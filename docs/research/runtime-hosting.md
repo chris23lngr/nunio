@@ -1,0 +1,115 @@
+# Runtime and hosting: Vercel topology and Bun compatibility
+
+Research date: 2026-10-29. Inputs: [product brief](../product-brief.md), [durable AI note](durable-ai.md), [identity/billing/security note](identity-billing-security.md), [foundation note](foundation.md) (partly stale: its pnpm/Fastify/Drizzle/Node baseline predates the founder's Next.js/Prisma/Bun/Turborepo/Vercel preference). Facts come from official docs, release notes, source, npm registry metadata, and owning-project GitHub issues inspected on this date. Nothing was installed, deployed, or benchmarked. Selections below are **proposals**.
+
+## Finding and recommendation
+
+**Verified, in short:**
+
+- Vercel can host **web** (Next.js) and **API** (Bun or Node Function) in an EU region. Vercel Functions cannot host a **persistent Temporal worker**: invocations are capped at 300 s by default, 800 s on Pro, and 1800 s in beta, and they scale to zero. Temporal's serverless-worker support covers only AWS Lambda and GCP Cloud Run, and it is in Public Preview.
+- Vercel's only always-on primitive is **Daemons**. It entered **public beta on 2026-10-15**, and its announcement names long-polling Temporal workers as a use case. During the beta, daemons run only in production, cannot be added to projects whose root directory is a subfolder such as `apps/worker`, and have no autoscaling.
+- **A Temporal worker under Bun is experimental.** The SDK README "strongly discourage[s] running Temporal Workers in anything except authentic Node.js at this time"; release notes label Bun support experimental since v1.15.0.
+- **Bun works as package manager and test runner for everything.** As a *production runtime*, it is beta on Vercel and not on the official support matrix for Next.js or Prisma 7. Better Auth smoke-tests it in CI but documents no support policy for it.
+
+**Does the founder's stack hold?** Mostly. The worker breaks it, and Bun as a runtime is the weak point everywhere.
+
+**Proposed smallest change:**
+
+- Run **web and API on Vercel in `fra1`**. Use Bun as package manager and test runner.
+- Run **web on Vercel's default Node runtime**. Run **API on the Bun runtime only if the compatibility spike below passes**; otherwise run it on Node with no code change, since it is Fetch-based.
+- Run the **Temporal worker on Node 24 LTS in a container in an EU region**, either on a container platform (e.g. Cloud Run, Fly, Railway, Render, Kubernetes) or on Vercel Daemons once it leaves beta. Keep the existing Temporal/BullMQ decision in [durable-ai.md](durable-ai.md).
+
+**Credible alternative (proposal: spike before locking the plan):** Vercel Workflows (Workflow SDK, `"use workflow"`) covers approval waits, timers, cancellation, and step idempotency keys, and it keeps all three apps on Vercel. Its costs are platform lock-in, residency caveats, payload retention you cannot shorten after a run finishes, and runs pinned to old deployments. Do not adopt both Temporal and Workflows.
+
+## Source table: verified APIs and limits
+
+| ID | Primary source, section | Verified fact | Status (checked 2026-10-29) |
+|---|---|---|---|
+| V1 | [Functions limits](https://vercel.com/docs/functions/limitations), "Max duration" | Node/Bun/Python with Fluid compute: Hobby 300 s max; Pro/Ent 300 s default, 800 s max, 1800 s "extended maximum". Memory up to 4 GB / 2 vCPU. 4.5 MB request/response body. Timeout returns 504 `FUNCTION_INVOCATION_TIMEOUT`. The page points unlimited-duration work to Workflows. | 1800 s is **Beta** |
+| V2 | [Docker on Vercel](https://vercel.com/kb/guide/docker), "Key behaviors" | Container-image Functions scale to zero after 5 min idle in production; `SIGTERM` + 30 s grace. | Container runtime **Beta** |
+| V3 | [Daemons](https://vercel.com/docs/daemons), "How daemons work", "Graceful shutdown", FAQ | Long-running container processes (queue consumers, workflow workers). Fixed instance count per region, restart on exit, `SIGTERM` with grace period configurable 0–3600 s. Production only; no preview deployments. `vercel dev` does not run them. | **Public Beta**; [announced 2026-10-15](https://vercel.com/changelog/vercel-daemons-is-now-in-public-beta), which names long-polling Temporal/Cadence workers |
+| V4 | [Daemons limits](https://vercel.com/docs/daemons/limits), "Instance limits", "Default quotas", "Unsupported features" | 1–8 GiB, amd64. Pro quota: 16 vCPU / 32 GiB concurrently. No inbound traffic, autoscaling, persistent storage, or preview deployments. **"Projects with a root directory such as `apps/web` can't add daemons yet."** | Beta |
+| V5 | [Daemon config reference](https://vercel.com/docs/daemons/config-reference), "instances" | `instances` is keyed by region ID; the docs example uses `cdg1`. Builds come from a `Dockerfile`, so the runtime can be Node. | Beta |
+| V6 | [Regions](https://vercel.com/docs/regions), "Region list" | EU compute regions: `fra1` Frankfurt, `cdg1` Paris, `dub1` Dublin, `arn1` Stockholm. `lhr1` London is UK, not EU. The default is `iad1` (US) for new projects. | GA |
+| V7 | [Configuring regions](https://vercel.com/docs/functions/configuring-functions/region), "Setting your default region", "Limits", "Automatic failover" | Set the region with `regions` in `vercel.json`, the dashboard, or per function. Hobby: 1 region; Pro: 5; Enterprise: all. `functionFailoverRegions` is Enterprise-only. | GA |
+| V8 | [Cron usage](https://vercel.com/docs/cron-jobs/usage-and-pricing) | 100 cron jobs per project. Hobby: once per day, ±59 min precision. Pro: per-minute. Cron invokes Functions, so V1 limits apply. | GA |
+| V9 | [Queues concepts](https://vercel.com/docs/queues/concepts), "At-least-once delivery", "Regions and data residency", "Deployments and versioning" | At-least-once delivery; 60 s default visibility timeout (max 3600 s); retention 60 s–7 d; idempotency-key dedup for min(retention, 24 h). Regional, but "Strict data residency … is not supported yet": failover may hold messages in a neighbouring region. Topics are partitioned by deployment. | **Beta** (`queue/v2beta`, `experimentalTriggers`) |
+| V10 | [Bun runtime](https://vercel.com/docs/functions/runtimes/bun), "Configuring the runtime", "Next.js", "Feature support" | `vercel.json` `"bunVersion": "1.4.x"` (the Rust rewrite, which has breaking changes) or `"1.x"` (1.3.14). Supports the `Bun.serve()` entrypoint. Next.js with ISR needs `bun run --bun next build`. Middleware must set runtime `nodejs`. Differences from Node: automatic source maps, bytecode caching, `node:http` metrics. Extended duration and large functions work. | **Beta** since [2025-10-28](https://vercel.com/changelog/bun-runtime-now-in-public-beta-for-vercel-functions); Bun 1.4 [added 2026-08-20](https://vercel.com/changelog/bun-1-4-is-now-available-in-vercel-functions) |
+| V11 | [Services](https://vercel.com/docs/services), "How services work" | Multiple services in one project "share the same deployment". That conflicts with the brief's separate lifecycles, so use one Vercel project per app instead. | **Beta** |
+| W1 | [Workflows](https://vercel.com/docs/workflows), "Multi-region"; [concepts](https://vercel.com/docs/workflows/concepts), "Hook", "Sleep", "Skew Protection" | `'use workflow'` and `'use step'`; `sleep()`; `defineHook().create({ token })` and `.resume(token, payload)` for approvals; event-log replay. Runs are pinned to their starting deployment, so a rollback does not stop them, and runs on a deleted deployment "never complete or fail on their own". `start(..., { region })` pins run data to a region. | No beta label on the overview. The `workflow` package `latest` is **5.2.3** (npm). Region pinning needs ≥ 5.0.0-beta.33; 4.x runs always live in `iad1`. A primary GA announcement was not located |
+| W2 | [Workflow retention](https://vercel.com/docs/workflows/retention), "Where Vercel stores run data", "Delete run data sooner" | Payloads are end-to-end encrypted and stay in the run's region. **Hook records default to `iad1`.** Run metadata (names, attributes, hook tokens) is unencrypted, goes to observability systems that are not region-pinned, and is kept up to 1 year. Pro payloads are readable 7 d and kept up to 96 d. **No way to delete a finished run's data.** `experimental_retention: 0` exists. | Zero retention **experimental** |
+| W3 | [Workflow pricing and limits](https://vercel.com/docs/workflows/pricing), "Workflow run limits" | 25,000 events / 10,000 steps per run (default runtime); 240 s max replay; 50 MB payload; no limit on run or sleep duration; step runtime bounded by Function limits (V1). Billed per event, data written, and data retained, plus Functions and Queues. | QuickJS runtime **experimental** |
+| W4 | [Idempotency](https://workflow-sdk.dev/docs/foundations/idempotency); [Cancellation](https://workflow-sdk.dev/docs/foundations/cancellation), "Run cancellation" | `getStepMetadata().stepId` is stable across retries; use it as the provider idempotency key. `run.cancel()` is not cooperative: it stops at the next suspension, in-flight steps "run to completion", and hooks are disposed. Serializable `AbortController`/`AbortSignal` passed into steps gives cooperative in-flight abort in v5. | Stable docs |
+| W5 | [Postgres World](https://workflow-sdk.dev/worlds/postgres), "Limitations", "Security" | Self-hosting exit path: graphile-worker, which needs a long-running process. It is a "reference implementation … not optimized for scale, speed, or security", with no route auth and no end-to-end encryption. | Reference implementation |
+| T1 | [Temporal TS SDK README](https://github.com/temporalio/sdk-typescript#requirements), "Requirements" → "Other JavaScript runtime environments" | Official support: Node 20/22/24. Workers need N-API, `worker_threads`, `vm` (sandbox), `AsyncLocalStorage`, and `async_hooks`. The README "strongly discourage[s] running Temporal Workers in anything except authentic Node.js at this time". The client is "believed to work" on Bun but is untested. The README covers the main branch. | Official position |
+| T2 | Release notes [v1.15.0](https://github.com/temporalio/sdk-typescript/releases/tag/v1.15.0) (2026-02-18), [v1.23.0](https://github.com/temporalio/sdk-typescript/releases/tag/v1.23.0) (2026-08-26); issue [#2273](https://github.com/temporalio/sdk-typescript/issues/2273) | "Added experimental support for Bun runtime". v1.23.0 adds "Experimental: Fixed compatibility with Bun 1.4" and CI temporarily pinned to Bun 1.3.14. #2273 "Full Bun Support" is open: "Bun support for Workers and Clients is currently experimental". Latest SDK: 1.25.0 (2026-10-27). | **Experimental** |
+| T3 | Issue [#2608](https://github.com/temporalio/sdk-typescript/issues/2608) (community report, 2026-10-28/29) | On SDK 1.25.0 + Bun 1.4.4, the core bridge, `bundleWorkflowCode` (webpack), `Worker.create`, and a full round trip work. Promise-stack diagnostics are "disabled with a warning". Anecdotal, Windows, test server only. | Anecdotal |
+| T4 | [Temporal serverless workers](https://docs.temporal.io/develop/typescript/workers/serverless-workers) | Only AWS Lambda (`@temporalio/lambda-worker`) and GCP Cloud Run are listed; Vercel is not mentioned. | **Public Preview** |
+| P1 | [Prisma v7 generators](https://www.prisma.io/docs/orm/v7/prisma-schema/overview/generators), "Field reference" | `runtime`: `nodejs` (default), `deno`, `bun`, … The docs say `nodejs`, `deno`, and `bun` "all map to the same internal codepath". `output` is required. | No status label |
+| P2 | [Prisma v7 system requirements](https://www.prisma.io/docs/orm/v7/reference/system-requirements), "Software requirements" | Lists Node ^20.19 / ^22.12 / ^24 only; Bun is not mentioned. | — |
+| P3 | npm registry (`npm view … dist-tags`) | `@prisma/client` latest 7.10.1. **The `prisma` CLI `latest` tag points to `8.0.0-rc.28`**, so an unpinned `bunx prisma` pulls the RC. The [Prisma Bun guide](https://www.prisma.io/docs/guides/runtimes/bun) now uses `prisma@latest` and Prisma 8 material. | RC on `latest` |
+| B1 | [Better Auth installation](https://www.better-auth.com/docs/installation), "Mount Handler"; [Elysia integration](https://www.better-auth.com/docs/integrations/elysia) | Works with any standard `Request`/`Response` backend. Bun is not among the Mount Handler tabs; the Elysia guide assumes the Bun server. | — |
+| B2 | Better Auth source: [`e2e/smoke/test/bun.spec.ts`](https://github.com/better-auth/better-auth/blob/main/e2e/smoke/test/bun.spec.ts), [`.github/workflows/e2e.yml`](https://github.com/better-auth/better-auth/blob/main/.github/workflows/e2e.yml) | CI smoke-tests a `Bun.serve({ fetch: auth.handler })` sign-up against `bun:sqlite`. The unit/integration matrix is Node 22/24 only. Latest: 1.7.14. | CI smoke only |
+| B3 | Issues [#10886](https://github.com/better-auth/better-auth/issues/10886), [#11197](https://github.com/better-auth/better-auth/issues/11197), [#12020](https://github.com/better-auth/better-auth/issues/12020) | Passkey plugin in a Bun bundle needed `reflect-metadata` (closed). A Bun deploy on Vercel missed `@better-auth/telemetry` at runtime (closed as not planned; packaging). Bun.SQL Kysely dialect is still open. | — |
+| N1 | Next.js docs: [Installation](https://github.com/vercel/next.js/blob/canary/docs/01-app/01-getting-started/01-installation.mdx), "System requirements" | Minimum Node 20.9. Bun appears only as a package-manager tab (`bun create next-app`, `bun dev`). No Bun runtime support statement. Latest stable: 16.4.3. | — |
+| N2 | [Bun runtime docs](https://bun.com/docs/runtime), "Run a package.json script" → `--bun`; [Bun Next.js guide](https://bun.com/docs/guides/ecosystem/nextjs) | `bun run` respects the `#!/usr/bin/env node` shebang, so `bun dev` runs Next on **Node**; `--bun` forces Bun. The [Bun 1.4 post](https://bun.com/blog/bun-v1.4) (2026-08-20) says `bun --bun next build` works on Next 16.3. That is Bun's claim, not Next's. | Bun latest 1.4.4 (Rust rewrite) |
+
+## Assessment of Vercel Workflows against nunio's needs
+
+These are **proposals and inferences** drawn from W1–W5. They are not tested.
+
+- **It fits these needs:** durable approval waits (hooks), arbitrary timers (`sleep`), cancellation (run-level plus cooperative `AbortSignal`), and stable step IDs for provider idempotency keys. Delivery underneath is at-least-once (V9), the same contract as Temporal Activities. The outbox, reconciliation, and `outcome_unknown` invariants in [durable-ai.md](durable-ai.md) still apply unchanged.
+- **Mismatch for long-lived responsibilities.** A run keeps executing its original deployment's code (W1). Semester-long runs would keep old code, including unfixed bugs, alive unless restarted at checkpoints or started with `deploymentId: 'latest'`. Temporal has the same problem, solved through patching or worker versioning.
+- **EU residency caveats.**
+  - Start every run with an EU `region` on v5.
+  - Hook records default to `iad1`, and run metadata goes to observability systems that are not region-pinned (W2).
+  - Queues failover may leave the region temporarily (V9).
+  - Mitigation: keep payloads, attributes, and hook tokens free of personal data, and pass opaque IDs only. This matches durable-ai invariant 6.
+- **Deletion.** Finished-run payloads cannot be deleted on demand (W2). For GDPR erasure, this means no student content may ever enter payloads.
+- **Lock-in.** Hosted state, queues, and observability are Vercel's. The only self-host exit, the Postgres World, is explicitly not production-hardened (W5). Temporal can be self-hosted or moved between managed providers.
+
+## Proposed implications for the plan
+
+1. **Monorepo layout:** one Vercel project per app (web, API), each with its own root directory, which keeps independent deploy lifecycles (V11). Set `regions: ["fra1"]` explicitly; never rely on the `iad1` default (V6, V7). Pro plan is required for 800 s functions, per-minute cron, and more than one region (V1, V7, V8).
+2. **Worker:** the `apps/worker` Docker image runs `node` (24 LTS), not `bun`, in an EU region. Use Bun only to install dependencies and run tests at build time; T1 allows nothing more for the runtime. Daemons is a later option, not a launch dependency: it is beta, production-only, and incompatible with a subfolder root directory (V3, V4).
+3. **API:** keep the API Fetch-native (`Bun.serve` / Hono-style), so switching between the Bun and Node runtimes on Vercel is a `vercel.json` change (V10). Pin `bunVersion` explicitly.
+4. **Web:** default Node runtime on Vercel; `next` stays under Node unless `--bun` is passed (N2). Revisit the Bun runtime for web only after the API spike.
+5. **Versions:** pin `prisma` and `@prisma/client` at 7.10.x exactly, because the CLI `latest` tag is an RC (P3). Pin Better Auth, Temporal (all `@temporalio/*` packages at the same version), and Bun exactly.
+6. **Cron:** use cron only as a trigger. Put durable timers in the workflow engine (V8, W3).
+
+## Verification to carry into the plan
+
+- **API spike on the Vercel Bun runtime (`fra1`, Bun 1.4.x):**
+  - Better Auth sign-up, sign-in, session, and revocation through Prisma 7 with `@prisma/adapter-pg`.
+  - A Stripe raw-body webhook.
+  - A cold start.
+  - The same suite on Node.
+  - Record any packaging gaps (B3).
+- `prisma generate` with `runtime = "bun"` versus `nodejs`; confirm identical output (P1) and that migrations run from the pinned 7.x CLI.
+- `bun --bun next build` versus `next build` on the pinned Next version, if Bun for web is still wanted.
+- **Worker on Node in an EU container:**
+  - Long-poll connection to the Temporal service.
+  - `SIGTERM` drain within the platform's grace period.
+  - The kill/restart and replay tests from durable-ai.md.
+- **If the Workflows spike runs:**
+  - An approval hook on v5 with an EU `region`.
+  - Inspect where hook records and metadata land (W2).
+  - Cancel during an in-flight step.
+  - Roll back and deploy while a run sleeps (W1).
+  - Count events for a realistic responsibility against the 25k cap (W3).
+- Confirm with Vercel where builds, runtime logs, and observability data are processed, and review the DPA. This was not established here.
+
+## Confidence and gaps
+
+- **High confidence:** the documented Vercel limits and beta labels, the EU region list, Temporal's official Node-only worker position, Prisma's `runtime` field semantics, and the npm dist-tags, all inspected directly today.
+- **Medium confidence:** that Daemons accepts `fra1`. The docs show `cdg1` keyed per region ID but do not enumerate allowed regions.
+- **Low confidence:** Bun-runtime behaviour for this exact stack. The evidence is beta labels, a CI smoke test, and anecdotal reports (T3, B3).
+- **Gaps:**
+  - No primary-source GA announcement for Vercel Workflows was found.
+  - Region pinning for hook records ("unless you choose a different region") is not documented.
+  - Behaviour of a `fra1` Function during a regional outage on non-Enterprise plans is unclear.
+  - Vercel build, log, and observability data locations are unverified.
+  - Temporal Cloud EU regions and container-host pricing were not evaluated.
+  - No performance or cost comparison was made.
+
+  This note does not establish GDPR compliance.
