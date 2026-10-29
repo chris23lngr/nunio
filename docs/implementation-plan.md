@@ -37,7 +37,7 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
 | `vercel` CLI | 65.8.0 | |
 | `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` | 3.1160.0 | |
 | `@vercel/functions` | 3.10.5 | `awsCredentialsProvider` from `@vercel/functions/oidc` |
-| `@ai-sdk/amazon-bedrock` | AI SDK v7 line | use the `/anthropic` subpath |
+| `@openrouter/ai-sdk-provider` | 3.1.0 | peer `ai ^7`; base URL `https://eu.openrouter.ai/api/v1` (ADR-0012) |
 
 ### Allowed APIs (copy from these locations)
 
@@ -81,11 +81,11 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
   - Deploy from CI with `POST https://api.render.com/v1/services/{id}/deploys` `{ commitId }`, then poll.
   - OIDC to AWS: GA, Pro workspace, runtime only.
   - Sources: render.com/docs/blueprint-spec, /docs/private-services, /docs/oidc; api-docs.render.com/reference/create-deploy.
-- **AWS:**
-  - Bedrock via `@ai-sdk/amazon-bedrock/anthropic` with `region: "eu-central-1"` and `eu.anthropic.claude-*-5-5` IDs only.
-  - Retention `PUT /data-retention` `none`; `GetInferenceProfile` destination check.
-  - Vercel OIDC: `awsCredentialsProvider({ roleArn, audience })`.
-  - Sources: [ai-providers.md](research/ai-providers.md); vercel.com/docs/oidc/aws.
+- **AI provider (interim, ADR-0012):**
+  - OpenRouter via `@openrouter/ai-sdk-provider` with the EU base URL `https://eu.openrouter.ai/api/v1` only.
+  - The organization guardrail restricts data regions to the EU; Zero Data Retention is enforced account-wide.
+  - Sources: openrouter.ai/docs/guides/features/sovereign-ai, /docs/guides/features/guardrails, /docs/guides/routing/provider-selection.
+  - The Bedrock entries in [ai-providers.md](research/ai-providers.md) (ADR-0011) apply after the switch back.
 - **Hetzner S3:**
   - `new S3Client({ endpoint: "https://fsn1.your-objectstorage.com", region: "fsn1", requestChecksumCalculation: "WHEN_REQUIRED" })`.
   - `getSignedUrl(client, new PutObjectCommand({ Bucket, Key, ContentLength, SSECustomerAlgorithm: "AES256", SSECustomerKey, SSECustomerKeyMD5 }), { expiresIn })`. The SSE-C headers stay signed headers that the browser must send. `ContentLength` is signed.
@@ -103,12 +103,17 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
 - Do not use `middleware.ts` in Next 16 (use `proxy.ts`), and do not set `runtime` in it.
 - There is no `payloadCodecPath` option on Temporal's DataConverter. Do not use Alpine images for Temporal workers. Do not use `cronSchedule` (use Schedules).
 - Do not use session-level `SET` through Neon's pooler, or `rootDir` on Render services built with `turbo prune`.
-- Do not use Bedrock `global.*` or `us.*` profiles, Anthropic direct, Fable or Mythos models, forced `tool_choice`, `jsonTool` structured output, or batch inference for student content (ADR-0011).
+- Do not use OpenRouter's global endpoint (`openrouter.ai/api/v1`), Anthropic direct, Fable or Mythos models, forced `tool_choice`, structured-output modes that force a tool, or batch inference for student content (ADR-0011 rules, ADR-0012).
 - Do not use a cached session for authorization decisions (disable Better Auth's cookie cache), and do not use `advanced.disableCSRFCheck` / `disableOriginCheck`.
 
 ---
 
 ## Phase 1: Accounts, domains, and secrets (human steps)
+
+**Status (2026-10-30): done except the Vercel team.** It was completed with `scripts/setup-phase-1.sh`, and the record is in [operations/environments.md](operations/environments.md). The deviations:
+- **Vercel team pending.** Deploys of `api` and `web` are blocked until it exists. `VERCEL_ORG_ID` must be set and `VERCEL_TOKEN` likely re-issued for the team.
+- **AI provider is OpenRouter EU (ADR-0012)** instead of Bedrock. One AWS account is reserved for the later switch.
+- **AWS policies** (retention, SCPs, OIDC roles) are not needed until the switch back to Bedrock.
 
 > **How this serves the primary goal:** nothing can reach pilot students without real EU environments, and only the founder can create the accounts behind them.
 
@@ -156,16 +161,16 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
    1. install (`bun install --frozen-lockfile`);
    2. typecheck, lint, and test (Testcontainers);
    3. `prisma migrate deploy` (unpooled URL);
-   4. deploy api via `vercel deploy --prebuilt`;
+   4. deploy api via `vercel deploy --prebuilt` (**blocked until the Vercel team exists**);
    5. deploy worker and parser via the Render deploy API, polling until live;
-   6. deploy web.
+   6. deploy web (**blocked until the Vercel team exists**).
 
    Vercel `git.deploymentEnabled.main: false`, so PR preview builds stay UI-only (ADR-0005).
 4. **Observability** from the gate decision: error tracking in all four apps, plus an alert when the Temporal worker is not polling.
 5. **Spikes.** Each one is a test or script kept in the repo:
    - **a. Prisma 7 + Better Auth on Node:** sign-up, sign-in, session, and revocation through `prismaAdapter`. Run on Testcontainers and against the staging Neon branch.
-   - **b. Cross-origin session:** `app.` → `api.` with the cookie on `.nunio.app`. Next.js server-side session check by forwarding the cookie to `https://api.nunio.app/api/auth/get-session`. This has no official recipe, so it must be proven here. Cover CSRF and origin rejection from an untrusted origin.
-   - **c. Hono on Vercel `fra1`:** cold start, a Stripe-style raw-body route, and `attachDatabasePool` with `PrismaPg(pool)`.
+   - **b. Cross-origin session (blocked until the Vercel team exists):** `app.` → `api.` with the cookie on `.nunio.app`. Next.js server-side session check by forwarding the cookie to `https://api.nunio.app/api/auth/get-session`. This has no official recipe, so it must be proven here. Cover CSRF and origin rejection from an untrusted origin.
+   - **c. Hono on Vercel `fra1` (blocked until the Vercel team exists):** cold start, a Stripe-style raw-body route, and `attachDatabasePool` with `PrismaPg(pool)`.
    - **d. Temporal worker on Render:**
      - connects to Temporal Cloud with an API key;
      - a workflow waits on a signal, and survives a worker kill/restart and a redeploy;
@@ -180,7 +185,12 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
      - noncurrent-version expiry configured.
 
      **If any of these fail, switch to the S3 `eu-central-1` fallback and record it as an ADR amendment.**
-   - **f. Bedrock guardrails:**
+   - **f. OpenRouter EU check (ADR-0012), replacing the Bedrock guardrails below until the switch back:**
+     - a request via `eu.openrouter.ai` succeeds, and one via the global endpoint is rejected (403);
+     - list which Claude models and **embedding** models are served in-region with zero retention, and set the allowlist from that list;
+     - structured output works without forcing a tool, and prompt caching passes through;
+     - if no in-region embeddings exist, stop and raise a new decision before Phase 5.
+   - **f′. Bedrock guardrails (only after switching back to ADR-0011):**
      - `GetInferenceProfile` for each allowlisted `eu.*` ID fails CI on a non-EU destination;
      - retention `none` is set and read back;
      - a `global.*` call is denied;
@@ -244,8 +254,8 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
    - Settle actual usage after the call; hold uncertain reservations.
    - Return `budget_exhausted` / `allowance_exhausted` as values.
 2. `packages/ai`:
-   - Model registry with only EU-pinned Bedrock IDs (`customProvider`).
-   - Default model per task (ADR-0011).
+   - Model registry with only the in-region, zero-retention OpenRouter model IDs from spike f (`customProvider`). It is built so that switching to Bedrock (ADR-0011) changes only the registry.
+   - Default model per task (ADR-0011 defaults, served via ADR-0012).
    - Bounded calls (`maxOutputTokens`, `maxRetries` coordinated with Temporal retries, `abortSignal`).
    - Each model carries a data-handling label.
 3. Global AI kill switch (a configuration flag checked inside `meter`).
@@ -278,7 +288,7 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
    - The parser is called with a presigned GET plus the single file's key, and returns structured text.
    - Scanned pages are detected and routed to Claude image input via `meter` (ADR-0011).
    - On success, CopyObject to `sources` and delete from `quarantine`.
-4. Chunking, with chunk text encrypted under the Source key ([knowledge-retrieval.md](design/knowledge-retrieval.md)). Embeddings via the Bedrock embedding model chosen by the German eval (run the eval here; deprecation check first).
+4. Chunking, with chunk text encrypted under the Source key ([knowledge-retrieval.md](design/knowledge-retrieval.md)). Embeddings via an in-region OpenRouter embedding model from spike f, chosen by the German eval (run the eval here; deprecation check first).
 5. **Source deletion:** shred the key, delete embedding rows and derived rows in one transaction, and delete objects. Visible immediately everywhere.
 
 **Documentation references.**
@@ -468,7 +478,7 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
 
 **What to implement and complete.**
 
-1. **DPA review (ADR-0008):** Vercel, Neon, Temporal, Render, Hetzner, and AWS Bedrock with its four specific checks, plus the email and observability providers.
+1. **DPA review (ADR-0008):** Vercel, Neon, Temporal, Render, Hetzner, OpenRouter and the providers it routes to (ADR-0012), plus the email and observability providers. AWS Bedrock with its four checks joins the review on the switch back.
 2. **Key operations:** documented rotation and compromise procedures for each master key, with one rotation rehearsed on staging.
 3. **Evals:**
    - German retrieval;
@@ -507,7 +517,7 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
 1. **Docs vs code.** Each module's interface matches its design doc (delegation, knowledge), and the ADRs match the deployed configuration (regions, retention, origins, models).
 2. **Anti-pattern greps.** No hits on any of:
    - `prisma-client-js`, `directUrl`, `postgresqlExtensions`, `hono/vercel`, `middleware.ts`, `payloadCodecPath`, `cronSchedule`;
-   - `global.anthropic`, `us.anthropic`, `tool_choice`, `jsonTool`;
+   - `https://openrouter.ai/api` (global endpoint), `global.anthropic`, `us.anthropic`, `tool_choice`, `jsonTool`;
    - `disableCSRFCheck`, `disableOriginCheck`, `FROM node:.*alpine`.
 3. **Full test run.** Unit, contract, Testcontainers integration, workflow replay, and end-to-end on staging: upload a syllabus, review it, then a Responsibility Run proposes a Study Block, the student approves it, and the Action is done.
 4. **First-use timing.** Re-measure the ten-minute result on staging with eval materials.
