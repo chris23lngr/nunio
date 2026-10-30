@@ -33,4 +33,4 @@ If verification persists the verified flag before entitlement activation fails, 
 
 The founder's `revoke-pilot` command targets a student ID through an operator database connection. It records revocation and operator attribution together. Repeated revocation preserves the original record; signing in and reading existing data remain permitted. No student-facing revocation or reactivation endpoint is introduced.
 
-This API seam covers authenticated ownership selection, not database isolation. Restricted roles, forced RLS, transaction-local owner context and Principal construction remain subsequent Phase 3 slices. Usage amounts and enforcement remain Phase 4.
+The API runs as a restricted `nunio_runtime` login. Billing reads and activates entitlements through `withOwner(prisma, principal, fn)` from `packages/delegation`, so forced RLS and the transaction-local owner context back the application-level selection. Usage amounts and enforcement remain Phase 4.

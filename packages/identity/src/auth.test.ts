@@ -11,14 +11,18 @@ const run = Date.now().toString(36);
 const email = (name: string) => `${name}+${run}@example.com`;
 
 let db: TestDatabase;
+/** The restricted runtime role the deployed API uses. */
 let prisma: PrismaClient;
+/** The migration role, for fixtures outside RLS. */
+let admin: PrismaClient;
 let auth: Auth;
 const messages: { url: string; headers: Headers; body: { to: { email: string }[]; text: string; project_id: string } }[] = [];
 let mailStatus = 201;
 
 beforeAll(async () => {
   db = await startTestDatabase();
-  prisma = createPrismaClient(createPool(db.connectionString));
+  prisma = createPrismaClient(createPool(db.runtimeConnectionString));
+  admin = createPrismaClient(createPool(db.connectionString));
   auth = createAuth({
     prisma,
     baseURL: origin,
@@ -39,6 +43,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma?.$disconnect();
+  await admin?.$disconnect();
   await db?.stop();
 });
 
@@ -58,7 +63,7 @@ function call(path: string, init: { body?: unknown; cookie?: string; invitation?
 
 async function invite(email: string, expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), acceptedAt: Date | null = null) {
   const token = randomBytes(32).toString("base64url");
-  await prisma.invitation.create({ data: {
+  await admin.invitation.create({ data: {
     tokenHash: createHash("sha256").update(token).digest("hex"),
     email: email.toLowerCase(),
     issuedBy: "test-operator",

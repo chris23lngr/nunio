@@ -1,6 +1,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { pilotStatus } from "@nunio/billing";
 import type { PrismaClient } from "@nunio/db";
+import { principal } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 
 export interface AppBindings {
@@ -45,7 +46,7 @@ routes.openapi(createRoute({
   c.header("cache-control", "no-store");
   const actor = await c.get("auth").authenticate(c.req.raw);
   if (!actor) return c.json({ error: "unauthorized" as const }, 401);
-  return c.json({ status: await pilotStatus(c.get("prisma"), actor.studentId) }, 200);
+  return c.json({ status: await pilotStatus(c.get("prisma"), principal.fromSession(actor)) }, 200);
 });
 
 export const openApiConfig = {

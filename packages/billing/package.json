@@ -14,7 +14,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@nunio/db": "workspace:*"
+    "@nunio/db": "workspace:*",
+    "@nunio/delegation": "workspace:*"
   },
   "devDependencies": {
     "@nunio/eslint-config": "workspace:*",

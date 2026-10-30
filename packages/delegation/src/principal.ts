@@ -21,10 +21,14 @@ export const principal = {
 type Transaction = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
 
 /** Runs `fn` in a transaction whose RLS owner context is the Principal's student. */
-export async function withOwner<T>(prisma: PrismaClient, p: Principal, fn: (tx: Transaction) => Promise<T>): Promise<T> {
+export async function withOwner<T>(
+  prisma: PrismaClient,
+  p: Principal,
+  fn: (tx: Transaction, studentId: string) => Promise<T>,
+): Promise<T> {
   if (p.kind !== "student") throw new Error("Run principals are not authorized until Phase 9");
   return prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT set_config('app.owner_id', ${p.studentId}, true)`;
-    return fn(tx);
+    return fn(tx, p.studentId);
   });
 }

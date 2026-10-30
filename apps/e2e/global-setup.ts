@@ -37,7 +37,7 @@ export default async function globalSetup() {
     start("api", {
       ...shared,
       PORT: String(ports.api),
-      DATABASE_URL: db.connectionString,
+      DATABASE_URL: db.runtimeConnectionString,
       BETTER_AUTH_URL: origins.api,
       BETTER_AUTH_SECRET: "spike-b-e2e-secret-that-is-long-enough",
       APP_ORIGIN: origins.app,

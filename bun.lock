@@ -17,6 +17,7 @@
         "@hono/zod-openapi": "1.6.3",
         "@nunio/billing": "workspace:*",
         "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
         "@nunio/identity": "workspace:*",
         "@vercel/functions": "3.10.5",
         "hono": "4.13.14",
@@ -150,6 +151,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
       },
       "devDependencies": {
         "@nunio/eslint-config": "workspace:*",
@@ -226,6 +228,7 @@
       "dependencies": {
         "@nunio/billing": "workspace:*",
         "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
         "better-auth": "1.7.14",
         "zod": "4.6.7",
       },

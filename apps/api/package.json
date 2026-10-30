@@ -24,6 +24,7 @@
     "@nunio/billing": "workspace:*",
     "@hono/zod-openapi": "1.6.3",
     "@nunio/db": "workspace:*",
+    "@nunio/delegation": "workspace:*",
     "@nunio/identity": "workspace:*",
     "@vercel/functions": "3.10.5",
     "hono": "4.13.14",

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { activatePilot } from "@nunio/billing";
 import type { PrismaClient } from "@nunio/db";
+import { principal } from "@nunio/delegation";
 import { APIError, betterAuth, getCurrentAdapter } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { createAuthMiddleware } from "better-auth/api";
@@ -26,7 +27,7 @@ export function createAuth({ prisma, baseURL, trustedOrigins, secret, email, coo
     const invitation = await prisma.invitation.findFirst({
       where: { email: user.email, acceptedAt: { not: null } },
     });
-    if (invitation) await activatePilot(prisma, user.id);
+    if (invitation) await activatePilot(prisma, principal.fromSession({ studentId: user.id }));
   }
 
   const auth = betterAuth({

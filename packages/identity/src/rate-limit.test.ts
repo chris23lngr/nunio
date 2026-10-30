@@ -38,7 +38,7 @@ beforeAll(async () => {
     `, {
       eval: true,
       execArgv: ["--import", "tsx"],
-      workerData: db.connectionString,
+      workerData: db.runtimeConnectionString,
       env: { ...process.env, NODE_ENV: "production" },
     });
     instances.push(instance);

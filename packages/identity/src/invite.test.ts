@@ -15,7 +15,7 @@ let auth: Auth;
 
 beforeAll(async () => {
   db = await startTestDatabase();
-  prisma = createPrismaClient(createPool(db.connectionString));
+  prisma = createPrismaClient(createPool(db.runtimeConnectionString));
   auth = createAuth({
     prisma, baseURL: origin, trustedOrigins: [origin], secret: "invite-test-secret-that-is-long-enough",
     email: {

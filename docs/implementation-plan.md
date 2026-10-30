@@ -243,10 +243,10 @@ Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-
 - PostgreSQL row security docs.
 
 **Verification checklist.**
-- [ ] User A cannot read or mutate user B's data by changing IDs: API tests plus an RLS test under the runtime role.
+- [x] User A cannot read or mutate user B's data by changing IDs: API tests plus an RLS test under the runtime role. Locally verified; staging pending.
 - [x] A revoked session cannot call authenticated routes. The local entitlement API test rejects a replayed cookie after sign-out; pilot revocation separately preserves the session and read access.
 - [ ] An untrusted origin cannot perform an authenticated mutation.
-- [ ] Concurrent requests for two users never leak `app.owner_id` across pooled connections.
+- [x] Concurrent requests for two users never leak `app.owner_id` across pooled connections. Locally verified at the `withOwner` seam; staging pending.
 
 **Anti-pattern guards.** Do not authorize from the cookie-presence check in `proxy.ts`. Never use the table owner or a `BYPASSRLS` role at runtime. Do not put Better Auth's server instance in `web`.
 

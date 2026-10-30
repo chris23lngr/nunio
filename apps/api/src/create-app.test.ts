@@ -20,14 +20,18 @@ const webhookSecret = "spike-c-webhook-secret";
 
 let db: TestDatabase;
 let pool: Pool;
+/** The restricted runtime role the deployed API uses. */
 let prisma: PrismaClient;
+/** The migration role, for fixtures and fault injection outside RLS. */
+let admin: PrismaClient;
 let app: ReturnType<typeof createApp>;
 const verificationLinks = new Map<string, string>();
 
 beforeAll(async () => {
   db = await startTestDatabase();
-  pool = createPool(db.connectionString);
+  pool = createPool(db.runtimeConnectionString);
   prisma = createPrismaClient(pool);
+  admin = createPrismaClient(createPool(db.connectionString));
   const auth = createAuth({
     prisma,
     baseURL: apiOrigin,
@@ -49,6 +53,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma?.$disconnect();
+  await admin?.$disconnect();
   await db?.stop();
 });
 
@@ -66,7 +71,7 @@ function call(path: string, init: { origin: string; body?: unknown; cookie?: str
 
 async function signUp(name: string): Promise<string> {
   const invitation = randomBytes(32).toString("base64url");
-  await prisma.invitation.create({ data: {
+  await admin.invitation.create({ data: {
     tokenHash: createHash("sha256").update(invitation).digest("hex"),
     email: `${name}+${run}@example.com`,
     issuedBy: "api-test-operator",
@@ -107,7 +112,7 @@ describe("the student's pilot entitlement", () => {
   it("does not activate pilot access while email verification is still pending", async () => {
     const address = `pilot-pending+${run}@example.com`;
     const invitation = randomBytes(32).toString("base64url");
-    await prisma.invitation.create({ data: {
+    await admin.invitation.create({ data: {
       tokenHash: createHash("sha256").update(invitation).digest("hex"),
       email: address,
       issuedBy: "api-test-operator",
@@ -136,7 +141,7 @@ describe("the student's pilot entitlement", () => {
   it("recovers pilot activation on sign-in after verification's activation failed", async () => {
     const address = `pilot-activation-retry+${run}@example.com`;
     const invitation = randomBytes(32).toString("base64url");
-    await prisma.invitation.create({ data: {
+    await admin.invitation.create({ data: {
       tokenHash: createHash("sha256").update(invitation).digest("hex"),
       email: address,
       issuedBy: "api-test-operator",
@@ -149,18 +154,18 @@ describe("the student's pilot entitlement", () => {
     expect(signup.status).toBe(200);
     const pending = await signup.json() as { user: { id: string } };
     const verification = verificationLinks.get(address)!;
-    await prisma.$executeRaw`CREATE FUNCTION reject_pilot_activation_test() RETURNS trigger
+    await admin.$executeRaw`CREATE FUNCTION reject_pilot_activation_test() RETURNS trigger
       LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'temporary pilot activation failure'; END; $$`;
     try {
       // Scope the injected database fault to this student, including on a shared test branch.
       const id = pending.user.id.replaceAll("'", "''");
-      await prisma.$executeRawUnsafe(`CREATE TRIGGER reject_pilot_activation_test
+      await admin.$executeRawUnsafe(`CREATE TRIGGER reject_pilot_activation_test
         BEFORE INSERT ON "pilot_entitlement" FOR EACH ROW
         WHEN (NEW."studentId" = '${id}') EXECUTE FUNCTION reject_pilot_activation_test()`);
       expect((await app.request(verification)).status).toBe(500);
     } finally {
-      await prisma.$executeRaw`DROP TRIGGER IF EXISTS reject_pilot_activation_test ON "pilot_entitlement"`;
-      await prisma.$executeRaw`DROP FUNCTION reject_pilot_activation_test()`;
+      await admin.$executeRaw`DROP TRIGGER IF EXISTS reject_pilot_activation_test ON "pilot_entitlement"`;
+      await admin.$executeRaw`DROP FUNCTION reject_pilot_activation_test()`;
     }
     expect((await app.request(verification)).status).toBe(302);
     const signIn = await call("/sign-in/email", { origin: appOrigin, body: { email: address, password } });
@@ -193,7 +198,7 @@ describe("the student's pilot entitlement", () => {
   it("refuses an existing session when its account is no longer verified", async () => {
     const cookie = await signUp("pilot-unverified");
     // A legacy session must not authorize access using an obsolete verified flag.
-    await prisma.user.update({
+    await admin.user.update({
       where: { email: `pilot-unverified+${run}@example.com` },
       data: { emailVerified: false },
     });
@@ -225,7 +230,7 @@ describe("the student's pilot entitlement", () => {
   it("does not grant pilot access to a verified account that never accepted an invitation", async () => {
     const address = `pilot-legacy+${run}@example.com`;
     const studentId = randomUUID();
-    await prisma.user.create({ data: {
+    await admin.user.create({ data: {
       id: studentId, name: "Legacy", email: address, emailVerified: true,
       accounts: { create: {
         id: randomUUID(), accountId: studentId, providerId: "credential", password: await hashPassword(password),
