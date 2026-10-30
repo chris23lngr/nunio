@@ -1,5 +1,5 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { APICallError, type LanguageModel } from "ai";
+import { APICallError, type LanguageModel, type LanguageModelUsage, type ProviderMetadata } from "ai";
 
 /**
  * Claude models OpenRouter serves from zero-retention endpoints (spike f); Covered Models stay excluded.
@@ -14,6 +14,9 @@ const allowlist = {
 export type ModelId = keyof typeof allowlist;
 
 const maxOutputTokens = 8_000;
+/** Generous per-text allowance for role markers and message framing around the text's own tokens. */
+const framingTokens = 200;
+const encoder = new TextEncoder();
 
 /** ADR-0011 starting defaults, each to be confirmed by evaluations before the pilot. */
 const defaults = {
@@ -46,8 +49,17 @@ export interface RegisteredModel {
    * outside a fresh reservation. Callers still pass `meter`'s `abortSignal`.
    */
   callSettings: { maxOutputTokens: number; maxRetries: 0 };
-  /** An upper bound for `meter`: the input plus the full output budget, rounded up to whole micro-USD. */
-  estimateMicroUsd(inputTokens: number): number;
+  /**
+   * An upper bound for `meter`, rounded up to whole micro-USD. Pass every text the request sends: system
+   * prompt, messages, and any output schema. A token covers at least one UTF-8 byte, so each text's byte
+   * length plus a framing allowance bounds its tokens; the full output budget is added on top. Text only.
+   */
+  estimateMicroUsd(texts: readonly string[]): number;
+  /**
+   * What a finished call cost, for `meter` to settle: OpenRouter's reported cost, or its token counts at
+   * the registry's prices when no cost was reported. Rounded up to whole micro-USD.
+   */
+  actualMicroUsd(result: { usage: LanguageModelUsage; providerMetadata?: ProviderMetadata }): number;
 }
 
 export interface Models {
@@ -71,10 +83,19 @@ export function createModels({ apiKey, baseURL, fetch }: {
       return {
         id,
         label: { provider: "OpenRouter", upstream: [...allowlist[id].upstream], routing: "international", zeroRetention: true },
-        model: openrouter.chat(id, { provider: { zdr: true, data_collection: "deny" } }),
+        model: openrouter.chat(id, { provider: { zdr: true, data_collection: "deny" }, usage: { include: true } }),
         callSettings: { maxOutputTokens, maxRetries: 0 },
-        estimateMicroUsd: inputTokens =>
-          Math.ceil((inputTokens * allowlist[id].input + maxOutputTokens * allowlist[id].output) / 1_000_000),
+        estimateMicroUsd(texts) {
+          const inputTokens = texts.reduce((sum, text) => sum + encoder.encode(text).byteLength + framingTokens, 0);
+          return Math.ceil((inputTokens * allowlist[id].input + maxOutputTokens * allowlist[id].output) / 1_000_000);
+        },
+        actualMicroUsd({ usage, providerMetadata }) {
+          const cost = (providerMetadata?.openrouter?.usage as { cost?: unknown } | undefined)?.cost;
+          // toPrecision drops float noise such as 0.000123 * 1e6 = 123.00000000000001 before rounding up.
+          if (typeof cost === "number") return Math.ceil(Number((cost * 1_000_000).toPrecision(12)));
+          return Math.ceil(((usage.inputTokens ?? 0) * allowlist[id].input
+            + (usage.outputTokens ?? 0) * allowlist[id].output) / 1_000_000);
+        },
       };
     },
   };

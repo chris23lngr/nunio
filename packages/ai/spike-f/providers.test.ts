@@ -1,6 +1,7 @@
 import { embedMany, generateText, Output } from "ai";
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
+import { createModels } from "../src/models.ts";
 import { openRouterConfigured, spikeModels } from "./openrouter.ts";
 
 describe.skipIf(!openRouterConfigured)("OpenRouter (spike f)", () => {
@@ -62,3 +63,21 @@ describe.skipIf(!openRouterConfigured)("OpenRouter (spike f)", () => {
     expect(embeddings[0]).toHaveLength(1024);
   });
 });
+
+// Phase 4: the registry's cost accounting and estimate bound, against the live API.
+describe.skipIf(!openRouterConfigured)("the model registry against OpenRouter", () => {
+  it("reports a real call's cost, within the registry's estimate", async () => {
+    const models = createModels({ apiKey: process.env.OPENROUTER_API_KEY!, baseURL: process.env.OPENROUTER_BASE_URL! });
+    const haiku = models.byId("anthropic/claude-haiku-5.5");
+    const prompt = "Fasse in einem Satz zusammen: Die Prüfungsleistung ist eine Hausarbeit (15 Seiten), "
+      + "Abgabe bis zum Ende der Vorlesungszeit. Übungsblätter sind Zulassungsvoraussetzung.";
+
+    const result = await generateText({ model: haiku.model, ...haiku.callSettings, prompt });
+
+    expect(result.providerMetadata?.openrouter?.usage).toMatchObject({ cost: expect.any(Number) });
+    expect(result.usage.inputTokens).toBeLessThanOrEqual(new TextEncoder().encode(prompt).byteLength + 200);
+    expect(haiku.actualMicroUsd(result)).toBeGreaterThan(0);
+    expect(haiku.actualMicroUsd(result)).toBeLessThanOrEqual(haiku.estimateMicroUsd([prompt]));
+  });
+});
+

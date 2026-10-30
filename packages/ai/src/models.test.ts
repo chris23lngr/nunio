@@ -31,12 +31,16 @@ describe("the model registry", () => {
     });
 
   // OpenRouter prices per million tokens (input / output): Haiku $0.10 / $0.50, Sonnet $2 / $10, Opus $4 / $20.
+  // A token covers at least one UTF-8 byte, so 10,000 bytes plus 200 tokens of message framing bound the input.
   it.each([
-    ["anthropic/claude-haiku-5.5", 1_000 + 4_000],
-    ["anthropic/claude-sonnet-5.5", 20_000 + 80_000],
-    ["anthropic/claude-opus-5.5", 40_000 + 160_000],
-  ])("estimates %s at 10k input tokens plus its full 8k output budget", (id, microUsd) => {
-    expect(models.byId(id).estimateMicroUsd(10_000)).toBe(microUsd);
+    ["anthropic/claude-haiku-5.5", 1_020 + 4_000],
+    ["anthropic/claude-sonnet-5.5", 20_400 + 80_000],
+    ["anthropic/claude-opus-5.5", 40_800 + 160_000],
+  ])("estimates %s from 10,000 bytes of German input plus its full 8k output budget", (id, microUsd) => {
+    const input = "Prüfung".repeat(1_250); // "ü" takes two bytes: 8 bytes per word.
+
+    expect(new TextEncoder().encode(input).byteLength).toBe(10_000);
+    expect(models.byId(id).estimateMicroUsd([input])).toBe(microUsd);
   });
 
   it("sends every request to zero-retention endpoints only, with a bounded output budget", async () => {
@@ -56,7 +60,34 @@ describe("the model registry", () => {
       model: "anthropic/claude-haiku-5.5",
       provider: { zdr: true, data_collection: "deny" },
       max_tokens: 8_000,
+      usage: { include: true },
     })]);
+  });
+
+  it.each([[0.0001234, 124], [0.000123, 123], [0.0007, 700]])(
+    "charges the cost OpenRouter reports for a call: $%f is %i micro-USD", async (cost, microUsd) => {
+      const reporting = createModels({
+        apiKey: "test-key", baseURL: "https://openrouter.test/api/v1",
+        fetch: async () => Response.json(completion("pong", { cost })),
+      });
+      const haiku = reporting.byId("anthropic/claude-haiku-5.5");
+
+      const result = await generateText({ model: haiku.model, ...haiku.callSettings, prompt: "Reply with: pong" });
+
+      expect(haiku.actualMicroUsd(result)).toBe(microUsd);
+    });
+
+  it("prices the reported tokens when OpenRouter reports no cost", async () => {
+    const silent = createModels({
+      apiKey: "test-key", baseURL: "https://openrouter.test/api/v1",
+      fetch: async () => Response.json(completion("pong", { promptTokens: 1_000, completionTokens: 200 })),
+    });
+    const sonnet = silent.byId("anthropic/claude-sonnet-5.5");
+
+    const result = await generateText({ model: sonnet.model, ...sonnet.callSettings, prompt: "Reply with: pong" });
+
+    // 1,000 input tokens at $2 per million plus 200 output tokens at $10 per million.
+    expect(sonnet.actualMicroUsd(result)).toBe(2_000 + 2_000);
   });
 
   it("leaves retries to the caller: a failed request is sent once", async () => {
@@ -105,10 +136,15 @@ describe("isDefiniteFailure", () => {
   });
 });
 
-function completion(content: string) {
+function completion(content: string, { promptTokens = 5, completionTokens = 1, cost }: {
+  promptTokens?: number; completionTokens?: number; cost?: number;
+} = {}) {
   return {
     id: "gen-test", object: "chat.completion", created: 0, model: "anthropic/claude-haiku-5.5",
     choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
-    usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 },
+    usage: {
+      prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens,
+      ...(cost !== undefined && { cost }),
+    },
   };
 }
