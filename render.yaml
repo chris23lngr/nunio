@@ -5,7 +5,7 @@ services:
     runtime: docker
     region: frankfurt
     plan: starter
-    branch: phase-2/scaffold
+    branch: main
     # No rootDir: it breaks turbo prune. Build from the repo root.
     dockerContext: .
     dockerfilePath: ./apps/worker/Dockerfile
@@ -41,7 +41,7 @@ services:
     runtime: docker
     region: frankfurt
     plan: starter
-    branch: phase-2/scaffold
+    branch: main
     dockerContext: .
     dockerfilePath: ./apps/parser/Dockerfile
     autoDeployTrigger: "off"
