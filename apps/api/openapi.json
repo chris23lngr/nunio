@@ -19,6 +19,36 @@
         "required": [
           "status"
         ]
+      },
+      "PilotEntitlement": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "active",
+              "revoked"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "Unauthorized": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "unauthorized"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
       }
     },
     "parameters": {}
@@ -33,6 +63,32 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/entitlement": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "The current student's pilot status. Active pilot access has no fixed expiry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PilotEntitlement"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A current, verified session is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
                 }
               }
             }

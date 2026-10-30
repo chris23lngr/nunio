@@ -9,4 +9,4 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/((?!sign-in|_next/|favicon.ico).*)"] };
+export const config = { matcher: ["/((?!sign-in|reset-password|_next/|favicon.ico).*)"] };

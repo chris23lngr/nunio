@@ -44,6 +44,9 @@ export default async function globalSetup() {
       COOKIE_DOMAIN: cookieDomain,
       SPIKE_ROUTES: "true",
       SPIKE_WEBHOOK_SECRET: spikeWebhookSecret,
+      SCW_PROJECT_ID: "test-project",
+      SCW_SECRET_KEY: "test-key",
+      AUTH_EMAIL_FROM: "accounts@nunio.test",
     }),
     start("web", {
       ...shared,
@@ -53,6 +56,9 @@ export default async function globalSetup() {
     }),
     start("evil", { ...shared, PORT: String(ports.evil) }),
   ];
+
+  // Only Playwright workers provision verified account fixtures.
+  process.env.INVITATION_DATABASE_URL = db.connectionString;
 
   await Promise.all([
     waitFor(`${origins.api}/health`, ca),

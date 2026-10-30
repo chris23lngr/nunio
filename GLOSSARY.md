@@ -123,7 +123,7 @@ The cap on AI usage for one Responsibility. A Responsibility that exhausts its B
 _Avoid_: Limit, quota, allowance
 
 **Allowance**:
-The student's total included AI usage for their plan period, shared across all Runs.
+The student's total included AI usage, shared across all Runs. During the pilot it increases only through explicit grants; it does not reset automatically.
 _Avoid_: Credits, quota, budget
 
 ### Handing in

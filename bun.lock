@@ -15,6 +15,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@hono/zod-openapi": "1.6.3",
+        "@nunio/billing": "workspace:*",
         "@nunio/db": "workspace:*",
         "@nunio/identity": "workspace:*",
         "@vercel/functions": "3.10.5",
@@ -26,6 +27,7 @@
         "@nunio/eslint-config": "workspace:*",
         "@nunio/typescript-config": "workspace:*",
         "@types/node": "24.19.2",
+        "better-auth": "1.7.14",
         "eslint": "10.13.0",
         "tsx": "4.23.15",
         "typescript": "5.9.3",
@@ -45,6 +47,7 @@
         "@nunio/web": "workspace:*",
         "@playwright/test": "1.64.1",
         "@types/node": "24.19.2",
+        "better-auth": "1.7.14",
         "eslint": "10.13.0",
         "next": "16.4.3",
         "tsx": "4.23.15",
@@ -145,6 +148,9 @@
     "packages/billing": {
       "name": "@nunio/billing",
       "version": "0.0.0",
+      "dependencies": {
+        "@nunio/db": "workspace:*",
+      },
       "devDependencies": {
         "@nunio/eslint-config": "workspace:*",
         "@nunio/typescript-config": "workspace:*",
@@ -215,14 +221,17 @@
       "name": "@nunio/identity",
       "version": "0.0.0",
       "dependencies": {
+        "@nunio/billing": "workspace:*",
         "@nunio/db": "workspace:*",
         "better-auth": "1.7.14",
+        "zod": "4.6.7",
       },
       "devDependencies": {
         "@nunio/eslint-config": "workspace:*",
         "@nunio/typescript-config": "workspace:*",
         "@types/node": "24.19.2",
         "eslint": "10.13.0",
+        "tsx": "4.23.15",
         "typescript": "5.9.3",
         "vitest": "5.0.5",
       },

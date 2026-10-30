@@ -39,7 +39,7 @@ These are engineering proposals inferred from the brief and evidence above; API 
 
 ### Billing and capped usage
 
-- The free pilot receives explicit expiring/capped entitlements in nunio, independent of Stripe subscriptions. Enforce atomic usage reservations before costly work and reconcile actual cost afterward. Subscription status alone does not prevent concurrent jobs overspending an allowance.
+- The free pilot receives explicit entitlements with no fixed expiry and a finite Allowance in nunio, independent of Stripe subscriptions (founder decision, 2026-10-30). Access ends through explicit founder revocation; additional Allowance is granted manually, without an automatic reset. Enforce atomic usage reservations before costly work and reconcile actual cost afterward. Subscription status alone does not prevent concurrent jobs overspending an allowance.
 - Add Stripe hosted Checkout and Portal when paid plans are ready. Permit only server-approved plan/price IDs and return URLs. Do not let a user submit another customer's ID or grant access from a browser success redirect.
 - Proposed webhook ingress: read bounded raw body → verify signature → atomically insert a unique event inbox record plus durable work intent → return success. The worker applies an idempotent transition and marks processing complete. If durable persistence fails, return failure so Stripe can retry.
 - A crash after receipt must not permanently mark unfinished processing as complete. Replays and manual redelivery must remain safe. Use unique business-operation IDs as well as event IDs for side effects, without collapsing all future updates to the same subscription into one event.
