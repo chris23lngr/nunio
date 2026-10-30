@@ -5,6 +5,9 @@ import { createAuth, type Auth } from "./auth.js";
 
 const origin = "http://localhost:3000";
 const password = "correct horse battery staple";
+// Unique per run, so reruns against a persistent database (a Neon branch) don't collide.
+const run = Date.now().toString(36);
+const email = (name: string) => `${name}+${run}@example.com`;
 
 let db: TestDatabase;
 let prisma: PrismaClient;
@@ -57,34 +60,34 @@ async function sessionEmail(cookie: string): Promise<string | null> {
 describe("email and password sessions", () => {
   it("signs up a new user and finds their session", async () => {
     const res = await call("/sign-up/email", {
-      body: { name: "Ada", email: "ada@example.com", password },
+      body: { name: "Ada", email: email("ada"), password },
     });
 
     expect(res.status).toBe(200);
-    expect(await sessionEmail(sessionCookie(res))).toBe("ada@example.com");
+    expect(await sessionEmail(sessionCookie(res))).toBe(email("ada"));
   });
 
   it("signs in with the right password and refuses the wrong one", async () => {
     await call("/sign-up/email", {
-      body: { name: "Grace", email: "grace@example.com", password },
+      body: { name: "Grace", email: email("grace"), password },
     });
 
     const wrong = await call("/sign-in/email", {
-      body: { email: "grace@example.com", password: "not the password" },
+      body: { email: email("grace"), password: "not the password" },
     });
     expect(wrong.status).toBe(401);
     expect(wrong.headers.getSetCookie()).toEqual([]);
 
     const right = await call("/sign-in/email", {
-      body: { email: "grace@example.com", password },
+      body: { email: email("grace"), password },
     });
     expect(right.status).toBe(200);
-    expect(await sessionEmail(sessionCookie(right))).toBe("grace@example.com");
+    expect(await sessionEmail(sessionCookie(right))).toBe(email("grace"));
   });
 
   it("revokes the session on sign-out, even for a replayed cookie", async () => {
     const signUp = await call("/sign-up/email", {
-      body: { name: "Alan", email: "alan@example.com", password },
+      body: { name: "Alan", email: email("alan"), password },
     });
     const cookie = sessionCookie(signUp);
 
@@ -96,10 +99,10 @@ describe("email and password sessions", () => {
 
   it("revokes one session by token and leaves the user's others working", async () => {
     await call("/sign-up/email", {
-      body: { name: "Edsger", email: "edsger@example.com", password },
+      body: { name: "Edsger", email: email("edsger"), password },
     });
     const signIn = () =>
-      call("/sign-in/email", { body: { email: "edsger@example.com", password } });
+      call("/sign-in/email", { body: { email: email("edsger"), password } });
     const laptop = sessionCookie(await signIn());
     const phone = sessionCookie(await signIn());
 
@@ -114,7 +117,7 @@ describe("email and password sessions", () => {
 
     expect(await auth.api.getSession({ headers: new Headers({ cookie: laptop }) })).toBeNull();
     expect((await auth.api.getSession({ headers: phoneHeaders }))?.user.email).toBe(
-      "edsger@example.com",
+      email("edsger"),
     );
   });
 });
