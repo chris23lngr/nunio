@@ -56,7 +56,7 @@ jobs:
           fi
           bunx commitlint --from "$from" --to "$HEAD" --verbose
 
-  storage-spike:
+  spikes:
     if: github.event_name == 'push'
     needs: checks
     runs-on: ubuntu-latest
@@ -64,8 +64,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
-      # Spike e against the staging buckets; the tests skip wherever these are unset.
-      - run: bunx vitest run spike-e
+      # Spike e against the staging buckets and spike f against OpenRouter; both skip wherever their
+      # variables are unset.
+      - name: Spike e (Hetzner SSE-C)
+        run: bunx vitest run spike-e
         working-directory: packages/knowledge
         env:
           HETZNER_S3_ENDPOINT: ${{ vars.HETZNER_S3_ENDPOINT }}
@@ -74,6 +76,14 @@ jobs:
           HETZNER_SOURCES_BUCKET: ${{ vars.HETZNER_SOURCES_BUCKET }}
           HETZNER_S3_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY_ID }}
           HETZNER_S3_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_ACCESS_KEY }}
+      - name: Spike f (OpenRouter)
+        run: bunx vitest run spike-f
+        working-directory: packages/ai
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_BASE_URL: ${{ vars.OPENROUTER_BASE_URL }}
+          OPENROUTER_CHAT_MODEL: ${{ vars.OPENROUTER_CHAT_MODEL }}
+          OPENROUTER_EMBEDDING_MODEL: ${{ vars.OPENROUTER_EMBEDDING_MODEL }}
 
   migrate:
     if: github.event_name == 'push'

@@ -190,6 +190,8 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
      - list which Claude models and **embedding** models are served in-region with zero retention, and set the allowlist from that list;
      - structured output works without forcing a tool, and prompt caching passes through;
      - if no in-region embeddings exist, stop and raise a new decision before Phase 5.
+
+     Done with international routing (2026-10-30): EU routing and the global-endpoint rejection are deferred to before pilot release. ZDR Claude and embedding models, structured output and caching are verified ([spike-results.md](operations/spike-results.md#f-openrouter-2026-10-30); ADR-0012 and ADR-0008 amendments).
    - **f′. Bedrock guardrails (only after switching back to ADR-0011):**
      - `GetInferenceProfile` for each allowlisted `eu.*` ID fails CI on a non-EU destination;
      - retention `none` is set and read back;

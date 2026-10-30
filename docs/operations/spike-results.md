@@ -69,3 +69,64 @@ Run against `nunio-staging-quarantine` and `nunio-staging-sources` in `fsn1`, cr
 Decision (2026-10-30): stay on Hetzner and promote with a multipart copy; ADR-0007 is amended. The copy uses parts of up to 5 GiB; the multi-part branch (files over 5 GiB) is untested. A test pins the 501, so it starts failing if Hetzner implements CopyObject with SSE-C.
 
 Notes for the upload flow: presign with the SSE-C headers as `unhoistableHeaders` (the key never goes in the URL) and `content-length` as a signed header. `quarantine` allows only browser PUTs and `sources` only GETs. Hetzner answers `CreateBucket` with `BucketAlreadyExists` even for a bucket you own, so check with `HeadBucket` first.
+
+## f. OpenRouter (2026-10-30)
+
+Run with international routing: on 2026-10-30 the EU-routing check was deferred, and ADR-0012 and ADR-0008 are amended. Checks: `packages/ai/spike-f/providers.test.ts` (Vitest, `@openrouter/ai-sdk-provider` 3.1.0 with AI SDK 7). The tests skip without `OPENROUTER_API_KEY` and run in the `main` pipeline. Every request sets `provider: { zdr: true, data_collection: "deny" }`.
+
+| Check | Result |
+| --- | --- |
+| EU endpoint accepted, global endpoint rejected | **Deferred**, together with EU routing. |
+| Claude through a zero-retention endpoint | Passes (`anthropic/claude-haiku-5.5`). |
+| Structured output without forcing a tool | Passes: `Output.object` sends `response_format: json_schema`, with no `tools` or `tool_choice` in the request body. |
+| Prompt caching passes through | Passes: with `cacheControl` on the `instructions` system message, the second call reports cache-read tokens. |
+| Zero-retention embeddings exist (Phase 5 stop condition) | Passes: many exist, including multilingual models; `baai/bge-m3` embeds German text (1024 dimensions). The German retrieval eval still picks the model in Phase 5. |
+
+Claude and embedding models with zero-retention endpoints, from `packages/ai/spike-f/list-models.ts`. Re-run it before relying on a model; Covered Models (Fable, Mythos) are filtered out.
+
+| Model | Kind | ZDR providers | `structured_outputs` |
+| --- | --- | --- | --- |
+| `amazon/titan-embed-image-v1` | embedding | Amazon Bedrock | – |
+| `amazon/titan-embed-text-v1` | embedding | Amazon Bedrock | – |
+| `amazon/titan-embed-text-v2` | embedding | Amazon Bedrock | – |
+| `anthropic/claude-haiku-4.5` | chat | Amazon Bedrock, Google | yes |
+| `anthropic/claude-haiku-5.5` | chat | Amazon Bedrock, Google | yes |
+| `anthropic/claude-opus-4.1` | chat | Amazon Bedrock | no |
+| `anthropic/claude-opus-4.5` | chat | Amazon Bedrock, Google | yes |
+| `anthropic/claude-opus-4.6` | chat | Amazon Bedrock, Google | yes |
+| `anthropic/claude-opus-4.7` | chat | Amazon Bedrock, Google | yes |
+| `anthropic/claude-opus-4.8` | chat | Amazon Bedrock, Google | yes |
+| `anthropic/claude-opus-5` | chat | Amazon Bedrock, Google | yes |
+| `anthropic/claude-opus-5.5` | chat | Amazon Bedrock, Google | yes |
+| `anthropic/claude-sonnet-4.5` | chat | Amazon Bedrock, Google | yes |
+| `anthropic/claude-sonnet-4.6` | chat | Amazon Bedrock, Google | yes |
+| `anthropic/claude-sonnet-5` | chat | Amazon Bedrock, Google | yes |
+| `anthropic/claude-sonnet-5.5` | chat | Amazon Bedrock, Google | yes |
+| `baai/bge-base-en-v1.5` | embedding | DeepInfra | – |
+| `baai/bge-large-en-v1.5` | embedding | DeepInfra | – |
+| `baai/bge-m3` | embedding | DeepInfra, Parasail | – |
+| `google/gemini-embedding-001` | embedding | Google | – |
+| `google/gemini-embedding-2` | embedding | Google | – |
+| `intfloat/e5-base-v2` | embedding | DeepInfra | – |
+| `intfloat/e5-large-v2` | embedding | DeepInfra | – |
+| `intfloat/multilingual-e5-large` | embedding | DeepInfra | – |
+| `mistralai/codestral-embed-2505` | embedding | Mistral | – |
+| `mistralai/mistral-embed-2312` | embedding | Mistral | – |
+| `openai/text-embedding-3-large` | embedding | Azure | – |
+| `openai/text-embedding-3-small` | embedding | Azure | – |
+| `perplexity/pplx-embed-v1-0.6b` | embedding | Perplexity | – |
+| `perplexity/pplx-embed-v1-4b` | embedding | Perplexity | – |
+| `qwen/qwen3-embedding-4b` | embedding | DeepInfra | – |
+| `qwen/qwen3-embedding-8b` | embedding | DeepInfra, Nebius, SiliconFlow | – |
+| `sentence-transformers/all-minilm-l12-v2` | embedding | DeepInfra | – |
+| `sentence-transformers/all-minilm-l6-v2` | embedding | DeepInfra | – |
+| `sentence-transformers/all-mpnet-base-v2` | embedding | DeepInfra | – |
+| `sentence-transformers/multi-qa-mpnet-base-dot-v1` | embedding | DeepInfra | – |
+| `sentence-transformers/paraphrase-minilm-l6-v2` | embedding | DeepInfra | – |
+| `thenlper/gte-base` | embedding | DeepInfra | – |
+| `thenlper/gte-large` | embedding | DeepInfra | – |
+
+Notes:
+- AI SDK 7 rejects system messages in `messages`. Pass them as `instructions`, which also carries `providerOptions` for caching.
+- The provider leaves `request.body` empty, so the test inspects request bodies through the `fetch` option.
+- The account had never bought credits, so paid models failed with "Insufficient credits" until the organization was funded.
