@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@nunio/eslint-config": "workspace:*",
+    "@nunio/parser": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
     "@temporalio/testing": "1.25.0",
     "@types/node": "24.19.2",

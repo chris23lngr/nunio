@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NativeConnection, Worker } from "@temporalio/worker";
-import * as activities from "./activities.js";
+import { createActivities } from "./activities.js";
 import { createPayloadCodec } from "./codec.js";
 import { log } from "./log.js";
 
@@ -36,7 +36,8 @@ const worker = await Worker.create({
   namespace: required("TEMPORAL_NAMESPACE"),
   taskQueue,
   ...workflows,
-  activities,
+  // Render's private host:port for the parser service (render.yaml `fromService`).
+  activities: createActivities({ parserUrl: `http://${required("PARSER_HOSTPORT")}` }),
   dataConverter: { payloadCodecs: [codec] },
   shutdownGraceTime: `${Number(process.env.SHUTDOWN_GRACE_SECONDS ?? 25)} seconds`,
 });

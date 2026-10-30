@@ -4,6 +4,9 @@ import type { PayloadCodec } from "@temporalio/common";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { bundleWorkflowCode, Worker, type WorkflowBundle } from "@temporalio/worker";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { AddressInfo } from "node:net";
+import { createParserServer } from "@nunio/parser/server";
+import { createActivities } from "./activities.js";
 import { createPayloadCodec } from "./codec.js";
 import { approvalSignal } from "./workflows.js";
 
@@ -92,3 +95,25 @@ function payloadsOf(event: object): RawPayload[] {
 }
 
 const text = (bytes: Uint8Array | undefined) => (bytes ? Buffer.from(bytes).toString("utf8") : undefined);
+
+describe("checkParser", () => {
+  it("reaches the parser's health endpoint from an Activity", async () => {
+    const parser = createParserServer();
+    await new Promise<void>((resolve) => parser.listen(0, "127.0.0.1", resolve));
+    const parserUrl = `http://127.0.0.1:${(parser.address() as AddressInfo).port}`;
+    try {
+      const worker = await Worker.create({
+        connection: env.nativeConnection,
+        taskQueue,
+        workflowBundle,
+        activities: createActivities({ parserUrl }),
+      });
+      const result = await worker.runUntil(
+        env.client.workflow.execute("checkParser", { taskQueue, workflowId: `parser-${randomUUID()}` }),
+      );
+      expect(result).toEqual({ status: "ok" });
+    } finally {
+      await new Promise<void>((resolve) => parser.close(() => resolve()));
+    }
+  });
+});

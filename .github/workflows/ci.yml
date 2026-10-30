@@ -113,18 +113,22 @@ jobs:
           project-id: ${{ vars.VERCEL_API_PROJECT_ID }}
           token: ${{ secrets.VERCEL_TOKEN }}
 
-  deploy-worker:
+  deploy-render:
     needs: deploy-api
     runs-on: ubuntu-latest
     environment: staging
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
     steps:
       - uses: actions/checkout@v5
-      - run: .github/scripts/render-deploy.sh "${{ vars.RENDER_WORKER_SERVICE_ID }}" "${{ github.sha }}"
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      # The parser first: the worker calls it.
+      - name: Deploy parser
+        run: .github/scripts/render-deploy.sh "${{ vars.RENDER_PARSER_SERVICE_ID }}" "${{ github.sha }}"
+      - name: Deploy worker
+        run: .github/scripts/render-deploy.sh "${{ vars.RENDER_WORKER_SERVICE_ID }}" "${{ github.sha }}"
 
   deploy-web:
-    needs: deploy-worker
+    needs: deploy-render
     runs-on: ubuntu-latest
     environment: staging
     env:

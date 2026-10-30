@@ -53,6 +53,7 @@ describe("the worker process", () => {
       CODEC_KEY: randomBytes(32).toString("base64"),
       CODEC_KEY_VERSION: "v1",
       SHUTDOWN_GRACE_SECONDS: "10",
+      PARSER_HOSTPORT: "127.0.0.1:1",
     });
     await logged("worker running");
 

@@ -1,8 +1,8 @@
 // Spike d workflows. Workflow code is deterministic: no I/O here, only Activities (durable-ai.md).
 import { condition, defineSignal, proxyActivities, setHandler } from "@temporalio/workflow";
-import type * as activities from "./activities.js";
+import type { Activities } from "./activities.js";
 
-const { hold } = proxyActivities<typeof activities>({
+const { hold, checkParser: parserHealth } = proxyActivities<Activities>({
   startToCloseTimeout: "1 minute",
   retry: { maximumAttempts: 3 },
 });
@@ -23,4 +23,9 @@ export async function awaitApproval(): Promise<string> {
 /** Runs one Activity for `ms`; used to observe draining on shutdown. */
 export async function holdActivity(ms: number): Promise<number> {
   return hold(ms);
+}
+
+/** Asks the parser for its health through an Activity (spike g). */
+export async function checkParser(): Promise<{ status: string }> {
+  return parserHealth();
 }
