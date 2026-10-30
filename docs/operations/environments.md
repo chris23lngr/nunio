@@ -72,7 +72,7 @@ Supply `OPERATOR_DATABASE_URL` (a pooled operator connection; see "Database role
 
 Revocation changes entitlement status immediately but preserves sessions and read access. It does not suspend the account or delete data. Upload and AI entry points must enforce `active` status as those features arrive; Allowance amounts and atomic usage metering remain Phase 4.
 
-Local API tests use Testcontainers Postgres, run the API as a `nunio_runtime` login and execute the real founder command. They cover activation, indefinite access, current-session checks, forged student IDs and audited revocation. `packages/delegation` tests forced RLS and pooled owner context under the same role. These changes are not yet verified on staging.
+Local API tests use Testcontainers Postgres, run the API as a `nunio_runtime` login and execute the real founder command. They cover activation, indefinite access, current-session checks, forged student IDs and audited revocation. `packages/delegation` tests forced RLS and pooled owner context under the same role. On staging (2026-10-30), activation, current-session checks and the origin guard were exercised through the app; founder revocation has not yet been run there.
 
 ## Sessions and deletion requests (Phase 3)
 
@@ -90,11 +90,13 @@ Vercel applies environment changes only to new deployments, so provision the log
 2. Confirm the pooled URL for `nunio_api` connects, store it in Vaultwarden, and set it as Vercel `nunio-api`'s `DATABASE_URL` without redeploying.
 3. Merge. CI's migrate job grants privileges, then the API deployment picks up the new URL. A redeploy between steps 2 and 3 would run without grants.
 
+Staging (2026-10-30): `nunio_api` is provisioned in `nunio_runtime` without `BYPASSRLS` and the API connects through the pooler with it; production has no runtime login yet.
+
 Operator commands keep separate connections. `revoke-pilot` sets `app.owner_id` to the target student inside its transaction, so it needs neither superuser nor `BYPASSRLS`: `USAGE` on the schema and `SELECT, UPDATE` on `pilot_entitlement` suffice.
 
 ## Authentication email (Phase 3)
 
-Scaleway TEM in `fr-par` is selected by [ADR-0013](../adr/0013-scaleway-for-authentication-email.md). Before deploying this slice, configure the API's `SCW_PROJECT_ID`, `SCW_SECRET_KEY` and `AUTH_EMAIL_FROM`; the app refuses to start when they are missing. Validate the sending domain and sender with Scaleway first. Keep the API key out of web/worker/parser environments.
+Scaleway TEM in `fr-par` is selected by [ADR-0013](../adr/0013-scaleway-for-authentication-email.md). Before deploying this slice, configure the API's `SCW_PROJECT_ID`, `SCW_SECRET_KEY` and `AUTH_EMAIL_FROM`; the app refuses to start when they are missing. Validate the sending domain and sender with Scaleway first. The key's IAM application needs a policy granting `TransactionalEmailEmailApiCreate` on the project (the SMTP permission set does not cover the HTTP API); without it every send fails and Scaleway records no email. Keep the API key out of web/worker/parser environments.
 
 Signup creates an unverified account without a session. Better Auth's verification links expire after one hour; following a valid link verifies the address, then the student signs in with their password. Invalid/expired links return to sign-in with recovery guidance. Pending students can resend verification without another invitation. Better Auth keeps signup successful even when delivery fails; the account remains pending, and resending can recover after provider access is restored. Provider errors do not expose response bodies, keys or verification links in our error messages.
 
@@ -102,7 +104,7 @@ Password recovery starts from the email field and **Forgot password?** button on
 
 Local auth/API integration tests use real Postgres and stub only outbound Scaleway HTTP. Browser session tests provision verified users through their operator connection and do not send emails to generated addresses. This is not a live delivery check.
 
-Separate staging smoke test, still unperformed: issue an invitation for an owned mailbox, register through the app, confirm sign-in is refused before verification, receive and follow the message, then sign in successfully. Repeat resend and expired/invalid-link recovery. Request password recovery, follow the delivered link while signed out, set a new password, and confirm old sessions and the old password no longer work. Record DNS/sender validation and actual mailbox delivery before marking staging email verified; HTTP acceptance alone does not prove delivery. The provider DPA and metadata-deletion procedure remain part of the pre-pilot review under ADR-0013.
+Staging smoke test, performed 2026-10-30 against `mail.nunio.app` (Scaleway status `checked`), sender `onboarding@mail.nunio.app`, with delivery to an owned mailbox: issue an invitation for an owned mailbox, register through the app, confirm sign-in is refused before verification, receive and follow the message, then sign in successfully. Repeat resend and expired/invalid-link recovery. Request password recovery, follow the delivered link while signed out, set a new password, and confirm old sessions and the old password no longer work. Then, from `/account`, revoke a session, sign out everywhere, and request deletion of a throwaway account. Repeat this test against production before its first student; HTTP acceptance alone does not prove delivery. The provider DPA and metadata-deletion procedure remain part of the pre-pilot review under ADR-0013.
 
 ## Interim Vercel staging (2026-10-30)
 

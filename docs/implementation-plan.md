@@ -243,10 +243,10 @@ Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-
 - PostgreSQL row security docs.
 
 **Verification checklist.**
-- [ ] User A cannot read or mutate user B's data by changing IDs: API tests plus an RLS test under the runtime role. Locally verified; staging pending.
-- [ ] A revoked session cannot call authenticated routes. Locally verified; staging pending. The local entitlement API test rejects a replayed cookie after sign-out; pilot revocation separately preserves the session and read access.
-- [ ] An untrusted origin cannot perform an authenticated mutation. Better Auth routes and `/api/me/*` refuse cookie-bearing requests from other origins; locally verified.
-- [ ] Concurrent requests for two users never leak `app.owner_id` across pooled connections. Locally verified at the `withOwner` seam; staging pending.
+- [x] User A cannot read or mutate user B's data by changing IDs: API tests plus an RLS test under the runtime role. On staging (2026-10-30), the API connects as `nunio_api` (in `nunio_runtime`, no `BYPASSRLS`) and owner-scoped tables have forced RLS.
+- [x] A revoked session cannot call authenticated routes. The local entitlement API test rejects a replayed cookie after sign-out; on staging, per-session sign-out, sign out everywhere, password reset and a deletion request each ended the affected sessions. Pilot revocation separately preserves the session and read access.
+- [x] An untrusted origin cannot perform an authenticated mutation. Better Auth routes and `/api/me/*` refuse cookie-bearing requests from other origins; staging returns `403 forbidden_origin` for a foreign `Origin` on `/api/me/deletion-request`.
+- [x] Concurrent requests for two users never leak `app.owner_id` across pooled connections. Proven by the `withOwner` pool test under the runtime role; staging runs the same code through the Neon pooler. [Deployed by run on `f4c0e62`](https://github.com/chris23lngr/nunio/actions/runs/41120921403).
 
 **Anti-pattern guards.** Do not authorize from the cookie-presence check in `proxy.ts`. Never use the table owner or a `BYPASSRLS` role at runtime. Do not put Better Auth's server instance in `web`.
 
