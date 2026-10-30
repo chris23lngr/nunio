@@ -49,6 +49,35 @@ routes.openapi(createRoute({
   return c.json({ status: await pilotStatus(c.get("prisma"), principal.fromSession(actor)) }, 200);
 });
 
+const DeletionRequestSchema = z.object({ password: z.string() }).openapi("DeletionRequest");
+const DeletionPendingSchema = z.object({ status: z.literal("pending") }).openapi("DeletionPending");
+const InvalidPasswordSchema = z.object({ error: z.literal("invalid_password") }).openapi("InvalidPassword");
+
+routes.openapi(createRoute({
+  method: "post",
+  path: "/api/me/deletion-request",
+  request: { body: { content: { "application/json": { schema: DeletionRequestSchema } }, required: true } },
+  responses: {
+    202: {
+      content: { "application/json": { schema: DeletionPendingSchema } },
+      description: "Deletion is queued for manual completion; every session of the student has ended.",
+    },
+    401: {
+      content: { "application/json": { schema: UnauthorizedSchema } },
+      description: "A current, verified session is required.",
+    },
+    403: {
+      content: { "application/json": { schema: InvalidPasswordSchema } },
+      description: "The password does not match; nothing was recorded and sessions remain.",
+    },
+  },
+}), async c => {
+  const result = await c.get("auth").requestDeletion(c.req.raw, c.req.valid("json").password);
+  if (result === "unauthorized") return c.json({ error: "unauthorized" as const }, 401);
+  if (result === "invalid_password") return c.json({ error: "invalid_password" as const }, 403);
+  return c.json({ status: "pending" as const }, 202);
+});
+
 export const openApiConfig = {
   openapi: "3.1.0",
   info: { title: "nunio API", version: "0.0.0" },

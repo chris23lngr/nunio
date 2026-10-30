@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { apiOrigin, getSession } from "@/lib/session";
 import { SignOutButton } from "./sign-out-button";
@@ -9,6 +10,7 @@ export default async function HomePage() {
   return (
     <main>
       <p>Signed in as {session.user.email}</p>
+      <Link href="/account">Account</Link>
       <SignOutButton apiOrigin={apiOrigin()} />
     </main>
   );

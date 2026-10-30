@@ -344,6 +344,124 @@ describe("the student's pilot entitlement", () => {
   });
 });
 
+async function signIn(name: string): Promise<string> {
+  const response = await call("/sign-in/email", {
+    origin: appOrigin, body: { email: `${name}+${run}@example.com`, password },
+  });
+  expect(response.status).toBe(200);
+  return response.headers.getSetCookie().map(value => value.split(";")[0]!).join("; ");
+}
+
+describe("the student's sessions", () => {
+  it("lists the student's sessions and revokes one without ending the others", async () => {
+    const laptop = await signUp("sessions-revoke-one");
+    const phone = await signIn("sessions-revoke-one");
+    const listed = await call("/list-sessions", { origin: appOrigin, cookie: laptop });
+    const sessions = await listed.json() as { token: string }[];
+    expect(sessions).toHaveLength(2);
+    const phoneSession = await (await call("/get-session", { origin: appOrigin, cookie: phone })).json() as {
+      session: { token: string };
+    };
+
+    const revoked = await call("/revoke-session", {
+      origin: appOrigin, cookie: laptop, body: { token: phoneSession.session.token },
+    });
+
+    expect(revoked.status).toBe(200);
+    expect(await (await call("/get-session", { origin: appOrigin, cookie: phone })).json()).toBeNull();
+    expect(await studentId(laptop)).toBeTruthy();
+  });
+
+  it("cannot revoke another student's session by its token", async () => {
+    const mallory = await signUp("sessions-mallory");
+    const victim = await signUp("sessions-victim");
+    const victimSession = await (await call("/get-session", { origin: appOrigin, cookie: victim })).json() as {
+      session: { token: string };
+    };
+
+    await call("/revoke-session", { origin: appOrigin, cookie: mallory, body: { token: victimSession.session.token } });
+
+    expect(await studentId(victim)).toBeTruthy();
+  });
+
+  it("signs the student out everywhere", async () => {
+    const laptop = await signUp("sessions-everywhere");
+    const phone = await signIn("sessions-everywhere");
+
+    const revoked = await call("/revoke-sessions", { origin: appOrigin, cookie: laptop, body: {} });
+
+    expect(revoked.status).toBe(200);
+    for (const cookie of [laptop, phone]) {
+      expect(await (await call("/get-session", { origin: appOrigin, cookie })).json()).toBeNull();
+    }
+  });
+
+  it("refuses signing out everywhere from an untrusted origin", async () => {
+    const cookie = await signUp("sessions-forged-everywhere");
+
+    const forged = await call("/revoke-sessions", { origin: evilOrigin, cookie, body: {} });
+
+    expect(forged.status).toBe(403);
+    expect(await studentId(cookie)).toBeTruthy();
+  });
+});
+
+describe("the student's deletion request", () => {
+  function requestDeletion(cookie: string, body: unknown, origin = appOrigin) {
+    return app.request(`${apiOrigin}/api/me/deletion-request`, {
+      method: "POST",
+      headers: { origin, cookie, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("accepts the request with the student's password and ends every session", async () => {
+    const laptop = await signUp("deletion-requested");
+    const phone = await signIn("deletion-requested");
+
+    const response = await requestDeletion(laptop, { password });
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ status: "pending" });
+    for (const cookie of [laptop, phone]) {
+      expect(await (await call("/get-session", { origin: appOrigin, cookie })).json()).toBeNull();
+    }
+  });
+
+  it("refuses the request without the student's password and keeps their sessions", async () => {
+    const cookie = await signUp("deletion-wrong-password");
+
+    const response = await requestDeletion(cookie, { password: "not the password" });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "invalid_password" });
+    expect(await studentId(cookie)).toBeTruthy();
+    await signIn("deletion-wrong-password");
+  });
+
+  it("refuses signing in again once deletion is requested", async () => {
+    const cookie = await signUp("deletion-sign-in");
+    expect((await requestDeletion(cookie, { password })).status).toBe(202);
+
+    const response = await call("/sign-in/email", {
+      origin: appOrigin, body: { email: `deletion-sign-in+${run}@example.com`, password },
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.headers.getSetCookie().filter(value => value.includes("session_token=") && !value.includes("Max-Age=0")))
+      .toEqual([]);
+  });
+
+  it("refuses a cookie-bearing request from an untrusted origin and keeps the account", async () => {
+    const cookie = await signUp("deletion-forged");
+
+    const forged = await requestDeletion(cookie, { password }, evilOrigin);
+
+    expect(forged.status).toBe(403);
+    expect(await studentId(cookie)).toBeTruthy();
+  });
+});
+
 describe("the API's auth routes from other origins", () => {
   it("refuses a cookie-bearing sign-out from an untrusted origin and keeps the session", async () => {
     const cookie = await signUp("mallory-target");

@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type MouseEvent } from "react";
 import { authClient } from "@/lib/auth-client";
 
-export function SignInForm({ apiOrigin, invitation, verificationError, passwordReset }: {
-  apiOrigin: string; invitation?: string; verificationError?: boolean; passwordReset?: boolean;
+export function SignInForm({ apiOrigin, invitation, verificationError, passwordReset, deletionRequested }: {
+  apiOrigin: string; invitation?: string; verificationError?: boolean; passwordReset?: boolean; deletionRequested?: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(verificationError
@@ -14,7 +14,9 @@ export function SignInForm({ apiOrigin, invitation, verificationError, passwordR
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(passwordReset
     ? "Your password has been reset. Sign in with your new password."
-    : null);
+    : deletionRequested
+      ? "Your account deletion request was received. You have been signed out everywhere."
+      : null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

@@ -74,6 +74,12 @@ Revocation changes entitlement status immediately but preserves sessions and rea
 
 Local API tests use Testcontainers Postgres, run the API as a `nunio_runtime` login and execute the real founder command. They cover activation, indefinite access, current-session checks, forged student IDs and audited revocation. `packages/delegation` tests forced RLS and pooled owner context under the same role. These changes are not yet verified on staging.
 
+## Sessions and deletion requests (Phase 3)
+
+Students list and revoke sessions, or sign out everywhere, from `/account`. `POST /api/me/deletion-request` requires the student's password, records the request and ends every session in one transaction; later sign-in is refused. Mutations under `/api/me/*` are accepted only from `APP_ORIGIN`.
+
+Completion is manual and not yet scripted. List pending requests over an owner connection with `SELECT "studentId", "requestedAt" FROM deletion_request;`. Deleting the `user` row as the owner currently cascades to its sessions, accounts, entitlement and request.
+
 ## Database roles (Phase 3)
 
 Migrations run as the table owner (`DATABASE_URL_UNPOOLED`) and create the `nunio_runtime` group role, which cannot log in. The API connects as a per-environment login in that group, never as the owner or a `BYPASSRLS` role. Student-owned tables use forced RLS keyed on the transaction-local `app.owner_id` that `withOwner` sets; auth tables are limited by grants, and the runtime role cannot issue invitations or update revocations.

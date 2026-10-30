@@ -11,6 +11,7 @@ model User {
   sessions         Session[]
   accounts         Account[]
   pilotEntitlement PilotEntitlement?
+  deletionRequest  DeletionRequest?
 
   @@map("user")
 }
@@ -81,4 +82,13 @@ model Invitation {
   acceptedAt DateTime?
 
   @@map("invitation")
+}
+
+// A student's request to delete their account; completion is manual (Phase 3).
+model DeletionRequest {
+  studentId   String   @id
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  requestedAt DateTime @default(now())
+
+  @@map("deletion_request")
 }

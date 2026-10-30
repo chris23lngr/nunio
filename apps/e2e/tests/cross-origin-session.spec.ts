@@ -8,6 +8,12 @@ const password = "correct horse battery staple";
 const run = Date.now().toString(36);
 
 async function signIn(page: Page, name: string): Promise<string> {
+  const email = await createStudent(name);
+  await signInAs(page, email);
+  return email;
+}
+
+async function createStudent(name: string): Promise<string> {
   const email = `${name}+${run}@example.com`;
   const databaseURL = process.env.INVITATION_DATABASE_URL;
   if (!databaseURL) throw new Error("INVITATION_DATABASE_URL is required to provision verified account fixtures");
@@ -25,6 +31,10 @@ async function signIn(page: Page, name: string): Promise<string> {
   } finally {
     await prisma.$disconnect();
   }
+  return email;
+}
+
+async function signInAs(page: Page, email: string): Promise<void> {
   await page.goto(`${origins.app}/sign-in`);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
@@ -38,7 +48,6 @@ async function signIn(page: Page, name: string): Promise<string> {
     await submit.click();
   }
   await expect(page).toHaveURL(`${origins.app}/`);
-  return email;
 }
 
 test("a visitor without a session is sent to sign-in", async ({ page }) => {
@@ -96,4 +105,27 @@ test("a page on an untrusted origin cannot sign the user out", async ({ page }) 
 
   await page.goto(`${origins.app}/`);
   await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+});
+
+test("a student revokes another session and requests deletion from account settings", async ({ page, browser }) => {
+  const email = await signIn(page, "hedy");
+  const phone = await browser.newContext({ ignoreHTTPSErrors: true });
+  const phonePage = await phone.newPage();
+  await signInAs(phonePage, email);
+
+  await page.getByRole("link", { name: "Account" }).click();
+  const sessions = page.getByRole("listitem");
+  await expect(sessions).toHaveCount(2);
+  await sessions.filter({ hasNotText: "This device" }).getByRole("button", { name: "Revoke" }).click();
+  await expect(sessions).toHaveCount(1);
+  await phonePage.goto(`${origins.app}/`);
+  await expect(phonePage).toHaveURL(`${origins.app}/sign-in`);
+
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Request account deletion" }).click();
+  await expect(page).toHaveURL(`${origins.app}/sign-in?deletion=requested`);
+  await expect(page.getByText("Your account deletion request was received")).toBeVisible();
+  await page.goto(`${origins.app}/`);
+  await expect(page).toHaveURL(`${origins.app}/sign-in`);
+  await phone.close();
 });

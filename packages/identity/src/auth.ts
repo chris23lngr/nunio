@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { activatePilot } from "@nunio/billing";
 import type { PrismaClient } from "@nunio/db";
-import { principal } from "@nunio/delegation";
+import { principal, withOwner } from "@nunio/delegation";
 import { APIError, betterAuth, getCurrentAdapter } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { createAuthMiddleware } from "better-auth/api";
@@ -66,6 +66,9 @@ export function createAuth({ prisma, baseURL, trustedOrigins, secret, email, coo
       session: {
         create: {
           before: async session => {
+            const pendingDeletion = await withOwner(prisma, principal.fromSession({ studentId: session.userId }), tx =>
+              tx.deletionRequest.findUnique({ where: { studentId: session.userId }, select: { studentId: true } }));
+            if (pendingDeletion) throw new APIError("FORBIDDEN", { message: "Account deletion is pending" });
             // Retry activation when verification was committed before its earlier activation failed.
             const user = await prisma.user.findUnique({
               where: { id: session.userId },
@@ -131,6 +134,22 @@ export function createAuth({ prisma, baseURL, trustedOrigins, secret, email, coo
       const session = await auth.api.getSession({ headers: request.headers, query: { disableRefresh: true } });
       if (!session?.user.emailVerified) return null;
       return { studentId: session.user.id };
+    },
+    /** Records the current student's deletion request and ends all their sessions in one transaction. */
+    async requestDeletion(request: Request, password: string): Promise<"pending" | "unauthorized" | "invalid_password"> {
+      const actor = await this.authenticate(request);
+      if (!actor) return "unauthorized";
+      try {
+        await auth.api.verifyPassword({ headers: request.headers, body: { password } });
+      } catch (error) {
+        if (error instanceof APIError && error.status === "BAD_REQUEST") return "invalid_password";
+        throw error;
+      }
+      await withOwner(prisma, principal.fromSession(actor), async (tx, studentId) => {
+        await tx.deletionRequest.upsert({ where: { studentId }, create: { studentId }, update: {} });
+        await tx.session.deleteMany({ where: { userId: studentId } });
+      });
+      return "pending";
     },
   });
 }

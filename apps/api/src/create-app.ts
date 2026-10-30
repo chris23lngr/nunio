@@ -21,6 +21,10 @@ export function createApp({ auth, prisma, appOrigin, spike }: AppDeps) {
   if (spike) app.use("*", spikePoolHeader(spike.pool));
   app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
   app.use("/api/me/*", async (c, next) => {
+    // CORS alone does not stop a forged request from reaching the handler.
+    if (!["GET", "HEAD"].includes(c.req.method) && c.req.header("origin") !== appOrigin) {
+      return c.json({ error: "forbidden_origin" }, 403);
+    }
     c.set("auth", auth);
     c.set("prisma", prisma);
     await next();
