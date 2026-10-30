@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
 import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
+import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { principal, withOwner } from "./index.js";
 
@@ -57,19 +58,22 @@ describe("withOwner under the runtime role", () => {
   it("never leaks one student's owner context to another request on a pooled connection", async () => {
     const a = await student();
     const b = await student();
-    const seen = (id: string) => withOwner(runtime, principal.fromSession({ studentId: id }), async tx => {
-      await tx.$executeRaw`SELECT pg_sleep(0.01)`;
-      return tx.pilotEntitlement.findMany({ select: { studentId: true } });
-    });
-
-    // Twice as many concurrent transactions as pg's default pool of 10, so every connection is reused
-    // across students without queueing past Prisma's 2 s transaction wait on slow runners.
-    const ids = Array.from({ length: 20 }, (_, i) => (i % 2 ? a : b));
-    const results = await Promise.all(ids.map(seen));
-    results.forEach((visible, i) => expect(visible).toEqual([{ studentId: ids[i] }]));
-
-    const outside = await Promise.all(ids.map(() => runtime.pilotEntitlement.findMany()));
-    expect(outside.flat()).toEqual([]);
+    const singleConnection = createPrismaClient(new pg.Pool({ connectionString: db.runtimeConnectionString, max: 1 }));
+    try {
+      const backends: number[] = [];
+      for (const id of [a, b, a, b]) {
+        const visible = await withOwner(singleConnection, principal.fromSession({ studentId: id }), async tx => {
+          const [backend] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          backends.push(backend!.pid);
+          return tx.pilotEntitlement.findMany({ select: { studentId: true } });
+        });
+        expect(visible).toEqual([{ studentId: id }]);
+        expect(await singleConnection.pilotEntitlement.findMany()).toEqual([]);
+      }
+      expect(new Set(backends).size).toBe(1);
+    } finally {
+      await singleConnection.$disconnect();
+    }
   });
 
   it("refuses a run Principal: a run ID alone grants no authority", async () => {

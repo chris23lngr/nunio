@@ -2,10 +2,20 @@ import { randomUUID } from "node:crypto";
 import { createPool, createPrismaClient } from "@nunio/db";
 import { expect, test, type Page } from "@playwright/test";
 import { hashPassword } from "better-auth/crypto";
-import { cookieDomain, origins } from "../origins.js";
+import { cookieDomain, origins, target } from "../origins.js";
 
 const password = "correct horse battery staple";
-const run = Date.now().toString(36);
+
+test.beforeEach(async () => {
+  if (target !== "local") return;
+  // Local suites share an IP, but each test gets fresh limiter state in its disposable database.
+  const prisma = createPrismaClient(createPool(process.env.INVITATION_DATABASE_URL!));
+  try {
+    await prisma.rateLimit.deleteMany();
+  } finally {
+    await prisma.$disconnect();
+  }
+});
 
 async function signIn(page: Page, name: string): Promise<string> {
   const email = await createStudent(name);
@@ -14,7 +24,7 @@ async function signIn(page: Page, name: string): Promise<string> {
 }
 
 async function createStudent(name: string): Promise<string> {
-  const email = `${name}+${run}@example.com`;
+  const email = `${name}+${randomUUID()}@example.com`;
   const databaseURL = process.env.INVITATION_DATABASE_URL;
   if (!databaseURL) throw new Error("INVITATION_DATABASE_URL is required to provision verified account fixtures");
   const prisma = createPrismaClient(createPool(databaseURL));
@@ -40,22 +50,15 @@ async function signInAs(page: Page, email: string): Promise<void> {
   await page.getByLabel("Password").fill(password);
   const submit = page.getByRole("button", { name: "Sign in", exact: true });
   await submit.click();
-  // Better Auth allows 3 sign-ins per 10 s per client IP; wait out the window once.
-  const limited = page.getByText("Too many requests");
-  await Promise.race([page.waitForURL(`${origins.app}/`), limited.waitFor()]);
-  if (await limited.isVisible()) {
-    await page.waitForTimeout(10_000);
-    await submit.click();
-  }
   await expect(page).toHaveURL(`${origins.app}/`);
 }
 
-test("a visitor without a session is sent to sign-in", async ({ page }) => {
+test("a visitor without a session is sent to sign-in", { tag: "@staging" }, async ({ page }) => {
   await page.goto(`${origins.app}/`);
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
 });
 
-test("signing in on app. sets a parent-domain cookie the app's server can use", async ({
+test("signing in on app. sets a parent-domain cookie the app's server can use", { tag: "@staging" }, async ({
   page,
   context,
 }) => {
@@ -84,7 +87,7 @@ test("signing out ends the session for the app's server too", async ({ page }) =
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
 });
 
-test("a page on an untrusted origin cannot sign the user out", async ({ page }) => {
+test("a page on an untrusted origin cannot sign the user out", { tag: "@staging" }, async ({ page }) => {
   const email = await signIn(page, "alan");
 
   await page.goto(`${origins.evil}/`);
