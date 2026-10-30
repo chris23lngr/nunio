@@ -1,5 +1,6 @@
 // Temporal worker entrypoint (ADR-0004). Runs on Render; SIGTERM drains in-flight Activities for up
 // to SHUTDOWN_GRACE_SECONDS, which must stay below the service's maxShutdownDelaySeconds.
+import { existsSync } from "node:fs";
 import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NativeConnection, Worker } from "@temporalio/worker";
@@ -24,12 +25,17 @@ const codec = createPayloadCodec({
   keyVersion: required("CODEC_KEY_VERSION"),
 });
 
+// dist/ carries a bundle prebuilt at build time; under tsx (tests) the worker bundles src itself.
+const here = (file: string) => fileURLToPath(new URL(file, import.meta.url));
+const workflows = existsSync(here("./workflow-bundle.js"))
+  ? { workflowBundle: { codePath: here("./workflow-bundle.js") } }
+  : { workflowsPath: here(`./workflows${extname(fileURLToPath(import.meta.url))}`) };
+
 const worker = await Worker.create({
   connection,
   namespace: required("TEMPORAL_NAMESPACE"),
   taskQueue,
-  // ./workflows.ts under tsx in tests, ./workflows.js from dist in production.
-  workflowsPath: fileURLToPath(new URL(`./workflows${extname(fileURLToPath(import.meta.url))}`, import.meta.url)),
+  ...workflows,
   activities,
   dataConverter: { payloadCodecs: [codec] },
   shutdownGraceTime: `${Number(process.env.SHUTDOWN_GRACE_SECONDS ?? 25)} seconds`,

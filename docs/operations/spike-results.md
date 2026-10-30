@@ -149,7 +149,7 @@ Findings:
 - The Temporal native bridge loads fine on `node:24-bookworm-slim`. `@temporalio/proto` is CommonJS, so plain Node needs its default import (Vitest hides this).
 - Deploys go through `.github/scripts/render-deploy.sh` (pinned commit, polls until live; about 35–60 s).
 
-Follow-ups, not blocking:
-- The image is 756 MB because dev dependencies ship with it. Use a production-only install stage.
-- The worker bundles workflows at startup (about 3 s); switch to a prebuilt `bundleWorkflowCode` bundle with `workflowBundle`.
-- Switch the Render service's branch to `main` when PR #1 merges.
+Follow-ups:
+- Done: the image went from 756 to 447 MB. That came from a production-only install filtered to the worker, a runtime stage without Bun, and only the Linux binaries of Temporal's core bridge. What remains is mostly the Node base image, the bridge, and `@temporalio/worker`'s declared webpack and swc dependencies.
+- Done: workflows are bundled at build time (`scripts/bundle-workflows.ts`, `workflowBundle`), so the worker logs `worker running` 1.4 s after the container starts, without webpack.
+- Open: switch the Render service's branch to `main` when PR #1 merges.
