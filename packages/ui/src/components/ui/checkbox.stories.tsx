@@ -62,12 +62,24 @@ export const SpecStyling: Story = {
     await expect(
       Number.parseFloat(style(off).borderTopWidth),
     ).toBeGreaterThanOrEqual(1)
-    await expect(style(off).backgroundColor).toBe("rgba(0, 0, 0, 0)")
+    // Compare rendered alpha: Chromium may serialize transparent transitions
+    // as oklab rather than rgba.
+    const pixel = document
+      .createElement("canvas")
+      .getContext("2d") as CanvasRenderingContext2D
+    await waitFor(() => {
+      pixel.clearRect(0, 0, 1, 1)
+      pixel.fillStyle = style(off).backgroundColor
+      pixel.fillRect(0, 0, 1, 1)
+      expect(pixel.getImageData(0, 0, 1, 1).data[3]).toBe(0)
+    })
 
     // Checked: no frame, bluBacAccPri fill (#2783de, not the ring's #2383e2),
     // white 14px tick centred
     await expect(style(on).borderTopWidth).toBe("0px")
-    await expect(style(on).backgroundColor).toBe("rgb(39, 131, 222)")
+    await waitFor(() =>
+      expect(style(on).backgroundColor).toBe("rgb(39, 131, 222)"),
+    )
     const tick = on.querySelector("svg") as SVGElement
     await expect(tick.getBoundingClientRect().width).toBe(14)
     await expect(

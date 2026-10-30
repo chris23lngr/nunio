@@ -111,10 +111,14 @@ export const SpecStyling: Story = {
       await expect(style(el).backgroundColor).toBe("rgba(0, 0, 0, 0)")
       await expect(style(el).transitionDuration).toBe("0s")
     }
-    // Text-width up to the field, then three 20px lines at 200px
+    // System fonts wrap differently across platforms; every line stays 20px.
     await expect(label.getBoundingClientRect().width).toBeLessThan(480)
     const wrapped = canvas.getByTestId("wrapped")
-    await expect(wrapped.getBoundingClientRect().height).toBe(60)
+    const text = document.createRange()
+    text.selectNodeContents(wrapped)
+    const lines = text.getClientRects().length
+    await expect(lines).toBeGreaterThan(1)
+    await expect(wrapped.getBoundingClientRect().height).toBe(lines * 20)
     await expect(wrapped.getBoundingClientRect().width).toBeLessThanOrEqual(200)
   },
 }
