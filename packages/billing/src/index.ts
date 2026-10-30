@@ -6,12 +6,13 @@ import { withOwner, type Principal } from "@nunio/delegation";
 
 export type PilotStatus = "none" | "active" | "revoked";
 
+/** Grants pilot access with the default Allowance; repeating it changes neither. */
 export async function activatePilot(prisma: PrismaClient, student: Principal): Promise<void> {
-  await withOwner(prisma, student, (tx, studentId) => tx.pilotEntitlement.upsert({
-    where: { studentId },
-    create: { studentId },
-    update: {},
-  }));
+  await withOwner(prisma, student, async (tx, studentId) => {
+    await tx.pilotEntitlement.upsert({ where: { studentId }, create: { studentId }, update: {} });
+    // Only the student ID: the runtime role may not choose its own limit, so the column default applies.
+    await tx.$executeRaw`INSERT INTO "allowance" ("studentId") VALUES (${studentId}) ON CONFLICT DO NOTHING`;
+  });
 }
 
 /** Whether the student was ever granted pilot access; reads inside the caller's owner-context transaction. */

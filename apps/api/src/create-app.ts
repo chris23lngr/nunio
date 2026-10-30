@@ -1,4 +1,5 @@
 import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
+import { createDelegation, type Delegation } from "@nunio/delegation";
 import { createAuth, type Auth } from "@nunio/identity";
 import { attachDatabasePool } from "@vercel/functions";
 import { Hono } from "hono";
@@ -9,13 +10,14 @@ import { spikePoolHeader, spikeRoutes, type SpikeDeps } from "./spike.js";
 export interface AppDeps {
   auth: Auth;
   prisma: PrismaClient;
+  delegation: Delegation;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
   /** Mounts the spike c routes when set. */
   spike?: SpikeDeps;
 }
 
-export function createApp({ auth, prisma, appOrigin, spike }: AppDeps) {
+export function createApp({ auth, prisma, delegation, appOrigin, spike }: AppDeps) {
   const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
   if (spike) app.use("*", spikePoolHeader(spike.pool));
@@ -30,6 +32,7 @@ export function createApp({ auth, prisma, appOrigin, spike }: AppDeps) {
   app.use("/api/me/*", async (c, next) => {
     c.set("auth", auth);
     c.set("prisma", prisma);
+    c.set("delegation", delegation);
     await next();
   });
   app.route("/", routes);
@@ -64,5 +67,7 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
   });
   const spike =
     env.SPIKE_ROUTES === "true" ? { webhookSecret: required("SPIKE_WEBHOOK_SECRET"), pool } : undefined;
-  return createApp({ auth, prisma, appOrigin, spike });
+  // The global AI kill switch; like every variable, a change takes effect on the next deployment.
+  const delegation = createDelegation({ db: prisma, aiEnabled: () => env.AI_DISABLED !== "true" });
+  return createApp({ auth, prisma, delegation, appOrigin, spike });
 }

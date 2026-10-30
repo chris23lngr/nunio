@@ -50,6 +50,25 @@
           "error"
         ]
       },
+      "Allowance": {
+        "type": "object",
+        "properties": {
+          "limitMicroUsd": {
+            "type": "integer"
+          },
+          "usedMicroUsd": {
+            "type": "integer"
+          },
+          "heldMicroUsd": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "limitMicroUsd",
+          "usedMicroUsd",
+          "heldMicroUsd"
+        ]
+      },
       "DeletionPending": {
         "type": "object",
         "properties": {
@@ -132,6 +151,32 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PilotEntitlement"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A current, verified session is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unauthorized"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/allowance": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "The current student's Allowance in micro-USD: its limit, settled usage, and usage still held for calls in flight or of unknown outcome. Readable while the AI kill switch is on.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Allowance"
                 }
               }
             }

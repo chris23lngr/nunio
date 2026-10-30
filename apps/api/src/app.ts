@@ -1,11 +1,11 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { pilotStatus } from "@nunio/billing";
 import type { PrismaClient } from "@nunio/db";
-import { principal } from "@nunio/delegation";
+import { principal, type Delegation } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 
 export interface AppBindings {
-  Variables: { auth: Auth; prisma: PrismaClient };
+  Variables: { auth: Auth; prisma: PrismaClient; delegation: Delegation };
 }
 
 const HealthSchema = z.object({ status: z.literal("ok") }).openapi("Health");
@@ -47,6 +47,33 @@ routes.openapi(createRoute({
   const actor = await c.get("auth").authenticate(c.req.raw);
   if (!actor) return c.json({ error: "unauthorized" as const }, 401);
   return c.json({ status: await pilotStatus(c.get("prisma"), principal.fromSession(actor)) }, 200);
+});
+
+const AllowanceSchema = z.object({
+  limitMicroUsd: z.number().int(),
+  usedMicroUsd: z.number().int(),
+  heldMicroUsd: z.number().int(),
+}).openapi("Allowance");
+
+routes.openapi(createRoute({
+  method: "get",
+  path: "/api/me/allowance",
+  responses: {
+    200: {
+      content: { "application/json": { schema: AllowanceSchema } },
+      description: "The current student's Allowance in micro-USD: its limit, settled usage, and usage still held "
+        + "for calls in flight or of unknown outcome. Readable while the AI kill switch is on.",
+    },
+    401: {
+      content: { "application/json": { schema: UnauthorizedSchema } },
+      description: "A current, verified session is required.",
+    },
+  },
+}), async c => {
+  c.header("cache-control", "no-store");
+  const actor = await c.get("auth").authenticate(c.req.raw);
+  if (!actor) return c.json({ error: "unauthorized" as const }, 401);
+  return c.json(await c.get("delegation").allowance(principal.fromSession(actor)), 200);
 });
 
 const DeletionRequestSchema = z.object({ password: z.string() }).openapi("DeletionRequest");

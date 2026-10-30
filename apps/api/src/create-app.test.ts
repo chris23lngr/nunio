@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createPool, createPrismaClient, type Pool, type PrismaClient } from "@nunio/db";
 import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
+import { createDelegation } from "@nunio/delegation";
 import { createAuth } from "@nunio/identity";
 import { hashPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -48,7 +49,8 @@ beforeAll(async () => {
       },
     },
   });
-  app = createApp({ auth, prisma, appOrigin, spike: { webhookSecret, pool } });
+  const delegation = createDelegation({ db: prisma, aiEnabled: () => true });
+  app = createApp({ auth, prisma, delegation, appOrigin, spike: { webhookSecret, pool } });
 }, 180_000);
 
 afterAll(async () => {
@@ -351,6 +353,55 @@ async function signIn(name: string): Promise<string> {
   expect(response.status).toBe(200);
   return response.headers.getSetCookie().map(value => value.split(";")[0]!).join("; ");
 }
+
+describe("the student's Allowance", () => {
+  it("starts a newly activated student with a $5 Allowance", async () => {
+    const cookie = await signUp("allowance-new");
+    const response = await app.request(`${apiOrigin}/api/me/allowance`, { headers: { cookie } });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({ limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 });
+  });
+
+  it("reads only the current student's Allowance despite forged student IDs", async () => {
+    const spender = await signUp("allowance-spender");
+    const saver = await signUp("allowance-saver");
+    const spenderId = await studentId(spender);
+    const saverId = await studentId(saver);
+    await admin.allowance.update({ where: { studentId: spenderId }, data: { usedMicroUsd: 1_200_000 } });
+
+    const [spent, saved] = await Promise.all([
+      app.request(`${apiOrigin}/api/me/allowance?studentId=${saverId}`, {
+        headers: { cookie: spender, "x-student-id": saverId },
+      }),
+      app.request(`${apiOrigin}/api/me/allowance?studentId=${spenderId}`, {
+        headers: { cookie: saver, "x-student-id": spenderId },
+      }),
+    ]);
+
+    expect(await spent.json()).toEqual({ limitMicroUsd: 5_000_000, usedMicroUsd: 1_200_000, heldMicroUsd: 0 });
+    expect(await saved.json()).toEqual({ limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 });
+  });
+
+  it("shows an empty Allowance to a verified account without pilot access", async () => {
+    const address = `allowance-legacy+${run}@example.com`;
+    const id = randomUUID();
+    await admin.user.create({ data: {
+      id, name: "Legacy", email: address, emailVerified: true,
+      accounts: { create: {
+        id: randomUUID(), accountId: id, providerId: "credential", password: await hashPassword(password),
+      } },
+    } });
+    const signIn = await call("/sign-in/email", { origin: appOrigin, body: { email: address, password } });
+    const cookie = signIn.headers.getSetCookie().map(value => value.split(";")[0]!).join("; ");
+
+    const response = await app.request(`${apiOrigin}/api/me/allowance`, { headers: { cookie } });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ limitMicroUsd: 0, usedMicroUsd: 0, heldMicroUsd: 0 });
+  });
+});
 
 describe("the student's sessions", () => {
   it("lists the student's sessions and revokes one without ending the others", async () => {
