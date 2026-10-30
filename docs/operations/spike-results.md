@@ -153,3 +153,21 @@ Follow-ups:
 - Done: the image went from 756 to 447 MB. That came from a production-only install filtered to the worker, a runtime stage without Bun, and only the Linux binaries of Temporal's core bridge. What remains is mostly the Node base image, the bridge, and `@temporalio/worker`'s declared webpack and swc dependencies.
 - Done: workflows are bundled at build time (`scripts/bundle-workflows.ts`, `workflowBundle`), so the worker logs `worker running` 1.4 s after the container starts, without webpack.
 - Open: switch the Render service's branch to `main` when PR #1 merges.
+
+## g. Parser isolation (2026-10-30)
+
+Run with Render private service `nunio-parser-staging` (`srv-dbi8lt67bikc73af3tr0`: Frankfurt, Starter, from `render.yaml`) and the worker from spike d. Automated checks: `apps/parser/src/index.test.ts` and the `checkParser` test in `apps/worker/src/workflows.test.ts`. Staging check: `apps/worker/scripts/staging.ts parser`.
+
+| Check | Result |
+| --- | --- |
+| Runs as a Render private service | Passes: type `private_service`, with only the private address `nunio-parser-staging:10000`. |
+| Holds no secrets | Passes: its Render environment is `PORT` alone. The entrypoint also refuses to start when any variable looks secret (`…SECRET…`, `…_KEY`, `DATABASE_URL`, tokens, passwords); it logs the names, never the values, and exits 1 (test, and `docker run -e DATABASE_URL=…`). |
+| Reachable from the worker | Passes: a `checkParser` workflow on the Render worker got `{"status":"ok"}` from the parser over the private network on the first attempt (about 100 ms). The worker gets the address from Render's `fromService … hostport`. |
+| Not reachable from the internet | Passes: the private hostname doesn't resolve publicly. `nunio-parser-staging.onrender.com` resolves only through Render's wildcard DNS, and Render's router answers `404 Not Found` (the parser would answer `{"status":"ok"}`). |
+| Reachable *only* from the worker | **Partly:** [Render's private network](https://render.com/docs/private-network) spans every service in the same workspace and region. Today the worker is the only other Render service in Frankfurt, so in practice only the worker reaches the parser. Nothing enforces that, though. |
+
+Options to enforce "only the worker" (not decided):
+- [Environment isolation](https://render.com/docs/projects) (Pro workspace, `networking.isolation: enabled`) keeps other environments out, but services inside the same environment still reach each other.
+- Requests signed by the worker and verified by the parser with a **public** key (for example Ed25519). The parser would still hold no secrets, and Render [recommends application-level authorization](https://render.com/articles/how-render-handles-private-networking) for service-to-service trust.
+
+The parser can still make outbound requests. It needs them to fetch the presigned URL from Hetzner, so limiting egress beyond that is part of the parsing work (ADR-0009's limits on size, pages, decompression and time).

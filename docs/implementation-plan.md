@@ -200,7 +200,7 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
      - a `global.*` call is denied;
      - Vercel OIDC role assumption works from `api`;
      - **Render OIDC** works from `worker`. If it does, update ADR-0011 to drop worker access keys.
-   - **g. Parser isolation:** `parser` runs as a Render private service with no secrets and is reachable only from `worker`.
+   - **g. Parser isolation:** `parser` runs as a Render private service with no secrets and is reachable only from `worker`. Done on 2026-10-30, with one limit: Render's private network admits every service in the workspace and region, so "only from the worker" holds in practice but isn't enforced ([spike-results.md](operations/spike-results.md#g-parser-isolation-2026-10-30)).
 
 **Documentation references.** Phase 0 Allowed APIs; ADR-0003–0007, 0009, 0011; [foundation.md](research/foundation.md) "Required implementation proof"; [runtime-hosting.md](research/runtime-hosting.md) "Verification to carry into the plan".
 

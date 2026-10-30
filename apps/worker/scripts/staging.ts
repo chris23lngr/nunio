@@ -7,6 +7,7 @@
 //   hold <id> <ms>        start holdActivity
 //   ciphertext <id>       check the stored history holds only codec ciphertext (what the UI shows)
 //   timeline <id>         Activity attempts with their worker identity and times
+//   parser <id>           run checkParser: the worker calls the parser over Render's private network
 import { Client, Connection } from "@temporalio/client";
 import { createPayloadCodec } from "../src/codec.js";
 import { approvalSignal } from "../src/workflows.js";
@@ -65,6 +66,9 @@ switch (command) {
     console.log("payload encodings:", Object.fromEntries(encodings));
     break;
   }
+  case "parser":
+    console.log("parser", JSON.stringify(await client.workflow.execute("checkParser", { taskQueue, workflowId: id })));
+    break;
   case "timeline": {
     const history = await raw.workflow.getHandle(id).fetchHistory();
     for (const event of history.events ?? []) {
