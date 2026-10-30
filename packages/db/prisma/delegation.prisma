@@ -1,0 +1,26 @@
+// Usage reservations, owned by @nunio/delegation: one row per metered call.
+model UsageReservation {
+  id               String            @id @default(uuid())
+  studentId        String
+  allowance        Allowance         @relation(fields: [studentId], references: [studentId], onDelete: Cascade)
+  estimateMicroUsd BigInt
+  actualMicroUsd   BigInt?
+  status           ReservationStatus @default(reserved)
+  reservedAt       DateTime          @default(now())
+  settledAt        DateTime?
+  // The operator who settled a held reservation by hand; null when meter settled it.
+  settledBy        String?
+
+  @@index([studentId, status])
+  @@map("usage_reservation")
+}
+
+/// reserved: the call is in flight. held: its outcome is unknown, so its estimate stays counted.
+enum ReservationStatus {
+  reserved
+  settled
+  released
+  held
+
+  @@map("reservation_status")
+}

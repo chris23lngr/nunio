@@ -1,6 +1,6 @@
 # Delegation execution gate
 
-Status: accepted design, 2026-10-29. Not yet implemented. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md). Architecture terms (module, interface, seam, adapter, depth) follow the codebase-design vocabulary. Related decisions: ADR-0001, ADR-0004, ADR-0006, ADR-0010; invariants from [durable-ai.md](../research/durable-ai.md).
+Status: accepted design, 2026-10-29. `meter` is implemented (Phase 4) as `createDelegation({ db, aiEnabled })` with `allowance` and `held` reads; a call signals certain non-usage by throwing `DefiniteFailure`, and the founder settles held reservations with `settle-held` until `reconcile` exists. The rest is not yet implemented. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md). Architecture terms (module, interface, seam, adapter, depth) follow the codebase-design vocabulary. Related decisions: ADR-0001, ADR-0004, ADR-0006, ADR-0010; invariants from [durable-ai.md](../research/durable-ai.md).
 
 ## Purpose
 

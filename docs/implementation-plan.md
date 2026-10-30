@@ -272,10 +272,10 @@ Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-
 **Documentation references.** [delegation-gate.md](design/delegation-gate.md) "Invariants" (`meter`); [durable-ai.md](research/durable-ai.md) "AI SDK" and invariant 4; ADR-0011 rules for code; Phase 0 Bedrock entry.
 
 **Verification checklist.**
-- [ ] N concurrent `meter` calls against one Allowance never exceed it (Testcontainers race test).
-- [ ] An uncertain call (timeout after send) keeps its reservation.
-- [ ] The kill switch refuses new calls without breaking reads.
-- [ ] The registry rejects any model ID outside the allowlist.
+- [ ] N concurrent `meter` calls against one Allowance never exceed it (Testcontainers race test). Locally verified under the runtime role; staging pending.
+- [ ] An uncertain call (timeout after send) keeps its reservation. Locally verified: it stays held until the founder settles it with `settle-held`; a provider's 4xx rejection releases it instead.
+- [ ] The kill switch refuses new calls without breaking reads. Locally verified (`AI_DISABLED`); staging pending.
+- [ ] The registry rejects any model ID outside the allowlist. Locally verified.
 
 **Anti-pattern guards.** No model call outside `meter`. No SDK retries stacked on Temporal retries without explicit limits. No `global.*` IDs.
 
