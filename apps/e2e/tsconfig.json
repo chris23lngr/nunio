@@ -1,0 +1,5 @@
+{
+  "extends": "@nunio/typescript-config/base.json",
+  "compilerOptions": { "noEmit": true, "lib": ["ES2023", "DOM"] },
+  "include": ["*.ts", "servers", "tests"]
+}

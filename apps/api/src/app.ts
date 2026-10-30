@@ -13,9 +13,10 @@ const healthRoute = createRoute({
   },
 });
 
-export const app = new OpenAPIHono();
+/** The documented routes; `openapi.json` is generated from these. */
+export const routes = new OpenAPIHono();
 
-app.openapi(healthRoute, (c) => c.json({ status: "ok" as const }, 200));
+routes.openapi(healthRoute, (c) => c.json({ status: "ok" as const }, 200));
 
 export const openApiConfig = {
   openapi: "3.1.0",

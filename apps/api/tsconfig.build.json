@@ -1,6 +1,6 @@
 {
   "extends": "@nunio/typescript-config/base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "compilerOptions": { "rootDir": "src", "outDir": "dist", "declaration": true },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts", "src/dev.ts"]
 }

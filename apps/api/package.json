@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./server": { "types": "./dist/server.d.ts", "default": "./dist/server.js" }
+  },
   "scripts": {
     "dev": "tsx watch src/dev.ts",
     "build": "tsc -p tsconfig.build.json",
@@ -13,6 +16,8 @@
   },
   "dependencies": {
     "@hono/zod-openapi": "1.6.3",
+    "@nunio/db": "workspace:*",
+    "@nunio/identity": "workspace:*",
     "hono": "4.13.14",
     "zod": "4.6.7"
   },

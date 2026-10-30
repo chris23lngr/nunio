@@ -1,4 +1,4 @@
 // Vercel zero-config entrypoint for Hono: the default export is the app.
-import { app } from "./app.js";
+import { appFromEnv } from "./server.js";
 
-export default app;
+export default appFromEnv(process.env);
