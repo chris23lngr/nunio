@@ -2,16 +2,21 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Client } from "@temporalio/client";
 import type { PayloadCodec } from "@temporalio/common";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
-import { Worker } from "@temporalio/worker";
+import { bundleWorkflowCode, Worker, type WorkflowBundle } from "@temporalio/worker";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createPayloadCodec } from "./codec.js";
 import { approvalSignal } from "./workflows.js";
 
 const taskQueue = "spike-d-test";
 let env: TestWorkflowEnvironment;
+let workflowBundle: WorkflowBundle;
 
+// Bundling the workflows takes several seconds on CI runners, so do it once per file.
 beforeAll(async () => {
-  env = await TestWorkflowEnvironment.createLocal();
+  [env, workflowBundle] = await Promise.all([
+    TestWorkflowEnvironment.createLocal(),
+    bundleWorkflowCode({ workflowsPath: new URL("./workflows.ts", import.meta.url).pathname }),
+  ]);
 }, 120_000);
 
 afterAll(async () => {
@@ -23,7 +28,7 @@ async function withWorker<T>(run: () => Promise<T>, codec?: PayloadCodec): Promi
     connection: env.nativeConnection,
     taskQueue,
     ...(codec && { dataConverter: { payloadCodecs: [codec] } }),
-    workflowsPath: new URL("./workflows.ts", import.meta.url).pathname,
+    workflowBundle,
   });
   return worker.runUntil(run());
 }
