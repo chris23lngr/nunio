@@ -161,16 +161,16 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
    1. install (`bun install --frozen-lockfile`);
    2. typecheck, lint, and test (Testcontainers);
    3. `prisma migrate deploy` (unpooled URL);
-   4. deploy api via `vercel deploy --prebuilt` (**blocked until the Vercel team exists**);
+   4. deploy api via `vercel deploy --prebuilt` (verified on interim Hobby staging);
    5. deploy worker and parser via the Render deploy API, polling until live;
-   6. deploy web (**blocked until the Vercel team exists**).
+   6. deploy web (verified on interim Hobby staging).
 
    Vercel `git.deploymentEnabled.main: false`, so PR preview builds stay UI-only (ADR-0005).
 4. **Observability (deferred):** no error-tracking service yet. Apps log structured JSON to stdout so a provider can be added later without code changes; the Temporal Cloud UI shows worker and workflow health.
 5. **Spikes.** Each one is a test or script kept in the repo:
    - **a. Prisma 7 + Better Auth on Node:** sign-up, sign-in, session, and revocation through `prismaAdapter`. Run on Testcontainers and against the staging Neon branch.
-   - **b. Cross-origin session (blocked until the Vercel team exists):** `app.` → `api.` with the cookie on `.nunio.app`. Next.js server-side session check by forwarding the cookie to `https://api.nunio.app/api/auth/get-session`. This has no official recipe, so it must be proven here. Cover CSRF and origin rejection from an untrusted origin.
-   - **c. Hono on Vercel `fra1` (blocked until the Vercel team exists):** cold start, a Stripe-style raw-body route, and `attachDatabasePool` with `PrismaPg(pool)`. Done on the interim Hobby staging; results in [spike-results.md](operations/spike-results.md#c-hono-on-vercel-fra1-2026-10-30). Re-run the idle cold start on the team.
+   - **b. Cross-origin session (verified on interim Hobby staging):** `app.` → `api.` with the cookie on `.nunio.app`. Next.js server-side session check by forwarding the cookie to `https://api.nunio.app/api/auth/get-session`. This has no official recipe, so it must be proven here. Cover CSRF and origin rejection from an untrusted origin.
+   - **c. Hono on Vercel `fra1` (verified on interim Hobby staging):** cold start, a Stripe-style raw-body route, and `attachDatabasePool` with `PrismaPg(pool)`. Done on the interim Hobby staging; results in [spike-results.md](operations/spike-results.md#c-hono-on-vercel-fra1-2026-10-30). Re-run the idle cold start on the team.
    - **d. Temporal worker on Render:**
      - connects to Temporal Cloud with an API key;
      - a workflow waits on a signal, and survives a worker kill/restart and a redeploy;
@@ -205,11 +205,14 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
 **Documentation references.** Phase 0 Allowed APIs; ADR-0003–0007, 0009, 0011; [foundation.md](research/foundation.md) "Required implementation proof"; [runtime-hosting.md](research/runtime-hosting.md) "Verification to carry into the plan".
 
 **Verification checklist.**
-- [ ] A clean clone runs `bun install --frozen-lockfile`, then `turbo run build typecheck test`, all green.
-- [ ] Each app builds from its pruned Docker or Vercel artifact alone.
-- [ ] A commit on `main` deploys to staging in the documented order; a failing migration stops the pipeline before any app deploys.
-- [ ] Spikes a–g each have a passing automated check or a recorded result in `docs/operations/spike-results.md`.
-- [ ] Changing `apps/api` routes without regenerating `openapi.json` fails CI.
+- [x] A clean clone runs `bun install --frozen-lockfile`, then `turbo run build typecheck test`, all green. Verified by the CI `checks` job (also lint and local e2e).
+- [x] Each app builds from its pruned Docker or Vercel artifact alone. Worker and parser Docker images run on Render; API and web deploy as Vercel prebuilt artifacts.
+- [x] A commit on `main` deploys to staging in the documented order. [Successful run on `f115d29`](https://github.com/chris23lngr/nunio/actions/runs/41057920257): migration → API → parser/worker → web → staging e2e.
+- [ ] A failing migration stops the pipeline before any app deploys. Enforced by the workflow's `needs` chain; a deliberate failing-migration exercise remains unperformed.
+- [x] Spikes a–g each have a passing automated check or a recorded result in `docs/operations/spike-results.md`.
+- [x] Changing `apps/api` routes without regenerating `openapi.json` fails CI. Drift rejection was proven during PR #1; the check remains in CI.
+
+Closeout (2026-10-30): the walking skeleton is deployed and verified on interim staging. The migration-failure exercise above remains open. Carry forward the recorded spike limitations: repeat idle cold-start measurement on the Pro team, move auth rate limiting to shared storage in Phase 3, verify OpenRouter EU routing before pilot release, and decide how to enforce worker-only parser access before real parsing. The Render Blueprint now tracks `main` for both services.
 
 **Anti-pattern guards.** No feature code in this phase. Do not auto-run migrations on app startup. Do not commit `.env` files. Do not weaken CORS or origin checks to make spike b pass. Use only the allowed APIs from Phase 0.
 
