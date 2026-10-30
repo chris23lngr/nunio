@@ -62,8 +62,9 @@ describe("withOwner under the runtime role", () => {
       return tx.pilotEntitlement.findMany({ select: { studentId: true } });
     });
 
-    // More concurrent transactions than the pool holds, so connections are reused across students.
-    const ids = Array.from({ length: 40 }, (_, i) => (i % 2 ? a : b));
+    // Twice as many concurrent transactions as pg's default pool of 10, so every connection is reused
+    // across students without queueing past Prisma's 2 s transaction wait on slow runners.
+    const ids = Array.from({ length: 20 }, (_, i) => (i % 2 ? a : b));
     const results = await Promise.all(ids.map(seen));
     results.forEach((visible, i) => expect(visible).toEqual([{ studentId: ids[i] }]));
 
