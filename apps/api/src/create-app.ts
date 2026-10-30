@@ -1,24 +1,37 @@
-import { createPool, createPrismaClient } from "@nunio/db";
+import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
 import { createAuth, type Auth } from "@nunio/identity";
 import { attachDatabasePool } from "@vercel/functions";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { routes } from "./app.js";
+import { routes, type AppBindings } from "./app.js";
 import { spikePoolHeader, spikeRoutes, type SpikeDeps } from "./spike.js";
 
 export interface AppDeps {
   auth: Auth;
+  prisma: PrismaClient;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
   /** Mounts the spike c routes when set. */
   spike?: SpikeDeps;
 }
 
-export function createApp({ auth, appOrigin, spike }: AppDeps) {
-  const app = new Hono();
+export function createApp({ auth, prisma, appOrigin, spike }: AppDeps) {
+  const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
   if (spike) app.use("*", spikePoolHeader(spike.pool));
   app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+  app.use("/api/me/*", async (c, next) => {
+    // CORS alone does not stop a forged request from reaching the handler.
+    if (!["GET", "HEAD"].includes(c.req.method) && c.req.header("origin") !== appOrigin) {
+      return c.json({ error: "forbidden_origin" }, 403);
+    }
+    await next();
+  });
+  app.use("/api/me/*", async (c, next) => {
+    c.set("auth", auth);
+    c.set("prisma", prisma);
+    await next();
+  });
   app.route("/", routes);
   if (spike) app.route("/", spikeRoutes(spike));
   return app;
@@ -36,14 +49,20 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
   // On Vercel Fluid compute, keeps the instance alive until idle clients are released, so
   // connections are reused across invocations and none leak when it suspends. No-op elsewhere.
   attachDatabasePool(pool);
+  const prisma = createPrismaClient(pool);
   const auth = createAuth({
-    prisma: createPrismaClient(pool),
+    prisma,
     baseURL: required("BETTER_AUTH_URL"),
     secret: required("BETTER_AUTH_SECRET"),
     trustedOrigins: [appOrigin],
     cookieDomain: env.COOKIE_DOMAIN,
+    email: {
+      projectId: required("SCW_PROJECT_ID"),
+      secretKey: required("SCW_SECRET_KEY"),
+      from: required("AUTH_EMAIL_FROM"),
+    },
   });
   const spike =
     env.SPIKE_ROUTES === "true" ? { webhookSecret: required("SPIKE_WEBHOOK_SECRET"), pool } : undefined;
-  return createApp({ auth, appOrigin, spike });
+  return createApp({ auth, prisma, appOrigin, spike });
 }

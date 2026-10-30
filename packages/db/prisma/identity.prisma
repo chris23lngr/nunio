@@ -1,15 +1,17 @@
 // Better Auth core tables, owned by @nunio/identity.
 
 model User {
-  id            String    @id
-  name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
-  image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  sessions      Session[]
-  accounts      Account[]
+  id               String            @id
+  name             String
+  email            String            @unique
+  emailVerified    Boolean           @default(false)
+  image            String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  sessions         Session[]
+  accounts         Account[]
+  pilotEntitlement PilotEntitlement?
+  deletionRequest  DeletionRequest?
 
   @@map("user")
 }
@@ -59,4 +61,34 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+model RateLimit {
+  id          String @id
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+
+  @@map("rate_limit")
+}
+
+model Invitation {
+  id         String    @id @default(uuid())
+  tokenHash  String    @unique
+  email      String
+  issuedBy   String
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  acceptedAt DateTime?
+
+  @@map("invitation")
+}
+
+// A student's request to delete their account; completion is manual (Phase 3).
+model DeletionRequest {
+  studentId   String   @id
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  requestedAt DateTime @default(now())
+
+  @@map("deletion_request")
 }
