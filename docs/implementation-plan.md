@@ -8,7 +8,7 @@ Pilot students can upload their real course materials and, within ten minutes, r
 
 ## Decision gates outside the phases
 
-- **Before Phase 2:** choose observability and error tracking (EU-hosted or EU-region). The brief requires background-job monitoring before the pilot, and the walking skeleton should ship with it.
+- **Before Phase 12 (deferred by the founder on 2026-10-30):** choose observability and error tracking (EU-hosted or EU-region). The brief requires background-job monitoring before the pilot, so this is a pilot-readiness gate. Until then, rely on platform logs (Vercel, Render) and the Temporal Cloud UI.
 - **Before Phase 10:** choose an email delivery provider (EU processing, DPA). Record it as an ADR.
 - **Before Phase 9 (optional):** `prototype` the delegation gate's state machine (Approval expiry, Unconfirmed, Pause mid-Run, Budget exhaustion) as a throwaway.
 - **Before connector work (post-pilot):** collect the pilot tool inventory. No Integration or verified Destination is built until then; Submissions are Handoffs during the pilot.
@@ -166,7 +166,7 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
    6. deploy web (**blocked until the Vercel team exists**).
 
    Vercel `git.deploymentEnabled.main: false`, so PR preview builds stay UI-only (ADR-0005).
-4. **Observability** from the gate decision: error tracking in all four apps, plus an alert when the Temporal worker is not polling.
+4. **Observability (deferred):** no error-tracking service yet. Apps log structured JSON to stdout so a provider can be added later without code changes; the Temporal Cloud UI shows worker and workflow health.
 5. **Spikes.** Each one is a test or script kept in the repo:
    - **a. Prisma 7 + Better Auth on Node:** sign-up, sign-in, session, and revocation through `prismaAdapter`. Run on Testcontainers and against the staging Neon branch.
    - **b. Cross-origin session (blocked until the Vercel team exists):** `app.` → `api.` with the cookie on `.nunio.app`. Next.js server-side session check by forwarding the cookie to `https://api.nunio.app/api/auth/get-session`. This has no official recipe, so it must be proven here. Cover CSRF and origin rejection from an untrusted origin.
