@@ -1,0 +1,9 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "generate": {
+      "inputs": ["prisma/**", "prisma.config.ts"],
+      "outputs": ["src/generated/**"]
+    }
+  }
+}

@@ -8,8 +8,8 @@
   },
   "scripts": {
     "generate": "openapi-typescript ../../apps/api/openapi.json -o src/schema.d.ts",
-    "build": "bun run generate && tsc -p tsconfig.build.json && cp src/schema.d.ts dist/schema.d.ts",
-    "typecheck": "bun run generate && tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json && cp src/schema.d.ts dist/schema.d.ts",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests"
   },

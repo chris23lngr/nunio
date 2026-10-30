@@ -1,0 +1,6 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "openapi": { "dependsOn": ["^build"] }
+  }
+}
