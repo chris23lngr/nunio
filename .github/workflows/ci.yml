@@ -35,6 +35,27 @@ jobs:
         working-directory: apps/e2e
       - run: bun run test:e2e
 
+  commits:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      # Rules from AGENTS.md, "Commits". Commits up to the baseline predate them and are not linted.
+      - name: Commit messages follow the rules
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASELINE: a2118f880b472544bf521621a69ee763ed6cc996
+        run: |
+          from=$BASE
+          if git merge-base --is-ancestor "$BASELINE" "$HEAD" && ! git merge-base --is-ancestor "$BASELINE" "$BASE"; then
+            from=$BASELINE
+          fi
+          bunx commitlint --from "$from" --to "$HEAD" --verbose
+
   migrate:
     if: github.event_name == 'push'
     needs: checks

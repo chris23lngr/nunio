@@ -1,0 +1,21 @@
+{
+  "name": "@nunio/commitlint-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./index.js" },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@commitlint/config-conventional": "21.2.4"
+  },
+  "devDependencies": {
+    "@commitlint/lint": "21.2.4",
+    "@commitlint/load": "21.2.4",
+    "@nunio/eslint-config": "workspace:*",
+    "eslint": "10.13.0",
+    "vitest": "5.0.5"
+  }
+}

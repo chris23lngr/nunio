@@ -11,9 +11,12 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
-    "openapi": "turbo run openapi"
+    "openapi": "turbo run openapi",
+    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
+    "@commitlint/cli": "21.2.4",
+    "@nunio/commitlint-config": "workspace:*",
     "turbo": "2.11.10"
   }
 }
