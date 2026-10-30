@@ -11,13 +11,14 @@ model PilotEntitlement {
 
 // The student's total included AI usage in micro-USD. Only the founder raises the limit.
 model Allowance {
-  studentId     String           @id
-  student       User             @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  limitMicroUsd BigInt           @default(5000000)
-  usedMicroUsd  BigInt           @default(0)
-  heldMicroUsd  BigInt           @default(0)
-  updatedAt     DateTime         @default(now()) @updatedAt
+  studentId     String             @id
+  student       User               @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  limitMicroUsd BigInt             @default(5000000)
+  usedMicroUsd  BigInt             @default(0)
+  heldMicroUsd  BigInt             @default(0)
+  updatedAt     DateTime           @default(now()) @updatedAt
   grants        AllowanceGrant[]
+  reservations  UsageReservation[]
 
   @@map("allowance")
 }

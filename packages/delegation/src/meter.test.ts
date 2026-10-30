@@ -73,6 +73,20 @@ describe("meter", () => {
     expect(await delegation.allowance(p)).toEqual({ limitMicroUsd: 1_000, usedMicroUsd: 0, heldMicroUsd: 300 });
   });
 
+  it("lists each call of unknown outcome as a held reservation, and only those", async () => {
+    const p = await student({ limit: 1_000 });
+    const sentThenHung = (signal: AbortSignal) => new Promise<never>((_, reject) =>
+      signal.addEventListener("abort", () => reject(signal.reason)));
+    const before = new Date();
+
+    await delegation.meter(p, { microUsd: 100 }, async () => ({ value: "ok", usage: { microUsd: 40 } }));
+    await delegation.meter(p, { microUsd: 300 }, sentThenHung, { timeoutMs: 50 }).catch(() => undefined);
+
+    const held = await delegation.held(p);
+    expect(held).toEqual([{ id: expect.any(String), estimateMicroUsd: 300, reservedAt: expect.any(Date) }]);
+    expect(held[0]!.reservedAt.getTime()).toBeGreaterThanOrEqual(before.getTime() - 1_000);
+  });
+
   it("releases the reservation when the call definitely did not incur usage", async () => {
     const p = await student({ limit: 1_000 });
     const rejected = async () => { throw new DefiniteFailure("provider rejected the request (400)"); };

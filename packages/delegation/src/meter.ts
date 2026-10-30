@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import { withOwner, type Principal } from "./principal.js";
 
@@ -21,6 +22,13 @@ export interface AllowanceState {
   heldMicroUsd: number;
 }
 
+/** A call whose outcome is unknown; its estimate stays counted until the founder settles it. */
+export interface HeldReservation {
+  id: string;
+  estimateMicroUsd: number;
+  reservedAt: Date;
+}
+
 export interface Delegation {
   /**
    * Reserves `estimate` against the Allowance, runs `call`, then settles its actual usage. A call that throws
@@ -30,6 +38,7 @@ export interface Delegation {
     call: (signal: AbortSignal) => Promise<{ value: T; usage: Usage }>,
     options?: { timeoutMs?: number }): Promise<Metered<T>>;
   allowance(p: Principal): Promise<AllowanceState>;
+  held(p: Principal): Promise<HeldReservation[]>;
 }
 
 export function createDelegation({ db, aiEnabled }: {
@@ -40,6 +49,7 @@ export function createDelegation({ db, aiEnabled }: {
   return {
     async meter(p, estimate, call, { timeoutMs = 120_000 } = {}) {
       if (!aiEnabled()) return { status: "refused", reason: "ai_disabled" };
+      const reservationId = randomUUID();
       const refusal = await withOwner(db, p, async (tx, studentId) => {
         const entitlement = await tx.pilotEntitlement.findUnique({ where: { studentId }, select: { revokedAt: true } });
         if (!entitlement || entitlement.revokedAt) return "not_entitled";
@@ -48,18 +58,33 @@ export function createDelegation({ db, aiEnabled }: {
           UPDATE "allowance" SET "heldMicroUsd" = "heldMicroUsd" + ${estimate.microUsd}, "updatedAt" = now()
           WHERE "studentId" = ${studentId}
             AND "limitMicroUsd" - "usedMicroUsd" - "heldMicroUsd" >= ${estimate.microUsd}`;
-        return reserved === 0 ? "allowance_exhausted" : undefined;
+        if (reserved === 0) return "allowance_exhausted";
+        await tx.$executeRaw`
+          INSERT INTO "usage_reservation" ("id", "studentId", "estimateMicroUsd")
+          VALUES (${reservationId}, ${studentId}, ${estimate.microUsd})`;
+        return undefined;
       });
       if (refusal) return { status: "refused", reason: refusal };
-      const settle = (usage: Usage) => withOwner(db, p, (tx, studentId) => tx.allowance.update({
-        where: { studentId },
-        data: { heldMicroUsd: { decrement: estimate.microUsd }, usedMicroUsd: { increment: usage.microUsd } },
-      }));
+      const settle = (usage: Usage, status: "settled" | "released") => withOwner(db, p, async (tx, studentId) => {
+        await tx.allowance.update({
+          where: { studentId },
+          data: { heldMicroUsd: { decrement: estimate.microUsd }, usedMicroUsd: { increment: usage.microUsd } },
+        });
+        await tx.usageReservation.update({
+          where: { id: reservationId },
+          data: { status, actualMicroUsd: usage.microUsd, settledAt: new Date() },
+        });
+      });
       const { value, usage } = await call(AbortSignal.timeout(timeoutMs)).catch(async (error: unknown) => {
-        if (error instanceof DefiniteFailure) await settle({ microUsd: 0 });
+        if (error instanceof DefiniteFailure) {
+          await settle({ microUsd: 0 }, "released");
+        } else {
+          // The estimate is already counted; marking it held only makes it findable for the founder.
+          await withOwner(db, p, tx => tx.usageReservation.update({ where: { id: reservationId }, data: { status: "held" } }));
+        }
         throw error;
       });
-      await settle(usage);
+      await settle(usage, "settled");
       return { status: "ok", value, usage };
     },
 
@@ -72,6 +97,15 @@ export function createDelegation({ db, aiEnabled }: {
         usedMicroUsd: Number(row.usedMicroUsd),
         heldMicroUsd: Number(row.heldMicroUsd),
       };
+    },
+
+    async held(p) {
+      const rows = await withOwner(db, p, (tx, studentId) => tx.usageReservation.findMany({
+        where: { studentId, status: "held" },
+        orderBy: { reservedAt: "asc" },
+        select: { id: true, estimateMicroUsd: true, reservedAt: true },
+      }));
+      return rows.map(row => ({ ...row, estimateMicroUsd: Number(row.estimateMicroUsd) }));
     },
   };
 }
