@@ -1,0 +1,97 @@
+# Checks on every PR and push to main; on main, then migrate and deploy staging in the order of
+# docs/implementation-plan.md, Phase 2: a failing migration stops the pipeline before any deploy.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# One run per ref. On main a newer push waits for the running one (replacing any already waiting),
+# so migrations and deploys never overlap.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      # Tests start Postgres with Testcontainers on the runner's Docker.
+      - run: bun run build typecheck lint test
+      - name: openapi.json is up to date (ADR-0003)
+        run: |
+          bun run openapi
+          git diff --exit-code -- apps/api/openapi.json \
+            || { echo "::error::apps/api/openapi.json is stale; run 'bun run openapi' and commit it."; exit 1; }
+      - name: Local HTTPS names for the e2e suite
+        run: echo "127.0.0.1 app.nunio.test api.nunio.test evil.test" | sudo tee -a /etc/hosts
+      - run: bunx playwright install --with-deps chromium
+        working-directory: apps/e2e
+      - run: bun run test:e2e
+
+  migrate:
+    if: github.event_name == 'push'
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      # The unpooled URL: migrations never go through the pooler.
+      - run: bun run migrate:deploy
+        working-directory: packages/db
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_UNPOOLED }}
+
+  deploy-api:
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/vercel-deploy
+        with:
+          project-id: ${{ vars.VERCEL_API_PROJECT_ID }}
+          token: ${{ secrets.VERCEL_TOKEN }}
+
+  deploy-web:
+    needs: deploy-api
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/vercel-deploy
+        with:
+          project-id: ${{ vars.VERCEL_WEB_PROJECT_ID }}
+          token: ${{ secrets.VERCEL_TOKEN }}
+
+  staging-e2e:
+    needs: deploy-web
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      # global-setup imports @nunio/db/testing from dist.
+      - run: bunx turbo run build --filter=@nunio/db
+      # The hostile origin is always served from the runner.
+      - run: echo "127.0.0.1 evil.test" | sudo tee -a /etc/hosts
+      - run: bunx playwright install --with-deps chromium
+        working-directory: apps/e2e
+      - run: bunx playwright test
+        working-directory: apps/e2e
+        env:
+          E2E_TARGET: staging
+          SPIKE_WEBHOOK_SECRET: ${{ secrets.SPIKE_WEBHOOK_SECRET }}
