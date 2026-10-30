@@ -10,5 +10,6 @@ export default defineConfig({
     ...devices["Desktop Chrome"],
     // The local CA isn't in the browser's trust store; cookies still get https semantics.
     ignoreHTTPSErrors: true,
+    trace: "retain-on-failure",
   },
 });

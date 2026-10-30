@@ -184,7 +184,7 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
      - presigned GET with SSE-C via `fetch()`;
      - noncurrent-version expiry configured.
 
-     **If any of these fail, switch to the S3 `eu-central-1` fallback and record it as an ADR amendment.**
+     **If any of these fail, switch to the S3 `eu-central-1` fallback and record it as an ADR amendment.** Done: CopyObject with SSE-C is not implemented on Hetzner, so promotion uses a multipart copy and we stay on Hetzner (ADR-0007 amendment; [spike-results.md](operations/spike-results.md#e-hetzner-sse-c-2026-10-30)).
    - **f. OpenRouter EU check (ADR-0012), replacing the Bedrock guardrails below until the switch back:**
      - a request via `eu.openrouter.ai` succeeds, and one via the global endpoint is rejected (403);
      - list which Claude models and **embedding** models are served in-region with zero retention, and set the allowlist from that list;

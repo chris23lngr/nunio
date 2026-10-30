@@ -12,6 +12,7 @@
     "@hono/node-server": "2.1.5",
     "@nunio/api": "workspace:*",
     "@nunio/db": "workspace:*",
+    "@nunio/knowledge": "workspace:*",
     "@nunio/eslint-config": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
     "@nunio/web": "workspace:*",

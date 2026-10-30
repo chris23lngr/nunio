@@ -17,6 +17,8 @@ Master keys (this one and the Temporal payload key) are platform secrets in Verc
 
 If any of these fail, fall back to AWS S3 `eu-central-1`: default encryption, size-limited presigned POST, and the same two-bucket layout.
 
+**Amendment (2026-10-30, spike e):** Hetzner answers CopyObject on an SSE-C source with 501 Not Implemented. A multipart copy (`UploadPartCopy`, parts up to 5 GiB) works with SSE-C on both sides and stays server-side, so the worker promotes files that way, and the gate is otherwise met. We stay on Hetzner. Results are in [spike-results.md](../operations/spike-results.md#e-hetzner-sse-c-2026-10-30).
+
 ## Considered Options
 
 - **AWS S3 eu-central-1**: encrypted by default with documented size-limited POST, but US-parented. Kept as the fallback.

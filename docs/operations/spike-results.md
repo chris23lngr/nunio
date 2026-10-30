@@ -53,3 +53,19 @@ Measured with `apps/api/scripts/spike-c-measure.sh health|session` from Germany.
 ### Side finding: Better Auth's rate limit is per instance on Fluid
 
 Better Auth limits sign-up to 3 requests per 10 s per client IP, with in-memory storage by default. On Fluid each instance keeps its own counter, so the effective limit depends on how many instances serve the traffic. The staging browser suite tripped it once all sign-ups landed on one pre-warmed instance, and its `signUp` helper now waits out the window once. Locally the limit never applies, because requests carry no `x-forwarded-for`. Before pilot users arrive (Phase 3), move the limiter to shared storage (`rateLimit.storage: "database"` or secondary storage) so it holds across instances.
+
+## e. Hetzner SSE-C (2026-10-30)
+
+Run against `nunio-staging-quarantine` and `nunio-staging-sources` in `fsn1`, created and configured by `packages/knowledge/spike-e/provision.ts` (idempotent; see [environments.md](environments.md)). Checks: `packages/knowledge/spike-e/storage.test.ts` (Vitest, S3 semantics) and `apps/e2e/tests/sse-c-browser.spec.ts` (Playwright, browser and CORS). Both skip without the Hetzner variables, and both run in the `main` pipeline.
+
+| ADR-0007 gate check | Result |
+| --- | --- |
+| Presigned PUT with SSE-C headers and a signed `Content-Length` | Passes. A longer body (403), a missing SSE-C header (403) and a wrong key on download are rejected; a GET without the key fails (400), so objects really are encrypted. |
+| CORS allowing PUT and the SSE-C headers from `app.` | Passes from `https://app.staging.nunio.app` and the local `https://app.nunio.test:8443`; a page on an untrusted origin is blocked. |
+| Presigned GET with SSE-C via `fetch()` | Passes from the browser on `sources`. |
+| CopyObject from `quarantine` to `sources` with SSE-C | **Fails: Hetzner (Ceph) answers 501 `NotImplemented`** for any CopyObject whose source is SSE-C, inside a bucket or across, with the AWS SDK and the AWS CLI alike. A multipart copy (`CreateMultipartUpload`, `UploadPartCopy`, `CompleteMultipartUpload`) works with SSE-C on both sides: server-side, versioned in `sources`, byte-identical, unreadable without the key. |
+| Noncurrent-version expiry | Passes: `sources` is versioned with noncurrent versions expiring after 30 days; `quarantine` objects expire after 7 days (both read back). |
+
+Decision (2026-10-30): stay on Hetzner and promote with a multipart copy; ADR-0007 is amended. The copy uses parts of up to 5 GiB; the multi-part branch (files over 5 GiB) is untested. A test pins the 501, so it starts failing if Hetzner implements CopyObject with SSE-C.
+
+Notes for the upload flow: presign with the SSE-C headers as `unhoistableHeaders` (the key never goes in the URL) and `content-length` as a signed header. `quarantine` allows only browser PUTs and `sources` only GETs. Hetzner answers `CreateBucket` with `BucketAlreadyExists` even for a bucket you own, so check with `HeadBucket` first.

@@ -56,6 +56,25 @@ jobs:
           fi
           bunx commitlint --from "$from" --to "$HEAD" --verbose
 
+  storage-spike:
+    if: github.event_name == 'push'
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      # Spike e against the staging buckets; the tests skip wherever these are unset.
+      - run: bunx vitest run spike-e
+        working-directory: packages/knowledge
+        env:
+          HETZNER_S3_ENDPOINT: ${{ vars.HETZNER_S3_ENDPOINT }}
+          HETZNER_S3_REGION: ${{ vars.HETZNER_S3_REGION }}
+          HETZNER_QUARANTINE_BUCKET: ${{ vars.HETZNER_QUARANTINE_BUCKET }}
+          HETZNER_SOURCES_BUCKET: ${{ vars.HETZNER_SOURCES_BUCKET }}
+          HETZNER_S3_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY_ID }}
+          HETZNER_S3_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_ACCESS_KEY }}
+
   migrate:
     if: github.event_name == 'push'
     needs: checks
@@ -116,3 +135,9 @@ jobs:
         env:
           E2E_TARGET: staging
           SPIKE_WEBHOOK_SECRET: ${{ secrets.SPIKE_WEBHOOK_SECRET }}
+          HETZNER_S3_ENDPOINT: ${{ vars.HETZNER_S3_ENDPOINT }}
+          HETZNER_S3_REGION: ${{ vars.HETZNER_S3_REGION }}
+          HETZNER_QUARANTINE_BUCKET: ${{ vars.HETZNER_QUARANTINE_BUCKET }}
+          HETZNER_SOURCES_BUCKET: ${{ vars.HETZNER_SOURCES_BUCKET }}
+          HETZNER_S3_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY_ID }}
+          HETZNER_S3_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_ACCESS_KEY }}
