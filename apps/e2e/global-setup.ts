@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startTestDatabase } from "@nunio/db/testing";
 import { createCerts } from "./certs.js";
-import { cookieDomain, origins, ports } from "./origins.js";
+import { cookieDomain, origins, ports, target } from "./origins.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -15,14 +15,23 @@ export default async function globalSetup() {
     new URL(origins.api).hostname,
     new URL(origins.evil).hostname,
   ]);
+  const ca = readFileSync(certs.caPath);
+  const tls = { NODE_EXTRA_CA_CERTS: certs.caPath, TLS_KEY: certs.keyPath, TLS_CERT: certs.certPath };
+
+  if (target === "staging") {
+    const evil = start("evil", { ...process.env, ...tls, PORT: String(ports.evil) });
+    await waitFor(`${origins.evil}/`, ca);
+    return async () => {
+      evil.kill();
+    };
+  }
+
   const db = await startTestDatabase();
 
   const shared = {
     ...process.env,
     NODE_ENV: "production" as const,
-    NODE_EXTRA_CA_CERTS: certs.caPath,
-    TLS_KEY: certs.keyPath,
-    TLS_CERT: certs.certPath,
+    ...tls,
   };
   const children = [
     start("api", {
@@ -43,7 +52,6 @@ export default async function globalSetup() {
     start("evil", { ...shared, PORT: String(ports.evil) }),
   ];
 
-  const ca = readFileSync(certs.caPath);
   await Promise.all([
     waitFor(`${origins.api}/health`, ca),
     waitFor(`${origins.app}/sign-in`, ca),

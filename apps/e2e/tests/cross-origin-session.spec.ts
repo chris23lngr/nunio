@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { origins } from "../origins.js";
+import { cookieDomain, origins } from "../origins.js";
 
 const password = "correct horse battery staple";
 const run = Date.now().toString(36);
@@ -32,7 +32,7 @@ test("signing up on app. sets a parent-domain cookie the app's server can use", 
     c.name.endsWith("session_token"),
   );
   expect(cookie).toMatchObject({
-    domain: ".nunio.test",
+    domain: `.${cookieDomain}`,
     secure: true,
     httpOnly: true,
     sameSite: "Lax",

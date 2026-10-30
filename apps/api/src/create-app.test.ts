@@ -2,7 +2,7 @@ import { createPrismaClient, type PrismaClient } from "@nunio/db";
 import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
 import { createAuth } from "@nunio/identity";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createApp } from "./server.js";
+import { createApp } from "./create-app.js";
 
 const appOrigin = "https://app.nunio.test";
 const apiOrigin = "https://api.nunio.test";

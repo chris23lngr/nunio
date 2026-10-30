@@ -3,8 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "engines": { "node": ">=24 <25" },
   "exports": {
-    "./server": { "types": "./dist/server.d.ts", "default": "./dist/server.js" }
+    "./create-app": { "types": "./dist/create-app.d.ts", "default": "./dist/create-app.js" }
   },
   "scripts": {
     "dev": "tsx watch src/dev.ts",
