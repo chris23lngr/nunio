@@ -1,4 +1,5 @@
-import { createPrismaClient, type PrismaClient } from "@nunio/db";
+import { createHmac } from "node:crypto";
+import { createPool, createPrismaClient, type Pool, type PrismaClient } from "@nunio/db";
 import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
 import { createAuth } from "@nunio/identity";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -10,13 +11,17 @@ const evilOrigin = "https://evil.test";
 const password = "correct horse battery staple";
 const run = Date.now().toString(36);
 
+const webhookSecret = "spike-c-webhook-secret";
+
 let db: TestDatabase;
+let pool: Pool;
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 
 beforeAll(async () => {
   db = await startTestDatabase();
-  prisma = createPrismaClient(db.connectionString);
+  pool = createPool(db.connectionString);
+  prisma = createPrismaClient(pool);
   const auth = createAuth({
     prisma,
     baseURL: apiOrigin,
@@ -24,7 +29,7 @@ beforeAll(async () => {
     cookieDomain: "nunio.test",
     secret: "spike-b-test-secret-that-is-long-enough",
   });
-  app = createApp({ auth, appOrigin });
+  app = createApp({ auth, appOrigin, spike: { webhookSecret, pool } });
 }, 180_000);
 
 afterAll(async () => {
@@ -86,5 +91,33 @@ describe("the API's auth routes from other origins", () => {
     const fromEvil = await preflight(evilOrigin);
     expect(fromEvil.headers.get("access-control-allow-origin")).not.toBe(evilOrigin);
     expect(fromEvil.headers.get("access-control-allow-origin")).not.toBe("*");
+  });
+});
+
+describe("the spike raw-body route", () => {
+  const signed = '{"id":"evt_1","type":"invoice.paid","amount":1999}';
+  const signature = createHmac("sha256", webhookSecret).update(signed).digest("hex");
+
+  const post = (body: string) =>
+    app.request(`${apiOrigin}/spike/raw-body`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-spike-signature": signature },
+      body,
+    });
+
+  it("accepts the exact bytes that were signed", async () => {
+    const res = await post(signed);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ verified: true, bytes: 50 });
+  });
+
+  it("rejects a body with one byte changed", async () => {
+    const res = await post(signed.replace("1999", "1998"));
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects the same JSON with its keys reordered", async () => {
+    const res = await post('{"type":"invoice.paid","id":"evt_1","amount":1999}');
+    expect(res.status).toBe(401);
   });
 });

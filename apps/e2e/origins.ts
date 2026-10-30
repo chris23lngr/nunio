@@ -15,3 +15,7 @@ export const origins =
     : { app: `https://app.nunio.test:${ports.app}`, api: `https://api.nunio.test:${ports.api}`, evil };
 
 export const cookieDomain = target === "staging" ? "staging.nunio.app" : "nunio.test";
+
+/** Key for the spike c raw-body route; on staging pass the API's SPIKE_WEBHOOK_SECRET. */
+export const spikeWebhookSecret =
+  target === "staging" ? (process.env.SPIKE_WEBHOOK_SECRET ?? "") : "spike-c-e2e-webhook-secret";

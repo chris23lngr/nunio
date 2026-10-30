@@ -1,4 +1,4 @@
-import { createPrismaClient, type PrismaClient } from "@nunio/db";
+import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
 import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createAuth, type Auth } from "./auth.js";
@@ -15,7 +15,7 @@ let auth: Auth;
 
 beforeAll(async () => {
   db = await startTestDatabase();
-  prisma = createPrismaClient(db.connectionString);
+  prisma = createPrismaClient(createPool(db.connectionString));
   auth = createAuth({
     prisma,
     baseURL: origin,

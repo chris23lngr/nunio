@@ -170,7 +170,7 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
 5. **Spikes.** Each one is a test or script kept in the repo:
    - **a. Prisma 7 + Better Auth on Node:** sign-up, sign-in, session, and revocation through `prismaAdapter`. Run on Testcontainers and against the staging Neon branch.
    - **b. Cross-origin session (blocked until the Vercel team exists):** `app.` → `api.` with the cookie on `.nunio.app`. Next.js server-side session check by forwarding the cookie to `https://api.nunio.app/api/auth/get-session`. This has no official recipe, so it must be proven here. Cover CSRF and origin rejection from an untrusted origin.
-   - **c. Hono on Vercel `fra1` (blocked until the Vercel team exists):** cold start, a Stripe-style raw-body route, and `attachDatabasePool` with `PrismaPg(pool)`.
+   - **c. Hono on Vercel `fra1` (blocked until the Vercel team exists):** cold start, a Stripe-style raw-body route, and `attachDatabasePool` with `PrismaPg(pool)`. Done on the interim Hobby staging; results in [spike-results.md](operations/spike-results.md#c-hono-on-vercel-fra1-2026-10-30). Re-run the idle cold start on the team.
    - **d. Temporal worker on Render:**
      - connects to Temporal Cloud with an API key;
      - a workflow waits on a signal, and survives a worker kill/restart and a redeploy;

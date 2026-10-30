@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startTestDatabase } from "@nunio/db/testing";
 import { createCerts } from "./certs.js";
-import { cookieDomain, origins, ports, target } from "./origins.js";
+import { cookieDomain, origins, ports, spikeWebhookSecret, target } from "./origins.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -42,6 +42,8 @@ export default async function globalSetup() {
       BETTER_AUTH_SECRET: "spike-b-e2e-secret-that-is-long-enough",
       APP_ORIGIN: origins.app,
       COOKIE_DOMAIN: cookieDomain,
+      SPIKE_ROUTES: "true",
+      SPIKE_WEBHOOK_SECRET: spikeWebhookSecret,
     }),
     start("web", {
       ...shared,

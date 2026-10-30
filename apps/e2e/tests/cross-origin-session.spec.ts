@@ -10,7 +10,15 @@ async function signUp(page: Page, name: string): Promise<string> {
   await page.getByLabel("Name").fill(name);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign up" }).click();
+  const submit = page.getByRole("button", { name: "Sign up" });
+  await submit.click();
+  // Better Auth allows 3 sign-ups per 10 s per client IP on deployed origins; wait out the window once.
+  const limited = page.getByText("Too many requests");
+  await Promise.race([page.waitForURL(`${origins.app}/`), limited.waitFor()]);
+  if (await limited.isVisible()) {
+    await page.waitForTimeout(10_000);
+    await submit.click();
+  }
   await expect(page).toHaveURL(`${origins.app}/`);
   return email;
 }
