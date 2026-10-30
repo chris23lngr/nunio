@@ -197,6 +197,9 @@
     "packages/delegation": {
       "name": "@nunio/delegation",
       "version": "0.0.0",
+      "dependencies": {
+        "@nunio/db": "workspace:*",
+      },
       "devDependencies": {
         "@nunio/eslint-config": "workspace:*",
         "@nunio/typescript-config": "workspace:*",
