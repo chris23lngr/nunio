@@ -4,20 +4,64 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./components/*": {
+      "types": "./dist/components/ui/*.d.ts",
+      "default": "./dist/components/ui/*.js"
+    },
+    "./styles.css": "./src/styles/globals.css",
+    "./tokens.css": "./src/styles/tokens.css"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "lint": "biome check .",
+    "test": "vitest run --passWithNoTests",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build",
+    "tokens": "bun scripts/build-tokens.ts && biome format --write src/styles/tokens.css",
+    "format": "biome check --write ."
   },
   "devDependencies": {
-    "@nunio/eslint-config": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
-    "eslint": "10.13.0",
     "typescript": "5.9.3",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "@biomejs/biome": "2.6.3",
+    "@storybook/addon-a11y": "10.6.5",
+    "@storybook/addon-docs": "10.6.5",
+    "@storybook/addon-themes": "10.6.5",
+    "@storybook/addon-vitest": "10.6.5",
+    "@storybook/react-vite": "10.6.5",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "@vitest/browser-playwright": "5.0.5",
+    "playwright": "1.64.1",
+    "storybook": "10.6.5",
+    "tailwindcss": "4.3.3",
+    "vite": "8.3.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "dependencies": {
+    "@base-ui/react": "1.9.0",
+    "class-variance-authority": "0.7.1",
+    "cmdk": "1.1.1",
+    "cn": "0.5.0",
+    "lucide-react": "1.63.0",
+    "motion": "14.7.1"
+  },
+  "peerDependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   }
 }

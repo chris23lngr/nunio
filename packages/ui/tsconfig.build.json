@@ -1,6 +1,10 @@
 {
-  "extends": "@nunio/typescript-config/library.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "dist", "noEmit": false },
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "noEmit": false
+  },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  "exclude": ["src/**/*.stories.tsx", "src/**/*.test.ts", "src/**/*.test.tsx"]
 }

@@ -1,0 +1,408 @@
+# Notion CSS custom properties, extracted 2026-10-28 from app.notion.com
+# Source rules: ":root, .notion-light-theme" (l) and ".notion-dark-theme" (d).
+# Names are Notion's own abbreviations with the --c-/--ca-/--cl-/--cd- prefix stripped.
+# Dark inherits every key it does not override from light.
+# Later lines win, so the full-length shadow values at the bottom replace truncated ones.
+
+l palUiBlu50=#2383e209 palUiBlu75=#2383e20d palUiBlu100=#2383e212
+l palUiBlu200=#2383e224 palUiBlu300=#2383e236 palUiBlu400=#2383e259
+l palUiBlu500=#2383e291 palUiBlu600=#2383e2 palUiBlu700=#105fad
+l palPin30=#e793bc12 palPin50=#fcf1f6 palPin100=#e188b345
+l palPin200=#cc5c9266 palPin300=#d15b94a6 palPin400=#c4548ad1
+l palPin500=#c14c8a palPin600=#a2336f palPin700=#6f3151
+l palPin800=#4c2337 palPin900=#2c1420 palPur30=#ceafe512
+l palPur50=#f8f3fc palPur100=#a881c545 palPur200=#8d62ae66
+l palPur300=#9a72b9a6 palPur400=#9467b6d1 palPur500=#9065b0
+l palPur600=#754d92 palPur700=#5a3872 palPur800=#412454
+l palPur900=#26152e palGre30=#7bb78112 palGre50=#edf3ec
+l palGre100=#7bb78145 palGre200=#50906766 palGre300=#509067a6
+l palGre400=#42855ad1 palGre500=#448361 palGre600=#33684e
+l palGre700=#1f4f3b palGre800=#1c3829 palGre900=#102416
+l palGra0=#fff palGra30=#5448310a palGra50=#f8f8f7
+l palGra75=#54483114 palGra90=#e3e2e0b3 palGra100=#54483126
+l palGra200=#51493c52 palGra300=#46444073 palGra400=#47464499
+l palGra500=#73726e palGra600=#5f5e5b palGra700=#484743
+l palGra800=#32302c palGra900=#1d1b16 palTraGra30=#00000003
+l palTraGra50=#0000000a palTraGra75=#0000000d palTraGra100=#0000000f
+l palTraGra200=#00000012 palTraGra300=#0000001c palTraGra400=#00000028
+l palTraGra500=#0005 palTraGra600=#00000075 palTraGra700=#0000009e
+l palTraGra800=#000000d0 palTraGra850=#000000e3 palTraGra900=#000000fc
+l palOra30=#e07c3912 palOra50=#fbecdd palOra100=#e07c3945
+l palOra200=#d95f0d66 palOra300=#d95f0da6 palOra400=#d95f0dd1
+l palOra500=#d9730d palOra600=#8d4e17 palOra700=#6a3b12
+l palOra800=#49290e palOra900=#281809 palBro30=#d2a28d12
+l palBro50=#f4eeee palBro100=#d2a28d59 palBro200=#9c4c2852
+l palBro300=#9c4c2880 palBro400=#9c4c28ad palBro500=#9f6b53
+l palBro600=#80543f palBro700=#613e2e palBro800=#442a1e
+l palBro900=#2d1506 palRed30=#f3887612 palRed50=#fdebec
+l palRed100=#f4ab9f66 palRed200=#d7261552 palRed300=#d7261580
+l palRed400=#d72615ad palRed500=#cd3c3a palRed600=#ae2f2e
+l palRed700=#862120 palRed800=#5d1715 palRed900=#30130f
+l palYel30=#d7b11812 palYel50=#fbf3db palYel100=#ecbf4263
+l palYel200=#e5af198c palYel300=#d79609bf palYel400=#c07d00d1
+l palYel500=#cb912f palYel600=#835e33 palYel700=#5f4023
+l palYel800=#402c1b palYel900=#251910 palBlu30=#5ba6d112
+l palBlu50=#e7f3f8 palBlu100=#5da5ce45 palBlu200=#3987b866
+l palBlu300=#3f89b8a6 palBlu400=#3681b1d1 palBlu500=#337ea9
+l palBlu600=#2d6387 palBlu700=#1f4a68 palBlu800=#183347
+l palBlu900=#0c1d2b palPagGla0=#fffc palWasGla0=#f9f9f8cc
+l bluTexPri=#264a72 bluTexSec=#387dc9 bluTexTer=#83abe1
+l bluTexDis=#9dc0ea bluTexAccPri=#2783de bluTexInvPri=#f3f9fd
+l bluTexInvSec=#b6d4f3 bluTexDisTra=#005bc862 bluIcoPri=#264a72
+l bluIcoSec=#387dc9 bluIcoTer=#83abe1 bluIcoDis=#9dc0ea
+l bluIcoAccPri=#2783de bluIcoInvPri=#f3f9fd bluIcoInvSec=#b6d4f3
+l bluBorPri=#cee3f7 bluBorSec=#e5f2fc bluBorInvPri=#355f8b
+l bluBorAccPri=#2783de bluBorStr=#b6d4f3 bluBorPriTra=#0076d934
+l bluBorSecTra=#007cd718 bluBorStrTra=#0070db49 bluBacPri=#f3f9fd
+l bluBacSec=#e5f2fc bluBacTer=#cee3f7 bluBacEle=#fff
+l bluBacAccPri=#2783de bluBacAccSec=#5e9fe8 bluBacPriTra=#0080d50c
+l bluBacSecTra=#007cd718 bluBacTerTra=#0076d934 bluBacIntTra=#0079e413
+l bluBacInt=#ecf5fd broTexPri=#584437 broTexSec=#9f765a
+l broTexTer=#bca290 broTexDis=#cfb8a8 broTexAccPri=#b68965
+l broTexInvPri=#faf8f6 broTexInvSec=#e0cdc0 broTexDisTra=#722f0057
+l broIcoPri=#584437 broIcoSec=#9f765a broIcoTer=#bca290
+l broIcoDis=#cfb8a8 broIcoAccPri=#b68965 broIcoInvPri=#faf8f6
+l broIcoInvSec=#e0cdc0 broBorPri=#ebdfd7 broBorSec=#f5ede9
+l broBorInvPri=#6d5340 broBorAccPri=#b68965 broBorStr=#e0cdc0
+l broBorPriTra=#7f330028 broBorSecTra=#8b2e0016 broBorStrTra=#8134003f
+l broBacPri=#faf8f6 broBacSec=#f5ede9 broBacTer=#ebdfd7
+l broBacEle=#fff broBacAccPri=#b68965 broBacAccSec=#bd9576
+l broBacPriTra=#733b0309 broBacSecTra=#8b2e0016 broBacTerTra=#7f330028
+l broBacIntTra=#7722000f broBacInt=#f7f2f0 graTexPri=#494846
+l graTexSec=#7d7a75 graTexTer=#ada9a3 graTexDis=#bcbab6
+l graTexAccPri=#8e8b86 graTexInvPri=#f9f8f7 graTexInvSec=#d4d3cf
+l graTexDisTra=#150e0049 graIcoPri=#494846 graIcoSec=#7d7a75
+l graIcoTer=#ada9a3 graIcoDis=#bcbab6 graIcoAccPri=#8e8b86
+l graIcoInvPri=#f9f8f7 graIcoInvSec=#d4d3cf graBorPri=#e6e5e3
+l graBorSec=#f0efed graBorInvPri=#5f5e59 graBorAccPri=#8e8b86
+l graBorStr=#d4d3cf graBorPriTra=#1c13011c graBorSecTra=#2a1c0012
+l graBorStrTra=#1b150030 graBacPri=#f9f8f7 graBacSec=#f0efed
+l graBacTer=#e6e5e3 graBacEle=#fff graBacAccPri=#8e8b86
+l graBacAccSec=#a19e99 graBacPriTra=#42230308 graBacSecTra=#2a1c0012
+l graBacTerTra=#1c13011c graBacIntTra=#211b170d graBacInt=#f4f3f3
+l greTexPri=#2a533c greTexSec=#50946e greTexTer=#8bb79d
+l greTexDis=#a6c7b4 greTexAccPri=#46a171 greTexInvPri=#f6f9f7
+l greTexInvSec=#bed9c9 greTexDisTra=#005f2859 greIcoPri=#2a533c
+l greIcoSec=#50946e greIcoTer=#8bb79d greIcoDis=#a6c7b4
+l greIcoAccPri=#46a171 greIcoInvPri=#f6f9f7 greIcoInvSec=#bed9c9
+l greBorPri=#d7e6dd greBorSec=#e8f1ec greBorInvPri=#37674c
+l greBorAccPri=#46a171 greBorStr=#bed9c9 greBorPriTra=#00602628
+l greBorSecTra=#00642d17 greBorStrTra=#006a2b41 greBacPri=#f6f9f7
+l greBacSec=#e8f1ec greBacTer=#d7e6dd greBacEle=#fff
+l greBacAccPri=#46a171 greBacAccSec=#72bc8f greBacPriTra=#03571f09
+l greBacSecTra=#00642d17 greBacTerTra=#00602628 greBacIntTra=#00602010
+l greBacInt=#eff5f1 oraTexPri=#6a4222 oraTexSec=#d27b2d
+l oraTexTer=#cba27d oraTexDis=#dab798 oraTexAccPri=#d5803b
+l oraTexInvPri=#fcf7f4 oraTexInvSec=#eaccb2 oraTexDisTra=#a34d0067
+l oraIcoPri=#6a4222 oraIcoSec=#d27b2d oraIcoTer=#cba27d
+l oraIcoDis=#dab798 oraIcoAccPri=#d5803b oraIcoInvPri=#fcf7f4
+l oraIcoInvSec=#eaccb2 oraBorPri=#f3ddcb oraBorSec=#fbebde
+l oraBorInvPri=#88522f oraBorAccPri=#d5803b oraBorStr=#eaccb2
+l oraBorPriTra=#c4580034 oraBorSecTra=#e0650121 oraBorStrTra=#ba56004d
+l oraBacPri=#fcf7f4 oraBacSec=#fbebde oraBacTer=#f3ddcb
+l oraBacEle=#fff oraBacAccPri=#d5803b oraBacAccSec=#de9255
+l oraBacPriTra=#ba48030b oraBacSecTra=#e0650121 oraBacTerTra=#c4580034
+l oraBacIntTra=#e9640017 oraBacInt=#fdf1e8 pinTexPri=#68354e
+l pinTexSec=#c14c8a pinTexTer=#c897ad pinTexDis=#d8afc1
+l pinTexAccPri=#db6999 pinTexInvPri=#fcf7f9 pinTexInvSec=#eac4d5
+l pinTexDisTra=#83003950 pinIcoPri=#68354e pinIcoSec=#c14c8a
+l pinIcoTer=#c897ad pinIcoDis=#d8afc1 pinIcoAccPri=#db6999
+l pinIcoInvPri=#fcf7f9 pinIcoInvSec=#eac4d5 pinBorPri=#f4d8e4
+l pinBorSec=#fae9f1 pinBorInvPri=#7b4760 pinBorAccPri=#db6999
+l pinBorStr=#eac4d5 pinBorPriTra=#b7004e27 pinBorSecTra=#c5005d16
+l pinBorStrTra=#a400493b pinBacPri=#fcf7f9 pinBacSec=#fae9f1
+l pinBacTer=#f4d8e4 pinBacEle=#fff pinBacAccPri=#db6999
+l pinBacAccSec=#df84a8 pinBacPriTra=#a1034208 pinBacSecTra=#c5005d16
+l pinBacTerTra=#b7004e27 pinBacIntTra=#bf006010 pinBacInt=#fbeff5
+l purTexPri=#553b69 purTexSec=#9a6bb4 purTexTer=#b49cc6
+l purTexDis=#c7b3d5 purTexAccPri=#b577d6 purTexInvPri=#faf7fc
+l purTexInvSec=#dbc8e8 purTexDisTra=#4300724c purIcoPri=#553b69
+l purIcoSec=#9a6bb4 purIcoTer=#b49cc6 purIcoDis=#c7b3d5
+l purIcoAccPri=#b577d6 purIcoInvPri=#faf7fc purIcoInvSec=#dbc8e8
+l purBorPri=#e8dbf2 purBorSec=#f3ebf9 purBorInvPri=#674d7b
+l purBorAccPri=#b577d6 purBorStr=#dbc8e8 purBorPriTra=#5c00a324
+l purBorSecTra=#6600b214 purBorStrTra=#58019537 purBacPri=#faf7fc
+l purBacSec=#f3ebf9 purBacTer=#e8dbf2 purBacEle=#fff
+l purBacAccPri=#b577d6 purBacAccSec=#bf8eda purBacPriTra=#6203a108
+l purBacSecTra=#6600b214 purBacTerTra=#5c00a324 purBacIntTra=#6600bb0f
+l purBacInt=#f6f0fb redTexPri=#6d3531 redTexSec=#cf5148
+l redTexTer=#d0988d redTexDis=#e0aea6 redTexAccPri=#e56458
+l redTexInvPri=#fdf6f6 redTexInvSec=#f0c5be redTexDisTra=#a6170059
+l redIcoPri=#6d3531 redIcoSec=#cf5148 redIcoTer=#d0988d
+l redIcoDis=#e0aea6 redIcoAccPri=#e56458 redIcoInvPri=#fdf6f6
+l redIcoInvSec=#f0c5be redBorPri=#f7d9d5 redBorSec=#fce9e7
+l redBorInvPri=#924943 redBorAccPri=#e56458 redBorStr=#f0c5be
+l redBorPriTra=#ce18002a redBorSecTra=#df160018 redBorStrTra=#c41b0041
+l redBacPri=#fdf6f6 redBacSec=#fce9e7 redBacTer=#f7d9d5
+l redBacEle=#fff redBacAccPri=#e56458 redBacAccSec=#e97366
+l redBacPriTra=#c7030309 redBacSecTra=#df160018 redBacTerTra=#ce18002a
+l redBacIntTra=#df100010 redBacInt=#fdf0ef teaTexPri=#18505b
+l teaTexSec=#2c8b9e teaTexTer=#7eb6c2 teaTexDis=#99c8d3
+l teaTexAccPri=#37a4b4 teaTexInvPri=#f3fafb teaTexInvSec=#b0dbe4
+l teaTexDisTra=#00769166 teaIcoPri=#18505b teaIcoSec=#2c8b9e
+l teaIcoTer=#7eb6c2 teaIcoDis=#99c8d3 teaIcoAccPri=#37a4b4
+l teaIcoInvPri=#f3fafb teaIcoInvSec=#b0dbe4 teaBorPri=#cae9f0
+l teaBorSec=#e0f3f7 teaBorInvPri=#226471 teaBorAccPri=#37a4b4
+l teaBorStr=#b0dbe4 teaBorPriTra=#0095b735 teaBorSecTra=#019dbd1f
+l teaBorStrTra=#008ba84f teaBacPri=#f3fafb teaBacSec=#e0f3f7
+l teaBacTer=#cae9f0 teaBacEle=#fff teaBacAccPri=#37a4b4
+l teaBacAccSec=#4fb9c9 teaBacPriTra=#0396ab0c teaBacSecTra=#019dbd1f
+l teaBacTerTra=#0095b735 teaBacIntTra=#009bbc17 teaBacInt=#e8f6f9
+l yelTexPri=#655121 yelTexSec=#cb9434 yelTexTer=#d8c283
+l yelTexDis=#e2ca88 yelTexAccPri=#d8a32f yelTexInvPri=#fcfaef
+l yelTexInvSec=#e8d497 yelTexDisTra=#c18d0077 yelIcoPri=#655121
+l yelIcoSec=#cb9434 yelIcoTer=#d8c283 yelIcoDis=#e8d497
+l yelIcoAccPri=#d8a32f yelIcoInvPri=#fcfaef yelIcoInvSec=#e8d497
+l yelBorPri=#f2e3b7 yelBorSec=#f9f3dc yelBorInvPri=#836426
+l yelBorAccPri=#d8a32f yelBorStr=#e8d497 yelBorPriTra=#d19c0048
+l yelBorSecTra=#d3a80023 yelBorStrTra=#c7960068 yelBacPri=#fcfaef
+l yelBacSec=#f9f3dc yelBacTer=#f2e3b7 yelBacEle=#fff
+l yelBacAccPri=#d8a32f yelBacAccSec=#eac26b yelBacPriTra=#cfaf0010
+l yelBacSecTra=#d3a80023 yelBacTerTra=#d19c0048 yelBacIntTra=#eba30019
+l yelBacInt=#fdf6e6 texDisTra=#150e0049 priBla=#000
+l linDecCol=#37352f40 opaLinDecCol=#37352f66 regEmoCol=#000
+l sidIteSelBac=#00000008 sidSecBac=#00000006 conBacTra=#fff0
+l popBac=#fff popWaxPapBac=#ffffffe6 modUndBac=#0f0f0f99 codBloBac=#f7f6f3
+l tokInpMenIteBac=#f2f1ee99 hovDisBac=#37352f08 butHovBac=#37352f0f
+l tabRowHovBac=#37352f06 outButHovBac=#37352f0f outButPreBac=#37352f29
+l butPreBac=#37352f29 butPreBacLig=#37352f1a bluButHovBac=#0077d4
+l bluButPreBac=#006bc7 whi=#fff whiButBac=#fff
+l ligGraButHovBac=#e3e2e0b3 ligGraButPreBac=#54483126 whiButHovBac=#efefee
+l whiButPreBac=#dfdfde selLigGra30=#f9f9f580 selLigGra50=#f1f1ef80
+l selLigGra100=#e3e2e080 selLigGra200=#c7c6c480 selLigGra300=#acaba980
+l selLigGra400=#91918e80 selLigGra500=#78777480 selLigGra700=#48474380
+l shaCol=#0f0f0f
+l assCorButBac=#fff assCorButBacHov=#efefee assCorButBacPre=#dfdfde
+l staHov=#37352f0a staPre=#37352f1a
+l popOveBac=#0f0f0f99 swiButTeaBg=#8783784d swiTogDesTraBg=#87837866
+l swiTogDesTraBgVar=#cecdca4d
+
+d palUiBlu300=#2383e233 palUiBlu700=#4fa7ff palUiBlu150=#2383e21a
+d palPin30=#f6daf7 palPin50=#dc4c910f palPin100=#302228
+d palPin200=#dc4c9138 palPin300=#4e2c3c palPin400=#dc4c9166
+d palPin500=#dc4c9199 palPin600=#dc4c91d1 palPin700=#d85795e8
+d palPin800=#c94b8c palPin900=#d15796 palPin75=#dc4c9117
+d palPur30=#e8def6 palPur50=#9b61d314 palPur100=#2b2431
+d palPur200=#9b61d32e palPur300=#3c2d49 palPur400=#a85bf257
+d palPur500=#9b61d3a6 palPur600=#9b61d3d1 palPur700=#9b61d3e8
+d palPur800=#9d67d2 palPur900=#9d68d3 palPur75=#9b61d31a
+d palGre30=#d7e8d9 palGre50=#2d996414 palGre100=#222b26
+d palGre200=#2d996433 palGre300=#243d30 palGre400=#2d996480
+d palGre500=#2ca76aa6 palGre600=#2ca76ad1 palGre700=#2ca76ae8
+d palGre800=#3c9d6a palGre900=#529e72 palGre75=#2d99641f
+d palGra0=#000 palGra30=#151515 palGra50=#191919
+d palGra75=#1c1c1c palGra90=#1e1e1e palGra100=#202020
+d palGra200=#252525 palGra300=#2f2f2f palGra400=#373737
+d palGra500=#5a5a5a palGra600=#7f7f7f palGra700=#9b9b9b
+d palGra800=#d3d3d3 palGra900=#fff palGra850=#e1e1e1
+d palTraGra30=#151515 palTraGra50=#191919 palTraGra75=#ffffff04
+d palTraGra100=#ffffff08 palTraGra200=#ffffff0e palTraGra300=#ffffff18
+d palTraGra400=#ffffff21 palTraGra500=#ffffff48 palTraGra600=#ffffff75
+d palTraGra700=#ffffff90 palTraGra800=#ffffffcf palTraGra850=#ffffffde
+d palTraGra900=#fffffff5 palOra30=#f0e0c8 palOra50=#e97e280f
+d palOra100=#38281e palOra200=#e97e2533 palOra300=#5c3b23
+d palOra400=#e97e2373 palOra500=#e97e2299 palOra600=#e97e21cc
+d palOra700=#e97e20e8 palOra800=#e48539 palOra900=#c77d48
+d palOra75=#e97e2726 palBro30=#f4f4d3 palBro50=#b8654814
+d palBro100=#2f2723 palBro200=#b8654540 palBro300=#4a3228
+d palBro400=#b8654373 palBro500=#ef997699 palBro600=#d18a6dbf
+d palBro700=#bb7d64e8 palBro800=#b27e67 palBro900=#ba856f
+d palBro75=#b8654726 palRed30=#fddada palRed50=#de55581a
+d palRed100=#362422 palRed200=#de555540 palRed300=#522e2a
+d palRed400=#de555373 palRed500=#de555299 palRed600=#de5551cc
+d palRed700=#de5550e8 palRed800=#de5550 palRed900=#e65b58
+d palRed75=#de555726 palYel30=#f0e2cb palYel50=#a269321a
+d palYel100=#392e1e palYel200=#b3813d33 palYel300=#564328
+d palYel400=#fab14380 palYel500=#f0a63399 palYel600=#e8a225cc
+d palYel700=#dd9a22e8 palYel800=#d99e35 palYel900=#ca984d
+d palYel75=#98663026 palBlu30=#cbe6f7 palBlu50=#337ea914
+d palBlu100=#1d282e palBlu200=#337ea933 palBlu300=#143a4e
+d palBlu400=#337ea980 palBlu500=#337ea9a6 palBlu600=#337ea9d1
+d palBlu700=#337ea9e8 palBlu800=#388ebf palBlu900=#379ad3
+d palBlu75=#337ea91f palPagGla0=#191919cc palWasGla0=#202020cc
+d bluTexPri=#e5f2fc bluTexTer=#355f8b bluTexDis=#264a72
+d bluTexDisTra=#3b98ff62 bluIcoPri=#e5f2fc bluIcoSec=#83abe1
+d bluIcoTer=#387dc9 bluIcoDis=#264a72 bluBorPri=#233850
+d bluBorSec=#213041 bluBorStr=#355f8b bluBorPriTra=#439bff3d
+d bluBorSecTra=#479dff2c bluBorStrTra=#51a6ff7e bluBacPri=#1a2027
+d bluBacSec=#233850 bluBacTer=#355f8b bluBacEle=#213041
+d bluBacPriTra=#298bfd10 bluBacSecTra=#439bff3d bluBacTerTra=#51a6ff7e
+d bluBacIntTra=#4499ff1e bluBacInt=#1e2834 broTexPri=#f5ede9
+d broTexTer=#6d5340 broTexDis=#584437 broTexDisTra=#ffb68746
+d broIcoPri=#f5ede9 broIcoSec=#bca290 broIcoTer=#9f765a
+d broIcoDis=#584437 broBorPri=#45362d broBorSec=#382d26
+d broBorStr=#6d5340 broBorPriTra=#ffb18131 broBorSecTra=#ffae7a22
+d broBorStrTra=#ffb8845d broBacPri=#25201d broBacSec=#45362d
+d broBacTer=#6d5340 broBacEle=#382d26 broBacPriTra=#fd9e650d
+d broBacSecTra=#ffb18131 broBacTerTra=#ffb8845d broBacIntTra=#ffab7718
+d broBacInt=#2f2722 graTexPri=#f0efed graTexTer=#5f5e59
+d graTexDis=#494846 graTexDisTra=#fefaf035 graIcoPri=#f0efed
+d graIcoTer=#5f5e59 graIcoDis=#494846 graBorPri=#383836
+d graBorSec=#2c2c2b graBorStr=#5f5e59 graBorPriTra=#ffffeb1a
+d graBorSecTra=#fffff315 graBorStrTra=#fffceb4e graBacPri=#202020
+d graBacSec=#383836 graBacTer=#5f5e59 graBacEle=#2c2c2b
+d graBacPriTra=#fcfcfc08 graBacSecTra=#ffffeb1a graBacTerTra=#fffceb4e
+d graBacIntTra=#ffffff0e graBacInt=#262626 greTexPri=#e8f1ec
+d greTexTer=#37674c greTexDis=#2a533c greTexDisTra=#5dffa440
+d greIcoPri=#e8f1ec greIcoSec=#8bb79d greIcoTer=#50946e
+d greIcoDis=#2a533c greBorPri=#263d30 greBorSec=#24342b
+d greBorStr=#37674c greBorPriTra=#6cffac28 greBorSecTra=#77ffb31e
+d greBorStrTra=#71ffaf56 greBacPri=#1b211d greBacSec=#263d30
+d greBacTer=#37674c greBacEle=#24342b greBacPriTra=#53ff8c09
+d greBacSecTra=#6cffac28 greBacTerTra=#71ffaf56 greBacIntTra=#72ffa614
+d greBacInt=#202b24 oraTexPri=#fbebde oraTexTer=#88522f
+d oraTexDis=#6a4222 oraTexDisTra=#bb6b2b80 oraIcoPri=#fbebde
+d oraIcoSec=#cba27d oraIcoTer=#d27b2d oraIcoDis=#6a4222
+d oraBorPri=#53361f oraBorSec=#3d2a1d oraBorStr=#88522f
+d oraBorPriTra=#ff934b47 oraBorSecTra=#ff863328 oraBorStrTra=#ff8f477b
+d oraBacPri=#231e1b oraBacSec=#53361f oraBacTer=#88522f
+d oraBacEle=#3d2a1d oraBacPriTra=#fe8b470b oraBacSecTra=#ff934b47
+d oraBacTerTra=#ff8f477b oraBacIntTra=#ff87371a oraBacInt=#30241c
+d pinTexPri=#fae9f1 pinTexTer=#7b4760 pinTexDis=#68354e
+d pinTexDisTra=#ff6bb457 pinIcoPri=#fae9f1 pinIcoSec=#c897ad
+d pinIcoTer=#c14c8a pinIcoDis=#68354e pinBorPri=#4e2b3c
+d pinBorSec=#3f2631 pinBorStr=#7b4760 pinBorPriTra=#ff67b13b
+d pinBorSecTra=#ff68ab2a pinBorStrTra=#ff85c06d pinBacPri=#261c20
+d pinBacSec=#4e2b3c pinBacTer=#7b4760 pinBacEle=#3f2631
+d pinBacPriTra=#ff4e950e pinBacSecTra=#ff67b13b pinBacTerTra=#ff85c06d
+d pinBacIntTra=#ff60a71d pinBacInt=#332129 purTexPri=#f3ebf9
+d purTexTer=#674d7b purTexDis=#553b69 purTexDisTra=#c57bff58
+d purIcoPri=#f3ebf9 purIcoTer=#9a6bb4 purIcoDis=#553b69
+d purBorPri=#3c2d47 purBorSec=#36293f purBorStr=#674d7b
+d purBorPriTra=#c87dff33 purBorSecTra=#c97aff2a purBorStrTra=#d093ff6d
+d purBacPri=#221d25 purBacSec=#3c2d47 purBacTer=#674d7b
+d purBacEle=#36293f purBacPriTra=#c465fd0d purBacSecTra=#c87dff33
+d purBacTerTra=#d093ff6d purBacIntTra=#c875ff1c purBacInt=#2c2332
+d redTexPri=#fce9e7 redTexTer=#924943 redTexDis=#6d3531
+d redTexDisTra=#ff665b5d redIcoPri=#fce9e7 redIcoSec=#d0988d
+d redIcoTer=#cf5148 redIcoDis=#6d3531 redBorPri=#502c29
+d redBorSec=#412725 redBorStr=#924943 redBorPriTra=#ff685c3d
+d redBorSecTra=#ff6a5e2c redBorStrTra=#ff746986 redBacPri=#241d1d
+d redBacSec=#502c29 redBacTer=#924943 redBacEle=#412725
+d redBacAccSec=#e56458 redBacPriTra=#fb6b6b0c redBacSecTra=#ff685c3d
+d redBacTerTra=#ff746986 redBacIntTra=#ff69601d redBacInt=#332221
+d teaTexPri=#e0f3f7 teaTexTer=#226471 teaTexDis=#18505b
+d teaTexDisTra=#16d9ff49 teaIcoPri=#e0f3f7 teaIcoSec=#7eb6c2
+d teaIcoTer=#2c8b9e teaIcoDis=#18505b teaBorPri=#143d45
+d teaBorSec=#193439 teaBorStr=#226471 teaBorPriTra=#00cdf533
+d teaBorSecTra=#19dbff23 teaBorStrTra=#31ddff61 teaBacPri=#172124
+d teaBacSec=#143d45 teaBacTer=#226471 teaBacEle=#193439
+d teaBacPriTra=#007ea414 teaBacSecTra=#00cdf533 teaBacTerTra=#31ddff61
+d teaBacIntTra=#0fd5ff18 teaBacInt=#182b2f yelTexPri=#f9f3dc
+d yelTexTer=#836426 yelTexDis=#655121 yelTexDisTra=#ffc23154
+d yelIcoPri=#f9f3dc yelIcoSec=#d8c283 yelIcoTer=#cb9434
+d yelIcoDis=#655121 yelIcoInvSec=#d8c283 yelBorPri=#504425
+d yelBorSec=#373325 yelBorStr=#836426 yelBorPriTra=#ffcd4b3d
+d yelBorSecTra=#ffe17521 yelBorStrTra=#ffbc3575 yelBacPri=#23221a
+d yelBacSec=#504425 yelBacTer=#836426 yelBacEle=#373325
+d yelBacPriTra=#ffe8300b yelBacSecTra=#ffcd4b3d yelBacTerTra=#ffbc3575
+d yelBacIntTra=#ffe86a16 yelBacInt=#2d2b20 texDisTra=#fffceb4e
+d priBla=#fff linDecCol=#373737 opaLinDecCol=#ffffff48
+d regEmoCol=#fff sidIteSelBac=#ffffff0e conBacTra=#f1f1ef00
+d popBac=#252525 popWaxPapBac=#202020e6 modUndBac=#0f0f0fcc codBloBac=#ffffff08
+d tokInpMenIteBac=#ffffff08 hovDisBac=#202020 butHovBac=#ffffff0e
+d tabRowHovBac=#ffffff0e outButHovBac=#ffffff0e outButPreBac=#252525
+d butPreBac=#ffffff08 butPreBacLig=#ffffff08 whi=#000
+d whiButBac=#252525 ligGraButHovBac=#ffffff0e ligGraButPreBac=#ffffff18
+d whiButHovBac=#2f2f2f whiButPreBac=#252525 selLigGra30=#151515
+d selLigGra50=#191919 selLigGra100=#202020 selLigGra200=#252525
+d selLigGra300=#2f2f2f selLigGra400=#373737 selLigGra500=#5a5a5a
+d selLigGra700=#9b9b9b
+d staHov=#ffffff0e staPre=#ffffff21
+d assCorButBac=#d3d3d3
+d swiButTeaBg=#7881874d swiTogDesTraBg=#78818766 swiTogDesTraBgVar=#caccce4d
+
+# Neutral semantic scale and shadows (one value per line, untruncated)
+l texPri=#2c2c2b
+l texSec=#7d7a75
+l texTer=#a19e99
+l texDis=#bcbab6
+l texAccPri=#5f5e59
+l texInvPri=#f0efed
+l texInvSec=#ada9a3
+l icoPri=#383836
+l icoSec=#8e8b86
+l icoTer=#ada9a3
+l icoDis=#bcbab6
+l icoAccPri=#7d7a75
+l icoInvPri=#f0efed
+l icoInvSec=#ada9a3
+l borPri=#e6e5e3
+l borSec=#f0efed
+l borInvPri=#5f5e59
+l borAccPri=#8e8b86
+l borStr=#d4d3cf
+l borPriTra=#1c13011c
+l borSecTra=#2a1c0012
+l borStrTra=#1b150030
+l bacPri=#fff
+l bacSec=#f9f8f7
+l bacTer=#f0efed
+l bacEle=#fff
+l bacAccPri=#2c2c2b
+l bacAccSec=#a19e99
+l bacPriTra=#fff0
+l bacSecTra=#42230308
+l bacTerTra=#2a1c0012
+l bacIntTra=#211b170d
+l bacInt=#f4f3f3
+l butBoxSha=inset 0 0 0 1px #0f0f0f1a, 0 1px 2px #0f0f0f1a
+l butBluFocRin=0px 0px 0px 2px #f8f8f7, 0px 0px 0px 4px #2383e2, 0px 0px 0px 6px #ffffff40
+l inpRedFocRin=0px 0px 0px 1px #cd3c3a inset, 0px 0px 0px 1px #cd3c3a
+l inpBluFocRin=0px 0px 0px 1px #2383e2 inset, 0px 0px 0px 1px #2383e2
+l focSha=#2383e291 0px 0px 0px 1px inset, #2383e259 0px 0px 0px 2px
+l shaSMThiOut=0px 4px 12px -2px #00000014, 0 0 0 2px #54483114
+l shaMDPriOut=0px 14px 28px -6px #0000001a, 0px 2px 4px -1px #0000000f, 0 0 0 1px #1c13011c
+l shaMDThiOut=0px 14px 28px -6px #0000001a, 0px 2px 4px -1px #0000000f, 0 0 0 2px #54483114
+l shaOutMd=0px 8px 12px 0px #19191907, 0px 2px 6px 0px #19191907, 0px 0px 0px 1px #2a1c0012
+l shaOutSm=0px 2px 4px 0px #0000000a, 0px 0px 0px 1px #2a1c0012
+l shaOutLg=0px 20px 24px 0px #1919190d, 0px 5px 8px 0px #19191907, 0px 0px 0px 1px #2a1c0012
+l shaOutDif=0px 12px 32px 0px #19191907, 0px 0px 0px 1px #2a1c0012
+l shaOutScr=0px 24px 48px 0px #1919193d, 0px 4px 12px 0px #19191924, 0px 0px 0px 1px #2a1c0012
+l shaBasLg=0px 20px 24px 0px #1919190d, 0px 5px 8px 0px #19191907
+l shaBasMd=0px 8px 12px 0px #19191907, 0px 2px 6px 0px #19191907
+l shaBasSm=0px 4px 12px 0px #19191907, 0px 1px 2px 0px #19191905
+l shaBasScr=0px 24px 48px 0px #1919193d, 0px 4px 12px 0px #19191924
+l shaBasDif=0px 12px 32px 0px #19191907
+d texPri=#f0efed
+d texSec=#ada9a3
+d texTer=#7d7a75
+d texDis=#5f5e59
+d texAccPri=#bcbab6
+d icoPri=#e6e5e3
+d icoSec=#ada9a3
+d icoTer=#7d7a75
+d icoDis=#5f5e59
+d icoAccPri=#bcbab6
+d borPri=#383836
+d borSec=#2c2c2b
+d borStr=#5f5e59
+d borPriTra=#ffffeb1a
+d borSecTra=#fffff315
+d borStrTra=#fffceb4e
+d bacPri=#191919
+d bacSec=#202020
+d bacTer=#383836
+d bacEle=#202020
+d bacPriTra=#19191900
+d bacSecTra=#fcfcfc08
+d bacTerTra=#fffff315
+d bacIntTra=#ffffff0e
+d bacInt=#262626
+d butBoxSha=inset 0 0 0 1px #0f0f0f33, 0 1px 2px #0f0f0f1a
+d butBluFocRin=0px 0px 0px 2px #191919, 0px 0px 0px 4px #2383e2, 0px 0px 0px 6px #191919
+d shaSMThiOut=0 0 0 2px #383836, 0px 4px 12px -2px #00000029
+d shaMDPriOut=inset 0 0 0 1px #ffffeb1a, 0px 14px 28px -6px #0003, 0px 2px 4px -1px #0000001f
+d shaMDThiOut=0 0 0 2px #383836, 0px 14px 28px -6px #0003, 0px 2px 4px -1px #0000001f
+d shaOutMd=0px 0px 0px 1px #383836, 0px 4px 12px -2px #19191914
+d shaOutSm=0px 0px 0px 1px #383836, 0px 2px 4px 0px #19191914
+d shaOutLg=0px 0px 0px 1px #383836, 0px 14px 28px -6px #19191933, 0px 2px 4px -1px #1919191e
+d shaOutDif=0px 0px 0px 1px #383836, 0px 12px 32px 0px #19191966
+d shaOutScr=0px 0px 0px 1px #383836, 0px 24px 48px 0px #191919a3, 0px 4px 12px 0px #1919198f
+d shaBasLg=0px 14px 28px -6px #19191933, 0px 2px 4px -1px #1919191e
+d shaBasMd=0px 4px 12px -2px #19191914
+d shaBasSm=0px 2px 4px 0px #19191914
+d shaBasScr=0px 24px 48px 0px #191919a3, 0px 4px 12px 0px #1919198f
+d shaBasDif=0px 12px 32px 0px #19191966
+l sidSecCol=#91918e
+d sidSecCol=#9b9b9b

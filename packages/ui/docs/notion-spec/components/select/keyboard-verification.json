@@ -1,0 +1,4 @@
+{
+  "typeaheadD": "### Result\n{\n  \"key\": \"d\",\n  \"active\": \"Systemeinstellung verwenden\"\n}\n",
+  "typeaheadH": "### Result\n{\n  \"key\": \"h\",\n  \"active\": \"Systemeinstellung verwenden\",\n  \"triggerLayout\": {\n    \"display\": \"flex\",\n    \"alignItems\": \"center\",\n    \"justifyContent\": \"center\",\n    \"flexShrink\": \"1\",\n    \"boxSizing\": \"border-box\"\n  },\n  \"value\": \"Systemeinstellung verwenden\"\n}\n"
+}

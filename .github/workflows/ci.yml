@@ -23,6 +23,8 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
       # Tests start Postgres with Testcontainers on the runner's Docker.
+      # UI story tests run in Chromium as part of the regular test task.
+      - run: bunx playwright install --with-deps chromium
       - run: bun run build typecheck lint test
       - name: openapi.json is up to date (ADR-0003)
         run: |
@@ -31,8 +33,6 @@ jobs:
             || { echo "::error::apps/api/openapi.json is stale; run 'bun run openapi' and commit it."; exit 1; }
       - name: Local HTTPS names for the e2e suite
         run: echo "127.0.0.1 app.nunio.test api.nunio.test evil.test" | sudo tee -a /etc/hosts
-      - run: bunx playwright install --with-deps chromium
-        working-directory: apps/e2e
       - run: bun run test:e2e
 
   commits:
