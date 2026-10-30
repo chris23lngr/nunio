@@ -94,9 +94,21 @@ describe("the API's auth routes from other origins", () => {
   });
 });
 
+describe("the spike pool header", () => {
+  it("reports the serving instance's pool on a database request", async () => {
+    const cookie = await signUp("pool-reader");
+    const res = await call("/get-session", { origin: appOrigin, cookie });
+    expect(res.headers.get("x-spike-instance")).toMatch(/^[0-9a-f-]{36}$/);
+    // Before the handler: the sign-up's connection is still idle in the pool (5 s timeout).
+    expect(res.headers.get("x-spike-pool-before")).toMatch(/^total=([1-9]\d*) idle=\1 waiting=0$/);
+    // Every connection is back in the pool by the time the response leaves.
+    expect(res.headers.get("x-spike-pool")).toMatch(/^total=([1-9]\d*) idle=\1 waiting=0$/);
+  });
+});
+
 describe("the spike raw-body route", () => {
-  const signed = '{"id":"evt_1","type":"invoice.paid","amount":1999}';
-  const signature = createHmac("sha256", webhookSecret).update(signed).digest("hex");
+  const signedBody = '{"id":"evt_1","type":"invoice.paid","amount":1999}';
+  const signature = createHmac("sha256", webhookSecret).update(signedBody).digest("hex");
 
   const post = (body: string) =>
     app.request(`${apiOrigin}/spike/raw-body`, {
@@ -106,13 +118,13 @@ describe("the spike raw-body route", () => {
     });
 
   it("accepts the exact bytes that were signed", async () => {
-    const res = await post(signed);
+    const res = await post(signedBody);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ verified: true, bytes: 50 });
   });
 
   it("rejects a body with one byte changed", async () => {
-    const res = await post(signed.replace("1999", "1998"));
+    const res = await post(signedBody.replace("1999", "1998"));
     expect(res.status).toBe(401);
   });
 

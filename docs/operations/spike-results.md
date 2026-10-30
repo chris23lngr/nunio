@@ -6,7 +6,7 @@ Recorded results for the Phase 2 spikes in [implementation-plan.md](../implement
 
 Run against the interim Hobby staging (`nunio-api`, Fluid compute, `fra1`; see [environments.md](environments.md#interim-vercel-staging-2026-10-30)) with the Neon `staging` branch in `aws-eu-central-1`, pooled URL. Repeat on the Pro team before any pilot user, because Hobby and Pro differ in how instances are kept warm.
 
-The spike routes `/spike/raw-body` and `/spike/pool` live in `apps/api/src/spike.ts` and are mounted only when `SPIKE_ROUTES=true`. They are spike-only: delete them once billing brings the real Stripe webhook (`stripe.webhooks.constructEvent`).
+The spike code lives in `apps/api/src/spike.ts` and is mounted only when `SPIKE_ROUTES=true`: the `/spike/raw-body` route, and a middleware that tags every response with `x-spike-instance`, `x-spike-pool-before` and `x-spike-pool`. It is spike-only: delete it once billing brings the real Stripe webhook (`stripe.webhooks.constructEvent`).
 
 ### Raw-body route: passes
 
@@ -20,23 +20,22 @@ All three pass on staging, so Vercel's Node runtime hands Hono the request body 
 
 ### `attachDatabasePool` with `PrismaPg(pool)`: works, no leak
 
-`createPool` in `@nunio/db` builds a `pg.Pool` (`idleTimeoutMillis: 5000`) and calls `attachDatabasePool(pool)`. `createPrismaClient(pool)` passes it to `PrismaPg` with `disposeExternalPool: true`, so `$disconnect()` still ends the pool. Off Vercel, `attachDatabasePool` does nothing (it checks `VERCEL_URL` / `VERCEL_REGION`), so tests and local servers are unaffected.
+`createPool` in `@nunio/db` builds a `pg.Pool` (`idleTimeoutMillis: 5000`). `createPrismaClient(pool)` passes it to `PrismaPg` with `disposeExternalPool: true`, so `$disconnect()` still ends the pool. The API's `appFromEnv` calls `attachDatabasePool(pool)`, keeping `@nunio/db` free of Vercel code for the Render worker. Off Vercel, `attachDatabasePool` does nothing (it checks `VERCEL_URL` / `VERCEL_REGION`).
 
-`GET /spike/pool` returns a per-instance id plus the pool's counts. Measured with `apps/api/scripts/spike-c-measure.sh pool` (signed-in `get-session` calls, which read the session row because `cookieCache` is off):
+Every response reports the instance that served it plus its pool counts before and after the handler, so the evidence comes from the requests that did the work. Measured with `apps/api/scripts/spike-c-measure.sh pool`, using signed-in `get-session` calls; these read the session row because `cookieCache` is off:
 
-| After | Instance | total / idle / waiting |
-| --- | --- | --- |
-| sign-up | `a2c7…` | 1 / 1 / 0 |
-| 30 sequential requests | `a2c7…` | 1 / 1 / 0 |
-| 20 parallel requests | `f217…` | 1 / 1 / 0 |
-| 3 × 20 parallel requests | `be7d…` | 1 / 1 / 0 |
-| 7 s idle | `be7d…` | 0 / 0 / 0 |
+| Round | Instances | Max pool total on any instance | Pool before each instance's first request |
+| --- | --- | --- | --- |
+| 30 sequential | 1 | 1 | 1 (open from sign-up) |
+| 20 parallel | 18 (17 new) | 1 | 0 on the 17 new instances: they had just started |
+| 3 × 20 parallel | the same 18 | 1 | 1 on all 18: their connection was reused |
+| 10 sequential after 7 s idle | 1 | 1 | 0: the pool had drained |
 
-Each instance reuses one connection across invocations, Fluid spreads parallel load over several instances instead of growing one pool, and after the idle timeout the pool is empty. Nothing leaks across invocations. Trade-off: after more than 5 s of quiet, an instance's next query opens a new connection to the Neon pooler.
+Each instance holds at most one connection and reuses it across invocations. Fluid on Hobby answers a burst by starting instances rather than running many requests in one. After the idle timeout the pool is empty, so nothing leaks across invocations. Trade-off: after more than 5 s without queries, an instance's next request opens a new connection to the Neon pooler. Neon-side counts (`pg_stat_activity`) can't show client connections behind PgBouncer, which is why the evidence comes from the pool itself.
 
-### Cold start: no user-visible function cold start observed
+### Cold start: the database is the cold cost, not the function
 
-Measured with `apps/api/scripts/spike-c-measure.sh health|session` from Germany. "Server" is time to first byte after the TLS handshake (`starttransfer − appconnect`), so it leaves out client DNS and TLS; the totals are 40–250 ms higher.
+Measured with `apps/api/scripts/spike-c-measure.sh health|session` from Germany. The "fresh deployment" rows come from running `vercel deploy --prebuilt --prod` on the same build output, then the script, with no other request in between. For the last row, the staging compute was suspended first (Neon API `suspend_postgres_endpoint`), and the deploy started once it reported `idle`. "Server" is time to first byte after the TLS handshake (`starttransfer − appconnect`), so it leaves out client DNS and TLS; the totals are 40–250 ms higher.
 
 | Case | First request (server ms) | Following 10 (server ms) |
 | --- | --- | --- |
@@ -46,8 +45,8 @@ Measured with `apps/api/scripts/spike-c-measure.sh health|session` from Germany.
 | `get-session`, fresh deployment, Neon active | 382 | 1797 once, then 160–173; next run 39–95, median 52 |
 | `get-session`, fresh deployment, Neon compute suspended | 1125 | 97–336 for about 6 s, then 49 |
 
-- **The function itself:** a fresh production deployment showed no cold start on `/health`. Vercel pre-warms instances for production deployments ([What is Compute?](https://vercel.com/docs/fundamentals/what-is-compute), [How Fluid compute works](https://vercel.com/blog/how-fluid-compute-works-on-vercel)). Variation on warm requests (about 40–220 ms) comes from routing, not from Hono.
-- **First database request on a new instance:** about 0.4 s, from opening the first pooled connection and Prisma/Better Auth's first query. One request at 1.8 s points to a second new instance doing the same while traffic moved.
+- **The function itself:** no user-visible cold start on `/health`, even right after a fresh production deployment. Vercel pre-warms instances for production deployments ([What is Compute?](https://vercel.com/docs/fundamentals/what-is-compute), [How Fluid compute works](https://vercel.com/blog/how-fluid-compute-works-on-vercel)). Variation on warm requests (about 40–220 ms) comes from routing, not from Hono.
+- **First database request on a new instance:** about 0.4 s, from opening the first pooled connection and Prisma/Better Auth's first query. One request at 1.8 s points to a second new instance doing the same while traffic moved. The pool run supports this: a burst starts new instances, and each one's first request opens its connection.
 - **Neon waking up:** suspending the staging compute (autosuspend is the default 5 min) adds about 0.7–0.8 s to the first request, and requests stay slow for a few seconds while the 0.25 CU compute warms up. This is the largest cold cost, and it is Neon's, not Vercel's. For production, consider disabling autosuspend on the primary compute.
 - **Not measured:** how long an idle Hobby instance lives before Vercel drops it. A 2 × 16 min idle run was started and stopped in favour of fresh-deployment readings. Vercel says cold starts can still happen in periods of low traffic. Re-run the idle case on the Pro team, which keeps at least one instance warm.
 

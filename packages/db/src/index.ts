@@ -2,7 +2,6 @@
  * Prisma 7 client and multi-file schema; one schema file per owning module.
  */
 import { PrismaPg } from "@prisma/adapter-pg";
-import { attachDatabasePool } from "@vercel/functions";
 import pg from "pg";
 import { PrismaClient } from "./generated/prisma/client.js";
 
@@ -10,14 +9,11 @@ export { PrismaClient };
 export type Pool = pg.Pool;
 
 /**
- * Runtime `pg` pool over TCP; pass Neon's pooled URL. On Vercel Fluid compute, `attachDatabasePool`
- * keeps the instance alive until idle clients are released, so connections are reused across
- * invocations without leaking when the instance suspends. Outside Vercel it does nothing.
+ * Runtime `pg` pool over TCP; pass Neon's pooled URL. Idle connections close after 5 s, so a
+ * suspended serverless instance holds none; the cost is a reconnect after 5 s without queries.
  */
 export function createPool(connectionString: string): Pool {
-  const pool = new pg.Pool({ connectionString, idleTimeoutMillis: 5_000 });
-  attachDatabasePool(pool);
-  return pool;
+  return new pg.Pool({ connectionString, idleTimeoutMillis: 5_000 });
 }
 
 /** Runtime client over `pool`; `$disconnect()` ends the pool. */

@@ -3,9 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24 <25" },
+  "engines": {
+    "node": ">=24 <25"
+  },
   "exports": {
-    "./create-app": { "types": "./dist/create-app.d.ts", "default": "./dist/create-app.js" }
+    "./create-app": {
+      "types": "./dist/create-app.d.ts",
+      "default": "./dist/create-app.js"
+    }
   },
   "scripts": {
     "dev": "tsx watch src/dev.ts",
@@ -19,6 +24,7 @@
     "@hono/zod-openapi": "1.6.3",
     "@nunio/db": "workspace:*",
     "@nunio/identity": "workspace:*",
+    "@vercel/functions": "3.10.5",
     "hono": "4.13.14",
     "zod": "4.6.7"
   },

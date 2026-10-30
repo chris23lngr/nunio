@@ -15,6 +15,7 @@
         "@hono/zod-openapi": "1.6.3",
         "@nunio/db": "workspace:*",
         "@nunio/identity": "workspace:*",
+        "@vercel/functions": "3.10.5",
         "hono": "4.13.14",
         "zod": "4.6.7",
       },
@@ -139,7 +140,6 @@
       "dependencies": {
         "@prisma/adapter-pg": "7.10.1",
         "@prisma/client": "7.10.1",
-        "@vercel/functions": "3.10.5",
         "pg": "8.23.1",
       },
       "devDependencies": {
