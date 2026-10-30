@@ -81,11 +81,16 @@ Each student's Allowance counts AI usage in micro-USD of model cost (1,000,000 =
 
 Every model call goes through `meter` in `packages/delegation`, which works in three steps:
 
-1. It reserves the estimate in one conditional update, so concurrent calls never overspend. It refuses `allowance_exhausted`, `not_entitled` (no or revoked pilot access) and `ai_disabled` as values.
+1. It reserves the estimate in one conditional update and records a `usage_reservation` row, so concurrent calls never overspend. It refuses `allowance_exhausted`, `not_entitled` (no or revoked pilot access) and `ai_disabled` as values.
 2. It runs the call.
-3. It settles the actual cost. A provider's 4xx rejection (other than 408) releases the reservation. Timeouts, network errors and 5xx responses keep it held, because the call may have been charged; held usage still counts against the Allowance. Releasing held usage is not yet scripted.
+3. It settles the actual cost. A provider's 4xx rejection (other than 408) releases the reservation. Timeouts, network errors and 5xx responses mark it `held`, because the call may have been charged; held usage still counts against the Allowance until the founder settles it.
 
-Estimates come from `packages/ai`'s registry: input tokens plus the full 8,000-token output budget, at OpenRouter's prices recorded there. Only the allowlisted Haiku, Sonnet and Opus 5.5 IDs resolve. Every request is restricted to zero-retention endpoints and SDK retries are off.
+Costs come from `packages/ai`'s registry:
+
+- **Estimates** are a guaranteed upper bound for text input. Each text the request sends counts as its UTF-8 byte length plus 200 tokens of framing; a token never covers less than one byte. The full 8,000-token output budget is added, at OpenRouter's prices recorded in the registry.
+- **Actual costs** are OpenRouter's reported cost per call (usage accounting is on for every request). If no cost is reported, the token counts are priced instead.
+
+Only the allowlisted Haiku, Sonnet and Opus 5.5 IDs resolve. Every request is restricted to zero-retention endpoints and SDK retries are off. The `main` pipeline's spike f job checks the cost field and the estimate bound against the live API.
 
 Raise a student's Allowance from the repo root after building:
 
@@ -94,6 +99,23 @@ node --env-file=.env.operator packages/billing/dist/grant-allowance.js STUDENT_I
 ```
 
 The amount is in USD, up to six decimals. The command prints the student ID, the amount granted, the new limit, the operator and the time, and appends an `allowance_grant` audit row. Each run adds again. It fails without changes for a malformed amount or a student without an Allowance. On top of the revocation privileges, the operator connection needs `SELECT, UPDATE ("limitMicroUsd", "updatedAt")` on `allowance` and `SELECT, INSERT` on `allowance_grant`. The runtime role can move usage but cannot change a limit or read grants.
+
+To settle held calls, list them over an owner connection:
+
+```sql
+SELECT "id", "studentId", "estimateMicroUsd", "reservedAt" FROM usage_reservation WHERE "status" = 'held';
+```
+
+Look up each call's cost in OpenRouter's activity log around `reservedAt`, then settle it with that cost, or `0` if it was not charged:
+
+```sh
+node --env-file=.env.operator packages/delegation/dist/settle-held.js STUDENT_ID RESERVATION_ID 0.00012
+```
+
+The command charges the actual cost, frees the rest of the estimate, and records the operator. It refuses anything that is not a held reservation of that student, so repeating it never charges twice. The operator connection needs these privileges:
+
+- `SELECT, UPDATE ("status", "actualMicroUsd", "settledAt", "settledBy")` on `usage_reservation`;
+- `SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd", "updatedAt")` on `allowance`.
 
 Set `AI_DISABLED=true` on `nunio-api` and redeploy to stop all new model calls; Allowance reads keep working. Locally verified with Testcontainers under the runtime role; not yet verified on staging.
 

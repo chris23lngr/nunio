@@ -273,7 +273,7 @@ Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-
 
 **Verification checklist.**
 - [ ] N concurrent `meter` calls against one Allowance never exceed it (Testcontainers race test). Locally verified under the runtime role; staging pending.
-- [ ] An uncertain call (timeout after send) keeps its reservation. Locally verified; a provider's 4xx rejection releases it instead.
+- [ ] An uncertain call (timeout after send) keeps its reservation. Locally verified: it stays held until the founder settles it with `settle-held`; a provider's 4xx rejection releases it instead.
 - [ ] The kill switch refuses new calls without breaking reads. Locally verified (`AI_DISABLED`); staging pending.
 - [ ] The registry rejects any model ID outside the allowlist. Locally verified.
 
