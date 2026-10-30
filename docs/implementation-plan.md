@@ -177,6 +177,8 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
      - drains on SIGTERM within `maxShutdownDelaySeconds`;
      - payload codec round trip, and the Temporal UI shows only ciphertext;
      - a replay test runs in CI.
+
+     Done on 2026-10-30 ([spike-results.md](operations/spike-results.md#d-temporal-worker-on-render-2026-10-30)).
    - **e. Hetzner SSE-C (ADR-0007 gate):**
      - presigned PUT with SSE-C headers and a signed `ContentLength` from a browser on `app.`;
      - CORS allowing PUT and the SSE-C headers;

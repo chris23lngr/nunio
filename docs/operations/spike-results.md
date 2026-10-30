@@ -130,3 +130,26 @@ Notes:
 - AI SDK 7 rejects system messages in `messages`. Pass them as `instructions`, which also carries `providerOptions` for caching.
 - The provider leaves `request.body` empty, so the test inspects request bodies through the `fetch` option.
 - The account had never bought credits, so paid models failed with "Insufficient credits" until the organization was funded.
+
+## d. Temporal worker on Render (2026-10-30)
+
+Run with `apps/worker` (Temporal TypeScript SDK 1.25.0) on Render service `nunio-worker-staging` (`srv-dbi862on74is73b128pg`: background worker, Frankfurt, Starter, Docker from `apps/worker/Dockerfile`, `maxShutdownDelaySeconds: 30`, see `render.yaml`) against namespace `nunio-staging.lta09`. Automated checks run in the CI `checks` job on Temporal's local dev server. Staging checks use `apps/worker/scripts/staging.ts`.
+
+| Check | Result |
+| --- | --- |
+| Connects to Temporal Cloud with an API key | Passes: `NativeConnection.connect({ address, tls: true, apiKey })`, from the container locally and on Render. The namespace has 7-day retention. |
+| Workflow waits on a signal | Passes: `awaitApproval` waits on `condition()` until the Approval signal arrives (`src/workflows.test.ts`). |
+| Survives a worker kill/restart and a redeploy | Passes: one run waited through a Render restart and two redeploys, then completed with the signalled decision. A run stranded by stopping the local container was completed by the Render worker. |
+| Drains on SIGTERM within `maxShutdownDelaySeconds` | Passes: on Render, SIGTERM arrived with three Activities in flight; all finished on attempt 1 and the worker stopped 13.8 s later (grace 25 s, Render limit 30 s). Also covered by `src/shutdown.test.ts` on the real entrypoint and by `docker stop` locally (15 s Activity, exit 0 after 16 s). |
+| Payload codec round trip; only ciphertext in Temporal | Passes: AES-256-GCM codec (`src/codec.ts`) on Client and Worker, with the key version in each payload's metadata. Raw histories on the dev server (`src/workflows.test.ts`) and in Temporal Cloud (`staging.ts ciphertext`) hold only `binary/encrypted (v1)` payloads. Without a codec server, the Cloud UI shows these payloads as ciphertext. |
+| Replay test in CI | Passes: `src/replay.test.ts` replays `histories/await-approval.json` (recorded with `scripts/record-history.ts`); an unpatched timer added before the wait fails with `TMPRL1100 Nondeterminism error`. |
+
+Findings:
+- **Render overlaps old and new instances for about 3 minutes.** It reports a deploy live before the new worker has bundled its workflows, and SIGTERMs the old instance minutes later. Both poll the task queue meanwhile, which Temporal handles. Activities in flight during a cutover therefore usually finish undisturbed, and drain only matters for the final seconds of the old instance.
+- The Temporal native bridge loads fine on `node:24-bookworm-slim`. `@temporalio/proto` is CommonJS, so plain Node needs its default import (Vitest hides this).
+- Deploys go through `.github/scripts/render-deploy.sh` (pinned commit, polls until live; about 35–60 s).
+
+Follow-ups, not blocking:
+- The image is 756 MB because dev dependencies ship with it. Use a production-only install stage.
+- The worker bundles workflows at startup (about 3 s); switch to a prebuilt `bundleWorkflowCode` bundle with `workflowBundle`.
+- Switch the Render service's branch to `main` when PR #1 merges.

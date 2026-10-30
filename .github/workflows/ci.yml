@@ -113,8 +113,18 @@ jobs:
           project-id: ${{ vars.VERCEL_API_PROJECT_ID }}
           token: ${{ secrets.VERCEL_TOKEN }}
 
-  deploy-web:
+  deploy-worker:
     needs: deploy-api
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v5
+      - run: .github/scripts/render-deploy.sh "${{ vars.RENDER_WORKER_SERVICE_ID }}" "${{ github.sha }}"
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+
+  deploy-web:
+    needs: deploy-worker
     runs-on: ubuntu-latest
     environment: staging
     env:

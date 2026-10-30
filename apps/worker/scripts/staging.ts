@@ -6,6 +6,7 @@
 //   status <id>           print the run's status
 //   hold <id> <ms>        start holdActivity
 //   ciphertext <id>       check the stored history holds only codec ciphertext (what the UI shows)
+//   timeline <id>         Activity attempts with their worker identity and times
 import { Client, Connection } from "@temporalio/client";
 import { createPayloadCodec } from "../src/codec.js";
 import { approvalSignal } from "../src/workflows.js";
@@ -62,6 +63,19 @@ switch (command) {
     };
     walk(history);
     console.log("payload encodings:", Object.fromEntries(encodings));
+    break;
+  }
+  case "timeline": {
+    const history = await raw.workflow.getHandle(id).fetchHistory();
+    for (const event of history.events ?? []) {
+      const at = new Date(Number(event.eventTime?.seconds ?? 0) * 1000 + (event.eventTime?.nanos ?? 0) / 1e6);
+      const started = event.activityTaskStartedEventAttributes;
+      const completed = event.activityTaskCompletedEventAttributes;
+      const failed = event.activityTaskTimedOutEventAttributes ?? event.activityTaskFailedEventAttributes;
+      if (started) console.log(at.toISOString(), "activity started", `attempt ${started.attempt}`, started.identity);
+      if (completed) console.log(at.toISOString(), "activity completed", completed.identity);
+      if (failed) console.log(at.toISOString(), "activity failed or timed out");
+    }
     break;
   }
   default:
