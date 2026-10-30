@@ -4,19 +4,17 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type MouseEvent } from "react";
 import { authClient } from "@/lib/auth-client";
 
-export function SignInForm({ apiOrigin, invitation, verificationError, passwordReset, deletionRequested }: {
-  apiOrigin: string; invitation?: string; verificationError?: boolean; passwordReset?: boolean; deletionRequested?: boolean;
+function appURL(path: string): string {
+  return `${window.location.origin}${path}`;
+}
+
+export function SignInForm({ apiOrigin, invitation, initialNotice, initialError }: {
+  apiOrigin: string; invitation?: string; initialNotice?: string; initialError?: string;
 }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(verificationError
-    ? "That verification link could not be used. Sign in to request a new one."
-    : null);
+  const [error, setError] = useState<string | null>(initialError ?? null);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(passwordReset
-    ? "Your password has been reset. Sign in with your new password."
-    : deletionRequested
-      ? "Your account deletion request was received. You have been signed out everywhere."
-      : null);
+  const [notice, setNotice] = useState<string | null>(initialNotice ?? null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -31,7 +29,7 @@ export function SignInForm({ apiOrigin, invitation, verificationError, passwordR
       intent === "sign-up"
         ? await client.signUp.email({
             name: String(form.get("name")), email, password,
-            callbackURL: `${window.location.origin}/sign-in`,
+            callbackURL: appURL("/sign-in"),
             fetchOptions: { headers: { "x-invitation-token": invitation ?? "" } },
           })
         : await client.signIn.email({ email, password });
@@ -51,7 +49,7 @@ export function SignInForm({ apiOrigin, invitation, verificationError, passwordR
     if (!pendingEmail) return;
     const result = await authClient(apiOrigin).sendVerificationEmail({
       email: pendingEmail,
-      callbackURL: `${window.location.origin}/sign-in`,
+      callbackURL: appURL("/sign-in"),
     });
     if (result.error) return setError(result.error.message ?? "Could not send verification email");
     setError(null);
@@ -65,7 +63,7 @@ export function SignInForm({ apiOrigin, invitation, verificationError, passwordR
     setNotice(null);
     const result = await authClient(apiOrigin).requestPasswordReset({
       email: email.value,
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: appURL("/reset-password"),
     });
     if (result.error) return setError("Could not request a password reset. Please try again.");
     setNotice("If an account exists for that email address, check your email for a reset link.");

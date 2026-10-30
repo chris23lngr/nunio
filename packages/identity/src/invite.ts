@@ -1,6 +1,7 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { createPool, createPrismaClient } from "@nunio/db";
 import { z } from "zod";
+import { hashInvitationToken } from "./invitation.js";
 
 const input = z.object({
   email: z.email().transform(email => email.toLowerCase()),
@@ -32,7 +33,7 @@ try {
       email,
       issuedBy: operator,
       createdAt,
-      tokenHash: createHash("sha256").update(token).digest("hex"),
+      tokenHash: hashInvitationToken(token),
       expiresAt: new Date(createdAt.getTime() + 7 * 24 * 60 * 60 * 1000),
     },
     select: { id: true, email: true, issuedBy: true, createdAt: true, expiresAt: true },

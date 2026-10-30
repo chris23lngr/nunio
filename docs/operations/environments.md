@@ -68,7 +68,7 @@ After building the workspace and applying migrations, revoke an existing pilot e
 node --env-file=.env.operator packages/billing/dist/revoke-pilot.js STUDENT_ID
 ```
 
-Supply `OPERATOR_DATABASE_URL` (a pooled operator connection) and `OPERATOR_ID` in the ignored `.env.operator` file. Use the student's ID from an authenticated session or operator database tooling. Database credentials authorize the command; the operator ID is audit attribution. The command prints the stored student ID, revocation timestamp and operator. Repeating it preserves the first revocation's audit record. A missing entitlement or operator causes a nonzero exit, without creating an entitlement.
+Supply `OPERATOR_DATABASE_URL` (a pooled operator connection; see "Database roles" for its minimum privileges) and `OPERATOR_ID` in the ignored `.env.operator` file. Use the student's ID from an authenticated session or operator database tooling. Database credentials authorize the command; the operator ID is audit attribution. The command prints the stored student ID, revocation timestamp and operator. Repeating it preserves the first revocation's audit record. A missing entitlement or operator causes a nonzero exit, without creating an entitlement.
 
 Revocation changes entitlement status immediately but preserves sessions and read access. It does not suspend the account or delete data. Upload and AI entry points must enforce `active` status as those features arrive; Allowance amounts and atomic usage metering remain Phase 4.
 
@@ -82,7 +82,7 @@ Completion is manual and not yet scripted. List pending requests over an owner c
 
 ## Database roles (Phase 3)
 
-Migrations run as the table owner (`DATABASE_URL_UNPOOLED`) and create the `nunio_runtime` group role, which cannot log in. The API connects as a per-environment login in that group, never as the owner or a `BYPASSRLS` role. Student-owned tables use forced RLS keyed on the transaction-local `app.owner_id` that `withOwner` sets; auth tables are limited by grants, and the runtime role cannot issue invitations or update revocations.
+Migrations run as the table owner (`DATABASE_URL_UNPOOLED`) and create the `nunio_runtime` group role, which cannot log in. The API connects as a per-environment login in that group, never as the owner or a `BYPASSRLS` role. Student-owned tables use forced RLS keyed on the transaction-local `app.owner_id` that `withOwner` sets; auth tables are limited by grants, column-scoped for `user` and `invitation` updates, and the runtime role cannot issue invitations or update revocations.
 
 Vercel applies environment changes only to new deployments, so provision the login before merging the migration:
 
@@ -90,7 +90,7 @@ Vercel applies environment changes only to new deployments, so provision the log
 2. Confirm the pooled URL for `nunio_api` connects, store it in Vaultwarden, and set it as Vercel `nunio-api`'s `DATABASE_URL` without redeploying.
 3. Merge. CI's migrate job grants privileges, then the API deployment picks up the new URL. A redeploy between steps 2 and 3 would run without grants.
 
-Operator commands keep owner connections. With forced RLS the owner sees student-owned rows only if it has `BYPASSRLS`; check `SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user;` before relying on `revoke-pilot` in that environment.
+Operator commands keep separate connections. `revoke-pilot` sets `app.owner_id` to the target student inside its transaction, so it needs neither superuser nor `BYPASSRLS`: `USAGE` on the schema and `SELECT, UPDATE` on `pilot_entitlement` suffice.
 
 ## Authentication email (Phase 3)
 

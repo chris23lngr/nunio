@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 
@@ -10,6 +11,7 @@ interface ListedSession {
 }
 
 export function SessionList({ apiOrigin }: { apiOrigin: string }) {
+  const router = useRouter();
   const [sessions, setSessions] = useState<ListedSession[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -26,8 +28,14 @@ export function SessionList({ apiOrigin }: { apiOrigin: string }) {
 
   async function revoke(token: string) {
     const result = await authClient(apiOrigin).revokeSession({ token });
-    if (result.error) return setError("Could not revoke that session.");
+    if (result.error) return setError("Could not sign out that session.");
     setVersion((v) => v + 1);
+  }
+
+  async function signOutEverywhere() {
+    const result = await authClient(apiOrigin).revokeSessions();
+    if (result.error) return setError("Could not sign out everywhere.");
+    router.replace("/sign-in");
   }
 
   return (
@@ -38,10 +46,11 @@ export function SessionList({ apiOrigin }: { apiOrigin: string }) {
             {session.userAgent ?? "Unknown device"}, signed in {new Date(session.createdAt).toLocaleString()}
             {session.token === current
               ? " (This device)"
-              : <button type="button" onClick={() => revoke(session.token)}>Revoke</button>}
+              : <button type="button" onClick={() => revoke(session.token)}>Sign out</button>}
           </li>
         ))}
       </ul>
+      <button type="button" onClick={signOutEverywhere}>Sign out everywhere</button>
       {error && <p role="alert">{error}</p>}
     </>
   );

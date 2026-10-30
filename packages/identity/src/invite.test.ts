@@ -31,7 +31,7 @@ afterAll(async () => {
 });
 
 function issue(email: string, operator = "pilot-founder") {
-  return execute(process.execPath, [fileURLToPath(new URL("./invite.ts", import.meta.url)), email], {
+  return execute(process.execPath, ["--import", "tsx", fileURLToPath(new URL("./invite.ts", import.meta.url)), email], {
     env: {
       PATH: process.env.PATH,
       INVITATION_DATABASE_URL: db.connectionString,

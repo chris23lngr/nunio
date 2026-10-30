@@ -123,8 +123,16 @@ The cap on AI usage for one Responsibility. A Responsibility that exhausts its B
 _Avoid_: Limit, quota, allowance
 
 **Allowance**:
-The student's total included AI usage, shared across all Runs. During the pilot it increases only through explicit grants; it does not reset automatically.
+The student's total included AI usage, shared across all Runs. During the pilot only the founder increases it, manually; it does not reset automatically.
 _Avoid_: Credits, quota, budget
+
+**Invitation**:
+The founder's single-use offer for one email address to join the pilot, shared manually and expiring after seven days. Accepting it reserves it for a pending account; pilot access activates only after email verification.
+_Avoid_: Invite code, referral, sign-up link
+
+**Pilot entitlement**:
+A student's access to the pilot: none, active, or revoked. It has no fixed end; only the founder revokes it, which blocks new uploads and AI work but keeps sign-in, existing results, and deletion requests.
+_Avoid_: Subscription, license, trial, plan
 
 ### Handing in
 

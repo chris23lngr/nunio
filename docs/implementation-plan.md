@@ -234,7 +234,7 @@ Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-
    - `ENABLE` and `FORCE ROW LEVEL SECURITY` on owner-scoped tables.
    - A transaction-scoped `SET LOCAL app.owner_id`.
    - A pool-leakage test.
-5. Pilot entitlement record per student in `packages/billing`: no fixed expiry, explicit founder revocation, finite Allowance with manual grants and no automatic reset. Phase 4 defines and enforces usage amounts. No Stripe yet.
+5. Pilot entitlement record per student in `packages/billing`: no fixed expiry, explicit founder revocation, finite Allowance that only the founder increases manually, with no automatic reset. Phase 4 defines and enforces usage amounts. No Stripe yet.
 
 **Documentation references.**
 - Phase 0 Better Auth and Next.js entries;
@@ -243,10 +243,10 @@ Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-
 - PostgreSQL row security docs.
 
 **Verification checklist.**
-- [x] User A cannot read or mutate user B's data by changing IDs: API tests plus an RLS test under the runtime role. Locally verified; staging pending.
-- [x] A revoked session cannot call authenticated routes. The local entitlement API test rejects a replayed cookie after sign-out; pilot revocation separately preserves the session and read access.
-- [x] An untrusted origin cannot perform an authenticated mutation. Better Auth routes and `/api/me/*` refuse cookie-bearing requests from other origins; locally verified.
-- [x] Concurrent requests for two users never leak `app.owner_id` across pooled connections. Locally verified at the `withOwner` seam; staging pending.
+- [ ] User A cannot read or mutate user B's data by changing IDs: API tests plus an RLS test under the runtime role. Locally verified; staging pending.
+- [ ] A revoked session cannot call authenticated routes. Locally verified; staging pending. The local entitlement API test rejects a replayed cookie after sign-out; pilot revocation separately preserves the session and read access.
+- [ ] An untrusted origin cannot perform an authenticated mutation. Better Auth routes and `/api/me/*` refuse cookie-bearing requests from other origins; locally verified.
+- [ ] Concurrent requests for two users never leak `app.owner_id` across pooled connections. Locally verified at the `withOwner` seam; staging pending.
 
 **Anti-pattern guards.** Do not authorize from the cookie-presence check in `proxy.ts`. Never use the table owner or a `BYPASSRLS` role at runtime. Do not put Better Auth's server instance in `web`.
 
@@ -299,6 +299,7 @@ Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-
    - On success, CopyObject to `sources` and delete from `quarantine`.
 4. Chunking, with chunk text encrypted under the Source key ([knowledge-retrieval.md](design/knowledge-retrieval.md)). Embeddings via an in-region OpenRouter embedding model from spike f, chosen by the German eval (run the eval here; deprecation check first).
 5. **Source deletion:** shred the key, delete embedding rows and derived rows in one transaction, and delete objects. Visible immediately everywhere.
+6. Upload and AI entry points refuse students with a pending deletion request or a non-active pilot entitlement ([identity-and-pilot-access.md](design/identity-and-pilot-access.md)).
 
 **Documentation references.**
 - ADR-0007, ADR-0009;
@@ -311,6 +312,7 @@ Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-
 - [ ] Oversized, mislabeled, malformed, and zip-bomb uploads never reach `sources` or retrieval.
 - [ ] The parser container has no environment secrets (an automated check).
 - [ ] After deletion, the object is unreadable with any key, chunks are gone, and retrieval returns nothing.
+- [ ] A student with a pending deletion request or a revoked pilot entitlement can start neither an upload nor an ingestion Run.
 - [ ] The German/English embedding eval result is recorded and the chosen model ID and dimensions are stored per vector row.
 
 **Anti-pattern guards.** Do not upload through the API body (4.5 MB Vercel limit). Never pass a master key to the parser or the browser. Do not trust MIME headers.

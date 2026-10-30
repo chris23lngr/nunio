@@ -11,6 +11,8 @@ if (!studentId || !operator || !databaseURL || process.argv.length !== 3) {
 const prisma = createPrismaClient(createPool(databaseURL));
 try {
   const entitlement = await prisma.$transaction(async tx => {
+    // Forced RLS applies to every role without BYPASSRLS; scope this transaction to the student.
+    await tx.$executeRaw`SELECT set_config('app.owner_id', ${studentId}, true)`;
     await tx.pilotEntitlement.updateMany({
       where: { studentId, revokedAt: null },
       data: { revokedAt: new Date(), revokedBy: operator },

@@ -25,6 +25,9 @@ export function createApp({ auth, prisma, appOrigin, spike }: AppDeps) {
     if (!["GET", "HEAD"].includes(c.req.method) && c.req.header("origin") !== appOrigin) {
       return c.json({ error: "forbidden_origin" }, 403);
     }
+    await next();
+  });
+  app.use("/api/me/*", async (c, next) => {
     c.set("auth", auth);
     c.set("prisma", prisma);
     await next();

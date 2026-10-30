@@ -78,6 +78,20 @@
           "error"
         ]
       },
+      "TooManyRequests": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "too_many_requests"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
       "DeletionRequest": {
         "type": "object",
         "properties": {
@@ -174,6 +188,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/InvalidPassword"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many password attempts for this student; the password was not checked. Retry after 10 seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequests"
                 }
               }
             }

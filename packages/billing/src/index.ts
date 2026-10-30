@@ -14,6 +14,11 @@ export async function activatePilot(prisma: PrismaClient, student: Principal): P
   }));
 }
 
+/** Whether the student was ever granted pilot access; reads inside the caller's owner-context transaction. */
+export async function hasPilotEntitlement(tx: Pick<PrismaClient, "pilotEntitlement">, studentId: string): Promise<boolean> {
+  return await tx.pilotEntitlement.findUnique({ where: { studentId }, select: { studentId: true } }) !== null;
+}
+
 export async function pilotStatus(prisma: PrismaClient, student: Principal): Promise<PilotStatus> {
   const entitlement = await withOwner(prisma, student, (tx, studentId) => tx.pilotEntitlement.findUnique({
     where: { studentId },

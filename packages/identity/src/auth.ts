@@ -1,11 +1,12 @@
-import { createHash } from "node:crypto";
-import { activatePilot } from "@nunio/billing";
+import { randomUUID } from "node:crypto";
+import { activatePilot, hasPilotEntitlement } from "@nunio/billing";
 import type { PrismaClient } from "@nunio/db";
 import { principal, withOwner } from "@nunio/delegation";
 import { APIError, betterAuth, getCurrentAdapter } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { createAuthMiddleware } from "better-auth/api";
 import { sendPasswordResetEmail, sendVerificationEmail, type ScalewayEmailOptions } from "./email.js";
+import { hashInvitationToken } from "./invitation.js";
 
 export interface AuthOptions {
   prisma: PrismaClient;
@@ -22,12 +23,30 @@ export interface Actor {
   readonly studentId: string;
 }
 
+const invitationRequired = "A valid invitation is required";
+/** Better Auth's rule for `/sign-in`, applied to password checks it does not rate-limit itself. */
+const passwordAttempts = { windowMs: 10_000, max: 3 };
+
 export function createAuth({ prisma, baseURL, trustedOrigins, secret, email, cookieDomain }: AuthOptions) {
   async function activateInvitedPilot(user: { id: string; email: string }) {
     const invitation = await prisma.invitation.findFirst({
       where: { email: user.email, acceptedAt: { not: null } },
     });
     if (invitation) await activatePilot(prisma, principal.fromSession({ studentId: user.id }));
+  }
+
+  /** Counts a password attempt in Better Auth's shared `rate_limit` table; false once the limit is reached. */
+  async function admitPasswordAttempt(key: string): Promise<boolean> {
+    const now = Date.now();
+    const windowStart = now - passwordAttempts.windowMs;
+    // One statement: the upsert's row lock serialises concurrent attempts across API instances.
+    const admitted = await prisma.$executeRaw`
+      INSERT INTO "rate_limit" ("id", "key", "count", "lastRequest") VALUES (${randomUUID()}, ${key}, 1, ${now})
+      ON CONFLICT ("key") DO UPDATE SET
+        "count" = CASE WHEN "rate_limit"."lastRequest" <= ${windowStart} THEN 1 ELSE "rate_limit"."count" + 1 END,
+        "lastRequest" = ${now}
+      WHERE "rate_limit"."lastRequest" <= ${windowStart} OR "rate_limit"."count" < ${passwordAttempts.max}`;
+    return admitted === 1;
   }
 
   const auth = betterAuth({
@@ -53,22 +72,26 @@ export function createAuth({ prisma, baseURL, trustedOrigins, secret, email, coo
         const address = context.body?.email;
         const invitation = token && typeof address === "string" && await prisma.invitation.findFirst({
           where: {
-            tokenHash: createHash("sha256").update(token).digest("hex"),
+            tokenHash: hashInvitationToken(token),
             email: address.toLowerCase(),
             expiresAt: { gt: new Date() },
             acceptedAt: null,
           },
         });
-        if (!invitation) throw new APIError("FORBIDDEN", { message: "A valid invitation is required" });
+        if (!invitation) throw new APIError("FORBIDDEN", { message: invitationRequired });
       }),
     },
     databaseHooks: {
       session: {
         create: {
           before: async session => {
-            const pendingDeletion = await withOwner(prisma, principal.fromSession({ studentId: session.userId }), tx =>
-              tx.deletionRequest.findUnique({ where: { studentId: session.userId }, select: { studentId: true } }));
+            const { pendingDeletion, activated } = await withOwner(
+              prisma, principal.fromSession({ studentId: session.userId }), async (tx, studentId) => ({
+                pendingDeletion: await tx.deletionRequest.findUnique({ where: { studentId }, select: { studentId: true } }),
+                activated: await hasPilotEntitlement(tx, studentId),
+              }));
             if (pendingDeletion) throw new APIError("FORBIDDEN", { message: "Account deletion is pending" });
+            if (activated) return;
             // Retry activation when verification was committed before its earlier activation failed.
             const user = await prisma.user.findUnique({
               where: { id: session.userId },
@@ -83,14 +106,14 @@ export function createAuth({ prisma, baseURL, trustedOrigins, secret, email, coo
           before: async (user, context) => {
             const token = context?.headers?.get("x-invitation-token");
             if (!token || !context) {
-              throw new APIError("FORBIDDEN", { message: "A valid invitation is required" });
+              throw new APIError("FORBIDDEN", { message: invitationRequired });
             }
             // Use the signup transaction: claiming an invitation and creating its account commit together.
             const adapter = await getCurrentAdapter(context.context.adapter);
             const claimed = await adapter.updateMany({
               model: "invitation",
               where: [
-                { field: "tokenHash", value: createHash("sha256").update(token).digest("hex") },
+                { field: "tokenHash", value: hashInvitationToken(token) },
                 { field: "email", value: user.email.toLowerCase() },
                 { field: "expiresAt", operator: "gt", value: new Date() },
                 { field: "acceptedAt", value: null },
@@ -98,7 +121,7 @@ export function createAuth({ prisma, baseURL, trustedOrigins, secret, email, coo
               update: { acceptedAt: new Date() },
             });
             if (claimed !== 1) {
-              throw new APIError("FORBIDDEN", { message: "A valid invitation is required" });
+              throw new APIError("FORBIDDEN", { message: invitationRequired });
             }
           },
         },
@@ -136,9 +159,14 @@ export function createAuth({ prisma, baseURL, trustedOrigins, secret, email, coo
       return { studentId: session.user.id };
     },
     /** Records the current student's deletion request and ends all their sessions in one transaction. */
-    async requestDeletion(request: Request, password: string): Promise<"pending" | "unauthorized" | "invalid_password"> {
+    async requestDeletion(
+      request: Request,
+      password: string,
+    ): Promise<"pending" | "unauthorized" | "invalid_password" | "too_many_requests"> {
       const actor = await this.authenticate(request);
       if (!actor) return "unauthorized";
+      // Server-side auth.api calls bypass Better Auth's rate limiter, so a session could guess passwords here.
+      if (!await admitPasswordAttempt(`deletion-request:${actor.studentId}`)) return "too_many_requests";
       try {
         await auth.api.verifyPassword({ headers: request.headers, body: { password } });
       } catch (error) {

@@ -107,7 +107,7 @@ test("a page on an untrusted origin cannot sign the user out", async ({ page }) 
   await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
 });
 
-test("a student revokes another session and requests deletion from account settings", async ({ page, browser }) => {
+test("a student signs out another session and requests deletion from account settings", async ({ page, browser }) => {
   const email = await signIn(page, "hedy");
   const phone = await browser.newContext({ ignoreHTTPSErrors: true });
   const phonePage = await phone.newPage();
@@ -116,7 +116,7 @@ test("a student revokes another session and requests deletion from account setti
   await page.getByRole("link", { name: "Account" }).click();
   const sessions = page.getByRole("listitem");
   await expect(sessions).toHaveCount(2);
-  await sessions.filter({ hasNotText: "This device" }).getByRole("button", { name: "Revoke" }).click();
+  await sessions.filter({ hasNotText: "This device" }).getByRole("button", { name: "Sign out" }).click();
   await expect(sessions).toHaveCount(1);
   await phonePage.goto(`${origins.app}/`);
   await expect(phonePage).toHaveURL(`${origins.app}/sign-in`);
@@ -127,5 +127,22 @@ test("a student revokes another session and requests deletion from account setti
   await expect(page.getByText("Your account deletion request was received")).toBeVisible();
   await page.goto(`${origins.app}/`);
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
+  await phone.close();
+});
+
+test("a student signs out everywhere from account settings", async ({ page, browser }) => {
+  const email = await signIn(page, "katherine");
+  const phone = await browser.newContext({ ignoreHTTPSErrors: true });
+  const phonePage = await phone.newPage();
+  await signInAs(phonePage, email);
+
+  await page.getByRole("link", { name: "Account" }).click();
+  await page.getByRole("button", { name: "Sign out everywhere" }).click();
+  await expect(page).toHaveURL(`${origins.app}/sign-in`);
+
+  await page.goto(`${origins.app}/`);
+  await expect(page).toHaveURL(`${origins.app}/sign-in`);
+  await phonePage.goto(`${origins.app}/`);
+  await expect(phonePage).toHaveURL(`${origins.app}/sign-in`);
   await phone.close();
 });

@@ -14,7 +14,11 @@ export function DeletionForm({ apiOrigin }: { apiOrigin: string }) {
     setError(null);
     const { response } = await createApiClient(apiOrigin).POST("/api/me/deletion-request", { body: { password } });
     if (response.status === 202) return router.replace("/sign-in?deletion=requested");
-    setError(response.status === 403 ? "That password is incorrect." : "Could not request deletion. Please try again.");
+    setError(response.status === 403
+      ? "That password is incorrect."
+      : response.status === 429
+        ? "Too many attempts. Wait a moment and try again."
+        : "Could not request deletion. Please try again.");
   }
 
   return (

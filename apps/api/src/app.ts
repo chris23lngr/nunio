@@ -52,6 +52,7 @@ routes.openapi(createRoute({
 const DeletionRequestSchema = z.object({ password: z.string() }).openapi("DeletionRequest");
 const DeletionPendingSchema = z.object({ status: z.literal("pending") }).openapi("DeletionPending");
 const InvalidPasswordSchema = z.object({ error: z.literal("invalid_password") }).openapi("InvalidPassword");
+const TooManyRequestsSchema = z.object({ error: z.literal("too_many_requests") }).openapi("TooManyRequests");
 
 routes.openapi(createRoute({
   method: "post",
@@ -70,11 +71,16 @@ routes.openapi(createRoute({
       content: { "application/json": { schema: InvalidPasswordSchema } },
       description: "The password does not match; nothing was recorded and sessions remain.",
     },
+    429: {
+      content: { "application/json": { schema: TooManyRequestsSchema } },
+      description: "Too many password attempts for this student; the password was not checked. Retry after 10 seconds.",
+    },
   },
 }), async c => {
   const result = await c.get("auth").requestDeletion(c.req.raw, c.req.valid("json").password);
   if (result === "unauthorized") return c.json({ error: "unauthorized" as const }, 401);
   if (result === "invalid_password") return c.json({ error: "invalid_password" as const }, 403);
+  if (result === "too_many_requests") return c.json({ error: "too_many_requests" as const }, 429);
   return c.json({ status: "pending" as const }, 202);
 });
 

@@ -439,6 +439,31 @@ describe("the student's deletion request", () => {
     await signIn("deletion-wrong-password");
   });
 
+  it("limits password attempts per student, refusing even the right password once exceeded", async () => {
+    const cookie = await signUp("deletion-guessing");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      expect((await requestDeletion(cookie, { password: `guess ${attempt}` })).status).toBe(403);
+    }
+
+    const limited = await requestDeletion(cookie, { password: "guess 3" });
+    const right = await requestDeletion(cookie, { password });
+
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toEqual({ error: "too_many_requests" });
+    expect(right.status).toBe(429);
+    expect(await studentId(cookie)).toBeTruthy();
+  });
+
+  it("admits only three concurrent password attempts per student", async () => {
+    const cookie = await signUp("deletion-concurrent-guessing");
+
+    const statuses = (await Promise.all(Array.from({ length: 8 }, (_, attempt) =>
+      requestDeletion(cookie, { password: `guess ${attempt}` })))).map(response => response.status);
+
+    expect(statuses.filter(status => status === 403)).toHaveLength(3);
+    expect(statuses.filter(status => status === 429)).toHaveLength(5);
+  });
+
   it("refuses signing in again once deletion is requested", async () => {
     const cookie = await signUp("deletion-sign-in");
     expect((await requestDeletion(cookie, { password })).status).toBe(202);
