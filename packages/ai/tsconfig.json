@@ -1,0 +1,5 @@
+{
+  "extends": "@nunio/typescript-config/library.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true, "allowImportingTsExtensions": true },
+  "include": ["src", "spike-f", "*.config.ts"]
+}

@@ -1,0 +1,52 @@
+# Render Blueprint (plan, Phase 2 "Render"; ADR-0004). Deploys are triggered by CI, never by pushes.
+services:
+  - type: worker
+    name: nunio-worker-staging
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    branch: phase-2/scaffold
+    # No rootDir: it breaks turbo prune. Build from the repo root.
+    dockerContext: .
+    dockerfilePath: ./apps/worker/Dockerfile
+    autoDeployTrigger: "off"
+    buildFilter:
+      paths: [apps/worker/**, packages/**, package.json, bun.lock, turbo.json]
+    # Render waits this long after SIGTERM; the worker drains for SHUTDOWN_GRACE_SECONDS (less).
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: TEMPORAL_ADDRESS
+        value: nunio-staging.lta09.tmprl.cloud:7233
+      - key: TEMPORAL_NAMESPACE
+        value: nunio-staging.lta09
+      - key: TEMPORAL_TASK_QUEUE
+        value: spike-d
+      - key: CODEC_KEY_VERSION
+        value: v1
+      - key: SHUTDOWN_GRACE_SECONDS
+        value: "25"
+      - key: PARSER_HOSTPORT
+        fromService:
+          type: pserv
+          name: nunio-parser-staging
+          property: hostport
+      - key: TEMPORAL_API_KEY
+        sync: false
+      - key: CODEC_KEY
+        sync: false
+
+  # ADR-0009: no public URL, no secrets (the parser refuses to start with any), reached by the worker.
+  - type: pserv
+    name: nunio-parser-staging
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    branch: phase-2/scaffold
+    dockerContext: .
+    dockerfilePath: ./apps/parser/Dockerfile
+    autoDeployTrigger: "off"
+    buildFilter:
+      paths: [apps/parser/**, packages/**, package.json, bun.lock, turbo.json]
+    envVars:
+      - key: PORT
+        value: "10000"

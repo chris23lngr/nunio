@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "cd ../.. && bunx turbo run build --filter=@nunio/web",
+  "regions": ["fra1"],
+  "git": { "deploymentEnabled": { "main": false } }
+}

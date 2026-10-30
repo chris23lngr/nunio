@@ -1,0 +1,20 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "tasks": {
+    "transit": { "dependsOn": ["^transit"] },
+    "generate": {
+      "inputs": ["prisma/**", "prisma.config.ts"],
+      "outputs": ["src/generated/**"]
+    },
+    "build": {
+      "dependsOn": ["^build", "generate"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "typecheck": { "dependsOn": ["^build", "generate"] },
+    "lint": { "dependsOn": ["transit", "generate"] },
+    "test": { "dependsOn": ["^build", "generate"] },
+    "test:e2e": { "dependsOn": ["^build"], "cache": false },
+    "openapi": { "outputs": ["openapi.json"] },
+    "dev": { "cache": false, "persistent": true }
+  }
+}

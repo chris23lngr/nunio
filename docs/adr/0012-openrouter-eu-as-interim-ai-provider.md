@@ -24,6 +24,8 @@ Until nunio switches to Amazon Bedrock (ADR-0011, still the target), all model c
 
 If embeddings are not available in-region, retrieval cannot ship on this provider, and that becomes a new decision.
 
+**Amendment (2026-10-30, spike f):** for now, requests use OpenRouter's international routing (`https://openrouter.ai/api/v1`), and the EU-only guardrail is relaxed. EU routing is deferred and must be revisited before pilot release. Every request still goes only to zero-data-retention endpoints. The allowlist is the ZDR Claude and embedding models in [spike-results.md](../operations/spike-results.md#f-openrouter-2026-10-30). Structured output without forced tools and prompt caching are verified there.
+
 ## Considered Options
 
 - **Amazon Bedrock EU (ADR-0011)**: the strongest controls and a single processor, but too much setup for now. It remains the target, and ADR-0011's AWS account is reserved.

@@ -11,3 +11,7 @@ Pin exact versions: in particular `prisma` and `@prisma/client` at 7.10.x, becau
 - **Bun as production runtime**: the founder's original preference, deferred until a compatibility spike passes after the pilot stabilises.
 - **tRPC, or Hono's typed client with a type-only import**: faster end-to-end types with a single client, rejected in favour of a documented HTTP contract that webhooks, the extension interface, and native apps can share.
 - **Fastify / Elysia**: Fastify isn't Fetch-native, and Elysia is Bun-first.
+
+## Amendment (2026-10-30): Vitest instead of `bun test`
+
+Tests run on Node with Vitest, not with `bun test`. Production runs on Node, and Temporal strongly discourages running workers under Bun, so workflow and integration tests must run on the same runtime as production. Bun remains the package manager.

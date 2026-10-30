@@ -8,7 +8,7 @@ Pilot students can upload their real course materials and, within ten minutes, r
 
 ## Decision gates outside the phases
 
-- **Before Phase 2:** choose observability and error tracking (EU-hosted or EU-region). The brief requires background-job monitoring before the pilot, and the walking skeleton should ship with it.
+- **Before Phase 12 (deferred by the founder on 2026-10-30):** choose observability and error tracking (EU-hosted or EU-region). The brief requires background-job monitoring before the pilot, so this is a pilot-readiness gate. Until then, rely on platform logs (Vercel, Render) and the Temporal Cloud UI.
 - **Before Phase 10:** choose an email delivery provider (EU processing, DPA). Record it as an ADR.
 - **Before Phase 9 (optional):** `prototype` the delegation gate's state machine (Approval expiry, Unconfirmed, Pause mid-Run, Budget exhaustion) as a throwaway.
 - **Before connector work (post-pilot):** collect the pilot tool inventory. No Integration or verified Destination is built until then; Submissions are Handoffs during the pilot.
@@ -166,17 +166,19 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
    6. deploy web (**blocked until the Vercel team exists**).
 
    Vercel `git.deploymentEnabled.main: false`, so PR preview builds stay UI-only (ADR-0005).
-4. **Observability** from the gate decision: error tracking in all four apps, plus an alert when the Temporal worker is not polling.
+4. **Observability (deferred):** no error-tracking service yet. Apps log structured JSON to stdout so a provider can be added later without code changes; the Temporal Cloud UI shows worker and workflow health.
 5. **Spikes.** Each one is a test or script kept in the repo:
    - **a. Prisma 7 + Better Auth on Node:** sign-up, sign-in, session, and revocation through `prismaAdapter`. Run on Testcontainers and against the staging Neon branch.
    - **b. Cross-origin session (blocked until the Vercel team exists):** `app.` → `api.` with the cookie on `.nunio.app`. Next.js server-side session check by forwarding the cookie to `https://api.nunio.app/api/auth/get-session`. This has no official recipe, so it must be proven here. Cover CSRF and origin rejection from an untrusted origin.
-   - **c. Hono on Vercel `fra1` (blocked until the Vercel team exists):** cold start, a Stripe-style raw-body route, and `attachDatabasePool` with `PrismaPg(pool)`.
+   - **c. Hono on Vercel `fra1` (blocked until the Vercel team exists):** cold start, a Stripe-style raw-body route, and `attachDatabasePool` with `PrismaPg(pool)`. Done on the interim Hobby staging; results in [spike-results.md](operations/spike-results.md#c-hono-on-vercel-fra1-2026-10-30). Re-run the idle cold start on the team.
    - **d. Temporal worker on Render:**
      - connects to Temporal Cloud with an API key;
      - a workflow waits on a signal, and survives a worker kill/restart and a redeploy;
      - drains on SIGTERM within `maxShutdownDelaySeconds`;
      - payload codec round trip, and the Temporal UI shows only ciphertext;
      - a replay test runs in CI.
+
+     Done on 2026-10-30 ([spike-results.md](operations/spike-results.md#d-temporal-worker-on-render-2026-10-30)).
    - **e. Hetzner SSE-C (ADR-0007 gate):**
      - presigned PUT with SSE-C headers and a signed `ContentLength` from a browser on `app.`;
      - CORS allowing PUT and the SSE-C headers;
@@ -184,19 +186,21 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
      - presigned GET with SSE-C via `fetch()`;
      - noncurrent-version expiry configured.
 
-     **If any of these fail, switch to the S3 `eu-central-1` fallback and record it as an ADR amendment.**
+     **If any of these fail, switch to the S3 `eu-central-1` fallback and record it as an ADR amendment.** Done: CopyObject with SSE-C is not implemented on Hetzner, so promotion uses a multipart copy and we stay on Hetzner (ADR-0007 amendment; [spike-results.md](operations/spike-results.md#e-hetzner-sse-c-2026-10-30)).
    - **f. OpenRouter EU check (ADR-0012), replacing the Bedrock guardrails below until the switch back:**
      - a request via `eu.openrouter.ai` succeeds, and one via the global endpoint is rejected (403);
      - list which Claude models and **embedding** models are served in-region with zero retention, and set the allowlist from that list;
      - structured output works without forcing a tool, and prompt caching passes through;
      - if no in-region embeddings exist, stop and raise a new decision before Phase 5.
+
+     Done with international routing (2026-10-30): EU routing and the global-endpoint rejection are deferred to before pilot release. ZDR Claude and embedding models, structured output and caching are verified ([spike-results.md](operations/spike-results.md#f-openrouter-2026-10-30); ADR-0012 and ADR-0008 amendments).
    - **f′. Bedrock guardrails (only after switching back to ADR-0011):**
      - `GetInferenceProfile` for each allowlisted `eu.*` ID fails CI on a non-EU destination;
      - retention `none` is set and read back;
      - a `global.*` call is denied;
      - Vercel OIDC role assumption works from `api`;
      - **Render OIDC** works from `worker`. If it does, update ADR-0011 to drop worker access keys.
-   - **g. Parser isolation:** `parser` runs as a Render private service with no secrets and is reachable only from `worker`.
+   - **g. Parser isolation:** `parser` runs as a Render private service with no secrets and is reachable only from `worker`. Done on 2026-10-30, with one limit: Render's private network admits every service in the workspace and region, so "only from the worker" holds in practice but isn't enforced ([spike-results.md](operations/spike-results.md#g-parser-isolation-2026-10-30)).
 
 **Documentation references.** Phase 0 Allowed APIs; ADR-0003–0007, 0009, 0011; [foundation.md](research/foundation.md) "Required implementation proof"; [runtime-hosting.md](research/runtime-hosting.md) "Verification to carry into the plan".
 

@@ -1,0 +1,22 @@
+name: Vercel deploy
+description: Prebuilt production deploy from the repo root (docs/operations/environments.md).
+inputs:
+  project-id:
+    description: Vercel project id
+    required: true
+  token:
+    description: Vercel token
+    required: true
+runs:
+  using: composite
+  steps:
+    # Prebuilt output refers to workspace dependencies by repo-root paths, so run from the root.
+    - shell: bash
+      env:
+        VERCEL_PROJECT_ID: ${{ inputs.project-id }}
+        VERCEL_TOKEN: ${{ inputs.token }}
+      run: |
+        bunx vercel@65.8.0 pull --yes --environment=production --token="$VERCEL_TOKEN"
+        bunx vercel@65.8.0 build --prod --token="$VERCEL_TOKEN"
+        bunx vercel@65.8.0 deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        rm -rf .vercel
