@@ -15,6 +15,7 @@
     "test": { "dependsOn": ["^build", "generate"] },
     "test:e2e": { "dependsOn": ["^build"], "cache": false },
     "openapi": { "outputs": ["openapi.json"] },
-    "dev": { "cache": false, "persistent": true }
+    "dev": { "cache": false, "persistent": true },
+    "build-storybook": { "outputs": ["storybook-static/**"] }
   }
 }
