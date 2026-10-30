@@ -20,6 +20,8 @@ export default mergeConfig(
           ],
           test: {
             name: "storybook",
+            // Keep Chromium within the CI runner's CPU/memory budget.
+            maxWorkers: 1,
             browser: {
               enabled: true,
               headless: true,
