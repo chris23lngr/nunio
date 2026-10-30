@@ -5,7 +5,8 @@ export default defineConfig({
   globalSetup: "./global-setup.ts",
   fullyParallel: false,
   workers: 1,
-  reporter: "list",
+  globalTimeout: 5 * 60_000,
+  reporter: [["list"], ["html", { open: "never" }]],
   use: {
     ...devices["Desktop Chrome"],
     // The local CA isn't in the browser's trust store; cookies still get https semantics.

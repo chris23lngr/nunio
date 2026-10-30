@@ -1,5 +1,4 @@
-# Checks on every PR and push to main; on main, then migrate and deploy staging in the order of
-# docs/implementation-plan.md, Phase 2: a failing migration stops the pipeline before any deploy.
+# Validation jobs are independent; staging deployment still follows the aggregate check.
 name: CI
 
 on:
@@ -10,53 +9,175 @@ on:
 permissions:
   contents: read
 
-# One run per ref. On main a newer push waits for the running one (replacing any already waiting),
-# so migrations and deploys never overlap.
+# Until staging moves to its own workflow, keep the entire main rollout serialized.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  checks:
+  lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
-      # Tests start Postgres with Testcontainers on the runner's Docker.
-      # Browser tests run separately from the backend tests and Next.js build.
+      - run: bunx turbo run lint --concurrency=2
+
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: bunx turbo run typecheck --concurrency=2
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      # One package and one test-file worker at a time share this runner's Docker/CPU budget.
+      - run: >-
+          bunx turbo run test --concurrency=1
+          --filter=@nunio/db --filter=@nunio/delegation --filter=@nunio/billing
+          --filter=@nunio/identity --filter=@nunio/api
+          -- --maxWorkers=1 --reporter=default --reporter=json --outputFile=.turbo/tests.json
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: backend-test-diagnostics
+          include-hidden-files: true
+          path: |
+            **/.turbo/tests.json
+            **/.turbo/turbo-*.log
+
+  temporal-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: >-
+          bunx turbo run test --filter=@nunio/worker --concurrency=2
+          -- --maxWorkers=1 --reporter=default --reporter=json --outputFile=.turbo/tests.json
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: temporal-test-diagnostics
+          include-hidden-files: true
+          path: |
+            **/.turbo/tests.json
+            **/.turbo/turbo-*.log
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: >-
+          bunx turbo run test --concurrency=2
+          --filter=@nunio/parser --filter=@nunio/ai --filter=@nunio/commitlint-config
+          -- --exclude='spike-f/**' --maxWorkers=1
+          --reporter=default --reporter=json --outputFile=.turbo/tests.json
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: unit-test-diagnostics
+          include-hidden-files: true
+          path: |
+            **/.turbo/tests.json
+            **/.turbo/turbo-*.log
+
+  ui-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
       - run: bunx playwright install --with-deps chromium
-      - run: bun run build typecheck lint test --filter='!@nunio/ui'
-      - name: UI checks
-        run: bunx turbo run build typecheck lint test --filter=@nunio/ui
-      - name: openapi.json is up to date (ADR-0003)
-        run: |
-          bun run openapi
-          git diff --exit-code -- apps/api/openapi.json \
-            || { echo "::error::apps/api/openapi.json is stale; run 'bun run openapi' and commit it."; exit 1; }
+        working-directory: packages/ui
+      - run: >-
+          bunx turbo run test --filter=@nunio/ui --concurrency=2
+          -- --maxWorkers=1 --reporter=default --reporter=json --outputFile=.turbo/tests.json
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: ui-test-diagnostics
+          include-hidden-files: true
+          path: |
+            **/.turbo/tests.json
+            **/.turbo/turbo-*.log
+            packages/ui/**/__screenshots__/**
+
+  build-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: bunx playwright install --with-deps chromium
+        working-directory: apps/e2e
+      - run: bunx turbo run build --concurrency=2
       - name: Local HTTPS names for the e2e suite
         run: echo "127.0.0.1 app.nunio.test api.nunio.test evil.test" | sudo tee -a /etc/hosts
-      - run: bun run test:e2e
+      - run: bun run test:e2e --concurrency=2
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: local-e2e-diagnostics
+          include-hidden-files: true
+          path: |
+            apps/e2e/playwright-report/
+            apps/e2e/test-results/
+            **/.turbo/turbo-*.log
+
+  openapi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - name: openapi.json is up to date (ADR-0003)
+        run: |
+          bun run openapi --concurrency=2
+          git diff --exit-code -- apps/api/openapi.json \
+            || { echo "::error::apps/api/openapi.json is stale; run 'bun run openapi' and commit it."; exit 1; }
 
   commits:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup
-      # Rules from AGENTS.md, "Commits". Commits up to the baseline predate them and are not linted.
       - name: Commit messages follow the rules
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-          BASELINE: a2118f880b472544bf521621a69ee763ed6cc996
+        run: bunx commitlint --from "$BASE" --to "$HEAD" --verbose
+
+  # Always evaluate prerequisites: a skipped dependent job must not turn a failed lane green.
+  # https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-jobs
+  checks:
+    if: always()
+    needs: [lint, typecheck, backend-tests, temporal-tests, unit-tests, ui-tests, build-e2e, openapi, commits]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: All required checks succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          from=$BASE
-          if git merge-base --is-ancestor "$BASELINE" "$HEAD" && ! git merge-base --is-ancestor "$BASELINE" "$BASE"; then
-            from=$BASELINE
-          fi
-          bunx commitlint --from "$from" --to "$HEAD" --verbose
+          echo "$RESULTS" | jq -e 'all(to_entries[];
+            if .key == "commits" and env.EVENT_NAME != "pull_request"
+            then .value.result == "skipped"
+            else .value.result == "success"
+            end)'
 
   spikes:
     if: github.event_name == 'push'
