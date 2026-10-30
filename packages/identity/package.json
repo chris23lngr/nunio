@@ -20,11 +20,15 @@
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
     "eslint": "10.13.0",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "5.0.5"
   },
   "dependencies": {
+    "@nunio/billing": "workspace:*",
     "@nunio/db": "workspace:*",
-    "better-auth": "1.7.14"
+    "@nunio/delegation": "workspace:*",
+    "better-auth": "1.7.14",
+    "zod": "4.6.7"
   }
 }

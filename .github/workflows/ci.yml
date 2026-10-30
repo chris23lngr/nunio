@@ -158,6 +158,7 @@ jobs:
         working-directory: apps/e2e
         env:
           E2E_TARGET: staging
+          INVITATION_DATABASE_URL: ${{ secrets.INVITATION_DATABASE_URL }}
           SPIKE_WEBHOOK_SECRET: ${{ secrets.SPIKE_WEBHOOK_SECRET }}
           HETZNER_S3_ENDPOINT: ${{ vars.HETZNER_S3_ENDPOINT }}
           HETZNER_S3_REGION: ${{ vars.HETZNER_S3_REGION }}

@@ -96,7 +96,7 @@ Stripe is the payment requirement; Better Auth is the authentication requirement
 
 ## Validation
 
-Run a four-week real-course pilot with the existing users. Measure coordination effort, obligations caught or missed, work completed, corrections and dismissed interventions, and willingness to pay. Chat volume is not the primary success measure.
+Run an invite-only real-course pilot with the existing users, with no fixed end date. Measure coordination effort, obligations caught or missed, work completed, corrections and dismissed interventions, and willingness to pay. Chat volume is not the primary success measure.
 
 The personal workspace is the initial scope. Sharing/exporting finished artifacts is supported as a direction; shared projects, study groups, collaborative editing, and multi-user agents are deferred.
 

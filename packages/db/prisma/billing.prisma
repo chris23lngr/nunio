@@ -1,0 +1,10 @@
+// Pilot access, owned by @nunio/billing. Usage metering is added in Phase 4.
+model PilotEntitlement {
+  studentId   String    @id
+  student     User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  activatedAt DateTime  @default(now())
+  revokedAt   DateTime?
+  revokedBy   String?
+
+  @@map("pilot_entitlement")
+}

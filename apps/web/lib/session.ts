@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 
 export interface Session {
-  user: { id: string; name: string; email: string };
+  user: { id: string; name: string; email: string; emailVerified: boolean };
 }
 
 /** The public API origin, e.g. `https://api.nunio.app` (ADR-0005). */
@@ -20,5 +20,6 @@ export async function getSession(): Promise<Session | null> {
     cache: "no-store",
   });
   if (!res.ok) return null;
-  return (await res.json()) as Session | null;
+  const session = (await res.json()) as Session | null;
+  return session?.user.emailVerified ? session : null;
 }

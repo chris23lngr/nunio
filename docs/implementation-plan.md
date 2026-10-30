@@ -1,15 +1,15 @@
 # nunio pilot implementation plan
 
-Status: proposed, 2026-10-29. No implementation has begun. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0011](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md) and [knowledge-retrieval.md](design/knowledge-retrieval.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 3 in progress, 2026-10-30. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md) and [knowledge-retrieval.md](design/knowledge-retrieval.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
-Pilot students can upload their real course materials and, within ten minutes, review an accurate, sourced picture of their Courses and Obligations. They then spend a four-week pilot in which nunio keeps their Plan organized and helps them study. It acts only within permissions they explicitly granted, on infrastructure that keeps student data in the EU, deletes it on request, and survives failures without repeating consequential Actions.
+Pilot students can upload their real course materials and, within ten minutes, review an accurate, sourced picture of their Courses and Obligations. They then use an invite-only pilot with no fixed end date, in which nunio keeps their Plan organized and helps them study. It acts only within permissions they explicitly granted, on infrastructure that keeps student data in the EU, deletes it on request, and survives failures without repeating consequential Actions.
 
 ## Decision gates outside the phases
 
 - **Before Phase 12 (deferred by the founder on 2026-10-30):** choose observability and error tracking (EU-hosted or EU-region). The brief requires background-job monitoring before the pilot, so this is a pilot-readiness gate. Until then, rely on platform logs (Vercel, Render) and the Temporal Cloud UI.
-- **Before Phase 10:** choose an email delivery provider (EU processing, DPA). Record it as an ADR.
+- **Phase 3:** Scaleway Transactional Email is selected for verification and password recovery (EU processing, DPA). The processing boundary is recorded in [ADR-0013](adr/0013-scaleway-for-authentication-email.md); Phase 10 notification routing remains deferred.
 - **Before Phase 9 (optional):** `prototype` the delegation gate's state machine (Approval expiry, Unconfirmed, Pause mid-Run, Budget exhaustion) as a throwaway.
 - **Before connector work (post-pilot):** collect the pilot tool inventory. No Integration or verified Destination is built until then; Submissions are Handoffs during the pilot.
 
@@ -220,6 +220,8 @@ Closeout (2026-10-30): the walking skeleton is deployed and verified on interim 
 
 ## Phase 3: Identity and tenant isolation
 
+Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-pilot-access.md) (2026-10-30).
+
 > **How this serves the primary goal:** every pilot student's materials and plans must be reachable only by them. Isolation has to exist before the first real upload.
 
 **What to implement.**
@@ -232,7 +234,7 @@ Closeout (2026-10-30): the walking skeleton is deployed and verified on interim 
    - `ENABLE` and `FORCE ROW LEVEL SECURITY` on owner-scoped tables.
    - A transaction-scoped `SET LOCAL app.owner_id`.
    - A pool-leakage test.
-5. Pilot entitlement record per student (pilot, expiring, capped Allowance) in `packages/billing`. No Stripe yet.
+5. Pilot entitlement record per student in `packages/billing`: no fixed expiry, explicit founder revocation, finite Allowance that only the founder increases manually, with no automatic reset. Phase 4 defines and enforces usage amounts. No Stripe yet.
 
 **Documentation references.**
 - Phase 0 Better Auth and Next.js entries;
@@ -241,10 +243,10 @@ Closeout (2026-10-30): the walking skeleton is deployed and verified on interim 
 - PostgreSQL row security docs.
 
 **Verification checklist.**
-- [ ] User A cannot read or mutate user B's data by changing IDs: API tests plus an RLS test under the runtime role.
-- [ ] A revoked session cannot call authenticated routes.
-- [ ] An untrusted origin cannot perform an authenticated mutation.
-- [ ] Concurrent requests for two users never leak `app.owner_id` across pooled connections.
+- [x] User A cannot read or mutate user B's data by changing IDs: API tests plus an RLS test under the runtime role. On staging (2026-10-30), the API connects as `nunio_api` (in `nunio_runtime`, no `BYPASSRLS`) and owner-scoped tables have forced RLS.
+- [x] A revoked session cannot call authenticated routes. The local entitlement API test rejects a replayed cookie after sign-out; on staging, per-session sign-out, sign out everywhere, password reset and a deletion request each ended the affected sessions. Pilot revocation separately preserves the session and read access.
+- [x] An untrusted origin cannot perform an authenticated mutation. Better Auth routes and `/api/me/*` refuse cookie-bearing requests from other origins; staging returns `403 forbidden_origin` for a foreign `Origin` on `/api/me/deletion-request`.
+- [x] Concurrent requests for two users never leak `app.owner_id` across pooled connections. Proven by the `withOwner` pool test under the runtime role; staging runs the same code through the Neon pooler. [Deployed by run on `f4c0e62`](https://github.com/chris23lngr/nunio/actions/runs/41120921403).
 
 **Anti-pattern guards.** Do not authorize from the cookie-presence check in `proxy.ts`. Never use the table owner or a `BYPASSRLS` role at runtime. Do not put Better Auth's server instance in `web`.
 
@@ -297,6 +299,7 @@ Closeout (2026-10-30): the walking skeleton is deployed and verified on interim 
    - On success, CopyObject to `sources` and delete from `quarantine`.
 4. Chunking, with chunk text encrypted under the Source key ([knowledge-retrieval.md](design/knowledge-retrieval.md)). Embeddings via an in-region OpenRouter embedding model from spike f, chosen by the German eval (run the eval here; deprecation check first).
 5. **Source deletion:** shred the key, delete embedding rows and derived rows in one transaction, and delete objects. Visible immediately everywhere.
+6. Upload and AI entry points refuse students with a pending deletion request or a non-active pilot entitlement ([identity-and-pilot-access.md](design/identity-and-pilot-access.md)).
 
 **Documentation references.**
 - ADR-0007, ADR-0009;
@@ -309,6 +312,7 @@ Closeout (2026-10-30): the walking skeleton is deployed and verified on interim 
 - [ ] Oversized, mislabeled, malformed, and zip-bomb uploads never reach `sources` or retrieval.
 - [ ] The parser container has no environment secrets (an automated check).
 - [ ] After deletion, the object is unreadable with any key, chunks are gone, and retrieval returns nothing.
+- [ ] A student with a pending deletion request or a revoked pilot entitlement can start neither an upload nor an ingestion Run.
 - [ ] The German/English embedding eval result is recorded and the chosen model ID and dimensions are stored per vector row.
 
 **Anti-pattern guards.** Do not upload through the API body (4.5 MB Vercel limit). Never pass a master key to the parser or the browser. Do not trust MIME headers.
