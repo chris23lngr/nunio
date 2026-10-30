@@ -4,20 +4,35 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    }
   },
   "scripts": {
+    "generate": "prisma generate",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "migrate:deploy": "prisma migrate deploy"
   },
   "devDependencies": {
     "@nunio/eslint-config": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
+    "@testcontainers/postgresql": "12.2.1",
     "@types/node": "24.19.2",
     "eslint": "10.13.0",
+    "prisma": "7.10.1",
     "typescript": "5.9.3",
     "vitest": "5.0.5"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1"
   }
 }

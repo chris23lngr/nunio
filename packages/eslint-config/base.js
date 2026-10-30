@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 
 /** Shared lint rules for every nunio package and app. */
 export default tseslint.config(
-  { ignores: ["dist/**", ".next/**", "coverage/**", "next-env.d.ts"] },
+  { ignores: ["dist/**", ".next/**", "coverage/**", "next-env.d.ts", "**/generated/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
