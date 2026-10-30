@@ -1,4 +1,4 @@
-// Pilot access, owned by @nunio/billing. Usage metering is added in Phase 4.
+// Pilot access, owned by @nunio/billing. @nunio/delegation meters usage against the Allowance.
 model PilotEntitlement {
   studentId   String    @id
   student     User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -8,3 +8,16 @@ model PilotEntitlement {
 
   @@map("pilot_entitlement")
 }
+
+// The student's total included AI usage in micro-USD. Only the founder raises the limit.
+model Allowance {
+  studentId     String   @id
+  student       User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  limitMicroUsd BigInt   @default(5000000)
+  usedMicroUsd  BigInt   @default(0)
+  heldMicroUsd  BigInt   @default(0)
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  @@map("allowance")
+}
+
