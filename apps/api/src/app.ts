@@ -8,7 +8,7 @@ const healthRoute = createRoute({
   responses: {
     200: {
       content: { "application/json": { schema: HealthSchema } },
-      description: "The API is running (drift test).",
+      description: "The API is running.",
     },
   },
 });
