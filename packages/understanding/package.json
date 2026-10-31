@@ -9,8 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "lint": "eslint ."
   },
   "devDependencies": {
     "@nunio/eslint-config": "workspace:*",

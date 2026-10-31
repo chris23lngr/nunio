@@ -1,11 +1,11 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
-import { hetzner, hetznerConfigured, presignGet, presignPut, promote, sseCHeaders } from "@nunio/knowledge/spike-e";
+import { hetzner, presignGet, presignPut, promote, sseCHeaders } from "@nunio/knowledge/spike-e";
 import { origins } from "../origins.js";
 
 // Spike e: the browser talks to Hetzner directly with presigned URLs plus the Source's SSE-C headers.
-test.describe("SSE-C uploads from the browser", () => {
-  test.skip(!hetznerConfigured, "Hetzner credentials are not set");
+test.describe("SSE-C uploads from the browser", { tag: "@staging" }, () => {
+  const { s3, buckets } = hetzner();
 
   const fetchFrom = (page: Page, url: string, init: { method?: string; headers: Record<string, string>; body?: string }) =>
     page.evaluate(
@@ -23,7 +23,6 @@ test.describe("SSE-C uploads from the browser", () => {
     );
 
   test("the app origin uploads to quarantine and downloads from sources", async ({ page }) => {
-    const { s3, buckets } = hetzner();
     const key = randomBytes(32);
     const body = randomBytes(4096);
     const objectKey = `spike-e/${randomUUID()}`;
@@ -41,7 +40,6 @@ test.describe("SSE-C uploads from the browser", () => {
   });
 
   test("an untrusted origin is blocked by CORS", async ({ page }) => {
-    const { s3, buckets } = hetzner();
     const key = randomBytes(32);
     const put = await presignPut(s3, {
       bucket: buckets.quarantine,

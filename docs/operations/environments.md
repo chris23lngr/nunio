@@ -165,12 +165,15 @@ Until the Pro team exists, staging runs as two Hobby projects in the personal sc
 
 `nunio-staging-quarantine` (7-day expiry, CORS PUT) and `nunio-staging-sources` (versioned, noncurrent versions expire after 30 days, CORS GET) in `fsn1`. Both are configured by `packages/knowledge/spike-e/provision.ts`, which is safe to re-run. CORS allows the SSE-C headers from `HETZNER_CORS_ORIGINS` (staging: `https://app.staging.nunio.app,https://app.nunio.test:8443`). Production buckets come with the Pro-team move.
 
-## CI (`.github/workflows/ci.yml`)
+## CI and staging delivery
 
-- **Every PR and push to `main`:** frozen install, `bun run build typecheck lint test` (Testcontainers on the runner's Docker), an `openapi.json` drift check, and the local Playwright suite (`*.nunio.test` names in the runner's `/etc/hosts`).
-- **On `main` only, in order, each job only if the previous one passed:** `prisma migrate deploy` on the staging branch (unpooled URL), deploy `nunio-api`, deploy the Render parser and then the worker (`.github/scripts/render-deploy.sh`, pinned to the commit), deploy `nunio-web`, then the staging browser suite. The `spikes` job (spike e against the staging buckets, spike f against OpenRouter) runs alongside this chain. A failing migration stops the pipeline before any deploy. Runs on `main` never overlap.
-- Deploys use `vercel@65.8.0` with `pull` / `build --prod` / `deploy --prebuilt --prod` from the repo root (`.github/actions/vercel-deploy`).
-- Not in CI yet: production. Both Render services track `phase-2/scaffold` until PR #1 merges; then switch their branch to `main`. Vercel's Git integration stays off for `main` (`git.deploymentEnabled.main: false`).
+- `.github/workflows/ci.yml` runs independent lint, typecheck, database, Temporal, unit, Storybook, production-build/local-E2E, OpenAPI and PR commit checks. The always-evaluated `checks` job fails unless every required lane succeeds. Main validates every task; PRs select affected task inputs with full Git history. Local E2E and contract drift always run. Shared workflow changes force full validation.
+- The `Require validated pull requests` repository ruleset requires a pull request current with `main` and a successful GitHub Actions `checks` result before merging; it has no bypass actors or mandatory approval reviews.
+- Setup retains frozen installs and caches Bun downloads and Turbo artifacts. Deployment events restore only. Local E2E uses disposable Postgres and includes the full auth/session suite; it never resets limiter state in an external database. Live providers are excluded from secret-free PR validation.
+- `.github/workflows/deploy.yml` accepts only successful same-repository main push validation, rejects a stale SHA, and checks out that validated SHA in every code-running job. The whole staging workflow is serialized; pending rollouts use latest-pending-wins semantics. New CI runs remain independent of the rollout.
+- Staging order remains migrate → API → parser → worker → web → browser smoke. A failed migration stops deployment. Smoke covers deployed parent-domain cookies, origin protection, raw-body handling and live SSE-C, with two sign-ins under the real production quota. Full session/deletion regression coverage remains local.
+- `provider-checks` separately reports live Hetzner/OpenRouter compatibility in parallel with rollout. Its failure does not prevent migration or deploy, but makes the delivery workflow fail visibly. Both this job and staging smoke fail on missing required configuration rather than skipping tests. Live package suites run explicitly with `bun run test:live` from `packages/ai` or `packages/knowledge`; they are not Turbo-cached.
+- Deploys retain `vercel@65.8.0` with `pull` / `build --prod` / `deploy --prebuilt --prod` from the repo root. Render deploy requests use the same validated SHA. Production is not deployed by these workflows; Vercel Git deployment for main stays disabled.
 
 ## Deferred to Phase 2
 

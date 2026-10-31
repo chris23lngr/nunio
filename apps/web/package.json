@@ -9,8 +9,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
-    "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@nunio/api-client": "workspace:*",

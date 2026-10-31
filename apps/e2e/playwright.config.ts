@@ -1,7 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
+import { target } from "./origins.js";
 
 export default defineConfig({
   testDir: "tests",
+  testIgnore: target === "local" ? "**/sse-c-browser.spec.ts" : [],
+  grep: target === "staging" ? /@staging/ : undefined,
   globalSetup: "./global-setup.ts",
   fullyParallel: false,
   workers: 1,

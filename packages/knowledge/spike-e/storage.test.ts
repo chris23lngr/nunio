@@ -5,10 +5,10 @@ import {
   GetBucketVersioningCommand,
 } from "@aws-sdk/client-s3";
 import { describe, expect, it } from "vitest";
-import { hetzner, hetznerConfigured, presignGet, presignPut, promote, sseCHeaders } from "./hetzner.ts";
+import { hetzner, presignGet, presignPut, promote, sseCHeaders } from "./hetzner.ts";
 
-describe.skipIf(!hetznerConfigured)("Hetzner storage (spike e)", () => {
-  const { s3, buckets } = hetznerConfigured ? hetzner() : ({} as ReturnType<typeof hetzner>);
+describe("Hetzner storage (spike e)", () => {
+  const { s3, buckets } = hetzner();
 
   it("expires quarantine objects after 7 days", async () => {
     const { Rules } = await s3.send(

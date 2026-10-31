@@ -5,7 +5,7 @@ import { origins, spikeWebhookSecret } from "../origins.js";
 // Spike c: the deployed handler must see the exact bytes the sender signed, as Stripe webhooks need.
 const signedBody = '{"id":"evt_1","type":"invoice.paid","amount":1999}';
 
-test.describe("the spike raw-body route", () => {
+test.describe("the spike raw-body route", { tag: "@staging" }, () => {
   const signature = createHmac("sha256", spikeWebhookSecret).update(signedBody).digest("hex");
 
   const post = (request: APIRequestContext, body: string) =>
