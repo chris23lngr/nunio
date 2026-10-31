@@ -1,5 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
+  "globalDependencies": [".github/**"],
+  "futureFlags": { "affectedUsingTaskInputs": true },
   "tasks": {
     "transit": { "dependsOn": ["^transit"] },
     "generate": {},
@@ -9,8 +11,16 @@
     },
     "typecheck": { "dependsOn": ["^build", "generate"] },
     "lint": { "dependsOn": ["transit", "generate"] },
-    "test": { "dependsOn": ["^build", "generate"] },
-    "test:e2e": { "dependsOn": ["^build"], "cache": false },
+    "test": { "dependsOn": ["^build", "generate"], "env": ["CI", "NODE_ENV"] },
+    "test:e2e": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "passThroughEnv": [
+        "E2E_TARGET", "INVITATION_DATABASE_URL", "SPIKE_WEBHOOK_SECRET",
+        "HETZNER_S3_ENDPOINT", "HETZNER_S3_REGION", "HETZNER_QUARANTINE_BUCKET",
+        "HETZNER_SOURCES_BUCKET", "HETZNER_S3_ACCESS_KEY_ID", "HETZNER_S3_SECRET_ACCESS_KEY"
+      ]
+    },
     "openapi": { "outputs": ["openapi.json"] },
     "dev": { "cache": false, "persistent": true },
     "build-storybook": { "outputs": ["storybook-static/**"] }

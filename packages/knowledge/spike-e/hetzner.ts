@@ -12,8 +12,6 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-export const hetznerConfigured = Boolean(process.env.HETZNER_S3_ACCESS_KEY_ID);
-
 function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is not set (packages/knowledge/.env.staging)`);

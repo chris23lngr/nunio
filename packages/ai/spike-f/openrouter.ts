@@ -3,8 +3,6 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { EmbeddingModel, LanguageModel } from "ai";
 
-export const openRouterConfigured = Boolean(process.env.OPENROUTER_API_KEY);
-
 function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is not set (packages/ai/.env.staging)`);

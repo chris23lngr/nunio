@@ -10,13 +10,15 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "devDependencies": {
     "@nunio/eslint-config": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
     "eslint": "10.13.0",
+    "pg": "8.23.1",
     "typescript": "5.9.3",
     "vitest": "5.0.5"
   },

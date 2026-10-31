@@ -36,16 +36,20 @@ export async function startTestDatabase(): Promise<TestDatabase> {
   const container = await new PostgreSqlContainer(
     "pgvector/pgvector:0.8.7-pg18",
   ).start();
-  const connectionString = container.getConnectionUri();
-  migrate(connectionString);
-
-  return {
-    connectionString,
-    runtimeConnectionString: await createRuntimeLogin(connectionString, connectionString),
-    stop: async () => {
-      await container.stop();
-    },
-  };
+  try {
+    const connectionString = container.getConnectionUri();
+    migrate(connectionString);
+    return {
+      connectionString,
+      runtimeConnectionString: await createRuntimeLogin(connectionString, connectionString),
+      stop: async () => {
+        await container.stop();
+      },
+    };
+  } catch (error) {
+    await container.stop();
+    throw error;
+  }
 }
 
 function migrate(url: string): void {

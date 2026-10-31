@@ -1,4 +1,4 @@
-# Validation jobs are independent; staging deployment still follows the aggregate check.
+# Independent validation; successful main commits trigger the separate staging workflow.
 name: CI
 
 on:
@@ -9,10 +9,15 @@ on:
 permissions:
   contents: read
 
-# Until staging moves to its own workflow, keep the entire main rollout serialized.
+# Superseded validation can stop without interrupting a staging rollout.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
+
+# Compare the tested PR merge commit with its event base; main still validates every task.
+env:
+  TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
+  TURBO_SCM_HEAD: ${{ github.sha }}
 
 jobs:
   lint:
@@ -20,26 +25,32 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup
-      - run: bunx turbo run lint --concurrency=2
+      - run: bunx turbo run lint ${{ github.event_name == 'pull_request' && '--affected' || '' }} --concurrency=2
 
   typecheck:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup
-      - run: bunx turbo run typecheck --concurrency=2
+      - run: bunx turbo run typecheck ${{ github.event_name == 'pull_request' && '--affected' || '' }} --concurrency=2
 
   backend-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup
       # One package and one test-file worker at a time share this runner's Docker/CPU budget.
       - run: >-
-          bunx turbo run test --concurrency=1
+          bunx turbo run test ${{ github.event_name == 'pull_request' && '--affected' || '' }} --concurrency=1
           --filter=@nunio/db --filter=@nunio/delegation --filter=@nunio/billing
           --filter=@nunio/identity --filter=@nunio/api
           -- --maxWorkers=1 --reporter=default --reporter=json --outputFile=.turbo/tests.json
@@ -51,15 +62,18 @@ jobs:
           path: |
             **/.turbo/tests.json
             **/.turbo/turbo-*.log
+            !**/node_modules/**
 
   temporal-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup
       - run: >-
-          bunx turbo run test --filter=@nunio/worker --concurrency=2
+          bunx turbo run test ${{ github.event_name == 'pull_request' && '--affected' || '' }} --filter=@nunio/worker --concurrency=2
           -- --maxWorkers=1 --reporter=default --reporter=json --outputFile=.turbo/tests.json
       - uses: actions/upload-artifact@v5
         if: failure()
@@ -69,17 +83,20 @@ jobs:
           path: |
             **/.turbo/tests.json
             **/.turbo/turbo-*.log
+            !**/node_modules/**
 
   unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup
       - run: >-
-          bunx turbo run test --concurrency=2
+          bunx turbo run test ${{ github.event_name == 'pull_request' && '--affected' || '' }} --concurrency=2
           --filter=@nunio/parser --filter=@nunio/ai --filter=@nunio/commitlint-config
-          -- --exclude='spike-f/**' --maxWorkers=1
+          -- --maxWorkers=1
           --reporter=default --reporter=json --outputFile=.turbo/tests.json
       - uses: actions/upload-artifact@v5
         if: failure()
@@ -89,17 +106,20 @@ jobs:
           path: |
             **/.turbo/tests.json
             **/.turbo/turbo-*.log
+            !**/node_modules/**
 
   ui-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup
       - run: bunx playwright install --with-deps chromium
         working-directory: packages/ui
       - run: >-
-          bunx turbo run test --filter=@nunio/ui --concurrency=2
+          bunx turbo run test ${{ github.event_name == 'pull_request' && '--affected' || '' }} --filter=@nunio/ui --concurrency=2
           -- --maxWorkers=1 --reporter=default --reporter=json --outputFile=.turbo/tests.json
       - uses: actions/upload-artifact@v5
         if: failure()
@@ -110,16 +130,19 @@ jobs:
             **/.turbo/tests.json
             **/.turbo/turbo-*.log
             packages/ui/**/__screenshots__/**
+            !**/node_modules/**
 
   build-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup
       - run: bunx playwright install --with-deps chromium
         working-directory: apps/e2e
-      - run: bunx turbo run build --concurrency=2
+      - run: bunx turbo run build ${{ github.event_name == 'pull_request' && '--affected' || '' }} --concurrency=2
       - name: Local HTTPS names for the e2e suite
         run: echo "127.0.0.1 app.nunio.test api.nunio.test evil.test" | sudo tee -a /etc/hosts
       - run: bun run test:e2e --concurrency=2
@@ -132,12 +155,15 @@ jobs:
             apps/e2e/playwright-report/
             apps/e2e/test-results/
             **/.turbo/turbo-*.log
+            !**/node_modules/**
 
   openapi:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup
       - name: openapi.json is up to date (ADR-0003)
         run: |
@@ -178,114 +204,3 @@ jobs:
             then .value.result == "skipped"
             else .value.result == "success"
             end)'
-
-  spikes:
-    if: github.event_name == 'push'
-    needs: checks
-    runs-on: ubuntu-latest
-    environment: staging
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
-      # Spike e against the staging buckets and spike f against OpenRouter; both skip wherever their
-      # variables are unset.
-      - name: Spike e (Hetzner SSE-C)
-        run: bunx vitest run spike-e
-        working-directory: packages/knowledge
-        env:
-          HETZNER_S3_ENDPOINT: ${{ vars.HETZNER_S3_ENDPOINT }}
-          HETZNER_S3_REGION: ${{ vars.HETZNER_S3_REGION }}
-          HETZNER_QUARANTINE_BUCKET: ${{ vars.HETZNER_QUARANTINE_BUCKET }}
-          HETZNER_SOURCES_BUCKET: ${{ vars.HETZNER_SOURCES_BUCKET }}
-          HETZNER_S3_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY_ID }}
-          HETZNER_S3_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_ACCESS_KEY }}
-      - name: Spike f (OpenRouter)
-        run: bunx vitest run spike-f
-        working-directory: packages/ai
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENROUTER_BASE_URL: ${{ vars.OPENROUTER_BASE_URL }}
-          OPENROUTER_CHAT_MODEL: ${{ vars.OPENROUTER_CHAT_MODEL }}
-          OPENROUTER_EMBEDDING_MODEL: ${{ vars.OPENROUTER_EMBEDDING_MODEL }}
-
-  migrate:
-    if: github.event_name == 'push'
-    needs: checks
-    runs-on: ubuntu-latest
-    environment: staging
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
-      # The unpooled URL: migrations never go through the pooler.
-      - run: bun run migrate:deploy
-        working-directory: packages/db
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL_UNPOOLED }}
-
-  deploy-api:
-    needs: migrate
-    runs-on: ubuntu-latest
-    environment: staging
-    env:
-      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
-      - uses: ./.github/actions/vercel-deploy
-        with:
-          project-id: ${{ vars.VERCEL_API_PROJECT_ID }}
-          token: ${{ secrets.VERCEL_TOKEN }}
-
-  deploy-render:
-    needs: deploy-api
-    runs-on: ubuntu-latest
-    environment: staging
-    env:
-      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-    steps:
-      - uses: actions/checkout@v5
-      # The parser first: the worker calls it.
-      - name: Deploy parser
-        run: .github/scripts/render-deploy.sh "${{ vars.RENDER_PARSER_SERVICE_ID }}" "${{ github.sha }}"
-      - name: Deploy worker
-        run: .github/scripts/render-deploy.sh "${{ vars.RENDER_WORKER_SERVICE_ID }}" "${{ github.sha }}"
-
-  deploy-web:
-    needs: deploy-render
-    runs-on: ubuntu-latest
-    environment: staging
-    env:
-      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
-      - uses: ./.github/actions/vercel-deploy
-        with:
-          project-id: ${{ vars.VERCEL_WEB_PROJECT_ID }}
-          token: ${{ secrets.VERCEL_TOKEN }}
-
-  staging-e2e:
-    needs: deploy-web
-    runs-on: ubuntu-latest
-    environment: staging
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
-      # global-setup imports @nunio/db/testing from dist.
-      - run: bunx turbo run build --filter=@nunio/db
-      # The hostile origin is always served from the runner.
-      - run: echo "127.0.0.1 evil.test" | sudo tee -a /etc/hosts
-      - run: bunx playwright install --with-deps chromium
-        working-directory: apps/e2e
-      - run: bunx playwright test
-        working-directory: apps/e2e
-        env:
-          E2E_TARGET: staging
-          INVITATION_DATABASE_URL: ${{ secrets.INVITATION_DATABASE_URL }}
-          SPIKE_WEBHOOK_SECRET: ${{ secrets.SPIKE_WEBHOOK_SECRET }}
-          HETZNER_S3_ENDPOINT: ${{ vars.HETZNER_S3_ENDPOINT }}
-          HETZNER_S3_REGION: ${{ vars.HETZNER_S3_REGION }}
-          HETZNER_QUARANTINE_BUCKET: ${{ vars.HETZNER_QUARANTINE_BUCKET }}
-          HETZNER_SOURCES_BUCKET: ${{ vars.HETZNER_SOURCES_BUCKET }}
-          HETZNER_S3_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY_ID }}
-          HETZNER_S3_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_ACCESS_KEY }}

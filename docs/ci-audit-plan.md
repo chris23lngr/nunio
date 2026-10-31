@@ -4,7 +4,7 @@
 
 Contributors receive fast, independent, trustworthy checks on each pull request, without repeated timeout fixes or skipped coverage masquerading as success. A validated main commit can then roll out to staging safely without blocking validation of subsequent commits.
 
-Audit date: 2026-10-30 UTC. Base: `63946c8e3e82d549e902a3aa2cde8c9cb87280f9` (`origin/main`). Working branch: `chore/ci-audit-plan`. This document proposes changes; workflow behavior has not been changed.
+Audit date: 2026-10-30 UTC. Base: `63946c8e3e82d549e902a3aa2cde8c9cb87280f9` (`origin/main`). Original working branch: `chore/ci-audit-plan`. The audit and proposed phases below describe that historical snapshot; the implementation record at the end tracks subsequent changes.
 
 ## Findings and evidence
 
@@ -197,3 +197,25 @@ Guards: no claiming success from local cached tests alone, fewer assertions, inc
 Implement phases in order, keeping each change reviewable. Phases 1–2 address the immediate structural problem; Phase 3 resolves remaining test causes; Phase 4 reduces repeated work; Phase 5 separates delivery and enforces honest gates. No CI change, settings mutation, commit, push, PR, deployment or live-provider execution was performed for this planning task.
 
 Defer changing package managers, converting every internal package to source exports, replacing test frameworks, buying larger runners, broad test rewrites, and new infrastructure. None is justified by current evidence. Revisit sharding or Remote Cache only if measured lane duration and cache transfer costs warrant it.
+
+## Implementation record (2026-10-31)
+
+Artifact ownership and independent validation jobs were merged in [PR #6](https://github.com/chris23lngr/nunio/pull/6). Test isolation, cache reuse, affected selection, separate staging delivery, explicit live suites, and the remaining reliability fixes are in [PR #7](https://github.com/chris23lngr/nunio/pull/7), on `chore/ci-remediation`. The main [ruleset](https://github.com/chris23lngr/nunio/rules/26246644) is active: pull requests and successful GitHub Actions `checks` are required, with an up-to-date base and no bypass actors.
+
+The first parallel [PR validation](https://github.com/chris23lngr/nunio/actions/runs/41140066368) and its [main validation](https://github.com/chris23lngr/nunio/actions/runs/41140501512) passed. A later [follow-up validation](https://github.com/chris23lngr/nunio/actions/runs/41141118430) exposed a switch-story assertion that read its color during a CSS transition. A focused reproduction confirmed the correct dark token and a running transition; the existing exact final-color assertion now waits for that state. It passed five targeted runs and the full UI suite without changing the component or broadening the expected color.
+
+Local verification on the follow-up implementation:
+
+| Check | Result |
+| --- | --- |
+| Full lint / typecheck | 20 / 29 Turbo tasks passed, in separate invocations |
+| Database/API integration tests | 89 tests passed, with one package and file worker at a time |
+| Temporal tests | 5 tests passed |
+| Lightweight tests | 41 tests passed in Phase 5; their sources are unchanged |
+| Storybook browser tests | 57 tests across 16 files passed |
+| Production builds / local E2E | 18 build tasks and all 9 browser tests passed |
+| Workflow and installation validation | actionlint and frozen-lockfile dry installation passed |
+
+Earlier probes also verified byte-identical generated-artifact restoration, contract/schema/shared-configuration affected selection, startup-failure cleanup, aggregate failure/skip handling, and missing-configuration rejection. Staging discovery selects eight cases; live calls were not executed locally. The redundant delegation-only file-serialization override was removed: CI owns its worker budget through `--maxWorkers=1`. Integration/setup timeouts remain explicit budgets for real password hashing, database startup and operator subprocesses; no timeout was increased to hide a failing test.
+
+Phase 6 remains open for the final PR Linux result, a post-merge rollout of the new deployment workflow, and at least ten representative validations after the last reliability fix. Record cold/warm cache behavior, queue and lane durations, runner minutes and retry-free outcomes during that window. The successful intermediate runs and local checks above do not establish that observation window or prove the new staging rollout.

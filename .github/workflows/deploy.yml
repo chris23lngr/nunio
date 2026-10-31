@@ -1,0 +1,202 @@
+name: Deploy staging
+
+# workflow_run has privileged access: never promote PR runs or consume their artifacts.
+# https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Hold one lock for the entire rollout so commits cannot interleave across services.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  promotion:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      current: ${{ steps.current.outputs.current }}
+    steps:
+      - name: Reject stale promotion
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VALIDATED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$latest" == "$VALIDATED_SHA" ]]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping stale validated commit $VALIDATED_SHA; main is $latest."
+          fi
+
+  provider-checks:
+    needs: promotion
+    if: needs.promotion.outputs.current == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      HETZNER_S3_ENDPOINT: ${{ vars.HETZNER_S3_ENDPOINT }}
+      HETZNER_S3_REGION: ${{ vars.HETZNER_S3_REGION }}
+      HETZNER_QUARANTINE_BUCKET: ${{ vars.HETZNER_QUARANTINE_BUCKET }}
+      HETZNER_SOURCES_BUCKET: ${{ vars.HETZNER_SOURCES_BUCKET }}
+      HETZNER_S3_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY_ID }}
+      HETZNER_S3_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_ACCESS_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENROUTER_BASE_URL: ${{ vars.OPENROUTER_BASE_URL }}
+      OPENROUTER_CHAT_MODEL: ${{ vars.OPENROUTER_CHAT_MODEL }}
+      OPENROUTER_EMBEDDING_MODEL: ${{ vars.OPENROUTER_EMBEDDING_MODEL }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: ./.github/actions/setup
+      - name: Required provider configuration
+        run: |
+          missing=0
+          for variable in HETZNER_S3_ENDPOINT HETZNER_S3_REGION HETZNER_QUARANTINE_BUCKET HETZNER_SOURCES_BUCKET HETZNER_S3_ACCESS_KEY_ID HETZNER_S3_SECRET_ACCESS_KEY OPENROUTER_API_KEY OPENROUTER_BASE_URL OPENROUTER_CHAT_MODEL OPENROUTER_EMBEDDING_MODEL; do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::$variable is required for live provider checks"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - name: Hetzner SSE-C compatibility
+        run: bun run test:live --reporter=default --reporter=json --outputFile=.turbo/live-tests.json
+        working-directory: packages/knowledge
+      - name: OpenRouter compatibility
+        run: bun run test:live --reporter=default --reporter=json --outputFile=.turbo/live-tests.json
+        working-directory: packages/ai
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: provider-test-diagnostics
+          include-hidden-files: true
+          path: packages/*/.turbo/live-tests.json
+
+  migrate:
+    needs: promotion
+    if: needs.promotion.outputs.current == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: ./.github/actions/setup
+      # Migrations use the unpooled URL and complete before any service deploys.
+      - run: bun run migrate:deploy
+        working-directory: packages/db
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_UNPOOLED }}
+
+  deploy-api:
+    needs: migrate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/vercel-deploy
+        with:
+          project-id: ${{ vars.VERCEL_API_PROJECT_ID }}
+          token: ${{ secrets.VERCEL_TOKEN }}
+
+  deploy-render:
+    needs: deploy-api
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      VALIDATED_SHA: ${{ github.event.workflow_run.head_sha }}
+      PARSER_SERVICE_ID: ${{ vars.RENDER_PARSER_SERVICE_ID }}
+      WORKER_SERVICE_ID: ${{ vars.RENDER_WORKER_SERVICE_ID }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Deploy parser
+        run: .github/scripts/render-deploy.sh "$PARSER_SERVICE_ID" "$VALIDATED_SHA"
+      - name: Deploy worker
+        run: .github/scripts/render-deploy.sh "$WORKER_SERVICE_ID" "$VALIDATED_SHA"
+
+  deploy-web:
+    needs: deploy-render
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/vercel-deploy
+        with:
+          project-id: ${{ vars.VERCEL_WEB_PROJECT_ID }}
+          token: ${{ secrets.VERCEL_TOKEN }}
+
+  staging-e2e:
+    needs: deploy-web
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      E2E_TARGET: staging
+      INVITATION_DATABASE_URL: ${{ secrets.INVITATION_DATABASE_URL }}
+      SPIKE_WEBHOOK_SECRET: ${{ secrets.SPIKE_WEBHOOK_SECRET }}
+      HETZNER_S3_ENDPOINT: ${{ vars.HETZNER_S3_ENDPOINT }}
+      HETZNER_S3_REGION: ${{ vars.HETZNER_S3_REGION }}
+      HETZNER_QUARANTINE_BUCKET: ${{ vars.HETZNER_QUARANTINE_BUCKET }}
+      HETZNER_SOURCES_BUCKET: ${{ vars.HETZNER_SOURCES_BUCKET }}
+      HETZNER_S3_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY_ID }}
+      HETZNER_S3_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: ./.github/actions/setup
+      - name: Required staging test configuration
+        run: |
+          missing=0
+          for variable in INVITATION_DATABASE_URL SPIKE_WEBHOOK_SECRET HETZNER_S3_ENDPOINT HETZNER_S3_REGION HETZNER_QUARANTINE_BUCKET HETZNER_SOURCES_BUCKET HETZNER_S3_ACCESS_KEY_ID HETZNER_S3_SECRET_ACCESS_KEY; do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::$variable is required for staging smoke tests"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - run: bunx turbo run build --filter=@nunio/db --concurrency=2
+      - run: echo "127.0.0.1 evil.test" | sudo tee -a /etc/hosts
+      - run: bunx playwright install --with-deps chromium
+        working-directory: apps/e2e
+      - run: bunx playwright test
+        working-directory: apps/e2e
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: staging-e2e-diagnostics
+          path: |
+            apps/e2e/playwright-report/
+            apps/e2e/test-results/

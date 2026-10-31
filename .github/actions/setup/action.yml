@@ -9,5 +9,40 @@ runs:
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version-file: package.json
+    - name: Read toolchain versions
+      id: toolchain
+      shell: bash
+      run: |
+        echo "node=$(node --version)" >> "$GITHUB_OUTPUT"
+        echo "bun=$(bun --version)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      if: github.event_name != 'workflow_run'
+      with:
+        path: ~/.bun/install/cache
+        key: ${{ runner.os }}-bun-${{ steps.toolchain.outputs.bun }}-${{ hashFiles('bun.lock') }}
+        restore-keys: ${{ runner.os }}-bun-${{ steps.toolchain.outputs.bun }}-
+    # Deployment workflows only restore trusted default-branch caches.
+    - uses: actions/cache/restore@v4
+      if: github.event_name == 'workflow_run'
+      with:
+        path: ~/.bun/install/cache
+        key: ${{ runner.os }}-bun-${{ steps.toolchain.outputs.bun }}-${{ hashFiles('bun.lock') }}
+        restore-keys: ${{ runner.os }}-bun-${{ steps.toolchain.outputs.bun }}-
+    - uses: actions/cache@v4
+      if: github.event_name != 'workflow_run'
+      with:
+        path: .turbo/cache
+        key: ${{ runner.os }}-node-${{ steps.toolchain.outputs.node }}-bun-${{ steps.toolchain.outputs.bun }}-turbo-${{ github.job }}-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-node-${{ steps.toolchain.outputs.node }}-bun-${{ steps.toolchain.outputs.bun }}-turbo-${{ github.job }}-${{ hashFiles('bun.lock') }}-
+          ${{ runner.os }}-node-${{ steps.toolchain.outputs.node }}-bun-${{ steps.toolchain.outputs.bun }}-turbo-${{ github.job }}-
+    - uses: actions/cache/restore@v4
+      if: github.event_name == 'workflow_run'
+      with:
+        path: .turbo/cache
+        key: ${{ runner.os }}-node-${{ steps.toolchain.outputs.node }}-bun-${{ steps.toolchain.outputs.bun }}-turbo-${{ github.job }}-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-node-${{ steps.toolchain.outputs.node }}-bun-${{ steps.toolchain.outputs.bun }}-turbo-${{ github.job }}-${{ hashFiles('bun.lock') }}-
+          ${{ runner.os }}-node-${{ steps.toolchain.outputs.node }}-bun-${{ steps.toolchain.outputs.bun }}-turbo-${{ github.job }}-
     - run: bun install --frozen-lockfile
       shell: bash
