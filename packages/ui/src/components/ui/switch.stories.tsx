@@ -69,8 +69,10 @@ export const SpecStyling: Story = {
     await expect(style(thumb).boxShadow).toBe("none")
 
     // Off: swiButTeaBg, 30% gray; on: bluBacAccPri (#2783de in both themes)
-    await expect(style(track(off)).backgroundColor).toBe(
-      dark ? "rgba(120, 129, 135, 0.3)" : "rgba(135, 131, 120, 0.3)",
+    await waitFor(() =>
+      expect(style(track(off)).backgroundColor).toBe(
+        dark ? "rgba(120, 129, 135, 0.3)" : "rgba(135, 131, 120, 0.3)",
+      ),
     )
     await waitFor(() =>
       expect(style(track(on)).backgroundColor).toBe("rgb(39, 131, 222)"),
