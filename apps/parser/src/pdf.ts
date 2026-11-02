@@ -35,14 +35,13 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
     if (!Number.isSafeInteger(pages) || pages < 1 || pages > 100) throw new ParseError(413, "page_limit");
     await run("qpdf", [path, "--stream-data=uncompress", "--decode-level=all", "--object-streams=disable", "-"], 32 * 1024 * 1024);
     const texts = (await run("pdftotext", ["-layout", path, "-"])).toString("utf8").split("\f");
-    const images = (await run("pdfimages", ["-list", path])).toString();
-    const imagePages = new Set(images.split("\n").flatMap(line => line.match(/^\s*(\d+)\s+\d+\s+/)?.[1] ?? []));
     const result: ParsedPdf = { pages: [] };
     let totalBytes = 0;
     for (let page = 1; page <= pages; page++) {
       const text = (texts[page - 1] ?? "").trim();
       const item: ParsedPdf["pages"][number] = { page, text };
-      if (text.length < 80 || imagePages.has(String(page))) {
+      // Only a page without extractable text is scanned; an image on a text page (a logo) is not.
+      if (text.length < 80) {
         const prefix = join(dir, "page");
         await run("pdftoppm", ["-f", String(page), "-l", String(page), "-scale-to", "1568", "-singlefile", "-png", path, prefix]);
         const image = await readFile(`${prefix}.png`);

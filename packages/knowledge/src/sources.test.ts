@@ -129,7 +129,7 @@ it("keeps deletion retryable if durable cleanup cannot be dispatched", async () 
   const p = await student();
   const uploaded = await sources.upload(p, { title: "Retry.pdf", bytes: 100, type: "application/pdf" });
   if (uploaded.status !== "ok") throw new Error("upload refused");
-  await expect(sources.remove(p, uploaded.source.id, async () => { throw new Error("Temporal unavailable"); }))
+  await expect(sources.removeWithCleanup(p, uploaded.source.id, async () => { throw new Error("Temporal unavailable"); }))
     .rejects.toThrow("Temporal unavailable");
   expect(await sources.list(p)).toEqual([expect.objectContaining({ id: uploaded.source.id })]);
 });
@@ -157,4 +157,42 @@ it("keeps parser failures out of sources and never invokes an embedding model", 
     .toEqual({ status: "failed" });
   expect(objects.has(`sources/${uploaded.source.id}`)).toBe(false);
   expect(await sources.list(p)).toEqual([expect.objectContaining({ status: "failed" })]);
+});
+async function ingestPages(pages: { page: number; text: string; imageBase64?: string }[]) {
+  const p = await student();
+  if (p.kind !== "student") throw new Error("student");
+  await admin.allowance.create({ data: { studentId: p.studentId, limitMicroUsd: 5_000_000 } });
+  const uploaded = await sources.upload(p, { title: "Scan.pdf", bytes: 100, type: "application/pdf" });
+  if (uploaded.status !== "ok") throw new Error("upload refused");
+  await sources.complete(p, uploaded.source.id);
+  const delegation = createDelegation({ db: runtime, aiEnabled: () => true });
+  const metered: number[] = [];
+  const read: Buffer[] = [];
+  const embedded: string[] = [];
+  const result = await sources.ingest(p, uploaded.source.id, ingestion({
+    parse: async () => ({ pages }),
+    delegation: { ...delegation, meter: (principal, estimate, call, options) => {
+      metered.push(estimate.microUsd);
+      return delegation.meter(principal, estimate, call, options);
+    } },
+    scans: { estimateMicroUsd: () => 7, read: async image => { read.push(image); return { text: "Klausur am 3. Juli", usage: { microUsd: 1 } }; } },
+    embedder: { model: "test", dims: 3, estimateMicroUsd: () => 10,
+      embed: async texts => { embedded.push(...texts); return { vectors: texts.map(() => [1, 0, 0]), usage: { microUsd: 1 } }; } },
+  }));
+  return { result, metered, read, embedded };
+}
+it("meters a scanned page's transcription and indexes its text", async () => {
+  const png = Buffer.from("scanned page image");
+  const { result, metered, read, embedded } = await ingestPages([{ page: 1, text: "", imageBase64: png.toString("base64") }]);
+  expect(result).toEqual({ status: "ready" });
+  expect(read).toEqual([png]);
+  expect(metered).toEqual([7, 10]);
+  expect(embedded).toEqual(["Klausur am 3. Juli"]);
+});
+it("keeps a page's extracted text when it is also transcribed", async () => {
+  const { result, embedded } = await ingestPages([{ page: 1, text: "Raum H1",
+    imageBase64: Buffer.from("page image").toString("base64") }]);
+  expect(result).toEqual({ status: "ready" });
+  expect(embedded.join("\n")).toContain("Raum H1");
+  expect(embedded.join("\n")).toContain("Klausur am 3. Juli");
 });

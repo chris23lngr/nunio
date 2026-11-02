@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 // ADR-0009: the parser holds no secrets, so a secret in its environment is a deployment mistake.
 function start(env: Record<string, string>) {
   const child = spawn(process.execPath, ["--import", "tsx", new URL("./index.ts", import.meta.url).pathname], {
-    env: { PATH: process.env.PATH ?? "", PORT: "0", ...env },
+    env: { PATH: process.env.PATH ?? "", PORT: "0", PARSER_QUARANTINE_BUCKET: "test", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";

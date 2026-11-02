@@ -1,9 +1,10 @@
+CREATE TYPE "source_status" AS ENUM ('uploading', 'queued', 'processing', 'ready', 'failed', 'deleted');
 CREATE TABLE "source" (
   "id" TEXT PRIMARY KEY,
   "studentId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   "title" TEXT NOT NULL,
   "bytes" INTEGER NOT NULL CHECK ("bytes" > 0 AND "bytes" <= 20971520),
-  "status" TEXT NOT NULL DEFAULT 'uploading',
+  "status" "source_status" NOT NULL DEFAULT 'uploading',
   "keyVersion" TEXT,
   "keyCiphertext" TEXT,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

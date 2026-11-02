@@ -5,7 +5,7 @@ model Source {
   student       User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   title         String
   bytes         Int
-  status        String    @default("uploading")
+  status        SourceStatus @default(uploading)
   keyVersion    String?
   keyCiphertext String?
   createdAt     DateTime  @default(now())
@@ -17,6 +17,17 @@ model Source {
   @@unique([id, studentId])
   @@index([studentId, deletedAt])
   @@map("source")
+}
+
+enum SourceStatus {
+  uploading
+  queued
+  processing
+  ready
+  failed
+  deleted
+
+  @@map("source_status")
 }
 
 model SourceChunk {

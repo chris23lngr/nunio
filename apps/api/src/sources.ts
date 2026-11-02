@@ -1,12 +1,14 @@
 import { createRoute, z, type OpenAPIHono } from "@hono/zod-openapi";
+import { SourceStatus } from "@nunio/db";
 import { principal } from "@nunio/delegation";
+import { maxSourceBytes } from "@nunio/knowledge";
 import type { AppBindings } from "./app.js";
 
-const Source = z.object({ id: z.string(), title: z.string(), status: z.string() }).openapi("Source");
+const Source = z.object({ id: z.string(), title: z.string(), status: z.enum(SourceStatus) }).openapi("Source");
 const ErrorBody = z.object({ error: z.string() });
 const json = (schema: z.ZodType, description: string) => ({ description, content: { "application/json": { schema } } });
 const errors = { 401: json(ErrorBody, "Sign in required."), 403: json(ErrorBody, "Pilot access is not active or deletion is pending."),
-  404: json(ErrorBody, "Source is gone."), 503: json(ErrorBody, "Source processing is unavailable.") };
+  404: json(ErrorBody, "Source is gone.") };
 const params = z.object({ id: z.string().uuid() });
 export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(createRoute({ method: "get", path: "/api/me/sources", responses: {
@@ -16,30 +18,27 @@ export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
     const actor = await c.get("auth").authenticate(c.req.raw);
     if (!actor) return c.json({ error: "unauthorized" }, 401);
     const sources = c.get("sources");
-    if (!sources) return c.json({ error: "unavailable" }, 503);
     return c.json(await sources.list(principal.fromSession(actor)), 200);
   });
   routes.openapi(createRoute({ method: "post", path: "/api/me/sources", request: { body: { required: true,
-    content: { "application/json": { schema: z.object({ title: z.string().min(1).max(255), bytes: z.number().int().positive().max(20 * 1024 * 1024), type: z.literal("application/pdf") }) } } } },
+    content: { "application/json": { schema: z.object({ title: z.string().min(1).max(255), bytes: z.number().int().positive().max(maxSourceBytes), type: z.literal("application/pdf") }) } } } },
   responses: { 201: json(z.object({ source: Source, upload: z.object({ url: z.string(), headers: z.record(z.string(), z.string()), expiresAt: z.string() }) }), "Upload directly to quarantine using PUT and these headers."), ...errors },
   }), async c => {
     c.header("cache-control", "no-store");
     const actor = await c.get("auth").authenticate(c.req.raw);
     if (!actor) return c.json({ error: "unauthorized" }, 401);
     const sources = c.get("sources");
-    if (!sources) return c.json({ error: "unavailable" }, 503);
     const result = await sources.upload(principal.fromSession(actor), c.req.valid("json"));
     if (result.status === "refused") return c.json({ error: result.reason }, 403);
     return c.json({ source: result.source, upload: { ...result.upload, expiresAt: result.upload.expiresAt.toISOString() } }, 201);
   });
   routes.openapi(createRoute({ method: "post", path: "/api/me/sources/{id}/complete", request: { params }, responses: {
-    202: json(z.object({ status: z.literal("queued") }), "Ingestion Run queued; repeating is idempotent."), ...errors,
+    202: json(z.object({ status: z.literal("queued") }), "Ingestion queued; repeating is idempotent."), ...errors,
   } }), async c => {
     c.header("cache-control", "no-store");
     const actor = await c.get("auth").authenticate(c.req.raw);
     if (!actor) return c.json({ error: "unauthorized" }, 401);
     const sources = c.get("sources"), workflows = c.get("sourceWorkflows");
-    if (!sources || !workflows) return c.json({ error: "unavailable" }, 503);
     const id = c.req.valid("param").id;
     const result = await sources.complete(principal.fromSession(actor), id);
     if (result.status === "gone") return c.json({ error: "gone" }, 404);
@@ -54,9 +53,8 @@ export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
     const actor = await c.get("auth").authenticate(c.req.raw);
     if (!actor) return c.json({ error: "unauthorized" }, 401);
     const sources = c.get("sources"), workflows = c.get("sourceWorkflows");
-    if (!sources || !workflows) return c.json({ error: "unavailable" }, 503);
     const id = c.req.valid("param").id;
-    const result = await sources.remove(principal.fromSession(actor), id,
+    const result = await sources.removeWithCleanup(principal.fromSession(actor), id,
       cleanupAfter => workflows.start("deleteSource", actor.studentId, id, cleanupAfter.toISOString()));
     if (result.status === "gone") return c.json({ error: "gone" }, 404);
     return c.json({ status: "deleted" as const }, 202);

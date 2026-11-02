@@ -293,13 +293,13 @@ Manual staging evidence (2026-11-02): the founder confirmed all manual Phase 4 c
 2. **Upload flow:**
    1. The API validates the declared size and type, creates the Source record and key, and returns a presigned PUT to `quarantine` with SSE-C and a signed `ContentLength`.
    2. The browser uploads via `fetch()`.
-   3. The API is notified and starts an ingestion Run.
+   3. The API is notified and starts the ingestion workflow.
 3. **Ingestion workflow (worker):**
-   - Signature sniffing and size, page, and decompression limits.
+   - Signature sniffing and size, page, and decompression limits. *Accepted deviation:* these run in the parser, not the worker, so untrusted bytes are inspected only inside the secretless sandbox (ADR-0009).
    - The parser is called with a presigned GET plus the single file's key, and returns structured text.
    - Scanned pages are detected and routed to Claude image input via `meter` (ADR-0011).
    - Snapshot uploads to a worker-only key inside quarantine before parsing; on success, promote that snapshot to `sources` with SSE-C multipart copy and delete the quarantine copies (ADR-0007 amendment).
-4. Chunking, with chunk text encrypted under the Source key ([knowledge-retrieval.md](design/knowledge-retrieval.md)). Embeddings via an in-region OpenRouter embedding model from spike f, chosen by the German eval (run the eval here; deprecation check first).
+4. Chunking, with chunk text encrypted under the Source key ([knowledge-retrieval.md](design/knowledge-retrieval.md)). Embeddings via an in-region OpenRouter embedding model from spike f, chosen by the German eval (run the eval here; deprecation check first). *Accepted exception:* the chosen model is not in-region; see the ADR-0012 Phase 5 amendment.
 5. **Source deletion:** shred the key, delete embedding rows and derived rows in one transaction, and delete objects. Visible immediately everywhere.
 6. Upload and AI entry points refuse students with a pending deletion request or a non-active pilot entitlement ([identity-and-pilot-access.md](design/identity-and-pilot-access.md)).
 

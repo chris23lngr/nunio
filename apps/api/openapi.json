@@ -132,7 +132,15 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "uploading",
+              "queued",
+              "processing",
+              "ready",
+              "failed",
+              "deleted"
+            ]
           }
         },
         "required": [
@@ -338,24 +346,6 @@
                 }
               }
             }
-          },
-          "503": {
-            "description": "Source processing is unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
           }
         }
       },
@@ -488,24 +478,6 @@
                 }
               }
             }
-          },
-          "503": {
-            "description": "Source processing is unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
           }
         }
       }
@@ -525,7 +497,7 @@
         ],
         "responses": {
           "202": {
-            "description": "Ingestion Run queued; repeating is idempotent.",
+            "description": "Ingestion queued; repeating is idempotent.",
             "content": {
               "application/json": {
                 "schema": {
@@ -583,24 +555,6 @@
           },
           "404": {
             "description": "Source is gone.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Source processing is unavailable.",
             "content": {
               "application/json": {
                 "schema": {
@@ -693,24 +647,6 @@
           },
           "404": {
             "description": "Source is gone.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Source processing is unavailable.",
             "content": {
               "application/json": {
                 "schema": {

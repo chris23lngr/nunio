@@ -34,6 +34,9 @@ services:
         sync: false
       - key: CODEC_KEY
         sync: false
+      # Optional during rotation: {"<old version>":"<base64 32-byte key>"}, decode-only.
+      - key: CODEC_PREVIOUS_KEYS
+        sync: false
       - key: DATABASE_URL
         sync: false
       - key: SOURCE_MASTER_KEYS

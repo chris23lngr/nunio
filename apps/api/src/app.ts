@@ -9,7 +9,7 @@ import type { SourceWorkflows } from "./source-workflows.js";
 import { registerSourceRoutes } from "./sources.js";
 
 export interface AppBindings {
-  Variables: { auth: Auth; prisma: PrismaClient; delegation: Delegation; sources?: Sources; sourceWorkflows?: SourceWorkflows };
+  Variables: { auth: Auth; prisma: PrismaClient; delegation: Delegation; sources: Sources; sourceWorkflows: SourceWorkflows };
 }
 
 const HealthSchema = z.object({ status: z.literal("ok") }).openapi("Health");

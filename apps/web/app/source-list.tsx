@@ -1,12 +1,12 @@
 "use client";
 
-import { createApiClient } from "@nunio/api-client";
+import { createApiClient, type paths } from "@nunio/api-client";
 import { useEffect, useState, type FormEvent } from "react";
 
-interface Source { id: string; title: string; status: string }
-const labels: Record<string, string> = {
+type Source = paths["/api/me/sources"]["get"]["responses"][200]["content"]["application/json"][number];
+const labels: Record<Source["status"], string> = {
   uploading: "Waiting for upload", queued: "Waiting to process", processing: "Processing", ready: "Ready",
-  failed: "Processing stopped. Contact support before trying again.",
+  failed: "Processing stopped. Contact support before trying again.", deleted: "Deleted",
 };
 export function SourceList({ apiOrigin }: { apiOrigin: string }) {
   const [sources, setSources] = useState<Source[]>([]);
@@ -68,7 +68,7 @@ export function SourceList({ apiOrigin }: { apiOrigin: string }) {
       </form>
       {error && <p role="alert">{error}</p>}
       <ul>{sources.map(source => <li key={source.id}>
-        <span>{source.title} — {labels[source.status] ?? source.status}</span>{" "}
+        <span>{source.title} — {labels[source.status]}</span>{" "}
         <button type="button" disabled={busy} onClick={() => { void remove(source); }}>Delete</button>
       </li>)}</ul>
     </section>

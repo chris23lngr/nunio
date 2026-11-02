@@ -6,6 +6,7 @@ import pg from "pg";
 import { PrismaClient } from "./generated/prisma/client.js";
 
 export { PrismaClient };
+export { SourceStatus } from "./generated/prisma/enums.js";
 export type Pool = pg.Pool;
 
 /**

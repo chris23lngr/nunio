@@ -67,4 +67,4 @@ export function sourceKeysFromEnv(env: NodeJS.ProcessEnv): SourceKeys {
   const masters: Record<string, Buffer> = Object.fromEntries(Object.entries(values).map(([version, key]) => [version, Buffer.from(key, "base64")]));
   return createSourceKeys({ activeVersion: env.SOURCE_KEY_VERSION, masters });
 }
-export { createPayloadCodec } from "./codec.js";
+export { createPayloadCodec, payloadCodecFromEnv } from "./codec.js";

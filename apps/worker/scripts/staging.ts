@@ -9,7 +9,7 @@
 //   timeline <id>         Activity attempts with their worker identity and times
 //   parser <id>           run checkParser: the worker calls the parser over Render's private network
 import { Client, Connection } from "@temporalio/client";
-import { createPayloadCodec } from "../src/codec.js";
+import { payloadCodecFromEnv } from "@nunio/keys";
 import { approvalSignal } from "../src/workflows.js";
 
 const env = (name: string) => {
@@ -20,7 +20,7 @@ const env = (name: string) => {
 const connection = await Connection.connect({ address: env("TEMPORAL_ADDRESS"), tls: true, apiKey: env("TEMPORAL_API_KEY") });
 const namespace = env("TEMPORAL_NAMESPACE");
 const taskQueue = env("TEMPORAL_TASK_QUEUE");
-const codec = createPayloadCodec({ key: Buffer.from(env("CODEC_KEY"), "base64"), keyVersion: env("CODEC_KEY_VERSION") });
+const codec = payloadCodecFromEnv(process.env);
 const client = new Client({ connection, namespace, dataConverter: { payloadCodecs: [codec] } });
 const raw = new Client({ connection, namespace });
 

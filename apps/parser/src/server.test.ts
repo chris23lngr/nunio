@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createParserServer } from "./server.js";
 
-const server = createParserServer();
+const server = createParserServer({ quarantineBucket: "test" });
 let base = "";
 
 beforeAll(async () => {
@@ -60,6 +60,13 @@ it("extracts a real PDF and renders pages without text for the worker", async ()
   const scan = await parseUpload(pdfFixture({ text: "" }));
   expect(scan.status).toBe(200);
   expect(Buffer.from(scan.body.pages[0]!.imageBase64!, "base64").subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+});
+it("keeps a text-rich page with a logo as extracted text, without rendering it", async () => {
+  const { pdfFixture } = await import("../test/fixtures.js");
+  const parsed = await parseUpload(pdfFixture({ image: true }));
+  expect(parsed.status).toBe(200);
+  expect(parsed.body.pages[0]!.text).toContain("examination");
+  expect(parsed.body.pages[0]!.imageBase64).toBeUndefined();
 });
 it("refuses byte mismatches, malformed PDFs, excessive pages and compressed bombs", async () => {
   const { pdfFixture } = await import("../test/fixtures.js");

@@ -1,6 +1,7 @@
-// Spike d workflows. Workflow code is deterministic: no I/O here, only Activities (durable-ai.md).
+// Source ingestion and deletion workflows, plus the spike d checks. Workflow code is deterministic:
+// no I/O here, only Activities (durable-ai.md).
 import { condition, defineSignal, proxyActivities, setHandler, sleep } from "@temporalio/workflow";
-import type { SourceActivities, SourceRun } from "./source-activities.js";
+import type { SourceActivities, SourceRef } from "./source-activities.js";
 import type { Activities } from "./activities.js";
 
 const { hold, checkParser: parserHealth } = proxyActivities<Activities>({
@@ -33,17 +34,17 @@ export async function checkParser(): Promise<{ status: string }> {
 
 
 // Ingestion is not retried wholesale: a crashed model call may already have incurred usage.
-// A founder investigates failed/interrupted Runs and held reservations until Phase 9 reconciliation.
+// A founder investigates failed/interrupted ingestions and held reservations until Phase 9 reconciliation.
 const { processSource } = proxyActivities<SourceActivities>({
   startToCloseTimeout: "15 minutes", heartbeatTimeout: "30 seconds", retry: { maximumAttempts: 1 },
 });
 const { purgeSource } = proxyActivities<SourceActivities>({
   startToCloseTimeout: "2 minutes", retry: { initialInterval: "5 seconds", maximumInterval: "5 minutes" },
 });
-export async function ingestSource(input: SourceRun) {
+export async function ingestSource(input: SourceRef) {
   return processSource(input);
 }
-export async function deleteSource(input: SourceRun & { cleanupAfter: string }) {
+export async function deleteSource(input: SourceRef & { cleanupAfter: string }) {
   await purgeSource({ studentId: input.studentId, sourceId: input.sourceId });
   const delay = new Date(input.cleanupAfter).getTime() - Date.now();
   if (delay > 0) await sleep(delay);

@@ -5,7 +5,7 @@ import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import { createActivities } from "./activities.js";
-import { createPayloadCodec } from "./codec.js";
+import { payloadCodecFromEnv } from "@nunio/keys";
 import { createSourceActivities } from "./source-activities.js";
 import { log } from "./log.js";
 
@@ -21,10 +21,7 @@ const connection = await NativeConnection.connect({
   ...(apiKey && { tls: true, apiKey }),
 });
 const taskQueue = required("TEMPORAL_TASK_QUEUE");
-const codec = createPayloadCodec({
-  key: Buffer.from(required("CODEC_KEY"), "base64"),
-  keyVersion: required("CODEC_KEY_VERSION"),
-});
+const codec = payloadCodecFromEnv(process.env);
 
 // dist/ carries a bundle prebuilt at build time; under tsx (tests) the worker bundles src itself.
 const here = (file: string) => fileURLToPath(new URL(file, import.meta.url));

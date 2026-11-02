@@ -7,7 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AddressInfo } from "node:net";
 import { createParserServer } from "@nunio/parser/server";
 import { createActivities } from "./activities.js";
-import { createPayloadCodec } from "./codec.js";
+import { createPayloadCodec } from "@nunio/keys";
+import { parseSource } from "./source-activities.js";
 import { approvalSignal } from "./workflows.js";
 
 const taskQueue = "spike-d-test";
@@ -98,7 +99,7 @@ const text = (bytes: Uint8Array | undefined) => (bytes ? Buffer.from(bytes).toSt
 
 describe("checkParser", () => {
   it("reaches the parser's health endpoint from an Activity", async () => {
-    const parser = createParserServer();
+    const parser = createParserServer({ quarantineBucket: "test" });
     await new Promise<void>((resolve) => parser.listen(0, "127.0.0.1", resolve));
     const parserUrl = `http://127.0.0.1:${(parser.address() as AddressInfo).port}`;
     try {
@@ -128,6 +129,25 @@ describe("Source Runs", () => {
         args: [{ studentId: "student", sourceId: "source" }] })).rejects.toThrow();
     });
     expect(calls).toBe(1);
+  });
+  it("waits for a busy parser instead of failing the Source", async () => {
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const parser = createParserServer({ quarantineBucket: "test",
+      fetch: async () => { await held; return new Response(null, { status: 404 }); } });
+    await new Promise<void>(resolve => parser.listen(0, "127.0.0.1", resolve));
+    const hostport = `127.0.0.1:${(parser.address() as AddressInfo).port}`;
+    const input = { url: "https://fsn1.your-objectstorage.com/test/source", etag: "e", expectedBytes: 9 };
+    try {
+      const first = parseSource(hostport, { ...input, keyBase64: Buffer.alloc(32).toString("base64") }, new AbortController().signal);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      // Past the busy lock, the parser judges the request itself.
+      const second = expect(parseSource(hostport, { ...input, keyBase64: "not a key" }, new AbortController().signal))
+        .rejects.toThrow("(400)");
+      setTimeout(release, 300);
+      await expect(first).rejects.toThrow("(502)");
+      await second;
+    } finally { release(); await new Promise<void>(resolve => parser.close(() => resolve())); }
   });
   it("sweeps object versions immediately and again after the upload window", async () => {
     const seen: unknown[] = [];

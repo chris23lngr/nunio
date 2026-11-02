@@ -14,8 +14,8 @@ export interface AppDeps {
   auth: Auth;
   prisma: PrismaClient;
   delegation: Delegation;
-  sources?: Sources;
-  sourceWorkflows?: SourceWorkflows;
+  sources: Sources;
+  sourceWorkflows: SourceWorkflows;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
   /** Mounts the spike c routes when set. */

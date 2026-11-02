@@ -11,7 +11,7 @@ export function createSourceStorage({ s3, quarantine, sources }: { s3: S3Client;
   const unhoistableHeaders = new Set(["x-amz-server-side-encryption-customer-algorithm",
     "x-amz-server-side-encryption-customer-key", "x-amz-server-side-encryption-customer-key-md5"]);
   const ssec = (key: Buffer) => ({ SSECustomerAlgorithm: "AES256", SSECustomerKey: key.toString("base64") });
-  const sealedKey = (id: string) => `sealed/${id}`;
+  const snapshotPath = (id: string) => `sealed/${id}`;
   const copy = async (from: string, fromKey: string, to: string, toKey: string, key: Buffer) => {
     const target = { Bucket: to, Key: toKey };
     const { UploadId } = await s3.send(new CreateMultipartUploadCommand({ ...target, ...ssec(key) }));
@@ -39,22 +39,22 @@ export function createSourceStorage({ s3, quarantine, sources }: { s3: S3Client;
     async download(id, key) {
       // The signed browser PUT can be replayed. Parse a worker-only snapshot inside quarantine;
       // Hetzner does not enforce CopySourceIfMatch on multipart copy (Phase 5 live regression).
-      await copy(quarantine, id, quarantine, sealedKey(id), key);
-      const head = await s3.send(new HeadObjectCommand({ Bucket: quarantine, Key: sealedKey(id), ...ssec(key) }));
+      await copy(quarantine, id, quarantine, snapshotPath(id), key);
+      const head = await s3.send(new HeadObjectCommand({ Bucket: quarantine, Key: snapshotPath(id), ...ssec(key) }));
       if (!head.ETag) throw new Error("Missing upload ETag");
-      const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: quarantine, Key: sealedKey(id), IfMatch: head.ETag, ...ssec(key) }),
+      const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: quarantine, Key: snapshotPath(id), IfMatch: head.ETag, ...ssec(key) }),
         { expiresIn: 300, unhoistableHeaders });
       return { url, keyBase64: key.toString("base64"), etag: head.ETag };
     },
     async promote(id, key) {
       // ADR-0007 amendment / spike e: CopyObject returns501 for SSE-C; multipart copy works.
-      await copy(quarantine, sealedKey(id), sources, id, key);
+      await copy(quarantine, snapshotPath(id), sources, id, key);
       await s3.send(new DeleteObjectCommand({ Bucket: quarantine, Key: id }));
-      await s3.send(new DeleteObjectCommand({ Bucket: quarantine, Key: sealedKey(id) }));
+      await s3.send(new DeleteObjectCommand({ Bucket: quarantine, Key: snapshotPath(id) }));
     },
     async remove(id) {
       await s3.send(new DeleteObjectCommand({ Bucket: quarantine, Key: id }));
-      await s3.send(new DeleteObjectCommand({ Bucket: quarantine, Key: sealedKey(id) }));
+      await s3.send(new DeleteObjectCommand({ Bucket: quarantine, Key: snapshotPath(id) }));
       // Delete every retained version, not only a new delete marker. No Source key is required.
       let KeyMarker: string | undefined, VersionIdMarker: string | undefined;
       do {

@@ -7,7 +7,8 @@ export function createParserServer(options: {
   storageEndpoint?: string; quarantineBucket?: string; fetch?: typeof fetch;
 } = {}): Server {
   const endpoint = new URL(options.storageEndpoint ?? process.env.PARSER_STORAGE_ENDPOINT ?? "https://fsn1.your-objectstorage.com");
-  const bucket = options.quarantineBucket ?? process.env.PARSER_QUARANTINE_BUCKET ?? "nunio-quarantine-staging";
+  const bucket = options.quarantineBucket ?? process.env.PARSER_QUARANTINE_BUCKET;
+  if (!bucket) throw new Error("PARSER_QUARANTINE_BUCKET is required");
   let busy = false;
   return createServer(async (req, res) => {
     const json = (status: number, value: unknown) => {

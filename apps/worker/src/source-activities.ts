@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { Context } from "@temporalio/activity";
 import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
 import { createDelegation, principal } from "@nunio/delegation";
@@ -5,7 +6,7 @@ import { sourceKeysFromEnv } from "@nunio/keys";
 import { createSources, sourceStorageFromEnv, type Ingestion, type Sources } from "@nunio/knowledge";
 import { createEmbedder, createModels, createScanReader } from "@nunio/ai";
 
-export interface SourceRun { studentId: string; sourceId: string }
+export interface SourceRef { studentId: string; sourceId: string }
 export function createSourceActivities(env: NodeJS.ProcessEnv) {
   let db: PrismaClient | undefined;
   let sources: Sources | undefined;
@@ -18,7 +19,7 @@ export function createSourceActivities(env: NodeJS.ProcessEnv) {
   return {
     async close() { await db?.$disconnect(); },
     activities: {
-      async processSource({ studentId, sourceId }: SourceRun) {
+      async processSource({ studentId, sourceId }: SourceRef) {
         const { db, sources } = runtime();
         const context = Context.current();
         const heartbeat = setInterval(() => context.heartbeat(), 5_000);
@@ -28,27 +29,13 @@ export function createSourceActivities(env: NodeJS.ProcessEnv) {
             signal: context.cancellationSignal,
             delegation: createDelegation({ db, aiEnabled: () => env.AI_DISABLED !== "true" }),
             embedder: createEmbedder(provider), scans: createScanReader(createModels(provider)),
-            async parse(input) {
-              const response = await fetch(`http://${required("PARSER_HOSTPORT")}/parse`, { method: "POST",
-                headers: { "content-type": "application/json" }, body: JSON.stringify(input),
-                signal: AbortSignal.any([AbortSignal.timeout(75_000), context.cancellationSignal]) });
-              if (!response.ok) throw new Error(`Parser refused Source (${response.status})`);
-              if (!response.body) throw new Error("Empty parser response");
-              const parts: Uint8Array[] = [];
-              let bytes = 0;
-              for await (const part of response.body) {
-                bytes += part.length;
-                if (bytes > 18 * 1024 * 1024) throw new Error("Parser response exceeds its bound");
-                parts.push(part);
-              }
-              return JSON.parse(Buffer.concat(parts).toString()) as Awaited<ReturnType<Ingestion["parse"]>>;
-            },
+            parse: input => parseSource(required("PARSER_HOSTPORT"), input, context.cancellationSignal),
           };
           // Decrypted keys and content stay inside this Activity, never in workflow arguments/results.
           return await sources.ingest(principal.fromSession({ studentId }), sourceId, deps);
         } finally { clearInterval(heartbeat); }
       },
-      async purgeSource({ studentId, sourceId }: SourceRun) {
+      async purgeSource({ studentId, sourceId }: SourceRef) {
         const { sources } = runtime();
         const p = principal.fromSession({ studentId });
         // Dispatch precedes API deletion: finish the tombstone even if the API process stopped.
@@ -57,5 +44,27 @@ export function createSourceActivities(env: NodeJS.ProcessEnv) {
       },
     },
   };
+}
+/** The parser takes one PDF at a time; wait out `503 busy` until the Activity's own timeout cancels. */
+export async function parseSource(hostport: string, input: Parameters<Ingestion["parse"]>[0], signal: AbortSignal) {
+  let response: Response;
+  for (let pause = 250; ; pause = Math.min(pause * 2, 15_000)) {
+    response = await fetch(`http://${hostport}/parse`, { method: "POST",
+      headers: { "content-type": "application/json" }, body: JSON.stringify(input),
+      signal: AbortSignal.any([AbortSignal.timeout(75_000), signal]) });
+    if (response.status !== 503) break;
+    await response.body?.cancel();
+    await sleep(pause, undefined, { signal });
+  }
+  if (!response.ok) throw new Error(`Parser refused Source (${response.status})`);
+  if (!response.body) throw new Error("Empty parser response");
+  const parts: Uint8Array[] = [];
+  let bytes = 0;
+  for await (const part of response.body) {
+    bytes += part.length;
+    if (bytes > 18 * 1024 * 1024) throw new Error("Parser response exceeds its bound");
+    parts.push(part);
+  }
+  return JSON.parse(Buffer.concat(parts).toString()) as Awaited<ReturnType<Ingestion["parse"]>>;
 }
 export type SourceActivities = ReturnType<typeof createSourceActivities>["activities"];
