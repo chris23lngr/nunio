@@ -130,6 +130,20 @@ describe("Source Runs", () => {
     });
     expect(calls).toBe(1);
   });
+  it("extracts Facts once, only after ingestion made the Source ready", async () => {
+    const extracted: unknown[] = [];
+    const ingest = async (status: string) => {
+      const worker = await Worker.create({ connection: env.nativeConnection, taskQueue, workflowBundle, activities: {
+        processSource: async () => ({ status }),
+        extractFacts: async (input: unknown) => { extracted.push(input); return { status: "failed" }; },
+      } });
+      return worker.runUntil(env.client.workflow.execute("ingestSource", { taskQueue, workflowId: `source-${randomUUID()}`,
+        args: [{ studentId: "student", sourceId: status }] }));
+    };
+    expect(await ingest("failed")).toEqual({ status: "failed" });
+    expect(await ingest("ready")).toEqual({ status: "ready", extraction: { status: "failed" } });
+    expect(extracted).toEqual([{ studentId: "student", sourceId: "ready" }]);
+  });
   it("waits for a busy parser instead of failing the Source", async () => {
     let release!: () => void;
     const held = new Promise<void>(resolve => { release = resolve; });

@@ -3,8 +3,9 @@ import { Context } from "@temporalio/activity";
 import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
 import { createDelegation, principal } from "@nunio/delegation";
 import { sourceKeysFromEnv } from "@nunio/keys";
-import { createSources, sourceStorageFromEnv, type Ingestion, type Sources } from "@nunio/knowledge";
-import { createEmbedder, createModels, createScanReader } from "@nunio/ai";
+import { createFacts, createSources, sourceStorageFromEnv, type Ingestion, type Sources } from "@nunio/knowledge";
+import { createEmbedder, createExtractor, createModels, createScanReader } from "@nunio/ai";
+import { log } from "./log.js";
 
 export interface SourceRef { studentId: string; sourceId: string }
 const settings = ["DATABASE_URL", "SOURCE_KEY_VERSION", "SOURCE_MASTER_KEYS", "HETZNER_S3_ENDPOINT", "HETZNER_S3_REGION",
@@ -16,9 +17,12 @@ export function createSourceActivities(env: NodeJS.ProcessEnv) {
   const missing = settings.filter(name => !env[name]);
   if (missing.length) throw new Error(`Missing settings: ${missing.join(", ")}`);
   const db: PrismaClient = createPrismaClient(createPool(env.DATABASE_URL!));
-  const sources: Sources = createSources({ db, keys: sourceKeysFromEnv(env), storage: sourceStorageFromEnv(env) });
+  const keys = sourceKeysFromEnv(env);
+  const sources: Sources = createSources({ db, keys, storage: sourceStorageFromEnv(env) });
+  const facts = createFacts({ db, keys, clock: { now: () => new Date() } });
   const provider = { apiKey: env.OPENROUTER_API_KEY!, baseURL: env.OPENROUTER_BASE_URL! };
-  const embedder = createEmbedder(provider), scans = createScanReader(createModels(provider));
+  const models = createModels(provider);
+  const embedder = createEmbedder(provider), scans = createScanReader(models), extractor = createExtractor(models);
   const delegation = createDelegation({ db, aiEnabled: () => env.AI_DISABLED !== "true" });
   return {
     async close() { await db.$disconnect(); },
@@ -33,6 +37,17 @@ export function createSourceActivities(env: NodeJS.ProcessEnv) {
           };
           // Decrypted keys and content stay inside this Activity, never in workflow arguments/results.
           return await sources.ingest(principal.fromSession({ studentId }), sourceId, deps);
+        } finally { clearInterval(heartbeat); }
+      },
+      async extractFacts({ studentId, sourceId }: SourceRef) {
+        const context = Context.current();
+        const heartbeat = setInterval(() => context.heartbeat(), 5_000);
+        try {
+          const result = await facts.extract(principal.fromSession({ studentId }), sourceId,
+            { extractor, delegation, signal: context.cancellationSignal });
+          // IDs and counts only: never Source content.
+          log("extraction finished", { sourceId, ...result });
+          return result;
         } finally { clearInterval(heartbeat); }
       },
       async purgeSource({ studentId, sourceId }: SourceRef) {

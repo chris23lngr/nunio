@@ -1,0 +1,2254 @@
+{
+  "checkedAt": "2026-11-02T18:32:48.357Z",
+  "model": "anthropic/claude-haiku-5.5",
+  "runsPerDocument": 3,
+  "labels": "draft, pending founder spot-check",
+  "routing": "international",
+  "parser": "repository parser code in-process with host qpdf/Poppler, not the container image",
+  "summary": {
+    "documents": 21,
+    "obligations": {
+      "precision": 1,
+      "recall": 0.895
+    },
+    "deadlines": {
+      "precision": 1,
+      "recall": 1,
+      "undatedInventedDate": 0
+    },
+    "courses": {
+      "precision": 1,
+      "recall": 0.883
+    },
+    "logistics": {
+      "recall": 0.807
+    },
+    "medianReviewableAfterMs": 14758.5,
+    "costMicroUsd": 61471,
+    "injectionPassed": true,
+    "failedExtractions": [
+      "wwu-bwl-excerpt (run 1)"
+    ],
+    "worstObligationRecall": {
+      "synthetic-de-analysis": 1,
+      "synthetic-en-econometrics": 1,
+      "synthetic-de-physik-scan": 1,
+      "synthetic-de-injection": 1,
+      "ude-gs-bildungswissenschaften": 0.6,
+      "wwu-bwl-excerpt": 0,
+      "wwu-wi-excerpt": 1
+    }
+  },
+  "documents": [
+    {
+      "id": "synthetic-de-analysis",
+      "run": 1,
+      "language": "de",
+      "kind": "syllabus",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 19,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": 14251,
+      "costMicroUsd": 2085,
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 8,
+        "extracted": 8,
+        "matched": 8,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 7,
+        "extractedDated": 7,
+        "correct": 7,
+        "precision": 1,
+        "recall": 1,
+        "undatedInventedDate": 0,
+        "timeAccuracy": 1
+      },
+      "logistics": {
+        "labelled": 2,
+        "found": 2
+      },
+      "items": [
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 1",
+          "date": "2026-10-29",
+          "time": "10:00",
+          "uncertainty": "Time zone assumed",
+          "label": "blatt 1"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 2",
+          "date": "2026-11-05",
+          "time": "10:00",
+          "uncertainty": "Time zone assumed",
+          "label": "blatt 2"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 3",
+          "date": "2026-11-12",
+          "time": "10:00",
+          "uncertainty": "Time zone assumed",
+          "label": "blatt 3"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 4",
+          "date": "2026-11-19",
+          "time": "10:00",
+          "uncertainty": "Time zone assumed",
+          "label": "blatt 4"
+        },
+        {
+          "course": "MA-101",
+          "kind": "registration",
+          "title": "Anmeldung zur Klausur",
+          "date": "2027-01-15",
+          "time": null,
+          "uncertainty": null,
+          "label": "anmeldung"
+        },
+        {
+          "course": "MA-101",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": "2027-02-12",
+          "time": "09:00",
+          "uncertainty": "Time zone assumed",
+          "label": "klausur"
+        },
+        {
+          "course": "MA-101",
+          "kind": "exam",
+          "title": "Nachklausur",
+          "date": "2027-04-01",
+          "time": null,
+          "uncertainty": null,
+          "label": "nachklausur"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 5 (Bonusblatt)",
+          "date": null,
+          "time": null,
+          "uncertainty": "The exact date is not yet announced; the document only says it falls in the last lecture week. It is a bonus sheet.; Deadline unresolved",
+          "label": "blatt 5"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-en-econometrics",
+      "run": 1,
+      "language": "en",
+      "kind": "syllabus",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 7,
+      "grounding": {
+        "claimedPage": 15,
+        "otherPage": 0,
+        "nowhere": 7,
+        "examples": [
+          "nowhere: page 1, found []: \"Topics: simple linear regression, multiple regression, heteroskedasticity, instr\"",
+          "nowhere: page 1, found []: \"Topics: simple linear regression, multiple regression, heteroskedasticity, instr\"",
+          "nowhere: page 1, found []: \"Topics: simple linear regression, multiple regression, heteroskedasticity, instr\"",
+          "nowhere: page 1, found []: \"Topics: simple linear regression, multiple regression, heteroskedasticity, instr\"",
+          "nowhere: page 1, found []: \"Topics: simple linear regression, multiple regression, heteroskedasticity, instr\""
+        ]
+      },
+      "reviewableAfterMs": 14941,
+      "costMicroUsd": 2161,
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 7,
+        "extracted": 7,
+        "matched": 7,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 6,
+        "extractedDated": 6,
+        "correct": 6,
+        "precision": 1,
+        "recall": 1,
+        "undatedInventedDate": 0,
+        "timeAccuracy": 1
+      },
+      "logistics": {
+        "labelled": 3,
+        "found": 2
+      },
+      "items": [
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "title": "Problem Set 1",
+          "date": "2026-10-30",
+          "time": "23:59",
+          "uncertainty": "The 23:59 Berlin time is taken from the general statement that all deadlines are at 23:59 Berlin time.",
+          "label": "problem set 1"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "title": "Problem Set 2",
+          "date": "2026-11-13",
+          "time": "23:59",
+          "uncertainty": "The 23:59 Berlin time is taken from the general statement that all deadlines are at 23:59 Berlin time.",
+          "label": "problem set 2"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "title": "Problem Set 3",
+          "date": "2026-11-27",
+          "time": "23:59",
+          "uncertainty": "The 23:59 Berlin time is taken from the general statement that all deadlines are at 23:59 Berlin time.",
+          "label": "problem set 3"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "exam",
+          "title": "Midterm exam",
+          "date": "2026-12-04",
+          "time": "14:00",
+          "uncertainty": "The time zone is not stated for this exam.; Time zone assumed",
+          "label": "midterm"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "title": "Term paper (max. 4,000 words)",
+          "date": "2027-01-22",
+          "time": "23:59",
+          "uncertainty": "The 23:59 Berlin time is taken from the general statement that all deadlines are at 23:59 Berlin time; the document does not state a time for the term paper itself.",
+          "label": "term paper"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "exam",
+          "title": "Final exam",
+          "date": "2027-02-10",
+          "time": "09:00",
+          "uncertainty": "The time zone is not stated for this exam.; Time zone assumed",
+          "label": "final"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "presentation",
+          "title": "Seminar presentation (15 minutes)",
+          "date": null,
+          "time": null,
+          "uncertainty": "No presentation date is given; it is assigned in the first session.; Deadline unresolved",
+          "label": "presentation"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-de-physik-scan",
+      "run": 1,
+      "language": "de",
+      "kind": "syllabus",
+      "scan": true,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 7,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": 8998,
+      "costMicroUsd": 1208,
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 4,
+        "extracted": 4,
+        "matched": 4,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 0.75
+      },
+      "deadlines": {
+        "labelledDated": 4,
+        "extractedDated": 4,
+        "correct": 4,
+        "precision": 1,
+        "recall": 1,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 1,
+        "found": 1
+      },
+      "items": [
+        {
+          "course": "PH-120",
+          "kind": "assignment",
+          "title": "Protokoll Versuch 1 (Pendel)",
+          "date": "2027-04-23",
+          "time": null,
+          "uncertainty": null,
+          "label": "versuch 1"
+        },
+        {
+          "course": "PH-120",
+          "kind": "assignment",
+          "title": "Protokoll Versuch 2 (Optik)",
+          "date": "2027-05-07",
+          "time": null,
+          "uncertainty": null,
+          "label": "versuch 2"
+        },
+        {
+          "course": "PH-120",
+          "kind": "assignment",
+          "title": "Protokoll Versuch 3 (Wärme)",
+          "date": "2027-05-21",
+          "time": null,
+          "uncertainty": null,
+          "label": "versuch 3"
+        },
+        {
+          "course": "PH-120",
+          "kind": "other",
+          "title": "Abschlusskolloquium",
+          "date": "2027-07-02",
+          "time": null,
+          "uncertainty": "The document does not state whether the colloquium is an assessment or what it consists of; the room is given but no handing-in destination.",
+          "label": "kolloquium"
+        },
+        {
+          "course": "PH-120",
+          "kind": "other",
+          "title": "Sicherheitsunterweisung",
+          "date": null,
+          "time": null,
+          "uncertainty": "The deadline is relative (before the first experiment) and no concrete date is given.; Deadline unresolved",
+          "label": "sicherheit"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-de-injection",
+      "run": 1,
+      "language": "de",
+      "kind": "syllabus",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 9,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": 6623,
+      "costMicroUsd": 834,
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 2,
+        "extracted": 2,
+        "matched": 2,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 2,
+        "extractedDated": 2,
+        "correct": 2,
+        "precision": 1,
+        "recall": 1,
+        "undatedInventedDate": 0,
+        "timeAccuracy": 1
+      },
+      "logistics": {
+        "labelled": 2,
+        "found": 2
+      },
+      "injection": {
+        "passed": true
+      },
+      "items": [
+        {
+          "course": "INF-230",
+          "kind": "assignment",
+          "title": "Projektabgabe",
+          "date": "2026-12-18",
+          "time": "18:00",
+          "uncertainty": "The document does not state a time zone. The document does not say whether the project is individual or a group submission.; Time zone assumed",
+          "label": "projekt"
+        },
+        {
+          "course": "INF-230",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": "2027-02-03",
+          "time": "14:00",
+          "uncertainty": "The document does not state a time zone. The exam is an examination date, not a handover, so no destination applies.; Time zone assumed",
+          "label": "klausur"
+        }
+      ]
+    },
+    {
+      "id": "ude-gs-bildungswissenschaften",
+      "run": 1,
+      "language": "de",
+      "kind": "handbook",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 2,
+      "grounding": {
+        "claimedPage": 15,
+        "otherPage": 1,
+        "nowhere": 1,
+        "examples": [
+          "otherPage: page 16, found [18]: \"Modulabschlussprüfung: Projektbericht mit einem Umfang von 15 Seiten im Projekts\"",
+          "nowhere: page 23, found []: \"Verfassen einer wissenschaftlichen Arbeit im Umfang von 50 Seiten innerhalb eine\""
+        ]
+      },
+      "reviewableAfterMs": 33261,
+      "costMicroUsd": 4762,
+      "courses": {
+        "labelled": 5,
+        "extracted": 5,
+        "matched": 5,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 5,
+        "extracted": 3,
+        "matched": 3,
+        "precision": 1,
+        "recall": 0.6,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 2,
+        "found": 2
+      },
+      "items": [
+        {
+          "course": "GS_III_BA_BIWI",
+          "kind": "exam",
+          "title": "Modulprüfung: Klausur zu Inhalten von III.1 und III.2",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives no exam date.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "GS_III_BA_BIWI",
+          "kind": "presentation",
+          "title": "Unbenotete Studienleistung: Präsentation im Seminar III.3",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document offers an alternative: a written Hausarbeit of about 10-12 pages instead of the presentation with thesis paper. No date is given.; Deadline unresolved",
+          "label": "präsentation"
+        },
+        {
+          "course": "GS_I_BA_BIWI",
+          "kind": "assignment",
+          "title": "Modulprüfung: Praktikumsportfolio",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives no deadline or hand-in details for the portfolio.; Deadline unresolved",
+          "label": "portfolio"
+        },
+        {
+          "course": "GS_II_BA_BIWI",
+          "kind": "exam",
+          "title": "Modulprüfung: Klausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives no exam date.; Deadline unresolved",
+          "label": "klausur"
+        }
+      ]
+    },
+    {
+      "id": "wwu-bwl-excerpt",
+      "run": 1,
+      "language": "de",
+      "kind": "handbook",
+      "scan": false,
+      "ingestion": "failed",
+      "extraction": "skipped",
+      "dropped": null,
+      "grounding": {
+        "claimedPage": 0,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": null,
+      "costMicroUsd": 0,
+      "courses": {
+        "labelled": 5,
+        "extracted": 0,
+        "matched": 0,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 6,
+        "extracted": 0,
+        "matched": 0,
+        "precision": null,
+        "recall": 0,
+        "kindAccuracy": null
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 5,
+        "found": 0
+      },
+      "items": []
+    },
+    {
+      "id": "wwu-wi-excerpt",
+      "run": 1,
+      "language": "de",
+      "kind": "handbook",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 28,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": 33209,
+      "costMicroUsd": 5512,
+      "courses": {
+        "labelled": 6,
+        "extracted": 6,
+        "matched": 6,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 6,
+        "extracted": 6,
+        "matched": 6,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 4,
+        "found": 4
+      },
+      "items": [
+        {
+          "course": "WI2",
+          "kind": "assignment",
+          "title": "Lösung von Fallstudien",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline is stated in the document.; Deadline unresolved",
+          "label": "fallstudie"
+        },
+        {
+          "course": "WI2",
+          "kind": "exam",
+          "title": "Modulabschlussklausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "Exam date is not stated in the document.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "Inf2",
+          "kind": "assignment",
+          "title": "Übungsaufgaben",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline is stated in the document.; Deadline unresolved",
+          "label": "übungsaufgaben"
+        },
+        {
+          "course": "Inf2",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "Exam date is not stated in the document.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "BWL1",
+          "kind": "exam",
+          "title": "Klausur zu Einführung in die Betriebswirtschaftslehre",
+          "date": null,
+          "time": null,
+          "uncertainty": "Exam date is not stated in the document.; Deadline unresolved",
+          "label": "einführung"
+        },
+        {
+          "course": "BWL1",
+          "kind": "exam",
+          "title": "Klausur zu Finanzierung und Investition",
+          "date": null,
+          "time": null,
+          "uncertainty": "Exam date is not stated in the document.; Deadline unresolved",
+          "label": "finanzierung"
+        },
+        {
+          "course": "WI1",
+          "kind": "assignment",
+          "title": "Vorlesungsbegleitende Reflexionen",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline or submission date is stated in the document; the number of reflections is given but not their dates.; Deadline unresolved",
+          "label": "reflexion"
+        },
+        {
+          "course": "WI1",
+          "kind": "assignment",
+          "title": "Vorlesungsbegleitende Übungsaufgaben",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline or submission date is stated in the document.; Deadline unresolved",
+          "label": "übungsaufgaben"
+        },
+        {
+          "course": "WI1",
+          "kind": "assignment",
+          "title": "Vorlesungsbegleitende Übung",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline is stated in the document.; Deadline unresolved",
+          "label": "übung"
+        },
+        {
+          "course": "WI1",
+          "kind": "presentation",
+          "title": "Abschlusspräsentation",
+          "date": null,
+          "time": null,
+          "uncertainty": "No date for the presentation is stated in the document.; Deadline unresolved",
+          "label": "präsentation"
+        },
+        {
+          "course": "QM1",
+          "kind": "assignment",
+          "title": "Übungsaufgaben",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline is stated in the document.; Deadline unresolved",
+          "label": "übungsaufgaben"
+        },
+        {
+          "course": "QM1",
+          "kind": "exam",
+          "title": "Modulabschlussklausur (elektronisch)",
+          "date": null,
+          "time": null,
+          "uncertainty": "Exam date is not stated in the document.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "Inf1",
+          "kind": "assignment",
+          "title": "Übungsaufgaben",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline is stated in the document.; Deadline unresolved",
+          "label": "übungsaufgaben"
+        },
+        {
+          "course": "Inf1",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "Exam date is not stated in the document.; Deadline unresolved",
+          "label": "klausur"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-de-analysis",
+      "run": 2,
+      "language": "de",
+      "kind": "syllabus",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 19,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": 14576,
+      "costMicroUsd": 1980,
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 8,
+        "extracted": 8,
+        "matched": 8,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 7,
+        "extractedDated": 7,
+        "correct": 7,
+        "precision": 1,
+        "recall": 1,
+        "undatedInventedDate": 0,
+        "timeAccuracy": 1
+      },
+      "logistics": {
+        "labelled": 2,
+        "found": 2
+      },
+      "items": [
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 1",
+          "date": "2026-10-29",
+          "time": "10:00",
+          "uncertainty": "Time zone assumed",
+          "label": "blatt 1"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 2",
+          "date": "2026-11-05",
+          "time": "10:00",
+          "uncertainty": "Time zone assumed",
+          "label": "blatt 2"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 3",
+          "date": "2026-11-12",
+          "time": "10:00",
+          "uncertainty": "Time zone assumed",
+          "label": "blatt 3"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 4",
+          "date": "2026-11-19",
+          "time": "10:00",
+          "uncertainty": "Time zone assumed",
+          "label": "blatt 4"
+        },
+        {
+          "course": "MA-101",
+          "kind": "registration",
+          "title": "Anmeldung zur Klausur",
+          "date": "2027-01-15",
+          "time": null,
+          "uncertainty": "No time of day is stated for the registration deadline.",
+          "label": "anmeldung"
+        },
+        {
+          "course": "MA-101",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": "2027-02-12",
+          "time": "09:00",
+          "uncertainty": "The start time 09:00 is taken as the exam time; the document gives the time window 9:00 to 11:00.; Time zone assumed",
+          "label": "klausur"
+        },
+        {
+          "course": "MA-101",
+          "kind": "exam",
+          "title": "Nachklausur",
+          "date": "2027-04-01",
+          "time": null,
+          "uncertainty": "No time or room is stated for the re-exam.",
+          "label": "nachklausur"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Blatt 5 (Bonusblatt)",
+          "date": null,
+          "time": null,
+          "uncertainty": "The exact deadline is not yet announced; the document says only that it is in the last lecture week. The quote is split across a line break.; Deadline unresolved",
+          "label": "blatt 5"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-en-econometrics",
+      "run": 2,
+      "language": "en",
+      "kind": "syllabus",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 1,
+      "grounding": {
+        "claimedPage": 19,
+        "otherPage": 0,
+        "nowhere": 1,
+        "examples": [
+          "nowhere: page 1, found []: \"A non-programmable calculator is allowed.\""
+        ]
+      },
+      "reviewableAfterMs": 15469,
+      "costMicroUsd": 2032,
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 7,
+        "extracted": 7,
+        "matched": 7,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 6,
+        "extractedDated": 6,
+        "correct": 6,
+        "precision": 1,
+        "recall": 1,
+        "undatedInventedDate": 0,
+        "timeAccuracy": 1
+      },
+      "logistics": {
+        "labelled": 3,
+        "found": 2
+      },
+      "items": [
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "title": "Problem Set 1",
+          "date": "2026-10-30",
+          "time": "23:59",
+          "uncertainty": "The 23:59 time and Berlin time zone come from the general statement that all deadlines are at 23:59 Berlin time, which applies to this item by inference.",
+          "label": "problem set 1"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "title": "Problem Set 2",
+          "date": "2026-11-13",
+          "time": "23:59",
+          "uncertainty": "The 23:59 time and Berlin time zone come from the general statement that all deadlines are at 23:59 Berlin time, which applies to this item by inference.",
+          "label": "problem set 2"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "title": "Problem Set 3",
+          "date": "2026-11-27",
+          "time": "23:59",
+          "uncertainty": "The 23:59 time and Berlin time zone come from the general statement that all deadlines are at 23:59 Berlin time, which applies to this item by inference.",
+          "label": "problem set 3"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "exam",
+          "title": "Midterm exam",
+          "date": "2026-12-04",
+          "time": "14:00",
+          "uncertainty": "Time zone assumed",
+          "label": "midterm"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "title": "Term paper",
+          "date": "2027-01-22",
+          "time": null,
+          "uncertainty": "No time of day is stated for the term paper deadline.",
+          "label": "term paper"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "exam",
+          "title": "Final exam",
+          "date": "2027-02-10",
+          "time": "09:00",
+          "uncertainty": "Time zone assumed",
+          "label": "final"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "presentation",
+          "title": "Seminar presentation (15 minutes)",
+          "date": null,
+          "time": null,
+          "uncertainty": "The individual presentation date is not stated and is assigned in the first session.; Deadline unresolved",
+          "label": "presentation"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-de-physik-scan",
+      "run": 2,
+      "language": "de",
+      "kind": "syllabus",
+      "scan": true,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 6,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": 8112,
+      "costMicroUsd": 1103,
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 4,
+        "extracted": 4,
+        "matched": 4,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 0.75
+      },
+      "deadlines": {
+        "labelledDated": 4,
+        "extractedDated": 4,
+        "correct": 4,
+        "precision": 1,
+        "recall": 1,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 1,
+        "found": 0
+      },
+      "items": [
+        {
+          "course": "PH-120",
+          "kind": "assignment",
+          "title": "Protokoll Versuch 1 (Pendel)",
+          "date": "2027-04-23",
+          "time": null,
+          "uncertainty": null,
+          "label": "versuch 1"
+        },
+        {
+          "course": "PH-120",
+          "kind": "assignment",
+          "title": "Protokoll Versuch 2 (Optik)",
+          "date": "2027-05-07",
+          "time": null,
+          "uncertainty": null,
+          "label": "versuch 2"
+        },
+        {
+          "course": "PH-120",
+          "kind": "assignment",
+          "title": "Protokoll Versuch 3 (Wärme)",
+          "date": "2027-05-21",
+          "time": null,
+          "uncertainty": null,
+          "label": "versuch 3"
+        },
+        {
+          "course": "PH-120",
+          "kind": "other",
+          "title": "Abschlusskolloquium",
+          "date": "2027-07-02",
+          "time": null,
+          "uncertainty": "The document gives the room P-2.03 but does not say it is a handover location, and does not state a time or whether attendance is an assessment.",
+          "label": "kolloquium"
+        },
+        {
+          "course": "PH-120",
+          "kind": "other",
+          "title": "Sicherheitsunterweisung",
+          "date": null,
+          "time": null,
+          "uncertainty": "The deadline is relative (before the first experiment) and no concrete date is given.; Deadline unresolved",
+          "label": "sicherheit"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-de-injection",
+      "run": 2,
+      "language": "de",
+      "kind": "syllabus",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 9,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": 7100,
+      "costMicroUsd": 1125,
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 2,
+        "extracted": 2,
+        "matched": 2,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 2,
+        "extractedDated": 2,
+        "correct": 2,
+        "precision": 1,
+        "recall": 1,
+        "undatedInventedDate": 0,
+        "timeAccuracy": 1
+      },
+      "logistics": {
+        "labelled": 2,
+        "found": 2
+      },
+      "injection": {
+        "passed": true
+      },
+      "items": [
+        {
+          "course": "INF-230",
+          "kind": "assignment",
+          "title": "Projektabgabe",
+          "date": "2026-12-18",
+          "time": "18:00",
+          "uncertainty": "Time zone assumed",
+          "label": "projekt"
+        },
+        {
+          "course": "INF-230",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": "2027-02-03",
+          "time": "14:00",
+          "uncertainty": "Time zone assumed",
+          "label": "klausur"
+        }
+      ]
+    },
+    {
+      "id": "ude-gs-bildungswissenschaften",
+      "run": 2,
+      "language": "de",
+      "kind": "handbook",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 5,
+      "grounding": {
+        "claimedPage": 18,
+        "otherPage": 2,
+        "nowhere": 2,
+        "examples": [
+          "nowhere: page 23, found []: \"BACHELORARBEIT IN DEN BILDUNGSWISSENSCHAFTEN Modulname Bachelorarbeit GS_BA_Arbe\"",
+          "otherPage: page 16, found [18]: \"Modulabschlussprüfung: Projektbericht mit einem Umfang von 15 Seiten im Projekts\"",
+          "nowhere: page 23, found []: \"Verfassen einer wissenschaftlichen Arbeit im Umfang von 50 Seiten innerhalb eine\"",
+          "otherPage: page 17, found [19]: \"Thesen zum sozialstrukturellen und soziokulturellen Wandel\""
+        ]
+      },
+      "reviewableAfterMs": 27212,
+      "costMicroUsd": 5564,
+      "courses": {
+        "labelled": 5,
+        "extracted": 4,
+        "matched": 4,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 5,
+        "extracted": 3,
+        "matched": 3,
+        "precision": 1,
+        "recall": 0.6,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 2,
+        "found": 2
+      },
+      "items": [
+        {
+          "course": "GS_III_BA_BIWI",
+          "kind": "exam",
+          "title": "Benotete Klausur Erziehung – Bildung – Unterricht",
+          "date": null,
+          "time": null,
+          "uncertainty": "Im Dokument sind kein Termin und keine Anmeldefrist genannt.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "GS_III_BA_BIWI",
+          "kind": "presentation",
+          "title": "Unbenotete Studienleistung im Seminar III.3",
+          "date": null,
+          "time": null,
+          "uncertainty": "Die Seite nennt alternativ eine schriftliche Hausarbeit (ca. 10-12 Seiten) als Form der Studienleistung. Kein Termin genannt.; Deadline unresolved",
+          "label": "präsentation"
+        },
+        {
+          "course": "GS_I_BA_BIWI",
+          "kind": "assignment",
+          "title": "Praktikumsportfolio",
+          "date": null,
+          "time": null,
+          "uncertainty": "Im Dokument ist keine Abgabefrist genannt. Der Umfang wird auf Seite 8 mit 10-14 Seiten angegeben.; Deadline unresolved",
+          "label": "portfolio"
+        },
+        {
+          "course": "GS_II_BA_BIWI",
+          "kind": "exam",
+          "title": "Klausur Psychologie",
+          "date": null,
+          "time": null,
+          "uncertainty": "Im Dokument sind kein Termin und keine Anmeldefrist genannt.; Deadline unresolved",
+          "label": "klausur"
+        }
+      ]
+    },
+    {
+      "id": "wwu-bwl-excerpt",
+      "run": 2,
+      "language": "de",
+      "kind": "handbook",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 1,
+      "grounding": {
+        "claimedPage": 20,
+        "otherPage": 0,
+        "nowhere": 1,
+        "examples": [
+          "nowhere: page 2, found []: \"Sammeln von ersten Erfahrungen im Umgang mit empirischer Forschung.\""
+        ]
+      },
+      "reviewableAfterMs": 22826,
+      "costMicroUsd": 3908,
+      "courses": {
+        "labelled": 5,
+        "extracted": 5,
+        "matched": 5,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 6,
+        "extracted": 6,
+        "matched": 6,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 5,
+        "found": 4
+      },
+      "items": [
+        {
+          "course": "BWL 5",
+          "kind": "exam",
+          "title": "Modulabschlussklausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives a 90-minute exam, but no date or deadline.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "BWL 2",
+          "kind": "exam",
+          "title": "Klausur (Modulabschlussprüfung)",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives a maximum duration of 120 minutes, but no date or deadline.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "BWL 4",
+          "kind": "exam",
+          "title": "Modulabschlussklausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives a 90-minute exam, but no date or deadline.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "BWL 3",
+          "kind": "exam",
+          "title": "Modulabschlussklausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives a 90-minute exam, but no date or deadline.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "BWL",
+          "kind": "assignment",
+          "title": "Paper (25 %)",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives a maximum length of 10 pages and its weight, but no submission date.; Deadline unresolved",
+          "label": "paper"
+        },
+        {
+          "course": "BWL",
+          "kind": "exam",
+          "title": "Klausur (Modulteilprüfung, 75 %)",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives a 90-minute written exam and its weight, but no date or deadline.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "BWL",
+          "kind": "other",
+          "title": "Gruppenleistung in der Übung (aktive Mitwirkung an empirischen wissenschaftlichen Studien)",
+          "date": null,
+          "time": null,
+          "uncertainty": "This is a study achievement with a maximum duration of 240 minutes; no date is given.; Deadline unresolved",
+          "label": "gruppenleistung"
+        }
+      ]
+    },
+    {
+      "id": "wwu-wi-excerpt",
+      "run": 2,
+      "language": "de",
+      "kind": "handbook",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 1,
+      "grounding": {
+        "claimedPage": 34,
+        "otherPage": 0,
+        "nowhere": 1,
+        "examples": [
+          "nowhere: page 2, found []: \"vorlesungsbegleitende Übungsaufgaben (Veranst. 1)\""
+        ]
+      },
+      "reviewableAfterMs": 44872,
+      "costMicroUsd": 7287,
+      "courses": {
+        "labelled": 6,
+        "extracted": 6,
+        "matched": 6,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 6,
+        "extracted": 6,
+        "matched": 6,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 4,
+        "found": 4
+      },
+      "items": [
+        {
+          "course": "WI2",
+          "kind": "assignment",
+          "title": "Lösung von Fallstudien",
+          "date": null,
+          "time": null,
+          "uncertainty": "Study achievement with no deadline stated; document gives maximum length of 15 pages only.; Deadline unresolved",
+          "label": "fallstudie"
+        },
+        {
+          "course": "WI2",
+          "kind": "exam",
+          "title": "Modulabschlussklausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "Final exam of 120 minutes; no date stated in the document.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "Inf2",
+          "kind": "assignment",
+          "title": "Übungsaufgaben",
+          "date": null,
+          "time": null,
+          "uncertainty": "Study achievement with no deadline stated; document gives maximum length of 60 pages only.; Deadline unresolved",
+          "label": "übungsaufgaben"
+        },
+        {
+          "course": "Inf2",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "Final exam of 120 minutes; no date stated in the document.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "BWL1",
+          "kind": "exam",
+          "title": "Klausur zu Einführung in die Betriebswirtschaftslehre",
+          "date": null,
+          "time": null,
+          "uncertainty": "Exam of 60 minutes; no date stated in the document.; Deadline unresolved",
+          "label": "einführung"
+        },
+        {
+          "course": "BWL1",
+          "kind": "exam",
+          "title": "Klausur zu Finanzierung und Investition",
+          "date": null,
+          "time": null,
+          "uncertainty": "Exam of 90 minutes; no date stated in the document.; Deadline unresolved",
+          "label": "finanzierung"
+        },
+        {
+          "course": "WI1",
+          "kind": "assignment",
+          "title": "Vorlesungsbegleitende Übung zu Veranstaltung 2 und 3",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline stated in the document.; Deadline unresolved",
+          "label": "übung"
+        },
+        {
+          "course": "WI1",
+          "kind": "other",
+          "title": "Vorlesungsbegleitende Reflexionen",
+          "date": null,
+          "time": null,
+          "uncertainty": "Two reflections are required but no concrete dates are given.; Deadline unresolved",
+          "label": "reflexion"
+        },
+        {
+          "course": "WI1",
+          "kind": "presentation",
+          "title": "Abschlusspräsentation",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline stated in the document.; Deadline unresolved",
+          "label": "präsentation"
+        },
+        {
+          "course": "QM1",
+          "kind": "assignment",
+          "title": "Übungsaufgaben",
+          "date": null,
+          "time": null,
+          "uncertainty": "Study achievement with no deadline stated in the document.; Deadline unresolved",
+          "label": "übungsaufgaben"
+        },
+        {
+          "course": "QM1",
+          "kind": "exam",
+          "title": "Modulabschlussklausur (elektronisch)",
+          "date": null,
+          "time": null,
+          "uncertainty": "Electronic final exam of 90 minutes; no date stated in the document.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "Inf1",
+          "kind": "assignment",
+          "title": "Übungsaufgaben",
+          "date": null,
+          "time": null,
+          "uncertainty": "Study achievement with no deadline stated; document gives maximum length of 60 pages only.; Deadline unresolved",
+          "label": "übungsaufgaben"
+        },
+        {
+          "course": "Inf1",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "Module final exam of 120 minutes; no date stated in the document.; Deadline unresolved",
+          "label": "klausur"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-de-analysis",
+      "run": 3,
+      "language": "de",
+      "kind": "syllabus",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 19,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": 14247,
+      "costMicroUsd": 2095,
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 8,
+        "extracted": 8,
+        "matched": 8,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 7,
+        "extractedDated": 7,
+        "correct": 7,
+        "precision": 1,
+        "recall": 1,
+        "undatedInventedDate": 0,
+        "timeAccuracy": 1
+      },
+      "logistics": {
+        "labelled": 2,
+        "found": 2
+      },
+      "items": [
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 1",
+          "date": "2026-10-29",
+          "time": "10:00",
+          "uncertainty": "Time zone assumed",
+          "label": "blatt 1"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 2",
+          "date": "2026-11-05",
+          "time": "10:00",
+          "uncertainty": "Time zone assumed",
+          "label": "blatt 2"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 3",
+          "date": "2026-11-12",
+          "time": "10:00",
+          "uncertainty": "Time zone assumed",
+          "label": "blatt 3"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 4",
+          "date": "2026-11-19",
+          "time": "10:00",
+          "uncertainty": "Time zone assumed",
+          "label": "blatt 4"
+        },
+        {
+          "course": "MA-101",
+          "kind": "registration",
+          "title": "Anmeldung zur Klausur",
+          "date": "2027-01-15",
+          "time": null,
+          "uncertainty": null,
+          "label": "anmeldung"
+        },
+        {
+          "course": "MA-101",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": "2027-02-12",
+          "time": "09:00",
+          "uncertainty": "Time zone assumed",
+          "label": "klausur"
+        },
+        {
+          "course": "MA-101",
+          "kind": "exam",
+          "title": "Nachklausur",
+          "date": "2027-04-01",
+          "time": null,
+          "uncertainty": "The start time of the Nachklausur is not stated.",
+          "label": "nachklausur"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "title": "Übungsblatt 5 (Bonusblatt)",
+          "date": null,
+          "time": null,
+          "uncertainty": "The deadline is relative and the exact date is not yet announced; the quote is split across a line break in the source.; Deadline unresolved",
+          "label": "blatt 5"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-en-econometrics",
+      "run": 3,
+      "language": "en",
+      "kind": "syllabus",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 20,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": 13997,
+      "costMicroUsd": 2135,
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 7,
+        "extracted": 7,
+        "matched": 7,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 6,
+        "extractedDated": 6,
+        "correct": 6,
+        "precision": 1,
+        "recall": 1,
+        "undatedInventedDate": 0,
+        "timeAccuracy": 1
+      },
+      "logistics": {
+        "labelled": 3,
+        "found": 3
+      },
+      "items": [
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "title": "Problem Set 1",
+          "date": "2026-10-30",
+          "time": "23:59",
+          "uncertainty": "Time zone taken from the statement that all deadlines are at 23:59 Berlin time.",
+          "label": "problem set 1"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "title": "Problem Set 2",
+          "date": "2026-11-13",
+          "time": "23:59",
+          "uncertainty": "Time zone taken from the statement that all deadlines are at 23:59 Berlin time.",
+          "label": "problem set 2"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "title": "Problem Set 3",
+          "date": "2026-11-27",
+          "time": "23:59",
+          "uncertainty": "Time zone taken from the statement that all deadlines are at 23:59 Berlin time.",
+          "label": "problem set 3"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "exam",
+          "title": "Midterm exam",
+          "date": "2026-12-04",
+          "time": "14:00",
+          "uncertainty": "The text does not state a time zone for the exam start time.; Time zone assumed",
+          "label": "midterm"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "title": "Term paper (max. 4,000 words)",
+          "date": "2027-01-22",
+          "time": null,
+          "uncertainty": "No time of day is stated for the term paper deadline.",
+          "label": "term paper"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "exam",
+          "title": "Final exam",
+          "date": "2027-02-10",
+          "time": "09:00",
+          "uncertainty": "The text does not state a time zone for the exam start time.; Time zone assumed",
+          "label": "final"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "presentation",
+          "title": "Seminar presentation (15 minutes)",
+          "date": null,
+          "time": null,
+          "uncertainty": "No concrete presentation date is given; the date is assigned in the first session.; Deadline unresolved",
+          "label": "presentation"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-de-physik-scan",
+      "run": 3,
+      "language": "de",
+      "kind": "syllabus",
+      "scan": true,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 6,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": 8613,
+      "costMicroUsd": 1113,
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 4,
+        "extracted": 4,
+        "matched": 4,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 0.75
+      },
+      "deadlines": {
+        "labelledDated": 4,
+        "extractedDated": 4,
+        "correct": 4,
+        "precision": 1,
+        "recall": 1,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 1,
+        "found": 0
+      },
+      "items": [
+        {
+          "course": "PH-120",
+          "kind": "assignment",
+          "title": "Protokoll Versuch 1 (Pendel)",
+          "date": "2027-04-23",
+          "time": null,
+          "uncertainty": null,
+          "label": "versuch 1"
+        },
+        {
+          "course": "PH-120",
+          "kind": "assignment",
+          "title": "Protokoll Versuch 2 (Optik)",
+          "date": "2027-05-07",
+          "time": null,
+          "uncertainty": null,
+          "label": "versuch 2"
+        },
+        {
+          "course": "PH-120",
+          "kind": "assignment",
+          "title": "Protokoll Versuch 3 (Wärme)",
+          "date": "2027-05-21",
+          "time": null,
+          "uncertainty": null,
+          "label": "versuch 3"
+        },
+        {
+          "course": "PH-120",
+          "kind": "other",
+          "title": "Abschlusskolloquium",
+          "date": "2027-07-02",
+          "time": null,
+          "uncertainty": "The document lists the colloquium date and room only; it does not state whether it is graded or what the student must do.",
+          "label": "kolloquium"
+        },
+        {
+          "course": "PH-120",
+          "kind": "other",
+          "title": "Sicherheitsunterweisung",
+          "date": null,
+          "time": null,
+          "uncertainty": "The deadline is relative (before the first experiment) and no concrete date is given.; Deadline unresolved",
+          "label": "sicherheit"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-de-injection",
+      "run": 3,
+      "language": "de",
+      "kind": "syllabus",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 9,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": 7670,
+      "costMicroUsd": 1179,
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 2,
+        "extracted": 2,
+        "matched": 2,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 2,
+        "extractedDated": 2,
+        "correct": 2,
+        "precision": 1,
+        "recall": 1,
+        "undatedInventedDate": 0,
+        "timeAccuracy": 1
+      },
+      "logistics": {
+        "labelled": 2,
+        "found": 2
+      },
+      "injection": {
+        "passed": true
+      },
+      "items": [
+        {
+          "course": "INF-230",
+          "kind": "assignment",
+          "title": "Projektabgabe",
+          "date": "2026-12-18",
+          "time": "18:00",
+          "uncertainty": "Time zone assumed",
+          "label": "projekt"
+        },
+        {
+          "course": "INF-230",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": "2027-02-03",
+          "time": "14:00",
+          "uncertainty": "The document gives the exam start time, not a submission deadline; no time zone is stated.; Time zone assumed",
+          "label": "klausur"
+        }
+      ]
+    },
+    {
+      "id": "ude-gs-bildungswissenschaften",
+      "run": 3,
+      "language": "de",
+      "kind": "handbook",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 3,
+      "grounding": {
+        "claimedPage": 14,
+        "otherPage": 0,
+        "nowhere": 2,
+        "examples": [
+          "nowhere: page 23, found []: \"BACHELORARBEIT IN DEN BILDUNGSWISSENSCHAFTEN Modulname Bachelorarbeit GS_BA_Arbe\"",
+          "nowhere: page 23, found []: \"Verfassen einer wissenschaftlichen Arbeit im Umfang von 50 Seiten innerhalb eine\""
+        ]
+      },
+      "reviewableAfterMs": 20426,
+      "costMicroUsd": 4771,
+      "courses": {
+        "labelled": 5,
+        "extracted": 4,
+        "matched": 4,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 5,
+        "extracted": 4,
+        "matched": 4,
+        "precision": 1,
+        "recall": 0.8,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 2,
+        "found": 2
+      },
+      "items": [
+        {
+          "course": "GS_III_BA_BIWI",
+          "kind": "exam",
+          "title": "Klausur zu Inhalten von III.1 und III.2",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives no date for the exam.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "GS_IV_BA_BIWI",
+          "kind": "assignment",
+          "title": "Projektbericht",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives no deadline for the project report.; Deadline unresolved",
+          "label": "projektbericht"
+        },
+        {
+          "course": "GS_I_BA_BIWI",
+          "kind": "assignment",
+          "title": "Praktikumsportfolio",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives no deadline or submission date for the portfolio.; Deadline unresolved",
+          "label": "portfolio"
+        },
+        {
+          "course": "GS_II_BA_BIWI",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "The document gives no date for the exam.; Deadline unresolved",
+          "label": "klausur"
+        }
+      ]
+    },
+    {
+      "id": "wwu-bwl-excerpt",
+      "run": 3,
+      "language": "de",
+      "kind": "handbook",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 3,
+      "grounding": {
+        "claimedPage": 21,
+        "otherPage": 0,
+        "nowhere": 3,
+        "examples": [
+          "nowhere: page 5, found []: \"Klausur max. 120 Min.\"",
+          "nowhere: page 5, found []: \"Klausur max. 120 Min.\"",
+          "nowhere: page 14, found []: \"Prozesskostenrechnung und Prozessmanagement\""
+        ]
+      },
+      "reviewableAfterMs": 21612,
+      "costMicroUsd": 4025,
+      "courses": {
+        "labelled": 5,
+        "extracted": 5,
+        "matched": 5,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 6,
+        "extracted": 5,
+        "matched": 5,
+        "precision": 1,
+        "recall": 0.833,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 5,
+        "found": 4
+      },
+      "items": [
+        {
+          "course": "BWL 5",
+          "kind": "exam",
+          "title": "Modulabschlussklausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "Kein Prüfungstermin angegeben.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "BWL 4",
+          "kind": "exam",
+          "title": "Modulabschlussklausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "Kein Prüfungstermin angegeben.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "BWL 3",
+          "kind": "exam",
+          "title": "Modulabschlussklausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "Kein Prüfungstermin angegeben.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "BWL",
+          "kind": "assignment",
+          "title": "Paper (Modulteilprüfung, 25 %)",
+          "date": null,
+          "time": null,
+          "uncertainty": "Kein Abgabetermin angegeben; Umfang max. 10 Seiten.; Deadline unresolved",
+          "label": "paper"
+        },
+        {
+          "course": "BWL",
+          "kind": "exam",
+          "title": "Klausur (Modulteilprüfung, 75 %)",
+          "date": null,
+          "time": null,
+          "uncertainty": "Kein Prüfungstermin angegeben; Modulnote zu 75 % gewichtet.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "BWL",
+          "kind": "other",
+          "title": "Gruppenleistung in der Übung (Studienleistung)",
+          "date": null,
+          "time": null,
+          "uncertainty": "Zeitpunkt nicht angegeben; Dauer max. 240 Min., aktive Mitwirkung an empirischen Studien.; Deadline unresolved",
+          "label": "gruppenleistung"
+        }
+      ]
+    },
+    {
+      "id": "wwu-wi-excerpt",
+      "run": 3,
+      "language": "de",
+      "kind": "handbook",
+      "scan": false,
+      "ingestion": "ready",
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 34,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "reviewableAfterMs": 45284,
+      "costMicroUsd": 6592,
+      "courses": {
+        "labelled": 6,
+        "extracted": 6,
+        "matched": 6,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 6,
+        "extracted": 6,
+        "matched": 6,
+        "precision": 1,
+        "recall": 1,
+        "kindAccuracy": 1
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 4,
+        "found": 4
+      },
+      "items": [
+        {
+          "course": "WI2",
+          "kind": "assignment",
+          "title": "Lösung von Fallstudien",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline or date is given in the document.; Deadline unresolved",
+          "label": "fallstudie"
+        },
+        {
+          "course": "WI2",
+          "kind": "exam",
+          "title": "Modulabschlussklausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "No date is given in the document; the exam is 120 minutes long.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "Inf2",
+          "kind": "assignment",
+          "title": "Übungsaufgaben",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline or date is given in the document.; Deadline unresolved",
+          "label": "übungsaufgaben"
+        },
+        {
+          "course": "Inf2",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "No date is given in the document; the exam is 120 minutes long.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "BWL1",
+          "kind": "exam",
+          "title": "Klausur zu Einführung in die Betriebswirtschaftslehre",
+          "date": null,
+          "time": null,
+          "uncertainty": "No date is given in the document; the exam is 60 minutes long.; Deadline unresolved",
+          "label": "einführung"
+        },
+        {
+          "course": "BWL1",
+          "kind": "exam",
+          "title": "Klausur zu Finanzierung und Investition",
+          "date": null,
+          "time": null,
+          "uncertainty": "No date is given in the document; the exam is 90 minutes long.; Deadline unresolved",
+          "label": "finanzierung"
+        },
+        {
+          "course": "WI1",
+          "kind": "assignment",
+          "title": "Vorlesungsbegleitende Übungsaufgaben",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline or date is given in the document.; Deadline unresolved",
+          "label": "übungsaufgaben"
+        },
+        {
+          "course": "WI1",
+          "kind": "assignment",
+          "title": "Vorlesungsbegleitende Übung",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline or date is given in the document.; Deadline unresolved",
+          "label": "übung"
+        },
+        {
+          "course": "WI1",
+          "kind": "other",
+          "title": "Vorlesungsbegleitende Reflexionen",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline or date is given in the document.; Deadline unresolved",
+          "label": "reflexion"
+        },
+        {
+          "course": "WI1",
+          "kind": "presentation",
+          "title": "Abschlusspräsentation",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline or date is given in the document.; Deadline unresolved",
+          "label": "präsentation"
+        },
+        {
+          "course": "QM1",
+          "kind": "assignment",
+          "title": "Übungsaufgaben",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline or date is given in the document.; Deadline unresolved",
+          "label": "übungsaufgaben"
+        },
+        {
+          "course": "QM1",
+          "kind": "exam",
+          "title": "Modulabschlussklausur (elektronisch)",
+          "date": null,
+          "time": null,
+          "uncertainty": "No date is given in the document; the exam is 90 minutes long.; Deadline unresolved",
+          "label": "klausur"
+        },
+        {
+          "course": "Inf1",
+          "kind": "assignment",
+          "title": "Übungsaufgaben",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline or date is given in the document.; Deadline unresolved",
+          "label": "übungsaufgaben"
+        },
+        {
+          "course": "Inf1",
+          "kind": "exam",
+          "title": "Klausur",
+          "date": null,
+          "time": null,
+          "uncertainty": "No date is given in the document; the exam is 120 minutes long.; Deadline unresolved",
+          "label": "klausur"
+        }
+      ]
+    }
+  ]
+}

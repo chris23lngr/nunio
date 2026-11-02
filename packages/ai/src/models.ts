@@ -14,6 +14,8 @@ const allowlist = {
 export type ModelId = keyof typeof allowlist;
 
 const maxOutputTokens = 8_000;
+/** Haiku 5.5 spends most of an 8k budget on reasoning over a long window, truncating the structured answer. */
+const taskOutputTokens: Partial<Record<Task, number>> = { extraction: 32_000 };
 /** Generous per-text allowance for role markers and message framing around the text's own tokens. */
 const framingTokens = 200;
 const encoder = new TextEncoder();
@@ -76,28 +78,29 @@ export function createModels({ apiKey, baseURL, fetch }: {
 }): Models {
   const openrouter = createOpenRouter({ apiKey, baseURL, fetch });
   const isAllowed = (id: string): id is ModelId => Object.hasOwn(allowlist, id);
+  function modelFor(id: string, outputTokens: number): RegisteredModel {
+    if (!isAllowed(id)) throw new Error(`Model ${JSON.stringify(id)} is not in the model allowlist`);
+    return {
+      id,
+      label: { provider: "OpenRouter", upstream: [...allowlist[id].upstream], routing: "international", zeroRetention: true },
+      model: openrouter.chat(id, { provider: { zdr: true, data_collection: "deny" }, usage: { include: true } }),
+      callSettings: { maxOutputTokens: outputTokens, maxRetries: 0 },
+      estimateMicroUsd(texts) {
+        const inputTokens = texts.reduce((sum, text) => sum + encoder.encode(text).byteLength + framingTokens, 0);
+        return Math.ceil((inputTokens * allowlist[id].input + outputTokens * allowlist[id].output) / 1_000_000);
+      },
+      actualMicroUsd({ usage, providerMetadata }) {
+        const cost = (providerMetadata?.openrouter?.usage as { cost?: unknown } | undefined)?.cost;
+        // toPrecision drops float noise such as 0.000123 * 1e6 = 123.00000000000001 before rounding up.
+        if (typeof cost === "number") return Math.ceil(Number((cost * 1_000_000).toPrecision(12)));
+        return Math.ceil(((usage.inputTokens ?? 0) * allowlist[id].input
+          + (usage.outputTokens ?? 0) * allowlist[id].output) / 1_000_000);
+      },
+    };
+  }
   const models: Models = {
-    forTask: task => models.byId(defaults[task]),
-    byId(id) {
-      if (!isAllowed(id)) throw new Error(`Model ${JSON.stringify(id)} is not in the model allowlist`);
-      return {
-        id,
-        label: { provider: "OpenRouter", upstream: [...allowlist[id].upstream], routing: "international", zeroRetention: true },
-        model: openrouter.chat(id, { provider: { zdr: true, data_collection: "deny" }, usage: { include: true } }),
-        callSettings: { maxOutputTokens, maxRetries: 0 },
-        estimateMicroUsd(texts) {
-          const inputTokens = texts.reduce((sum, text) => sum + encoder.encode(text).byteLength + framingTokens, 0);
-          return Math.ceil((inputTokens * allowlist[id].input + maxOutputTokens * allowlist[id].output) / 1_000_000);
-        },
-        actualMicroUsd({ usage, providerMetadata }) {
-          const cost = (providerMetadata?.openrouter?.usage as { cost?: unknown } | undefined)?.cost;
-          // toPrecision drops float noise such as 0.000123 * 1e6 = 123.00000000000001 before rounding up.
-          if (typeof cost === "number") return Math.ceil(Number((cost * 1_000_000).toPrecision(12)));
-          return Math.ceil(((usage.inputTokens ?? 0) * allowlist[id].input
-            + (usage.outputTokens ?? 0) * allowlist[id].output) / 1_000_000);
-        },
-      };
-    },
+    forTask: task => modelFor(defaults[task], taskOutputTokens[task] ?? maxOutputTokens),
+    byId: id => modelFor(id, maxOutputTokens),
   };
   return models;
 }

@@ -8,6 +8,13 @@ export const maxSourceBytes = 20 * 1024 * 1024;
 // Chunks overlap by 200 code points; <=6000 UTF-8 bytes per embedding.
 const chunkStride = 1200, chunkLength = 1400;
 const embeddingBatch = 16, maxChunks = 2000, maxTextBytes = 2 * 1024 * 1024;
+/** Rebuilds each page's text from its chunks in ordinal order, inverting the overlapping split below. */
+export function joinChunks(chunks: readonly { page: number; text: string }[]) {
+  const pages = new Map<number, string[]>();
+  for (const chunk of chunks) pages.set(chunk.page, [...pages.get(chunk.page) ?? [], chunk.text]);
+  return [...pages].map(([page, texts]) => ({ page,
+    text: texts.map((text, i) => i < texts.length - 1 ? Array.from(text).slice(0, chunkStride).join("") : text).join("") }));
+}
 // Bounds a still-valid PUT and an in-flight ingestion Activity after deletion.
 const inFlightBoundMs = 20 * 60_000;
 const cleanupAfter = (source: { uploadExpiresAt: Date }, deletedAt: Date) =>
@@ -49,7 +56,7 @@ export function createSources({ db, keys, storage }: { db: PrismaClient; keys: S
     },
     async list(p: Principal) {
       return withOwner(db, p, tx => tx.source.findMany({ where: { deletedAt: null },
-        select: { id: true, title: true, status: true }, orderBy: { createdAt: "asc" } }));
+        select: { id: true, title: true, status: true, extraction: true }, orderBy: { createdAt: "asc" } }));
     },
     async complete(p: Principal, id: string) {
       return withOwner(db, p, async (tx, studentId) => {
@@ -76,6 +83,11 @@ export function createSources({ db, keys, storage }: { db: PrismaClient; keys: S
         if (!source) return { status: "gone" } as const;
         const deletedAt = source.deletedAt ?? new Date();
         await tx.sourceChunk.deleteMany({ where: { sourceId: id } });
+        await tx.obligation.deleteMany({ where: { sourceId: id } });
+        await tx.fact.deleteMany({ where: { sourceId: id } });
+        await tx.sourceCourse.deleteMany({ where: { sourceId: id } });
+        // Proposals and rejections no remaining Source supports disappear with it; an accepted Course is the student's own.
+        await tx.course.deleteMany({ where: { status: { not: "accepted" }, sources: { none: {} } } });
         await tx.source.update({ where: { id }, data: { status: "deleted", deletedAt, keyVersion: null, keyCiphertext: null, title: "Deleted Source" } });
         return { status: "deleted", cleanupAfter: cleanupAfter(source, deletedAt) } as const;
       });

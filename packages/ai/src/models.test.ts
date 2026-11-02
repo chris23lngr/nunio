@@ -43,6 +43,15 @@ describe("the model registry", () => {
     expect(models.byId(id).estimateMicroUsd([input])).toBe(microUsd);
   });
 
+  it("gives extraction a 32k output budget, because Haiku's reasoning tokens share it, and reserves for all of it", () => {
+    const input = "Prüfung".repeat(1_250);
+    const extraction = models.forTask("extraction");
+
+    expect(extraction.callSettings.maxOutputTokens).toBe(32_000);
+    expect(extraction.estimateMicroUsd([input])).toBe(1_020 + 16_000);
+    expect(models.forTask("agent").callSettings.maxOutputTokens).toBe(8_000);
+  });
+
   it("sends every request to zero-retention endpoints only, with a bounded output budget", async () => {
     const bodies: Record<string, unknown>[] = [];
     const recording = createModels({
