@@ -4,12 +4,16 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run src"
   },
   "devDependencies": {
     "@nunio/eslint-config": "workspace:*",
@@ -18,5 +22,9 @@
     "eslint": "10.13.0",
     "typescript": "5.9.3",
     "vitest": "5.0.5"
+  },
+  "dependencies": {
+    "@temporalio/common": "1.25.0",
+    "@temporalio/proto": "1.25.0"
   }
 }

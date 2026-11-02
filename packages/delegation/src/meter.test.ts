@@ -124,3 +124,16 @@ describe("meter", () => {
     expect(called).toBe(false);
   });
 });
+
+it("refuses new AI calls after a deletion request without reserving usage", async () => {
+  const p = await student({ limit: 1_000 });
+  if (p.kind !== "student") throw new Error("student");
+  await admin.deletionRequest.create({ data: { studentId: p.studentId } });
+  let called = false;
+  expect(await delegation.meter(p, { microUsd: 100 }, async () => {
+    called = true;
+    return { value: "unexpected", usage: { microUsd: 100 } };
+  })).toEqual({ status: "refused", reason: "deletion_pending" });
+  expect(called).toBe(false);
+  expect((await delegation.allowance(p)).heldMicroUsd).toBe(0);
+});

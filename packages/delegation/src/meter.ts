@@ -9,7 +9,7 @@ export interface Usage {
 
 export type Metered<T> =
   | { status: "ok"; value: T; usage: Usage }
-  | { status: "refused"; reason: "allowance_exhausted" | "ai_disabled" | "not_entitled" };
+  | { status: "refused"; reason: "allowance_exhausted" | "ai_disabled" | "not_entitled" | "deletion_pending" };
 
 /** Thrown by a metered call that certainly incurred no usage, such as a provider's 4xx rejection. */
 export class DefiniteFailure extends Error {
@@ -53,6 +53,7 @@ export function createDelegation({ db, aiEnabled }: {
       const refusal = await withOwner(db, p, async (tx, studentId) => {
         const entitlement = await tx.pilotEntitlement.findUnique({ where: { studentId }, select: { revokedAt: true } });
         if (!entitlement || entitlement.revokedAt) return "not_entitled";
+        if (await tx.deletionRequest.findUnique({ where: { studentId } })) return "deletion_pending";
         // One conditional UPDATE: the row lock serializes concurrent reservations against the same Allowance.
         const reserved = await tx.$executeRaw`
           UPDATE "allowance" SET "heldMicroUsd" = "heldMicroUsd" + ${estimate.microUsd}, "updatedAt" = now()

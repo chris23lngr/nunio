@@ -262,6 +262,10 @@
     "packages/keys": {
       "name": "@nunio/keys",
       "version": "0.0.0",
+      "dependencies": {
+        "@temporalio/common": "1.25.0",
+        "@temporalio/proto": "1.25.0",
+      },
       "devDependencies": {
         "@nunio/eslint-config": "workspace:*",
         "@nunio/typescript-config": "workspace:*",
