@@ -8,6 +8,10 @@ const labels: Record<Source["status"], string> = {
   uploading: "Waiting for upload", queued: "Waiting to process", processing: "Processing", ready: "Ready",
   failed: "Processing stopped. Contact support before trying again.", deleted: "Deleted",
 };
+const extractionLabels: Record<Source["extraction"], string> = {
+  pending: "waiting to be read", running: "reading for review", done: "ready for review",
+  failed: "could not be read for review. Contact support before trying again.",
+};
 export function SourceList({ apiOrigin }: { apiOrigin: string }) {
   const [sources, setSources] = useState<Source[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +72,7 @@ export function SourceList({ apiOrigin }: { apiOrigin: string }) {
       </form>
       {error && <p role="alert">{error}</p>}
       <ul>{sources.map(source => <li key={source.id}>
-        <span>{source.title} — {labels[source.status]}</span>{" "}
+        <span>{source.title} — {labels[source.status]}{source.status === "ready" && `, ${extractionLabels[source.extraction]}`}</span>{" "}
         <button type="button" disabled={busy} onClick={() => { void remove(source); }}>Delete</button>
       </li>)}</ul>
     </section>
