@@ -32,3 +32,15 @@ describe("the parser entrypoint", () => {
     await once(child, "exit");
   });
 });
+
+it("refuses a Source master-key map without disclosing its value", async () => {
+  const { child, output } = start({ SOURCE_MASTER_KEYS: "master-key-material" });
+  const exited = once(child, "exit");
+  const timer = setTimeout(() => child.kill(), 1_500);
+  try {
+    await exited;
+    expect(output()).toContain("refusing to start with secrets");
+    expect(output()).toContain("SOURCE_MASTER_KEYS");
+    expect(output()).not.toContain("master-key-material");
+  } finally { clearTimeout(timer); }
+});

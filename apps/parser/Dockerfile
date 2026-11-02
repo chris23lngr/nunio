@@ -1,7 +1,7 @@
 # Parser image (ADR-0009). Shape from turborepo examples/with-docker, adapted to Bun.
 # Build from the repo root: docker build -f apps/parser/Dockerfile .
 FROM node:24-bookworm-slim AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates poppler-utils qpdf util-linux \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
