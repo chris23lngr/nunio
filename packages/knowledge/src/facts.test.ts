@@ -3,7 +3,7 @@ import { SourceModelRejected, type Extracted, type Extractor, type Page } from "
 import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
 import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
 import { createDelegation, principal, type Delegation, type Principal } from "@nunio/delegation";
-import { createSourceKeys } from "@nunio/keys";
+import { createSourceKeys, type SourceKeys } from "@nunio/keys";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createFacts, type Facts } from "./facts.js";
 import { createSources, type Sources, type SourceStorage } from "./sources.js";
@@ -14,6 +14,7 @@ let runtime: PrismaClient;
 let sources: Sources;
 let facts: Facts;
 let delegation: Delegation;
+let keys: SourceKeys;
 const now = new Date("2026-11-02T12:00:00Z");
 const storage: SourceStorage = {
   async upload(id) { return { url: `https://storage.invalid/${id}`, headers: {}, expiresAt: new Date(Date.now() + 300_000) }; },
@@ -25,7 +26,7 @@ beforeAll(async () => {
   database = await startTestDatabase();
   admin = createPrismaClient(createPool(database.connectionString));
   runtime = createPrismaClient(createPool(database.runtimeConnectionString));
-  const keys = createSourceKeys({ activeVersion: "v1", masters: { v1: randomBytes(32) } });
+  keys = createSourceKeys({ activeVersion: "v1", masters: { v1: randomBytes(32) } });
   sources = createSources({ db: runtime, keys, storage });
   facts = createFacts({ db: runtime, keys, clock: { now: () => now } });
   delegation = createDelegation({ db: runtime, aiEnabled: () => true });
@@ -82,7 +83,7 @@ it("stores grounded Obligations under a proposed Course and shows them for revie
 
   const result = await facts.extract(p, sourceId, { extractor: scripted({ ...empty, courses: [analysis], obligations: [sheet3] }), delegation });
 
-  expect(result).toEqual({ status: "done", dropped: 0 });
+  expect(result).toEqual({ status: "done", dropped: 0, reviewableAfterMs: expect.any(Number) });
   expect(await facts.review(p)).toEqual({
     courses: [{
       id: expect.any(String), code: "MA-101", title: "Analysis I", status: "proposed",
@@ -115,7 +116,7 @@ it("drops and counts items whose quote is not on their page or whose Course is u
     { ...empty, courses: [{ ...analysis, page: 2 }], obligations: [wrongPage, registration] },
   ) });
 
-  expect(result).toEqual({ status: "done", dropped: 4 });
+  expect(result).toEqual(expect.objectContaining({ status: "done", dropped: 4 }));
   const [course] = (await facts.review(p)).courses;
   expect(course?.obligations.map(o => o.title)).toEqual(["Übungsblatt 3", "Prüfungsanmeldung"]);
 });
@@ -138,7 +139,7 @@ it("matches Courses across windows and Sources by code, then title, and never me
     ] },
   ) });
 
-  expect(result).toEqual({ status: "done", dropped: 0 });
+  expect(result).toEqual(expect.objectContaining({ status: "done", dropped: 0 }));
   expect((await facts.review(p)).courses.map(c => [c.code, c.title, c.obligations.length]))
     .toEqual([["MA-101", "Analysis I", 1], ["MA-102", "Analysis I", 0], [null, "Lineare Algebra", 0]]);
 });
@@ -234,4 +235,16 @@ it("releases the reservation when the provider definitely rejected the call, and
   expect((await delegation.allowance(p)).heldMicroUsd).toBe(0);
   expect(await facts.extract(p, uncertain, { delegation, extractor: failing(new Error("connection reset")) })).toEqual({ status: "failed" });
   expect((await delegation.allowance(p)).heldMicroUsd).toBe(10);
+});
+
+it("reports the time from the upload request to a reviewable result", async () => {
+  const p = await student();
+  const sourceId = await readySource(p, "Analysis.pdf", [{ page: 1, text: "MA-101 Analysis I" }]);
+  const later = createFacts({ db: runtime, keys, clock: { now: () => new Date(Date.now() + 90_000) } });
+
+  const result = await later.extract(p, sourceId, { delegation, extractor: scripted({ ...empty, courses: [analysis] }) });
+
+  if (result.status !== "done") throw new Error(result.status);
+  expect(result.reviewableAfterMs).toBeGreaterThanOrEqual(90_000);
+  expect(result.reviewableAfterMs).toBeLessThan(120_000);
 });

@@ -5,6 +5,7 @@ import { createDelegation, principal } from "@nunio/delegation";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createFacts, createSources, sourceStorageFromEnv, type Ingestion, type Sources } from "@nunio/knowledge";
 import { createEmbedder, createExtractor, createModels, createScanReader } from "@nunio/ai";
+import { log } from "./log.js";
 
 export interface SourceRef { studentId: string; sourceId: string }
 const settings = ["DATABASE_URL", "SOURCE_KEY_VERSION", "SOURCE_MASTER_KEYS", "HETZNER_S3_ENDPOINT", "HETZNER_S3_REGION",
@@ -42,8 +43,11 @@ export function createSourceActivities(env: NodeJS.ProcessEnv) {
         const context = Context.current();
         const heartbeat = setInterval(() => context.heartbeat(), 5_000);
         try {
-          return await facts.extract(principal.fromSession({ studentId }), sourceId,
+          const result = await facts.extract(principal.fromSession({ studentId }), sourceId,
             { extractor, delegation, signal: context.cancellationSignal });
+          // IDs and counts only: never Source content.
+          log("extraction finished", { sourceId, ...result });
+          return result;
         } finally { clearInterval(heartbeat); }
       },
       async purgeSource({ studentId, sourceId }: SourceRef) {

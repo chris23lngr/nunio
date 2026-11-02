@@ -62,7 +62,7 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
         const stored = await withOwner(db, p, async (tx, studentId) => {
           await tx.$queryRaw`SELECT "id" FROM "source" WHERE "id" = ${sourceId} FOR UPDATE`;
           if (await accessRefusal(tx, studentId)
-            || !await tx.source.findFirst({ where: { id: sourceId, deletedAt: null, extraction: "running" } })) return false;
+            || !await tx.source.findFirst({ where: { id: sourceId, deletedAt: null, extraction: "running" } })) return null;
           const courses = new Map<string, string>();
           for (const course of kept.courses) {
             const matchCode = course.code ? normalize(course.code) : null, matchTitle = normalize(course.title);
@@ -96,11 +96,13 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
             await tx.fact.create({ data: { id: randomUUID(), studentId, courseId, sourceId, type: item.type,
               matchKey: normalize(item.key), page: item.page, ciphertext: seal(wording) } });
           }
-          await tx.source.update({ where: { id: sourceId }, data: { extraction: "done", extractedAt: clock.now() } });
-          return true;
+          const extractedAt = clock.now();
+          await tx.source.update({ where: { id: sourceId }, data: { extraction: "done", extractedAt } });
+          return { extractedAt };
         });
         if (!stored) { await markFailed(); return { status: "stopped" } as const; }
-        return { status: "done", dropped } as const;
+        // Phase 6's ten-minute target: from the upload request to a reviewable result.
+        return { status: "done", dropped, reviewableAfterMs: stored.extractedAt.getTime() - source.createdAt.getTime() } as const;
       } catch {
         // All or nothing: a failed window leaves no partial Facts, and the student decides whether to re-extract.
         await markFailed();
