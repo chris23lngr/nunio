@@ -4,8 +4,12 @@ import type { PrismaClient } from "@nunio/db";
 import { principal, type Delegation } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 
+import type { Sources } from "@nunio/knowledge";
+import type { SourceWorkflows } from "./source-workflows.js";
+import { registerSourceRoutes } from "./sources.js";
+
 export interface AppBindings {
-  Variables: { auth: Auth; prisma: PrismaClient; delegation: Delegation };
+  Variables: { auth: Auth; prisma: PrismaClient; delegation: Delegation; sources?: Sources; sourceWorkflows?: SourceWorkflows };
 }
 
 const HealthSchema = z.object({ status: z.literal("ok") }).openapi("Health");
@@ -115,3 +119,5 @@ export const openApiConfig = {
   openapi: "3.1.0",
   info: { title: "nunio API", version: "0.0.0" },
 };
+
+registerSourceRoutes(routes);
