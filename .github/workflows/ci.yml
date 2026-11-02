@@ -51,7 +51,7 @@ jobs:
       # One package and one test-file worker at a time share this runner's Docker/CPU budget.
       - run: >-
           bunx turbo run test ${{ github.event_name == 'pull_request' && '--affected' || '' }} --concurrency=1
-          --filter=@nunio/db --filter=@nunio/delegation --filter=@nunio/billing
+          --filter=@nunio/db --filter=@nunio/delegation --filter=@nunio/billing --filter=@nunio/knowledge
           --filter=@nunio/identity --filter=@nunio/api
           -- --maxWorkers=1 --reporter=default --reporter=json --outputFile=.turbo/tests.json
       - uses: actions/upload-artifact@v5
@@ -93,9 +93,11 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup
+      - name: PDF parser tools
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils qpdf util-linux
       - run: >-
           bunx turbo run test ${{ github.event_name == 'pull_request' && '--affected' || '' }} --concurrency=2
-          --filter=@nunio/parser --filter=@nunio/ai --filter=@nunio/commitlint-config
+          --filter=@nunio/parser --filter=@nunio/ai --filter=@nunio/commitlint-config --filter=@nunio/keys
           -- --maxWorkers=1
           --reporter=default --reporter=json --outputFile=.turbo/tests.json
       - uses: actions/upload-artifact@v5

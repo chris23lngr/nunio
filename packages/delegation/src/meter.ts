@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
-import { withOwner, type Principal } from "./principal.js";
+import { withOwner, type Principal, type Transaction } from "./principal.js";
 
 /** AI usage in micro-USD, as OpenRouter reports cost. */
 export interface Usage {
@@ -9,7 +9,7 @@ export interface Usage {
 
 export type Metered<T> =
   | { status: "ok"; value: T; usage: Usage }
-  | { status: "refused"; reason: "allowance_exhausted" | "ai_disabled" | "not_entitled" };
+  | { status: "refused"; reason: "allowance_exhausted" | "ai_disabled" | "not_entitled" | "deletion_pending" };
 
 /** Thrown by a metered call that certainly incurred no usage, such as a provider's 4xx rejection. */
 export class DefiniteFailure extends Error {
@@ -41,6 +41,14 @@ export interface Delegation {
   held(p: Principal): Promise<HeldReservation[]>;
 }
 
+/** Why the student may not start new work: no active Pilot Entitlement, or a pending deletion. */
+export async function accessRefusal(tx: Transaction, studentId: string) {
+  const entitlement = await tx.pilotEntitlement.findUnique({ where: { studentId }, select: { revokedAt: true } });
+  if (!entitlement || entitlement.revokedAt) return "not_entitled" as const;
+  if (await tx.deletionRequest.findUnique({ where: { studentId } })) return "deletion_pending" as const;
+  return undefined;
+}
+
 export function createDelegation({ db, aiEnabled }: {
   db: PrismaClient;
   /** The global AI kill switch, checked before every reservation. */
@@ -51,8 +59,8 @@ export function createDelegation({ db, aiEnabled }: {
       if (!aiEnabled()) return { status: "refused", reason: "ai_disabled" };
       const reservationId = randomUUID();
       const refusal = await withOwner(db, p, async (tx, studentId) => {
-        const entitlement = await tx.pilotEntitlement.findUnique({ where: { studentId }, select: { revokedAt: true } });
-        if (!entitlement || entitlement.revokedAt) return "not_entitled";
+        const denied = await accessRefusal(tx, studentId);
+        if (denied) return denied;
         // One conditional UPDATE: the row lock serializes concurrent reservations against the same Allowance.
         const reserved = await tx.$executeRaw`
           UPDATE "allowance" SET "heldMicroUsd" = "heldMicroUsd" + ${estimate.microUsd}, "updatedAt" = now()

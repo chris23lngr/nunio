@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 3 in progress, 2026-10-30. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md) and [knowledge-retrieval.md](design/knowledge-retrieval.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 4 verified; Phase 5 in progress (PDF uploads only), 2026-11-02. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md) and [knowledge-retrieval.md](design/knowledge-retrieval.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -272,10 +272,12 @@ Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-
 **Documentation references.** [delegation-gate.md](design/delegation-gate.md) "Invariants" (`meter`); [durable-ai.md](research/durable-ai.md) "AI SDK" and invariant 4; ADR-0011 rules for code; Phase 0 Bedrock entry.
 
 **Verification checklist.**
-- [ ] N concurrent `meter` calls against one Allowance never exceed it (Testcontainers race test). Locally verified under the runtime role; staging pending.
-- [ ] An uncertain call (timeout after send) keeps its reservation. Locally verified: it stays held until the founder settles it with `settle-held`; a provider's 4xx rejection releases it instead.
-- [ ] The kill switch refuses new calls without breaking reads. Locally verified (`AI_DISABLED`); staging pending.
-- [ ] The registry rejects any model ID outside the allowlist. Locally verified.
+- [x] N concurrent `meter` calls against one Allowance never exceed it (Testcontainers race test under the runtime role; automated CI coverage).
+- [x] An uncertain call (timeout after send) keeps its reservation. Automated tests verify held reservations, manual settlement, and release after a definite provider rejection.
+- [x] The kill switch refuses new calls without breaking reads. Automated coverage plus founder-confirmed manual staging checks (2026-11-02).
+- [x] The registry rejects any model ID outside the allowlist. Automated registry tests.
+
+Manual staging evidence (2026-11-02): the founder confirmed all manual Phase 4 checks passed, including the Allowance read, founder grant and audit check, and kill switch. This records founder-reported verification; concurrency and failure-path guarantees are covered by the automated tests above.
 
 **Anti-pattern guards.** No model call outside `meter`. No SDK retries stacked on Temporal retries without explicit limits. No `global.*` IDs.
 
@@ -291,13 +293,13 @@ Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-
 2. **Upload flow:**
    1. The API validates the declared size and type, creates the Source record and key, and returns a presigned PUT to `quarantine` with SSE-C and a signed `ContentLength`.
    2. The browser uploads via `fetch()`.
-   3. The API is notified and starts an ingestion Run.
+   3. The API is notified and starts the ingestion workflow.
 3. **Ingestion workflow (worker):**
-   - Signature sniffing and size, page, and decompression limits.
+   - Signature sniffing and size, page, and decompression limits. *Accepted deviation:* these run in the parser, not the worker, so untrusted bytes are inspected only inside the secretless sandbox (ADR-0009).
    - The parser is called with a presigned GET plus the single file's key, and returns structured text.
    - Scanned pages are detected and routed to Claude image input via `meter` (ADR-0011).
-   - On success, CopyObject to `sources` and delete from `quarantine`.
-4. Chunking, with chunk text encrypted under the Source key ([knowledge-retrieval.md](design/knowledge-retrieval.md)). Embeddings via an in-region OpenRouter embedding model from spike f, chosen by the German eval (run the eval here; deprecation check first).
+   - Snapshot uploads to a worker-only key inside quarantine before parsing; on success, promote that snapshot to `sources` with SSE-C multipart copy and delete the quarantine copies (ADR-0007 amendment).
+4. Chunking, with chunk text encrypted under the Source key ([knowledge-retrieval.md](design/knowledge-retrieval.md)). Embeddings via an in-region OpenRouter embedding model from spike f, chosen by the German eval (run the eval here; deprecation check first). *Accepted exception:* the chosen model is not in-region; see the ADR-0012 Phase 5 amendment.
 5. **Source deletion:** shred the key, delete embedding rows and derived rows in one transaction, and delete objects. Visible immediately everywhere.
 6. Upload and AI entry points refuse students with a pending deletion request or a non-active pilot entitlement ([identity-and-pilot-access.md](design/identity-and-pilot-access.md)).
 
@@ -309,11 +311,13 @@ Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-
 - [ai-providers.md](research/ai-providers.md), "Embeddings".
 
 **Verification checklist.**
-- [ ] Oversized, mislabeled, malformed, and zip-bomb uploads never reach `sources` or retrieval.
-- [ ] The parser container has no environment secrets (an automated check).
-- [ ] After deletion, the object is unreadable with any key, chunks are gone, and retrieval returns nothing.
-- [ ] A student with a pending deletion request or a revoked pilot entitlement can start neither an upload nor an ingestion Run.
-- [ ] The German/English embedding eval result is recorded and the chosen model ID and dimensions are stored per vector row.
+- [x] Oversized, mislabeled, malformed, and decompression-bomb uploads are refused by the Source/parser tests and never published. Linux container checks passed (2026-11-02); retrieval does not exist until Phase 7.
+- [x] The parser refuses secret-bearing environments, including Source master-key maps; automated entrypoint and Linux container checks passed (2026-11-02).
+- [ ] Staging deletion acceptance and Phase 7 retrieval checks pending. Implemented: immediate key/chunk/vector deletion and a durable two-pass physical purge; the live storage regression verifies no versions remain after purge. Previously distributed keys/URLs and asynchronous cleanup are documented in the runbook.
+- [x] Runtime-role Source tests refuse pending-deletion and revoked students at upload, completion and ingestion; metering also checks pending deletion before reserving. Staging acceptance remains pending.
+- [x] Synthetic German/English embedding eval recorded in [phase-5-embedding-eval.json](operations/phase-5-embedding-eval.json); initial choice `baai/bge-m3`, 1024 dimensions, stored per vector row. The catalog/ZDR/deprecation check and synthetic German scan eval passed (2026-11-02); representative-syllabus quality thresholds remain a pilot-readiness gate.
+
+Implementation evidence and deployment settings: [PDF Sources runbook](operations/environments.md#pdf-sources-phase-5). Local tests, container checks and synthetic live provider checks are not a staging end-to-end acceptance. Phase 5 remains in progress until the new settings are provisioned and staging acceptance is recorded.
 
 **Anti-pattern guards.** Do not upload through the API body (4.5 MB Vercel limit). Never pass a master key to the parser or the browser. Do not trust MIME headers.
 

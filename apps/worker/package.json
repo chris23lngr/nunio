@@ -27,6 +27,11 @@
     "@temporalio/common": "1.25.0",
     "@temporalio/proto": "1.25.0",
     "@temporalio/worker": "1.25.0",
-    "@temporalio/workflow": "1.25.0"
+    "@temporalio/workflow": "1.25.0",
+    "@nunio/knowledge": "workspace:*",
+    "@nunio/keys": "workspace:*",
+    "@nunio/ai": "workspace:*",
+    "@nunio/db": "workspace:*",
+    "@nunio/delegation": "workspace:*"
   }
 }

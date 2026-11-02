@@ -4,23 +4,33 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./spike-e": "./spike-e/hetzner.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test:live": "vitest run spike-e"
+    "test:live": "vitest run spike-e",
+    "test": "vitest run src"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "3.1160.0",
-    "@aws-sdk/s3-request-presigner": "3.1160.0",
     "@nunio/eslint-config": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
     "eslint": "10.13.0",
     "typescript": "5.9.3",
     "vitest": "5.0.5"
+  },
+  "dependencies": {
+    "@nunio/db": "workspace:*",
+    "@nunio/delegation": "workspace:*",
+    "@nunio/keys": "workspace:*",
+    "@nunio/ai": "workspace:*",
+    "@aws-sdk/client-s3": "3.1160.0",
+    "@aws-sdk/s3-request-presigner": "3.1160.0"
   }
 }

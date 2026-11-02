@@ -1,0 +1,87 @@
+{
+  "checkedAt": "2026-11-02T12:08:07.064Z",
+  "synthetic": true,
+  "routing": "international",
+  "limitations": "Ten synthetic questions over eight short passages; pilot thresholds and representative syllabi still need founder evaluation.",
+  "scores": [
+    {
+      "model": "baai/bge-m3",
+      "available": true,
+      "dimensions": 1024,
+      "queryCount": 10,
+      "recallAt1": 1,
+      "recallAt3": 1,
+      "ranks": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "pricing": {
+        "prompt": "0.00000001",
+        "completion": "0"
+      },
+      "expirationDate": null,
+      "zdrProviders": [
+        "Parasail",
+        "DeepInfra"
+      ],
+      "usage": {
+        "prompt_tokens": 336,
+        "total_tokens": 336,
+        "cost": 0.00000336,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.00000336,
+          "upstream_inference_prompt_cost": 0.00000336,
+          "upstream_inference_completions_cost": 0
+        }
+      }
+    },
+    {
+      "model": "amazon/titan-embed-text-v2",
+      "available": true,
+      "dimensions": 1024,
+      "queryCount": 10,
+      "recallAt1": 1,
+      "recallAt3": 1,
+      "ranks": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "pricing": {
+        "prompt": "0.00000002",
+        "completion": "0"
+      },
+      "expirationDate": null,
+      "zdrProviders": [
+        "Amazon Bedrock"
+      ],
+      "usage": {
+        "prompt_tokens": 332,
+        "total_tokens": 332,
+        "cost": 0.00000664,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": 0.00000664,
+          "upstream_inference_prompt_cost": 0.00000664,
+          "upstream_inference_completions_cost": 0
+        }
+      }
+    }
+  ]
+}

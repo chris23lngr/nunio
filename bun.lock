@@ -15,10 +15,14 @@
       "version": "0.0.0",
       "dependencies": {
         "@hono/zod-openapi": "1.6.3",
+        "@nunio/ai": "workspace:*",
         "@nunio/billing": "workspace:*",
         "@nunio/db": "workspace:*",
         "@nunio/delegation": "workspace:*",
         "@nunio/identity": "workspace:*",
+        "@nunio/keys": "workspace:*",
+        "@nunio/knowledge": "workspace:*",
+        "@temporalio/client": "1.25.0",
         "@vercel/functions": "3.10.5",
         "hono": "4.13.14",
         "zod": "4.6.7",
@@ -97,6 +101,11 @@
       "name": "@nunio/worker",
       "version": "0.0.0",
       "dependencies": {
+        "@nunio/ai": "workspace:*",
+        "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
+        "@nunio/keys": "workspace:*",
+        "@nunio/knowledge": "workspace:*",
         "@temporalio/activity": "1.25.0",
         "@temporalio/client": "1.25.0",
         "@temporalio/common": "1.25.0",
@@ -262,6 +271,10 @@
     "packages/keys": {
       "name": "@nunio/keys",
       "version": "0.0.0",
+      "dependencies": {
+        "@temporalio/common": "1.25.0",
+        "@temporalio/proto": "1.25.0",
+      },
       "devDependencies": {
         "@nunio/eslint-config": "workspace:*",
         "@nunio/typescript-config": "workspace:*",
@@ -274,9 +287,15 @@
     "packages/knowledge": {
       "name": "@nunio/knowledge",
       "version": "0.0.0",
-      "devDependencies": {
+      "dependencies": {
         "@aws-sdk/client-s3": "3.1160.0",
         "@aws-sdk/s3-request-presigner": "3.1160.0",
+        "@nunio/ai": "workspace:*",
+        "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
+        "@nunio/keys": "workspace:*",
+      },
+      "devDependencies": {
         "@nunio/eslint-config": "workspace:*",
         "@nunio/typescript-config": "workspace:*",
         "@types/node": "24.19.2",

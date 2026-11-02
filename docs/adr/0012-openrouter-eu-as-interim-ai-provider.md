@@ -26,6 +26,8 @@ If embeddings are not available in-region, retrieval cannot ship on this provide
 
 **Amendment (2026-10-30, spike f):** for now, requests use OpenRouter's international routing (`https://openrouter.ai/api/v1`), and the EU-only guardrail is relaxed. EU routing is deferred and must be revisited before pilot release. Every request still goes only to zero-data-retention endpoints. The allowlist is the ZDR Claude and embedding models in [spike-results.md](../operations/spike-results.md#f-openrouter-2026-10-30). Structured output without forced tools and prompt caching are verified there.
 
+**Amendment (2026-11-02, Phase 5 embeddings):** Source embeddings use `baai/bge-m3` (1024 dimensions) through the same international routing. The implementation plan asked for an in-region model; this is an explicit exception, not in-region processing. Requests pin only zero data retention and denied data collection, not a region, and the model's zero-retention providers are DeepInfra and Parasail. On the synthetic German/English eval ([phase-5-embedding-eval.json](../operations/phase-5-embedding-eval.json)) it tied with `amazon/titan-embed-text-v2` and was chosen for its lower listed price. Titan, served by Amazon Bedrock, fits the ADR-0011 target better. Switching models later means re-embedding every Source. The model ID and dimensions stored with each vector make that possible, but it is not free. Revisit both the routing and the model choice together with EU routing before pilot release, and against representative syllabi at the pilot-readiness gate.
+
 ## Considered Options
 
 - **Amazon Bedrock EU (ADR-0011)**: the strongest controls and a single processor, but too much setup for now. It remains the target, and ADR-0011's AWS account is reserved.

@@ -28,7 +28,11 @@
     "@nunio/identity": "workspace:*",
     "@vercel/functions": "3.10.5",
     "hono": "4.13.14",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "@nunio/knowledge": "workspace:*",
+    "@nunio/keys": "workspace:*",
+    "@nunio/ai": "workspace:*",
+    "@temporalio/client": "1.25.0"
   },
   "devDependencies": {
     "@hono/node-server": "2.1.5",

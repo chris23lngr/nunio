@@ -18,7 +18,7 @@ export const principal = {
   },
 };
 
-type Transaction = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
+export type Transaction = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
 
 /** Runs `fn` in a transaction whose RLS owner context is the Principal's student. */
 export async function withOwner<T>(

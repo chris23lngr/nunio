@@ -5,6 +5,8 @@ import { promisify } from "node:util";
 import { createPool, createPrismaClient, type Pool, type PrismaClient } from "@nunio/db";
 import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
 import { createDelegation } from "@nunio/delegation";
+import { createSources } from "@nunio/knowledge";
+import { createSourceKeys } from "@nunio/keys";
 import { createAuth } from "@nunio/identity";
 import { hashPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -50,7 +52,11 @@ beforeAll(async () => {
     },
   });
   const delegation = createDelegation({ db: prisma, aiEnabled: () => true });
-  app = createApp({ auth, prisma, delegation, appOrigin, spike: { webhookSecret, pool } });
+  const sources = createSources({ db: prisma, keys: createSourceKeys({ activeVersion: "test", masters: { test: randomBytes(32) } }), storage: {
+    upload: async (id, key) => ({ url: `https://storage.invalid/${id}`, headers: { key: key.toString("base64") }, expiresAt: new Date(Date.now() + 300_000) }),
+    download: async () => { throw new Error("unused"); }, promote: async () => {}, remove: async () => {},
+  } });
+  app = createApp({ auth, prisma, delegation, appOrigin, sources, sourceWorkflows: { start: async () => {} }, spike: { webhookSecret, pool } });
 }, 180_000);
 
 afterAll(async () => {
@@ -610,4 +616,25 @@ describe("the spike raw-body route", () => {
     const res = await post('{"type":"invoice.paid","id":"evt_1","amount":1999}');
     expect(res.status).toBe(401);
   });
+});
+
+
+it("uploads and deletes an owned PDF through authenticated, origin-protected routes", async () => {
+  const cookie = await signUp("source-upload");
+  const headers = { cookie, origin: appOrigin, "content-type": "application/json" };
+  const res = await app.request(`${apiOrigin}/api/me/sources`, { method: "POST", headers,
+    body: JSON.stringify({ title: "Syllabus.pdf", bytes: 1234, type: "application/pdf" }) });
+  expect(res.status).toBe(201);
+  const data = await res.json() as { source: { id: string }; upload: { url: string } };
+  expect(data.upload.url).toMatch(/^https:/);
+  const listed = await app.request(`${apiOrigin}/api/me/sources`, { headers: { cookie } });
+  expect(await listed.json()).toEqual([expect.objectContaining({ id: data.source.id, status: "uploading" })]);
+  const foreignOrigin = await app.request(`${apiOrigin}/api/me/sources/${data.source.id}`, { method: "DELETE", headers: { cookie, origin: evilOrigin } });
+  expect(foreignOrigin.status).toBe(403);
+  const complete = await app.request(`${apiOrigin}/api/me/sources/${data.source.id}/complete`, { method: "POST", headers });
+  expect(complete.status).toBe(202);
+  const removed = await app.request(`${apiOrigin}/api/me/sources/${data.source.id}`, { method: "DELETE", headers });
+  expect(removed.status).toBe(202);
+  const gone = await app.request(`${apiOrigin}/api/me/sources`, { headers: { cookie } });
+  expect(await gone.json()).toEqual([]);
 });

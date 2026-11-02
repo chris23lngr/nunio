@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 // ADR-0009: the parser holds no secrets, so a secret in its environment is a deployment mistake.
 function start(env: Record<string, string>) {
   const child = spawn(process.execPath, ["--import", "tsx", new URL("./index.ts", import.meta.url).pathname], {
-    env: { PATH: process.env.PATH ?? "", PORT: "0", ...env },
+    env: { PATH: process.env.PATH ?? "", PORT: "0", PARSER_QUARANTINE_BUCKET: "test", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
@@ -31,4 +31,16 @@ describe("the parser entrypoint", () => {
     child.kill("SIGTERM");
     await once(child, "exit");
   });
+});
+
+it("refuses a Source master-key map without disclosing its value", async () => {
+  const { child, output } = start({ SOURCE_MASTER_KEYS: "master-key-material" });
+  const exited = once(child, "exit");
+  const timer = setTimeout(() => child.kill(), 1_500);
+  try {
+    await exited;
+    expect(output()).toContain("refusing to start with secrets");
+    expect(output()).toContain("SOURCE_MASTER_KEYS");
+    expect(output()).not.toContain("master-key-material");
+  } finally { clearTimeout(timer); }
 });

@@ -123,7 +123,7 @@ The cap on AI usage for one Responsibility. A Responsibility that exhausts its B
 _Avoid_: Limit, quota, allowance
 
 **Allowance**:
-The student's total included AI usage, shared across all Runs and counted in the model cost it incurs. During the pilot only the founder increases it, manually; it does not reset automatically.
+The student's total included AI usage, shared across all Runs and the reading of Sources, and counted in the model cost it incurs. During the pilot only the founder increases it, manually; it does not reset automatically.
 _Avoid_: Credits, quota, budget
 
 **Invitation**:
@@ -211,7 +211,7 @@ The state of a Responsibility stopped for good: its Grants are gone and its hist
 _Avoid_: Revoked, cancelled, deleted, archived, completed
 
 **Run**:
-A single, bounded execution of Agent work, started either from a Chat or by a Responsibility.
+A single, bounded execution of Agent work, started either from a Chat or by a Responsibility. Reading or deleting a Source is never a Run.
 _Avoid_: Job, task, session
 
 **Action**:

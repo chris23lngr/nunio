@@ -7,7 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AddressInfo } from "node:net";
 import { createParserServer } from "@nunio/parser/server";
 import { createActivities } from "./activities.js";
-import { createPayloadCodec } from "./codec.js";
+import { createPayloadCodec } from "@nunio/keys";
+import { parseSource } from "./source-activities.js";
 import { approvalSignal } from "./workflows.js";
 
 const taskQueue = "spike-d-test";
@@ -98,7 +99,7 @@ const text = (bytes: Uint8Array | undefined) => (bytes ? Buffer.from(bytes).toSt
 
 describe("checkParser", () => {
   it("reaches the parser's health endpoint from an Activity", async () => {
-    const parser = createParserServer();
+    const parser = createParserServer({ quarantineBucket: "test" });
     await new Promise<void>((resolve) => parser.listen(0, "127.0.0.1", resolve));
     const parserUrl = `http://127.0.0.1:${(parser.address() as AddressInfo).port}`;
     try {
@@ -115,5 +116,48 @@ describe("checkParser", () => {
     } finally {
       await new Promise<void>((resolve) => parser.close(() => resolve()));
     }
+  });
+});
+
+describe("Source Runs", () => {
+  it("does not blindly retry an ingestion Activity whose call may have been charged", async () => {
+    let calls = 0;
+    const worker = await Worker.create({ connection: env.nativeConnection, taskQueue, workflowBundle,
+      activities: { processSource: async () => { calls++; throw new Error("uncertain call"); } } });
+    await worker.runUntil(async () => {
+      await expect(env.client.workflow.execute("ingestSource", { taskQueue, workflowId: `source-${randomUUID()}`,
+        args: [{ studentId: "student", sourceId: "source" }] })).rejects.toThrow();
+    });
+    expect(calls).toBe(1);
+  });
+  it("waits for a busy parser instead of failing the Source", async () => {
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const parser = createParserServer({ quarantineBucket: "test",
+      fetch: async () => { await held; return new Response(null, { status: 404 }); } });
+    await new Promise<void>(resolve => parser.listen(0, "127.0.0.1", resolve));
+    const hostport = `127.0.0.1:${(parser.address() as AddressInfo).port}`;
+    const input = { url: "https://fsn1.your-objectstorage.com/test/source", etag: "e", expectedBytes: 9 };
+    try {
+      const first = parseSource(hostport, { ...input, keyBase64: Buffer.alloc(32).toString("base64") }, new AbortController().signal);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      // Past the busy lock, the parser judges the request itself.
+      const second = expect(parseSource(hostport, { ...input, keyBase64: "not a key" }, new AbortController().signal))
+        .rejects.toThrow("(400)");
+      setTimeout(release, 300);
+      await expect(first).rejects.toThrow("(502)");
+      await second;
+    } finally { release(); await new Promise<void>(resolve => parser.close(() => resolve())); }
+  });
+  it("sweeps object versions immediately and again after the upload window", async () => {
+    const seen: unknown[] = [];
+    const workflowId = `delete-source-${randomUUID()}`;
+    const worker = await Worker.create({ connection: env.nativeConnection, taskQueue, workflowBundle,
+      activities: { purgeSource: async (input: unknown) => { seen.push(input); } } });
+    await worker.runUntil(env.client.workflow.execute("deleteSource", { taskQueue, workflowId,
+      args: [{ studentId: "student", sourceId: "source", cleanupAfter: new Date(Date.now() + 3_000).toISOString() }] }));
+    expect(seen).toEqual([{ studentId: "student", sourceId: "source" }, { studentId: "student", sourceId: "source" }]);
+    const history = await env.client.workflow.getHandle(workflowId).fetchHistory();
+    expect(history.events?.some(event => event.timerFiredEventAttributes)).toBe(true);
   });
 });

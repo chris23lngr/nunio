@@ -1,0 +1,48 @@
+// Source lifecycle and encrypted passages, owned by @nunio/knowledge.
+model Source {
+  id            String    @id
+  studentId     String
+  student       User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  title         String
+  bytes         Int
+  status        SourceStatus @default(uploading)
+  keyVersion    String?
+  keyCiphertext String?
+  createdAt     DateTime  @default(now())
+  uploadExpiresAt DateTime
+  deletedAt     DateTime?
+
+  chunks SourceChunk[]
+
+  @@unique([id, studentId])
+  @@index([studentId, deletedAt])
+  @@map("source")
+}
+
+enum SourceStatus {
+  uploading
+  queued
+  processing
+  ready
+  failed
+  deleted
+
+  @@map("source_status")
+}
+
+model SourceChunk {
+  id         String @id
+  sourceId   String
+  studentId  String
+  source     Source @relation(fields: [sourceId, studentId], references: [id, studentId], onDelete: Cascade)
+  page       Int
+  ordinal    Int
+  ciphertext Bytes
+  model      String
+  dimensions Int
+  embedding  Unsupported("vector")
+
+  @@unique([sourceId, ordinal])
+  @@index([studentId, sourceId])
+  @@map("source_chunk")
+}
