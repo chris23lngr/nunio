@@ -6,12 +6,22 @@ service=$1 commit=$2
 api=https://api.render.com/v1
 auth=(-H "Authorization: Bearer $RENDER_API_KEY" -H "content-type: application/json")
 
-deploy=$(curl -sf "${auth[@]}" -X POST -d "{\"commitId\":\"$commit\",\"clearCache\":\"do_not_clear\"}" \
-  "$api/services/$service/deploys" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+# Fails with Render's own error body rather than an unrelated JSON traceback.
+render() {
+  local body
+  if ! body=$(curl -sS --fail-with-body "${auth[@]}" "$@"); then
+    echo "::error::Render API request failed: $body" >&2; return 1
+  fi
+  printf '%s' "$body"
+}
+
+started=$(render -X POST -d "{\"commitId\":\"$commit\",\"clearCache\":\"do_not_clear\"}" "$api/services/$service/deploys")
+deploy=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$started")
 echo "deploy $deploy of $commit started"
 
 for _ in $(seq 120); do
-  status=$(curl -sf "${auth[@]}" "$api/services/$service/deploys/$deploy" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+  current=$(render "$api/services/$service/deploys/$deploy")
+  status=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])' <<<"$current")
   case $status in
     live) echo "deploy $deploy is live"; exit 0 ;;
     *failed|canceled|deactivated) echo "::error::deploy $deploy ended as $status"; exit 1 ;;

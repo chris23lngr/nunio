@@ -97,10 +97,13 @@ export function createSources({ db, keys, storage }: { db: PrismaClient; keys: S
         return row;
       });
       if (!source?.keyVersion || !source.keyCiphertext) return { status: "stopped" } as const;
-      const key = keys.unwrap(id, { version: source.keyVersion, ciphertext: source.keyCiphertext });
+      const markFailed = () => withOwner(db, p, tx => fail(tx, id, "processing"));
+      let key: Buffer;
+      // A master key the worker lacks (or holds differently) would otherwise leave the Source processing.
+      try { key = keys.unwrap(id, { version: source.keyVersion, ciphertext: source.keyCiphertext }); }
+      catch { await markFailed(); return { status: "failed" } as const; }
       const stillIngesting = () => deps.signal?.aborted ? Promise.resolve(false) : withOwner(db, p, async (tx, studentId) => !(await accessRefusal(tx, studentId))
         && Boolean(await tx.source.findFirst({ where: { id, status: "processing", deletedAt: null } })));
-      const markFailed = () => withOwner(db, p, tx => fail(tx, id, "processing"));
       const meteredModelCall = async <T>(estimate: number, call: (signal: AbortSignal) => Promise<{ value: T; usage: { microUsd: number } }>) => {
         if (!(await stillIngesting())) throw new Error("Source is no longer available for ingestion");
         const result = await deps.delegation.meter(p, { microUsd: estimate }, async signal => {

@@ -196,3 +196,14 @@ it("keeps a page's extracted text when it is also transcribed", async () => {
   expect(embedded.join("\n")).toContain("Raum H1");
   expect(embedded.join("\n")).toContain("Klausur am 3. Juli");
 });
+
+it("fails a Source whose key the worker cannot unwrap instead of leaving it processing", async () => {
+  const p = await student();
+  const upload = await sources.upload(p, { title: "Exam.pdf", bytes: 100, type: "application/pdf" });
+  if (upload.status !== "ok") throw new Error("upload refused");
+  await sources.complete(p, upload.source.id);
+  // A worker whose SOURCE_MASTER_KEYS differ from the API's.
+  const misconfigured = createSources({ db: runtime, keys: createSourceKeys({ activeVersion: "v1", masters: { v1: randomBytes(32) } }), storage });
+  expect(await misconfigured.ingest(p, upload.source.id, ingestion())).toEqual({ status: "failed" });
+  expect(await sources.list(p)).toEqual([expect.objectContaining({ status: "failed" })]);
+});

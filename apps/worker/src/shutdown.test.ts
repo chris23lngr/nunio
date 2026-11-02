@@ -54,6 +54,13 @@ describe("the worker process", () => {
       CODEC_KEY_VERSION: "v1",
       SHUTDOWN_GRACE_SECONDS: "10",
       PARSER_HOSTPORT: "127.0.0.1:1",
+      // Unused by this test; the worker refuses to start without its Source settings.
+      DATABASE_URL: "postgresql://runtime@127.0.0.1:1/nunio",
+      SOURCE_KEY_VERSION: "v1", SOURCE_MASTER_KEYS: JSON.stringify({ v1: randomBytes(32).toString("base64") }),
+      HETZNER_S3_ENDPOINT: "https://storage.invalid", HETZNER_S3_REGION: "test",
+      HETZNER_S3_ACCESS_KEY_ID: "test", HETZNER_S3_SECRET_ACCESS_KEY: "test",
+      HETZNER_QUARANTINE_BUCKET: "quarantine", HETZNER_SOURCES_BUCKET: "sources",
+      OPENROUTER_API_KEY: "test", OPENROUTER_BASE_URL: "https://openrouter.invalid",
     });
     await logged("worker running");
 
