@@ -32,6 +32,11 @@ RUN rm -rf node_modules/.bun/@temporalio+core-bridge@*/node_modules/@temporalio/
 FROM runtime
 COPY --from=deps --chown=node:node /app .
 COPY --from=builder --chown=node:node /app/apps/worker/dist ./apps/worker/dist
+COPY --from=builder --chown=node:node /app/packages/ai/dist ./packages/ai/dist
+COPY --from=builder --chown=node:node /app/packages/db/dist ./packages/db/dist
+COPY --from=builder --chown=node:node /app/packages/delegation/dist ./packages/delegation/dist
+COPY --from=builder --chown=node:node /app/packages/keys/dist ./packages/keys/dist
+COPY --from=builder --chown=node:node /app/packages/knowledge/dist ./packages/knowledge/dist
 USER node
 # node directly, so SIGTERM reaches the worker, which drains for SHUTDOWN_GRACE_SECONDS.
 CMD ["node", "apps/worker/dist/index.js"]

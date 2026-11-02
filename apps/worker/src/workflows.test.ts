@@ -117,3 +117,27 @@ describe("checkParser", () => {
     }
   });
 });
+
+describe("Source Runs", () => {
+  it("does not blindly retry an ingestion Activity whose call may have been charged", async () => {
+    let calls = 0;
+    const worker = await Worker.create({ connection: env.nativeConnection, taskQueue, workflowBundle,
+      activities: { processSource: async () => { calls++; throw new Error("uncertain call"); } } });
+    await worker.runUntil(async () => {
+      await expect(env.client.workflow.execute("ingestSource", { taskQueue, workflowId: `source-${randomUUID()}`,
+        args: [{ studentId: "student", sourceId: "source" }] })).rejects.toThrow();
+    });
+    expect(calls).toBe(1);
+  });
+  it("sweeps object versions immediately and again after the upload window", async () => {
+    const seen: unknown[] = [];
+    const workflowId = `delete-source-${randomUUID()}`;
+    const worker = await Worker.create({ connection: env.nativeConnection, taskQueue, workflowBundle,
+      activities: { purgeSource: async (input: unknown) => { seen.push(input); } } });
+    await worker.runUntil(env.client.workflow.execute("deleteSource", { taskQueue, workflowId,
+      args: [{ studentId: "student", sourceId: "source", cleanupAfter: new Date(Date.now() + 3_000).toISOString() }] }));
+    expect(seen).toEqual([{ studentId: "student", sourceId: "source" }, { studentId: "student", sourceId: "source" }]);
+    const history = await env.client.workflow.getHandle(workflowId).fetchHistory();
+    expect(history.events?.some(event => event.timerFiredEventAttributes)).toBe(true);
+  });
+});

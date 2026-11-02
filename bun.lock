@@ -97,6 +97,11 @@
       "name": "@nunio/worker",
       "version": "0.0.0",
       "dependencies": {
+        "@nunio/ai": "workspace:*",
+        "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
+        "@nunio/keys": "workspace:*",
+        "@nunio/knowledge": "workspace:*",
         "@temporalio/activity": "1.25.0",
         "@temporalio/client": "1.25.0",
         "@temporalio/common": "1.25.0",

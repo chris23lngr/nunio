@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import { createActivities } from "./activities.js";
 import { createPayloadCodec } from "./codec.js";
+import { createSourceActivities } from "./source-activities.js";
 import { log } from "./log.js";
 
 function required(name: string): string {
@@ -31,18 +32,19 @@ const workflows = existsSync(here("./workflow-bundle.js"))
   ? { workflowBundle: { codePath: here("./workflow-bundle.js") } }
   : { workflowsPath: here(`./workflows${extname(fileURLToPath(import.meta.url))}`) };
 
+const sourceActivities = createSourceActivities(process.env);
 const worker = await Worker.create({
   connection,
   namespace: required("TEMPORAL_NAMESPACE"),
   taskQueue,
   ...workflows,
   // Render's private host:port for the parser service (render.yaml `fromService`).
-  activities: createActivities({ parserUrl: `http://${required("PARSER_HOSTPORT")}` }),
+  activities: { ...createActivities({ parserUrl: `http://${required("PARSER_HOSTPORT")}` }), ...sourceActivities.activities },
   dataConverter: { payloadCodecs: [codec] },
   shutdownGraceTime: `${Number(process.env.SHUTDOWN_GRACE_SECONDS ?? 25)} seconds`,
 });
 
 log("worker running", { taskQueue });
-await worker.run();
+try { await worker.run(); } finally { await sourceActivities.close(); }
 await connection.close();
 log("worker stopped");
