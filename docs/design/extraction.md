@@ -63,7 +63,7 @@ The worker calls `facts.extract(...)` from its own Activity, the same way it cal
 
 - `course` and `obligation` have their own tables, because planning needs real columns. `topic`, `course_rule`, and `exam_logistics` share one `fact` table with a `type` and a value validated per type.
 - Every extracted row carries Provenance (Source, page, quote) and `uncertainty`: a nullable short reason. The model supplies reasons ("only 'end of semester' given"); the worker adds its own ("deadline unresolved", "time zone assumed"). There is no numeric confidence.
-- **Encryption.** Extracted values and quotes are encrypted under the Source's key (ADR-0007), so Source deletion shreds them with the chunks. Course names, Corrections, and manual entries are plain rows under row-level security.
+- **Encryption.** Extracted wording is encrypted under the Source's key (ADR-0007): titles, original deadline wording, `destinationText`, quotes, uncertainty, and Fact values. Structure stays plain so planning can query it and matching works across Sources: kind, `due` date and time, Course link, page, review state, and the normalized match key. Extracted rows are deleted with their Source in the same transaction, so the encryption protects backups. Course names, Corrections, and manual entries are plain rows under row-level security.
 - **Obligation fields:**
   - `kind`: `exam | assignment | presentation | thesis | registration | other`. Exam registration is an Obligation.
   - `title`.

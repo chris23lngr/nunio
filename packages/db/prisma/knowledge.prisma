@@ -11,8 +11,13 @@ model Source {
   createdAt     DateTime  @default(now())
   uploadExpiresAt DateTime
   deletedAt     DateTime?
+  extraction    ExtractionStatus @default(pending)
+  extractedAt   DateTime?
 
-  chunks SourceChunk[]
+  chunks      SourceChunk[]
+  courses     SourceCourse[]
+  obligations Obligation[]
+  facts       Fact[]
 
   @@unique([id, studentId])
   @@index([studentId, deletedAt])
@@ -45,4 +50,122 @@ model SourceChunk {
   @@unique([sourceId, ordinal])
   @@index([studentId, sourceId])
   @@map("source_chunk")
+}
+
+enum ExtractionStatus {
+  pending
+  running
+  done
+  failed
+
+  @@map("extraction_status")
+}
+
+model Course {
+  id         String       @id
+  studentId  String
+  student    User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  code       String?
+  title      String
+  matchCode  String?
+  matchTitle String
+  status     CourseStatus @default(proposed)
+  createdAt  DateTime     @default(now())
+
+  sources     SourceCourse[]
+  obligations Obligation[]
+  facts       Fact[]
+
+  @@unique([id, studentId])
+  @@index([studentId])
+  @@map("course")
+}
+
+enum CourseStatus {
+  proposed
+  accepted
+  rejected
+
+  @@map("course_status")
+}
+
+model SourceCourse {
+  sourceId  String
+  courseId  String
+  studentId String
+  source    Source @relation(fields: [sourceId, studentId], references: [id, studentId], onDelete: Cascade)
+  course    Course @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+
+  @@id([sourceId, courseId])
+  @@index([studentId, courseId])
+  @@map("source_course")
+}
+
+enum ReviewState {
+  unreviewed
+  confirmed
+  rejected
+
+  @@map("review_state")
+}
+
+enum ObligationKind {
+  exam
+  assignment
+  presentation
+  thesis
+  registration
+  other
+
+  @@map("obligation_kind")
+}
+
+// Structure is plain for planning and matching; wording is encrypted under the Source key.
+model Obligation {
+  id         String         @id
+  studentId  String
+  courseId   String
+  sourceId   String
+  course     Course         @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+  source     Source         @relation(fields: [sourceId, studentId], references: [id, studentId], onDelete: Cascade)
+  matchKey   String
+  kind       ObligationKind
+  dueDate    DateTime?      @db.Date
+  dueTime    String?
+  timeZone   String?
+  page       Int
+  ciphertext Bytes
+  state      ReviewState    @default(unreviewed)
+  createdAt  DateTime       @default(now())
+
+  @@index([studentId, courseId])
+  @@index([sourceId])
+  @@map("obligation")
+}
+
+enum FactType {
+  topic
+  course_rule
+  exam_logistics
+
+  @@map("fact_type")
+}
+
+model Fact {
+  id         String      @id
+  studentId  String
+  courseId   String
+  sourceId   String
+  course     Course      @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+  source     Source      @relation(fields: [sourceId, studentId], references: [id, studentId], onDelete: Cascade)
+  type       FactType
+  matchKey   String
+  page       Int
+  ciphertext Bytes
+  state      ReviewState @default(unreviewed)
+  createdAt  DateTime    @default(now())
+
+  @@index([studentId, courseId])
+  @@index([sourceId])
+  @@map("fact")
 }
