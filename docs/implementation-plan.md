@@ -313,11 +313,11 @@ Manual staging evidence (2026-11-02): the founder confirmed all manual Phase 4 c
 **Verification checklist.**
 - [x] Oversized, mislabeled, malformed, and decompression-bomb uploads are refused by the Source/parser tests and never published. Linux container checks passed (2026-11-02); retrieval does not exist until Phase 7.
 - [x] The parser refuses secret-bearing environments, including Source master-key maps; automated entrypoint and Linux container checks passed (2026-11-02).
-- [ ] Staging deletion acceptance and Phase 7 retrieval checks pending. Implemented: immediate key/chunk/vector deletion and a durable two-pass physical purge; the live storage regression verifies no versions remain after purge. Previously distributed keys/URLs and asynchronous cleanup are documented in the runbook.
+- [ ] Staging deletion during processing and Phase 7 retrieval checks pending; staging deletion with both physical-cleanup sweeps passed (2026-11-02). Implemented: immediate key/chunk/vector deletion and a durable two-pass physical purge; the live storage regression verifies no versions remain after purge. Previously distributed keys/URLs and asynchronous cleanup are documented in the runbook.
 - [x] Runtime-role Source tests refuse pending-deletion and revoked students at upload, completion and ingestion; metering also checks pending deletion before reserving. Staging acceptance remains pending.
 - [x] Synthetic German/English embedding eval recorded in [phase-5-embedding-eval.json](operations/phase-5-embedding-eval.json); initial choice `baai/bge-m3`, 1024 dimensions, stored per vector row. The catalog/ZDR/deprecation check and synthetic German scan eval passed (2026-11-02); representative-syllabus quality thresholds remain a pilot-readiness gate.
 
-Implementation evidence and deployment settings: [PDF Sources runbook](operations/environments.md#pdf-sources-phase-5). Local tests, container checks and synthetic live provider checks are not a staging end-to-end acceptance. Phase 5 remains in progress until the new settings are provisioned and staging acceptance is recorded.
+Implementation evidence and deployment settings: [PDF Sources runbook](operations/environments.md#pdf-sources-phase-5). Local tests, container checks and synthetic live provider checks are not a staging end-to-end acceptance. Settings are provisioned and staging is deployed (2026-11-02); Phase 5 remains in progress until the remaining staging acceptance in the runbook is recorded.
 
 **Anti-pattern guards.** Do not upload through the API body (4.5 MB Vercel limit). Never pass a master key to the parser or the browser. Do not trust MIME headers.
 
