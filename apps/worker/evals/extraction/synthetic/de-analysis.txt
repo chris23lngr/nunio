@@ -1,0 +1,28 @@
+Universität Musterstadt – Fachbereich Mathematik
+Wintersemester 2026/27
+
+MA-101 Analysis I
+Dozentin: Prof. Dr. A. Beispiel
+
+Organisatorisches
+Vorlesung: Montag und Donnerstag, 10–12 Uhr, Hörsaal H1.
+Übungsblätter erscheinen donnerstags im Moodle-Kurs „Analysis I WiSe 26/27“ und werden dort als PDF abgegeben.
+Abgabefrist ist jeweils der folgende Donnerstag um 10:00 Uhr.
+
+Abgabetermine
+Blatt 1: 29.10.2026, 10:00 Uhr
+Blatt 2: 05.11.2026, 10:00 Uhr
+Blatt 3: 12.11.2026, 10:00 Uhr
+Blatt 4: 19.11.2026, 10:00 Uhr
+Blatt 5 (Bonusblatt): in der letzten Vorlesungswoche, Termin wird noch bekanntgegeben.
+
+Klausurzulassung: Mindestens 50 % der Punkte aus den Übungsblättern 1–4.
+
+Klausur
+Die Klausur findet am 12.02.2027 von 9:00 bis 11:00 Uhr im Audimax statt.
+Anmeldung zur Klausur bis zum 15.01.2027 im Prüfungsportal.
+Erlaubte Hilfsmittel: ein handbeschriebenes DIN-A4-Blatt (beidseitig).
+Die Nachklausur findet am 01.04.2027 statt.
+
+Inhalte
+Vollständige Induktion, reelle Zahlen, Folgen und Reihen, Stetigkeit, Differenzierbarkeit, gleichmäßige Konvergenz.

@@ -1,0 +1,21 @@
+University of Exampleton – Department of Economics
+Winter Term 2026/27
+
+ECON 210 Introduction to Econometrics
+Instructor: Dr. J. Sample
+
+Course requirements
+Problem sets are submitted through the course page on ILIAS. All deadlines are at 23:59 Berlin time.
+Problem Set 1 due 30 October 2026
+Problem Set 2 due 13 November 2026
+Problem Set 3 due 27 November 2026
+
+Midterm exam: 4 December 2026, 14:00, room E-104, 60 minutes, closed book.
+Term paper (max. 4,000 words) due 22 January 2027 via ILIAS.
+Each student gives one 15-minute presentation in the seminar; dates are assigned in the first session.
+
+Final exam: 10 February 2027, 9:00, Main Hall, 90 minutes. A non-programmable calculator is allowed.
+
+Grading: problem sets 20 %, midterm 20 %, term paper 20 %, final exam 40 %.
+
+Topics: simple linear regression, multiple regression, heteroskedasticity, instrumental variables, panel data.
