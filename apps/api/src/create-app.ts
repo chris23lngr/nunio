@@ -1,7 +1,7 @@
 import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
 import { createDelegation, type Delegation } from "@nunio/delegation";
 import { createAuth, type Auth } from "@nunio/identity";
-import { createSources, sourceStorageFromEnv, type Sources } from "@nunio/knowledge";
+import { createFacts, createSources, sourceStorageFromEnv, type Facts, type Sources } from "@nunio/knowledge";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { sourceWorkflowsFromEnv, type SourceWorkflows } from "./source-workflows.js";
 import { attachDatabasePool } from "@vercel/functions";
@@ -15,6 +15,7 @@ export interface AppDeps {
   prisma: PrismaClient;
   delegation: Delegation;
   sources: Sources;
+  facts: Facts;
   sourceWorkflows: SourceWorkflows;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
@@ -22,7 +23,7 @@ export interface AppDeps {
   spike?: SpikeDeps;
 }
 
-export function createApp({ auth, prisma, delegation, appOrigin, spike, sources, sourceWorkflows }: AppDeps) {
+export function createApp({ auth, prisma, delegation, appOrigin, spike, sources, facts, sourceWorkflows }: AppDeps) {
   const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
   if (spike) app.use("*", spikePoolHeader(spike.pool));
@@ -39,6 +40,7 @@ export function createApp({ auth, prisma, delegation, appOrigin, spike, sources,
     c.set("prisma", prisma);
     c.set("delegation", delegation);
     c.set("sources", sources);
+    c.set("facts", facts);
     c.set("sourceWorkflows", sourceWorkflows);
     await next();
   });
@@ -76,6 +78,8 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     env.SPIKE_ROUTES === "true" ? { webhookSecret: required("SPIKE_WEBHOOK_SECRET"), pool } : undefined;
   // The global AI kill switch; like every variable, a change takes effect on the next deployment.
   const delegation = createDelegation({ db: prisma, aiEnabled: () => env.AI_DISABLED !== "true" });
-  const sources = createSources({ db: prisma, keys: sourceKeysFromEnv(env), storage: sourceStorageFromEnv(env) });
-  return createApp({ auth, prisma, delegation, appOrigin, spike, sources, sourceWorkflows: sourceWorkflowsFromEnv(env) });
+  const keys = sourceKeysFromEnv(env);
+  const sources = createSources({ db: prisma, keys, storage: sourceStorageFromEnv(env) });
+  const facts = createFacts({ db: prisma, keys, clock: { now: () => new Date() } });
+  return createApp({ auth, prisma, delegation, appOrigin, spike, sources, facts, sourceWorkflows: sourceWorkflowsFromEnv(env) });
 }

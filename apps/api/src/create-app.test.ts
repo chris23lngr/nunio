@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createPool, createPrismaClient, type Pool, type PrismaClient } from "@nunio/db";
 import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
-import { createDelegation } from "@nunio/delegation";
-import { createSources } from "@nunio/knowledge";
+import { createDelegation, principal, type Delegation } from "@nunio/delegation";
+import { createFacts, createSources, type Facts, type Sources } from "@nunio/knowledge";
 import { createSourceKeys } from "@nunio/keys";
 import { createAuth } from "@nunio/identity";
 import { hashPassword } from "better-auth/crypto";
@@ -28,6 +28,9 @@ let prisma: PrismaClient;
 /** The migration role, for fixtures and fault injection outside RLS. */
 let admin: PrismaClient;
 let app: ReturnType<typeof createApp>;
+let sources: Sources;
+let facts: Facts;
+let delegation: Delegation;
 const verificationLinks = new Map<string, string>();
 
 beforeAll(async () => {
@@ -51,12 +54,15 @@ beforeAll(async () => {
       },
     },
   });
-  const delegation = createDelegation({ db: prisma, aiEnabled: () => true });
-  const sources = createSources({ db: prisma, keys: createSourceKeys({ activeVersion: "test", masters: { test: randomBytes(32) } }), storage: {
+  delegation = createDelegation({ db: prisma, aiEnabled: () => true });
+  const keys = createSourceKeys({ activeVersion: "test", masters: { test: randomBytes(32) } });
+  sources = createSources({ db: prisma, keys, storage: {
     upload: async (id, key) => ({ url: `https://storage.invalid/${id}`, headers: { key: key.toString("base64") }, expiresAt: new Date(Date.now() + 300_000) }),
-    download: async () => { throw new Error("unused"); }, promote: async () => {}, remove: async () => {},
+    download: async (id, key) => ({ url: `https://storage.invalid/${id}`, keyBase64: key.toString("base64"), etag: "etag" }),
+    promote: async () => {}, remove: async () => {},
   } });
-  app = createApp({ auth, prisma, delegation, appOrigin, sources, sourceWorkflows: { start: async () => {} }, spike: { webhookSecret, pool } });
+  facts = createFacts({ db: prisma, keys, clock: { now: () => new Date() } });
+  app = createApp({ auth, prisma, delegation, appOrigin, sources, facts, sourceWorkflows: { start: async () => {} }, spike: { webhookSecret, pool } });
 }, 180_000);
 
 afterAll(async () => {
@@ -637,4 +643,41 @@ it("uploads and deletes an owned PDF through authenticated, origin-protected rou
   expect(removed.status).toBe(202);
   const gone = await app.request(`${apiOrigin}/api/me/sources`, { headers: { cookie } });
   expect(await gone.json()).toEqual([]);
+});
+
+it("reviews extracted Obligations and Courses through authenticated, origin-protected routes", async () => {
+  const cookie = await signUp("review");
+  const p = principal.fromSession({ studentId: await studentId(cookie) });
+  const upload = await sources.upload(p, { title: "Analysis.pdf", bytes: 100, type: "application/pdf" });
+  if (upload.status !== "ok") throw new Error("upload refused");
+  await sources.complete(p, upload.source.id);
+  const text = "MA-101 Analysis I\nAbgabe Blatt 3: 20.11., 12 Uhr";
+  await sources.ingest(p, upload.source.id, { delegation, parse: async () => ({ pages: [{ page: 1, text }] }),
+    embedder: { model: "test", dims: 1, estimateMicroUsd: () => 1, embed: async t => ({ vectors: t.map(() => [1]), usage: { microUsd: 1 } }) },
+    scans: { estimateMicroUsd: () => 1, read: async () => ({ text: "", usage: { microUsd: 1 } }) } });
+  await facts.extract(p, upload.source.id, { delegation, extractor: { model: "test", windows: pages => [[...pages]], estimateMicroUsd: () => 1,
+    extract: async () => ({ usage: { microUsd: 1 }, value: {
+      courses: [{ code: "MA-101", title: "Analysis I", page: 1, quote: "MA-101 Analysis I" }],
+      obligations: [{ course: "MA-101", kind: "assignment", title: "Übungsblatt 3", key: "Blatt 3", destination: null,
+        due: { date: "2026-11-20", time: "12:00", timeZone: "Europe/Berlin", text: "20.11., 12 Uhr" },
+        page: 1, quote: "Abgabe Blatt 3: 20.11., 12 Uhr", uncertainty: null }],
+      facts: [] } }) } });
+  const headers = { cookie, origin: appOrigin, "content-type": "application/json" };
+
+  const listed = await app.request(`${apiOrigin}/api/me/sources`, { headers: { cookie } });
+  expect(await listed.json()).toEqual([expect.objectContaining({ status: "ready", extraction: "done" })]);
+  const review = await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } });
+  expect(review.status).toBe(200);
+  const { courses: [course] } = await review.json() as { courses: { id: string; obligations: { id: string }[] }[] };
+  expect(course).toMatchObject({ title: "Analysis I", status: "proposed",
+    obligations: [{ title: "Übungsblatt 3", provenance: { title: "Analysis.pdf", page: 1, quote: "Abgabe Blatt 3: 20.11., 12 Uhr" } }] });
+  const confirm = `${apiOrigin}/api/me/review/obligation/${course!.obligations[0]!.id}/confirm`;
+
+  expect((await app.request(confirm, { method: "POST", headers: { cookie, origin: evilOrigin } })).status).toBe(403);
+  expect((await app.request(confirm, { method: "POST", headers: { ...headers, cookie: await signUp("review-stranger") } })).status).toBe(404);
+  expect((await app.request(confirm, { method: "POST", headers })).status).toBe(200);
+  expect((await app.request(`${apiOrigin}/api/me/courses/${course!.id}/decision`, { method: "POST", headers,
+    body: JSON.stringify({ decision: "accept" }) })).status).toBe(200);
+  const reviewed = await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } });
+  expect(await reviewed.json()).toMatchObject({ courses: [{ status: "accepted", obligations: [{ state: "confirmed" }] }] });
 });

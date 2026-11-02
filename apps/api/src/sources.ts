@@ -1,10 +1,11 @@
 import { createRoute, z, type OpenAPIHono } from "@hono/zod-openapi";
-import { SourceStatus } from "@nunio/db";
+import { ExtractionStatus, SourceStatus } from "@nunio/db";
 import { principal } from "@nunio/delegation";
 import { maxSourceBytes } from "@nunio/knowledge";
 import type { AppBindings } from "./app.js";
 
-const Source = z.object({ id: z.string(), title: z.string(), status: z.enum(SourceStatus) }).openapi("Source");
+const Source = z.object({ id: z.string(), title: z.string(), status: z.enum(SourceStatus),
+  extraction: z.enum(ExtractionStatus) }).openapi("Source");
 const ErrorBody = z.object({ error: z.string() });
 const json = (schema: z.ZodType, description: string) => ({ description, content: { "application/json": { schema } } });
 const errors = { 401: json(ErrorBody, "Sign in required."), 403: json(ErrorBody, "Pilot access is not active or deletion is pending."),
