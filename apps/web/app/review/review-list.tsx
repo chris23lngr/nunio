@@ -56,6 +56,25 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
     <button type="button" disabled={busy} onClick={() => { void review(kind, item.id, "confirm"); }}>Confirm</button>{" "}
     <button type="button" disabled={busy} onClick={() => { void review(kind, item.id, "reject"); }}>Reject</button>
   </>;
+  const items = (course: Course) => <>
+    <h3>Obligations</h3>
+    {course.obligations.length === 0 ? <p>None found.</p> : <ul>{course.obligations.map(item => <li key={item.id}>
+      <p><strong>{kinds[item.kind]}: {item.title}</strong> — due {due(item.due)}</p>
+      {item.destination && <p>Hand-in (as stated, not verified): {item.destination}</p>}
+      {item.uncertainty && <p>Uncertain: {item.uncertainty}</p>}
+      <Passage provenance={item.provenance} />
+      {actions("obligation", item)}
+    </li>)}</ul>}
+    {course.facts.length > 0 && <>
+      <h3>Topics and details</h3>
+      <ul>{course.facts.map(item => <li key={item.id}>
+        <p><strong>{factTypes[item.type]}:</strong> {item.value}</p>
+        {item.uncertainty && <p>Uncertain: {item.uncertainty}</p>}
+        <Passage provenance={item.provenance} />
+        {actions("fact", item)}
+      </li>)}</ul>
+    </>}
+  </>;
 
   return (
     <section aria-labelledby="review-title">
@@ -65,28 +84,18 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
       {courses === null ? <p>Loading…</p> : courses.length === 0 ? <p>Nothing to review yet. Results appear here once a Source has been read.</p>
         : courses.map(course => <article key={course.id} aria-labelledby={`course-${course.id}`}>
           <h2 id={`course-${course.id}`}>{course.code ? `${course.code} ` : ""}{course.title}</h2>
-          {course.status === "proposed" ? <p>
-            Is this one of your Courses?{" "}
-            <button type="button" disabled={busy} onClick={() => { void decide(course.id, "accept"); }}>Yes, accept</button>{" "}
-            <button type="button" disabled={busy} onClick={() => { void decide(course.id, "reject"); }}>No, reject</button>
-          </p> : <p>Accepted Course</p>}
-          <h3>Obligations</h3>
-          {course.obligations.length === 0 ? <p>None found.</p> : <ul>{course.obligations.map(item => <li key={item.id}>
-            <p><strong>{kinds[item.kind]}: {item.title}</strong> — due {due(item.due)}</p>
-            {item.destination && <p>Hand-in (as stated, not verified): {item.destination}</p>}
-            {item.uncertainty && <p>Uncertain: {item.uncertainty}</p>}
-            <Passage provenance={item.provenance} />
-            {actions("obligation", item)}
-          </li>)}</ul>}
-          {course.facts.length > 0 && <>
-            <h3>Topics and details</h3>
-            <ul>{course.facts.map(item => <li key={item.id}>
-              <p><strong>{factTypes[item.type]}:</strong> {item.value}</p>
-              {item.uncertainty && <p>Uncertain: {item.uncertainty}</p>}
-              <Passage provenance={item.provenance} />
-              {actions("fact", item)}
-            </li>)}</ul>
-          </>}
+          {course.status === "proposed" ? <>
+            <p>
+              Is this one of your Courses?{" "}
+              <button type="button" disabled={busy} onClick={() => { void decide(course.id, "accept"); }}>Yes, accept</button>{" "}
+              <button type="button" disabled={busy} onClick={() => { void decide(course.id, "reject"); }}>No, reject</button>
+            </p>
+            {/* A module handbook proposes many Courses; their items stay folded until the student accepts one. */}
+            <details>
+              <summary>{course.obligations.length + course.facts.length} items found</summary>
+              {items(course)}
+            </details>
+          </> : <><p>Accepted Course</p>{items(course)}</>}
         </article>)}
     </section>
   );

@@ -90,7 +90,7 @@ The worker calls `facts.extract(...)` from its own Activity, the same way it cal
 - **Source deletion** removes its extracted rows and rejections tied only to it. Corrections stay as standalone Facts with Correction Provenance, and the review screen notes that the original Source is gone.
 - **Manual Obligations** require a Course, either accepted or created in the same form. Their Provenance is `entry`, and they are edited directly, without a Correction.
 - **Downstream** (Phase 8) sees `unreviewed` and `confirmed` items, with unreviewed ones marked.
-- **Review screen** (`web`): grouped by Course, with each item's decrypted quote, page, and Source title, and the Confirm, Correct, and Reject actions. Proposed Courses are accepted or rejected there too. An inline PDF viewer is deferred.
+- **Review screen** (`web`): grouped by Course, with each item's decrypted quote, page, and Source title, and the Confirm, Correct, and Reject actions. Proposed Courses are accepted or rejected there too, and their items stay folded until accepted, so a module handbook's many proposals stay quick to decide. An inline PDF viewer is deferred.
 
 ## Timing
 
