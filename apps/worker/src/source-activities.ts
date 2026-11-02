@@ -7,36 +7,35 @@ import { createSources, sourceStorageFromEnv, type Ingestion, type Sources } fro
 import { createEmbedder, createModels, createScanReader } from "@nunio/ai";
 
 export interface SourceRef { studentId: string; sourceId: string }
+const settings = ["DATABASE_URL", "SOURCE_KEY_VERSION", "SOURCE_MASTER_KEYS", "HETZNER_S3_ENDPOINT", "HETZNER_S3_REGION",
+  "HETZNER_S3_ACCESS_KEY_ID", "HETZNER_S3_SECRET_ACCESS_KEY", "HETZNER_QUARANTINE_BUCKET", "HETZNER_SOURCES_BUCKET",
+  "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "PARSER_HOSTPORT"] as const;
+
+/** Reads every setting up front: a misconfigured worker fails at startup, not after taking a Source. */
 export function createSourceActivities(env: NodeJS.ProcessEnv) {
-  let db: PrismaClient | undefined;
-  let sources: Sources | undefined;
-  const required = (name: string) => { const value = env[name]; if (!value) throw new Error(`${name} is not set`); return value; };
-  const runtime = () => {
-    db ??= createPrismaClient(createPool(required("DATABASE_URL")));
-    sources ??= createSources({ db, keys: sourceKeysFromEnv(env), storage: sourceStorageFromEnv(env) });
-    return { db, sources };
-  };
+  const missing = settings.filter(name => !env[name]);
+  if (missing.length) throw new Error(`Missing settings: ${missing.join(", ")}`);
+  const db: PrismaClient = createPrismaClient(createPool(env.DATABASE_URL!));
+  const sources: Sources = createSources({ db, keys: sourceKeysFromEnv(env), storage: sourceStorageFromEnv(env) });
+  const provider = { apiKey: env.OPENROUTER_API_KEY!, baseURL: env.OPENROUTER_BASE_URL! };
+  const embedder = createEmbedder(provider), scans = createScanReader(createModels(provider));
+  const delegation = createDelegation({ db, aiEnabled: () => env.AI_DISABLED !== "true" });
   return {
-    async close() { await db?.$disconnect(); },
+    async close() { await db.$disconnect(); },
     activities: {
       async processSource({ studentId, sourceId }: SourceRef) {
-        const { db, sources } = runtime();
         const context = Context.current();
         const heartbeat = setInterval(() => context.heartbeat(), 5_000);
         try {
-          const provider = { apiKey: required("OPENROUTER_API_KEY"), baseURL: required("OPENROUTER_BASE_URL") };
           const deps: Ingestion = {
-            signal: context.cancellationSignal,
-            delegation: createDelegation({ db, aiEnabled: () => env.AI_DISABLED !== "true" }),
-            embedder: createEmbedder(provider), scans: createScanReader(createModels(provider)),
-            parse: input => parseSource(required("PARSER_HOSTPORT"), input, context.cancellationSignal),
+            signal: context.cancellationSignal, delegation, embedder, scans,
+            parse: input => parseSource(env.PARSER_HOSTPORT!, input, context.cancellationSignal),
           };
           // Decrypted keys and content stay inside this Activity, never in workflow arguments/results.
           return await sources.ingest(principal.fromSession({ studentId }), sourceId, deps);
         } finally { clearInterval(heartbeat); }
       },
       async purgeSource({ studentId, sourceId }: SourceRef) {
-        const { sources } = runtime();
         const p = principal.fromSession({ studentId });
         // Dispatch precedes API deletion: finish the tombstone even if the API process stopped.
         await sources.remove(p, sourceId);
