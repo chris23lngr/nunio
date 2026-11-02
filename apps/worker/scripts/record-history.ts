@@ -1,5 +1,5 @@
-// Records an awaitApproval history for the replay test (src/replay.test.ts). Usage, from apps/worker:
-//   node scripts/record-history.ts
+// Records awaitApproval and ingestSource histories for the replay test (src/replay.test.ts). Usage, from apps/worker:
+//   node scripts/record-history.ts [workflows file] [ingestSource history name]
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { historyToJSON } from "@temporalio/common/proto-utils";
@@ -7,24 +7,33 @@ import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { Worker } from "@temporalio/worker";
 import { approvalSignal } from "../src/workflows.ts";
 
+const workflowsPath = new URL(process.argv[2] ?? "../src/workflows.ts", import.meta.url).pathname;
+const write = (name: string, history: Parameters<typeof historyToJSON>[0]) => {
+  const path = new URL(`../histories/${name}.json`, import.meta.url);
+  writeFileSync(path, `${JSON.stringify(JSON.parse(historyToJSON(history)), null, 2)}\n`);
+  console.log(`wrote ${path.pathname}`);
+};
 const env = await TestWorkflowEnvironment.createLocal();
 try {
   const taskQueue = "record-history";
-  const worker = await Worker.create({
+  // A worker polls only once, so each recording gets its own.
+  const worker = () => Worker.create({
     connection: env.nativeConnection,
     taskQueue,
-    workflowsPath: new URL("../src/workflows.ts", import.meta.url).pathname,
+    workflowsPath,
+    activities: { processSource: async () => ({ status: "ready" }), extractFacts: async () => ({ status: "done", dropped: 0 }) },
   });
   const workflowId = `approval-${randomUUID()}`;
-  await worker.runUntil(async () => {
+  await (await worker()).runUntil(async () => {
     const handle = await env.client.workflow.start("awaitApproval", { taskQueue, workflowId });
     await handle.signal(approvalSignal, "approved");
     await handle.result();
   });
-  const history = await env.client.workflow.getHandle(workflowId).fetchHistory();
-  const path = new URL("../histories/await-approval.json", import.meta.url);
-  writeFileSync(path, `${JSON.stringify(JSON.parse(historyToJSON(history)), null, 2)}\n`);
-  console.log(`wrote ${path.pathname}`);
+  write("await-approval", await env.client.workflow.getHandle(workflowId).fetchHistory());
+  const sourceWorkflowId = `source-${randomUUID()}`;
+  await (await worker()).runUntil(env.client.workflow.execute("ingestSource", { taskQueue, workflowId: sourceWorkflowId,
+    args: [{ studentId: "student", sourceId: "source" }] }));
+  write(process.argv[3] ?? "ingest-source", await env.client.workflow.getHandle(sourceWorkflowId).fetchHistory());
 } finally {
   await env.teardown();
 }

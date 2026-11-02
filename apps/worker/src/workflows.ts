@@ -1,6 +1,6 @@
 // Source ingestion and deletion workflows, plus the spike d checks. Workflow code is deterministic:
 // no I/O here, only Activities (durable-ai.md).
-import { condition, defineSignal, proxyActivities, setHandler, sleep } from "@temporalio/workflow";
+import { condition, defineSignal, patched, proxyActivities, setHandler, sleep } from "@temporalio/workflow";
 import type { SourceActivities, SourceRef } from "./source-activities.js";
 import type { Activities } from "./activities.js";
 
@@ -41,8 +41,14 @@ const { processSource } = proxyActivities<SourceActivities>({
 const { purgeSource } = proxyActivities<SourceActivities>({
   startToCloseTimeout: "2 minutes", retry: { initialInterval: "5 seconds", maximumInterval: "5 minutes" },
 });
+// Extraction may also incur model usage, so it gets the same single attempt; the student re-extracts.
+const { extractFacts } = proxyActivities<SourceActivities>({
+  startToCloseTimeout: "15 minutes", heartbeatTimeout: "30 seconds", retry: { maximumAttempts: 1 },
+});
 export async function ingestSource(input: SourceRef) {
-  return processSource(input);
+  const ingestion = await processSource(input);
+  if (!patched("extract-after-ingest") || ingestion.status !== "ready") return ingestion;
+  return { ...ingestion, extraction: await extractFacts(input) };
 }
 export async function deleteSource(input: SourceRef & { cleanupAfter: string }) {
   await purgeSource({ studentId: input.studentId, sourceId: input.sourceId });
