@@ -49,7 +49,8 @@ const grounding = { page: z.number().int().describe("The page number the quote i
 const uncertainty = z.string().nullable().describe("Why this item may be wrong or incomplete, or null");
 // No personal data in the schema (ADR-0011): it describes course structure only.
 const schema = z.object({
-  courses: z.array(z.object({ code: z.string().nullable().describe("Module code, if stated"), title: z.string(), ...grounding })),
+  courses: z.array(z.object({ code: z.string().nullable().describe("Module code, if stated"),
+    title: z.string().describe("The module's title, not that of a lecture or tutorial within it"), ...grounding })),
   obligations: z.array(z.object({
     course: z.string().describe("The code or title of the course it belongs to, exactly as listed in courses"),
     kind: z.enum(kinds), title: z.string(),
@@ -69,6 +70,8 @@ const instructions = [
   "You extract the structure of university courses from course documents such as syllabi and module handbooks.",
   "Extract only what the document states: courses, obligations the student owes by a deadline (exams, assignments,",
   "presentations, theses, registrations), topics, course rules such as admission requirements, and exam logistics.",
+  "A course is a module (German: Modul) that ends in one assessment and grade. Lectures, tutorials, exercises, seminars and labs",
+  "that belong to a module are not separate courses: list only the module, and attach their obligations, topics and rules to it.",
   "Never infer, complete or invent an item, a date or a deadline. If a deadline is relative or incomplete, set date to null and explain in uncertainty.",
   "Expand a recurring obligation into separate items only when the document gives each concrete date.",
   "Every item must quote a short verbatim excerpt of the page it comes from, and give that page's number.",
