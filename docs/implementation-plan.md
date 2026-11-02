@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 4 verified; Phase 5 in progress (PDF uploads only), 2026-11-02. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md) and [knowledge-retrieval.md](design/knowledge-retrieval.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 4 verified; Phase 5 in progress (PDF uploads only), 2026-11-02. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), and [extraction.md](design/extraction.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -334,10 +334,12 @@ Implementation evidence and deployment settings: [PDF Sources runbook](operation
    - Corrections win over re-extraction.
    - Disagreement from a newer Source is flagged, never applied.
    - Re-uploading a Source never silently overwrites a Correction (glossary: Correction).
-3. A **review screen** in `web`: grouped by Course, each item showing its source passage, with confirm, correct, or dismiss actions. Progress and timing from upload to the first reviewable result is instrumented.
-4. Projects (optional workspaces) and manual Obligation entry.
+3. A **review screen** in `web`: grouped by Course, each item showing its source passage, with Confirm, Correct, or Reject actions. Progress and timing from upload to the first reviewable result is instrumented.
+4. Manual Obligation entry. *Moved:* Projects are implemented in Phase 8, where planning first uses them (decided 2026-11-02).
 
-**Documentation references.** GLOSSARY ("Knowledge", "Study work", "Organization"); [knowledge-retrieval.md](design/knowledge-retrieval.md) "Correction merge"; brief "Complete study workflow" steps 1–3; ADR-0011.
+The accepted design, including slicing, matching, and the eval, is [extraction.md](design/extraction.md).
+
+**Documentation references.** [extraction.md](design/extraction.md); GLOSSARY ("Knowledge", "Study work", "Organization"); [knowledge-retrieval.md](design/knowledge-retrieval.md) "Correction merge"; brief "Complete study workflow" steps 1–3; ADR-0011.
 
 **Verification checklist.**
 - [ ] An extraction eval set of representative German and English syllabi, including scans, has its precision and recall for Obligations and deadlines recorded. Pilot thresholds are set by the founder.
@@ -386,7 +388,8 @@ Implementation evidence and deployment settings: [PDF Sources runbook](operation
    - Planning never writes anything itself.
 2. Tasks (visible and completable), Estimates (proposed and correctable), Study Blocks inside nunio's Plan, Locks, Priorities, Preferences, and Protected Time.
 3. Fixed Events from manual entry or an uploaded `.ics` file, treated as operational Facts. Calendar Connections wait for the pilot tool inventory.
-4. Home: attention needed (Shortfalls, flagged disagreements), ready Artifacts, ongoing work.
+4. Projects (optional workspaces), moved from Phase 6: create, rename, and delete, related to zero or more Courses and optionally one Obligation.
+5. Home: attention needed (Shortfalls, flagged disagreements), ready Artifacts, ongoing work.
 
 **Documentation references.** GLOSSARY ("Planning", "Limits"); brief "User experience and information model"; [knowledge-retrieval.md](design/knowledge-retrieval.md) planning scope.
 

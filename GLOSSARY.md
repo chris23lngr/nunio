@@ -56,6 +56,10 @@ _Avoid_: Citation, origin, reference
 The student's override of a Fact. A Correction keeps winning over later extraction; disagreement from a newer Source is flagged to the student, never silently applied or hidden.
 _Avoid_: Edit, fix, override
 
+**Reject**:
+The student's judgment that an extracted Fact or proposed Course is wrong or not theirs. A rejected item is hidden and stays rejected when later extraction finds it again. Rejecting is not a Dismissal, which applies only to Interventions.
+_Avoid_: Dismiss, delete, hide
+
 ### Study work
 
 **Obligation**:
