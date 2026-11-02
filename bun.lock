@@ -278,9 +278,15 @@
     "packages/knowledge": {
       "name": "@nunio/knowledge",
       "version": "0.0.0",
-      "devDependencies": {
+      "dependencies": {
         "@aws-sdk/client-s3": "3.1160.0",
         "@aws-sdk/s3-request-presigner": "3.1160.0",
+        "@nunio/ai": "workspace:*",
+        "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
+        "@nunio/keys": "workspace:*",
+      },
+      "devDependencies": {
         "@nunio/eslint-config": "workspace:*",
         "@nunio/typescript-config": "workspace:*",
         "@types/node": "24.19.2",
