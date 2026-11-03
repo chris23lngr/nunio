@@ -741,6 +741,23 @@ it("merges one Course into another, reporting conflicting Corrections and Course
   expect((await merge(from!.id, into!.id)).status).toBe(404);
 });
 
+it("enters an Obligation by hand, refusing invalid entries, Courses that are not accepted and existing keys", async () => {
+  const { cookie, headers } = await reviewFixture("review-entry");
+  const [course] = (await (await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })).json() as ReviewBody).courses;
+  const enter = (body: unknown, origin = appOrigin) => app.request(`${apiOrigin}/api/me/obligations`, { method: "POST",
+    headers: { ...headers, origin }, body: JSON.stringify(body) });
+  const exam = { course: { id: course!.id }, kind: "exam", title: "Klausur", due: { date: "2027-02-12", time: null, timeZone: null }, destination: null };
+
+  expect((await enter(exam, evilOrigin)).status).toBe(403);
+  expect((await enter(exam)).status).toBe(404);
+  const created = await enter({ ...exam, course: { title: "Lineare Algebra", code: null } });
+  expect([created.status, await created.json()]).toEqual([201, { id: expect.any(String) }]);
+  expect((await enter({ ...exam, course: { title: "Lineare Algebra", code: null }, due: { date: "2027-02-30", time: null, timeZone: null } })).status).toBe(400);
+  await app.request(`${apiOrigin}/api/me/courses/${course!.id}/decision`, { method: "POST", headers, body: JSON.stringify({ decision: "accept" }) });
+  expect((await enter({ ...exam, kind: "assignment", title: "Blatt 3" })).status).toBe(409);
+  expect((await enter(exam)).status).toBe(201);
+});
+
 it("corrects, keeps, uses and restores review items, refusing invalid Corrections and unknown values", async () => {
   const { cookie, headers } = await reviewFixture("review-corrections");
   const review = async () => await (await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })).json() as ReviewBody;
