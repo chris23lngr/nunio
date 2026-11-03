@@ -2,7 +2,7 @@ import { Client, Connection, WorkflowExecutionAlreadyStartedError } from "@tempo
 import { payloadCodecFromEnv } from "@nunio/keys";
 
 export interface SourceWorkflows {
-  start(kind: "ingestSource" | "deleteSource", studentId: string, sourceId: string, cleanupAfter?: string): Promise<void>;
+  start(kind: "ingestSource" | "extractSource" | "deleteSource", studentId: string, sourceId: string, cleanupAfter?: string): Promise<void>;
 }
 export function sourceWorkflowsFromEnv(env: NodeJS.ProcessEnv): SourceWorkflows {
   const required = (name: string) => { const value = env[name]; if (!value) throw new Error(`${name} is not set`); return value; };
@@ -15,7 +15,7 @@ export function sourceWorkflowsFromEnv(env: NodeJS.ProcessEnv): SourceWorkflows 
           dataConverter: { payloadCodecs: [payloadCodecFromEnv(env)] } });
         await client.workflow.start(kind, { taskQueue: required("TEMPORAL_TASK_QUEUE"),
           workflowId: `${kind}/${sourceId}`, args: [{ studentId, sourceId, ...(cleanupAfter ? { cleanupAfter } : {}) }],
-          workflowExecutionTimeout: kind === "ingestSource" ? "20 minutes" : "7 days" });
+          workflowExecutionTimeout: kind === "deleteSource" ? "7 days" : "20 minutes" });
       } catch (error) {
         if (!(error instanceof WorkflowExecutionAlreadyStartedError)) throw error;
       } finally { await connection.close(); }

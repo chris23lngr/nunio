@@ -26,6 +26,8 @@ let pool: Pool;
 /** The restricted runtime role the deployed API uses. */
 let prisma: PrismaClient;
 /** The migration role, for fixtures and fault injection outside RLS. */
+/** Workflows the API asked to start, as [kind, studentId, sourceId]. */
+const started: unknown[][] = [];
 let admin: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let sources: Sources;
@@ -62,7 +64,7 @@ beforeAll(async () => {
     promote: async () => {}, remove: async () => {},
   } });
   facts = createFacts({ db: prisma, keys, clock: { now: () => new Date() } });
-  app = createApp({ auth, prisma, delegation, appOrigin, sources, facts, sourceWorkflows: { start: async () => {} }, spike: { webhookSecret, pool } });
+  app = createApp({ auth, prisma, delegation, appOrigin, sources, facts, sourceWorkflows: { start: async (...args) => { started.push(args); } }, spike: { webhookSecret, pool } });
 }, 180_000);
 
 afterAll(async () => {
@@ -686,6 +688,22 @@ it("reviews extracted Obligations and Courses through authenticated, origin-prot
     body: JSON.stringify({ decision: "accept" }) })).status).toBe(200);
   const reviewed = await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } });
   expect(await reviewed.json()).toMatchObject({ courses: [{ status: "accepted", obligations: [{ state: "confirmed" }] }] });
+});
+
+it("starts extracting a Source again on request, refusing while it runs and once it is gone", async () => {
+  const { cookie, headers } = await reviewFixture("review-reextract");
+  const [source] = await (await app.request(`${apiOrigin}/api/me/sources`, { headers: { cookie } })).json() as { id: string }[];
+  const extract = () => app.request(`${apiOrigin}/api/me/sources/${source!.id}/extract`, { method: "POST", headers });
+
+  expect((await app.request(`${apiOrigin}/api/me/sources/${source!.id}/extract`, { method: "POST", headers: { cookie, origin: evilOrigin } })).status).toBe(403);
+  const queued = await extract();
+  expect([queued.status, await queued.json()]).toEqual([202, { status: "queued" }]);
+  expect(started).toContainEqual(["extractSource", expect.any(String), source!.id]);
+  // Running is set by the worker's claim; the route only has to map it.
+  await admin.source.update({ where: { id: source!.id }, data: { extraction: "running" } });
+  expect((await extract()).status).toBe(409);
+  await app.request(`${apiOrigin}/api/me/sources/${source!.id}`, { method: "DELETE", headers });
+  expect((await extract()).status).toBe(404);
 });
 
 it("corrects, keeps, uses and restores review items, refusing invalid Corrections and unknown values", async () => {

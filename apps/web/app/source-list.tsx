@@ -18,7 +18,7 @@ const failureLabels: Record<NonNullable<Source["failure"]>, string> = {
 };
 const extractionLabels: Record<Source["extraction"], string> = {
   pending: "waiting to be read", running: "reading for review", done: "ready for review",
-  failed: "could not be read for review. Contact support before trying again.",
+  failed: "could not be read for review. You can read it again.",
 };
 export function SourceList({ apiOrigin }: { apiOrigin: string }) {
   const [sources, setSources] = useState<Source[]>([]);
@@ -60,6 +60,14 @@ export function SourceList({ apiOrigin }: { apiOrigin: string }) {
     } catch (error) { setError(error instanceof Error ? error.message : "Could not upload the PDF."); }
     finally { setBusy(false); setVersion(v => v + 1); }
   }
+  async function readAgain(source: Source) {
+    setBusy(true); setError(null);
+    try {
+      const result = await createApiClient(apiOrigin).POST("/api/me/sources/{id}/extract", { params: { path: { id: source.id } } });
+      if (!result.data) throw new Error();
+    } catch { setError("Could not start reading it again. Please try again."); }
+    finally { setBusy(false); setVersion(v => v + 1); }
+  }
   async function remove(source: Source) {
     if (!window.confirm(`Delete ${source.title}? Its contents will be removed from nunio.`)) return;
     setBusy(true); setError(null);
@@ -81,6 +89,8 @@ export function SourceList({ apiOrigin }: { apiOrigin: string }) {
       {error && <p role="alert">{error}</p>}
       <ul>{sources.map(source => <li key={source.id}>
         <span>{source.title} — {source.failure ? failureLabels[source.failure] : labels[source.status]}{source.status === "ready" && `, ${extractionLabels[source.extraction]}`}</span>{" "}
+        {source.status === "ready" && (source.extraction === "done" || source.extraction === "failed")
+          && <><button type="button" disabled={busy} onClick={() => { void readAgain(source); }}>Read again</button>{" "}</>}
         <button type="button" disabled={busy} onClick={() => { void remove(source); }}>Delete</button>
       </li>)}</ul>
     </section>

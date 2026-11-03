@@ -34,6 +34,21 @@ export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
     if (result.status === "refused") return c.json({ error: result.reason }, 403);
     return c.json({ source: result.source, upload: { ...result.upload, expiresAt: result.upload.expiresAt.toISOString() } }, 201);
   });
+  routes.openapi(createRoute({ method: "post", path: "/api/me/sources/{id}/extract", description: "Read again: extract a ready Source anew.",
+    request: { params }, responses: {
+      202: json(z.object({ status: z.literal("queued") }), "Extraction queued and metered again; repeating while it waits is idempotent."),
+      409: json(ErrorBody, "Extraction is running."), ...errors,
+    } }), async c => {
+    c.header("cache-control", "no-store");
+    const actor = await c.get("auth").authenticate(c.req.raw);
+    if (!actor) return c.json({ error: "unauthorized" }, 401);
+    const id = c.req.valid("param").id;
+    const result = await c.get("facts").requestExtraction(principal.fromSession(actor), id);
+    if (result.status === "gone") return c.json({ error: "gone" }, 404);
+    if (result.status === "running") return c.json({ error: "running" }, 409);
+    await c.get("sourceWorkflows").start("extractSource", actor.studentId, id);
+    return c.json({ status: "queued" as const }, 202);
+  });
   routes.openapi(createRoute({ method: "post", path: "/api/me/sources/{id}/complete", request: { params }, responses: {
     202: json(z.object({ status: z.literal("queued") }), "Ingestion queued; repeating is idempotent."), ...errors,
   } }), async c => {
