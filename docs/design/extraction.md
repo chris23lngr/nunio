@@ -37,7 +37,7 @@ export interface Facts {
   use(p: Principal, item: ItemRef, extractionId: string): Promise<void>;  // "Use this"; also Use new
   keepMine(p: Principal, item: ItemRef): Promise<void>;
   decideCourse(p: Principal, courseId: string, decision: "accept" | "reject" | "restore"): Promise<void>;
-  mergeCourses(p: Principal, into: string, from: string): Promise<void>;
+  mergeCourses(p: Principal, from: string, into: string): Promise<void>;   // 409 on differing Corrections
   enterObligation(p: Principal, input: ObligationInput): Promise<string>;  // Provenance `entry`
 }
 

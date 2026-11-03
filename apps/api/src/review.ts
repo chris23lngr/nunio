@@ -87,4 +87,19 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
     if (result.status === "gone") return c.json({ error: "gone" }, 404);
     return c.json({ status: "ok" as const }, 200);
   });
+  routes.openapi(createRoute({ method: "post", path: "/api/me/courses/{id}/merge", description: "Merge this Course into another.", request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: { required: true, content: { "application/json": { schema: z.object({ into: z.string().uuid() }) } } },
+  }, responses: { 200: Done, ...errors,
+    409: json(ErrorBody.extend({ items: z.array(z.object({ kind: itemParams.kind, id: z.string() })) }),
+      "Both Courses hold differing Corrections for these items of the target; resolve them first."),
+  } }), async c => {
+    c.header("cache-control", "no-store");
+    const actor = await c.get("auth").authenticate(c.req.raw);
+    if (!actor) return c.json({ error: "unauthorized" }, 401);
+    const result = await c.get("facts").mergeCourses(principal.fromSession(actor), c.req.valid("param").id, c.req.valid("json").into);
+    if (result.status === "gone") return c.json({ error: "gone" }, 404);
+    if (result.status === "conflict") return c.json({ error: "conflicting_corrections", items: result.items }, 409);
+    return c.json({ status: "ok" as const }, 200);
+  });
 }

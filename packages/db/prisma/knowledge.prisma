@@ -84,6 +84,10 @@ model Course {
   matchCode  String?
   matchTitle String
   status     CourseStatus @default(proposed)
+  /// Set when merged: a later Source naming this Course lands in the target.
+  mergedIntoId String?
+  mergedInto   Course?    @relation("merge", fields: [mergedIntoId, studentId], references: [id, studentId], onDelete: Cascade)
+  merged       Course[]   @relation("merge")
   createdAt  DateTime     @default(now())
 
   sources     SourceCourse[]
@@ -99,6 +103,7 @@ enum CourseStatus {
   proposed
   accepted
   rejected
+  merged
 
   @@map("course_status")
 }

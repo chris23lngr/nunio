@@ -120,11 +120,14 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
           for (const course of kept.courses) {
             const matchCode = course.code ? normalize(course.code) : null, matchTitle = normalize(course.title);
             // By code first, then by title when no code contradicts it; anything ambiguous becomes a new proposal.
-            const byCode = matchCode ? await tx.course.findMany({ where: { matchCode }, select: { id: true } }) : [];
-            const byTitle = byCode.length ? [] : await tx.course.findMany({
-              where: { matchTitle, ...(matchCode ? { matchCode: null } : {}) }, select: { id: true } });
+            // A merged Course stands for its target, so a Source naming either lands in the target.
+            const targets = (rows: { id: string; mergedIntoId: string | null }[]) => [...new Set(rows.map(row => row.mergedIntoId ?? row.id))];
+            const select = { id: true, mergedIntoId: true };
+            const byCode = matchCode ? targets(await tx.course.findMany({ where: { matchCode }, select })) : [];
+            const byTitle = byCode.length ? [] : targets(await tx.course.findMany({
+              where: { matchTitle, ...(matchCode ? { matchCode: null } : {}) }, select }));
             const match = [byCode, byTitle].find(found => found.length === 1)?.[0];
-            const id = match?.id ?? randomUUID();
+            const id = match ?? randomUUID();
             if (!match) await tx.course.create({ data: { id, studentId, code: course.code, title: course.title, matchCode, matchTitle } });
             await tx.sourceCourse.upsert({ where: { sourceId_courseId: { sourceId, courseId: id } }, create: { sourceId, courseId: id, studentId }, update: {} });
             for (const name of [course.code, course.title]) if (name) courses.set(normalize(name), id);
@@ -270,8 +273,68 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
       return withOwner(db, p, async tx => {
         const { count } = decision === "restore"
           ? await tx.course.updateMany({ where: { id: courseId, status: "rejected" }, data: { status: "proposed" } })
-          : await tx.course.updateMany({ where: { id: courseId }, data: { status: decision === "accept" ? "accepted" : "rejected" } });
+          : await tx.course.updateMany({ where: { id: courseId, status: { not: "merged" } }, data: { status: decision === "accept" ? "accepted" : "rejected" } });
         return { status: count ? "ok" : "gone" } as const;
+      });
+    },
+
+    /**
+     * Merges Course `fromId` into `intoId`: Source links and items move, items with the same key combine with their
+     * extractions pooled, and the target's state and Correction win. Differing Corrections for one key refuse the merge.
+     */
+    async mergeCourses(p: Principal, fromId: string, intoId: string) {
+      return withOwner(db, p, async (tx, studentId) => {
+        if (fromId === intoId) return { status: "gone" } as const;
+        await tx.$queryRaw`SELECT "id" FROM "course" WHERE "id" IN (${fromId}, ${intoId}) ORDER BY "id" FOR UPDATE`;
+        const from = await tx.course.findFirst({ where: { id: fromId, status: { in: ["proposed", "accepted"] } },
+          include: { obligations: true, facts: true, sources: true } });
+        const into = await tx.course.findFirst({ where: { id: intoId, status: { in: ["proposed", "accepted"] } },
+          include: { obligations: true, facts: true } });
+        if (!from || !into) return { status: "gone" } as const;
+        const obligationPairs = from.obligations.flatMap(item => {
+          const target = into.obligations.find(other => other.matchKey === item.matchKey);
+          return target ? [{ item, target }] : [];
+        });
+        const factPairs = from.facts.flatMap(item => {
+          const target = into.facts.find(other => other.type === item.type && other.matchKey === item.matchKey);
+          return target ? [{ item, target }] : [];
+        });
+        const correctedDue = (row: { correctedDueDate: Date | null; correctedDueTime: string | null; correctedTimeZone: string | null }) =>
+          dueKey({ dueDate: row.correctedDueDate, dueTime: row.correctedDueTime, timeZone: row.correctedTimeZone });
+        const conflicts = [
+          ...obligationPairs.filter(({ item, target }) => item.correctedAt && target.correctedAt && correctedDue(item) !== correctedDue(target))
+            .map(({ target }) => ({ kind: "obligation" as const, id: target.id })),
+          ...factPairs.filter(({ item, target }) => item.correctedAt && target.correctedAt
+            && normalize(item.correctedValue ?? "") !== normalize(target.correctedValue ?? ""))
+            .map(({ target }) => ({ kind: "fact" as const, id: target.id })),
+        ];
+        if (conflicts.length) return { status: "conflict", items: conflicts } as const;
+
+        for (const { sourceId } of from.sources) {
+          await tx.sourceCourse.upsert({ where: { sourceId_courseId: { sourceId, courseId: intoId } }, create: { sourceId, courseId: intoId, studentId }, update: {} });
+        }
+        await tx.sourceCourse.deleteMany({ where: { courseId: fromId } });
+        for (const { item, target } of obligationPairs) {
+          await tx.obligationExtraction.updateMany({ where: { obligationId: item.id }, data: { obligationId: target.id } });
+          const correction = item.correctedAt && !target.correctedAt ? { state: "confirmed" as const, correctedAt: item.correctedAt,
+            correctedTitle: item.correctedTitle, correctedDueDate: item.correctedDueDate, correctedDueTime: item.correctedDueTime,
+            correctedTimeZone: item.correctedTimeZone, correctedDestination: item.correctedDestination } : {};
+          await tx.obligation.update({ where: { id: target.id }, data: { unsupported: null, ...correction } });
+          await tx.obligation.delete({ where: { id: item.id } });
+        }
+        for (const { item, target } of factPairs) {
+          await tx.factExtraction.updateMany({ where: { factId: item.id }, data: { factId: target.id } });
+          const correction = item.correctedAt && !target.correctedAt
+            ? { state: "confirmed" as const, correctedAt: item.correctedAt, correctedValue: item.correctedValue } : {};
+          await tx.fact.update({ where: { id: target.id }, data: { unsupported: null, ...correction } });
+          await tx.fact.delete({ where: { id: item.id } });
+        }
+        await tx.obligation.updateMany({ where: { courseId: fromId }, data: { courseId: intoId } });
+        await tx.fact.updateMany({ where: { courseId: fromId }, data: { courseId: intoId } });
+        await tx.course.updateMany({ where: { mergedIntoId: fromId }, data: { mergedIntoId: intoId } });
+        await tx.course.update({ where: { id: fromId }, data: { status: "merged", mergedIntoId: intoId } });
+        await tx.course.update({ where: { id: intoId }, data: { status: "accepted" } });
+        return { status: "ok" } as const;
       });
     },
 
@@ -280,7 +343,7 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
       return withOwner(db, p, async tx => {
         const extractions = { where: { source: { deletedAt: null } }, orderBy: [{ createdAt: "asc" as const }, { page: "asc" as const }],
           include: { source: { select: { title: true, keyVersion: true, keyCiphertext: true } } } };
-        const rows = await tx.course.findMany({ orderBy: [{ title: "asc" }, { code: "asc" }],
+        const rows = await tx.course.findMany({ where: { status: { not: "merged" } }, orderBy: [{ title: "asc" }, { code: "asc" }],
           include: { obligations: { include: { extractions } }, facts: { include: { extractions } } } });
         const sourceKeys = new Map<string, Buffer>();
         const open = <T>(row: { sourceId: string; ciphertext: Uint8Array; source: { keyVersion: string | null; keyCiphertext: string | null } }) => {

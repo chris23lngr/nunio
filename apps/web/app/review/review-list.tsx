@@ -31,6 +31,7 @@ function Citations({ citations }: { citations: Citation[] }) {
 const valueText = (value: Item["item"]["values"][number]) => "due" in value ? deadline(value.due) : value.value;
 // Mirrors the server's comparison closely enough to pick out which values differ from a Correction.
 const same = (a: string, b: string) => a.toLocaleLowerCase().replace(/\s+/g, " ").trim() === b.toLocaleLowerCase().replace(/\s+/g, " ").trim();
+const courseName = (course: Course) => `${course.code ? `${course.code} ` : ""}${course.title}`;
 const label = ({ kind, item }: Item) => kind === "obligation" ? `${kinds[item.kind]}: ${item.title}` : `${factTypes[item.type]}: ${item.value}`;
 
 export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
@@ -71,6 +72,21 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
     act(() => client().POST("/api/me/review/{kind}/{id}/use", { params: { path: { kind, id: item.id } }, body: { extractionId } }));
   const decide = (id: string, decision: "accept" | "reject" | "restore") =>
     act(() => client().POST("/api/me/courses/{id}/decision", { params: { path: { id } }, body: { decision } }));
+  async function merge(event: FormEvent<HTMLFormElement>, course: Course) {
+    event.preventDefault();
+    const target = courses?.find(other => other.id === new FormData(event.currentTarget).get("into"));
+    if (!target || !window.confirm(`Merge ${courseName(course)} into ${courseName(target)}? Its items and Sources move there.`)) return;
+    setBusy(true); setError(null);
+    try {
+      const result = await client().POST("/api/me/courses/{id}/merge", { params: { path: { id: course.id } }, body: { into: target.id } });
+      if (result.response.status === 409 && result.error && "items" in result.error) {
+        const entries: Item[] = [...target.obligations.map(item => ({ kind: "obligation" as const, item })), ...target.facts.map(item => ({ kind: "fact" as const, item }))];
+        const titles = result.error.items.map(({ id }) => entries.find(entry => entry.item.id === id)).filter(entry => entry !== undefined).map(label);
+        setError(`Both Courses hold different Corrections for ${titles.join(", ")}. Make them match or use one value, then merge again.`);
+      } else if (!result.data) setError("Could not merge the Courses. Please try again.");
+    } catch { setError("Could not merge the Courses. Please try again."); }
+    finally { setBusy(false); setVersion(v => v + 1); }
+  }
   function correct(event: FormEvent<HTMLFormElement>, { kind, item }: Item) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -171,6 +187,15 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
               {items(course)}
             </details>
           </> : <><p>Accepted Course</p>{items(course)}</>}
+          {open.length > 1 && <form onSubmit={event => { void merge(event, course); }}>
+            <label>Same Course as{" "}
+              <select name="into" defaultValue="" required>
+                <option value="" disabled>Choose a Course</option>
+                {open.filter(other => other.id !== course.id).map(other => <option key={other.id} value={other.id}>{courseName(other)}</option>)}
+              </select>
+            </label>{" "}
+            <button type="submit" disabled={busy}>Merge into it</button>
+          </form>}
         </article>)}
       {rejectedCourses.length > 0 && <details>
         <summary>Rejected Courses ({rejectedCourses.length})</summary>
