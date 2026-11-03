@@ -665,7 +665,7 @@ it("reviews extracted Obligations and Courses through authenticated, origin-prot
   const headers = { cookie, origin: appOrigin, "content-type": "application/json" };
 
   const listed = await app.request(`${apiOrigin}/api/me/sources`, { headers: { cookie } });
-  expect(await listed.json()).toEqual([expect.objectContaining({ status: "ready", extraction: "done" })]);
+  expect(await listed.json()).toEqual([expect.objectContaining({ status: "ready", failure: null, extraction: "done" })]);
   const review = await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } });
   expect(review.status).toBe(200);
   const { courses: [course] } = await review.json() as { courses: { id: string; obligations: { id: string }[] }[] };

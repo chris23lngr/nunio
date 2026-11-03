@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PrismaClient } from "@nunio/db";
+import type { PrismaClient, SourceFailure } from "@nunio/db";
 import { accessRefusal, DefiniteFailure, withOwner, type Delegation, type Principal, type Transaction } from "@nunio/delegation";
 import { encryptSourceText, type SourceKeys } from "@nunio/keys";
 import { isDefiniteFailure, SourceModelRejected, type Embedder, type ScanReader } from "@nunio/ai";
@@ -32,8 +32,12 @@ export interface Ingestion {
   scans: ScanReader;
   delegation: Delegation;
 }
-const fail = (tx: Transaction, id: string, from: "queued" | "processing") =>
-  tx.source.updateMany({ where: { id, deletedAt: null, status: from }, data: { status: "failed" } });
+/** A failure the student can act on, recorded on the Source and shown to them. */
+export class IngestionError extends Error {
+  constructor(readonly reason: SourceFailure) { super(reason); }
+}
+const fail = (tx: Transaction, id: string, from: "queued" | "processing", failure?: SourceFailure) =>
+  tx.source.updateMany({ where: { id, deletedAt: null, status: from }, data: { status: "failed", failure } });
 
 export function createSources({ db, keys, storage }: { db: PrismaClient; keys: SourceKeys; storage: SourceStorage }) {
   const sourceLock = (tx: Transaction, id: string) => tx.$queryRaw`SELECT "id" FROM "source" WHERE "id" = ${id} FOR UPDATE`;
@@ -56,7 +60,7 @@ export function createSources({ db, keys, storage }: { db: PrismaClient; keys: S
     },
     async list(p: Principal) {
       return withOwner(db, p, tx => tx.source.findMany({ where: { deletedAt: null },
-        select: { id: true, title: true, status: true, extraction: true }, orderBy: { createdAt: "asc" } }));
+        select: { id: true, title: true, status: true, failure: true, extraction: true }, orderBy: { createdAt: "asc" } }));
     },
     async complete(p: Principal, id: string) {
       return withOwner(db, p, async (tx, studentId) => {
@@ -109,7 +113,7 @@ export function createSources({ db, keys, storage }: { db: PrismaClient; keys: S
         return row;
       });
       if (!source?.keyVersion || !source.keyCiphertext) return { status: "stopped" } as const;
-      const markFailed = () => withOwner(db, p, tx => fail(tx, id, "processing"));
+      const markFailed = (failure?: SourceFailure) => withOwner(db, p, tx => fail(tx, id, "processing", failure));
       let key: Buffer;
       // A master key the worker lacks (or holds differently) would otherwise leave the Source processing.
       try { key = keys.unwrap(id, { version: source.keyVersion, ciphertext: source.keyCiphertext }); }
@@ -125,7 +129,9 @@ export function createSources({ db, keys, storage }: { db: PrismaClient; keys: S
             throw error;
           }
         });
-        if (result.status === "refused") throw new Error(result.reason);
+        if (result.status === "refused") {
+          throw result.reason === "allowance_exhausted" ? new IngestionError(result.reason) : new Error(result.reason);
+        }
         return result.value;
       };
       try {
@@ -149,9 +155,9 @@ export function createSources({ db, keys, storage }: { db: PrismaClient; keys: S
             chunks.push({ page: page.page, text: chars.slice(offset, offset + chunkLength).join("") });
           }
         }
-        if (!chunks.length) throw new Error("No text found");
+        if (!chunks.length) throw new IngestionError("no_text");
         if (chunks.length > maxChunks || chunks.reduce((bytes, chunk) => bytes + Buffer.byteLength(chunk.text), 0) > maxTextBytes) {
-          throw new Error("Extracted text exceeds its bound");
+          throw new IngestionError("too_large");
         }
         const vectors: number[][] = [];
         for (let offset = 0; offset < chunks.length; offset += embeddingBatch) {
@@ -180,10 +186,11 @@ export function createSources({ db, keys, storage }: { db: PrismaClient; keys: S
         });
         if (!published) { await storage.remove(id); await markFailed(); return { status: "stopped" } as const; }
         return { status: "ready" } as const;
-      } catch {
-        await markFailed();
+      } catch (error) {
+        const failure = error instanceof IngestionError ? error.reason : undefined;
+        await markFailed(failure);
         // Quarantined failures are never published; a founder investigates held usage before any retry.
-        return { status: "failed" } as const;
+        return { status: "failed", failure } as const;
       } finally { key.fill(0); }
     },
   };

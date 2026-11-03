@@ -4,10 +4,12 @@ import type { PayloadCodec } from "@temporalio/common";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { bundleWorkflowCode, Worker, type WorkflowBundle } from "@temporalio/worker";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createParserServer } from "@nunio/parser/server";
 import { createActivities } from "./activities.js";
 import { createPayloadCodec } from "@nunio/keys";
+import { IngestionError } from "@nunio/knowledge";
 import { parseSource } from "./source-activities.js";
 import { approvalSignal } from "./workflows.js";
 
@@ -162,6 +164,24 @@ describe("Source Runs", () => {
       await expect(first).rejects.toThrow("(502)");
       await second;
     } finally { release(); await new Promise<void>(resolve => parser.close(() => resolve())); }
+  });
+  it("turns a parser refusal the student can act on into its reason", async () => {
+    let reply = { status: 413, error: "page_limit" };
+    const parser = createServer((_, res) => { res.writeHead(reply.status, { "content-type": "application/json" }).end(JSON.stringify({ error: reply.error })); });
+    await new Promise<void>(resolve => parser.listen(0, "127.0.0.1", resolve));
+    const hostport = `127.0.0.1:${(parser.address() as AddressInfo).port}`;
+    const parse = () => parseSource(hostport, { url: "https://storage.invalid/s", keyBase64: "k", etag: "e", expectedBytes: 9 },
+      new AbortController().signal).then(() => "parsed", (error: unknown) => error instanceof IngestionError ? error.reason : "internal");
+    try {
+      const reasons: Record<string, string> = {};
+      for (const [status, error] of [[413, "page_limit"], [413, "pdf_limit"], [413, "output_limit"], [413, "image_limit"],
+        [422, "invalid_pdf"], [422, "invalid_or_excessive_pdf"], [422, "size_mismatch"], [502, "storage_unavailable"]] as const) {
+        reply = { status, error };
+        reasons[error] = await parse();
+      }
+      expect(reasons).toEqual({ page_limit: "too_many_pages", pdf_limit: "too_large", output_limit: "too_large", image_limit: "too_large",
+        invalid_pdf: "unreadable", invalid_or_excessive_pdf: "unreadable", size_mismatch: "internal", storage_unavailable: "internal" });
+    } finally { await new Promise<void>(resolve => parser.close(() => resolve())); }
   });
   it("sweeps object versions immediately and again after the upload window", async () => {
     const seen: unknown[] = [];
