@@ -15,6 +15,8 @@ model Source {
   deletedAt     DateTime?
   extraction    ExtractionStatus @default(pending)
   extractedAt   DateTime?
+  /// When the student last asked to extract again; a re-extraction is timed from here, not from the upload.
+  extractionRequestedAt DateTime?
 
   chunks      SourceChunk[]
   courses     SourceCourse[]

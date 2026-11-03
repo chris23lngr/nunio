@@ -451,3 +451,47 @@ it("refuses another student's Correct, Keep mine, Use this and Restore without c
   await facts.decideCourse(p, before.courses[0]!.id, "restore");
   expect(await sheet3Item(p)).toEqual(expect.objectContaining({ state: "rejected", title: "Übungsblatt 3" }));
 });
+
+it("extracts a Source again on request, replacing its extractions and carrying review over by value", async () => {
+  const p = await student();
+  const text = `MA-101 Analysis I\nAbgabe Blatt 3: 20.11., 12 Uhr\n${sheet3Later.text}`;
+  const sourceId = await readySource(p, "Analysis.pdf", [{ page: 1, text }]);
+  const sheet = (n: number, due = sheet3.due) => ({ ...sheet3, title: `Übungsblatt ${n}`, key: `Übungsblatt ${n}`, due, quote: due.text });
+  await facts.extract(p, sourceId, { delegation, extractor: scripted({ ...empty, courses: [analysis], obligations: [sheet(3), sheet(4), sheet(5)] }) });
+  const item = async (title: string) => (await facts.review(p)).courses[0]!.obligations.find(o => o.title === title || o.values.length === 0)!;
+  const ref = async (title: string) => ({ kind: "obligation" as const, id: (await item(title)).id });
+  await facts.confirm(p, await ref("Übungsblatt 3"));
+  await facts.confirm(p, await ref("Übungsblatt 4"));
+  await facts.correct(p, await ref("Übungsblatt 5"), { title: "Blatt 5", due: { date: null, time: null, timeZone: null }, destination: null });
+
+  expect(await facts.requestExtraction(p, sourceId)).toEqual({ status: "ok" });
+  const result = await facts.extract(p, sourceId, { delegation,
+    extractor: scripted({ ...empty, courses: [analysis], obligations: [sheet(3), sheet(4, sheet3Later)] }) });
+
+  expect(result).toEqual({ status: "done", dropped: 0, reextractionMs: expect.any(Number) });
+  expect(await item("Übungsblatt 3")).toEqual(expect.objectContaining({ state: "confirmed", disagreement: false,
+    values: [expect.objectContaining({ citations: [expect.objectContaining({ sourceId })] })] }));
+  expect(await item("Übungsblatt 4")).toEqual(expect.objectContaining({ state: "unreviewed", disagreement: false,
+    values: [expect.objectContaining({ due: expect.objectContaining({ date: "2026-11-27" }) })] }));
+  expect(await item("Blatt 5")).toEqual(expect.objectContaining({ unsupported: "not_found", values: [], provenance: { kind: "correction" } }));
+});
+
+it("keeps the previous review when extracting again fails, and refuses a request while running or for a Source that is gone", async () => {
+  const p = await student();
+  const sourceId = await sheet3Source(p, "Analysis.pdf");
+  await facts.confirm(p, { kind: "obligation", id: (await sheet3Item(p)).id });
+  const stranger = await student();
+  expect(await facts.requestExtraction(stranger, sourceId)).toEqual({ status: "gone" });
+
+  expect(await facts.requestExtraction(p, sourceId)).toEqual({ status: "ok" });
+  const running = scripted();
+  let whileRunning: unknown;
+  running.extract = async () => { whileRunning = await facts.requestExtraction(p, sourceId); throw new SourceModelRejected("4xx"); };
+  expect(await facts.extract(p, sourceId, { delegation, extractor: running })).toEqual({ status: "failed" });
+  expect(whileRunning).toEqual({ status: "running" });
+
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ state: "confirmed", title: "Übungsblatt 3" }));
+  expect(await sources.list(p)).toEqual([expect.objectContaining({ id: sourceId, extraction: "failed" })]);
+  await sources.remove(p, sourceId);
+  expect(await facts.requestExtraction(p, sourceId)).toEqual({ status: "gone" });
+});

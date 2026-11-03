@@ -3,6 +3,7 @@ import { isDate, isDefiniteFailure, isTime, isTimeZone, SourceModelRejected, typ
 import type { FactType, ObligationKind, PrismaClient, ReviewState, Unsupported } from "@nunio/db";
 import { accessRefusal, DefiniteFailure, withOwner, type Delegation, type Principal, type Transaction } from "@nunio/delegation";
 import { decryptSourceText, encryptSourceText, type SourceKeys } from "@nunio/keys";
+import { pruneItems } from "./items.js";
 import { joinChunks } from "./sources.js";
 
 const defaultTimeZone = "Europe/Berlin";
@@ -102,6 +103,12 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
           if (await accessRefusal(tx, studentId)
             || !await tx.source.findFirst({ where: { id: sourceId, deletedAt: null, extraction: "running" } })) return null;
           const extractedAt = clock.now();
+          // A re-extraction replaces this Source's extractions only now, after every window succeeded. Until they are
+          // deleted below, they count as existing values, which carries review states and overrule marks over by value.
+          const ids = (rows: { id: string }[]) => ({ where: { id: { in: rows.map(row => row.id) } } });
+          const stale = { obligations: ids(await tx.obligationExtraction.findMany({ where: { sourceId }, select: { id: true } })),
+            facts: ids(await tx.factExtraction.findMany({ where: { sourceId }, select: { id: true } })) };
+          await tx.sourceCourse.deleteMany({ where: { sourceId } });
           const courses = new Map<string, string>();
           // A Source repeating a value (overlapping windows, a summary table) yields one extraction, cited on its first page.
           const firstSeen = new Map<string, { id: string; page: number }>();
@@ -162,10 +169,18 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
             await tx.factExtraction.create({ data: { id, studentId, factId: owned.id, sourceId, page: item.page,
               ciphertext: seal(wording), overruledAt: overruled(existing, key, extractedAt) } });
           }
+          if (stale.obligations.where.id.in.length || stale.facts.where.id.in.length) {
+            await tx.obligationExtraction.deleteMany(stale.obligations);
+            await tx.factExtraction.deleteMany(stale.facts);
+            await pruneItems(tx, "not_found");
+          }
           await tx.source.update({ where: { id: sourceId }, data: { extraction: "done", extractedAt } });
           return { extractedAt };
         });
         if (!stored) { await markFailed(); return { status: "stopped" } as const; }
+        if (source.extractionRequestedAt) {
+          return { status: "done", dropped, reextractionMs: stored.extractedAt.getTime() - source.extractionRequestedAt.getTime() } as const;
+        }
         // Phase 6's ten-minute target: from the upload request to a reviewable result.
         return { status: "done", dropped, reviewableAfterMs: stored.extractedAt.getTime() - source.createdAt.getTime() } as const;
       } catch {
@@ -175,6 +190,19 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
       } finally { key.fill(0); }
     },
 
+    /** "Read again": queues a ready Source for extraction; asking again while it waits only re-dispatches it. */
+    async requestExtraction(p: Principal, sourceId: string) {
+      return withOwner(db, p, async tx => {
+        await tx.$queryRaw`SELECT "id" FROM "source" WHERE "id" = ${sourceId} FOR UPDATE`;
+        const source = await tx.source.findFirst({ where: { id: sourceId, deletedAt: null, status: "ready" } });
+        if (!source) return { status: "gone" } as const;
+        if (source.extraction === "running") return { status: "running" } as const;
+        if (source.extraction !== "pending") {
+          await tx.source.update({ where: { id: sourceId }, data: { extraction: "pending", extractionRequestedAt: clock.now() } });
+        }
+        return { status: "ok" } as const;
+      });
+    },
     async confirm(p: Principal, item: ItemRef) { return setState(p, item, "confirmed"); },
     /** A Correction confirms the item and overrules what its Sources say now; later disagreement is flagged, never applied. */
     async correct(p: Principal, item: ItemRef, correction: Correction) {
