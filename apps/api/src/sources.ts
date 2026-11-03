@@ -1,10 +1,11 @@
 import { createRoute, z, type OpenAPIHono } from "@hono/zod-openapi";
-import { ExtractionStatus, SourceStatus } from "@nunio/db";
+import { ExtractionStatus, SourceFailure, SourceStatus } from "@nunio/db";
 import { principal } from "@nunio/delegation";
 import { maxSourceBytes } from "@nunio/knowledge";
 import type { AppBindings } from "./app.js";
 
 const Source = z.object({ id: z.string(), title: z.string(), status: z.enum(SourceStatus),
+  failure: z.enum(SourceFailure).nullable().openapi({ description: "Why processing stopped, when the student can act on it." }),
   extraction: z.enum(ExtractionStatus) }).openapi("Source");
 const ErrorBody = z.object({ error: z.string() });
 const json = (schema: z.ZodType, description: string) => ({ description, content: { "application/json": { schema } } });

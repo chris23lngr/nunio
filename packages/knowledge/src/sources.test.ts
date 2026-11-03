@@ -5,7 +5,7 @@ import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
 import { createDelegation, principal, type Principal } from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { createSources, type SourceStorage, type Ingestion } from "./sources.js";
+import { createSources, IngestionError, type SourceStorage, type Ingestion } from "./sources.js";
 
 let database: TestDatabase;
 let admin: PrismaClient;
@@ -157,6 +157,30 @@ it("keeps parser failures out of sources and never invokes an embedding model", 
     .toEqual({ status: "failed" });
   expect(objects.has(`sources/${uploaded.source.id}`)).toBe(false);
   expect(await sources.list(p)).toEqual([expect.objectContaining({ status: "failed" })]);
+});
+it("records why a Source failed when the student can act on it, and nothing for internal failures", async () => {
+  const failWith = async (overrides: Partial<Ingestion>, allowance = 5_000_000) => {
+    const p = await student();
+    if (p.kind !== "student") throw new Error("student");
+    await admin.allowance.create({ data: { studentId: p.studentId, limitMicroUsd: allowance } });
+    const uploaded = await sources.upload(p, { title: "Handbook.pdf", bytes: 100, type: "application/pdf" });
+    if (uploaded.status !== "ok") throw new Error("upload refused");
+    await sources.complete(p, uploaded.source.id);
+    const result = await sources.ingest(p, uploaded.source.id, ingestion(overrides));
+    const [listed] = await sources.list(p);
+    return { result, failure: listed?.failure };
+  };
+  const scanned = { page: 1, text: "", imageBase64: Buffer.from("page image").toString("base64") };
+  expect(await failWith({ parse: async () => { throw new IngestionError("too_many_pages"); } }))
+    .toEqual({ result: { status: "failed", failure: "too_many_pages" }, failure: "too_many_pages" });
+  expect(await failWith({ parse: async () => ({ pages: [{ page: 1, text: " " }] }) }))
+    .toEqual({ result: { status: "failed", failure: "no_text" }, failure: "no_text" });
+  expect(await failWith({ parse: async () => ({ pages: [{ page: 1, text: "a".repeat(2 * 1024 * 1024 + 1) }] }) }))
+    .toEqual({ result: { status: "failed", failure: "too_large" }, failure: "too_large" });
+  expect(await failWith({ parse: async () => ({ pages: [scanned] }) }, 0))
+    .toEqual({ result: { status: "failed", failure: "allowance_exhausted" }, failure: "allowance_exhausted" });
+  expect(await failWith({ parse: async () => { throw new Error("parser unavailable"); } }))
+    .toEqual({ result: { status: "failed" }, failure: null });
 });
 async function ingestPages(pages: { page: number; text: string; imageBase64?: string }[]) {
   const p = await student();

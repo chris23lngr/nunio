@@ -142,6 +142,21 @@
               "deleted"
             ]
           },
+          "failure": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "too_many_pages",
+              "too_large",
+              "unreadable",
+              "no_text",
+              "allowance_exhausted",
+              null
+            ],
+            "description": "Why processing stopped, when the student can act on it."
+          },
           "extraction": {
             "type": "string",
             "enum": [
@@ -156,6 +171,7 @@
           "id",
           "title",
           "status",
+          "failure",
           "extraction"
         ]
       },

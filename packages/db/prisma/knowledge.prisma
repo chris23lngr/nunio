@@ -6,6 +6,8 @@ model Source {
   title         String
   bytes         Int
   status        SourceStatus @default(uploading)
+  /// Why processing stopped, when the student can act on it; null for internal failures.
+  failure       SourceFailure?
   keyVersion    String?
   keyCiphertext String?
   createdAt     DateTime  @default(now())
@@ -50,6 +52,16 @@ model SourceChunk {
   @@unique([sourceId, ordinal])
   @@index([studentId, sourceId])
   @@map("source_chunk")
+}
+
+enum SourceFailure {
+  too_many_pages
+  too_large
+  unreadable
+  no_text
+  allowance_exhausted
+
+  @@map("source_failure")
 }
 
 enum ExtractionStatus {
