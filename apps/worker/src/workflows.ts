@@ -50,6 +50,10 @@ export async function ingestSource(input: SourceRef) {
   if (!patched("extract-after-ingest") || ingestion.status !== "ready") return ingestion;
   return { ...ingestion, extraction: await extractFacts(input) };
 }
+/** "Read again": extraction alone, started by the student and metered again. */
+export async function extractSource(input: SourceRef) {
+  return extractFacts(input);
+}
 export async function deleteSource(input: SourceRef & { cleanupAfter: string }) {
   await purgeSource({ studentId: input.studentId, sourceId: input.sourceId });
   const delay = new Date(input.cleanupAfter).getTime() - Date.now();

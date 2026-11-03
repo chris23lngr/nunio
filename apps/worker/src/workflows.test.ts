@@ -146,6 +146,17 @@ describe("Source Runs", () => {
     expect(await ingest("ready")).toEqual({ status: "ready", extraction: { status: "failed" } });
     expect(extracted).toEqual([{ studentId: "student", sourceId: "ready" }]);
   });
+  it("extracts a Source again on request with a single attempt", async () => {
+    const extracted: unknown[] = [];
+    const worker = await Worker.create({ connection: env.nativeConnection, taskQueue, workflowBundle, activities: {
+      extractFacts: async (input: unknown) => { extracted.push(input); throw new Error("uncertain call"); },
+    } });
+    await worker.runUntil(async () => {
+      await expect(env.client.workflow.execute("extractSource", { taskQueue, workflowId: `extractSource/${randomUUID()}`,
+        args: [{ studentId: "student", sourceId: "source" }] })).rejects.toThrow();
+    });
+    expect(extracted).toEqual([{ studentId: "student", sourceId: "source" }]);
+  });
   it("waits for a busy parser instead of failing the Source", async () => {
     let release!: () => void;
     const held = new Promise<void>(resolve => { release = resolve; });
