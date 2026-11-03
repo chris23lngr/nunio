@@ -163,6 +163,8 @@ model Obligation {
   correctedDueTime     String?
   correctedTimeZone    String?
   correctedDestination String?
+  /// Set for an Obligation the student entered by hand (Provenance entry); its values live in the corrected* columns.
+  enteredAt            DateTime?
   unsupported          Unsupported?
   createdAt            DateTime       @default(now())
 

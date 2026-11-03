@@ -561,3 +561,75 @@ it("refuses merging a Course into itself, into a rejected or merged Course, or a
   await facts.mergeCourses(p, b.id, a.id);
   expect([await facts.mergeCourses(p, b.id, a.id), await facts.mergeCourses(p, a.id, b.id)]).toEqual(Array(2).fill({ status: "gone" }));
 });
+
+const entry = { kind: "exam" as const, title: "Klausur", due: { date: "2027-02-12", time: "09:00", timeZone: null }, destination: null };
+
+it("enters an Obligation by hand under an accepted Course or a new one, confirmed with Provenance entry", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+  const analysisId = (await courseNamed(p, "Analysis I")).id;
+  await facts.decideCourse(p, analysisId, "accept");
+
+  const underAccepted = await facts.enterObligation(p, { ...entry, course: { id: analysisId } });
+  const underNew = await facts.enterObligation(p, { ...entry, kind: "assignment", title: "Hausarbeit", due: { date: null, time: null, timeZone: null },
+    destination: "Moodle", course: { title: "Lineare Algebra", code: "MA-102" } });
+
+  expect([underAccepted, underNew]).toEqual([{ status: "ok", id: expect.any(String) }, { status: "ok", id: expect.any(String) }]);
+  expect((await courseNamed(p, "Analysis I")).obligations.find(o => o.kind === "exam")).toEqual({
+    id: underAccepted.status === "ok" ? underAccepted.id : "", kind: "exam", title: "Klausur", state: "confirmed",
+    due: { date: "2027-02-12", time: "09:00", timeZone: "Europe/Berlin", text: null }, destination: null, uncertainty: null,
+    provenance: { kind: "entry" }, disagreement: false, unsupported: null, values: [] });
+  expect(await courseNamed(p, "Lineare Algebra")).toEqual(expect.objectContaining({ code: "MA-102", status: "accepted",
+    obligations: [expect.objectContaining({ title: "Hausarbeit", destination: "Moodle", provenance: { kind: "entry" } })] }));
+});
+
+it("refuses an invalid entry, a Course that is not accepted or not the student's, and a key the Course already has", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+  const course = { id: (await courseNamed(p, "Analysis I")).id };
+
+  expect(await facts.enterObligation(p, { ...entry, course })).toEqual({ status: "gone" });
+  await facts.decideCourse(p, course.id, "accept");
+  expect([
+    await facts.enterObligation(p, { ...entry, course, due: { date: "2027-02-30", time: null, timeZone: null } }),
+    await facts.enterObligation(p, { ...entry, course, title: " " }),
+    await facts.enterObligation(p, { ...entry, course: { title: " ", code: null } }),
+  ]).toEqual(Array(3).fill({ status: "invalid" }));
+  expect(await facts.enterObligation(await student(), { ...entry, course })).toEqual({ status: "gone" });
+  expect(await facts.enterObligation(p, { ...entry, course, kind: "assignment", title: "übungsblatt  3" })).toEqual({ status: "exists" });
+});
+
+it("lets a later Source attach to an entered Obligation like a Correction, which the student keeps or replaces", async () => {
+  const p = await student();
+  const entered = await facts.enterObligation(p, { kind: "assignment", title: "Übungsblatt 3",
+    due: { date: "2026-11-21", time: null, timeZone: null }, destination: null, course: { title: "Analysis I", code: "MA-101" } });
+  if (entered.status !== "ok") throw new Error(entered.status);
+  const ref = { kind: "obligation" as const, id: entered.id };
+
+  const sourceId = await sheet3Source(p, "Analysis.pdf");
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ id: entered.id, state: "confirmed", disagreement: true,
+    provenance: { kind: "entry" }, values: [expect.objectContaining({ citations: [expect.objectContaining({ sourceId })] })] }));
+  await facts.correct(p, ref, { title: "Blatt 3", due: { date: "2026-11-20", time: "12:00", timeZone: null }, destination: null });
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ title: "Blatt 3", disagreement: false, provenance: { kind: "entry" } }));
+
+  await sources.remove(p, sourceId);
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ id: entered.id, unsupported: "source_deleted", provenance: { kind: "entry" } }));
+  await sheet3Source(p, "Nachtrag.pdf", sheet3Later);
+  await facts.use(p, ref, (await sheet3Item(p)).values[0]!.citations[0]!.extractionId);
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ id: entered.id, title: "Übungsblatt 3", unsupported: null,
+    provenance: expect.objectContaining({ kind: "source", title: "Nachtrag.pdf" }) }));
+  // Once it follows a Source, correcting it again is a Correction, no longer the student's entry.
+  await facts.correct(p, ref, { title: "Blatt 3", due: { date: "2026-11-28", time: null, timeZone: null }, destination: null });
+  expect((await sheet3Item(p)).provenance).toEqual({ kind: "correction" });
+});
+
+it("keeps an entered Obligation an entry when a merge moves it onto the target's extracted item", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+  await facts.enterObligation(p, { kind: "assignment", title: "Übungsblatt 3", due: { date: "2026-11-21", time: null, timeZone: null },
+    destination: null, course: { title: "Analysis 1", code: null } });
+
+  await facts.mergeCourses(p, (await courseNamed(p, "Analysis 1")).id, (await courseNamed(p, "Analysis I")).id);
+
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ provenance: { kind: "entry" }, due: expect.objectContaining({ date: "2026-11-21" }) }));
+});

@@ -13,12 +13,11 @@ interface ObligationWording { title: string; dueText: string; destination: strin
 interface FactWording { value: string; quote: string; uncertainty: string | null }
 
 export type ItemRef = { kind: "obligation" | "fact"; id: string };
+type ObligationCorrection = { title: string; due: { date: string | null; time: string | null; timeZone: string | null }; destination: string | null };
 /** The student's own value: everything but the item's identity (kind and key). */
-export type Correction =
-  | { title: string; due: { date: string | null; time: string | null; timeZone: string | null }; destination: string | null }
-  | { value: string };
+export type Correction = ObligationCorrection | { value: string };
 type Citation = { extractionId: string; sourceId: string; title: string; page: number; quote: string };
-type Provenance = { kind: "correction" } | { kind: "source"; sourceId: string; title: string; page: number; quote: string };
+type Provenance = { kind: "correction" } | { kind: "entry" } | { kind: "source"; sourceId: string; title: string; page: number; quote: string };
 type DueValue = { date: string | null; time: string | null; timeZone: string | null };
 interface ReviewItem<V> {
   id: string; state: ReviewState; provenance: Provenance; uncertainty: string | null;
@@ -193,6 +192,30 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
       } finally { key.fill(0); }
     },
 
+    /** Enters an Obligation by hand (Provenance entry) under an accepted Course or a new one, which is accepted with it. */
+    async enterObligation(p: Principal, input: { course: { id: string } | { title: string; code: string | null }; kind: ObligationKind } & ObligationCorrection) {
+      const values = ownValues(input);
+      if (!values || ("title" in input.course && !input.course.title.trim())) return { status: "invalid" } as const;
+      return withOwner(db, p, async (tx, studentId) => {
+        let courseId: string;
+        if ("id" in input.course) {
+          const course = await tx.course.findFirst({ where: { id: input.course.id, status: "accepted" } });
+          if (!course) return { status: "gone" } as const;
+          courseId = course.id;
+        } else {
+          const { title, code } = input.course;
+          courseId = randomUUID();
+          await tx.course.create({ data: { id: courseId, studentId, status: "accepted", title: title.trim(), code: code?.trim() || null,
+            matchTitle: normalize(title), matchCode: code?.trim() ? normalize(code) : null } });
+        }
+        const matchKey = `${input.kind}:${normalize(input.title)}`;
+        if (await tx.obligation.findFirst({ where: { courseId, matchKey } })) return { status: "exists" } as const;
+        const id = randomUUID(), now = clock.now();
+        await tx.obligation.create({ data: { id, studentId, courseId, matchKey, kind: input.kind, state: "confirmed",
+          enteredAt: now, correctedAt: now, ...values } });
+        return { status: "ok", id } as const;
+      });
+    },
     /** "Read again": queues a ready Source for extraction; asking again while it waits only re-dispatches it. */
     async requestExtraction(p: Principal, sourceId: string) {
       return withOwner(db, p, async tx => {
@@ -213,15 +236,10 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
         const now = clock.now();
         let key: string, count: number;
         if (item.kind === "obligation") {
-          if (!("title" in correction)) return { status: "invalid" } as const;
-          const { title, due: { date, time, timeZone }, destination } = correction;
-          if (!title.trim() || (date !== null && !isDate(date)) || (time !== null && (date === null || !isTime(time)))
-            || (timeZone !== null && (date === null || !isTimeZone(timeZone)))) return { status: "invalid" } as const;
-          const value: Due = { dueDate: date ? new Date(`${date}T00:00:00Z`) : null, dueTime: time, timeZone: date ? timeZone ?? defaultTimeZone : null };
-          key = dueKey(value);
-          ({ count } = await tx.obligation.updateMany({ where: { id: item.id }, data: { state: "confirmed", correctedAt: now,
-            correctedTitle: title.trim(), correctedDueDate: value.dueDate, correctedDueTime: value.dueTime, correctedTimeZone: value.timeZone,
-            correctedDestination: destination?.trim() || null } }));
+          const values = "title" in correction ? ownValues(correction) : null;
+          if (!values) return { status: "invalid" } as const;
+          key = dueKey({ dueDate: values.correctedDueDate, dueTime: values.correctedDueTime, timeZone: values.correctedTimeZone });
+          ({ count } = await tx.obligation.updateMany({ where: { id: item.id }, data: { state: "confirmed", correctedAt: now, ...values } }));
         } else {
           if (!("value" in correction) || !correction.value.trim()) return { status: "invalid" } as const;
           key = normalize(correction.value);
@@ -256,7 +274,7 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
         const where = { id: { in: restored } }, data = { overruledAt: null };
         if (item.kind === "obligation") {
           await tx.obligationExtraction.updateMany({ where, data });
-          await tx.obligation.update({ where: { id: item.id }, data: { state: "confirmed", unsupported: null, correctedAt: null,
+          await tx.obligation.update({ where: { id: item.id }, data: { state: "confirmed", unsupported: null, correctedAt: null, enteredAt: null,
             correctedTitle: null, correctedDueDate: null, correctedDueTime: null, correctedTimeZone: null, correctedDestination: null } });
         } else {
           await tx.factExtraction.updateMany({ where, data });
@@ -318,7 +336,7 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
           await tx.obligationExtraction.updateMany({ where: { obligationId: item.id }, data: { obligationId: target.id } });
           const correction = item.correctedAt && !target.correctedAt ? { state: "confirmed" as const, correctedAt: item.correctedAt,
             correctedTitle: item.correctedTitle, correctedDueDate: item.correctedDueDate, correctedDueTime: item.correctedDueTime,
-            correctedTimeZone: item.correctedTimeZone, correctedDestination: item.correctedDestination } : {};
+            correctedTimeZone: item.correctedTimeZone, correctedDestination: item.correctedDestination, enteredAt: item.enteredAt } : {};
           await tx.obligation.update({ where: { id: target.id }, data: { unsupported: null, ...correction } });
           await tx.obligation.delete({ where: { id: item.id } });
         }
@@ -369,7 +387,7 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
                 values: values.map(value => value.shown) };
               if (corrected !== null || !chosen) return [{ ...shared, title: row.correctedTitle ?? "",
                 due: { ...due({ dueDate: row.correctedDueDate, dueTime: row.correctedDueTime, timeZone: row.correctedTimeZone }), text: null },
-                destination: row.correctedDestination, uncertainty: null, provenance: { kind: "correction" as const } }];
+                destination: row.correctedDestination, uncertainty: null, provenance: { kind: row.enteredAt ? "entry" as const : "correction" as const } }];
               const { extraction, wording } = chosen.first;
               return [{ ...shared, title: wording.title, due: { ...due(extraction), text: wording.dueText },
                 destination: wording.destination, uncertainty: wording.uncertainty, provenance: citation(extraction, wording) }];
@@ -413,6 +431,14 @@ const citation = (extraction: { id: string; sourceId: string; page: number; sour
 /** Whether a new value takes a confirmed item back to review: no extraction had it yet, and no Correction overrides it. */
 const changes = (item: { state: ReviewState; correctedAt: Date | null }, existing: { key: string; overruled: boolean }[], key: string) =>
   item.state === "confirmed" && !item.correctedAt && existing.length > 0 && !existing.some(value => value.key === key);
+
+/** An Obligation's own values, from a Correction or an entry, validated like extraction; null when invalid. */
+function ownValues({ title, due: { date, time, timeZone }, destination }: ObligationCorrection) {
+  if (!title.trim() || (date !== null && !isDate(date)) || (time !== null && (date === null || !isTime(time)))
+    || (timeZone !== null && (date === null || !isTimeZone(timeZone)))) return null;
+  return { correctedTitle: title.trim(), correctedDueDate: date ? new Date(`${date}T00:00:00Z`) : null, correctedDueTime: time,
+    correctedTimeZone: date ? timeZone ?? defaultTimeZone : null, correctedDestination: destination?.trim() || null };
+}
 
 /** Marks the given values overruled, leaving ones that already are untouched. */
 async function overrule(tx: Transaction, kind: ItemRef["kind"], values: { id: string; overruled: boolean }[], now: Date) {
