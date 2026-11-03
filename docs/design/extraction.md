@@ -54,7 +54,7 @@ The worker calls `facts.extract(...)` from its own Activity, the same way it cal
 ## Pipeline
 
 - **Placement.** Extraction is a second Activity in the `ingestSource` workflow. It runs after the chunks commit and has a single attempt, because a model call may already have been charged. The Source keeps its own status: `extraction` is `pending | running | done | failed`. A failed extraction leaves the Source `ready` and searchable.
-- **Re-extraction** is started only by the student, never automatically, and is metered again.
+- **Re-extraction** is started only by the student, never automatically, and is metered again: "Read again" on a ready Source whose extraction is done or failed calls `POST /api/me/sources/{id}/extract`, which starts the `extractSource` workflow (ID `extractSource/{sourceId}`, the same single-attempt Activity). It is refused while extraction runs (409) and for a Source that is not ready or is deleted (404). Asking again while it is still pending only re-dispatches the workflow, so a failed workflow start never strands the Source.
 - **Model.** Haiku 5.5 via `meter`, with `Output.object` structured output (`response_format: json_schema`, no forced tool). The schema contains no personal data.
 - **Windows.** Page text is split into overlapping page windows of about 30k tokens, each metered separately. Results are merged within the Source before anything is stored.
 - **Untrusted text.** Page text goes in the user message as a nonce-fenced data block, never in the system prompt.
@@ -103,7 +103,7 @@ The worker calls `facts.extract(...)` from its own Activity, the same way it cal
 
 ## Timing
 
-The Source records its upload request time (`createdAt`) and its extraction completion time. "Time to a reviewable result" is the difference. Staging logs it; the checklist number comes from the eval harness.
+The Source records its upload request time (`createdAt`) and its extraction completion time. "Time to a reviewable result" is the difference. Staging logs it; the checklist number comes from the eval harness. A re-extraction is timed from `extractionRequestedAt` instead and logged as `reextractionMs`, so it never counts towards time to a reviewable result.
 
 ## Seams and adapters
 
