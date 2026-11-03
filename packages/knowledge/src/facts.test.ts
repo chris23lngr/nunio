@@ -92,6 +92,9 @@ it("stores grounded Obligations under a proposed Course and shows them for revie
         due: { date: "2026-11-20", time: "12:00", timeZone: "Europe/Berlin", text: "Abgabe Blatt 3: 20.11., 12 Uhr" },
         destination: "Moodle", uncertainty: "Time zone assumed",
         provenance: { kind: "source", sourceId, title: "Analysis.pdf", page: 1, quote: "Abgabe Blatt 3: 20.11., 12 Uhr" },
+        disagreement: false, unsupported: null,
+        values: [{ due: { date: "2026-11-20", time: "12:00", timeZone: "Europe/Berlin" }, overruled: false,
+          citations: [{ extractionId: expect.any(String), sourceId, title: "Analysis.pdf", page: 1, quote: "Abgabe Blatt 3: 20.11., 12 Uhr" }] }],
       }],
       facts: [],
     }],
@@ -177,10 +180,11 @@ it("deleting a Source removes its extracted rows, and an extraction it interrupt
   expect(await facts.review(p)).toEqual({ courses: [] });
   // Deletion is not observable through review, which hides deleted Sources anyway: assert the rows are gone.
   const derived = { where: { sourceId: { in: [done, interrupted] } } };
-  expect([await admin.obligation.count(derived), await admin.fact.count(derived), await admin.sourceCourse.count(derived)]).toEqual([0, 0, 0]);
+  expect([await admin.obligationExtraction.count(derived), await admin.factExtraction.count(derived), await admin.sourceCourse.count(derived),
+    await admin.obligation.count({ where: { studentId: p.studentId } })]).toEqual([0, 0, 0, 0]);
 });
 
-it("confirms and rejects items and Courses for their owner only, hiding whatever is rejected", async () => {
+it("confirms and rejects items and Courses for their owner only, folding away whatever is rejected", async () => {
   const p = await student();
   const sourceId = await readySource(p, "Analysis.pdf", [{ page: 1, text: "MA-101 Analysis I\nAbgabe Blatt 3: 20.11., 12 Uhr\nLineare Algebra" }]);
   const sheet4 = { ...sheet3, title: "Übungsblatt 4", key: "Übungsblatt 4" };
@@ -197,8 +201,12 @@ it("confirms and rejects items and Courses for their owner only, hiding whatever
   expect(await facts.decideCourse(p, course!.id, "accept")).toEqual({ status: "ok" });
   expect(await facts.decideCourse(p, other!.id, "reject")).toEqual({ status: "ok" });
 
-  expect((await facts.review(p)).courses).toEqual([expect.objectContaining({ id: course!.id, status: "accepted",
-    obligations: [expect.objectContaining({ id: first!.id, state: "confirmed" })] })]);
+  expect((await facts.review(p)).courses).toEqual([
+    expect.objectContaining({ id: course!.id, status: "accepted", obligations: [
+      expect.objectContaining({ id: first!.id, state: "confirmed" }), expect.objectContaining({ id: second!.id, state: "rejected" })] }),
+    // A rejected Course keeps no items in review: they stay hidden until it is restored.
+    expect.objectContaining({ id: other!.id, status: "rejected", obligations: [], facts: [] }),
+  ]);
   expect(await facts.review(stranger)).toEqual({ courses: [] });
 });
 
@@ -218,7 +226,10 @@ it("stores Topics, course rules and exam logistics with their passage", async ()
   const [course] = (await facts.review(p)).courses;
   expect(course?.facts).toEqual([
     { id: expect.any(String), type: "topic", value: "Gleichmäßige Konvergenz", uncertainty: null, state: "unreviewed",
-      provenance: { kind: "source", sourceId, title: "Analysis.pdf", page: 1, quote: "gleichmäßige Konvergenz" } },
+      provenance: { kind: "source", sourceId, title: "Analysis.pdf", page: 1, quote: "gleichmäßige Konvergenz" },
+      disagreement: false, unsupported: null,
+      values: [{ value: "Gleichmäßige Konvergenz", overruled: false,
+        citations: [{ extractionId: expect.any(String), sourceId, title: "Analysis.pdf", page: 1, quote: "gleichmäßige Konvergenz" }] }] },
     expect.objectContaining({ type: "course_rule", value: "50 % der Übungspunkte für die Zulassung" }),
     expect.objectContaining({ type: "exam_logistics", value: "H1", uncertainty: "Raum kann sich ändern" }),
   ]);
@@ -247,4 +258,196 @@ it("reports the time from the upload request to a reviewable result", async () =
   if (result.status !== "done") throw new Error(result.status);
   expect(result.reviewableAfterMs).toBeGreaterThanOrEqual(90_000);
   expect(result.reviewableAfterMs).toBeLessThan(120_000);
+});
+
+/** A ready Source stating Blatt 3's deadline as `text`, extracted with that deadline. */
+async function sheet3Source(p: Principal, title: string, due = sheet3.due) {
+  const sourceId = await readySource(p, title, [{ page: 1, text: `MA-101 Analysis I\n${due.text}` }]);
+  await facts.extract(p, sourceId, { delegation, extractor: scripted({ ...empty, courses: [analysis],
+    obligations: [{ ...sheet3, due, quote: due.text }] }) });
+  return sourceId;
+}
+const sheet3Later = { date: "2026-11-27", time: "12:00", timeZone: null, text: "Abgabe Blatt 3 verschoben: 27.11., 12 Uhr" };
+async function sheet3Item(p: Principal) {
+  const [course] = (await facts.review(p)).courses;
+  return course!.obligations.find(o => o.kind === "assignment")!;
+}
+
+it("shows one item for Sources that agree, citing each of them", async () => {
+  const p = await student();
+  const first = await sheet3Source(p, "Analysis.pdf");
+  const second = await sheet3Source(p, "Übersicht.pdf");
+
+  const item = await sheet3Item(p);
+
+  expect(item).toEqual(expect.objectContaining({ disagreement: false, values: [{
+    due: { date: "2026-11-20", time: "12:00", timeZone: "Europe/Berlin" }, overruled: false,
+    citations: [expect.objectContaining({ sourceId: first }), expect.objectContaining({ sourceId: second })] }] }));
+});
+
+it("flags a Source that disagrees and returns a confirmed item to review", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+  await facts.confirm(p, { kind: "obligation", id: (await sheet3Item(p)).id });
+  await sheet3Source(p, "Nachtrag.pdf", sheet3Later);
+
+  const item = await sheet3Item(p);
+
+  expect(item.state).toBe("unreviewed");
+  expect(item.disagreement).toBe(true);
+  expect(item.values.map(value => [value.due.date, value.overruled, value.citations.map(c => c.title)]))
+    .toEqual([["2026-11-20", false, ["Analysis.pdf"]], ["2026-11-27", false, ["Nachtrag.pdf"]]]);
+});
+
+it("resolves a disagreement with the value the student uses, until a Source brings yet another value", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+  await sheet3Source(p, "Nachtrag.pdf", sheet3Later);
+  const flagged = await sheet3Item(p);
+  const later = flagged.values[1]!.citations[0]!.extractionId;
+
+  expect(await facts.use(p, { kind: "obligation", id: flagged.id }, later)).toEqual({ status: "ok" });
+  const resolved = await sheet3Item(p);
+  expect([resolved.state, resolved.disagreement, resolved.due.date, resolved.values.map(value => value.overruled)])
+    .toEqual(["confirmed", false, "2026-11-27", [true, false]]);
+
+  await sheet3Source(p, "Analysis Kopie.pdf");
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ state: "confirmed", disagreement: false }));
+  await sheet3Source(p, "Nachtrag 2.pdf", { ...sheet3Later, date: "2026-12-04", text: "Abgabe Blatt 3 verschoben: 04.12., 12 Uhr" });
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ state: "unreviewed", disagreement: true }));
+});
+
+it("lets a Correction win over every Source, flagging later disagreement until the student keeps it or uses the new value", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+  const { id } = await sheet3Item(p);
+  const ref = { kind: "obligation" as const, id };
+  const mine = { title: "Blatt 3 (Gruppe B)", due: { date: "2026-11-21", time: "10:00", timeZone: null }, destination: "Briefkasten" };
+
+  for (const date of ["2026-02-30", "2026-13-01"]) {
+    expect(await facts.correct(p, ref, { ...mine, due: { date, time: null, timeZone: null } })).toEqual({ status: "invalid" });
+  }
+  expect(await facts.correct(p, ref, { ...mine, due: { date: null, time: "10:00", timeZone: null } })).toEqual({ status: "invalid" });
+  expect(await facts.correct(p, ref, mine)).toEqual({ status: "ok" });
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ state: "confirmed", disagreement: false, title: "Blatt 3 (Gruppe B)",
+    due: { date: "2026-11-21", time: "10:00", timeZone: "Europe/Berlin", text: null }, destination: "Briefkasten",
+    uncertainty: null, provenance: { kind: "correction" } }));
+
+  await sheet3Source(p, "Nachtrag.pdf", sheet3Later);
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ state: "confirmed", disagreement: true, title: "Blatt 3 (Gruppe B)" }));
+  expect(await facts.keepMine(p, ref)).toEqual({ status: "ok" });
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ disagreement: false, title: "Blatt 3 (Gruppe B)" }));
+
+  const later = (await sheet3Item(p)).values.find(value => value.due.date === "2026-11-27")!.citations[0]!.extractionId;
+  expect(await facts.use(p, ref, later)).toEqual({ status: "ok" });
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ state: "confirmed", disagreement: false, title: "Übungsblatt 3",
+    due: expect.objectContaining({ date: "2026-11-27" }), provenance: expect.objectContaining({ kind: "source", title: "Nachtrag.pdf" }) }));
+});
+
+it("applies the same review rules to Facts, comparing their normalized value", async () => {
+  const p = await student();
+  const roomSource = async (title: string, room: string) => {
+    const sourceId = await readySource(p, title, [{ page: 1, text: `MA-101 Analysis I\nKlausur in Raum ${room}` }]);
+    await facts.extract(p, sourceId, { delegation, extractor: scripted({ ...empty, courses: [analysis], facts: [{ course: "MA-101",
+      type: "exam_logistics", key: "exam.room", value: room, page: 1, quote: `Klausur in Raum ${room}`, uncertainty: null }] }) });
+  };
+  const room = async () => (await facts.review(p)).courses[0]!.facts[0]!;
+  await roomSource("Analysis.pdf", "H1");
+  const ref = { kind: "fact" as const, id: (await room()).id };
+  await facts.confirm(p, ref);
+
+  await roomSource("Kopie.pdf", "h1 ");
+  expect(await room()).toEqual(expect.objectContaining({ state: "confirmed", disagreement: false }));
+  await roomSource("Nachtrag.pdf", "H2");
+  expect(await room()).toEqual(expect.objectContaining({ state: "unreviewed", disagreement: true }));
+
+  expect(await facts.correct(p, ref, { value: " " })).toEqual({ status: "invalid" });
+  expect(await facts.correct(p, ref, { value: "Audimax" })).toEqual({ status: "ok" });
+  expect(await room()).toEqual(expect.objectContaining({ state: "confirmed", disagreement: false, value: "Audimax", provenance: { kind: "correction" } }));
+  await roomSource("Nachtrag 2.pdf", "H3");
+  expect(await room()).toEqual(expect.objectContaining({ disagreement: true }));
+  await facts.keepMine(p, ref);
+  expect(await room()).toEqual(expect.objectContaining({ disagreement: false, value: "Audimax" }));
+
+  const h2 = (await room()).values.find(value => value.value === "H2")!.citations[0]!.extractionId;
+  expect(await facts.use(p, ref, h2)).toEqual({ status: "ok" });
+  expect(await room()).toEqual(expect.objectContaining({ state: "confirmed", disagreement: false, value: "H2" }));
+});
+
+it("keeps a rejected item rejected through later Sources until the student restores it", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+  const ref = { kind: "obligation" as const, id: (await sheet3Item(p)).id };
+  await facts.reject(p, ref);
+
+  await sheet3Source(p, "Kopie.pdf");
+  await sheet3Source(p, "Nachtrag.pdf", sheet3Later);
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ id: ref.id, state: "rejected" }));
+
+  expect(await facts.restore(p, ref)).toEqual({ status: "ok" });
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ id: ref.id, state: "unreviewed", disagreement: true }));
+});
+
+it("restores a rejected Course as a proposal with its items", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+  const [course] = (await facts.review(p)).courses;
+  await facts.decideCourse(p, course!.id, "reject");
+
+  expect(await facts.decideCourse(p, course!.id, "restore")).toEqual({ status: "ok" });
+  expect((await facts.review(p)).courses).toEqual([expect.objectContaining({ id: course!.id, status: "proposed",
+    obligations: [expect.objectContaining({ title: "Übungsblatt 3" })] })]);
+});
+
+it("keeps a Correction when its Source is deleted, and drops items and rejections only that Source supported", async () => {
+  const p = await student();
+  const sheet4 = { ...sheet3, title: "Übungsblatt 4", key: "Übungsblatt 4" }, sheet5 = { ...sheet3, title: "Übungsblatt 5", key: "Übungsblatt 5" };
+  const sourceId = await readySource(p, "Analysis.pdf", [{ page: 1, text: "MA-101 Analysis I\nAbgabe Blatt 3: 20.11., 12 Uhr" }]);
+  await facts.extract(p, sourceId, { delegation, extractor: scripted({ ...empty, courses: [analysis], obligations: [sheet3, sheet4, sheet5] }) });
+  const [course] = (await facts.review(p)).courses;
+  const byTitle = (title: string) => course!.obligations.find(o => o.title === title)!;
+  await facts.correct(p, { kind: "obligation", id: byTitle("Übungsblatt 3").id },
+    { title: "Blatt 3", due: { date: "2026-11-21", time: null, timeZone: null }, destination: null });
+  await facts.reject(p, { kind: "obligation", id: byTitle("Übungsblatt 4").id });
+
+  await sources.remove(p, sourceId);
+
+  expect((await facts.review(p)).courses).toEqual([expect.objectContaining({ id: course!.id, obligations: [
+    expect.objectContaining({ title: "Blatt 3", unsupported: "source_deleted", values: [], provenance: { kind: "correction" } })] })]);
+});
+
+it("combines a Source's repeated value into one citation on its first page, keeping a differing value apart", async () => {
+  const p = await student();
+  const sourceId = await readySource(p, "Analysis.pdf", [
+    { page: 1, text: "MA-101 Analysis I\nAbgabe Blatt 3: 20.11., 12 Uhr" },
+    { page: 2, text: `MA-101 Analysis I\nAbgabe Blatt 3: 20.11., 12 Uhr\n${sheet3Later.text}` },
+  ]);
+  await facts.extract(p, sourceId, { delegation, extractor: scripted(
+    { ...empty, courses: [analysis], obligations: [{ ...sheet3, page: 2 }] },
+    { ...empty, courses: [{ ...analysis, page: 2 }], obligations: [sheet3, { ...sheet3, due: sheet3Later, page: 2, quote: sheet3Later.text }] },
+  ) });
+
+  expect((await sheet3Item(p)).values.map(value => [value.due.date, value.citations.map(c => c.page)]))
+    .toEqual([["2026-11-20", [1]], ["2026-11-27", [2]]]);
+});
+
+it("refuses another student's Correct, Keep mine, Use this and Restore without changing anything", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+  const before = await facts.review(p);
+  const item = before.courses[0]!.obligations[0]!;
+  const ref = { kind: "obligation" as const, id: item.id };
+  await facts.reject(p, ref);
+  await facts.decideCourse(p, before.courses[0]!.id, "reject");
+  const stranger = await student();
+
+  expect([
+    await facts.correct(stranger, ref, { title: "Mine", due: { date: null, time: null, timeZone: null }, destination: null }),
+    await facts.keepMine(stranger, ref),
+    await facts.use(stranger, ref, item.values[0]!.citations[0]!.extractionId),
+    await facts.restore(stranger, ref),
+    await facts.decideCourse(stranger, before.courses[0]!.id, "restore"),
+  ]).toEqual(Array(5).fill({ status: "gone" }));
+  await facts.decideCourse(p, before.courses[0]!.id, "restore");
+  expect(await sheet3Item(p)).toEqual(expect.objectContaining({ state: "rejected", title: "Übungsblatt 3" }));
 });

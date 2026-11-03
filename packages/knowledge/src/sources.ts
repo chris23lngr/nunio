@@ -3,6 +3,7 @@ import type { PrismaClient, SourceFailure } from "@nunio/db";
 import { accessRefusal, DefiniteFailure, withOwner, type Delegation, type Principal, type Transaction } from "@nunio/delegation";
 import { encryptSourceText, type SourceKeys } from "@nunio/keys";
 import { isDefiniteFailure, SourceModelRejected, type Embedder, type ScanReader } from "@nunio/ai";
+import { pruneItems } from "./items.js";
 
 export const maxSourceBytes = 20 * 1024 * 1024;
 // Chunks overlap by 200 code points; <=6000 UTF-8 bytes per embedding.
@@ -87,11 +88,10 @@ export function createSources({ db, keys, storage }: { db: PrismaClient; keys: S
         if (!source) return { status: "gone" } as const;
         const deletedAt = source.deletedAt ?? new Date();
         await tx.sourceChunk.deleteMany({ where: { sourceId: id } });
-        await tx.obligation.deleteMany({ where: { sourceId: id } });
-        await tx.fact.deleteMany({ where: { sourceId: id } });
+        await tx.obligationExtraction.deleteMany({ where: { sourceId: id } });
+        await tx.factExtraction.deleteMany({ where: { sourceId: id } });
         await tx.sourceCourse.deleteMany({ where: { sourceId: id } });
-        // Proposals and rejections no remaining Source supports disappear with it; an accepted Course is the student's own.
-        await tx.course.deleteMany({ where: { status: { not: "accepted" }, sources: { none: {} } } });
+        await pruneItems(tx, "source_deleted");
         await tx.source.update({ where: { id }, data: { status: "deleted", deletedAt, keyVersion: null, keyCiphertext: null, title: "Deleted Source" } });
         return { status: "deleted", cleanupAfter: cleanupAfter(source, deletedAt) } as const;
       });

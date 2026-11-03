@@ -18,8 +18,8 @@ model Source {
 
   chunks      SourceChunk[]
   courses     SourceCourse[]
-  obligations Obligation[]
-  facts       Fact[]
+  obligations ObligationExtraction[]
+  facts       FactExtraction[]
 
   @@unique([id, studentId])
   @@index([studentId, deletedAt])
@@ -132,27 +132,61 @@ enum ObligationKind {
   @@map("obligation_kind")
 }
 
-// Structure is plain for planning and matching; wording is encrypted under the Source key.
-model Obligation {
-  id         String         @id
-  studentId  String
-  courseId   String
-  sourceId   String
-  course     Course         @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
-  source     Source         @relation(fields: [sourceId, studentId], references: [id, studentId], onDelete: Cascade)
-  matchKey   String
-  kind       ObligationKind
-  dueDate    DateTime?      @db.Date
-  dueTime    String?
-  timeZone   String?
-  page       Int
-  ciphertext Bytes
-  state      ReviewState    @default(unreviewed)
-  createdAt  DateTime       @default(now())
+/// Why a corrected item has no extraction left; it stays because the Correction is the student's own.
+enum Unsupported {
+  source_deleted
+  not_found
 
+  @@map("unsupported")
+}
+
+/// One item per Course and key; review state and the Correction live here, never on an extraction.
+/// A Correction is the student's own value in plain columns, present when correctedAt is set.
+model Obligation {
+  id                   String         @id
+  studentId            String
+  courseId             String
+  course               Course         @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+  matchKey             String
+  kind                 ObligationKind
+  state                ReviewState    @default(unreviewed)
+  correctedAt          DateTime?
+  correctedTitle       String?
+  correctedDueDate     DateTime?      @db.Date
+  correctedDueTime     String?
+  correctedTimeZone    String?
+  correctedDestination String?
+  unsupported          Unsupported?
+  createdAt            DateTime       @default(now())
+
+  extractions ObligationExtraction[]
+
+  @@unique([id, studentId])
+  @@unique([courseId, matchKey])
   @@index([studentId, courseId])
-  @@index([sourceId])
   @@map("obligation")
+}
+
+// Structure is plain for planning and matching; wording is encrypted under the Source key.
+model ObligationExtraction {
+  id           String     @id
+  studentId    String
+  obligationId String
+  sourceId     String
+  obligation   Obligation @relation(fields: [obligationId, studentId], references: [id, studentId], onDelete: Cascade)
+  source       Source     @relation(fields: [sourceId, studentId], references: [id, studentId], onDelete: Cascade)
+  page         Int
+  dueDate      DateTime?  @db.Date
+  dueTime      String?
+  timeZone     String?
+  ciphertext   Bytes
+  /// Set by "Use this" or Keep mine: this value no longer counts towards a Disagreement.
+  overruledAt  DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@index([obligationId])
+  @@index([sourceId])
+  @@map("obligation_extraction")
 }
 
 enum FactType {
@@ -164,20 +198,39 @@ enum FactType {
 }
 
 model Fact {
-  id         String      @id
-  studentId  String
-  courseId   String
-  sourceId   String
-  course     Course      @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
-  source     Source      @relation(fields: [sourceId, studentId], references: [id, studentId], onDelete: Cascade)
-  type       FactType
-  matchKey   String
-  page       Int
-  ciphertext Bytes
-  state      ReviewState @default(unreviewed)
-  createdAt  DateTime    @default(now())
+  id             String       @id
+  studentId      String
+  courseId       String
+  course         Course       @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+  type           FactType
+  matchKey       String
+  state          ReviewState  @default(unreviewed)
+  correctedAt    DateTime?
+  correctedValue String?
+  unsupported    Unsupported?
+  createdAt      DateTime     @default(now())
 
+  extractions FactExtraction[]
+
+  @@unique([id, studentId])
+  @@unique([courseId, type, matchKey])
   @@index([studentId, courseId])
-  @@index([sourceId])
   @@map("fact")
+}
+
+model FactExtraction {
+  id          String    @id
+  studentId   String
+  factId      String
+  sourceId    String
+  fact        Fact      @relation(fields: [factId, studentId], references: [id, studentId], onDelete: Cascade)
+  source      Source    @relation(fields: [sourceId, studentId], references: [id, studentId], onDelete: Cascade)
+  page        Int
+  ciphertext  Bytes
+  overruledAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([factId])
+  @@index([sourceId])
+  @@map("fact_extraction")
 }
