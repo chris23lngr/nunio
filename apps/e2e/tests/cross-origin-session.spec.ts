@@ -149,3 +149,110 @@ test("a student signs out everywhere from account settings", async ({ page, brow
   await expect(phonePage).toHaveURL(`${origins.app}/sign-in`);
   await phone.close();
 });
+
+test("an expired session removes cached Sources from an open page", async ({ page, context }) => {
+  let expired = false;
+  await page.route(`${origins.api}/api/me/sources`, async route => {
+    if (expired) return route.continue();
+    return route.fulfill({ json: [{ id: "cached-source", title: "Private biology syllabus", status: "ready", extraction: "done", failure: null }] });
+  });
+  await signIn(page, "cache-expiry");
+  await expect(page.getByText(/Private biology syllabus/)).toBeVisible();
+  await page.clock.install();
+  const signedOut = await context.request.post(`${origins.api}/api/auth/sign-out`, {
+    headers: { origin: origins.app }, data: {},
+  });
+  expect(signedOut.ok()).toBe(true);
+  expired = true;
+  await page.clock.runFor(31_000);
+  // Trigger Query's focus refresh independently of Better Auth's document listener.
+  await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
+  await expect(page).toHaveURL(`${origins.app}/sign-in`);
+  await expect(page.getByText(/Private biology syllabus/)).toHaveCount(0);
+});
+
+test("signing out and switching students never reuses the previous student's Sources", async ({ page }) => {
+  let title = "Ada's private syllabus";
+  await page.route(`${origins.api}/api/me/sources`, route => route.fulfill({
+    json: [{ id: "cached-source", title, status: "ready", extraction: "done", failure: null }],
+  }));
+  await signIn(page, "cache-first");
+  await expect(page.getByText(title, { exact: false })).toBeVisible();
+  const second = await createStudent("cache-second");
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(`${origins.app}/sign-in`);
+  title = "Grace's private syllabus";
+  // Stay in the same document: a page.goto would hide an in-memory cache leak.
+  await page.getByLabel("Email").fill(second);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByText(/Grace's private syllabus/)).toBeVisible();
+  await expect(page.getByText(/Ada's private syllabus/)).toHaveCount(0);
+});
+
+test("an account changed outside the page replaces the old student's cached view on focus", async ({ page, context }) => {
+  let title = "First student's syllabus";
+  await page.route(`${origins.api}/api/me/sources`, route => route.fulfill({
+    json: [{ id: "cached-source", title, status: "ready", extraction: "done", failure: null }],
+  }));
+  await signIn(page, "cache-original");
+  await expect(page.getByText(/First student's syllabus/)).toBeVisible();
+  const second = await createStudent("cache-external");
+  await context.request.post(`${origins.api}/api/auth/sign-out`, { headers: { origin: origins.app }, data: {} });
+  const signedIn = await context.request.post(`${origins.api}/api/auth/sign-in/email`, {
+    headers: { origin: origins.app }, data: { email: second, password },
+  });
+  expect(signedIn.ok()).toBe(true);
+  title = "Second student's syllabus";
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("focus"));
+    document.dispatchEvent(new Event("visibilitychange", { bubbles: true }));
+  });
+  await expect(page.getByText(/Second student's syllabus/)).toBeVisible();
+  await expect(page.getByText(/First student's syllabus/)).toHaveCount(0);
+});
+
+test("account deletion cannot restore cached Sources through browser Back", async ({ page }) => {
+  await page.route(`${origins.api}/api/me/sources`, route => route.fulfill({
+    json: [{ id: "cached-source", title: "Deleted student's syllabus", status: "ready", extraction: "done", failure: null }],
+  }));
+  await signIn(page, "cache-delete");
+  await expect(page.getByText(/Deleted student's syllabus/)).toBeVisible();
+  await page.getByRole("link", { name: "Account" }).click();
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Request account deletion" }).click();
+  await expect(page).toHaveURL(`${origins.app}/sign-in?deletion=requested`);
+  await page.goBack();
+  await expect(page.getByText(/Deleted student's syllabus/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+});
+
+test("signing out everywhere cannot restore cached Sources through browser Back", async ({ page }) => {
+  await page.route(`${origins.api}/api/me/sources`, route => route.fulfill({
+    json: [{ id: "cached-source", title: "Signed-out student's syllabus", status: "ready", extraction: "done", failure: null }],
+  }));
+  await signIn(page, "cache-revoke");
+  await expect(page.getByText(/Signed-out student's syllabus/)).toBeVisible();
+  await page.getByRole("link", { name: "Account" }).click();
+  await page.getByRole("button", { name: "Sign out everywhere" }).click();
+  await expect(page).toHaveURL(`${origins.app}/sign-in`);
+  await page.goBack();
+  await expect(page.getByText(/Signed-out student's syllabus/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+});
+
+test("navigation from Review back to Sources reuses the recently loaded collection", async ({ page }) => {
+  let reads = 0;
+  await page.route(`${origins.api}/api/me/sources`, route => {
+    reads++;
+    return route.fulfill({ json: [{ id: "cached-source", title: "Navigation syllabus", status: "ready", extraction: "done", failure: null }] });
+  });
+  await page.route(`${origins.api}/api/me/review`, route => route.fulfill({ json: { courses: [] } }));
+  await signIn(page, "cache-navigation");
+  await expect(page.getByText(/Navigation syllabus/)).toBeVisible();
+  await page.getByRole("link", { name: "Review", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Review" })).toBeVisible();
+  await page.getByRole("link", { name: "Back to Sources" }).click();
+  await expect(page.getByText(/Navigation syllabus/)).toBeVisible();
+  expect(reads).toBe(1);
+});

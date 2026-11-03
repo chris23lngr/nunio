@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 
 export interface Session {
+  session: { id: string };
   user: { id: string; name: string; email: string; emailVerified: boolean };
 }
 

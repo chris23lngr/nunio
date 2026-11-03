@@ -1,11 +1,11 @@
 "use client";
 
 import { createApiClient } from "@nunio/api-client";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 
 export function DeletionForm({ apiOrigin }: { apiOrigin: string }) {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -13,7 +13,11 @@ export function DeletionForm({ apiOrigin }: { apiOrigin: string }) {
     const password = String(new FormData(event.currentTarget).get("password"));
     setError(null);
     const { response } = await createApiClient(apiOrigin).POST("/api/me/deletion-request", { body: { password } });
-    if (response.status === 202) return router.replace("/sign-in?deletion=requested");
+    if (response.status === 202) {
+      queryClient.clear();
+      window.location.replace("/sign-in?deletion=requested");
+      return;
+    }
     setError(response.status === 403
       ? "That password is incorrect."
       : response.status === 429
