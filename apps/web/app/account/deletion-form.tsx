@@ -1,10 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { createApiClient } from "@nunio/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 
 export function DeletionForm({ apiOrigin }: { apiOrigin: string }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
 
@@ -15,7 +17,8 @@ export function DeletionForm({ apiOrigin }: { apiOrigin: string }) {
     const { response } = await createApiClient(apiOrigin).POST("/api/me/deletion-request", { body: { password } });
     if (response.status === 202) {
       queryClient.clear();
-      window.location.replace("/sign-in?deletion=requested");
+      router.replace("/sign-in?deletion=requested");
+      router.refresh();
       return;
     }
     setError(response.status === 403

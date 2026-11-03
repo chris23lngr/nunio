@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
@@ -11,6 +12,7 @@ interface ListedSession {
 }
 
 export function SessionList({ apiOrigin }: { apiOrigin: string }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [sessions, setSessions] = useState<ListedSession[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
@@ -36,7 +38,8 @@ export function SessionList({ apiOrigin }: { apiOrigin: string }) {
     const result = await authClient(apiOrigin).revokeSessions();
     if (result.error) return setError("Could not sign out everywhere.");
     queryClient.clear();
-    window.location.replace("/sign-in");
+    router.replace("/sign-in");
+    router.refresh();
   }
 
   return (

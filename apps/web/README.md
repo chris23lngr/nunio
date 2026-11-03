@@ -43,8 +43,10 @@ for reads, and no automatic mutation retries. Session-expiry responses are never
 retried. Caches are memory-only. Session expiry clears them and returns to sign-in.
 A Better Auth session boundary detects account changes on focus/reconnect and
 through its cross-tab notifications. Authentication transitions clear caches and
-use document navigation so Next.js cannot restore a previous student's cached
-route. Account deletion and signing out everywhere use the same policy.
+use Next.js router navigation plus refreshes to update the server-rendered
+identity and route cache. Account deletion and signing out everywhere use the
+same policy. The browser shares one Better Auth client per API origin so its
+session subscribers see sign-in and sign-out immediately.
 
 Sources polls every five seconds only while ingestion or extraction is active,
 with no polling in a hidden tab. An abandoned upload is not active processing.
@@ -66,8 +68,8 @@ bun run --cwd apps/e2e test:e2e
 ```
 
 Feature tests exercise screens with the real Query provider and typed transport,
-controlling responses at the HTTP boundary with MSW. Browser tests exercise the
-running Next.js app and existing Better Auth setup. Assert user-visible results
+controlling responses through an isolated local Node HTTP server. Browser tests
+exercise the running Next.js app and existing Better Auth setup. Assert user-visible results
 and HTTP behavior, not internal hooks or query-key layouts. Work one failing
 behavior through to a passing implementation before starting the next.
 

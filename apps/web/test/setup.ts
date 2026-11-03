@@ -1,8 +1,4 @@
 import { cleanup } from "@testing-library/react";
-import { afterEach, afterAll, beforeAll, vi } from "vitest";
-import { setupServer } from "msw/node";
+import { afterEach, vi } from "vitest";
 
-export const server = setupServer();
-beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
-afterEach(() => { cleanup(); server.resetHandlers(); vi.restoreAllMocks(); vi.useRealTimers(); });
-afterAll(() => server.close());
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });

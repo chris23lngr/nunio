@@ -1,29 +1,27 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
 import { useState } from "react";
 import { expect, test, vi } from "vitest";
-import { Providers } from "@/app/providers";
+import { TestProviders } from "./providers";
 import { SourcesScreen } from "@/features/sources/sources-screen";
-import { server } from "./setup";
+import { api } from "./api";
 
-const origin = "https://api.nunio.test";
 const source = { id: "source-1", title: "Biology.pdf", status: "ready", extraction: "done", failure: null };
 
 function Journey() {
   const [visible, setVisible] = useState(true);
-  return <Providers>
+  return <TestProviders>
     <button onClick={() => setVisible(value => !value)}>Toggle Sources</button>
-    {visible && <SourcesScreen apiOrigin={origin} />}
-  </Providers>;
+    {visible && <SourcesScreen apiOrigin={api.origin} />}
+  </TestProviders>;
 }
 
 test("returning to Sources immediately shows recently loaded data without another request", async () => {
   let reads = 0;
-  server.use(http.get(`${origin}/api/me/sources`, () => {
+  api.route("GET", `/api/me/sources`, () => {
     reads++;
-    return HttpResponse.json([source]);
-  }));
+    return Response.json([source]);
+  });
   render(<Journey />);
   await screen.findByText(/Biology.pdf/);
   fireEvent.click(screen.getByText("Toggle Sources"));
@@ -35,10 +33,10 @@ test("returning to Sources immediately shows recently loaded data without anothe
 test("Sources follows extraction until review is ready, then stops polling", async () => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   let reads = 0;
-  server.use(http.get(`${origin}/api/me/sources`, () => {
+  api.route("GET", `/api/me/sources`, () => {
     reads++;
-    return HttpResponse.json([{ ...source, extraction: reads === 1 ? "running" : "done" }]);
-  }));
+    return Response.json([{ ...source, extraction: reads === 1 ? "running" : "done" }]);
+  });
   render(<Journey />);
   await screen.findByText(/reading for review/);
   await act(() => vi.advanceTimersByTimeAsync(5_000));
@@ -49,10 +47,10 @@ test("Sources follows extraction until review is ready, then stops polling", asy
 
 test("Sources distinguishes loading from an empty collection", async () => {
   let respond!: () => void;
-  server.use(http.get(`${origin}/api/me/sources`, async () => {
+  api.route("GET", `/api/me/sources`, async () => {
     await new Promise<void>(resolve => { respond = resolve; });
-    return HttpResponse.json([]);
-  }));
+    return Response.json([]);
+  });
   render(<Journey />);
   expect(screen.getByRole("status").textContent).toBe("Loading Sources…");
   await waitFor(() => expect(respond).toBeTypeOf("function"));
@@ -63,21 +61,19 @@ test("Sources distinguishes loading from an empty collection", async () => {
 test("uploading a PDF shows progress and refreshes Sources after processing is queued", async () => {
   let uploaded = false;
   let finish!: () => void;
-  server.use(
-    http.get(`${origin}/api/me/sources`, () => HttpResponse.json(uploaded ? [{ ...source, status: "queued", extraction: "pending" }] : [])),
-    http.post(`${origin}/api/me/sources`, async ({ request }) => {
+  api.route("GET", `/api/me/sources`, () => Response.json(uploaded ? [{ ...source, status: "queued", extraction: "pending" }] : []));
+  api.route("POST", `/api/me/sources`, async (request) => {
       expect(await request.json()).toEqual({ title: "Biology.pdf", bytes: 4, type: "application/pdf" });
-      return HttpResponse.json({ source, upload: { url: "https://storage.test/upload", headers: {} } });
-    }),
-    http.put("https://storage.test/upload", async () => {
+      return Response.json({ source, upload: { url: `${api.origin}/upload`, headers: {} } });
+    });
+  api.route("PUT", "/upload", async () => {
       await new Promise<void>(resolve => { finish = resolve; });
-      return new HttpResponse(null, { status: 200 });
-    }),
-    http.post(`${origin}/api/me/sources/source-1/complete`, () => {
+      return new Response(null, { status: 200 });
+    });
+  api.route("POST", `/api/me/sources/source-1/complete`, () => {
       uploaded = true;
-      return HttpResponse.json({ ...source, status: "queued" });
-    }),
-  );
+      return Response.json({ ...source, status: "queued" });
+    });
   render(<Journey />);
   await screen.findByText(/No Sources yet/);
   const user = userEvent.setup();
@@ -92,13 +88,11 @@ test("uploading a PDF shows progress and refreshes Sources after processing is q
 
 test("a failed deletion keeps the Source visible and reports the failure", async () => {
   let finish!: () => void;
-  server.use(
-    http.get(`${origin}/api/me/sources`, () => HttpResponse.json([source])),
-    http.delete(`${origin}/api/me/sources/source-1`, async () => {
+  api.route("GET", `/api/me/sources`, () => Response.json([source]));
+  api.route("DELETE", `/api/me/sources/source-1`, async () => {
       await new Promise<void>(resolve => { finish = resolve; });
-      return HttpResponse.json({ error: "unavailable" }, { status: 503 });
-    }),
-  );
+      return Response.json({ error: "unavailable" }, { status: 503 });
+    });
   vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<Journey />);
   await screen.findByText(/Biology.pdf/);
@@ -113,15 +107,13 @@ test("a failed deletion keeps the Source visible and reports the failure", async
 
 test("successful deletion refreshes the remaining Sources and stays deleted on return", async () => {
   let deleted = false;
-  server.use(
-    http.get(`${origin}/api/me/sources`, () => HttpResponse.json(deleted
+  api.route("GET", `/api/me/sources`, () => Response.json(deleted
       ? [{ ...source, id: "source-2", title: "Chemistry.pdf", extraction: "done" }]
-      : [source, { ...source, id: "source-2", title: "Chemistry.pdf", extraction: "running" }])),
-    http.delete(`${origin}/api/me/sources/source-1`, () => {
+      : [source, { ...source, id: "source-2", title: "Chemistry.pdf", extraction: "running" }]));
+  api.route("DELETE", `/api/me/sources/source-1`, () => {
       deleted = true;
-      return HttpResponse.json({ deleted: true });
-    }),
-  );
+      return Response.json({ deleted: true });
+    });
   vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<Journey />);
   await screen.findByText(/Biology.pdf/);
@@ -136,13 +128,11 @@ test("successful deletion refreshes the remaining Sources and stays deleted on r
 
 test("Read again queues extraction and refreshes the Source without allowing another request while pending", async () => {
   let queued = false;
-  server.use(
-    http.get(`${origin}/api/me/sources`, () => HttpResponse.json([{ ...source, extraction: queued ? "pending" : "done" }])),
-    http.post(`${origin}/api/me/sources/source-1/extract`, () => {
+  api.route("GET", `/api/me/sources`, () => Response.json([{ ...source, extraction: queued ? "pending" : "done" }]));
+  api.route("POST", `/api/me/sources/source-1/extract`, () => {
       queued = true;
-      return HttpResponse.json({ status: "queued" }, { status: 202 });
-    }),
-  );
+      return Response.json({ status: "queued" }, { status: 202 });
+    });
   render(<Journey />);
   await screen.findByText(/Biology.pdf/);
   fireEvent.click(screen.getByRole("button", { name: "Read again" }));

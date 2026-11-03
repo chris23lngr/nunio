@@ -158,6 +158,7 @@ test("an expired session removes cached Sources from an open page", async ({ pag
   });
   await signIn(page, "cache-expiry");
   await expect(page.getByText(/Private biology syllabus/)).toBeVisible();
+  await page.evaluate(() => Reflect.set(window, "foundationDocument", "kept"));
   await page.clock.install();
   const signedOut = await context.request.post(`${origins.api}/api/auth/sign-out`, {
     headers: { origin: origins.app }, data: {},
@@ -169,6 +170,8 @@ test("an expired session removes cached Sources from an open page", async ({ pag
   await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
   await expect(page.getByText(/Private biology syllabus/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => Reflect.get(window, "foundationDocument"))).toBe("kept");
 });
 
 test("signing out and switching students never reuses the previous student's Sources", async ({ page }) => {
@@ -179,6 +182,7 @@ test("signing out and switching students never reuses the previous student's Sou
   await signIn(page, "cache-first");
   await expect(page.getByText(title, { exact: false })).toBeVisible();
   const second = await createStudent("cache-second");
+  await page.evaluate(() => Reflect.set(window, "foundationDocument", "kept"));
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
   title = "Grace's private syllabus";
@@ -188,6 +192,7 @@ test("signing out and switching students never reuses the previous student's Sou
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByText(/Grace's private syllabus/)).toBeVisible();
   await expect(page.getByText(/Ada's private syllabus/)).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, "foundationDocument"))).toBe("kept");
 });
 
 test("an account changed outside the page replaces the old student's cached view on focus", async ({ page, context }) => {
@@ -198,6 +203,7 @@ test("an account changed outside the page replaces the old student's cached view
   await signIn(page, "cache-original");
   await expect(page.getByText(/First student's syllabus/)).toBeVisible();
   const second = await createStudent("cache-external");
+  await page.evaluate(() => Reflect.set(window, "foundationDocument", "kept"));
   await context.request.post(`${origins.api}/api/auth/sign-out`, { headers: { origin: origins.app }, data: {} });
   const signedIn = await context.request.post(`${origins.api}/api/auth/sign-in/email`, {
     headers: { origin: origins.app }, data: { email: second, password },
@@ -210,6 +216,7 @@ test("an account changed outside the page replaces the old student's cached view
   });
   await expect(page.getByText(/Second student's syllabus/)).toBeVisible();
   await expect(page.getByText(/First student's syllabus/)).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, "foundationDocument"))).toBe("kept");
 });
 
 test("account deletion cannot restore cached Sources through browser Back", async ({ page }) => {

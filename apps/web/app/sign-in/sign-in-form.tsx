@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type MouseEvent } from "react";
 import { authClient } from "@/lib/auth-client";
 
@@ -10,6 +11,7 @@ function appURL(path: string): string {
 export function SignInForm({ apiOrigin, invitation, initialNotice, initialError }: {
   apiOrigin: string; invitation?: string; initialNotice?: string; initialError?: string;
 }) {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(initialNotice ?? null);
@@ -40,7 +42,8 @@ export function SignInForm({ apiOrigin, invitation, initialNotice, initialError 
       setNotice("Check your email to verify your account, then sign in.");
       return;
     }
-    window.location.replace("/");
+    router.replace("/");
+    router.refresh();
   }
 
   async function resendVerification() {
