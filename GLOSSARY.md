@@ -56,8 +56,12 @@ _Avoid_: Citation, origin, reference
 The student's override of a Fact. A Correction keeps winning over later extraction; disagreement from a newer Source is flagged to the student, never silently applied or hidden.
 _Avoid_: Edit, fix, override
 
+**Disagreement**:
+Sources, or a Source and a Correction, giving different values for the same Fact. It stays flagged until the student uses one value, keeps their Correction, or corrects it; values the student set aside this way are overruled and no longer count.
+_Avoid_: Conflict, mismatch
+
 **Reject**:
-The student's judgment that an extracted Fact or proposed Course is wrong or not theirs. A rejected item is hidden and stays rejected when later extraction finds it again. Rejecting is not a Dismissal, which applies only to Interventions.
+The student's judgment that an extracted Fact or proposed Course is wrong or not theirs. A rejected item is folded away and stays rejected when later extraction finds it again, until the student restores it. Rejecting is not a Dismissal, which applies only to Interventions.
 _Avoid_: Dismiss, delete, hide
 
 ### Study work

@@ -1,6 +1,6 @@
 # Extraction and review
 
-Status: accepted design, 2026-11-02. Not yet implemented. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md). Architecture terms (module, interface, seam, adapter, depth) follow the codebase-design vocabulary. Related: [knowledge-retrieval.md](knowledge-retrieval.md) (the read side of the same tables), ADR-0007, ADR-0011, ADR-0012, Phase 6 in the [implementation plan](../implementation-plan.md).
+Status: accepted design, 2026-11-02; slice 2 decisions added 2026-11-03. Slice 1 is implemented. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md). Architecture terms (module, interface, seam, adapter, depth) follow the codebase-design vocabulary. Related: [knowledge-retrieval.md](knowledge-retrieval.md) (the read side of the same tables), ADR-0007, ADR-0011, ADR-0012, Phase 6 in the [implementation plan](../implementation-plan.md).
 
 ## Purpose
 
@@ -11,7 +11,7 @@ The write side of Facts in the `knowledge` package. It turns a ready Source into
 One phase branch, one PR per slice, in this order:
 
 1. Extraction and the review screen, with timing instrumentation.
-2. Correction handling and re-uploads.
+2. Correction handling and re-uploads, in three PRs: (i) review items, Corrections, Disagreements and deletion; (ii) re-extraction; (iii) merging Courses.
 3. Manual Obligation entry.
 
 Projects move to Phase 8. Phase 6 is verified only after every slice and the eval.
@@ -31,10 +31,12 @@ export interface Facts {
     Promise<{ status: "done"; dropped: number } | { status: "failed" | "stopped" }>;
   review(p: Principal): Promise<Review>;                  // grouped by Course, decrypted server-side
   confirm(p: Principal, item: ItemRef): Promise<void>;
-  correct(p: Principal, item: ItemRef, value: unknown): Promise<void>;   // validated per type
+  correct(p: Principal, item: ItemRef, value: Correction): Promise<void>;  // validated per type
   reject(p: Principal, item: ItemRef): Promise<void>;
-  resolve(p: Principal, item: ItemRef, choice: "keep_mine" | "use_new"): Promise<void>;
-  decideCourse(p: Principal, courseId: string, decision: "accept" | "reject"): Promise<void>;
+  restore(p: Principal, item: ItemRef): Promise<void>;                    // undoes Reject
+  use(p: Principal, item: ItemRef, extractionId: string): Promise<void>;  // "Use this"; also Use new
+  keepMine(p: Principal, item: ItemRef): Promise<void>;
+  decideCourse(p: Principal, courseId: string, decision: "accept" | "reject" | "restore"): Promise<void>;
   mergeCourses(p: Principal, into: string, from: string): Promise<void>;
   enterObligation(p: Principal, input: ObligationInput): Promise<string>;  // Provenance `entry`
 }
@@ -62,6 +64,8 @@ The worker calls `facts.extract(...)` from its own Activity, the same way it cal
 ## Data
 
 - `course` and `obligation` have their own tables, because planning needs real columns. `topic`, `course_rule`, and `exam_logistics` share one `fact` table with a `type` and a value validated per type.
+- **Items and extractions** (slice 2). `obligation` and `fact` are review items: one per Course and key, holding the review state, an optional Correction in plain columns, and `unsupported` when a corrected item lost its last extraction. Each Source's reading of an item is a row in `obligation_extraction` or `fact_extraction`, with its page, encrypted wording, plain due fields for Obligations, and `overruledAt`. Slice 1's per-Source rows were rebuilt, since only staging test data existed.
+- **Value.** An Obligation's value is its due date, time, and time zone; changed wording alone is not a different value. A Fact's value is its normalized text. One Source repeating a value yields one extraction, cited on its lowest page; differing values from one Source stay separate.
 - Every extracted row carries Provenance (Source, page, quote) and `uncertainty`: a nullable short reason. The model supplies reasons ("only 'end of semester' given"); the worker adds its own ("deadline unresolved", "time zone assumed"). There is no numeric confidence.
 - **Encryption.** Extracted wording is encrypted under the Source's key (ADR-0007): titles, original deadline wording, `destinationText`, quotes, uncertainty, and Fact values. Structure stays plain so planning can query it and matching works across Sources: kind, `due` date and time, Course link, page, review state, and the normalized match key. Extracted rows are deleted with their Source in the same transaction, so the encryption protects backups. Course names, Corrections, and manual entries are plain rows under row-level security.
 - **Obligation fields:**
@@ -83,14 +87,19 @@ The worker calls `facts.extract(...)` from its own Activity, the same way it cal
 
 - Every extracted item starts `unreviewed`. The student can:
   - **Confirm** → `confirmed`.
-  - **Correct** → a Correction row holds the student's value; the item's Provenance becomes the Correction.
-  - **Reject** → `rejected`. The key stays suppressed in later extractions.
-- **A Correction always wins.** When a newer Source disagrees, both values are shown with a flag. **Keep mine** clears the flag until the extracted value changes again. **Use the new value** retires the Correction, and the item follows extraction again. Nothing resolves automatically, including by recency.
-- **Re-extraction** replaces the Source's extracted rows in one transaction. Corrections and rejections are reapplied by key. Review states carry over when key and value are unchanged; a changed value returns to `unreviewed`.
-- **Source deletion** removes its extracted rows and rejections tied only to it. Corrections stay as standalone Facts with Correction Provenance, and the review screen notes that the original Source is gone.
+  - **Correct** → the Correction holds the student's value: title, deadline, and destination for an Obligation, the value for a Fact. Kind and key are the item's identity and never change; a wrongly typed item is rejected and entered by hand. A Correction is validated like extraction (real date, `HH:MM`, IANA time zone, a time needs a date; the date may be cleared), confirms the item, overrules the values its Sources give now, and replaces the extracted uncertainty. Its Provenance is the Correction.
+  - **Reject** → `rejected`. The key stays suppressed in later extractions, whatever value they bring. Rejected items are folded per Course with **Restore**, which returns them to `unreviewed`; rejected Courses likewise return to proposed.
+- **Disagreement.** An item shows each distinct value with its citations. Values that are not overruled and differ from each other, or from the Correction, flag the item.
+  - **Use this** on a value confirms the item with it, retires any Correction, and overrules every other value. Use new is Use this.
+  - **Keep mine** keeps the Correction and overrules the values that differ from it.
+  - A value another Source repeats stays overruled; only a value no extraction had yet flags the item again. Nothing resolves automatically, including by recency.
+- **A new Source with a different value** returns a confirmed item without a Correction to `unreviewed`. A corrected item keeps its state and is only flagged. A rejected item stays rejected.
+- **Re-extraction** replaces the Source's extractions in its final transaction, so a failure leaves the previous ones. Overrule marks carry over by value, and a changed value without a Correction returns the item to `unreviewed`.
+- **No extraction left.** After Source deletion or re-extraction, an item no extraction supports is deleted, including a rejection tied only to it. A corrected item stays, marked `source_deleted` or `not_found`. Unaccepted Courses with no Source and no item go with them.
+- **Merging Courses.** "Merge into…" moves Source links and items, combining items with the same key and pooling their extractions. The target's state and Correction win; a Correction only the merged Course has moves. Two differing Corrections for one key refuse the merge (409). The merged Course stays as a `merged` pointer, so a later Source naming it lands in the target, which the merge accepts.
 - **Manual Obligations** require a Course, either accepted or created in the same form. Their Provenance is `entry`, and they are edited directly, without a Correction.
-- **Downstream** (Phase 8) sees `unreviewed` and `confirmed` items, with unreviewed ones marked.
-- **Review screen** (`web`): grouped by Course, with each item's decrypted quote, page, and Source title, and the Confirm, Correct, and Reject actions. Proposed Courses are accepted or rejected there too, and their items stay folded until accepted, so a module handbook's many proposals stay quick to decide. An inline PDF viewer is deferred.
+- **Downstream** (Phase 8) sees `unreviewed` and `confirmed` items, with unreviewed ones marked. How planning treats an unresolved Disagreement is decided there.
+- **Review screen** (`web`): grouped by Course, with each item's decrypted quotes, pages, and Source titles, and the Confirm, Correct, Reject, Use this, and Keep mine actions. Proposed Courses are accepted or rejected there too, and their items stay folded until accepted, so a module handbook's many proposals stay quick to decide. An inline PDF viewer is deferred.
 
 ## Timing
 
@@ -111,9 +120,11 @@ All tests cross the `facts` interface, with the scripted `Extractor`. Scenarios:
 
 - An ungrounded item is dropped and counted.
 - Course matching: code, then title; an unclear match never auto-merges.
-- A Correction survives re-uploading a conflicting Source, and the disagreement is flagged.
-- A rejection survives a re-upload.
-- Deleting a Source keeps its Corrections.
+- Sources that agree form one item; a disagreeing Source flags it and returns a confirmed item to review.
+- Use this resolves a Disagreement until a Source brings a value not seen before.
+- A Correction survives re-uploading a conflicting Source, and the Disagreement is flagged until Keep mine or Use this.
+- A rejection survives a re-upload until Restore.
+- Deleting a Source keeps its Corrections and drops items and rejections only it supported.
 - Re-extraction carries review states over, and a changed value returns to `unreviewed`.
 - Allowance exhaustion part-way ends `failed` with no partial Facts.
 - Row-level security refuses a foreign owner.
