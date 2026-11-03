@@ -226,6 +226,84 @@
           "id": {
             "type": "string"
           },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unreviewed",
+              "confirmed",
+              "rejected"
+            ]
+          },
+          "uncertainty": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provenance": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "correction"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "source"
+                    ]
+                  },
+                  "sourceId": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "page": {
+                    "type": "integer"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "sourceId",
+                  "title",
+                  "page",
+                  "quote"
+                ]
+              }
+            ]
+          },
+          "disagreement": {
+            "type": "boolean",
+            "description": "Values that are not overruled differ from each other or from the Correction."
+          },
+          "unsupported": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "source_deleted",
+              "not_found",
+              null
+            ],
+            "description": "Set when a corrected item lost its last extraction."
+          },
           "kind": {
             "type": "string",
             "enum": [
@@ -239,14 +317,6 @@
           },
           "title": {
             "type": "string"
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "unreviewed",
-              "confirmed",
-              "rejected"
-            ]
           },
           "due": {
             "type": "object",
@@ -270,7 +340,11 @@
                 ]
               },
               "text": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The Source's wording; null for a Correction."
               }
             },
             "required": [
@@ -285,7 +359,110 @@
               "string",
               "null"
             ],
-            "description": "As stated in the Source; never verified."
+            "description": "As stated in the Source, or the student's Correction; never verified."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "due": {
+                  "type": "object",
+                  "properties": {
+                    "date": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "time": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "timeZone": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "date",
+                    "time",
+                    "timeZone"
+                  ]
+                },
+                "overruled": {
+                  "type": "boolean"
+                },
+                "citations": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "extractionId": {
+                        "type": "string"
+                      },
+                      "sourceId": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "page": {
+                        "type": "integer"
+                      },
+                      "quote": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "extractionId",
+                      "sourceId",
+                      "title",
+                      "page",
+                      "quote"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "due",
+                "overruled",
+                "citations"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "uncertainty",
+          "provenance",
+          "disagreement",
+          "unsupported",
+          "kind",
+          "title",
+          "due",
+          "destination",
+          "values"
+        ]
+      },
+      "Fact": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unreviewed",
+              "confirmed",
+              "rejected"
+            ]
           },
           "uncertainty": {
             "type": [
@@ -294,52 +471,68 @@
             ]
           },
           "provenance": {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "source"
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "correction"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
                 ]
               },
-              "sourceId": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              },
-              "page": {
-                "type": "integer"
-              },
-              "quote": {
-                "type": "string"
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "source"
+                    ]
+                  },
+                  "sourceId": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "page": {
+                    "type": "integer"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "sourceId",
+                  "title",
+                  "page",
+                  "quote"
+                ]
               }
-            },
-            "required": [
-              "kind",
-              "sourceId",
-              "title",
-              "page",
-              "quote"
             ]
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "title",
-          "state",
-          "due",
-          "destination",
-          "uncertainty",
-          "provenance"
-        ]
-      },
-      "Fact": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
+          },
+          "disagreement": {
+            "type": "boolean",
+            "description": "Values that are not overruled differ from each other or from the Correction."
+          },
+          "unsupported": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "source_deleted",
+              "not_found",
+              null
+            ],
+            "description": "Set when a corrected item lost its last extraction."
           },
           "type": {
             "type": "string",
@@ -352,58 +545,135 @@
           "value": {
             "type": "string"
           },
-          "uncertainty": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "unreviewed",
-              "confirmed",
-              "rejected"
-            ]
-          },
-          "provenance": {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "source"
-                ]
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "overruled": {
+                  "type": "boolean"
+                },
+                "citations": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "extractionId": {
+                        "type": "string"
+                      },
+                      "sourceId": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "page": {
+                        "type": "integer"
+                      },
+                      "quote": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "extractionId",
+                      "sourceId",
+                      "title",
+                      "page",
+                      "quote"
+                    ]
+                  }
+                }
               },
-              "sourceId": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              },
-              "page": {
-                "type": "integer"
-              },
-              "quote": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "kind",
-              "sourceId",
-              "title",
-              "page",
-              "quote"
-            ]
+              "required": [
+                "value",
+                "overruled",
+                "citations"
+              ]
+            }
           }
         },
         "required": [
           "id",
+          "state",
+          "uncertainty",
+          "provenance",
+          "disagreement",
+          "unsupported",
           "type",
           "value",
-          "uncertainty",
-          "state",
-          "provenance"
+          "values"
+        ]
+      },
+      "Correction": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "due": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "time": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "timeZone": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "date",
+                  "time",
+                  "timeZone"
+                ]
+              },
+              "destination": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "title",
+              "due",
+              "destination"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "value"
+            ],
+            "additionalProperties": false
+          }
         ]
       }
     },
@@ -927,7 +1197,7 @@
       "get": {
         "responses": {
           "200": {
-            "description": "Extracted Courses and their items, without rejected ones.",
+            "description": "Every Course and its items; a rejected Course lists no items until restored.",
             "content": {
               "application/json": {
                 "schema": {
@@ -942,6 +1212,226 @@
                   },
                   "required": [
                     "courses"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item or Course is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/review/{kind}/{id}/correct": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "obligation",
+                "fact"
+              ]
+            },
+            "required": true,
+            "name": "kind",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Correction"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a valid Correction for this item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item or Course is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/review/{kind}/{id}/use": {
+      "post": {
+        "description": "Use this extracted value.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "obligation",
+                "fact"
+              ]
+            },
+            "required": true,
+            "name": "kind",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "extractionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "extractionId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
                   ]
                 }
               }
@@ -1015,7 +1505,9 @@
               "type": "string",
               "enum": [
                 "confirm",
-                "reject"
+                "reject",
+                "restore",
+                "keep_mine"
               ]
             },
             "required": true,
@@ -1108,7 +1600,8 @@
                     "type": "string",
                     "enum": [
                       "accept",
-                      "reject"
+                      "reject",
+                      "restore"
                     ]
                   }
                 },

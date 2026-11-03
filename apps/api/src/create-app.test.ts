@@ -645,8 +645,9 @@ it("uploads and deletes an owned PDF through authenticated, origin-protected rou
   expect(await gone.json()).toEqual([]);
 });
 
-it("reviews extracted Obligations and Courses through authenticated, origin-protected routes", async () => {
-  const cookie = await signUp("review");
+/** A student with one extracted Source: Analysis I and its Blatt 3. */
+async function reviewFixture(name: string) {
+  const cookie = await signUp(name);
   const p = principal.fromSession({ studentId: await studentId(cookie) });
   const upload = await sources.upload(p, { title: "Analysis.pdf", bytes: 100, type: "application/pdf" });
   if (upload.status !== "ok") throw new Error("upload refused");
@@ -662,7 +663,12 @@ it("reviews extracted Obligations and Courses through authenticated, origin-prot
         due: { date: "2026-11-20", time: "12:00", timeZone: "Europe/Berlin", text: "20.11., 12 Uhr" },
         page: 1, quote: "Abgabe Blatt 3: 20.11., 12 Uhr", uncertainty: null }],
       facts: [] } }) } });
-  const headers = { cookie, origin: appOrigin, "content-type": "application/json" };
+  return { cookie, headers: { cookie, origin: appOrigin, "content-type": "application/json" } };
+}
+type ReviewBody = { courses: { id: string; obligations: { id: string; values: { citations: { extractionId: string }[] }[] }[] }[] };
+
+it("reviews extracted Obligations and Courses through authenticated, origin-protected routes", async () => {
+  const { cookie, headers } = await reviewFixture("review");
 
   const listed = await app.request(`${apiOrigin}/api/me/sources`, { headers: { cookie } });
   expect(await listed.json()).toEqual([expect.objectContaining({ status: "ready", failure: null, extraction: "done" })]);
@@ -680,4 +686,30 @@ it("reviews extracted Obligations and Courses through authenticated, origin-prot
     body: JSON.stringify({ decision: "accept" }) })).status).toBe(200);
   const reviewed = await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } });
   expect(await reviewed.json()).toMatchObject({ courses: [{ status: "accepted", obligations: [{ state: "confirmed" }] }] });
+});
+
+it("corrects, keeps, uses and restores review items, refusing invalid Corrections and unknown values", async () => {
+  const { cookie, headers } = await reviewFixture("review-corrections");
+  const review = async () => await (await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })).json() as ReviewBody;
+  const { courses: [course] } = await review();
+  const item = `${apiOrigin}/api/me/review/obligation/${course!.obligations[0]!.id}`;
+  const post = (path: string, body?: unknown) => app.request(`${item}/${path}`, { method: "POST", headers,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const mine = { title: "Blatt 3", due: { date: "2026-11-21", time: null, timeZone: null }, destination: null };
+
+  expect((await post("correct", { ...mine, due: { ...mine.due, date: "2026-13-01" } })).status).toBe(400);
+  expect((await post("correct", { value: "H1" })).status).toBe(400);
+  expect((await post("correct", mine)).status).toBe(200);
+  expect(await review()).toMatchObject({ courses: [{ obligations: [{ title: "Blatt 3", provenance: { kind: "correction" } }] }] });
+  expect((await post("keep_mine")).status).toBe(200);
+  expect((await post("use", { extractionId: randomUUID() })).status).toBe(404);
+  expect((await post("use", { extractionId: course!.obligations[0]!.values[0]!.citations[0]!.extractionId })).status).toBe(200);
+  expect((await post("keep_mine")).status).toBe(404);
+  expect((await post("reject")).status).toBe(200);
+  expect((await post("restore")).status).toBe(200);
+  const decision = (value: string) => app.request(`${apiOrigin}/api/me/courses/${course!.id}/decision`, { method: "POST", headers,
+    body: JSON.stringify({ decision: value }) });
+  expect((await decision("reject")).status).toBe(200);
+  expect((await decision("restore")).status).toBe(200);
+  expect(await review()).toMatchObject({ courses: [{ status: "proposed", obligations: [{ title: "Übungsblatt 3", state: "unreviewed" }] }] });
 });
