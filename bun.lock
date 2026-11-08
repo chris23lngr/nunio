@@ -307,8 +307,14 @@
     "packages/planning": {
       "name": "@nunio/planning",
       "version": "0.0.0",
+      "dependencies": {
+        "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
+        "@nunio/knowledge": "workspace:*",
+      },
       "devDependencies": {
         "@nunio/eslint-config": "workspace:*",
+        "@nunio/keys": "workspace:*",
         "@nunio/typescript-config": "workspace:*",
         "@types/node": "24.19.2",
         "eslint": "10.13.0",

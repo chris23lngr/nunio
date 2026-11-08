@@ -95,6 +95,7 @@ model Course {
   obligations Obligation[]
   facts       Fact[]
   chats       ChatCourse[]
+  priority    CoursePriority?
 
   @@unique([id, studentId])
   @@index([studentId])
@@ -171,6 +172,9 @@ model Obligation {
   createdAt            DateTime       @default(now())
 
   extractions ObligationExtraction[]
+  tasks       Task[]
+  estimate    ObligationEstimate?
+  studyBlocks StudyBlock[]
 
   @@unique([id, studentId])
   @@unique([courseId, matchKey])

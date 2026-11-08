@@ -17,6 +17,10 @@ model User {
   courses          Course[]
   chats            Chat[]
   queryEmbeddings  QueryEmbedding[]
+  tasks            Task[]
+  studyBlocks      StudyBlock[]
+  protectedTime    ProtectedTime[]
+  planPreference   PlanPreference?
 
   @@map("user")
 }
