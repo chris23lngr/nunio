@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 4 verified; Phase 5 in progress (PDF uploads only), 2026-11-02. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), and [extraction.md](design/extraction.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 6 verified, 2026-11-08. Phase 5 is complete apart from checking deletion during processing on staging and its retrieval checks, which wait for Phase 7. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), and [extraction.md](design/extraction.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -342,10 +342,10 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 **Documentation references.** [extraction.md](design/extraction.md); GLOSSARY ("Knowledge", "Study work", "Organization"); [knowledge-retrieval.md](design/knowledge-retrieval.md) "Correction merge"; brief "Complete study workflow" steps 1–3; ADR-0011.
 
 **Verification checklist.**
-- [ ] An extraction eval set of representative German and English syllabi, including scans, has its precision and recall for Obligations and deadlines recorded. Pilot thresholds are set by the founder.
-- [ ] A Correction survives re-uploading a conflicting Source, and the conflict is flagged.
-- [ ] Median time from upload to a reviewable result is measured on the eval set (target ≤ 10 minutes).
-- [ ] A syllabus containing injection instructions produces no Actions and no scope change.
+- [x] An extraction eval set of representative German and English syllabi, including scans, has its precision and recall for Obligations and deadlines recorded. Pilot thresholds are set by the founder. Founder spot-checked labels; thresholds (2026-11-08): Obligations precision ≥ 0.95 and recall ≥ 0.85, deadlines precision ≥ 0.95 and recall ≥ 0.90, no invented dates. Haiku 5.5 meets them (Obligations 1.0/0.895, deadlines 1.0/1.0): [phase-6-extraction-eval.json](operations/phase-6-extraction-eval.json).
+- [x] A Correction survives re-uploading a conflicting Source, and the conflict is flagged. Covered by `packages/knowledge/src/facts.test.ts`.
+- [x] Median time from upload to a reviewable result is measured on the eval set (target ≤ 10 minutes). Measured: 14.8 s.
+- [x] A syllabus containing injection instructions produces no Actions and no scope change. The injection document matched its labels exactly in the eval, and the adapter's recorded-response test covers it.
 
 **Anti-pattern guards.** Never invent Obligations (glossary). No forced tool calls. Do not store extracted values without Provenance.
 
