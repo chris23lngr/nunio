@@ -57,6 +57,42 @@ request settles so extraction polling follows the server state. Never present an
 as saved. Future Review mutations must invalidate their affected Course/Review
 queries; Source deletion must also invalidate Review once it uses Query.
 
+## Forms
+
+Use `useAppForm` from `@/lib/form` for client form state. It binds text fields
+and submit buttons to TanStack Form with typed field names and values. No global
+provider is needed. Keep API calls in the owning feature or existing auth handler;
+TanStack Form owns input values, validation and submission state, while Query
+continues to own server state.
+
+```tsx
+const form = useAppForm({
+  defaultValues: { title: "" },
+  onSubmit: async ({ value }) => { await save(value); },
+});
+
+return (
+  <form onSubmit={event => { event.preventDefault(); void form.handleSubmit(); }}>
+    <form.AppField name="title" validators={{
+      onChange: ({ value }) => value.trim() ? undefined : "Enter a title.",
+    }}>
+      {field => <field.TextField label="Title" required />}
+    </form.AppField>
+    <form.AppForm><form.SubmitButton>Save</form.SubmitButton></form.AppForm>
+  </form>
+);
+```
+
+Text fields preserve native input attributes and connect touched-field errors to
+the input for assistive technology. Validators used with `TextField` return strings.
+Submit buttons subscribe to submission state to prevent duplicate requests; await
+asynchronous work in `onSubmit`. Use `form.Field` for custom controls.
+
+Sign-in, password reset and account deletion use this pattern. Sources and Review
+retain their existing handlers until their next feature migration.
+
+Reference: [TanStack Form composition](https://tanstack.com/form/latest/docs/framework/react/guides/form-composition).
+
 ## Verification
 
 From the repository root:
