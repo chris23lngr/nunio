@@ -1,0 +1,170 @@
+{
+  "about": "Phase 7 German retrieval eval. Questions and expected pages are drafts by the agent, to be spot-checked by the founder. Pages are 1-based within each excerpt; documents come from the extraction eval set. `unanswerable` questions have no answer in the document and calibrate the relevance floor.",
+  "documents": [
+    {
+      "id": "wwu-bwl-excerpt",
+      "questions": [
+        {
+          "text": "Wie lange dauert die Klausur in Grundlagen des Rechnungswesens?",
+          "pages": [
+            5
+          ]
+        },
+        {
+          "text": "Wie viele Seiten darf das Paper im Einführungsmodul Willkommen zur BWL höchstens haben?",
+          "pages": [
+            2
+          ]
+        },
+        {
+          "text": "Wie stark zählt die Klausur im Modul Willkommen zur Betriebswirtschaftslehre zur Modulnote?",
+          "pages": [
+            2
+          ]
+        },
+        {
+          "text": "Muss ich bei den Übungen im Modul Willkommen zur BWL anwesend sein?",
+          "pages": [
+            3
+          ]
+        },
+        {
+          "text": "Wer ist für das Modul Grundlagen des Rechnungswesens verantwortlich?",
+          "pages": [
+            6
+          ]
+        },
+        {
+          "text": "In welcher Sprache findet Marketing Management statt?",
+          "pages": [
+            7
+          ]
+        },
+        {
+          "text": "Was lerne ich in Marketing Management über die Preisfindung?",
+          "pages": [
+            8
+          ]
+        },
+        {
+          "text": "Welche Methode zur Bewertung von Investitionen steht im Vordergrund?",
+          "pages": [
+            10
+          ]
+        },
+        {
+          "text": "Gibt es im Controlling eine Anwesenheitspflicht?",
+          "pages": [
+            16
+          ]
+        },
+        {
+          "text": "Wer leitet das Controlling-Modul?",
+          "pages": [
+            16
+          ]
+        },
+        {
+          "text": "Wird im Rechnungswesen der Jahresabschluss nach HGB behandelt?",
+          "pages": [
+            4
+          ]
+        },
+        {
+          "text": "Welche Studienleistung muss ich in der Übung Applied Empirical Research erbringen?",
+          "pages": [
+            2
+          ]
+        }
+      ],
+      "unanswerable": [
+        "Welche Programmiersprache lerne ich im Modul Programmierung?",
+        "Wie hoch ist der Semesterbeitrag?",
+        "Wann beginnt die Rückmeldefrist für das Sommersemester?",
+        "Wie beantrage ich BAföG?",
+        "Wie koche ich Spaghetti Carbonara?",
+        "Wer hat die Fußball-Weltmeisterschaft 2014 gewonnen?"
+      ]
+    },
+    {
+      "id": "wwu-wi-excerpt",
+      "questions": [
+        {
+          "text": "Welche Programmiersprache wird im Modul Programmierung verwendet?",
+          "pages": [
+            4
+          ]
+        },
+        {
+          "text": "Wie lange dauert die Klausur in Programmierung?",
+          "pages": [
+            5
+          ]
+        },
+        {
+          "text": "Wer ist Modulbeauftragter für Programmierung?",
+          "pages": [
+            6
+          ]
+        },
+        {
+          "text": "Wird die Mathematik-Klausur elektronisch geschrieben?",
+          "pages": [
+            8
+          ]
+        },
+        {
+          "text": "Wie werden die beiden Klausuren im BWL-Modul gewichtet?",
+          "pages": [
+            11
+          ]
+        },
+        {
+          "text": "Welche Datenbanksprache lerne ich im Datenmanagement?",
+          "pages": [
+            13,
+            14
+          ]
+        },
+        {
+          "text": "Welches Datenbanksystem wird in den Übungen zum Datenmanagement genutzt?",
+          "pages": [
+            14
+          ]
+        },
+        {
+          "text": "Muss ich bei der Exkursion in Einführung in die Wirtschaftsinformatik dabei sein?",
+          "pages": [
+            3
+          ]
+        },
+        {
+          "text": "Wie viele Folien hat die Abschlusspräsentation in Einführung in die Wirtschaftsinformatik?",
+          "pages": [
+            2
+          ]
+        },
+        {
+          "text": "Welche Vorkenntnisse setzt Datenstrukturen und Algorithmen voraus?",
+          "pages": [
+            16
+          ]
+        },
+        {
+          "text": "Wer betreut das Modul Datenstrukturen und Algorithmen?",
+          "pages": [
+            18
+          ]
+        }
+      ],
+      "unanswerable": [
+        "Wie lange dauert die Klausur in Marketing Management?",
+        "Welche Bibliothek hat sonntags geöffnet?",
+        "Wo finde ich die Mensa am Schlossplatz?",
+        "Wie melde ich mich für das Auslandssemester an?",
+        "Was ist die Hauptstadt von Australien?",
+        "Wie viele Urlaubstage habe ich im Praktikum?"
+      ]
+    }
+  ]
+}

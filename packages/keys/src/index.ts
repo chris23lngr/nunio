@@ -59,6 +59,24 @@ export function decryptSourceText(key: Buffer, sourceId: string, ciphertext: Uin
   return open(key, JSON.stringify(["source-text", sourceId]), ciphertext).toString("utf8");
 }
 
+/** Text derived from Sources, such as a Chat answer, under its own data key; the owning record's ID and purpose are authenticated. */
+export function encryptDerivedText(key: Buffer, recordId: string, text: string): Buffer {
+  return seal(key, JSON.stringify(["derived-text", recordId]), Buffer.from(text));
+}
+
+export function decryptDerivedText(key: Buffer, recordId: string, ciphertext: Uint8Array): string {
+  return open(key, JSON.stringify(["derived-text", recordId]), ciphertext).toString("utf8");
+}
+
+/** Wraps a derived text's data key under one Source's key, so deleting that Source shreds it (ADR-0007). */
+export function wrapUnderSource(sourceKey: Buffer, sourceId: string, data: Uint8Array): Buffer {
+  return seal(sourceKey, JSON.stringify(["derived-key", sourceId]), Buffer.from(data));
+}
+
+export function unwrapUnderSource(sourceKey: Buffer, sourceId: string, wrapped: Uint8Array): Buffer {
+  return open(sourceKey, JSON.stringify(["derived-key", sourceId]), wrapped);
+}
+
 export function sourceKeysFromEnv(env: NodeJS.ProcessEnv): SourceKeys {
   if (!env.SOURCE_KEY_VERSION || !env.SOURCE_MASTER_KEYS) throw new Error("Source master keys are not configured");
   let values: Record<string, string>;

@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 6 verified, 2026-11-08. Phase 5 is complete apart from checking deletion during processing on staging and its retrieval checks, which wait for Phase 7. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), and [extraction.md](design/extraction.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), and [extraction.md](design/extraction.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -362,15 +362,15 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
    - explicit selection of Courses and Sources (empty means no Sources);
    - Sonnet 5.5 answers via `meter`, with retrieved data in a data slot;
    - citations stored as `CitationRef`s only and resolved via `cite()` at display time.
-3. A Chat can start a Run. Proposing Actions from Chat waits for Phase 9.
+3. A Chat can start a Run. Proposing Actions from Chat waits for Phase 9. *Moved:* `pin`, Run snapshots, widening, and starting a Run from a Chat move to Phase 9, where Runs and Run Principals exist (decided 2026-11-08).
 
 **Documentation references.** [knowledge-retrieval.md](design/knowledge-retrieval.md) (entire); [durable-ai.md](research/durable-ai.md) "Postgres and pgvector" and invariant 5; OWASP Prompt Injection Cheat Sheet.
 
 **Verification checklist.**
-- [ ] The design doc's "Testing" scenarios all pass through the interface.
-- [ ] A deleted Source shows as "gone" in older Chat messages.
-- [ ] A foreign or deselected Course never reaches a model request (assert on the captured prompt).
-- [ ] Measured German retrieval recall@k is recorded.
+- [ ] The design doc's "Testing" scenarios all pass through the interface. The scope, deletion, Correction, untrusted-text and metering scenarios pass in `packages/knowledge/src/reader.test.ts`. Snapshot and widening scenarios move to Phase 9. Disconnect and operational items wait for Connections and Fixed Events (Phase 8). Strategy parity applies only once a second strategy exists. The error classes, the query-embedding cache, `revision`, `truncated` and the Fact tie-break are implemented and tested.
+- [x] A deleted Source shows as "gone" in older Chat messages (`apps/api/src/create-app.test.ts`, "Chat").
+- [x] A foreign or deselected Course never reaches a model request. The API test asserts on the captured prompt for a deselected and a foreign Source; the reader test covers a deselected Course and foreign IDs in `narrow`.
+- [x] Measured German retrieval recall@k is recorded: [phase-7-retrieval-eval.json](operations/phase-7-retrieval-eval.json). Recall@1 0.43, @5 0.70, @8 0.74 on 23 draft questions over two module-handbook excerpts, at the calibrated relevance floor of 0.45; 12 unanswerable questions calibrate the floor. Labels pending founder spot-check; thresholds not yet set.
 
 **Anti-pattern guards.** Do not splice retrieved text into system prompts. Do not widen scope on weak results. Do not add an approximate index without the parity suite.
 
