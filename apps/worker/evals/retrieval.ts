@@ -24,7 +24,7 @@ const exec = promisify(execFile);
 const here = (path: string) => new URL(path, import.meta.url);
 const set = JSON.parse(await readFile(here("./extraction/set.json"), "utf8")) as { documents: { id: string; source: Source | { file: string } }[] };
 const labels = JSON.parse(await readFile(here("./retrieval/questions.json"), "utf8")) as
-  { documents: { id: string; questions: { text: string; pages: number[] }[] }[] };
+  { documents: { id: string; questions: { text: string; pages: number[] }[]; unanswerable: string[] }[] };
 const cache = join(tmpdir(), "nunio-extraction-eval");
 await mkdir(cache, { recursive: true });
 
@@ -65,10 +65,13 @@ const sources = createSources({ db, keys, storage: {
   promote: async () => {}, remove: async () => {},
 } });
 const delegation = createDelegation({ db, aiEnabled: () => true });
-const chats = createChats({ db });
-const reader = createKnowledgeReader({ db, keys, embedder, delegation });
-const limit = 10, ks = [1, 3, 5] as const;
+// The floor is disabled here so every score is seen; recall and false positives are then computed per candidate floor.
+const reader = createKnowledgeReader({ db, keys, embedder: { ...embedder, relevanceFloor: -1 }, delegation, clock: { now: () => new Date() } });
+const chats = createChats({ db, keys, reader, delegation });
+const limit = 10, ks = [1, 3, 5, 8] as const, candidates = [0.3, 0.4, 0.45, 0.5, 0.55, 0.6];
+const unanswerable: { document: string; question: string; topScore: number }[] = [];
 
+const round = (score: number) => Math.round(score * 1000) / 1000;
 const results = [];
 try {
   for (const labelled of labels.documents) {
@@ -92,12 +95,19 @@ try {
     for (const question of labelled.questions) {
       const retrieval = await reader.retrieve(p, { chatId: chat.id }, { kind: "passages", text: question.text, limit });
       if (retrieval.status !== "ok") throw new Error(`${labelled.id}: retrieval ${retrieval.status}`);
-      const pages = retrieval.items.map(item => item.kind === "passage" ? item.provenance.location.page : 0);
-      const rank = pages.findIndex(page => question.pages.includes(page)) + 1 || null;
-      const result = { document: labelled.id, question: question.text, expected: question.pages, rank, returned: pages.length,
-        scores: retrieval.items.map(item => item.kind === "passage" ? Math.round(item.score * 1000) / 1000 : 0) };
+      const passages = retrieval.items.flatMap(item => item.kind === "passage" ? [item] : []);
+      const hit = passages.findIndex(item => question.pages.includes(item.provenance.location.page));
+      const result = { document: labelled.id, question: question.text, expected: question.pages,
+        rank: hit + 1 || null, hitScore: hit < 0 ? null : round(passages[hit]!.score),
+        pages: passages.map(item => item.provenance.location.page), scores: passages.map(item => round(item.score)) };
       console.log(JSON.stringify(result));
       results.push(result);
+    }
+    for (const text of labelled.unanswerable) {
+      const retrieval = await reader.retrieve(p, { chatId: chat.id }, { kind: "passages", text, limit: 1 });
+      if (retrieval.status !== "ok") throw new Error(`${labelled.id}: retrieval ${retrieval.status}`);
+      const top = retrieval.items[0];
+      unanswerable.push({ document: labelled.id, question: text, topScore: top?.kind === "passage" ? round(top.score) : 0 });
     }
   }
 } finally {
@@ -106,17 +116,26 @@ try {
 }
 
 const ratio = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 1000 : null);
+/** Recall@k at a floor: the expected page is within k and its passage clears the floor. */
+const recallAt = (k: number, floor: number) =>
+  ratio(results.filter(r => r.rank !== null && r.rank <= k && r.hitScore! >= floor).length, results.length);
 const report = {
-  checkedAt: new Date().toISOString(), embeddingModel: embedder.model, limit, labels: "draft, pending founder spot-check",
+  checkedAt: new Date().toISOString(), embeddingModel: embedder.model, relevanceFloor: embedder.relevanceFloor, limit,
+  labels: "draft, pending founder spot-check",
   routing: provider.baseURL.includes("eu.openrouter") ? "eu" : "international",
   summary: {
     questions: results.length,
-    ...Object.fromEntries(ks.map(k => [`recallAt${k}`, ratio(results.filter(r => r.rank !== null && r.rank <= k).length, results.length)])),
-    /** Questions the score floor left with no passage at all. */
-    nothingReturned: results.filter(r => r.returned === 0).length,
+    unanswerable: unanswerable.length,
+    /** At the model's configured floor. */
+    ...Object.fromEntries(ks.map(k => [`recallAt${k}`, recallAt(k, embedder.relevanceFloor)])),
+    /** Unanswerable questions that still return a passage at the configured floor. */
+    falsePositiveRate: ratio(unanswerable.filter(u => u.topScore >= embedder.relevanceFloor).length, unanswerable.length),
+    calibration: candidates.map(floor => ({ floor, recallAt8: recallAt(8, floor),
+      falsePositiveRate: ratio(unanswerable.filter(u => u.topScore >= floor).length, unanswerable.length) })),
     missed: results.filter(r => r.rank === null).map(r => r.question),
   },
   questions: results,
+  unanswerable,
 };
 await writeFile(new URL("../../../docs/operations/phase-7-retrieval-eval.json", import.meta.url), `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify(report.summary, null, 2));

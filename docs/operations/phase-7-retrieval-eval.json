@@ -1,15 +1,50 @@
 {
-  "checkedAt": "2026-11-08T17:42:30.476Z",
+  "checkedAt": "2026-11-08T18:02:55.173Z",
   "embeddingModel": "baai/bge-m3",
+  "relevanceFloor": 0.45,
   "limit": 10,
   "labels": "draft, pending founder spot-check",
   "routing": "international",
   "summary": {
     "questions": 23,
+    "unanswerable": 12,
     "recallAt1": 0.435,
     "recallAt3": 0.609,
     "recallAt5": 0.696,
-    "nothingReturned": 0,
+    "recallAt8": 0.739,
+    "falsePositiveRate": 0.583,
+    "calibration": [
+      {
+        "floor": 0.3,
+        "recallAt8": 0.739,
+        "falsePositiveRate": 0.833
+      },
+      {
+        "floor": 0.4,
+        "recallAt8": 0.739,
+        "falsePositiveRate": 0.583
+      },
+      {
+        "floor": 0.45,
+        "recallAt8": 0.739,
+        "falsePositiveRate": 0.583
+      },
+      {
+        "floor": 0.5,
+        "recallAt8": 0.696,
+        "falsePositiveRate": 0.417
+      },
+      {
+        "floor": 0.55,
+        "recallAt8": 0.565,
+        "falsePositiveRate": 0.083
+      },
+      {
+        "floor": 0.6,
+        "recallAt8": 0.391,
+        "falsePositiveRate": 0
+      }
+    ],
     "missed": [
       "Wie stark zählt die Klausur im Modul Willkommen zur Betriebswirtschaftslehre zur Modulnote?",
       "Wer ist für das Modul Grundlagen des Rechnungswesens verantwortlich?",
@@ -25,18 +60,30 @@
         5
       ],
       "rank": 9,
-      "returned": 10,
+      "hitScore": 0.554,
+      "pages": [
+        4,
+        4,
+        16,
+        1,
+        10,
+        13,
+        10,
+        4,
+        5,
+        1
+      ],
       "scores": [
         0.657,
-        0.646,
+        0.647,
         0.601,
         0.584,
-        0.583,
+        0.584,
         0.576,
-        0.568,
+        0.569,
         0.561,
         0.554,
-        0.545
+        0.546
       ]
     },
     {
@@ -46,7 +93,19 @@
         2
       ],
       "rank": 10,
-      "returned": 10,
+      "hitScore": 0.485,
+      "pages": [
+        1,
+        11,
+        4,
+        10,
+        7,
+        9,
+        3,
+        16,
+        13,
+        2
+      ],
       "scores": [
         0.574,
         0.56,
@@ -67,7 +126,19 @@
         2
       ],
       "rank": null,
-      "returned": 10,
+      "hitScore": null,
+      "pages": [
+        3,
+        16,
+        9,
+        11,
+        1,
+        5,
+        4,
+        1,
+        11,
+        16
+      ],
       "scores": [
         0.674,
         0.668,
@@ -88,9 +159,21 @@
         3
       ],
       "rank": 5,
-      "returned": 10,
+      "hitScore": 0.62,
+      "pages": [
+        16,
+        11,
+        1,
+        9,
+        3,
+        4,
+        16,
+        4,
+        13,
+        1
+      ],
       "scores": [
-        0.666,
+        0.667,
         0.664,
         0.639,
         0.621,
@@ -109,7 +192,19 @@
         6
       ],
       "rank": null,
-      "returned": 10,
+      "hitScore": null,
+      "pages": [
+        4,
+        4,
+        5,
+        4,
+        3,
+        16,
+        1,
+        12,
+        13,
+        15
+      ],
       "scores": [
         0.674,
         0.616,
@@ -130,14 +225,26 @@
         7
       ],
       "rank": 1,
-      "returned": 10,
+      "hitScore": 0.628,
+      "pages": [
+        7,
+        8,
+        7,
+        7,
+        9,
+        13,
+        8,
+        1,
+        10,
+        1
+      ],
       "scores": [
         0.628,
         0.513,
         0.508,
         0.483,
         0.471,
-        0.468,
+        0.469,
         0.462,
         0.457,
         0.445,
@@ -151,7 +258,19 @@
         8
       ],
       "rank": 1,
-      "returned": 10,
+      "hitScore": 0.597,
+      "pages": [
+        8,
+        7,
+        8,
+        14,
+        13,
+        7,
+        14,
+        15,
+        10,
+        15
+      ],
       "scores": [
         0.597,
         0.567,
@@ -161,7 +280,7 @@
         0.53,
         0.521,
         0.521,
-        0.52,
+        0.519,
         0.503
       ]
     },
@@ -172,7 +291,19 @@
         10
       ],
       "rank": 1,
-      "returned": 10,
+      "hitScore": 0.613,
+      "pages": [
+        10,
+        10,
+        10,
+        13,
+        4,
+        14,
+        11,
+        15,
+        11,
+        14
+      ],
       "scores": [
         0.613,
         0.525,
@@ -183,7 +314,7 @@
         0.459,
         0.458,
         0.448,
-        0.445
+        0.444
       ]
     },
     {
@@ -193,10 +324,22 @@
         16
       ],
       "rank": 1,
-      "returned": 10,
+      "hitScore": 0.602,
+      "pages": [
+        16,
+        13,
+        13,
+        14,
+        16,
+        9,
+        15,
+        4,
+        3,
+        1
+      ],
       "scores": [
         0.602,
-        0.596,
+        0.597,
         0.562,
         0.552,
         0.51,
@@ -214,13 +357,25 @@
         16
       ],
       "rank": null,
-      "returned": 10,
+      "hitScore": null,
+      "pages": [
+        13,
+        13,
+        14,
+        13,
+        4,
+        1,
+        15,
+        15,
+        5,
+        12
+      ],
       "scores": [
         0.529,
-        0.515,
+        0.516,
         0.462,
         0.453,
-        0.441,
+        0.442,
         0.436,
         0.434,
         0.421,
@@ -235,7 +390,19 @@
         4
       ],
       "rank": 1,
-      "returned": 10,
+      "hitScore": 0.682,
+      "pages": [
+        4,
+        4,
+        5,
+        3,
+        4,
+        14,
+        13,
+        14,
+        16,
+        16
+      ],
       "scores": [
         0.682,
         0.593,
@@ -256,7 +423,19 @@
         2
       ],
       "rank": 2,
-      "returned": 10,
+      "hitScore": 0.562,
+      "pages": [
+        1,
+        2,
+        2,
+        4,
+        15,
+        3,
+        13,
+        11,
+        7,
+        8
+      ],
       "scores": [
         0.566,
         0.562,
@@ -277,7 +456,19 @@
         4
       ],
       "rank": 1,
-      "returned": 10,
+      "hitScore": 0.64,
+      "pages": [
+        4,
+        4,
+        13,
+        5,
+        4,
+        16,
+        13,
+        12,
+        7,
+        6
+      ],
       "scores": [
         0.64,
         0.624,
@@ -288,7 +479,7 @@
         0.523,
         0.522,
         0.519,
-        0.517
+        0.518
       ]
     },
     {
@@ -298,7 +489,19 @@
         5
       ],
       "rank": null,
-      "returned": 10,
+      "hitScore": null,
+      "pages": [
+        4,
+        10,
+        8,
+        16,
+        4,
+        1,
+        10,
+        17,
+        7,
+        11
+      ],
       "scores": [
         0.618,
         0.559,
@@ -307,7 +510,7 @@
         0.548,
         0.545,
         0.543,
-        0.536,
+        0.535,
         0.525,
         0.521
       ]
@@ -319,7 +522,19 @@
         6
       ],
       "rank": 3,
-      "returned": 10,
+      "hitScore": 0.527,
+      "pages": [
+        12,
+        4,
+        6,
+        3,
+        4,
+        15,
+        18,
+        13,
+        9,
+        13
+      ],
       "scores": [
         0.557,
         0.545,
@@ -340,7 +555,19 @@
         8
       ],
       "rank": 1,
-      "returned": 10,
+      "hitScore": 0.474,
+      "pages": [
+        8,
+        7,
+        16,
+        10,
+        4,
+        2,
+        9,
+        16,
+        8,
+        7
+      ],
       "scores": [
         0.474,
         0.451,
@@ -361,10 +588,22 @@
         11
       ],
       "rank": 1,
-      "returned": 10,
+      "hitScore": 0.54,
+      "pages": [
+        11,
+        10,
+        9,
+        7,
+        7,
+        2,
+        5,
+        6,
+        12,
+        16
+      ],
       "scores": [
         0.54,
-        0.526,
+        0.525,
         0.523,
         0.511,
         0.51,
@@ -383,11 +622,23 @@
         14
       ],
       "rank": 1,
-      "returned": 10,
+      "hitScore": 0.613,
+      "pages": [
+        13,
+        13,
+        13,
+        14,
+        14,
+        13,
+        16,
+        4,
+        4,
+        10
+      ],
       "scores": [
         0.613,
         0.604,
-        0.567,
+        0.568,
         0.567,
         0.564,
         0.555,
@@ -404,7 +655,19 @@
         14
       ],
       "rank": 3,
-      "returned": 10,
+      "hitScore": 0.589,
+      "pages": [
+        13,
+        13,
+        14,
+        16,
+        14,
+        13,
+        13,
+        16,
+        15,
+        17
+      ],
       "scores": [
         0.612,
         0.602,
@@ -412,7 +675,7 @@
         0.584,
         0.573,
         0.564,
-        0.556,
+        0.557,
         0.523,
         0.497,
         0.486
@@ -425,16 +688,28 @@
         3
       ],
       "rank": 1,
-      "returned": 10,
+      "hitScore": 0.705,
+      "pages": [
+        3,
+        1,
+        1,
+        10,
+        2,
+        4,
+        16,
+        13,
+        18,
+        7
+      ],
       "scores": [
         0.705,
-        0.636,
+        0.635,
         0.592,
         0.591,
         0.562,
         0.555,
         0.543,
-        0.539,
+        0.538,
         0.521,
         0.517
       ]
@@ -446,7 +721,19 @@
         2
       ],
       "rank": 4,
-      "returned": 10,
+      "hitScore": 0.576,
+      "pages": [
+        1,
+        1,
+        10,
+        2,
+        4,
+        16,
+        10,
+        3,
+        13,
+        1
+      ],
       "scores": [
         0.626,
         0.613,
@@ -467,7 +754,19 @@
         16
       ],
       "rank": 2,
-      "returned": 10,
+      "hitScore": 0.614,
+      "pages": [
+        17,
+        16,
+        16,
+        16,
+        4,
+        11,
+        8,
+        2,
+        1,
+        14
+      ],
       "scores": [
         0.63,
         0.614,
@@ -488,7 +787,19 @@
         18
       ],
       "rank": 8,
-      "returned": 10,
+      "hitScore": 0.525,
+      "pages": [
+        16,
+        16,
+        12,
+        13,
+        13,
+        17,
+        14,
+        18,
+        15,
+        3
+      ],
       "scores": [
         0.63,
         0.614,
@@ -501,6 +812,68 @@
         0.499,
         0.498
       ]
+    }
+  ],
+  "unanswerable": [
+    {
+      "document": "wwu-bwl-excerpt",
+      "question": "Welche Programmiersprache lerne ich im Modul Programmierung?",
+      "topScore": 0.58
+    },
+    {
+      "document": "wwu-bwl-excerpt",
+      "question": "Wie hoch ist der Semesterbeitrag?",
+      "topScore": 0.536
+    },
+    {
+      "document": "wwu-bwl-excerpt",
+      "question": "Wann beginnt die Rückmeldefrist für das Sommersemester?",
+      "topScore": 0.492
+    },
+    {
+      "document": "wwu-bwl-excerpt",
+      "question": "Wie beantrage ich BAföG?",
+      "topScore": 0.493
+    },
+    {
+      "document": "wwu-bwl-excerpt",
+      "question": "Wie koche ich Spaghetti Carbonara?",
+      "topScore": 0.295
+    },
+    {
+      "document": "wwu-bwl-excerpt",
+      "question": "Wer hat die Fußball-Weltmeisterschaft 2014 gewonnen?",
+      "topScore": 0.342
+    },
+    {
+      "document": "wwu-wi-excerpt",
+      "question": "Wie lange dauert die Klausur in Marketing Management?",
+      "topScore": 0.539
+    },
+    {
+      "document": "wwu-wi-excerpt",
+      "question": "Welche Bibliothek hat sonntags geöffnet?",
+      "topScore": 0.343
+    },
+    {
+      "document": "wwu-wi-excerpt",
+      "question": "Wo finde ich die Mensa am Schlossplatz?",
+      "topScore": 0.313
+    },
+    {
+      "document": "wwu-wi-excerpt",
+      "question": "Wie melde ich mich für das Auslandssemester an?",
+      "topScore": 0.51
+    },
+    {
+      "document": "wwu-wi-excerpt",
+      "question": "Was ist die Hauptstadt von Australien?",
+      "topScore": 0.284
+    },
+    {
+      "document": "wwu-wi-excerpt",
+      "question": "Wie viele Urlaubstage habe ich im Praktikum?",
+      "topScore": 0.5
     }
   ]
 }
