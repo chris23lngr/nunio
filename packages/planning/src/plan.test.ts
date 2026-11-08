@@ -1,7 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
 import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
-import { principal, type Principal } from "@nunio/delegation";
+import type { EstimateRequest, Estimator } from "@nunio/ai";
+import { createDelegation, principal, type Delegation, type Principal } from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import { createFacts, type Facts } from "@nunio/knowledge";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -12,6 +13,7 @@ let admin: PrismaClient;
 let runtime: PrismaClient;
 let facts: Facts;
 let plan: Plan;
+let delegation: Delegation;
 /** A Berlin wall-clock time in November (CET, UTC+1). */
 const at = (local: string) => new Date(`${local.replace(" ", "T")}:00+01:00`);
 let now = at("2026-11-09 08:00");
@@ -23,13 +25,15 @@ beforeAll(async () => {
   runtime = createPrismaClient(createPool(database.runtimeConnectionString));
   facts = createFacts({ db: runtime, keys: createSourceKeys({ activeVersion: "v1", masters: { v1: randomBytes(32) } }), clock });
   plan = createPlan({ db: runtime, facts, clock });
+  delegation = createDelegation({ db: runtime, aiEnabled: () => true });
 }, 180_000);
 afterAll(async () => { await runtime?.$disconnect(); await admin?.$disconnect(); await database?.stop(); });
 
-async function student(): Promise<Principal> {
+async function student(limitMicroUsd = 5_000_000): Promise<Principal> {
   const id = randomUUID();
   await admin.user.create({ data: { id, email: `${id}@example.com`, name: "Student" } });
   await admin.pilotEntitlement.create({ data: { studentId: id } });
+  await admin.allowance.create({ data: { studentId: id, limitMicroUsd } });
   return principal.fromSession({ studentId: id });
 }
 
@@ -159,4 +163,35 @@ it("expands weekly Protected Time onto every local day, even across the switch t
   expect((await plan.view(p)).proposal.moves).toEqual([
     { kind: "create", workId: lab, start: new Date("2027-03-29T09:00:00+02:00"), end: new Date("2027-03-29T10:00:00+02:00"), needsApproval: false },
   ]);
+});
+
+it("proposes Estimates only for Obligations without one, never replacing the student's own", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-11", "12:00");
+  const exam = await obligation(p, "Klausur", "2027-02-12", null);
+  await plan.estimate(p, { kind: "obligation", id: exam }, 1200);
+  const asked: EstimateRequest[][] = [];
+  const estimator: Estimator = { estimateMicroUsd: () => 10,
+    async estimate(items) { asked.push([...items]); return { value: items.map(() => ({ minutes: 180, rationale: "Four proofs." })), usage: { microUsd: 5 } }; } };
+
+  expect(await plan.proposeEstimates(p, { estimator, delegation })).toEqual({ status: "ok", proposed: 1 });
+  expect(asked).toEqual([[{ kind: "assignment", title: "Blatt 3", course: "Analysis I" }]]);
+  const { obligations } = await plan.view(p);
+  expect(obligations.map(o => [o.id, o.estimate])).toEqual(expect.arrayContaining([
+    [sheet, { minutes: 180, estimatedBy: "nunio", rationale: "Four proofs." }],
+    [exam, { minutes: 1200, estimatedBy: "student", rationale: null }],
+  ]));
+  expect(await plan.proposeEstimates(p, { estimator, delegation })).toEqual({ status: "ok", proposed: 0 });
+  expect(asked).toHaveLength(1);
+});
+
+it("refuses to propose Estimates once the Allowance is exhausted, without asking the model", async () => {
+  const p = await student(0);
+  await obligation(p, "Blatt 3", "2026-11-11", "12:00");
+  let calls = 0;
+  const estimator: Estimator = { estimateMicroUsd: () => 10, async estimate(items) { calls++; return { value: items.map(() => null), usage: { microUsd: 1 } }; } };
+
+  expect(await plan.proposeEstimates(p, { estimator, delegation })).toEqual({ status: "refused", reason: "allowance_exhausted" });
+  expect(calls).toBe(0);
 });

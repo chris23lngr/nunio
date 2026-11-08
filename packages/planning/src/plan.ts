@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import type { Estimator } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
-import { withOwner, type Principal, type Transaction } from "@nunio/delegation";
-import type { Facts } from "@nunio/knowledge";
+import { withOwner, type Delegation, type Principal, type Transaction } from "@nunio/delegation";
+import { definitely, type Facts } from "@nunio/knowledge";
 import { rebalance, type Interval, type Move, type PlanState } from "./rebalance.js";
 
 export type WorkRef = { kind: "obligation" | "task"; id: string };
@@ -38,7 +39,7 @@ export function createPlan({ db, facts, clock }: { db: PrismaClient; facts: Fact
       .filter(o => o.state !== "rejected")
       .map(o => {
         const estimate = estimates.find(e => e.obligationId === o.id);
-        return { id: o.id, courseId: course.id, title: o.title, kind: o.kind as ObligationKind, state: o.state as ReviewState,
+        return { id: o.id, courseId: course.id, course: course.title, title: o.title, kind: o.kind as ObligationKind, state: o.state as ReviewState,
           due: o.due.date ? deadline(o.due.date, o.due.time, o.due.timeZone ?? "Europe/Berlin") : null,
           estimate: estimate ? { minutes: estimate.minutes, estimatedBy: estimate.estimatedBy as Actor, rationale: estimate.rationale } as Estimate : null };
       }));
@@ -180,6 +181,29 @@ export function createPlan({ db, facts, clock }: { db: PrismaClient; facts: Fact
         await tx.coursePriority.createMany({ data: courseIds.map((courseId, i) => ({ courseId, studentId, rank: i + 1 })) });
         return { status: "ok" } as const;
       });
+    },
+    /** Asks the model for Estimates of Obligations that have none, in one metered call. */
+    async proposeEstimates(p: Principal, { estimator, delegation }: { estimator: Estimator; delegation: Delegation }) {
+      const missing = (await withOwner(db, p, tx => obligations(p, tx))).filter(o => !o.estimate);
+      if (!missing.length) return { status: "ok", proposed: 0 } as const;
+      const items = missing.map(o => ({ kind: o.kind, title: o.title, course: o.course }));
+      const proposed = await delegation.meter(p, { microUsd: estimator.estimateMicroUsd(items) },
+        signal => definitely(() => estimator.estimate(items, { signal })));
+      if (proposed.status === "refused") return proposed;
+      const written = await withOwner(db, p, async (tx, studentId) => {
+        let count = 0;
+        for (const [i, estimate] of proposed.value.entries()) {
+          const obligationId = missing[i]!.id;
+          // The student may have estimated it meanwhile, or the Obligation may be gone; neither is overwritten.
+          if (!estimate || await tx.obligationEstimate.findUnique({ where: { obligationId } })
+            || !await tx.obligation.findUnique({ where: { id: obligationId } })) continue;
+          await tx.obligationEstimate.create({ data: { obligationId, studentId, minutes: estimate.minutes, estimatedBy: "nunio",
+            rationale: estimate.rationale } });
+          count++;
+        }
+        return count;
+      });
+      return { status: "ok", proposed: written } as const;
     },
     /** The student's own Estimate, which a proposal never replaces. */
     async estimate(p: Principal, work: WorkRef, minutes: number) {

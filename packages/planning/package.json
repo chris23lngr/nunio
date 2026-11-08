@@ -25,6 +25,7 @@
     "vitest": "5.0.5"
   },
   "dependencies": {
+    "@nunio/ai": "workspace:*",
     "@nunio/db": "workspace:*",
     "@nunio/delegation": "workspace:*",
     "@nunio/knowledge": "workspace:*"

@@ -14,6 +14,7 @@ describe("the model registry", () => {
   it.each([
     ["extraction", "anthropic/claude-haiku-5.5"],
     ["classification", "anthropic/claude-haiku-5.5"],
+    ["estimation", "anthropic/claude-haiku-5.5"],
     ["agent", "anthropic/claude-sonnet-5.5"],
     ["explanation", "anthropic/claude-sonnet-5.5"],
     ["feedback", "anthropic/claude-sonnet-5.5"],
