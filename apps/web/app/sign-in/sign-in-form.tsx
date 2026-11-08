@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent, type MouseEvent } from "react";
+import { useState, type MouseEvent } from "react";
+import { useAppForm } from "@/lib/form";
 import { authClient } from "@/lib/auth-client";
 
 function appURL(path: string): string {
@@ -16,34 +17,35 @@ export function SignInForm({ apiOrigin, invitation, initialNotice, initialError 
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(initialNotice ?? null);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const intent = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value");
-    const email = String(form.get("email"));
-    const password = String(form.get("password"));
-    const client = authClient(apiOrigin);
-    setError(null);
-    setNotice(null);
-    const result =
-      intent === "sign-up"
-        ? await client.signUp.email({
-            name: String(form.get("name")), email, password,
-            callbackURL: appURL("/sign-in"),
-            fetchOptions: { headers: { "x-invitation-token": invitation ?? "" } },
-          })
-        : await client.signIn.email({ email, password });
-    if (result.error) {
-      if (result.error.code === "EMAIL_NOT_VERIFIED") setPendingEmail(email);
-      return setError(result.error.message ?? "Sign-in failed");
-    }
-    if (intent === "sign-up") {
-      setPendingEmail(email);
-      setNotice("Check your email to verify your account, then sign in.");
-      return;
-    }
-    router.replace("/");
-  }
+  const form = useAppForm({
+    defaultValues: { name: "", email: "", password: "" },
+    onSubmitMeta: { intent: "sign-in" as "sign-in" | "sign-up" },
+    onSubmit: async ({ value, meta: { intent } }) => {
+      const { email, password } = value;
+      const client = authClient(apiOrigin);
+      setError(null);
+      setNotice(null);
+      const result =
+        intent === "sign-up"
+          ? await client.signUp.email({
+              name: value.name, email, password,
+              callbackURL: appURL("/sign-in"),
+              fetchOptions: { headers: { "x-invitation-token": invitation ?? "" } },
+            })
+          : await client.signIn.email({ email, password });
+      if (result.error) {
+        if (result.error.code === "EMAIL_NOT_VERIFIED") setPendingEmail(email);
+        return setError(result.error.message ?? "Sign-in failed");
+      }
+      if (intent === "sign-up") {
+        setPendingEmail(email);
+        setNotice("Check your email to verify your account, then sign in.");
+        return;
+      }
+      router.replace("/");
+      router.refresh();
+    },
+  });
 
   async function resendVerification() {
     if (!pendingEmail) return;
@@ -62,7 +64,7 @@ export function SignInForm({ apiOrigin, invitation, initialNotice, initialError 
     setError(null);
     setNotice(null);
     const result = await authClient(apiOrigin).requestPasswordReset({
-      email: email.value,
+      email: form.getFieldValue("email"),
       redirectTo: appURL("/reset-password"),
     });
     if (result.error) return setError("Could not request a password reset. Please try again.");
@@ -70,22 +72,24 @@ export function SignInForm({ apiOrigin, invitation, initialNotice, initialError 
   }
 
   return (
-    <form onSubmit={submit}>
-      <label>
-        Name <input name="name" autoComplete="name" />
-      </label>
-      <label>
-        Email <input name="email" type="email" autoComplete="email" required />
-      </label>
-      <label>
-        Password <input name="password" type="password" required />
-      </label>
-      <button type="submit" value="sign-in">
-        Sign in
-      </button>
-      {invitation && <button type="submit" value="sign-up">
-        Sign up
-      </button>}
+    <form onSubmit={event => {
+      event.preventDefault();
+      const intent = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "sign-up" ? "sign-up" : "sign-in";
+      void form.handleSubmit({ intent });
+    }}>
+      <form.AppField name="name">
+        {field => <field.TextField label="Name" autoComplete="name" />}
+      </form.AppField>
+      <form.AppField name="email">
+        {field => <field.TextField label="Email" type="email" autoComplete="email" required />}
+      </form.AppField>
+      <form.AppField name="password">
+        {field => <field.TextField label="Password" type="password" required />}
+      </form.AppField>
+      <form.AppForm>
+        <form.SubmitButton value="sign-in">Sign in</form.SubmitButton>
+        {invitation && <form.SubmitButton value="sign-up">Sign up</form.SubmitButton>}
+      </form.AppForm>
       {pendingEmail && <button type="button" onClick={resendVerification}>Resend verification email</button>}
       <button type="button" onClick={requestPasswordReset}>Forgot password?</button>
       {notice && <p role="status">{notice}</p>}
