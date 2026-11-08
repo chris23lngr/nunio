@@ -16,6 +16,7 @@ model User {
   sources          Source[]
   courses          Course[]
   chats            Chat[]
+  queryEmbeddings  QueryEmbedding[]
 
   @@map("user")
 }

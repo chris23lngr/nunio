@@ -10,6 +10,7 @@ export class Untrusted {
     texts.set(untrusted, text);
     return untrusted;
   }
+  /** Part of the interface (knowledge-retrieval.md), so a caller can budget a prompt without reading the text. */
   get length() { return texts.get(this)!.length; }
   toString() { return "[untrusted]"; }
   toJSON() { return "[untrusted]"; }

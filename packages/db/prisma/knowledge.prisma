@@ -292,17 +292,38 @@ enum ChatRole {
 }
 
 /// Citations are stored as CitationRefs only, never snippets, and resolved at display time.
+/// An answer drawn from Sources is encrypted under its own key, wrapped in turn under each of those Sources' keys,
+/// so deleting any of them shreds it (ADR-0007); a question or an answer drawn from no Source is plain UTF-8.
 model ChatMessage {
-  id        String   @id
-  chatId    String
-  studentId String
-  chat      Chat     @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
-  role      ChatRole
-  text      String
-  /// [{ tag, cite }] for the citation tags in `text`.
-  citations Json     @default("[]")
+  id          String   @id
+  chatId      String
+  studentId   String
+  chat        Chat     @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
+  role        ChatRole
+  content     Bytes
+  /// The message key, wrapped under each `derivedFrom` Source's key in order; null when derived from none.
+  contentKey  Bytes?
+  /// The Sources whose passages the answer was given, in wrapping order.
+  derivedFrom String[] @default([])
+  /// [{ tag, cite }] for the citation tags in the text.
+  citations   Json     @default("[]")
   createdAt DateTime @default(now())
 
   @@index([chatId, createdAt])
   @@map("chat_message")
+}
+
+/// A student's own query vectors, so a repeated question is neither embedded nor metered again. Holds no course material.
+model QueryEmbedding {
+  studentId  String
+  student    User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  model      String
+  /// SHA-256 of the whitespace-normalized query text.
+  queryHash  String
+  dimensions Int
+  embedding  Unsupported("vector")
+  createdAt  DateTime @default(now())
+
+  @@id([studentId, model, queryHash])
+  @@map("query_embedding")
 }

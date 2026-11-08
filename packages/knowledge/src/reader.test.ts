@@ -7,7 +7,7 @@ import { createSourceKeys, type SourceKeys } from "@nunio/keys";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { createChats, type Chats } from "./chats.js";
 import { createFacts, type Facts } from "./facts.js";
-import { createKnowledgeReader, InvalidQueryError, type Item, type KnowledgeReader } from "./reader.js";
+import { createKnowledgeReader, InvalidQueryError, KnowledgeUnavailable, ScopeMismatchError, type Item, type KnowledgeReader } from "./reader.js";
 import { createSources, type Sources, type SourceStorage } from "./sources.js";
 
 let database: TestDatabase;
@@ -20,12 +20,13 @@ let reader: KnowledgeReader;
 let delegation: Delegation;
 let keys: SourceKeys;
 let embedCalls = 0;
+const clock = { now: () => new Date() };
 
 /** Deterministic vectors: one dimension per keyword, so a query scores the passages that share its keywords. */
 const keywords = ["klausur", "hausarbeit", "vorlesung"];
 const vector = (text: string) => [...keywords.map(k => text.toLowerCase().includes(k) ? 1 : 0), 0.01];
 const embedder: Embedder = {
-  model: "test-embedding", dims: 4, estimateMicroUsd: () => 1,
+  model: "test-embedding", dims: 4, relevanceFloor: 0.3, estimateMicroUsd: () => 1,
   async embed(texts) { embedCalls++; return { vectors: texts.map(vector), usage: { microUsd: 1 } }; },
 };
 const storage: SourceStorage = {
@@ -42,9 +43,9 @@ beforeAll(async () => {
   keys = createSourceKeys({ activeVersion: "v1", masters: { v1: randomBytes(32) } });
   delegation = createDelegation({ db: runtime, aiEnabled: () => true });
   sources = createSources({ db: runtime, keys, storage });
-  chats = createChats({ db: runtime });
-  facts = createFacts({ db: runtime, keys, clock: { now: () => new Date() } });
-  reader = createKnowledgeReader({ db: runtime, keys, embedder, delegation });
+  facts = createFacts({ db: runtime, keys, clock });
+  reader = createKnowledgeReader({ db: runtime, keys, embedder, delegation, clock });
+  chats = createChats({ db: runtime, keys, reader, delegation });
 }, 180_000);
 afterAll(async () => { await runtime?.$disconnect(); await admin?.$disconnect(); await database?.stop(); });
 beforeEach(() => { embedCalls = 0; });
@@ -236,7 +237,7 @@ it("skips passages embedded with another model", async () => {
   const p = await student();
   const handbook = await readySource(p, "Modulhandbuch", ["Die Klausur ist im Februar."]);
   const chat = await createChat(p, { courseIds: [], sourceIds: [handbook] });
-  const upgraded = createKnowledgeReader({ db: runtime, keys, delegation, embedder: { ...embedder, model: "test-embedding-v2" } });
+  const upgraded = createKnowledgeReader({ db: runtime, keys, delegation, clock, embedder: { ...embedder, model: "test-embedding-v2" } });
 
   const result = await upgraded.retrieve(p, { chatId: chat.id }, { kind: "passages", text: "Klausur" });
 
@@ -294,4 +295,95 @@ it("reads Obligations across every Course for planning, but never passages", asy
     "Physik, Obligation from Physik.pdf, page 2",
   ]);
   await expect(reader.retrieve(p, { planning: true }, { kind: "passages", text: "Klausur" })).rejects.toThrow(InvalidQueryError);
+});
+
+it("throws a scope mismatch when a Run reads a Chat's scope, without embedding", async () => {
+  const p = await student();
+  const chat = await createChat(p, { courseIds: [], sourceIds: [await readySource(p, "Modulhandbuch", ["Klausur im Februar."])] });
+  embedCalls = 0;
+
+  await expect(reader.retrieve(principal.fromRun(randomUUID()), { chatId: chat.id }, { kind: "passages", text: "Klausur" }))
+    .rejects.toThrow(ScopeMismatchError);
+  await expect(reader.retrieve(principal.fromRun(randomUUID()), { planning: true }, { kind: "facts", types: ["obligation"] }))
+    .rejects.toThrow(ScopeMismatchError);
+  expect(embedCalls).toBe(0);
+});
+
+it("reports an unavailable embedding provider as KnowledgeUnavailable", async () => {
+  const p = await student();
+  const chat = await createChat(p, { courseIds: [], sourceIds: [await readySource(p, "Modulhandbuch", ["Klausur im Februar."])] });
+  const failing = createKnowledgeReader({ db: runtime, keys, delegation, clock,
+    embedder: { ...embedder, embed: async () => { throw new Error("Embedding unavailable (503)"); } } });
+
+  await expect(failing.retrieve(p, { chatId: chat.id }, { kind: "passages", text: "Klausur" })).rejects.toThrow(KnowledgeUnavailable);
+});
+
+it("reuses a student's own query embedding for a repeated question, never another student's", async () => {
+  const p = await student();
+  const chat = await createChat(p, { courseIds: [], sourceIds: [await readySource(p, "Modulhandbuch", ["Klausur im Februar."])] });
+  const other = await student();
+  const otherChat = await createChat(other, { courseIds: [], sourceIds: [await readySource(other, "Andere", ["Klausur im März."])] });
+  const ask = (q: Principal, chatId: string, text: string) => reader.retrieve(q, { chatId }, { kind: "passages", text });
+  embedCalls = 0;
+
+  await ask(p, chat.id, "Wann ist die Klausur?");
+  await delegation.meter(p, { microUsd: 1 }, async () => ({ value: null, usage: { microUsd: 5_000_000 } }));
+  const repeated = await ask(p, chat.id, "  Wann ist die   Klausur? ");
+  await ask(other, otherChat.id, "Wann ist die Klausur?");
+
+  expect(repeated).toMatchObject({ status: "ok", items: [expect.objectContaining({ kind: "passage" })] });
+  expect(embedCalls).toBe(2);
+});
+
+it("orders Facts Correction first, then the student's entries, then extractions", async () => {
+  const p = await student();
+  const handbook = await readySource(p, "Modulhandbuch", ["MA-101 Analysis I", "Klausur am 10.02.2027, Nachklausur am 01.04.2027"]);
+  const course = await acceptedCourse(p, handbook, { code: "MA-101", title: "Analysis I", quote: "MA-101 Analysis I" }, [
+    exam("2027-02-10", 2, "Klausur am 10.02.2027"),
+    { ...exam("2027-04-01", 2, "Nachklausur am 01.04.2027"), title: "Nachklausur", key: "Nachklausur" },
+  ]);
+  await facts.enterObligation(p, { course: { id: course }, kind: "assignment", title: "Referat",
+    due: { date: "2027-01-15", time: null, timeZone: null }, destination: null });
+  const resit = (await facts.review(p)).courses[0]!.obligations.find(o => o.title === "Nachklausur")!;
+  await facts.correct(p, { kind: "obligation", id: resit.id },
+    { title: "Nachklausur", due: { date: "2027-04-02", time: null, timeZone: null }, destination: null });
+
+  const result = await reader.retrieve(p, { planning: true }, { kind: "facts", types: ["obligation"] });
+
+  if (result.status !== "ok") throw new Error(result.status);
+  expect(result.items.map(i => i.provenance.kind)).toEqual(["correction", "entry", "source"]);
+});
+
+it("forgets the Facts a deleted Source alone supported on the next call, and cites them as gone", async () => {
+  const p = await student();
+  const handbook = await readySource(p, "Modulhandbuch", ["MA-101 Analysis I", "Klausur am 10.02.2027"]);
+  const course = await acceptedCourse(p, handbook, { code: "MA-101", title: "Analysis I", quote: "MA-101 Analysis I" },
+    [exam("2027-02-10", 2, "Klausur am 10.02.2027")]);
+  const chat = await createChat(p, { courseIds: [course], sourceIds: [] });
+  const before = await reader.retrieve(p, { chatId: chat.id }, { kind: "facts", types: ["obligation"] });
+  if (before.status !== "ok") throw new Error(before.status);
+  const ref = before.items[0]!.cite;
+
+  await sources.remove(p, handbook);
+
+  expect(await reader.retrieve(p, { chatId: chat.id }, { kind: "facts", types: ["obligation"] })).toMatchObject({ status: "ok", items: [] });
+  expect((await reader.cite(p, [ref])).get(ref)).toBe("gone");
+});
+
+it("reports when the limit cut off relevant passages, and a revision that changes with the material in scope", async () => {
+  const p = await student();
+  const first = await readySource(p, "Erste.pdf", ["Klausur im Februar."]);
+  const second = await readySource(p, "Zweite.pdf", ["Klausur im März."]);
+  const chat = await createChat(p, { courseIds: [], sourceIds: [first, second] });
+  const ask = (limit: number) => reader.retrieve(p, { chatId: chat.id }, { kind: "passages", text: "Klausur", limit });
+
+  const cut = await ask(1), whole = await ask(8);
+  await sources.remove(p, second);
+  const after = await ask(8);
+
+  expect(cut).toMatchObject({ status: "ok", truncated: true });
+  expect(whole).toMatchObject({ status: "ok", truncated: false });
+  if (cut.status !== "ok" || whole.status !== "ok" || after.status !== "ok") throw new Error("refused");
+  expect(cut.revision).toBe(whole.revision);
+  expect(after.revision).not.toBe(whole.revision);
 });

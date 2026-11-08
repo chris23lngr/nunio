@@ -10,7 +10,6 @@ export interface AnswerInput {
 }
 
 export interface Answerer {
-  model: string;
   estimateMicroUsd(input: AnswerInput): number;
   answer(input: AnswerInput, options: { signal: AbortSignal }): Promise<{ value: { text: string; cited: string[] }; usage: { microUsd: number } }>;
 }
@@ -27,7 +26,6 @@ export function createAnswerer(models: Models): Answerer {
   const model = models.forTask("explanation");
   const dataMessage = (data: string) => `Course material for the next question:\n${data}`;
   return {
-    model: model.id,
     estimateMicroUsd: input => model.estimateMicroUsd([instructions, dataMessage(input.data), input.question]),
     async answer(input, { signal }) {
       const result = await generateText({ model: model.model, ...model.callSettings, abortSignal: signal,

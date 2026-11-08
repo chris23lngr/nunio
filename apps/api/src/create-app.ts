@@ -3,7 +3,7 @@ import { createDelegation, type Delegation } from "@nunio/delegation";
 import { createAuth, type Auth } from "@nunio/identity";
 import { createAnswerer, createEmbedder, createModels, type Answerer } from "@nunio/ai";
 import { createChats, createFacts, createKnowledgeReader, createSources, sourceStorageFromEnv, type Chats, type Facts,
-  type KnowledgeReader, type Sources } from "@nunio/knowledge";
+  type Sources } from "@nunio/knowledge";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { sourceWorkflowsFromEnv, type SourceWorkflows } from "./source-workflows.js";
 import { attachDatabasePool } from "@vercel/functions";
@@ -20,7 +20,6 @@ export interface AppDeps {
   facts: Facts;
   sourceWorkflows: SourceWorkflows;
   chats: Chats;
-  reader: KnowledgeReader;
   answerer: Answerer;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
@@ -28,7 +27,7 @@ export interface AppDeps {
   spike?: SpikeDeps;
 }
 
-export function createApp({ auth, prisma, delegation, appOrigin, spike, sources, facts, sourceWorkflows, chats, reader, answerer }: AppDeps) {
+export function createApp({ auth, prisma, delegation, appOrigin, spike, sources, facts, sourceWorkflows, chats, answerer }: AppDeps) {
   const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
   if (spike) app.use("*", spikePoolHeader(spike.pool));
@@ -48,7 +47,6 @@ export function createApp({ auth, prisma, delegation, appOrigin, spike, sources,
     c.set("facts", facts);
     c.set("sourceWorkflows", sourceWorkflows);
     c.set("chats", chats);
-    c.set("reader", reader);
     c.set("answerer", answerer);
     await next();
   });
@@ -88,9 +86,10 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
   const delegation = createDelegation({ db: prisma, aiEnabled: () => env.AI_DISABLED !== "true" });
   const keys = sourceKeysFromEnv(env);
   const sources = createSources({ db: prisma, keys, storage: sourceStorageFromEnv(env) });
-  const facts = createFacts({ db: prisma, keys, clock: { now: () => new Date() } });
+  const clock = { now: () => new Date() };
+  const facts = createFacts({ db: prisma, keys, clock });
   const provider = { apiKey: required("OPENROUTER_API_KEY"), baseURL: required("OPENROUTER_BASE_URL") };
-  const reader = createKnowledgeReader({ db: prisma, keys, embedder: createEmbedder(provider), delegation });
+  const reader = createKnowledgeReader({ db: prisma, keys, embedder: createEmbedder(provider), delegation, clock });
   return createApp({ auth, prisma, delegation, appOrigin, spike, sources, facts, sourceWorkflows: sourceWorkflowsFromEnv(env),
-    chats: createChats({ db: prisma }), reader, answerer: createAnswerer(createModels(provider)) });
+    chats: createChats({ db: prisma, keys, reader, delegation }), answerer: createAnswerer(createModels(provider)) });
 }

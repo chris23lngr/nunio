@@ -28,18 +28,18 @@ export function ChatView({ apiOrigin, chatId }: { apiOrigin: string; chatId: str
   const [sources, setSources] = useState<Source[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const client = () => createApiClient(apiOrigin);
   useEffect(() => {
     let cancelled = false;
+    const client = createApiClient(apiOrigin);
     void (async () => {
       try {
         if (chatId) {
-          const result = await createApiClient(apiOrigin).GET("/api/me/chats/{id}/messages", { params: { path: { id: chatId } } });
+          const result = await client.GET("/api/me/chats/{id}/messages", { params: { path: { id: chatId } } });
           if (cancelled) return;
           if (!result.data) return setError("This Chat is gone.");
           setMessages(result.data);
         } else {
-          const [review, listed] = await Promise.all([createApiClient(apiOrigin).GET("/api/me/review"), createApiClient(apiOrigin).GET("/api/me/sources")]);
+          const [review, listed] = await Promise.all([client.GET("/api/me/review"), client.GET("/api/me/sources")]);
           if (cancelled) return;
           if (!review.data || !listed.data) return setError("Could not load your Courses and Sources.");
           setCourses(review.data.courses.filter(course => course.status === "accepted"));
@@ -55,7 +55,7 @@ export function ChatView({ apiOrigin, chatId }: { apiOrigin: string; chatId: str
     const form = new FormData(event.currentTarget);
     setBusy(true); setError(null);
     try {
-      const result = await client().POST("/api/me/chats", { body: {
+      const result = await createApiClient(apiOrigin).POST("/api/me/chats", { body: {
         courseIds: form.getAll("course").map(String), sourceIds: form.getAll("source").map(String) } });
       if (!result.data) throw new Error("A selected Course or Source is gone. Reload and choose again.");
       router.push(`/chat?id=${result.data.id}`);
@@ -70,7 +70,7 @@ export function ChatView({ apiOrigin, chatId }: { apiOrigin: string; chatId: str
     if (!text) return;
     setBusy(true); setError(null);
     try {
-      const result = await client().POST("/api/me/chats/{id}/messages", { params: { path: { id: chatId } }, body: { text } });
+      const result = await createApiClient(apiOrigin).POST("/api/me/chats/{id}/messages", { params: { path: { id: chatId } }, body: { text } });
       if (!result.data) {
         const reason = (result.error as { error?: string } | undefined)?.error ?? "";
         throw new Error(refusals[reason] ?? (result.response.status === 404 ? "This Chat is gone." : "Could not answer. Please try again."));
@@ -106,7 +106,8 @@ export function ChatView({ apiOrigin, chatId }: { apiOrigin: string; chatId: str
     <section aria-labelledby="chat-title">
       <h1 id="chat-title">Chat</h1>
       <ol>{messages.map(message => <li key={message.id}>
-        <strong>{message.role === "student" ? "You" : "nunio"}:</strong> {message.text}
+        <strong>{message.role === "student" ? "You" : "nunio"}:</strong>{" "}
+        {message.text ?? <em>This answer was removed because a Source it drew on was deleted.</em>}
         <Citations citations={message.citations} />
       </li>)}</ol>
       {error && <p role="alert">{error}</p>}

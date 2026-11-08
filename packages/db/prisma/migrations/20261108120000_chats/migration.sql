@@ -30,7 +30,9 @@ CREATE TABLE "chat_message" (
   "chatId" TEXT NOT NULL,
   "studentId" TEXT NOT NULL,
   "role" "chat_role" NOT NULL,
-  "text" TEXT NOT NULL,
+  "content" BYTEA NOT NULL,
+  "contentKey" BYTEA,
+  "derivedFrom" TEXT[] NOT NULL DEFAULT '{}',
   "citations" JSONB NOT NULL DEFAULT '[]',
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY ("chatId", "studentId") REFERENCES "chat"("id", "studentId") ON DELETE CASCADE ON UPDATE CASCADE
@@ -51,3 +53,17 @@ CREATE POLICY "owner" ON "chat_source" USING ("studentId" = current_setting('app
 ALTER TABLE "chat_message" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "chat_message" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "owner" ON "chat_message" USING ("studentId" = current_setting('app.owner_id', true));
+
+CREATE TABLE "query_embedding" (
+  "studentId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "model" TEXT NOT NULL,
+  "queryHash" TEXT NOT NULL,
+  "dimensions" INTEGER NOT NULL CHECK ("dimensions" > 0),
+  "embedding" vector NOT NULL CHECK (vector_dims("embedding") = "dimensions"),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("studentId", "model", "queryHash")
+);
+GRANT SELECT, INSERT ON "query_embedding" TO nunio_runtime;
+ALTER TABLE "query_embedding" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "query_embedding" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "owner" ON "query_embedding" USING ("studentId" = current_setting('app.owner_id', true));

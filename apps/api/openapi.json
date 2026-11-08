@@ -719,7 +719,11 @@
             ]
           },
           "text": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null once a Source the answer drew on is deleted: its wording is removed with that Source."
           },
           "citations": {
             "type": "array",

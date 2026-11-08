@@ -37,13 +37,13 @@ let delegation: Delegation;
 /** What the answer model was asked, and what it replies next. */
 const prompts: AnswerInput[] = [];
 let reply = "";
-const answerer: Answerer = { model: "test-answerer", estimateMicroUsd: () => 1,
+const answerer: Answerer = { estimateMicroUsd: () => 1,
   async answer(input) {
     prompts.push(input);
     return { value: { text: reply, cited: [...reply.matchAll(/\[(S\d+)\]/g)].map(m => m[1]!) }, usage: { microUsd: 1 } };
   } };
 /** One dimension per keyword, so a question finds the passages that share its keywords. */
-const chatEmbedder: Embedder = { model: "test-embedding", dims: 2, estimateMicroUsd: () => 1,
+const chatEmbedder: Embedder = { model: "test-embedding", dims: 2, relevanceFloor: 0.3, estimateMicroUsd: () => 1,
   embed: async texts => ({ vectors: texts.map(t => [t.toLowerCase().includes("klausur") ? 1 : 0, 0.01]), usage: { microUsd: 1 } }) };
 const verificationLinks = new Map<string, string>();
 
@@ -76,9 +76,9 @@ beforeAll(async () => {
     promote: async () => {}, remove: async () => {},
   } });
   facts = createFacts({ db: prisma, keys, clock: { now: () => new Date() } });
-  const chats = createChats({ db: prisma });
-  const reader = createKnowledgeReader({ db: prisma, keys, embedder: chatEmbedder, delegation });
-  app = createApp({ auth, prisma, delegation, appOrigin, sources, facts, chats, reader, answerer, sourceWorkflows: { start: async (...args) => { started.push(args); } }, spike: { webhookSecret, pool } });
+  const reader = createKnowledgeReader({ db: prisma, keys, embedder: chatEmbedder, delegation, clock: { now: () => new Date() } });
+  const chats = createChats({ db: prisma, keys, reader, delegation });
+  app = createApp({ auth, prisma, delegation, appOrigin, sources, facts, chats, answerer, sourceWorkflows: { start: async (...args) => { started.push(args); } }, spike: { webhookSecret, pool } });
 }, 180_000);
 
 afterAll(async () => {
@@ -670,7 +670,7 @@ async function reviewFixture(name: string) {
   await sources.complete(p, upload.source.id);
   const text = "MA-101 Analysis I\nAbgabe Blatt 3: 20.11., 12 Uhr";
   await sources.ingest(p, upload.source.id, { delegation, parse: async () => ({ pages: [{ page: 1, text }] }),
-    embedder: { model: "test", dims: 1, estimateMicroUsd: () => 1, embed: async t => ({ vectors: t.map(() => [1]), usage: { microUsd: 1 } }) },
+    embedder: { model: "test", dims: 1, relevanceFloor: 0.3, estimateMicroUsd: () => 1, embed: async t => ({ vectors: t.map(() => [1]), usage: { microUsd: 1 } }) },
     scans: { estimateMicroUsd: () => 1, read: async () => ({ text: "", usage: { microUsd: 1 } }) } });
   await facts.extract(p, upload.source.id, { delegation, extractor: { model: "test", windows: pages => [[...pages]], estimateMicroUsd: () => 1,
     extract: async () => ({ usage: { microUsd: 1 }, value: {
@@ -727,7 +727,7 @@ it("merges one Course into another, reporting conflicting Corrections and Course
   if (upload.status !== "ok") throw new Error("upload refused");
   await sources.complete(p, upload.source.id);
   await sources.ingest(p, upload.source.id, { delegation, parse: async () => ({ pages: [{ page: 1, text: "Analysis 1\nAbgabe Blatt 3: 20.11., 12 Uhr" }] }),
-    embedder: { model: "test", dims: 1, estimateMicroUsd: () => 1, embed: async t => ({ vectors: t.map(() => [1]), usage: { microUsd: 1 } }) },
+    embedder: { model: "test", dims: 1, relevanceFloor: 0.3, estimateMicroUsd: () => 1, embed: async t => ({ vectors: t.map(() => [1]), usage: { microUsd: 1 } }) },
     scans: { estimateMicroUsd: () => 1, read: async () => ({ text: "", usage: { microUsd: 1 } }) } });
   await facts.extract(p, upload.source.id, { delegation, extractor: { model: "test", windows: pages => [[...pages]], estimateMicroUsd: () => 1,
     extract: async () => ({ usage: { microUsd: 1 }, value: { courses: [{ code: null, title: "Analysis 1", page: 1, quote: "Analysis 1" }],
@@ -835,7 +835,7 @@ describe("Chat", () => {
     expect(prompts[0]!.data).not.toContain("anderen Studenten");
   });
 
-  it("lists earlier messages with citations resolved when shown, so a deleted Source shows as gone", async () => {
+  it("lists earlier messages with citations resolved when shown, withdrawing an answer once a Source it drew on is deleted", async () => {
     const cookie = await signUp("chat-history");
     const headers = { cookie, origin: appOrigin, "content-type": "application/json" };
     const handbook = await chatSource(cookie, "Modulhandbuch.pdf", "Die Klausur ist am 10. Februar.");
@@ -850,8 +850,14 @@ describe("Chat", () => {
       { id: expect.any(String), role: "assistant", text: "Am 10. Februar [S1].",
         citations: [{ tag: "S1", provenance: { kind: "source", sourceId: handbook, title: "Modulhandbuch.pdf", location: { page: 1 } } }] },
     ]);
+    // Crypto-shredding has no observable effect through the API until deletion, so the stored row is checked directly.
+    const stored = await admin.chatMessage.findMany({ where: { chatId: id } });
+    expect(stored.some(row => Buffer.from(row.content).toString("utf8").includes("10. Februar"))).toBe(false);
     await app.request(`${apiOrigin}/api/me/sources/${handbook}`, { method: "DELETE", headers });
-    expect(await (await history()).json()).toMatchObject([{ role: "student" }, { role: "assistant", citations: [{ tag: "S1", provenance: "gone" }] }]);
+    expect(await (await history()).json()).toEqual([
+      { id: expect.any(String), role: "student", text: "Wann ist die Klausur?", citations: [] },
+      { id: expect.any(String), role: "assistant", text: null, citations: [{ tag: "S1", provenance: "gone" }] },
+    ]);
     const stranger = await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, { headers: { cookie: await signUp("chat-history-stranger") } });
     expect(stranger.status).toBe(404);
   });

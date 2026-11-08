@@ -5,6 +5,8 @@ export class SourceModelRejected extends Error {}
 export interface Embedder {
   model: string;
   dims: number;
+  /** Cosine similarity below which a passage is not relevant to a query; calibrated per model by the retrieval eval. */
+  relevanceFloor: number;
   estimateMicroUsd(texts: readonly string[]): number;
   embed(texts: string[], options: { signal: AbortSignal }): Promise<{ vectors: number[][]; usage: { microUsd: number } }>;
 }
@@ -12,7 +14,9 @@ export function createEmbedder({ apiKey, baseURL, fetch: request = fetch }: {
   apiKey: string; baseURL: string; fetch?: typeof fetch;
 }): Embedder {
   return {
-    model: "baai/bge-m3", dims: 1024,
+    // Phase 7 retrieval eval: off-topic questions top out near 0.34 and the lowest relevant hit scored 0.474.
+    // Study questions a document cannot answer still score up to 0.58, so the answer model must decline those.
+    model: "baai/bge-m3", dims: 1024, relevanceFloor: 0.45,
     // $0.01 / million tokens, checked against the model catalog in the embedding eval.
     estimateMicroUsd: texts => Math.ceil(texts.reduce((sum, text) => sum + Buffer.byteLength(text) + 200, 0) * 0.01),
     async embed(texts, { signal }) {
