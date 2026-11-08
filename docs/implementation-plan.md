@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), and [extraction.md](design/extraction.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), and [extraction.md](design/extraction.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -394,14 +394,24 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 **Documentation references.** GLOSSARY ("Planning", "Limits"); brief "User experience and information model"; [knowledge-retrieval.md](design/knowledge-retrieval.md) planning scope.
 
 **Verification checklist.**
-- [ ] Table-driven tests cover the following:
+- [x] Table-driven tests cover the following (`packages/planning/src/rebalance.test.ts`):
   - `rebalance` never schedules into Protected Time or over Fixed Events;
   - it never moves a Locked Study Block;
   - it marks moves of student-placed blocks as needing Approval;
   - it reports a Shortfall instead of overfilling.
-- [ ] Overload scenarios surface a Shortfall with tradeoffs on Home.
+- [x] Overload scenarios surface a Shortfall with tradeoffs on Home (`apps/api/src/create-app.test.ts`, "Home").
 
 **Anti-pattern guards.** No I/O in `rebalance`. Never silently drop an Obligation or remove Protected Time.
+
+**Phase 8 decisions (2026-11-09).**
+- **The student applies moves.** Approval, Actions and Grants arrive in Phase 9, so in Phase 8 the student applies a proposed move themselves, as their own decision. A move applies only while it matches a freshly computed proposal, so a stale or forged move is refused. Automatic Rebalance under Grants comes with Phase 9.
+- **Rebalance** places work earliest deadline first, breaking ties by Course Priority, in 30-minute slots inside the study window and under the daily limit, on the student's local days. A Shortfall offers three tradeoffs: exceed the daily limit (breaks a Preference, so needs Approval), free time planned for lower-Priority work, or reduce the Estimate. Obligations it cannot plan are reported as `unplanned` (no Estimate, no deadline, past due), never dropped.
+- **Deadlines.** A deadline with only a date counts from the start of that day, so work is planned before an exam day, not on it.
+- **Estimates** are proposed by Haiku 5.5 (task `estimation`) from an Obligation's kind, title and Course only, in one metered call, and never replace the student's own. Task Estimates are the student's own. The proposals still need an eval before the pilot.
+- **Limits.** Preferences are global (study window, daily limit, time zone); per-Course and per-Task precedence waits for a need. Protected Time is weekly; one-off spans wait for a need.
+- **Fixed Events** come from manual entry or an `.ics` import (`ical.js`, MPL-2.0). Recurrences are expanded for the coming year at import, so importing again extends them; each file's own `VTIMEZONE`s are honoured, floating times use the student's time zone, and all-day events are skipped and counted. The reader's `fixed_event` planning type waits for Phase 9, when Agents first read the Plan through `knowledge`.
+- **Projects** live in `knowledge` beside Courses, so retrieval can narrow to a Project's Courses.
+- **Home** shows Shortfalls with tradeoffs, flagged Disagreements, Locked conflicts and unplannable work, then work in progress. Ready Artifacts (Phase 11) and Agent work (Phase 9) are shown as empty placeholders.
 
 ---
 
