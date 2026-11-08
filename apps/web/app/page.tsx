@@ -13,6 +13,7 @@ export default async function HomePage() {
       <p>Signed in as {session.user.email}</p>
       <Link href="/account">Account</Link>
       <Link href="/review">Review</Link>
+      <Link href="/chat">Chat</Link>
       <SignOutButton apiOrigin={apiOrigin()} />
       <SourcesScreen apiOrigin={apiOrigin()} />
     </main>

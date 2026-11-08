@@ -50,7 +50,11 @@ _Avoid_: Shared knowledge, memory, extracted information, data
 
 **Provenance**:
 Where a Fact came from: the Source and location it was extracted from, or the student's own entry or Correction.
-_Avoid_: Citation, origin, reference
+_Avoid_: Origin, reference
+
+**Citation**:
+A mark in a Chat answer, such as [S1], pointing to the passage or Fact it rests on. It is stored only as a reference and shown with its Provenance, or as gone once its Source is deleted.
+_Avoid_: Quote, snippet, source link
 
 **Correction**:
 The student's override of a Fact. A Correction keeps winning over later extraction; disagreement from a newer Source is flagged to the student, never silently applied or hidden.

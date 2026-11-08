@@ -13,7 +13,7 @@
       "default": "./dist/components/ui/*.js"
     },
     "./styles.css": "./src/styles/globals.css",
-    "./tokens.css": "./src/styles/tokens.css"
+    "./tokens.css": "./src/styles/theme.css"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

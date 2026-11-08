@@ -2,7 +2,7 @@
   "checkedAt": "2026-11-02T18:32:48.357Z",
   "model": "anthropic/claude-haiku-5.5",
   "runsPerDocument": 3,
-  "labels": "draft, pending founder spot-check",
+  "labels": "founder spot-checked 2026-11-08",
   "routing": "international",
   "parser": "repository parser code in-process with host qpdf/Poppler, not the container image",
   "summary": {

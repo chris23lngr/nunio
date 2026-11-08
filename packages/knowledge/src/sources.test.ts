@@ -54,7 +54,7 @@ it("encrypts ingested passages, then deletion immediately removes them and refus
   expect(await sources.complete(p, upload.source.id)).toEqual({ status: "ok" });
   const result = await sources.ingest(p, upload.source.id, {
     parse: async () => ({ pages: [{ page: 1, text: "Prüfung am 12. März in Raum H1." }] }),
-    embedder: { model: "test-embedding", dims: 3, estimateMicroUsd: () => 10,
+    embedder: { model: "test-embedding", dims: 3, relevanceFloor: 0.3, estimateMicroUsd: () => 10,
       embed: async () => ({ vectors: [[1, 0, 0]], usage: { microUsd: 2 } }) },
     scans: { estimateMicroUsd: () => 10, read: async () => ({ text: "scan", usage: { microUsd: 2 } }) },
     delegation: createDelegation({ db: runtime, aiEnabled: () => true }),
@@ -87,7 +87,7 @@ it("refuses completion and ingestion after a pending deletion request", async ()
 function ingestion(overrides: Partial<Ingestion> = {}): Ingestion {
   return {
     parse: async () => ({ pages: [{ page: 1, text: "The exam is in room H1." }] }),
-    embedder: { model: "test", dims: 3, estimateMicroUsd: () => 10,
+    embedder: { model: "test", dims: 3, relevanceFloor: 0.3, estimateMicroUsd: () => 10,
       embed: async () => ({ vectors: [[1, 0, 0]], usage: { microUsd: 1 } }) },
     scans: { estimateMicroUsd: () => 10, read: async () => ({ text: "Scan", usage: { microUsd: 1 } }) },
     delegation: createDelegation({ db: runtime, aiEnabled: () => true }), ...overrides,
@@ -101,7 +101,7 @@ it("does not publish or resurrect a Source deleted while embeddings are in fligh
   if (uploaded.status !== "ok") throw new Error("upload refused");
   await sources.complete(p, uploaded.source.id);
   const result = await sources.ingest(p, uploaded.source.id, ingestion({ embedder: {
-    model: "test", dims: 3, estimateMicroUsd: () => 10, embed: async () => {
+    model: "test", dims: 3, relevanceFloor: 0.3, estimateMicroUsd: () => 10, embed: async () => {
       await sources.remove(p, uploaded.source.id);
       return { vectors: [[1, 0, 0]], usage: { microUsd: 1 } };
     },
@@ -118,7 +118,7 @@ it("publishes once when completion or ingestion is repeated", async () => {
   if (uploaded.status !== "ok") throw new Error("upload refused");
   await Promise.all([sources.complete(p, uploaded.source.id), sources.complete(p, uploaded.source.id)]);
   let calls = 0;
-  const deps = ingestion({ embedder: { model: "test", dims: 3, estimateMicroUsd: () => 10,
+  const deps = ingestion({ embedder: { model: "test", dims: 3, relevanceFloor: 0.3, estimateMicroUsd: () => 10,
     embed: async () => { calls++; return { vectors: [[1, 0, 0]], usage: { microUsd: 1 } }; } } });
   const results = await Promise.all([sources.ingest(p, uploaded.source.id, deps), sources.ingest(p, uploaded.source.id, deps)]);
   expect(results.map(r => r.status).sort()).toEqual(["ready", "stopped"]);
@@ -200,7 +200,7 @@ async function ingestPages(pages: { page: number; text: string; imageBase64?: st
       return delegation.meter(principal, estimate, call, options);
     } },
     scans: { estimateMicroUsd: () => 7, read: async image => { read.push(image); return { text: "Klausur am 3. Juli", usage: { microUsd: 1 } }; } },
-    embedder: { model: "test", dims: 3, estimateMicroUsd: () => 10,
+    embedder: { model: "test", dims: 3, relevanceFloor: 0.3, estimateMicroUsd: () => 10,
       embed: async texts => { embedded.push(...texts); return { vectors: texts.map(() => [1, 0, 0]), usage: { microUsd: 1 } }; } },
   }));
   return { result, metered, read, embedded };

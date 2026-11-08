@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 4 verified; Phase 5 in progress (PDF uploads only), 2026-11-02. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), and [extraction.md](design/extraction.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), and [extraction.md](design/extraction.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -342,10 +342,10 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 **Documentation references.** [extraction.md](design/extraction.md); GLOSSARY ("Knowledge", "Study work", "Organization"); [knowledge-retrieval.md](design/knowledge-retrieval.md) "Correction merge"; brief "Complete study workflow" steps 1–3; ADR-0011.
 
 **Verification checklist.**
-- [ ] An extraction eval set of representative German and English syllabi, including scans, has its precision and recall for Obligations and deadlines recorded. Pilot thresholds are set by the founder.
-- [ ] A Correction survives re-uploading a conflicting Source, and the conflict is flagged.
-- [ ] Median time from upload to a reviewable result is measured on the eval set (target ≤ 10 minutes).
-- [ ] A syllabus containing injection instructions produces no Actions and no scope change.
+- [x] An extraction eval set of representative German and English syllabi, including scans, has its precision and recall for Obligations and deadlines recorded. Pilot thresholds are set by the founder. Founder spot-checked labels; thresholds (2026-11-08): Obligations precision ≥ 0.95 and recall ≥ 0.85, deadlines precision ≥ 0.95 and recall ≥ 0.90, no invented dates. Haiku 5.5 meets them (Obligations 1.0/0.895, deadlines 1.0/1.0): [phase-6-extraction-eval.json](operations/phase-6-extraction-eval.json).
+- [x] A Correction survives re-uploading a conflicting Source, and the conflict is flagged. Covered by `packages/knowledge/src/facts.test.ts`.
+- [x] Median time from upload to a reviewable result is measured on the eval set (target ≤ 10 minutes). Measured: 14.8 s.
+- [x] A syllabus containing injection instructions produces no Actions and no scope change. The injection document matched its labels exactly in the eval, and the adapter's recorded-response test covers it.
 
 **Anti-pattern guards.** Never invent Obligations (glossary). No forced tool calls. Do not store extracted values without Provenance.
 
@@ -362,15 +362,15 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
    - explicit selection of Courses and Sources (empty means no Sources);
    - Sonnet 5.5 answers via `meter`, with retrieved data in a data slot;
    - citations stored as `CitationRef`s only and resolved via `cite()` at display time.
-3. A Chat can start a Run. Proposing Actions from Chat waits for Phase 9.
+3. A Chat can start a Run. Proposing Actions from Chat waits for Phase 9. *Moved:* `pin`, Run snapshots, widening, and starting a Run from a Chat move to Phase 9, where Runs and Run Principals exist (decided 2026-11-08).
 
 **Documentation references.** [knowledge-retrieval.md](design/knowledge-retrieval.md) (entire); [durable-ai.md](research/durable-ai.md) "Postgres and pgvector" and invariant 5; OWASP Prompt Injection Cheat Sheet.
 
 **Verification checklist.**
-- [ ] The design doc's "Testing" scenarios all pass through the interface.
-- [ ] A deleted Source shows as "gone" in older Chat messages.
-- [ ] A foreign or deselected Course never reaches a model request (assert on the captured prompt).
-- [ ] Measured German retrieval recall@k is recorded.
+- [ ] The design doc's "Testing" scenarios all pass through the interface. The scope, deletion, Correction, untrusted-text and metering scenarios pass in `packages/knowledge/src/reader.test.ts`. Snapshot and widening scenarios move to Phase 9. Disconnect and operational items wait for Connections and Fixed Events (Phase 8). Strategy parity applies only once a second strategy exists. The error classes, the query-embedding cache, `revision`, `truncated` and the Fact tie-break are implemented and tested.
+- [x] A deleted Source shows as "gone" in older Chat messages (`apps/api/src/create-app.test.ts`, "Chat").
+- [x] A foreign or deselected Course never reaches a model request. The API test asserts on the captured prompt for a deselected and a foreign Source; the reader test covers a deselected Course and foreign IDs in `narrow`.
+- [x] Measured German retrieval recall@k is recorded: [phase-7-retrieval-eval.json](operations/phase-7-retrieval-eval.json). Recall@1 0.43, @5 0.70, @8 0.74 on 23 draft questions over two module-handbook excerpts, at the calibrated relevance floor of 0.45; 12 unanswerable questions calibrate the floor. Labels pending founder spot-check; thresholds not yet set.
 
 **Anti-pattern guards.** Do not splice retrieved text into system prompts. Do not widen scope on weak results. Do not add an approximate index without the parity suite.
 

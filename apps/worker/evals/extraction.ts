@@ -194,7 +194,7 @@ const sum = (pick: (r: typeof results[number]) => number) => results.reduce((tot
 const times = results.flatMap(r => r.reviewableAfterMs === null ? [] : [r.reviewableAfterMs]).sort((a, b) => a - b);
 const median = times.length ? (times[Math.floor((times.length - 1) / 2)]! + times[Math.ceil((times.length - 1) / 2)]!) / 2 : null;
 const report = {
-  checkedAt: new Date().toISOString(), model: extractor.model, runsPerDocument: runs, labels: "draft, pending founder spot-check",
+  checkedAt: new Date().toISOString(), model: extractor.model, runsPerDocument: runs, labels: "founder spot-checked",
   routing: provider.baseURL.includes("eu.openrouter") ? "eu" : "international",
   parser: "repository parser code in-process with host qpdf/Poppler, not the container image",
   summary: {
