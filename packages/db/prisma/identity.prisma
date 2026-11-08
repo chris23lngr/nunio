@@ -23,6 +23,7 @@ model User {
   planPreference   PlanPreference?
   calendarImports  CalendarImport[]
   fixedEvents      FixedEvent[]
+  projects         Project[]
 
   @@map("user")
 }

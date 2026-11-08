@@ -1,7 +1,7 @@
 import { createRoute, z, type OpenAPIHono } from "@hono/zod-openapi";
-import type { Context } from "hono";
 import { principal } from "@nunio/delegation";
 import type { AppBindings } from "./app.js";
+import { body, created, Created, Done, done, ErrorBody, errors, failed, id, json, outcomes, student } from "./outcomes.js";
 
 const Actor = z.enum(["nunio", "student"]);
 const Work = z.object({ kind: z.enum(["obligation", "task"]), id: z.string().uuid() });
@@ -36,32 +36,6 @@ const PlanView = z.object({
     lockedConflicts: z.array(z.string()),
   }).describe("What a Rebalance would change now. Moves the student applies count as their own decisions."),
 }).openapi("Plan");
-const ErrorBody = z.object({ error: z.string() });
-const json = (schema: z.ZodType, description: string) => ({ description, content: { "application/json": { schema } } });
-const body = <T extends z.ZodType>(schema: T) => ({ body: { required: true, content: { "application/json": { schema } } } });
-const Done = json(z.object({ status: z.literal("ok") }), "Recorded.");
-const Created = json(z.object({ id: z.string() }), "Created.");
-const errors = { 401: json(ErrorBody, "Sign in required."), 404: json(ErrorBody, "It is gone or not the student's.") };
-/** Every way a Plan change can fail, shared by the routes that change the Plan. */
-const outcomes = { 400: json(ErrorBody, "Not valid."), 409: json(ErrorBody, "The move no longer matches a fresh proposal."), ...errors };
-const id = z.object({ id: z.string().uuid() });
-type Result = { status: "ok" | "gone" | "invalid" | "stale"; id?: string };
-
-/** Maps a failed Plan change to its response the same way for every route. */
-function failed(c: Context<AppBindings>, status: "gone" | "invalid" | "stale") {
-  if (status === "invalid") return c.json({ error: "invalid" }, 400);
-  if (status === "gone") return c.json({ error: "gone" }, 404);
-  return c.json({ error: "stale" }, 409);
-}
-const done = (c: Context<AppBindings>, result: Result) => result.status === "ok" ? c.json({ status: "ok" as const }, 200) : failed(c, result.status);
-const created = (c: Context<AppBindings>, result: Result) => result.status === "ok" ? c.json({ id: result.id! }, 201) : failed(c, result.status);
-/** The signed-in student, setting no-store on every Plan response. */
-async function student(c: Context<AppBindings>) {
-  c.header("cache-control", "no-store");
-  const actor = await c.get("auth").authenticate(c.req.raw);
-  return actor && principal.fromSession(actor);
-}
-
 export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(createRoute({ method: "get", path: "/api/me/plan", responses: { 200: json(PlanView, "The Plan and a Rebalance proposal."), 401: errors[401] } }),
     async c => {

@@ -1417,6 +1417,35 @@
             ]
           }
         ]
+      },
+      "Project": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "courseIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "obligationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "courseIds",
+          "obligationId"
+        ]
       }
     },
     "parameters": {}
@@ -3251,7 +3280,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3452,7 +3481,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3575,7 +3604,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3704,7 +3733,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3852,7 +3881,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3993,7 +4022,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4101,7 +4130,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4230,7 +4259,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4356,7 +4385,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4479,7 +4508,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4589,7 +4618,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4720,7 +4749,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4830,7 +4859,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4974,7 +5003,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5084,7 +5113,7 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5207,7 +5236,553 @@
             }
           },
           "409": {
-            "description": "The move no longer matches a fresh proposal.",
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/projects": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "The student's Projects.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "courseIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 50
+                  },
+                  "obligationId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "courseIds",
+                  "obligationId",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/projects/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/projects/{id}/relations": {
+      "put": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "courseIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 50
+                  },
+                  "obligationId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "courseIds",
+                  "obligationId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
             "content": {
               "application/json": {
                 "schema": {

@@ -7,7 +7,7 @@ import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
 import { createDelegation, principal, type Delegation } from "@nunio/delegation";
 import type { AnswerInput, Answerer, Embedder, Estimator } from "@nunio/ai";
 import { createPlan } from "@nunio/planning";
-import { createChats, createFacts, createKnowledgeReader, createSources, type Facts, type Sources } from "@nunio/knowledge";
+import { createChats, createFacts, createKnowledgeReader, createProjects, createSources, type Facts, type Sources } from "@nunio/knowledge";
 import { createSourceKeys } from "@nunio/keys";
 import { createAuth } from "@nunio/identity";
 import { hashPassword } from "better-auth/crypto";
@@ -83,7 +83,7 @@ beforeAll(async () => {
   const reader = createKnowledgeReader({ db: prisma, keys, embedder: chatEmbedder, delegation, clock: { now: () => new Date() } });
   const chats = createChats({ db: prisma, keys, reader, delegation });
   const plan = createPlan({ db: prisma, facts, clock: { now: () => new Date() } });
-  app = createApp({ auth, prisma, delegation, appOrigin, sources, facts, chats, answerer, plan, estimator, sourceWorkflows: { start: async (...args) => { started.push(args); } }, spike: { webhookSecret, pool } });
+  app = createApp({ auth, prisma, delegation, appOrigin, sources, facts, chats, answerer, plan, estimator, projects: createProjects({ db: prisma }), sourceWorkflows: { start: async (...args) => { started.push(args); } }, spike: { webhookSecret, pool } });
 }, 180_000);
 
 afterAll(async () => {
@@ -1000,4 +1000,24 @@ describe("Plan", () => {
     expect(view.fixedEvents.map(e => e.title).sort()).toEqual(["Schicht", "Vorlesung"]);
     expect((await call("DELETE", `/calendar-imports/${view.imports[0]!.id}`)).status).toBe(200);
   });
+});
+
+it("creates, renames, relates and deletes Projects through origin-protected routes", async () => {
+  const { cookie, headers } = await reviewFixture("projects");
+  const [course] = (await (await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })).json() as ReviewBody).courses;
+  const call = (method: string, path: string, body?: unknown, origin = appOrigin) => app.request(`${apiOrigin}/api/me/projects${path}`,
+    { method, headers: { ...headers, origin }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+
+  expect((await call("POST", "", { name: "Klausur", courseIds: [], obligationId: null }, evilOrigin)).status).toBe(403);
+  const created = await call("POST", "", { name: "Klausurvorbereitung", courseIds: [course!.id], obligationId: course!.obligations[0]!.id });
+  expect(created.status).toBe(201);
+  const { id } = await created.json() as { id: string };
+  expect((await call("PATCH", `/${id}`, { name: "Prüfungsphase" })).status).toBe(200);
+  expect((await call("PUT", `/${id}/relations`, { courseIds: [], obligationId: null })).status).toBe(200);
+  expect(await (await app.request(`${apiOrigin}/api/me/projects`, { headers: { cookie } })).json())
+    .toEqual([{ id, name: "Prüfungsphase", courseIds: [], obligationId: null }]);
+  expect((await app.request(`${apiOrigin}/api/me/projects/${id}`, { method: "PATCH",
+    headers: { origin: appOrigin, "content-type": "application/json" }, body: JSON.stringify({ name: "x" }) })).status).toBe(401);
+  expect((await call("DELETE", `/${id}`)).status).toBe(200);
+  expect((await call("DELETE", `/${id}`)).status).toBe(404);
 });

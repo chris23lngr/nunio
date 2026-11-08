@@ -2,8 +2,8 @@ import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
 import { createDelegation, type Delegation } from "@nunio/delegation";
 import { createAuth, type Auth } from "@nunio/identity";
 import { createAnswerer, createEmbedder, createEstimator, createModels, type Answerer, type Estimator } from "@nunio/ai";
-import { createChats, createFacts, createKnowledgeReader, createSources, sourceStorageFromEnv, type Chats, type Facts,
-  type Sources } from "@nunio/knowledge";
+import { createChats, createFacts, createKnowledgeReader, createProjects, createSources, sourceStorageFromEnv, type Chats, type Facts,
+  type Projects, type Sources } from "@nunio/knowledge";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createPlan, type Plan } from "@nunio/planning";
 import { sourceWorkflowsFromEnv, type SourceWorkflows } from "./source-workflows.js";
@@ -24,13 +24,14 @@ export interface AppDeps {
   answerer: Answerer;
   plan: Plan;
   estimator: Estimator;
+  projects: Projects;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
   /** Mounts the spike c routes when set. */
   spike?: SpikeDeps;
 }
 
-export function createApp({ auth, prisma, delegation, appOrigin, spike, sources, facts, sourceWorkflows, chats, answerer, plan, estimator }: AppDeps) {
+export function createApp({ auth, prisma, delegation, appOrigin, spike, sources, facts, sourceWorkflows, chats, answerer, plan, estimator, projects }: AppDeps) {
   const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
   if (spike) app.use("*", spikePoolHeader(spike.pool));
@@ -53,6 +54,7 @@ export function createApp({ auth, prisma, delegation, appOrigin, spike, sources,
     c.set("answerer", answerer);
     c.set("plan", plan);
     c.set("estimator", estimator);
+    c.set("projects", projects);
     await next();
   });
   app.route("/", routes);
@@ -98,5 +100,5 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
   const reader = createKnowledgeReader({ db: prisma, keys, embedder: createEmbedder(provider), delegation, clock });
   return createApp({ auth, prisma, delegation, appOrigin, spike, sources, facts, sourceWorkflows: sourceWorkflowsFromEnv(env),
     chats: createChats({ db: prisma, keys, reader, delegation }), answerer: createAnswerer(models),
-    plan: createPlan({ db: prisma, facts, clock }), estimator: createEstimator(models) });
+    plan: createPlan({ db: prisma, facts, clock }), estimator: createEstimator(models), projects: createProjects({ db: prisma }) });
 }

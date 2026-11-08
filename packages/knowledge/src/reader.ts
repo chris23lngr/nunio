@@ -17,8 +17,8 @@ export class KnowledgeUnavailable extends Error { override name = "KnowledgeUnav
 export class ScopeMismatchError extends Error { override name = "ScopeMismatchError"; }
 /** The Plan spans every Course, so planning sees their Facts; course content always stays under explicit selection. */
 const planningTypes: readonly FactType[] = ["obligation", "course_rule", "topic"];
-/** Intersected with the selection, never unioned. Projects arrive in Phase 8. */
-export type Narrow = { courseIds?: string[]; sourceIds?: string[] };
+/** Intersected with the selection, never unioned. A Project narrows to its Courses. */
+export type Narrow = { courseIds?: string[]; sourceIds?: string[]; projectId?: string };
 /** Fixed Events arrive with planning in Phase 8. */
 export type FactType = "obligation" | "topic" | "course_rule" | "exam_logistics";
 export type Query =
@@ -161,10 +161,14 @@ export function createKnowledgeReader({ db, keys, embedder, delegation, clock }:
           return chat.courses.map(c => c.courseId).filter(id => !narrowCourses || narrowCourses.includes(id));
         }
         let selected = [...new Set([...chat.sources.map(s => s.sourceId), ...chat.courses.flatMap(c => c.course.sources.map(s => s.sourceId))])];
-        const { courseIds, sourceIds: narrowSources } = query.narrow ?? {};
+        const { courseIds, sourceIds: narrowSources, projectId } = query.narrow ?? {};
         if (narrowSources) selected = selected.filter(id => narrowSources.includes(id));
-        if (courseIds) {
-          const ofCourses = await tx.sourceCourse.findMany({ where: { studentId, courseId: { in: courseIds } }, select: { sourceId: true } });
+        // RLS hides another student's Project, which then narrows to no Courses at all.
+        const projectCourses = projectId
+          ? (await tx.projectCourse.findMany({ where: { studentId, projectId }, select: { courseId: true } })).map(c => c.courseId) : undefined;
+        for (const narrowing of [courseIds, projectCourses]) {
+          if (!narrowing) continue;
+          const ofCourses = await tx.sourceCourse.findMany({ where: { studentId, courseId: { in: narrowing } }, select: { sourceId: true } });
           selected = selected.filter(id => ofCourses.some(s => s.sourceId === id));
         }
         const live = await tx.source.findMany({ where: { studentId, id: { in: selected }, deletedAt: null, status: "ready" }, select: { id: true } });
