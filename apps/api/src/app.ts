@@ -4,16 +4,18 @@ import type { PrismaClient } from "@nunio/db";
 import { principal, type Delegation } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 
-import type { Answerer } from "@nunio/ai";
+import type { Answerer, Estimator } from "@nunio/ai";
 import type { Chats, Facts, Sources } from "@nunio/knowledge";
+import type { Plan } from "@nunio/planning";
 import type { SourceWorkflows } from "./source-workflows.js";
 import { registerChatRoutes } from "./chats.js";
+import { registerPlanRoutes } from "./plan.js";
 import { registerReviewRoutes } from "./review.js";
 import { registerSourceRoutes } from "./sources.js";
 
 export interface AppBindings {
   Variables: { auth: Auth; prisma: PrismaClient; delegation: Delegation; sources: Sources; facts: Facts; sourceWorkflows: SourceWorkflows;
-    chats: Chats; answerer: Answerer };
+    chats: Chats; answerer: Answerer; plan: Plan; estimator: Estimator };
 }
 
 const HealthSchema = z.object({ status: z.literal("ok") }).openapi("Health");
@@ -127,3 +129,4 @@ export const openApiConfig = {
 registerSourceRoutes(routes);
 registerReviewRoutes(routes);
 registerChatRoutes(routes);
+registerPlanRoutes(routes);

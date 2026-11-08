@@ -5,7 +5,8 @@ import { promisify } from "node:util";
 import { createPool, createPrismaClient, type Pool, type PrismaClient } from "@nunio/db";
 import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
 import { createDelegation, principal, type Delegation } from "@nunio/delegation";
-import type { AnswerInput, Answerer, Embedder } from "@nunio/ai";
+import type { AnswerInput, Answerer, Embedder, Estimator } from "@nunio/ai";
+import { createPlan } from "@nunio/planning";
 import { createChats, createFacts, createKnowledgeReader, createSources, type Facts, type Sources } from "@nunio/knowledge";
 import { createSourceKeys } from "@nunio/keys";
 import { createAuth } from "@nunio/identity";
@@ -42,6 +43,9 @@ const answerer: Answerer = { estimateMicroUsd: () => 1,
     prompts.push(input);
     return { value: { text: reply, cited: [...reply.matchAll(/\[(S\d+)\]/g)].map(m => m[1]!) }, usage: { microUsd: 1 } };
   } };
+let estimatorCalls = 0;
+const estimator: Estimator = { estimateMicroUsd: () => 1,
+  async estimate(items) { estimatorCalls++; return { value: items.map(() => ({ minutes: 120, rationale: "Two proofs." })), usage: { microUsd: 1 } }; } };
 /** One dimension per keyword, so a question finds the passages that share its keywords. */
 const chatEmbedder: Embedder = { model: "test-embedding", dims: 2, relevanceFloor: 0.3, estimateMicroUsd: () => 1,
   embed: async texts => ({ vectors: texts.map(t => [t.toLowerCase().includes("klausur") ? 1 : 0, 0.01]), usage: { microUsd: 1 } }) };
@@ -78,7 +82,8 @@ beforeAll(async () => {
   facts = createFacts({ db: prisma, keys, clock: { now: () => new Date() } });
   const reader = createKnowledgeReader({ db: prisma, keys, embedder: chatEmbedder, delegation, clock: { now: () => new Date() } });
   const chats = createChats({ db: prisma, keys, reader, delegation });
-  app = createApp({ auth, prisma, delegation, appOrigin, sources, facts, chats, answerer, sourceWorkflows: { start: async (...args) => { started.push(args); } }, spike: { webhookSecret, pool } });
+  const plan = createPlan({ db: prisma, facts, clock: { now: () => new Date() } });
+  app = createApp({ auth, prisma, delegation, appOrigin, sources, facts, chats, answerer, plan, estimator, sourceWorkflows: { start: async (...args) => { started.push(args); } }, spike: { webhookSecret, pool } });
 }, 180_000);
 
 afterAll(async () => {
@@ -897,5 +902,82 @@ describe("Chat", () => {
     expect([refused.status, await refused.json()]).toEqual([403, { error: "allowance_exhausted" }]);
     expect(prompts).toEqual([]);
     expect(await (await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, { headers: { cookie } })).json()).toEqual([]);
+  });
+});
+
+describe("Plan", () => {
+  /** A student with one entered Obligation due in three days at noon. */
+  async function planFixture(name: string) {
+    const cookie = await signUp(name);
+    const headers = { cookie, origin: appOrigin, "content-type": "application/json" };
+    const due = new Date(Date.now() + 3 * 24 * 60 * 60_000).toISOString().slice(0, 10);
+    const entered = await app.request(`${apiOrigin}/api/me/obligations`, { method: "POST", headers, body: JSON.stringify({
+      course: { title: "Analysis I", code: "MA-101" }, kind: "assignment", title: "Blatt 3", due: { date: due, time: "12:00", timeZone: null }, destination: null }) });
+    const { id } = await entered.json() as { id: string };
+    return { cookie, headers, obligationId: id };
+  }
+  type PlanBody = { obligations: { id: string; estimate: unknown }[]; studyBlocks: { placedBy: string }[];
+    proposal: { moves: { kind: string; workId: string; start: string; end: string }[] } };
+
+  it("proposes Estimates, then applies a proposed move as a Study Block, through origin-protected routes", async () => {
+    const { cookie, headers, obligationId } = await planFixture("plan");
+    const plan = async () => await (await app.request(`${apiOrigin}/api/me/plan`, { headers: { cookie } })).json() as PlanBody;
+
+    expect((await app.request(`${apiOrigin}/api/me/plan/estimates`, { method: "POST", headers: { ...headers, origin: evilOrigin } })).status).toBe(403);
+    const proposed = await app.request(`${apiOrigin}/api/me/plan/estimates`, { method: "POST", headers });
+    expect([proposed.status, await proposed.json()]).toEqual([200, { proposed: 1 }]);
+    const before = await plan();
+    expect(before.obligations).toEqual([expect.objectContaining({ id: obligationId, estimate: { minutes: 120, estimatedBy: "nunio", rationale: "Two proofs." } })]);
+    const [move] = before.proposal.moves;
+    expect(move).toMatchObject({ kind: "create", workId: obligationId });
+
+    const apply = (body: unknown) => app.request(`${apiOrigin}/api/me/plan/apply`, { method: "POST", headers, body: JSON.stringify(body) });
+    expect((await apply(move)).status).toBe(200);
+    expect((await apply(move)).status).toBe(409);
+    expect((await plan()).studyBlocks).toEqual([expect.objectContaining({ placedBy: "nunio" })]);
+    const corrected = await app.request(`${apiOrigin}/api/me/estimates/obligation/${obligationId}`, { method: "PUT", headers,
+      body: JSON.stringify({ minutes: 60 }) });
+    expect(corrected.status).toBe(200);
+    const stranger = await app.request(`${apiOrigin}/api/me/estimates/obligation/${obligationId}`, { method: "PUT",
+      headers: { ...headers, cookie: await signUp("plan-stranger") }, body: JSON.stringify({ minutes: 60 }) });
+    expect(stranger.status).toBe(404);
+  });
+
+  it("refuses proposing Estimates once the Allowance is exhausted, without asking the model", async () => {
+    const { cookie, headers } = await planFixture("plan-allowance");
+    await admin.allowance.update({ where: { studentId: await studentId(cookie) }, data: { limitMicroUsd: 0 } });
+    estimatorCalls = 0;
+
+    const refused = await app.request(`${apiOrigin}/api/me/plan/estimates`, { method: "POST", headers });
+
+    expect([refused.status, await refused.json()]).toEqual([403, { error: "allowance_exhausted" }]);
+    expect(estimatorCalls).toBe(0);
+  });
+
+  it("edits Tasks, Study Blocks and Limits through the student's own routes", async () => {
+    const { cookie, headers, obligationId } = await planFixture("plan-edits");
+    const call = (method: string, path: string, body?: unknown) => app.request(`${apiOrigin}/api/me${path}`, { method, headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+
+    const task = await call("POST", "/tasks", { title: "Aufgaben 1–4", obligationId });
+    expect(task.status).toBe(201);
+    const { id: taskId } = await task.json() as { id: string };
+    expect((await call("POST", `/tasks/${taskId}/done`, { done: true })).status).toBe(200);
+    const start = new Date(Date.now() + 24 * 60 * 60_000), end = new Date(start.getTime() + 60 * 60_000);
+    const placed = await call("POST", "/study-blocks", { work: { kind: "obligation", id: obligationId }, start, end });
+    expect(placed.status).toBe(201);
+    const { id: blockId } = await placed.json() as { id: string };
+    expect((await call("POST", `/study-blocks/${blockId}/lock`, { locked: true })).status).toBe(200);
+    expect((await call("PUT", "/preferences", { studyFromMinute: 600, studyToMinute: 960, maxMinutesPerDay: 120 })).status).toBe(200);
+    expect((await call("PUT", "/preferences", { studyFromMinute: 960, studyToMinute: 600, maxMinutesPerDay: 120 })).status).toBe(400);
+    const off = await call("POST", "/protected-time", { weekday: 7, fromMinute: 0, toMinute: 1440 });
+    expect(off.status).toBe(201);
+    const view = await (await app.request(`${apiOrigin}/api/me/plan`, { headers: { cookie } })).json() as
+      { tasks: { done: boolean }[]; studyBlocks: { locked: boolean; placedBy: string }[]; limits: { protectedTime: unknown[] } };
+    expect(view).toMatchObject({ tasks: [{ done: true }], studyBlocks: [{ locked: true, placedBy: "student" }], limits: { protectedTime: [{ weekday: 7 }] } });
+    const { id: offId } = await off.json() as { id: string };
+    expect((await call("DELETE", `/protected-time/${offId}`)).status).toBe(200);
+    expect((await call("DELETE", `/study-blocks/${blockId}`)).status).toBe(200);
+    expect((await call("DELETE", `/study-blocks/${blockId}`)).status).toBe(404);
   });
 });

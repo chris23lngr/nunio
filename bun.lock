@@ -22,6 +22,7 @@
         "@nunio/identity": "workspace:*",
         "@nunio/keys": "workspace:*",
         "@nunio/knowledge": "workspace:*",
+        "@nunio/planning": "workspace:*",
         "@temporalio/client": "1.25.0",
         "@vercel/functions": "3.10.5",
         "hono": "4.13.14",
