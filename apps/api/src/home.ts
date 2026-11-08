@@ -12,8 +12,8 @@ const Attention = z.discriminatedUnion("kind", [
 const HomeView = z.object({
   attention: z.array(Attention).describe("What needs the student's decision: Shortfalls with tradeoffs first, never resolved silently."),
   ongoing: z.array(z.object({ kind: z.literal("source"), id: z.string(), title: z.string(), activity: z.enum(["processing", "reading"]) })),
-  artifacts: z.array(z.never()).describe("Ready Artifacts; produced from Phase 11."),
-  agentWork: z.array(z.never()).describe("Runs in progress; arriving with Phase 9."),
+  artifacts: z.array(z.unknown()).max(0).describe("Ready Artifacts; always empty until Artifacts exist (Phase 11)."),
+  agentWork: z.array(z.unknown()).max(0).describe("Runs in progress; always empty until Runs exist (Phase 9)."),
 }).openapi("Home");
 
 export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {

@@ -1446,6 +1446,207 @@
           "courseIds",
           "obligationId"
         ]
+      },
+      "Home": {
+        "type": "object",
+        "properties": {
+          "attention": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "shortfall"
+                      ]
+                    },
+                    "workId": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "course": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "due": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "shortMinutes": {
+                      "type": "integer"
+                    },
+                    "tradeoffs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": {}
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "workId",
+                    "title",
+                    "course",
+                    "due",
+                    "shortMinutes",
+                    "tradeoffs"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "disagreement"
+                      ]
+                    },
+                    "item": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "obligation",
+                            "fact"
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "course": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "item",
+                    "title",
+                    "course"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "locked_conflict"
+                      ]
+                    },
+                    "blockId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "blockId"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "unplanned"
+                      ]
+                    },
+                    "workId": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "no_estimate",
+                        "no_deadline",
+                        "past_due"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "workId",
+                    "title",
+                    "reason"
+                  ]
+                }
+              ]
+            },
+            "description": "What needs the student's decision: Shortfalls with tradeoffs first, never resolved silently."
+          },
+          "ongoing": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "source"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "activity": {
+                  "type": "string",
+                  "enum": [
+                    "processing",
+                    "reading"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "title",
+                "activity"
+              ]
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {},
+            "maxItems": 0,
+            "description": "Ready Artifacts; always empty until Artifacts exist (Phase 11)."
+          },
+          "agentWork": {
+            "type": "array",
+            "items": {},
+            "maxItems": 0,
+            "description": "Runs in progress; always empty until Runs exist (Phase 9)."
+          }
+        },
+        "required": [
+          "attention",
+          "ongoing",
+          "artifacts",
+          "agentWork"
+        ]
       }
     },
     "parameters": {}
@@ -5783,6 +5984,40 @@
           },
           "409": {
             "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/home": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "The student's actionable day.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Home"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
             "content": {
               "application/json": {
                 "schema": {
