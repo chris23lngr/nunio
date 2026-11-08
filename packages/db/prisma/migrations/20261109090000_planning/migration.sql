@@ -72,11 +72,32 @@ CREATE TABLE "course_priority" (
 CREATE UNIQUE INDEX "course_priority_courseId_studentId_key" ON "course_priority"("courseId", "studentId");
 CREATE INDEX "course_priority_studentId_idx" ON "course_priority"("studentId");
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON "task", "obligation_estimate", "study_block", "protected_time", "plan_preference", "course_priority" TO nunio_runtime;
+CREATE TABLE "calendar_import" (
+  "id" TEXT PRIMARY KEY,
+  "studentId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "name" TEXT NOT NULL CHECK (length("name") BETWEEN 1 AND 255),
+  "importedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX "calendar_import_id_studentId_key" ON "calendar_import"("id", "studentId");
+CREATE INDEX "calendar_import_studentId_idx" ON "calendar_import"("studentId");
+
+CREATE TABLE "fixed_event" (
+  "id" TEXT PRIMARY KEY,
+  "studentId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "importId" TEXT,
+  "title" TEXT NOT NULL CHECK (length("title") BETWEEN 1 AND 500),
+  "start" TIMESTAMP(3) NOT NULL,
+  "end" TIMESTAMP(3) NOT NULL,
+  FOREIGN KEY ("importId", "studentId") REFERENCES "calendar_import"("id", "studentId") ON DELETE CASCADE ON UPDATE CASCADE,
+  CHECK ("end" > "start")
+);
+CREATE INDEX "fixed_event_studentId_start_idx" ON "fixed_event"("studentId", "start");
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON "task", "obligation_estimate", "study_block", "protected_time", "plan_preference", "course_priority", "calendar_import", "fixed_event" TO nunio_runtime;
 DO $$
 DECLARE t TEXT;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['task', 'obligation_estimate', 'study_block', 'protected_time', 'plan_preference', 'course_priority'] LOOP
+  FOREACH t IN ARRAY ARRAY['task', 'obligation_estimate', 'study_block', 'protected_time', 'plan_preference', 'course_priority', 'calendar_import', 'fixed_event'] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format('CREATE POLICY "owner" ON %I USING ("studentId" = current_setting(''app.owner_id'', true))', t);

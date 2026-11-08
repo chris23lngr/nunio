@@ -195,3 +195,29 @@ it("refuses to propose Estimates once the Allowance is exhausted, without asking
   expect(await plan.proposeEstimates(p, { estimator, delegation })).toEqual({ status: "refused", reason: "allowance_exhausted" });
   expect(calls).toBe(0);
 });
+
+it("plans around Fixed Events entered by hand or imported from a calendar file, and forgets a deleted import", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-11", "12:00");
+  await plan.estimate(p, { kind: "obligation", id: sheet }, 60);
+  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//test//EN", "BEGIN:VEVENT", "UID:lecture@test", "DTSTAMP:20261101T000000Z",
+    "SUMMARY:Analysis I", "DTSTART:20261109T080000Z", "DTEND:20261109T100000Z", "RRULE:FREQ=WEEKLY;COUNT=10", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+
+  const entered = await plan.addFixedEvent(p, { title: "Schicht", start: at("2026-11-09 11:00"), end: at("2026-11-09 12:00") });
+  const imported = await plan.importCalendar(p, { name: "Stundenplan.ics", ics });
+  if (entered.status !== "ok" || imported.status !== "ok") throw new Error("refused");
+  expect(imported).toMatchObject({ events: 10, skipped: { allDay: 0, outsideWindow: 0, truncated: false } });
+
+  const view = await plan.view(p);
+  expect(view.fixedEvents.slice(0, 2)).toEqual([
+    { id: expect.any(String), title: "Analysis I", start: at("2026-11-09 09:00"), end: at("2026-11-09 11:00"), importId: imported.id },
+    { id: entered.id, title: "Schicht", start: at("2026-11-09 11:00"), end: at("2026-11-09 12:00"), importId: null },
+  ]);
+  expect(view.imports).toEqual([{ id: imported.id, name: "Stundenplan.ics", events: 10 }]);
+  expect(view.proposal.moves).toEqual([expect.objectContaining({ start: at("2026-11-09 12:00"), end: at("2026-11-09 13:00") })]);
+
+  expect(await plan.removeImport(p, imported.id)).toEqual({ status: "ok" });
+  expect((await plan.view(p)).fixedEvents).toEqual([expect.objectContaining({ id: entered.id })]);
+  expect(await plan.importCalendar(p, { name: "kaputt.ics", ics: "not a calendar" })).toEqual({ status: "invalid" });
+});

@@ -98,3 +98,34 @@ model CoursePriority {
   @@index([studentId])
   @@map("course_priority")
 }
+
+/// One uploaded calendar file; deleting it removes every Fixed Event read from it.
+model CalendarImport {
+  id         String   @id
+  studentId  String
+  student    User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  name       String
+  importedAt DateTime @default(now())
+
+  events FixedEvent[]
+
+  @@unique([id, studentId])
+  @@index([studentId])
+  @@map("calendar_import")
+}
+
+/// A calendar event nunio did not create: an operational Fact it plans around and never changes.
+model FixedEvent {
+  id        String          @id
+  studentId String
+  student   User            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// Null for an event the student entered by hand.
+  importId  String?
+  import    CalendarImport? @relation(fields: [importId, studentId], references: [id, studentId], onDelete: Cascade)
+  title     String
+  start     DateTime
+  end       DateTime
+
+  @@index([studentId, start])
+  @@map("fixed_event")
+}

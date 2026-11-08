@@ -28,6 +28,7 @@
     "@nunio/ai": "workspace:*",
     "@nunio/db": "workspace:*",
     "@nunio/delegation": "workspace:*",
-    "@nunio/knowledge": "workspace:*"
+    "@nunio/knowledge": "workspace:*",
+    "ical.js": "2.2.1"
   }
 }

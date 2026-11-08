@@ -21,6 +21,8 @@ model User {
   studyBlocks      StudyBlock[]
   protectedTime    ProtectedTime[]
   planPreference   PlanPreference?
+  calendarImports  CalendarImport[]
+  fixedEvents      FixedEvent[]
 
   @@map("user")
 }
