@@ -23,6 +23,8 @@ const PlanView = z.object({
   tasks: z.array(z.object({ id: z.string(), title: z.string(), obligationId: z.string().nullable(),
     estimate: z.object({ minutes: z.number().int(), estimatedBy: Actor }).nullable(), done: z.boolean() })),
   studyBlocks: z.array(z.object({ id: z.string(), work: Work, start: z.date(), end: z.date(), placedBy: Actor, locked: z.boolean() })),
+  fixedEvents: z.array(z.object({ id: z.string(), title: z.string(), start: z.date(), end: z.date(), importId: z.string().nullable() })),
+  imports: z.array(z.object({ id: z.string(), name: z.string(), events: z.number().int() })),
   limits: z.object({
     preferences: z.object({ timeZone: z.string(), studyFromMinute: z.number().int(), studyToMinute: z.number().int(), maxMinutesPerDay: z.number().int() }),
     protectedTime: z.array(z.object({ id: z.string(), weekday: z.number().int(), fromMinute: z.number().int(), toMinute: z.number().int() })),
@@ -145,6 +147,35 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
       return done(c, await c.get("plan").removeProtectedTime(p, c.req.valid("param").id));
+    });
+  routes.openapi(createRoute({ method: "post", path: "/api/me/fixed-events",
+    request: body(Span.extend({ title: z.string() }).strict()), responses: { 201: Created, ...outcomes } }), async c => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return created(c, await c.get("plan").addFixedEvent(p, c.req.valid("json")));
+    });
+  routes.openapi(createRoute({ method: "delete", path: "/api/me/fixed-events/{id}", request: { params: id }, responses: { 200: Done, ...outcomes } }),
+    async c => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(c, await c.get("plan").removeFixedEvent(p, c.req.valid("param").id));
+    });
+  routes.openapi(createRoute({ method: "post", path: "/api/me/calendar-imports",
+    request: body(z.object({ name: z.string(), ics: z.string().max(1024 * 1024) }).strict()),
+    responses: { 201: json(z.object({ id: z.string(), events: z.number().int(),
+      skipped: z.object({ allDay: z.number().int(), outsideWindow: z.number().int(), truncated: z.boolean() }) }),
+      "Timed events of the coming year, with what was skipped."), ...outcomes } }), async c => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const result = await c.get("plan").importCalendar(p, c.req.valid("json"));
+      if (result.status === "invalid") return failed(c, "invalid");
+      return c.json({ id: result.id, events: result.events, skipped: result.skipped }, 201);
+    });
+  routes.openapi(createRoute({ method: "delete", path: "/api/me/calendar-imports/{id}", request: { params: id }, responses: { 200: Done, ...outcomes } }),
+    async c => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(c, await c.get("plan").removeImport(p, c.req.valid("param").id));
     });
   routes.openapi(createRoute({ method: "put", path: "/api/me/priorities", request: body(z.object({ courseIds: z.array(z.string().uuid()).max(100) }).strict()),
     responses: { 200: Done, ...outcomes } }), async c => {

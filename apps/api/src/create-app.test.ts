@@ -980,4 +980,24 @@ describe("Plan", () => {
     expect((await call("DELETE", `/study-blocks/${blockId}`)).status).toBe(200);
     expect((await call("DELETE", `/study-blocks/${blockId}`)).status).toBe(404);
   });
+
+  it("enters Fixed Events and imports a calendar file, refusing one it cannot read", async () => {
+    const { cookie, headers } = await planFixture("plan-calendar");
+    const call = (method: string, path: string, body?: unknown) => app.request(`${apiOrigin}/api/me${path}`, { method, headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const start = new Date(Date.now() + 24 * 60 * 60_000), end = new Date(start.getTime() + 60 * 60_000);
+    const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+    const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//test//EN", "BEGIN:VEVENT", "UID:a@test", `DTSTAMP:${stamp(start)}`,
+      "SUMMARY:Vorlesung", `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`, "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+
+    expect((await call("POST", "/fixed-events", { title: "Schicht", start, end })).status).toBe(201);
+    const imported = await call("POST", "/calendar-imports", { name: "Stundenplan.ics", ics });
+    expect([imported.status, await imported.json()]).toEqual([201, { id: expect.any(String), events: 1,
+      skipped: { allDay: 0, outsideWindow: 0, truncated: false } }]);
+    expect((await call("POST", "/calendar-imports", { name: "kaputt.ics", ics: "nope" })).status).toBe(400);
+    const view = await (await app.request(`${apiOrigin}/api/me/plan`, { headers: { cookie } })).json() as
+      { fixedEvents: { title: string }[]; imports: { id: string; events: number }[] };
+    expect(view.fixedEvents.map(e => e.title).sort()).toEqual(["Schicht", "Vorlesung"]);
+    expect((await call("DELETE", `/calendar-imports/${view.imports[0]!.id}`)).status).toBe(200);
+  });
 });
