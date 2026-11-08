@@ -1,6 +1,6 @@
 # Knowledge retrieval
 
-Status: accepted design, 2026-10-29. Not yet implemented. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md). Architecture terms (module, interface, seam, adapter, depth) follow the codebase-design vocabulary. Related: [delegation-gate.md](delegation-gate.md), ADR-0007, ADR-0009, invariant 5 in [durable-ai.md](../research/durable-ai.md).
+Status: accepted design, 2026-10-29; Phase 7 implemented `retrieve`, `cite`, Chat and planning scopes, 2026-11-08 (see "Phase 7 decisions"). `pin`, Run snapshots and widening wait for Runs in Phase 9. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md). Architecture terms (module, interface, seam, adapter, depth) follow the codebase-design vocabulary. Related: [delegation-gate.md](delegation-gate.md), ADR-0007, ADR-0009, invariant 5 in [durable-ai.md](../research/durable-ai.md).
 
 ## Purpose
 
@@ -127,10 +127,23 @@ All tests cross `pin`, `retrieve`, and `cite`. Scenarios:
 - **Strategy parity:** whenever an approximate or hybrid strategy is enabled, it runs the same scenarios as the exact path. Results must stay in scope, and recall is measured against the exact path.
 - **Per-profile contract suite:** location anchors round-trip, and display text is non-empty.
 
+## Phase 7 decisions
+
+- **Runs wait for Phase 9.** `ScopeRef` is `{ chatId }` or `{ planning: true }`; `pin`, snapshots, widening and the `run_unpinned` refusal arrive with Runs and Run Principals. Budgets are likewise a Phase 9 concept, so the only usage refusals are `meter`'s.
+- **Chats live in `knowledge`.** `createChats` stores the selection (`chat_course`, `chat_source`) and messages, whose citations are `[{ tag, cite }]` only. Creating a Chat refuses a selection with a foreign or deleted Source or Course as `gone`.
+- **Selection.** Passages come from the selected Sources and every Source of a selected Course. Facts come from selected Courses only, so a Source-only selection yields passages, never Facts. `narrow` takes `courseIds` and `sourceIds`; Projects arrive in Phase 8.
+- **Facts** reuse the write side's review merge, so a Correction or entry is the shown value and a newer Source's differing value is `disagreement`. Rejected items and Courses are excluded. A `text` filter over Facts is not implemented (Facts carry no embeddings), so Fact queries never meter. Correction Provenance is `{ kind: "correction" }`: Corrections carry no separate ID or timestamp yet.
+- **Planning scope** accepts `obligation`, `course_rule` and `topic`; `fixed_event` arrives with Fixed Events in Phase 8. Anything else throws `InvalidQueryError`.
+- **Chat answers** use passages only: Facts and passages each number their own `[S1]` tags, and combining them is deferred. The answer model (Sonnet 5.5, task `explanation`) gets the rendered block as a separate user message; citation tags it was not given are removed.
+- **The `Embedder` port** is the one in `@nunio/ai` (with `estimateMicroUsd`), shared with ingestion.
+- **Score floor.** A fixed cosine floor of 0.3 is in place, but the Phase 7 eval shows `baai/bge-m3` scores unrelated handbook passages above 0.40, so the floor does not yet drop weak matches. It needs calibrating against the eval.
+
 ## Accepted limits
 
 - A Run can see its context shrink mid-task, because removals apply live.
 - The same question can return different results in a Chat and in a Run started from it, because only Runs pin.
 - Exact scans grow linearly with each student's scoped chunks. That is acceptable at pilot scale; an approximate index waits for measured need and the parity suite.
 - `render()` fixes one prompt-fencing convention inside `knowledge`. Callers needing another layout build it from `items` and must not reach inside `Untrusted`, which a lint rule enforces.
+- Chat message text (questions and answers) is stored in plain columns under row-level security, not under a Source key, so deleting a Source does not remove an earlier answer's wording, only its citation (which then shows as gone).
+- Template-heavy documents such as module handbooks retrieve poorly when the module name is not in the chunk that holds the answer (Phase 7 eval). Prefixing chunks with their Source title and section, or a keyword strategy, are the candidates.
 - Deleted Sources remain recoverable from database backups only until Neon's point-in-time recovery window ends (see ADR-0007).
