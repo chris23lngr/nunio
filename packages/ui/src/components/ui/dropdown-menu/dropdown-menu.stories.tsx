@@ -257,7 +257,7 @@ export const Checkboxes: Story = {
     ).toBe(6)
     await userEvent.click(second)
     await expect(second).toHaveAttribute("aria-checked", "false")
-    await expect(second.querySelector("svg")).toBeNull()
+    await waitFor(() => expect(second.querySelector("svg")).toBeNull())
     const disabled = items.getByRole("menuitemcheckbox", { name: "Option 3" })
     disabled.click()
     await expect(disabled).toHaveAttribute("aria-checked", "false")

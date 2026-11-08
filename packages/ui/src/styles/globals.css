@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./tokens.css";
 @import "./theme.css";
 
 /* Include library classes when this stylesheet is consumed by a workspace app. */
@@ -6,8 +7,20 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Keep the existing components styled while the Paper migration is in progress. */
+@theme {
+  --font-mono:
+    "SFMono-Regular", Menlo, Consolas, "PT Mono", "Liberation Mono", Courier,
+    monospace;
+  --ease-in: ease-in;
+  --ease-out: ease-out;
+  --ease-in-out: ease-in-out;
+  --ease-standard: ease;
+  --default-transition-timing-function: ease;
+}
+
 @layer base {
   body {
-    @apply bg-white font-sans text-base-800;
+    @apply bg-primary font-sans text-primary;
   }
 }
