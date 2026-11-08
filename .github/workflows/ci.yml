@@ -98,6 +98,7 @@ jobs:
       - run: >-
           bunx turbo run test ${{ github.event_name == 'pull_request' && '--affected' || '' }} --concurrency=2
           --filter=@nunio/parser --filter=@nunio/ai --filter=@nunio/commitlint-config --filter=@nunio/keys
+          --filter=@nunio/planning
           -- --maxWorkers=1
           --reporter=default --reporter=json --outputFile=.turbo/tests.json
       - uses: actions/upload-artifact@v5
