@@ -1,23 +1,17 @@
 @import "tailwindcss";
 @import "./tokens.css";
+@import "./theme.css";
 
 /* Include library classes when this stylesheet is consumed by a workspace app. */
 @source "../components";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Keep the existing components styled while the Paper migration is in progress. */
 @theme {
-  --font-sans:
-    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display",
-    "Segoe UI", Helvetica, "Apple Color Emoji", "Noto Sans Arabic",
-    "Noto Sans Hebrew", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
-  /* Notion's code stack (docs/notion-spec/components/typography.md) */
   --font-mono:
     "SFMono-Regular", Menlo, Consolas, "PT Mono", "Liberation Mono", Courier,
     monospace;
-
-  /* Notion transitions use the CSS keywords; Tailwind's own curves differ
-     (its ease-out is cubic-bezier(0, 0, 0.2, 1)). `ease-standard` is CSS `ease`. */
   --ease-in: ease-in;
   --ease-out: ease-out;
   --ease-in-out: ease-in-out;
