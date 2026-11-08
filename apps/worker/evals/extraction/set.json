@@ -1,5 +1,5 @@
 {
-  "about": "Phase 6 extraction eval set. Labels are drafts by the agent, to be spot-checked by the founder before they count. Obligation `match` lists lowercase substrings of an acceptable title or key; `optional` items count neither as misses nor, when found, as false positives. Public handbooks are fetched by URL and cut to fixed pages, never committed.",
+  "about": "Phase 6 extraction eval set. Labels were drafted by the agent and spot-checked by the founder (2026-11-08). Obligation `match` lists lowercase substrings of an acceptable title or key; `optional` items count neither as misses nor, when found, as false positives. Public handbooks are fetched by URL and cut to fixed pages, never committed.",
   "documents": [
     {
       "id": "synthetic-de-analysis", "language": "de", "kind": "syllabus", "scan": false,
