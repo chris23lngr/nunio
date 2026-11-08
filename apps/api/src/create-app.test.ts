@@ -1021,3 +1021,26 @@ it("creates, renames, relates and deletes Projects through origin-protected rout
   expect((await call("DELETE", `/${id}`)).status).toBe(200);
   expect((await call("DELETE", `/${id}`)).status).toBe(404);
 });
+
+describe("Home", () => {
+  it("surfaces an overload's Shortfall with its tradeoffs, beside placeholders for later work", async () => {
+    const { cookie, headers } = await reviewFixture("home");
+    const [course] = (await (await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })).json() as ReviewBody).courses;
+    await app.request(`${apiOrigin}/api/me/courses/${course!.id}/decision`, { method: "POST", headers, body: JSON.stringify({ decision: "accept" }) });
+    // An exam tomorrow at noon needing 20 hours cannot fit: at most 4 hours a day before it.
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60_000).toISOString().slice(0, 10);
+    const entered = await app.request(`${apiOrigin}/api/me/obligations`, { method: "POST", headers, body: JSON.stringify({
+      course: { id: course!.id }, kind: "exam", title: "Klausur", due: { date: tomorrow, time: "12:00", timeZone: null }, destination: null }) });
+    const { id: examId } = await entered.json() as { id: string };
+    await app.request(`${apiOrigin}/api/me/estimates/obligation/${examId}`, { method: "PUT", headers, body: JSON.stringify({ minutes: 1200 }) });
+
+    const home = await app.request(`${apiOrigin}/api/me/home`, { headers: { cookie } });
+
+    expect(home.status).toBe(200);
+    const body = await home.json() as { attention: { kind: string }[]; ongoing: unknown[]; artifacts: unknown[]; agentWork: unknown[] };
+    expect(body.attention).toContainEqual({ kind: "shortfall", workId: examId, title: "Klausur", course: "Analysis I", due: expect.any(String),
+      shortMinutes: expect.any(Number), tradeoffs: expect.arrayContaining([expect.objectContaining({ kind: "reduce_estimate", workId: examId })]) });
+    expect(body).toMatchObject({ ongoing: [], artifacts: [], agentWork: [] });
+    expect((await app.request(`${apiOrigin}/api/me/home`, { headers: { cookie: "" } })).status).toBe(401);
+  });
+});
