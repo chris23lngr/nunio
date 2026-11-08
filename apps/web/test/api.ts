@@ -18,7 +18,10 @@ const server = createServer(async (incoming, outgoing) => {
     for await (const chunk of incoming) chunks.push(Buffer.from(chunk));
     const url = new URL(incoming.url!, api.origin);
     const handler = handlers.get(`${incoming.method} ${url.pathname}`);
-    if (!handler) throw new Error(`Unhandled test request: ${incoming.method} ${url.pathname}`);
+    if (!handler)
+      throw new Error(
+        `Unhandled test request: ${incoming.method} ${url.pathname}`,
+      );
     const request = new Request(url, {
       method: incoming.method,
       headers: incoming.headers as Record<string, string>,
@@ -33,9 +36,10 @@ const server = createServer(async (incoming, outgoing) => {
   }
 });
 beforeAll(async () => {
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("Test API did not start");
+  if (!address || typeof address === "string")
+    throw new Error("Test API did not start");
   api.origin = `http://127.0.0.1:${address.port}`;
 });
 afterEach(() => {
@@ -45,5 +49,5 @@ afterEach(() => {
 });
 afterAll(async () => {
   server.closeAllConnections();
-  await new Promise<void>(resolve => server.close(() => resolve()));
+  await new Promise<void>((resolve) => server.close(() => resolve()));
 });

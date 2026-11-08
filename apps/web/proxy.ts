@@ -1,5 +1,6 @@
 import { getSessionCookie } from "better-auth/cookies";
-import { NextResponse, type NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
 // Presence check only; pages confirm the session with the API (lib/session.ts).
 export function proxy(request: NextRequest) {
@@ -9,4 +10,6 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/((?!sign-in|reset-password|_next/|favicon.ico).*)"] };
+export const config = {
+  matcher: ["/((?!sign-in|reset-password|_next/|favicon.ico).*)"],
+};

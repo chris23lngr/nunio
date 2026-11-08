@@ -1,16 +1,29 @@
-import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
-import { createDelegation, type Delegation } from "@nunio/delegation";
-import { createAuth, type Auth } from "@nunio/identity";
-import { createAnswerer, createEmbedder, createModels, type Answerer } from "@nunio/ai";
-import { createChats, createFacts, createKnowledgeReader, createSources, sourceStorageFromEnv, type Chats, type Facts,
-  type Sources } from "@nunio/knowledge";
+import type { Answerer } from "@nunio/ai";
+import { createAnswerer, createEmbedder, createModels } from "@nunio/ai";
+import type { PrismaClient } from "@nunio/db";
+import { createPool, createPrismaClient } from "@nunio/db";
+import type { Delegation } from "@nunio/delegation";
+import { createDelegation } from "@nunio/delegation";
+import type { Auth } from "@nunio/identity";
+import { createAuth } from "@nunio/identity";
 import { sourceKeysFromEnv } from "@nunio/keys";
-import { sourceWorkflowsFromEnv, type SourceWorkflows } from "./source-workflows.js";
+import type { Chats, Facts, Sources } from "@nunio/knowledge";
+import {
+  createChats,
+  createFacts,
+  createKnowledgeReader,
+  createSources,
+  sourceStorageFromEnv,
+} from "@nunio/knowledge";
 import { attachDatabasePool } from "@vercel/functions";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { routes, type AppBindings } from "./app.js";
-import { spikePoolHeader, spikeRoutes, type SpikeDeps } from "./spike.js";
+import type { AppBindings } from "./app.js";
+import { routes } from "./app.js";
+import type { SourceWorkflows } from "./source-workflows.js";
+import { sourceWorkflowsFromEnv } from "./source-workflows.js";
+import type { SpikeDeps } from "./spike.js";
+import { spikePoolHeader, spikeRoutes } from "./spike.js";
 
 export interface AppDeps {
   auth: Auth;
@@ -27,14 +40,28 @@ export interface AppDeps {
   spike?: SpikeDeps;
 }
 
-export function createApp({ auth, prisma, delegation, appOrigin, spike, sources, facts, sourceWorkflows, chats, answerer }: AppDeps) {
+export function createApp({
+  auth,
+  prisma,
+  delegation,
+  appOrigin,
+  spike,
+  sources,
+  facts,
+  sourceWorkflows,
+  chats,
+  answerer,
+}: AppDeps) {
   const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
   if (spike) app.use("*", spikePoolHeader(spike.pool));
   app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
   app.use("/api/me/*", async (c, next) => {
     // CORS alone does not stop a forged request from reaching the handler.
-    if (!["GET", "HEAD"].includes(c.req.method) && c.req.header("origin") !== appOrigin) {
+    if (
+      !["GET", "HEAD"].includes(c.req.method) &&
+      c.req.header("origin") !== appOrigin
+    ) {
       return c.json({ error: "forbidden_origin" }, 403);
     }
     await next();
@@ -81,15 +108,43 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     },
   });
   const spike =
-    env.SPIKE_ROUTES === "true" ? { webhookSecret: required("SPIKE_WEBHOOK_SECRET"), pool } : undefined;
+    env.SPIKE_ROUTES === "true"
+      ? { webhookSecret: required("SPIKE_WEBHOOK_SECRET"), pool }
+      : undefined;
   // The global AI kill switch; like every variable, a change takes effect on the next deployment.
-  const delegation = createDelegation({ db: prisma, aiEnabled: () => env.AI_DISABLED !== "true" });
+  const delegation = createDelegation({
+    db: prisma,
+    aiEnabled: () => env.AI_DISABLED !== "true",
+  });
   const keys = sourceKeysFromEnv(env);
-  const sources = createSources({ db: prisma, keys, storage: sourceStorageFromEnv(env) });
+  const sources = createSources({
+    db: prisma,
+    keys,
+    storage: sourceStorageFromEnv(env),
+  });
   const clock = { now: () => new Date() };
   const facts = createFacts({ db: prisma, keys, clock });
-  const provider = { apiKey: required("OPENROUTER_API_KEY"), baseURL: required("OPENROUTER_BASE_URL") };
-  const reader = createKnowledgeReader({ db: prisma, keys, embedder: createEmbedder(provider), delegation, clock });
-  return createApp({ auth, prisma, delegation, appOrigin, spike, sources, facts, sourceWorkflows: sourceWorkflowsFromEnv(env),
-    chats: createChats({ db: prisma, keys, reader, delegation }), answerer: createAnswerer(createModels(provider)) });
+  const provider = {
+    apiKey: required("OPENROUTER_API_KEY"),
+    baseURL: required("OPENROUTER_BASE_URL"),
+  };
+  const reader = createKnowledgeReader({
+    db: prisma,
+    keys,
+    embedder: createEmbedder(provider),
+    delegation,
+    clock,
+  });
+  return createApp({
+    auth,
+    prisma,
+    delegation,
+    appOrigin,
+    spike,
+    sources,
+    facts,
+    sourceWorkflows: sourceWorkflowsFromEnv(env),
+    chats: createChats({ db: prisma, keys, reader, delegation }),
+    answerer: createAnswerer(createModels(provider)),
+  });
 }

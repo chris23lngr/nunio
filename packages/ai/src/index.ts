@@ -1,7 +1,30 @@
 /**
  * Model registry and bounded model calls (ADR-0011, ADR-0012).
  */
-export { createModels, isDefiniteFailure, type DataHandlingLabel, type ModelId, type Models, type RegisteredModel, type Task } from "./models.js";
-export { createEmbedder, createScanReader, SourceModelRejected, type Embedder, type ScanReader } from "./source-models.js";
-export { createExtractor, isDate, isTime, isTimeZone, type Extracted, type Extractor, type Page } from "./extraction.js";
-export { createAnswerer, type AnswerInput, type Answerer } from "./answer.js";
+
+export { type Answerer, type AnswerInput, createAnswerer } from "./answer.js";
+export {
+  createExtractor,
+  type Extracted,
+  type Extractor,
+  isDate,
+  isTime,
+  isTimeZone,
+  type Page,
+} from "./extraction.js";
+export {
+  createModels,
+  type DataHandlingLabel,
+  isDefiniteFailure,
+  type ModelId,
+  type Models,
+  type RegisteredModel,
+  type Task,
+} from "./models.js";
+export {
+  createEmbedder,
+  createScanReader,
+  type Embedder,
+  type ScanReader,
+  SourceModelRejected,
+} from "./source-models.js";

@@ -19,7 +19,7 @@ function Input({ className, ...props }: InputPrimitive.Props) {
       className={(state) =>
         cn(
           inputBaseClass,
-          "bg-secondary-translucent h-7 rounded-md px-2.5 py-1 shadow-input focus-visible:shadow-focus-input",
+          "bg-secondary-translucent shadow-input focus-visible:shadow-focus-input h-7 rounded-md px-2.5 py-1",
           typeof className === "function" ? className(state) : className,
         )
       }

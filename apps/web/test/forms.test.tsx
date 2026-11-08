@@ -1,11 +1,17 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
-import { SignInForm } from "@/app/sign-in/sign-in-form";
-import { ResetPasswordForm } from "@/app/reset-password/reset-password-form";
 import { DeletionForm } from "@/app/account/deletion-form";
-import { TestProviders } from "./providers";
+import { ResetPasswordForm } from "@/app/reset-password/reset-password-form";
+import { SignInForm } from "@/app/sign-in/sign-in-form";
 import { api } from "./api";
+import { TestProviders } from "./providers";
 
 const { router, client } = vi.hoisted(() => ({
   router: { replace: vi.fn(), refresh: vi.fn() },
@@ -41,7 +47,10 @@ test("sign-in submits current values and refreshes the protected route", async (
   const user = await fillCredentials();
   await user.click(screen.getByRole("button", { name: "Sign in" }));
   await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"));
-  expect(client.signIn.email).toHaveBeenCalledWith({ email: "student@example.com", password: "password123" });
+  expect(client.signIn.email).toHaveBeenCalledWith({
+    email: "student@example.com",
+    password: "password123",
+  });
   expect(client.signUp.email).not.toHaveBeenCalled();
   expect(router.refresh).toHaveBeenCalled();
 });
@@ -51,17 +60,28 @@ test("sign-up preserves the invitation and offers verification without navigatin
   const user = await fillCredentials();
   await user.type(screen.getByLabelText("Name"), "Student");
   await user.click(screen.getByRole("button", { name: "Sign up" }));
-  await screen.findByText("Check your email to verify your account, then sign in.");
+  await screen.findByText(
+    "Check your email to verify your account, then sign in.",
+  );
   expect(client.signUp.email).toHaveBeenCalledWith({
-    name: "Student", email: "student@example.com", password: "password123",
+    name: "Student",
+    email: "student@example.com",
+    password: "password123",
     callbackURL: `${window.location.origin}/sign-in`,
     fetchOptions: { headers: { "x-invitation-token": "invitation-token" } },
   });
   expect(client.signIn.email).not.toHaveBeenCalled();
   expect(router.replace).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Resend verification email" }));
-  await screen.findByText("If verification is needed, a new email has been sent.");
-  expect(client.sendVerificationEmail).toHaveBeenCalledWith({ email: "student@example.com", callbackURL: `${window.location.origin}/sign-in` });
+  await user.click(
+    screen.getByRole("button", { name: "Resend verification email" }),
+  );
+  await screen.findByText(
+    "If verification is needed, a new email has been sent.",
+  );
+  expect(client.sendVerificationEmail).toHaveBeenCalledWith({
+    email: "student@example.com",
+    callbackURL: `${window.location.origin}/sign-in`,
+  });
 });
 
 test("forgot password uses the email without requiring a password", async () => {
@@ -69,19 +89,32 @@ test("forgot password uses the email without requiring a password", async () => 
   const user = userEvent.setup();
   await user.type(screen.getByLabelText("Email"), "student@example.com");
   await user.click(screen.getByRole("button", { name: "Forgot password?" }));
-  await screen.findByText("If an account exists for that email address, check your email for a reset link.");
-  expect(client.requestPasswordReset).toHaveBeenCalledWith({ email: "student@example.com", redirectTo: `${window.location.origin}/reset-password` });
+  await screen.findByText(
+    "If an account exists for that email address, check your email for a reset link.",
+  );
+  expect(client.requestPasswordReset).toHaveBeenCalledWith({
+    email: "student@example.com",
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
 });
 
 test("password reset validates length, blocks duplicate submissions, and can retry a server error", async () => {
   let finish!: (result: { error: { message: string } }) => void;
-  client.resetPassword.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  client.resetPassword.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
   render(<ResetPasswordForm apiOrigin={api.origin} token="reset-token" />);
   const user = userEvent.setup();
   const input = screen.getByLabelText("New password");
   await user.type(input, "short");
   await user.tab();
-  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Use between 8 and 128 characters.");
+  expect(await screen.findByRole("alert")).toHaveProperty(
+    "textContent",
+    "Use between 8 and 128 characters.",
+  );
   // Submit directly to verify the form's validator independently of browser constraints.
   fireEvent.submit(input.closest("form")!);
   expect(client.resetPassword).not.toHaveBeenCalled();
@@ -93,30 +126,53 @@ test("password reset validates length, blocks duplicate submissions, and can ret
   await user.click(button);
   expect(client.resetPassword).toHaveBeenCalledTimes(1);
   await act(async () => finish({ error: { message: "Link expired" } }));
-  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Link expired");
+  expect(await screen.findByRole("alert")).toHaveProperty(
+    "textContent",
+    "Link expired",
+  );
   await waitFor(() => expect(button).toHaveProperty("disabled", false));
   await user.click(button);
-  await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/sign-in?reset=success"));
-  expect(client.resetPassword).toHaveBeenLastCalledWith({ token: "reset-token", newPassword: "new-password" });
+  await waitFor(() =>
+    expect(router.replace).toHaveBeenCalledWith("/sign-in?reset=success"),
+  );
+  expect(client.resetPassword).toHaveBeenLastCalledWith({
+    token: "reset-token",
+    newPassword: "new-password",
+  });
 });
 
 test("account deletion keeps incorrect-password feedback and submits the corrected password", async () => {
   const passwords: string[] = [];
-  api.route("POST", "/api/me/deletion-request", async request => {
-    const { password } = await request.json() as { password: string };
+  api.route("POST", "/api/me/deletion-request", async (request) => {
+    const { password } = (await request.json()) as { password: string };
     passwords.push(password);
-    return password === "correct-password" ? Response.json({}, { status: 202 }) : Response.json({}, { status: 403 });
+    return password === "correct-password"
+      ? Response.json({}, { status: 202 })
+      : Response.json({}, { status: 403 });
   });
-  render(<TestProviders><DeletionForm apiOrigin={api.origin} /></TestProviders>);
+  render(
+    <TestProviders>
+      <DeletionForm apiOrigin={api.origin} />
+    </TestProviders>,
+  );
   const user = userEvent.setup();
   const input = screen.getByLabelText("Password");
   await user.type(input, "wrong-password");
-  await user.click(screen.getByRole("button", { name: "Request account deletion" }));
-  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "That password is incorrect.");
+  await user.click(
+    screen.getByRole("button", { name: "Request account deletion" }),
+  );
+  expect(await screen.findByRole("alert")).toHaveProperty(
+    "textContent",
+    "That password is incorrect.",
+  );
   await user.clear(input);
   await user.type(input, "correct-password");
-  await user.click(screen.getByRole("button", { name: "Request account deletion" }));
-  await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/sign-in?deletion=requested"));
+  await user.click(
+    screen.getByRole("button", { name: "Request account deletion" }),
+  );
+  await waitFor(() =>
+    expect(router.replace).toHaveBeenCalledWith("/sign-in?deletion=requested"),
+  );
   expect(passwords).toEqual(["wrong-password", "correct-password"]);
   expect(router.refresh).toHaveBeenCalled();
 });

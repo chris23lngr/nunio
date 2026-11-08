@@ -21,31 +21,43 @@ Projects move to Phase 8. Phase 6 is verified only after every slice and the eva
 ```ts
 // packages/knowledge
 export function createFacts(deps: {
-  db: PrismaClient;          // local-substitutable; internal seam
-  keys: SourceKeys;          // unwraps the Source key for extracted values
-  clock: Clock;              // in-process; injected
+  db: PrismaClient; // local-substitutable; internal seam
+  keys: SourceKeys; // unwraps the Source key for extracted values
+  clock: Clock; // in-process; injected
 }): Facts;
 
 export interface Facts {
-  extract(p: Principal, sourceId: string, deps: { extractor: Extractor; delegation: Delegation; signal: AbortSignal }):
-    Promise<{ status: "done"; dropped: number } | { status: "failed" | "stopped" }>;
-  review(p: Principal): Promise<Review>;                  // grouped by Course, decrypted server-side
+  extract(
+    p: Principal,
+    sourceId: string,
+    deps: { extractor: Extractor; delegation: Delegation; signal: AbortSignal },
+  ): Promise<
+    { status: "done"; dropped: number } | { status: "failed" | "stopped" }
+  >;
+  review(p: Principal): Promise<Review>; // grouped by Course, decrypted server-side
   confirm(p: Principal, item: ItemRef): Promise<void>;
-  correct(p: Principal, item: ItemRef, value: Correction): Promise<void>;  // validated per type
+  correct(p: Principal, item: ItemRef, value: Correction): Promise<void>; // validated per type
   reject(p: Principal, item: ItemRef): Promise<void>;
-  restore(p: Principal, item: ItemRef): Promise<void>;                    // undoes Reject
-  use(p: Principal, item: ItemRef, extractionId: string): Promise<void>;  // "Use this"; also Use new
+  restore(p: Principal, item: ItemRef): Promise<void>; // undoes Reject
+  use(p: Principal, item: ItemRef, extractionId: string): Promise<void>; // "Use this"; also Use new
   keepMine(p: Principal, item: ItemRef): Promise<void>;
-  decideCourse(p: Principal, courseId: string, decision: "accept" | "reject" | "restore"): Promise<void>;
-  mergeCourses(p: Principal, from: string, into: string): Promise<void>;   // 409 on differing Corrections
-  enterObligation(p: Principal, input: ObligationInput): Promise<string>;  // Provenance `entry`; 409 on an existing key
+  decideCourse(
+    p: Principal,
+    courseId: string,
+    decision: "accept" | "reject" | "restore",
+  ): Promise<void>;
+  mergeCourses(p: Principal, from: string, into: string): Promise<void>; // 409 on differing Corrections
+  enterObligation(p: Principal, input: ObligationInput): Promise<string>; // Provenance `entry`; 409 on an existing key
 }
 
 // packages/ai, next to createScanReader
 export interface Extractor {
   model: string;
   estimateMicroUsd(window: Window): number;
-  extract(window: Window, opts: { signal: AbortSignal }): Promise<{ items: ExtractedItem[]; usage: Usage }>;
+  extract(
+    window: Window,
+    opts: { signal: AbortSignal },
+  ): Promise<{ items: ExtractedItem[]; usage: Usage }>;
 }
 ```
 
@@ -107,12 +119,12 @@ The Source records its upload request time (`createdAt`) and its extraction comp
 
 ## Seams and adapters
 
-| Dependency | Category | Seam | Adapters |
-|---|---|---|---|
-| Postgres (Prisma 7) | Local-substitutable | Internal only | Testcontainers with the pgvector image |
-| Extraction model | True external | **Real port** (`Extractor`) | OpenRouter adapter; scripted fake |
-| `delegation` | In-process | None; the real module is used | Real `createDelegation` on the same test database |
-| Clock | In-process | Small | System clock; manual clock |
+| Dependency          | Category            | Seam                          | Adapters                                          |
+| ------------------- | ------------------- | ----------------------------- | ------------------------------------------------- |
+| Postgres (Prisma 7) | Local-substitutable | Internal only                 | Testcontainers with the pgvector image            |
+| Extraction model    | True external       | **Real port** (`Extractor`)   | OpenRouter adapter; scripted fake                 |
+| `delegation`        | In-process          | None; the real module is used | Real `createDelegation` on the same test database |
+| Clock               | In-process          | Small                         | System clock; manual clock                        |
 
 ## Testing
 

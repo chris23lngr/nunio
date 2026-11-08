@@ -1,8 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
-import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
+import type { PrismaClient } from "@nunio/db";
+import { createPool, createPrismaClient } from "@nunio/db";
+import type { TestDatabase } from "@nunio/db/testing";
+import { startTestDatabase } from "@nunio/db/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createAuth, type Auth } from "./auth.js";
+import type { Auth } from "./auth.js";
+import { createAuth } from "./auth.js";
 
 const origin = "http://localhost:3000";
 const password = "correct horse battery staple";
@@ -16,7 +19,11 @@ let prisma: PrismaClient;
 /** The migration role, for fixtures outside RLS. */
 let admin: PrismaClient;
 let auth: Auth;
-const messages: { url: string; headers: Headers; body: { to: { email: string }[]; text: string; project_id: string } }[] = [];
+const messages: {
+  url: string;
+  headers: Headers;
+  body: { to: { email: string }[]; text: string; project_id: string };
+}[] = [];
 let mailStatus = 201;
 
 beforeAll(async () => {
@@ -34,8 +41,15 @@ beforeAll(async () => {
       from: "accounts@nunio.test",
       fetch: async (input, init) => {
         const request = new Request(input, init);
-        messages.push({ url: request.url, headers: request.headers, body: await request.json() as (typeof messages)[number]["body"] });
-        return Response.json({ emails: [{ id: "test-email" }] }, { status: mailStatus });
+        messages.push({
+          url: request.url,
+          headers: request.headers,
+          body: (await request.json()) as (typeof messages)[number]["body"],
+        });
+        return Response.json(
+          { emails: [{ id: "test-email" }] },
+          { status: mailStatus },
+        );
       },
     },
   });
@@ -47,7 +61,10 @@ afterAll(async () => {
   await db?.stop();
 });
 
-function call(path: string, init: { body?: unknown; cookie?: string; invitation?: string } = {}) {
+function call(
+  path: string,
+  init: { body?: unknown; cookie?: string; invitation?: string } = {},
+) {
   const headers = new Headers({ origin });
   if (init.invitation) headers.set("x-invitation-token", init.invitation);
   if (init.cookie) headers.set("cookie", init.cookie);
@@ -61,15 +78,21 @@ function call(path: string, init: { body?: unknown; cookie?: string; invitation?
   );
 }
 
-async function invite(email: string, expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), acceptedAt: Date | null = null) {
+async function invite(
+  email: string,
+  expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  acceptedAt: Date | null = null,
+) {
   const token = randomBytes(32).toString("base64url");
-  await admin.invitation.create({ data: {
-    tokenHash: createHash("sha256").update(token).digest("hex"),
-    email: email.toLowerCase(),
-    issuedBy: "test-operator",
-    expiresAt,
-    acceptedAt,
-  } });
+  await admin.invitation.create({
+    data: {
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+      email: email.toLowerCase(),
+      issuedBy: "test-operator",
+      expiresAt,
+      acceptedAt,
+    },
+  });
   return token;
 }
 
@@ -89,8 +112,11 @@ async function sessionEmail(cookie: string): Promise<string | null> {
 }
 
 async function verifyEmail(address: string) {
-  const message = messages.findLast(message => message.body.to[0]?.email === address
-    && message.body.text.includes("/api/auth/verify-email?"));
+  const message = messages.findLast(
+    (message) =>
+      message.body.to[0]?.email === address &&
+      message.body.text.includes("/api/auth/verify-email?"),
+  );
   const link = message?.body.text.match(/https?:\/\/\S+/)?.[0];
   if (!link) throw new Error("Verification email was not sent");
   const response = await auth.handler(new Request(link));
@@ -103,7 +129,9 @@ async function requestPasswordReset(address: string) {
     body: { email: address, redirectTo: `${origin}/reset-password` },
   });
   expect(response.status).toBe(200);
-  const message = messages.findLast(message => message.body.to[0]?.email === address)!;
+  const message = messages.findLast(
+    (message) => message.body.to[0]?.email === address,
+  )!;
   const link = message.body.text.match(/https?:\/\/\S+/)![0];
   const landing = await auth.handler(new Request(link));
   expect(landing.status).toBe(302);
@@ -118,19 +146,24 @@ describe("email and password sessions", () => {
       body: { name: "Password reset", email: address, password },
     });
     await verifyEmail(address);
-    const signIn = () => call("/sign-in/email", { body: { email: address, password } });
+    const signIn = () =>
+      call("/sign-in/email", { body: { email: address, password } });
     const laptop = sessionCookie(await signIn());
     const phone = sessionCookie(await signIn());
     const requested = await call("/request-password-reset", {
       body: { email: address, redirectTo: `${origin}/reset-password` },
     });
     expect(requested.status).toBe(200);
-    const message = messages.findLast(message => message.body.to[0]?.email === address)!;
+    const message = messages.findLast(
+      (message) => message.body.to[0]?.email === address,
+    )!;
     const link = message.body.text.match(/https?:\/\/\S+/)![0];
     const landing = await auth.handler(new Request(link));
     expect(landing.status).toBe(302);
     const target = new URL(landing.headers.get("location")!);
-    expect(`${target.origin}${target.pathname}`).toBe(`${origin}/reset-password`);
+    expect(`${target.origin}${target.pathname}`).toBe(
+      `${origin}/reset-password`,
+    );
     const newPassword = "a different correct horse battery staple";
     const reset = await call("/reset-password", {
       body: { token: target.searchParams.get("token"), newPassword },
@@ -141,7 +174,9 @@ describe("email and password sessions", () => {
     expect(await sessionEmail(laptop)).toBeNull();
     expect(await sessionEmail(phone)).toBeNull();
     expect((await signIn()).status).toBe(401);
-    const recovered = await call("/sign-in/email", { body: { email: address, password: newPassword } });
+    const recovered = await call("/sign-in/email", {
+      body: { email: address, password: newPassword },
+    });
     expect(await sessionEmail(sessionCookie(recovered))).toBe(address);
   });
 
@@ -155,11 +190,23 @@ describe("email and password sessions", () => {
     const token = await requestPasswordReset(address);
     const newPassword = "the first replacement password";
 
-    expect((await call("/reset-password", { body: { token, newPassword } })).status).toBe(200);
-    expect((await call("/reset-password", {
-      body: { token, newPassword: "an unauthorized replacement password" },
-    })).status).toBe(400);
-    expect((await call("/sign-in/email", { body: { email: address, password: newPassword } })).status).toBe(200);
+    expect(
+      (await call("/reset-password", { body: { token, newPassword } })).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("/reset-password", {
+          body: { token, newPassword: "an unauthorized replacement password" },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call("/sign-in/email", {
+          body: { email: address, password: newPassword },
+        })
+      ).status,
+    ).toBe(200);
   });
 
   it("rejects an expired reset token without changing the password", async () => {
@@ -180,7 +227,10 @@ describe("email and password sessions", () => {
     } finally {
       vi.useRealTimers();
     }
-    expect((await call("/sign-in/email", { body: { email: address, password } })).status).toBe(200);
+    expect(
+      (await call("/sign-in/email", { body: { email: address, password } }))
+        .status,
+    ).toBe(200);
   });
 
   it("does not bypass email verification when a pending account resets its password", async () => {
@@ -191,11 +241,25 @@ describe("email and password sessions", () => {
     });
     const token = await requestPasswordReset(address);
     const newPassword = "a pending replacement password";
-    expect((await call("/reset-password", { body: { token, newPassword } })).status).toBe(200);
-    expect((await call("/sign-in/email", { body: { email: address, password: newPassword } })).status).toBe(403);
+    expect(
+      (await call("/reset-password", { body: { token, newPassword } })).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("/sign-in/email", {
+          body: { email: address, password: newPassword },
+        })
+      ).status,
+    ).toBe(403);
 
     await verifyEmail(address);
-    expect((await call("/sign-in/email", { body: { email: address, password: newPassword } })).status).toBe(200);
+    expect(
+      (
+        await call("/sign-in/email", {
+          body: { email: address, password: newPassword },
+        })
+      ).status,
+    ).toBe(200);
   });
 
   it("returns the same recovery response for known and unknown email addresses", async () => {
@@ -215,7 +279,9 @@ describe("email and password sessions", () => {
     expect(knownResponse.status).toBe(200);
     expect(unknownResponse.status).toBe(200);
     expect(await unknownResponse.json()).toEqual(await knownResponse.json());
-    expect(messages.some(message => message.body.to[0]?.email === unknown)).toBe(false);
+    expect(
+      messages.some((message) => message.body.to[0]?.email === unknown),
+    ).toBe(false);
   });
 
   it("refuses to send recovery links that redirect to an untrusted origin", async () => {
@@ -242,11 +308,17 @@ describe("email and password sessions", () => {
 
     expect(signUp.status).toBe(200);
     expect(signUp.headers.getSetCookie()).toEqual([]);
-    const message = messages.find(message => message.body.to[0]?.email === address);
-    expect(message?.url).toBe("https://api.scaleway.com/transactional-email/v1alpha1/regions/fr-par/emails");
+    const message = messages.find(
+      (message) => message.body.to[0]?.email === address,
+    );
+    expect(message?.url).toBe(
+      "https://api.scaleway.com/transactional-email/v1alpha1/regions/fr-par/emails",
+    );
     expect(message?.headers.get("x-auth-token")).toBe("test-scaleway-key");
     expect(message?.body.project_id).toBe("test-project");
-    expect(message?.body.text).toContain(`${origin}/api/auth/verify-email?token=`);
+    expect(message?.body.text).toContain(
+      `${origin}/api/auth/verify-email?token=`,
+    );
   });
 
   it("does not let an invited student sign in before verifying their email", async () => {
@@ -255,7 +327,9 @@ describe("email and password sessions", () => {
       invitation: await invite(address),
       body: { name: "Pending", email: address, password },
     });
-    const signIn = await call("/sign-in/email", { body: { email: address, password } });
+    const signIn = await call("/sign-in/email", {
+      body: { email: address, password },
+    });
 
     expect(signIn.status).toBe(403);
     expect(signIn.headers.getSetCookie()).toEqual([]);
@@ -267,35 +341,53 @@ describe("email and password sessions", () => {
       invitation: await invite(address),
       body: { name: "Resend", email: address, password },
     });
-    const before = messages.filter(message => message.body.to[0]?.email === address).length;
-    const resend = await call("/send-verification-email", { body: { email: address, callbackURL: origin } });
+    const before = messages.filter(
+      (message) => message.body.to[0]?.email === address,
+    ).length;
+    const resend = await call("/send-verification-email", {
+      body: { email: address, callbackURL: origin },
+    });
 
     expect(resend.status).toBe(200);
-    expect(messages.filter(message => message.body.to[0]?.email === address)).toHaveLength(before + 1);
+    expect(
+      messages.filter((message) => message.body.to[0]?.email === address),
+    ).toHaveLength(before + 1);
     await verifyEmail(address);
-    expect((await call("/sign-in/email", { body: { email: address, password } })).status).toBe(200);
+    expect(
+      (await call("/sign-in/email", { body: { email: address, password } }))
+        .status,
+    ).toBe(200);
   });
 
   it("keeps signup pending and allows resend after Scaleway rejects delivery", async () => {
     const address = email("delivery-retry");
     const invitation = await invite(address);
-    const signup = () => call("/sign-up/email", {
-      invitation,
-      body: { name: "Delivery retry", email: address, password },
-    });
+    const signup = () =>
+      call("/sign-up/email", {
+        invitation,
+        body: { name: "Delivery retry", email: address, password },
+      });
     mailStatus = 503;
     try {
       const failed = await signup();
       expect(failed.status).toBe(200);
       expect(failed.headers.getSetCookie()).toEqual([]);
-      expect((await call("/sign-in/email", { body: { email: address, password } })).status).toBe(403);
+      expect(
+        (await call("/sign-in/email", { body: { email: address, password } }))
+          .status,
+      ).toBe(403);
     } finally {
       mailStatus = 201;
     }
-    const resend = await call("/send-verification-email", { body: { email: address, callbackURL: origin } });
+    const resend = await call("/send-verification-email", {
+      body: { email: address, callbackURL: origin },
+    });
     expect(resend.status).toBe(200);
     await verifyEmail(address);
-    expect((await call("/sign-in/email", { body: { email: address, password } })).status).toBe(200);
+    expect(
+      (await call("/sign-in/email", { body: { email: address, password } }))
+        .status,
+    ).toBe(200);
   });
 
   it("keeps an account pending when its verification link has expired", async () => {
@@ -304,7 +396,9 @@ describe("email and password sessions", () => {
       invitation: await invite(address),
       body: { name: "Expired verification", email: address, password },
     });
-    const message = messages.find(message => message.body.to[0]?.email === address)!;
+    const message = messages.find(
+      (message) => message.body.to[0]?.email === address,
+    )!;
     const link = message.body.text.match(/https?:\/\/\S+/)![0];
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
@@ -316,7 +410,10 @@ describe("email and password sessions", () => {
     } finally {
       vi.useRealTimers();
     }
-    expect((await call("/sign-in/email", { body: { email: address, password } })).status).toBe(403);
+    expect(
+      (await call("/sign-in/email", { body: { email: address, password } }))
+        .status,
+    ).toBe(403);
   });
 
   it("keeps an account pending when its verification token is modified", async () => {
@@ -325,14 +422,23 @@ describe("email and password sessions", () => {
       invitation: await invite(address),
       body: { name: "Tampered verification", email: address, password },
     });
-    const message = messages.find(message => message.body.to[0]?.email === address)!;
+    const message = messages.find(
+      (message) => message.body.to[0]?.email === address,
+    )!;
     const link = new URL(message.body.text.match(/https?:\/\/\S+/)![0]);
     link.searchParams.set("token", `${link.searchParams.get("token")}x`);
     const response = await auth.handler(new Request(link));
 
     expect(response.status).toBe(302);
-    expect(new URL(response.headers.get("location")!, origin).searchParams.get("error")).toBe("INVALID_TOKEN");
-    expect((await call("/sign-in/email", { body: { email: address, password } })).status).toBe(403);
+    expect(
+      new URL(response.headers.get("location")!, origin).searchParams.get(
+        "error",
+      ),
+    ).toBe("INVALID_TOKEN");
+    expect(
+      (await call("/sign-in/email", { body: { email: address, password } }))
+        .status,
+    ).toBe(403);
   });
 
   it("rejects registration without an invitation", async () => {
@@ -353,7 +459,9 @@ describe("email and password sessions", () => {
     expect(res.status).toBe(200);
     expect(res.headers.getSetCookie()).toEqual([]);
     await verifyEmail(email("ada"));
-    const signIn = await call("/sign-in/email", { body: { email: email("ada"), password } });
+    const signIn = await call("/sign-in/email", {
+      body: { email: email("ada"), password },
+    });
     expect(await sessionEmail(sessionCookie(signIn))).toBe(email("ada"));
   });
 
@@ -421,7 +529,9 @@ describe("email and password sessions", () => {
       body: { name: "Alan", email: email("alan"), password },
     });
     await verifyEmail(email("alan"));
-    const signIn = await call("/sign-in/email", { body: { email: email("alan"), password } });
+    const signIn = await call("/sign-in/email", {
+      body: { email: email("alan"), password },
+    });
     const cookie = sessionCookie(signIn);
 
     const signOut = await call("/sign-out", { body: {}, cookie });
@@ -450,9 +560,11 @@ describe("email and password sessions", () => {
       body: { token: laptopSession!.session.token },
     });
 
-    expect(await auth.api.getSession({ headers: new Headers({ cookie: laptop }) })).toBeNull();
-    expect((await auth.api.getSession({ headers: phoneHeaders }))?.user.email).toBe(
-      email("edsger"),
-    );
+    expect(
+      await auth.api.getSession({ headers: new Headers({ cookie: laptop }) }),
+    ).toBeNull();
+    expect(
+      (await auth.api.getSession({ headers: phoneHeaders }))?.user.email,
+    ).toBe(email("edsger"));
   });
 });

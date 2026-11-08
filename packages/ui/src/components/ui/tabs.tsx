@@ -1,7 +1,8 @@
 "use client"
 
 import { Tabs as TabsPrimitive } from "@base-ui/react/tabs"
-import { cva, type VariantProps } from "class-variance-authority"
+import type { VariantProps } from "class-variance-authority"
+import { cva } from "class-variance-authority"
 import * as React from "react"
 import { cn } from "../../lib/utils.js"
 
@@ -52,7 +53,7 @@ function TabsList({
 // Fills follow Notion's derived bacIntTra states: hover 1×, active hover 1.5×,
 // pressed 2×. No sliding indicator: the active tab paints its own background.
 const tabVariants = cva(
-  "hover:bg-interactive-translucent focus-visible:bg-interactive-translucent data-active:bg-interactive-translucent data-active:hover:bg-interactive-translucent-150 data-active:focus-visible:bg-interactive-translucent-150 active:bg-interactive-translucent-200 text-secondary data-active:text-primary flex h-8 min-w-0 shrink-0 cursor-pointer items-center text-sm leading-[1.2] font-medium whitespace-nowrap outline-hidden select-none focus-visible:shadow-focus-button data-disabled:pointer-events-none data-disabled:opacity-40",
+  "hover:bg-interactive-translucent focus-visible:bg-interactive-translucent data-active:bg-interactive-translucent data-active:hover:bg-interactive-translucent-150 data-active:focus-visible:bg-interactive-translucent-150 active:bg-interactive-translucent-200 text-secondary data-active:text-primary focus-visible:shadow-focus-button flex h-8 min-w-0 shrink-0 cursor-pointer items-center text-sm leading-[1.2] font-medium whitespace-nowrap outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-40",
   {
     variants: {
       variant: {

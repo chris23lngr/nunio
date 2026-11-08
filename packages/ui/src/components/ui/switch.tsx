@@ -19,7 +19,7 @@ function Switch({ className, ...props }: SwitchPrimitive.Root.Props) {
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(
-        "hover:bg-secondary-translucent-150 active:bg-secondary-translucent-200 relative inline-flex h-[18px] w-[30px] shrink-0 cursor-pointer rounded-full outline-hidden focus-visible:shadow-focus-button data-disabled:pointer-events-none data-disabled:opacity-40",
+        "hover:bg-secondary-translucent-150 active:bg-secondary-translucent-200 focus-visible:shadow-focus-button relative inline-flex h-[18px] w-[30px] shrink-0 cursor-pointer rounded-full outline-hidden data-disabled:pointer-events-none data-disabled:opacity-40",
         className,
       )}
       {...props}

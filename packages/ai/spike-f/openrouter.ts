@@ -10,7 +10,11 @@ function required(name: string): string {
 }
 
 /** `fetch` lets a test see the exact request bodies sent to OpenRouter. */
-export function spikeModels({ fetch }: { fetch?: typeof globalThis.fetch } = {}): {
+export function spikeModels({
+  fetch,
+}: {
+  fetch?: typeof globalThis.fetch;
+} = {}): {
   chat: LanguageModel;
   embedding: EmbeddingModel;
 } {
@@ -22,6 +26,9 @@ export function spikeModels({ fetch }: { fetch?: typeof globalThis.fetch } = {})
   const routing = { provider: { zdr: true, data_collection: "deny" as const } };
   return {
     chat: openrouter.chat(required("OPENROUTER_CHAT_MODEL"), routing),
-    embedding: openrouter.textEmbeddingModel(required("OPENROUTER_EMBEDDING_MODEL"), routing),
+    embedding: openrouter.textEmbeddingModel(
+      required("OPENROUTER_EMBEDDING_MODEL"),
+      routing,
+    ),
   };
 }

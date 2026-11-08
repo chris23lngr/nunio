@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { apiOrigin, getSession } from "@/lib/session";
 import { SourcesScreen } from "@/features/sources/sources-screen";
+import { apiOrigin, getSession } from "@/lib/session";
 import { SignOutButton } from "./sign-out-button";
 
 export default async function HomePage() {

@@ -22,7 +22,9 @@ describe("AI credit", () => {
   });
 
   it("rejects a 'Generated with' line naming an AI tool", async () => {
-    const result = await check("fix: retry sign-up\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)");
+    const result = await check(
+      "fix: retry sign-up\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    );
     expect(result).toEqual({ valid: false, rules: ["no-ai-credit"] });
   });
 
@@ -50,7 +52,9 @@ describe("body length", () => {
   });
 
   it("counts each bullet as a sentence", async () => {
-    const result = await check("chore: tidy\n\n- rename a helper\n- drop a dead route\n- bump a version");
+    const result = await check(
+      "chore: tidy\n\n- rename a helper\n- drop a dead route\n- bump a version",
+    );
     expect(result).toEqual({ valid: false, rules: ["body-max-sentences"] });
   });
 
@@ -66,6 +70,8 @@ describe("conventional subject", () => {
   it("rejects a subject without a type", async () => {
     const result = await check("Add CI pipeline");
     expect(result.valid).toBe(false);
-    expect(result.rules).toEqual(expect.arrayContaining(["type-empty", "subject-empty"]));
+    expect(result.rules).toEqual(
+      expect.arrayContaining(["type-empty", "subject-empty"]),
+    );
   });
 });

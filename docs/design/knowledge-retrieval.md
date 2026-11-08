@@ -10,49 +10,105 @@ The read side of the `knowledge` package is the only way course material and Fac
 
 ```ts
 export function createKnowledgeReader(deps: {
-  db: PrismaClient;          // local-substitutable; internal seam
-  embedder: Embedder;        // true external; real port
-  delegation: Delegation;    // in-process; used only for meter()
-  clock: Clock;              // in-process; injected
+  db: PrismaClient; // local-substitutable; internal seam
+  embedder: Embedder; // true external; real port
+  delegation: Delegation; // in-process; used only for meter()
+  clock: Clock; // in-process; injected
 }): KnowledgeReader;
 
 export interface KnowledgeReader {
-  pin(p: Principal, req: { runId: string; from: { chatId: string } | { responsibilityId: string };
-                           widen?: { courseIds?: string[]; sourceIds?: string[] } }): Promise<Pinned>;
+  pin(
+    p: Principal,
+    req: {
+      runId: string;
+      from: { chatId: string } | { responsibilityId: string };
+      widen?: { courseIds?: string[]; sourceIds?: string[] };
+    },
+  ): Promise<Pinned>;
   retrieve(p: Principal, scope: ScopeRef, q: Query): Promise<Retrieval>;
-  cite(p: Principal, refs: CitationRef[]): Promise<Map<CitationRef, Provenance | "gone">>;
+  cite(
+    p: Principal,
+    refs: CitationRef[],
+  ): Promise<Map<CitationRef, Provenance | "gone">>;
 }
 
 // A reference, not authority: serialisable through Temporal; owner and selection are resolved server-side on every call.
-export type ScopeRef = { chatId: string } | { runId: string } | { planning: true };
+export type ScopeRef =
+  | { chatId: string }
+  | { runId: string }
+  | { planning: true };
 
 export type Query =
-  | { kind: "passages"; text: string; limit?: number; narrow?: Narrow }       // metered (query embedding)
-  | { kind: "facts"; types: FactType[]; text?: string; narrow?: Narrow };    // metered only when text is given
-type Narrow = { courseIds?: string[]; sourceIds?: string[]; projectId?: string };   // intersected, never unioned
-type FactType = "obligation" | "topic" | "fixed_event" | "course_rule" | "exam_logistics";
+  | { kind: "passages"; text: string; limit?: number; narrow?: Narrow } // metered (query embedding)
+  | { kind: "facts"; types: FactType[]; text?: string; narrow?: Narrow }; // metered only when text is given
+type Narrow = {
+  courseIds?: string[];
+  sourceIds?: string[];
+  projectId?: string;
+}; // intersected, never unioned
+type FactType =
+  | "obligation"
+  | "topic"
+  | "fixed_event"
+  | "course_rule"
+  | "exam_logistics";
 
 export type Retrieval =
-  | { status: "ok"; revision: string; items: Item[]; truncated: boolean; render(): PromptData }
-  | { status: "refused"; reason: "not_owner" | "run_unpinned" | "budget_exhausted" | "allowance_exhausted" };
+  | {
+      status: "ok";
+      revision: string;
+      items: Item[];
+      truncated: boolean;
+      render(): PromptData;
+    }
+  | {
+      status: "refused";
+      reason:
+        | "not_owner"
+        | "run_unpinned"
+        | "budget_exhausted"
+        | "allowance_exhausted";
+    };
 
-type Item = { channel: "course_material" | "operational"; cite: CitationRef } & (
+type Item = {
+  channel: "course_material" | "operational";
+  cite: CitationRef;
+} & (
   | { kind: "passage"; text: Untrusted; provenance: Provenance; score: number }
-  | { kind: "fact"; factId: string; type: FactType; value: Untrusted; uncertainty?: string;
-      provenance: Provenance;                                            // the Correction when one exists
-      disagreement?: { value: Untrusted; provenance: Provenance } });   // newer Source; flagged, never applied
+  | {
+      kind: "fact";
+      factId: string;
+      type: FactType;
+      value: Untrusted;
+      uncertainty?: string;
+      provenance: Provenance; // the Correction when one exists
+      disagreement?: { value: Untrusted; provenance: Provenance };
+    }
+); // newer Source; flagged, never applied
 
 type Provenance =
-  | { kind: "source"; sourceId: string; title: string; location: { page?: number; section?: string; span?: [number, number] } }
+  | {
+      kind: "source";
+      sourceId: string;
+      title: string;
+      location: { page?: number; section?: string; span?: [number, number] };
+    }
   | { kind: "correction"; correctionId: string; at: Date }
   | { kind: "entry"; at: Date };
 
-type Untrusted = Brand<{ readonly length: number }, "Untrusted">;        // toString()/toJSON() return "[untrusted]"
-type PromptData = { data: string; citations: { tag: string; cite: CitationRef }[] };   // nonce-fenced data block, [S1] tags
+type Untrusted = Brand<{ readonly length: number }, "Untrusted">; // toString()/toJSON() return "[untrusted]"
+type PromptData = {
+  data: string;
+  citations: { tag: string; cite: CitationRef }[];
+}; // nonce-fenced data block, [S1] tags
 
 export interface Embedder {
-  model: string; dims: number;
-  embed(texts: string[], opts: { signal: AbortSignal }): Promise<{ vectors: number[][]; usage: Usage }>;
+  model: string;
+  dims: number;
+  embed(
+    texts: string[],
+    opts: { signal: AbortSignal },
+  ): Promise<{ vectors: number[][]; usage: Usage }>;
 }
 ```
 
@@ -92,12 +148,12 @@ If `meter` cannot tell whether an embedding call finished, the reservation stays
 
 ## Seams and adapters
 
-| Dependency | Category | Seam | Adapters |
-|---|---|---|---|
-| Postgres + pgvector (Prisma 7, raw SQL for vectors) | Local-substitutable | Internal only | Real Postgres; Testcontainers with the pgvector image |
-| Embedding provider | True external | **Real port** (`Embedder`) | Provider adapter; deterministic fake (hash-seeded vectors, scripted failure and hang) |
-| `delegation` | In-process | None; the real module is used | Real `createDelegation` on the same test database |
-| Clock | In-process | Small | System clock; manual clock |
+| Dependency                                          | Category            | Seam                          | Adapters                                                                              |
+| --------------------------------------------------- | ------------------- | ----------------------------- | ------------------------------------------------------------------------------------- |
+| Postgres + pgvector (Prisma 7, raw SQL for vectors) | Local-substitutable | Internal only                 | Real Postgres; Testcontainers with the pgvector image                                 |
+| Embedding provider                                  | True external       | **Real port** (`Embedder`)    | Provider adapter; deterministic fake (hash-seeded vectors, scripted failure and hang) |
+| `delegation`                                        | In-process          | None; the real module is used | Real `createDelegation` on the same test database                                     |
+| Clock                                               | In-process          | Small                         | System clock; manual clock                                                            |
 
 Rejected as hypothetical seams: a vector-store port, a reranker port before a reranker exists, and a cache port. The parser and the write side of `knowledge` are not dependencies of the read side; tests seed data through the write side's interface, never with raw SQL.
 

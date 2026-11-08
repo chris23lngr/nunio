@@ -7,33 +7,57 @@ import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { Worker } from "@temporalio/worker";
 import { approvalSignal } from "../src/workflows.ts";
 
-const workflowsPath = new URL(process.argv[2] ?? "../src/workflows.ts", import.meta.url).pathname;
+const workflowsPath = new URL(
+  process.argv[2] ?? "../src/workflows.ts",
+  import.meta.url,
+).pathname;
 const write = (name: string, history: Parameters<typeof historyToJSON>[0]) => {
   const path = new URL(`../histories/${name}.json`, import.meta.url);
-  writeFileSync(path, `${JSON.stringify(JSON.parse(historyToJSON(history)), null, 2)}\n`);
+  writeFileSync(
+    path,
+    `${JSON.stringify(JSON.parse(historyToJSON(history)), null, 2)}\n`,
+  );
   console.log(`wrote ${path.pathname}`);
 };
 const env = await TestWorkflowEnvironment.createLocal();
 try {
   const taskQueue = "record-history";
   // A worker polls only once, so each recording gets its own.
-  const worker = () => Worker.create({
-    connection: env.nativeConnection,
-    taskQueue,
-    workflowsPath,
-    activities: { processSource: async () => ({ status: "ready" }), extractFacts: async () => ({ status: "done", dropped: 0 }) },
-  });
+  const worker = () =>
+    Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowsPath,
+      activities: {
+        processSource: async () => ({ status: "ready" }),
+        extractFacts: async () => ({ status: "done", dropped: 0 }),
+      },
+    });
   const workflowId = `approval-${randomUUID()}`;
   await (await worker()).runUntil(async () => {
-    const handle = await env.client.workflow.start("awaitApproval", { taskQueue, workflowId });
+    const handle = await env.client.workflow.start("awaitApproval", {
+      taskQueue,
+      workflowId,
+    });
     await handle.signal(approvalSignal, "approved");
     await handle.result();
   });
-  write("await-approval", await env.client.workflow.getHandle(workflowId).fetchHistory());
+  write(
+    "await-approval",
+    await env.client.workflow.getHandle(workflowId).fetchHistory(),
+  );
   const sourceWorkflowId = `source-${randomUUID()}`;
-  await (await worker()).runUntil(env.client.workflow.execute("ingestSource", { taskQueue, workflowId: sourceWorkflowId,
-    args: [{ studentId: "student", sourceId: "source" }] }));
-  write(process.argv[3] ?? "ingest-source", await env.client.workflow.getHandle(sourceWorkflowId).fetchHistory());
+  await (await worker()).runUntil(
+    env.client.workflow.execute("ingestSource", {
+      taskQueue,
+      workflowId: sourceWorkflowId,
+      args: [{ studentId: "student", sourceId: "source" }],
+    }),
+  );
+  write(
+    process.argv[3] ?? "ingest-source",
+    await env.client.workflow.getHandle(sourceWorkflowId).fetchHistory(),
+  );
 } finally {
   await env.teardown();
 }

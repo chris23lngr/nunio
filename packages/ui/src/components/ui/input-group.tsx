@@ -1,7 +1,8 @@
 "use client"
 
 import { Input as InputPrimitive } from "@base-ui/react/input"
-import { cva, type VariantProps } from "class-variance-authority"
+import type { VariantProps } from "class-variance-authority"
+import { cva } from "class-variance-authority"
 import type * as React from "react"
 import { cn } from "../../lib/utils.js"
 import { Button } from "./button.js"
@@ -12,18 +13,18 @@ import { inputBaseClass } from "./input.js"
 // The frame owns the surface; its control is bare text. Only the control's
 // focus rings the frame, so a focused InputGroupButton leaves it idle.
 const inputGroupVariants = cva(
-  "group/input-group [&_svg:not([class*='text-'])]:text-icon-secondary relative flex w-full min-w-0 cursor-text items-center gap-1.5 rounded-md has-[[data-slot=input-group-control]:focus-visible]:shadow-focus-input [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/input-group [&_svg:not([class*='text-'])]:text-icon-secondary has-[[data-slot=input-group-control]:focus-visible]:shadow-focus-input relative flex w-full min-w-0 cursor-text items-center gap-1.5 rounded-md [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
         // Page menu search
-        default: "bg-secondary-translucent h-7 px-1.5 py-[3px] shadow-input",
+        default: "bg-secondary-translucent shadow-input h-7 px-1.5 py-[3px]",
         // Settings search: the same field with an inset ring and lighter icon
         inset:
-          "bg-secondary-translucent [&_svg:not([class*='text-'])]:text-icon-tertiary h-7 px-1.5 py-1 shadow-input-inset",
+          "bg-secondary-translucent [&_svg:not([class*='text-'])]:text-icon-tertiary shadow-input-inset h-7 px-1.5 py-1",
         // Share recipients: transparent, grows with chips
         outline:
-          "min-h-8 bg-transparent px-1 py-0.5 shadow-input *:data-[slot=input-group-control]:h-6 *:data-[slot=input-group-control]:p-0.5",
+          "shadow-input min-h-8 bg-transparent px-1 py-0.5 *:data-[slot=input-group-control]:h-6 *:data-[slot=input-group-control]:p-0.5",
       },
     },
     defaultVariants: { variant: "default" },

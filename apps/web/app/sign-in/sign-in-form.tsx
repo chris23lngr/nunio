@@ -1,16 +1,25 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type MouseEvent } from "react";
-import { useAppForm } from "@/lib/form";
+import type { MouseEvent } from "react";
+import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { useAppForm } from "@/lib/form";
 
 function appURL(path: string): string {
   return `${window.location.origin}${path}`;
 }
 
-export function SignInForm({ apiOrigin, invitation, initialNotice, initialError }: {
-  apiOrigin: string; invitation?: string; initialNotice?: string; initialError?: string;
+export function SignInForm({
+  apiOrigin,
+  invitation,
+  initialNotice,
+  initialError,
+}: {
+  apiOrigin: string;
+  invitation?: string;
+  initialNotice?: string;
+  initialError?: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(initialError ?? null);
@@ -28,9 +37,13 @@ export function SignInForm({ apiOrigin, invitation, initialNotice, initialError 
       const result =
         intent === "sign-up"
           ? await client.signUp.email({
-              name: value.name, email, password,
+              name: value.name,
+              email,
+              password,
               callbackURL: appURL("/sign-in"),
-              fetchOptions: { headers: { "x-invitation-token": invitation ?? "" } },
+              fetchOptions: {
+                headers: { "x-invitation-token": invitation ?? "" },
+              },
             })
           : await client.signIn.email({ email, password });
       if (result.error) {
@@ -53,13 +66,18 @@ export function SignInForm({ apiOrigin, invitation, initialNotice, initialError 
       email: pendingEmail,
       callbackURL: appURL("/sign-in"),
     });
-    if (result.error) return setError(result.error.message ?? "Could not send verification email");
+    if (result.error)
+      return setError(
+        result.error.message ?? "Could not send verification email",
+      );
     setError(null);
     setNotice("If verification is needed, a new email has been sent.");
   }
 
   async function requestPasswordReset(event: MouseEvent<HTMLButtonElement>) {
-    const email = event.currentTarget.form!.elements.namedItem("email") as HTMLInputElement;
+    const email = event.currentTarget.form!.elements.namedItem(
+      "email",
+    ) as HTMLInputElement;
     if (!email.reportValidity()) return;
     setError(null);
     setNotice(null);
@@ -67,31 +85,58 @@ export function SignInForm({ apiOrigin, invitation, initialNotice, initialError 
       email: form.getFieldValue("email"),
       redirectTo: appURL("/reset-password"),
     });
-    if (result.error) return setError("Could not request a password reset. Please try again.");
-    setNotice("If an account exists for that email address, check your email for a reset link.");
+    if (result.error)
+      return setError("Could not request a password reset. Please try again.");
+    setNotice(
+      "If an account exists for that email address, check your email for a reset link.",
+    );
   }
 
   return (
-    <form onSubmit={event => {
-      event.preventDefault();
-      const intent = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "sign-up" ? "sign-up" : "sign-in";
-      void form.handleSubmit({ intent });
-    }}>
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const intent =
+          (event.nativeEvent as SubmitEvent).submitter?.getAttribute(
+            "value",
+          ) === "sign-up"
+            ? "sign-up"
+            : "sign-in";
+        void form.handleSubmit({ intent });
+      }}
+    >
       <form.AppField name="name">
-        {field => <field.TextField label="Name" autoComplete="name" />}
+        {(field) => <field.TextField label="Name" autoComplete="name" />}
       </form.AppField>
       <form.AppField name="email">
-        {field => <field.TextField label="Email" type="email" autoComplete="email" required />}
+        {(field) => (
+          <field.TextField
+            label="Email"
+            type="email"
+            autoComplete="email"
+            required
+          />
+        )}
       </form.AppField>
       <form.AppField name="password">
-        {field => <field.TextField label="Password" type="password" required />}
+        {(field) => (
+          <field.TextField label="Password" type="password" required />
+        )}
       </form.AppField>
       <form.AppForm>
         <form.SubmitButton value="sign-in">Sign in</form.SubmitButton>
-        {invitation && <form.SubmitButton value="sign-up">Sign up</form.SubmitButton>}
+        {invitation && (
+          <form.SubmitButton value="sign-up">Sign up</form.SubmitButton>
+        )}
       </form.AppForm>
-      {pendingEmail && <button type="button" onClick={resendVerification}>Resend verification email</button>}
-      <button type="button" onClick={requestPasswordReset}>Forgot password?</button>
+      {pendingEmail && (
+        <button type="button" onClick={resendVerification}>
+          Resend verification email
+        </button>
+      )}
+      <button type="button" onClick={requestPasswordReset}>
+        Forgot password?
+      </button>
       {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}
     </form>

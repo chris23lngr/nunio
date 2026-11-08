@@ -56,761 +56,254 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wie lange dauert die Klausur in Grundlagen des Rechnungswesens?",
-      "expected": [
-        5
-      ],
+      "expected": [5],
       "rank": 9,
       "hitScore": 0.554,
-      "pages": [
-        4,
-        4,
-        16,
-        1,
-        10,
-        13,
-        10,
-        4,
-        5,
-        1
-      ],
+      "pages": [4, 4, 16, 1, 10, 13, 10, 4, 5, 1],
       "scores": [
-        0.657,
-        0.647,
-        0.601,
-        0.584,
-        0.584,
-        0.576,
-        0.569,
-        0.561,
-        0.554,
-        0.546
+        0.657, 0.647, 0.601, 0.584, 0.584, 0.576, 0.569, 0.561, 0.554, 0.546
       ]
     },
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wie viele Seiten darf das Paper im Einführungsmodul Willkommen zur BWL höchstens haben?",
-      "expected": [
-        2
-      ],
+      "expected": [2],
       "rank": 10,
       "hitScore": 0.485,
-      "pages": [
-        1,
-        11,
-        4,
-        10,
-        7,
-        9,
-        3,
-        16,
-        13,
-        2
-      ],
+      "pages": [1, 11, 4, 10, 7, 9, 3, 16, 13, 2],
       "scores": [
-        0.574,
-        0.56,
-        0.534,
-        0.528,
-        0.517,
-        0.508,
-        0.504,
-        0.501,
-        0.495,
-        0.485
+        0.574, 0.56, 0.534, 0.528, 0.517, 0.508, 0.504, 0.501, 0.495, 0.485
       ]
     },
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wie stark zählt die Klausur im Modul Willkommen zur Betriebswirtschaftslehre zur Modulnote?",
-      "expected": [
-        2
-      ],
+      "expected": [2],
       "rank": null,
       "hitScore": null,
-      "pages": [
-        3,
-        16,
-        9,
-        11,
-        1,
-        5,
-        4,
-        1,
-        11,
-        16
-      ],
+      "pages": [3, 16, 9, 11, 1, 5, 4, 1, 11, 16],
       "scores": [
-        0.674,
-        0.668,
-        0.657,
-        0.652,
-        0.639,
-        0.613,
-        0.603,
-        0.592,
-        0.591,
-        0.576
+        0.674, 0.668, 0.657, 0.652, 0.639, 0.613, 0.603, 0.592, 0.591, 0.576
       ]
     },
     {
       "document": "wwu-bwl-excerpt",
       "question": "Muss ich bei den Übungen im Modul Willkommen zur BWL anwesend sein?",
-      "expected": [
-        3
-      ],
+      "expected": [3],
       "rank": 5,
       "hitScore": 0.62,
-      "pages": [
-        16,
-        11,
-        1,
-        9,
-        3,
-        4,
-        16,
-        4,
-        13,
-        1
-      ],
+      "pages": [16, 11, 1, 9, 3, 4, 16, 4, 13, 1],
       "scores": [
-        0.667,
-        0.664,
-        0.639,
-        0.621,
-        0.62,
-        0.61,
-        0.605,
-        0.589,
-        0.576,
-        0.574
+        0.667, 0.664, 0.639, 0.621, 0.62, 0.61, 0.605, 0.589, 0.576, 0.574
       ]
     },
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wer ist für das Modul Grundlagen des Rechnungswesens verantwortlich?",
-      "expected": [
-        6
-      ],
+      "expected": [6],
       "rank": null,
       "hitScore": null,
-      "pages": [
-        4,
-        4,
-        5,
-        4,
-        3,
-        16,
-        1,
-        12,
-        13,
-        15
-      ],
+      "pages": [4, 4, 5, 4, 3, 16, 1, 12, 13, 15],
       "scores": [
-        0.674,
-        0.616,
-        0.613,
-        0.591,
-        0.59,
-        0.587,
-        0.574,
-        0.565,
-        0.564,
-        0.537
+        0.674, 0.616, 0.613, 0.591, 0.59, 0.587, 0.574, 0.565, 0.564, 0.537
       ]
     },
     {
       "document": "wwu-bwl-excerpt",
       "question": "In welcher Sprache findet Marketing Management statt?",
-      "expected": [
-        7
-      ],
+      "expected": [7],
       "rank": 1,
       "hitScore": 0.628,
-      "pages": [
-        7,
-        8,
-        7,
-        7,
-        9,
-        13,
-        8,
-        1,
-        10,
-        1
-      ],
+      "pages": [7, 8, 7, 7, 9, 13, 8, 1, 10, 1],
       "scores": [
-        0.628,
-        0.513,
-        0.508,
-        0.483,
-        0.471,
-        0.469,
-        0.462,
-        0.457,
-        0.445,
-        0.439
+        0.628, 0.513, 0.508, 0.483, 0.471, 0.469, 0.462, 0.457, 0.445, 0.439
       ]
     },
     {
       "document": "wwu-bwl-excerpt",
       "question": "Was lerne ich in Marketing Management über die Preisfindung?",
-      "expected": [
-        8
-      ],
+      "expected": [8],
       "rank": 1,
       "hitScore": 0.597,
-      "pages": [
-        8,
-        7,
-        8,
-        14,
-        13,
-        7,
-        14,
-        15,
-        10,
-        15
-      ],
+      "pages": [8, 7, 8, 14, 13, 7, 14, 15, 10, 15],
       "scores": [
-        0.597,
-        0.567,
-        0.544,
-        0.538,
-        0.535,
-        0.53,
-        0.521,
-        0.521,
-        0.519,
-        0.503
+        0.597, 0.567, 0.544, 0.538, 0.535, 0.53, 0.521, 0.521, 0.519, 0.503
       ]
     },
     {
       "document": "wwu-bwl-excerpt",
       "question": "Welche Methode zur Bewertung von Investitionen steht im Vordergrund?",
-      "expected": [
-        10
-      ],
+      "expected": [10],
       "rank": 1,
       "hitScore": 0.613,
-      "pages": [
-        10,
-        10,
-        10,
-        13,
-        4,
-        14,
-        11,
-        15,
-        11,
-        14
-      ],
+      "pages": [10, 10, 10, 13, 4, 14, 11, 15, 11, 14],
       "scores": [
-        0.613,
-        0.525,
-        0.491,
-        0.489,
-        0.477,
-        0.471,
-        0.459,
-        0.458,
-        0.448,
-        0.444
+        0.613, 0.525, 0.491, 0.489, 0.477, 0.471, 0.459, 0.458, 0.448, 0.444
       ]
     },
     {
       "document": "wwu-bwl-excerpt",
       "question": "Gibt es im Controlling eine Anwesenheitspflicht?",
-      "expected": [
-        16
-      ],
+      "expected": [16],
       "rank": 1,
       "hitScore": 0.602,
-      "pages": [
-        16,
-        13,
-        13,
-        14,
-        16,
-        9,
-        15,
-        4,
-        3,
-        1
-      ],
+      "pages": [16, 13, 13, 14, 16, 9, 15, 4, 3, 1],
       "scores": [
-        0.602,
-        0.597,
-        0.562,
-        0.552,
-        0.51,
-        0.506,
-        0.5,
-        0.497,
-        0.495,
-        0.489
+        0.602, 0.597, 0.562, 0.552, 0.51, 0.506, 0.5, 0.497, 0.495, 0.489
       ]
     },
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wer leitet das Controlling-Modul?",
-      "expected": [
-        16
-      ],
+      "expected": [16],
       "rank": null,
       "hitScore": null,
-      "pages": [
-        13,
-        13,
-        14,
-        13,
-        4,
-        1,
-        15,
-        15,
-        5,
-        12
-      ],
+      "pages": [13, 13, 14, 13, 4, 1, 15, 15, 5, 12],
       "scores": [
-        0.529,
-        0.516,
-        0.462,
-        0.453,
-        0.442,
-        0.436,
-        0.434,
-        0.421,
-        0.417,
-        0.411
+        0.529, 0.516, 0.462, 0.453, 0.442, 0.436, 0.434, 0.421, 0.417, 0.411
       ]
     },
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wird im Rechnungswesen der Jahresabschluss nach HGB behandelt?",
-      "expected": [
-        4
-      ],
+      "expected": [4],
       "rank": 1,
       "hitScore": 0.682,
-      "pages": [
-        4,
-        4,
-        5,
-        3,
-        4,
-        14,
-        13,
-        14,
-        16,
-        16
-      ],
+      "pages": [4, 4, 5, 3, 4, 14, 13, 14, 16, 16],
       "scores": [
-        0.682,
-        0.593,
-        0.518,
-        0.482,
-        0.46,
-        0.445,
-        0.433,
-        0.432,
-        0.431,
-        0.429
+        0.682, 0.593, 0.518, 0.482, 0.46, 0.445, 0.433, 0.432, 0.431, 0.429
       ]
     },
     {
       "document": "wwu-bwl-excerpt",
       "question": "Welche Studienleistung muss ich in der Übung Applied Empirical Research erbringen?",
-      "expected": [
-        2
-      ],
+      "expected": [2],
       "rank": 2,
       "hitScore": 0.562,
-      "pages": [
-        1,
-        2,
-        2,
-        4,
-        15,
-        3,
-        13,
-        11,
-        7,
-        8
-      ],
+      "pages": [1, 2, 2, 4, 15, 3, 13, 11, 7, 8],
       "scores": [
-        0.566,
-        0.562,
-        0.533,
-        0.526,
-        0.518,
-        0.517,
-        0.499,
-        0.498,
-        0.487,
-        0.486
+        0.566, 0.562, 0.533, 0.526, 0.518, 0.517, 0.499, 0.498, 0.487, 0.486
       ]
     },
     {
       "document": "wwu-wi-excerpt",
       "question": "Welche Programmiersprache wird im Modul Programmierung verwendet?",
-      "expected": [
-        4
-      ],
+      "expected": [4],
       "rank": 1,
       "hitScore": 0.64,
-      "pages": [
-        4,
-        4,
-        13,
-        5,
-        4,
-        16,
-        13,
-        12,
-        7,
-        6
-      ],
+      "pages": [4, 4, 13, 5, 4, 16, 13, 12, 7, 6],
       "scores": [
-        0.64,
-        0.624,
-        0.545,
-        0.539,
-        0.531,
-        0.53,
-        0.523,
-        0.522,
-        0.519,
-        0.518
+        0.64, 0.624, 0.545, 0.539, 0.531, 0.53, 0.523, 0.522, 0.519, 0.518
       ]
     },
     {
       "document": "wwu-wi-excerpt",
       "question": "Wie lange dauert die Klausur in Programmierung?",
-      "expected": [
-        5
-      ],
+      "expected": [5],
       "rank": null,
       "hitScore": null,
-      "pages": [
-        4,
-        10,
-        8,
-        16,
-        4,
-        1,
-        10,
-        17,
-        7,
-        11
-      ],
+      "pages": [4, 10, 8, 16, 4, 1, 10, 17, 7, 11],
       "scores": [
-        0.618,
-        0.559,
-        0.55,
-        0.549,
-        0.548,
-        0.545,
-        0.543,
-        0.535,
-        0.525,
-        0.521
+        0.618, 0.559, 0.55, 0.549, 0.548, 0.545, 0.543, 0.535, 0.525, 0.521
       ]
     },
     {
       "document": "wwu-wi-excerpt",
       "question": "Wer ist Modulbeauftragter für Programmierung?",
-      "expected": [
-        6
-      ],
+      "expected": [6],
       "rank": 3,
       "hitScore": 0.527,
-      "pages": [
-        12,
-        4,
-        6,
-        3,
-        4,
-        15,
-        18,
-        13,
-        9,
-        13
-      ],
+      "pages": [12, 4, 6, 3, 4, 15, 18, 13, 9, 13],
       "scores": [
-        0.557,
-        0.545,
-        0.527,
-        0.523,
-        0.518,
-        0.503,
-        0.5,
-        0.495,
-        0.486,
-        0.483
+        0.557, 0.545, 0.527, 0.523, 0.518, 0.503, 0.5, 0.495, 0.486, 0.483
       ]
     },
     {
       "document": "wwu-wi-excerpt",
       "question": "Wird die Mathematik-Klausur elektronisch geschrieben?",
-      "expected": [
-        8
-      ],
+      "expected": [8],
       "rank": 1,
       "hitScore": 0.474,
-      "pages": [
-        8,
-        7,
-        16,
-        10,
-        4,
-        2,
-        9,
-        16,
-        8,
-        7
-      ],
+      "pages": [8, 7, 16, 10, 4, 2, 9, 16, 8, 7],
       "scores": [
-        0.474,
-        0.451,
-        0.431,
-        0.419,
-        0.417,
-        0.414,
-        0.414,
-        0.408,
-        0.407,
-        0.406
+        0.474, 0.451, 0.431, 0.419, 0.417, 0.414, 0.414, 0.408, 0.407, 0.406
       ]
     },
     {
       "document": "wwu-wi-excerpt",
       "question": "Wie werden die beiden Klausuren im BWL-Modul gewichtet?",
-      "expected": [
-        11
-      ],
+      "expected": [11],
       "rank": 1,
       "hitScore": 0.54,
-      "pages": [
-        11,
-        10,
-        9,
-        7,
-        7,
-        2,
-        5,
-        6,
-        12,
-        16
-      ],
+      "pages": [11, 10, 9, 7, 7, 2, 5, 6, 12, 16],
       "scores": [
-        0.54,
-        0.525,
-        0.523,
-        0.511,
-        0.51,
-        0.508,
-        0.508,
-        0.506,
-        0.501,
-        0.499
+        0.54, 0.525, 0.523, 0.511, 0.51, 0.508, 0.508, 0.506, 0.501, 0.499
       ]
     },
     {
       "document": "wwu-wi-excerpt",
       "question": "Welche Datenbanksprache lerne ich im Datenmanagement?",
-      "expected": [
-        13,
-        14
-      ],
+      "expected": [13, 14],
       "rank": 1,
       "hitScore": 0.613,
-      "pages": [
-        13,
-        13,
-        13,
-        14,
-        14,
-        13,
-        16,
-        4,
-        4,
-        10
-      ],
+      "pages": [13, 13, 13, 14, 14, 13, 16, 4, 4, 10],
       "scores": [
-        0.613,
-        0.604,
-        0.568,
-        0.567,
-        0.564,
-        0.555,
-        0.534,
-        0.505,
-        0.495,
-        0.494
+        0.613, 0.604, 0.568, 0.567, 0.564, 0.555, 0.534, 0.505, 0.495, 0.494
       ]
     },
     {
       "document": "wwu-wi-excerpt",
       "question": "Welches Datenbanksystem wird in den Übungen zum Datenmanagement genutzt?",
-      "expected": [
-        14
-      ],
+      "expected": [14],
       "rank": 3,
       "hitScore": 0.589,
-      "pages": [
-        13,
-        13,
-        14,
-        16,
-        14,
-        13,
-        13,
-        16,
-        15,
-        17
-      ],
+      "pages": [13, 13, 14, 16, 14, 13, 13, 16, 15, 17],
       "scores": [
-        0.612,
-        0.602,
-        0.589,
-        0.584,
-        0.573,
-        0.564,
-        0.557,
-        0.523,
-        0.497,
-        0.486
+        0.612, 0.602, 0.589, 0.584, 0.573, 0.564, 0.557, 0.523, 0.497, 0.486
       ]
     },
     {
       "document": "wwu-wi-excerpt",
       "question": "Muss ich bei der Exkursion in Einführung in die Wirtschaftsinformatik dabei sein?",
-      "expected": [
-        3
-      ],
+      "expected": [3],
       "rank": 1,
       "hitScore": 0.705,
-      "pages": [
-        3,
-        1,
-        1,
-        10,
-        2,
-        4,
-        16,
-        13,
-        18,
-        7
-      ],
+      "pages": [3, 1, 1, 10, 2, 4, 16, 13, 18, 7],
       "scores": [
-        0.705,
-        0.635,
-        0.592,
-        0.591,
-        0.562,
-        0.555,
-        0.543,
-        0.538,
-        0.521,
-        0.517
+        0.705, 0.635, 0.592, 0.591, 0.562, 0.555, 0.543, 0.538, 0.521, 0.517
       ]
     },
     {
       "document": "wwu-wi-excerpt",
       "question": "Wie viele Folien hat die Abschlusspräsentation in Einführung in die Wirtschaftsinformatik?",
-      "expected": [
-        2
-      ],
+      "expected": [2],
       "rank": 4,
       "hitScore": 0.576,
-      "pages": [
-        1,
-        1,
-        10,
-        2,
-        4,
-        16,
-        10,
-        3,
-        13,
-        1
-      ],
+      "pages": [1, 1, 10, 2, 4, 16, 10, 3, 13, 1],
       "scores": [
-        0.626,
-        0.613,
-        0.579,
-        0.576,
-        0.554,
-        0.541,
-        0.539,
-        0.538,
-        0.527,
-        0.521
+        0.626, 0.613, 0.579, 0.576, 0.554, 0.541, 0.539, 0.538, 0.527, 0.521
       ]
     },
     {
       "document": "wwu-wi-excerpt",
       "question": "Welche Vorkenntnisse setzt Datenstrukturen und Algorithmen voraus?",
-      "expected": [
-        16
-      ],
+      "expected": [16],
       "rank": 2,
       "hitScore": 0.614,
-      "pages": [
-        17,
-        16,
-        16,
-        16,
-        4,
-        11,
-        8,
-        2,
-        1,
-        14
-      ],
+      "pages": [17, 16, 16, 16, 4, 11, 8, 2, 1, 14],
       "scores": [
-        0.63,
-        0.614,
-        0.592,
-        0.568,
-        0.522,
-        0.517,
-        0.517,
-        0.504,
-        0.502,
-        0.496
+        0.63, 0.614, 0.592, 0.568, 0.522, 0.517, 0.517, 0.504, 0.502, 0.496
       ]
     },
     {
       "document": "wwu-wi-excerpt",
       "question": "Wer betreut das Modul Datenstrukturen und Algorithmen?",
-      "expected": [
-        18
-      ],
+      "expected": [18],
       "rank": 8,
       "hitScore": 0.525,
-      "pages": [
-        16,
-        16,
-        12,
-        13,
-        13,
-        17,
-        14,
-        18,
-        15,
-        3
-      ],
+      "pages": [16, 16, 12, 13, 13, 17, 14, 18, 15, 3],
       "scores": [
-        0.63,
-        0.614,
-        0.564,
-        0.56,
-        0.559,
-        0.536,
-        0.527,
-        0.525,
-        0.499,
-        0.498
+        0.63, 0.614, 0.564, 0.56, 0.559, 0.536, 0.527, 0.525, 0.499, 0.498
       ]
     }
   ],

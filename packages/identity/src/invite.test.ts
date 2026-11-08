@@ -1,10 +1,13 @@
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { createPool, createPrismaClient, type PrismaClient } from "@nunio/db";
-import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
+import type { PrismaClient } from "@nunio/db";
+import { createPool, createPrismaClient } from "@nunio/db";
+import type { TestDatabase } from "@nunio/db/testing";
+import { startTestDatabase } from "@nunio/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createAuth, type Auth } from "./auth.js";
+import type { Auth } from "./auth.js";
+import { createAuth } from "./auth.js";
 
 const execute = promisify(execFile);
 const origin = "https://app.nunio.test";
@@ -17,10 +20,16 @@ beforeAll(async () => {
   db = await startTestDatabase();
   prisma = createPrismaClient(createPool(db.runtimeConnectionString));
   auth = createAuth({
-    prisma, baseURL: origin, trustedOrigins: [origin], secret: "invite-test-secret-that-is-long-enough",
+    prisma,
+    baseURL: origin,
+    trustedOrigins: [origin],
+    secret: "invite-test-secret-that-is-long-enough",
     email: {
-      projectId: "test-project", secretKey: "test-key", from: "accounts@nunio.test",
-      fetch: async () => Response.json({ emails: [{ id: "test-email" }] }, { status: 201 }),
+      projectId: "test-project",
+      secretKey: "test-key",
+      from: "accounts@nunio.test",
+      fetch: async () =>
+        Response.json({ emails: [{ id: "test-email" }] }, { status: 201 }),
     },
   });
 }, 180_000);
@@ -31,26 +40,41 @@ afterAll(async () => {
 });
 
 function issue(email: string, operator = "pilot-founder") {
-  return execute(process.execPath, ["--import", "tsx", fileURLToPath(new URL("./invite.ts", import.meta.url)), email], {
-    env: {
-      PATH: process.env.PATH,
-      INVITATION_DATABASE_URL: db.connectionString,
-      APP_ORIGIN: origin,
-      OPERATOR_ID: operator,
+  return execute(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      fileURLToPath(new URL("./invite.ts", import.meta.url)),
+      email,
+    ],
+    {
+      env: {
+        PATH: process.env.PATH,
+        INVITATION_DATABASE_URL: db.connectionString,
+        APP_ORIGIN: origin,
+        OPERATOR_ID: operator,
+      },
     },
-  });
+  );
 }
 
 async function register(email: string, url: string) {
-  return auth.handler(new Request(`${origin}/api/auth/sign-up/email`, {
-    method: "POST",
-    headers: {
-      origin,
-      "content-type": "application/json",
-      "x-invitation-token": new URL(url).searchParams.get("invitation")!,
-    },
-    body: JSON.stringify({ name: "Ada", email, password: "correct horse battery staple" }),
-  }));
+  return auth.handler(
+    new Request(`${origin}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: {
+        origin,
+        "content-type": "application/json",
+        "x-invitation-token": new URL(url).searchParams.get("invitation")!,
+      },
+      body: JSON.stringify({
+        name: "Ada",
+        email,
+        password: "correct horse battery staple",
+      }),
+    }),
+  );
 }
 
 describe("the founder's invitation command", () => {
@@ -68,8 +92,15 @@ describe("the founder's invitation command", () => {
 
   it("records the issuing operator and issuance time", async () => {
     const before = Date.now();
-    const { stdout } = await issue(`audit+${run}@example.com`, "founder-audit-test");
-    const invitation = JSON.parse(stdout) as { id: string; issuedBy: string; createdAt: string };
+    const { stdout } = await issue(
+      `audit+${run}@example.com`,
+      "founder-audit-test",
+    );
+    const invitation = JSON.parse(stdout) as {
+      id: string;
+      issuedBy: string;
+      createdAt: string;
+    };
 
     expect(invitation.issuedBy).toBe("founder-audit-test");
     expect(invitation.id).toEqual(expect.any(String));
@@ -79,9 +110,14 @@ describe("the founder's invitation command", () => {
 
   it("expires the invitation seven days after issuance", async () => {
     const { stdout } = await issue(`expiry+${run}@example.com`);
-    const invitation = JSON.parse(stdout) as { createdAt: string; expiresAt: string };
+    const invitation = JSON.parse(stdout) as {
+      createdAt: string;
+      expiresAt: string;
+    };
 
-    expect(Date.parse(invitation.expiresAt) - Date.parse(invitation.createdAt)).toBe(604_800_000);
+    expect(
+      Date.parse(invitation.expiresAt) - Date.parse(invitation.createdAt),
+    ).toBe(604_800_000);
   });
 
   it("binds a mixed-case email invitation to the normalized student address", async () => {
@@ -89,12 +125,18 @@ describe("the founder's invitation command", () => {
     const invitation = JSON.parse(stdout) as { email: string; url: string };
 
     expect(invitation.email).toBe(`case+${run}@example.com`);
-    expect((await register(`other+${run}@example.com`, invitation.url)).status).toBe(403);
-    expect((await register(`case+${run}@example.com`, invitation.url)).status).toBe(200);
+    expect(
+      (await register(`other+${run}@example.com`, invitation.url)).status,
+    ).toBe(403);
+    expect(
+      (await register(`case+${run}@example.com`, invitation.url)).status,
+    ).toBe(200);
   });
 
   it("refuses to issue an invitation without operator attribution", async () => {
-    await expect(issue(`unaudited+${run}@example.com`, "")).rejects.toMatchObject({
+    await expect(
+      issue(`unaudited+${run}@example.com`, ""),
+    ).rejects.toMatchObject({
       code: 1,
       stdout: "",
       stderr: expect.stringContaining("OPERATOR_ID"),

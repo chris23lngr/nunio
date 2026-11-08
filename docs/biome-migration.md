@@ -79,11 +79,11 @@ Sources: [Biome mappings](https://biomejs.dev/linter/javascript/sources/),
 
 - Frozen-lockfile installation passes, with no ESLint dependencies remaining.
 - Repository lint and formatting checks pass; a second formatter run writes no
-  changes. Five warnings and one informational diagnostic remain nonblocking.
+  changes. Six warnings and one informational diagnostic remain nonblocking.
 - Typecheck passes (31 Turbo tasks), run with `--concurrency=1` to avoid the
   existing web build/type-generation race on a fresh checkout. Formatting required
   moving one `@ts-expect-error` comment onto its newly wrapped argument.
-- Workspace tests pass (318 tests across 47 files; 26 Turbo tasks including
+- Workspace tests pass (330 tests across 49 files; 27 Turbo tasks including
   prerequisite builds). This includes real database, Temporal, and Storybook
   browser tests; the separate E2E suite was not run.
 - Temporary probes confirm both restricted import patterns, type-only imports,

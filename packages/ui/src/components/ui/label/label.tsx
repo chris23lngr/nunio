@@ -9,7 +9,7 @@ function Label({ className, ...props }: Field.Label.Props) {
       data-slot="label"
       className={(state) =>
         cn(
-          "block w-fit max-w-full font-sans text-sm font-medium text-base-800 data-disabled:opacity-50 data-invalid:text-destructive-700",
+          "text-base-800 data-invalid:text-destructive-700 block w-fit max-w-full font-sans text-sm font-medium data-disabled:opacity-50",
           typeof className === "function" ? className(state) : className,
         )
       }

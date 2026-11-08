@@ -1,14 +1,27 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { APICallError, type LanguageModel, type LanguageModelUsage, type ProviderMetadata } from "ai";
+import type { LanguageModel, LanguageModelUsage, ProviderMetadata } from "ai";
+import { APICallError } from "ai";
 
 /**
  * Claude models OpenRouter serves from zero-retention endpoints (spike f); Covered Models stay excluded.
  * Prices are OpenRouter's, in micro-USD per million tokens, as of 2026-10-31; update them when OpenRouter does.
  */
 const allowlist = {
-  "anthropic/claude-haiku-5.5": { input: 100_000, output: 500_000, upstream: ["Amazon Bedrock", "Google"] },
-  "anthropic/claude-sonnet-5.5": { input: 2_000_000, output: 10_000_000, upstream: ["Amazon Bedrock", "Google"] },
-  "anthropic/claude-opus-5.5": { input: 4_000_000, output: 20_000_000, upstream: ["Amazon Bedrock", "Google"] },
+  "anthropic/claude-haiku-5.5": {
+    input: 100_000,
+    output: 500_000,
+    upstream: ["Amazon Bedrock", "Google"],
+  },
+  "anthropic/claude-sonnet-5.5": {
+    input: 2_000_000,
+    output: 10_000_000,
+    upstream: ["Amazon Bedrock", "Google"],
+  },
+  "anthropic/claude-opus-5.5": {
+    input: 4_000_000,
+    output: 20_000_000,
+    upstream: ["Amazon Bedrock", "Google"],
+  },
 } as const;
 
 export type ModelId = keyof typeof allowlist;
@@ -61,7 +74,10 @@ export interface RegisteredModel {
    * What a finished call cost, for `meter` to settle: OpenRouter's reported cost, or its token counts at
    * the registry's prices when no cost was reported. Rounded up to whole micro-USD.
    */
-  actualMicroUsd(result: { usage: LanguageModelUsage; providerMetadata?: ProviderMetadata }): number;
+  actualMicroUsd(result: {
+    usage: LanguageModelUsage;
+    providerMetadata?: ProviderMetadata;
+  }): number;
 }
 
 export interface Models {
@@ -70,7 +86,11 @@ export interface Models {
   forTask(task: Task): RegisteredModel;
 }
 
-export function createModels({ apiKey, baseURL, fetch }: {
+export function createModels({
+  apiKey,
+  baseURL,
+  fetch,
+}: {
   apiKey: string;
   baseURL: string;
   /** Lets a test see the exact request bodies sent to OpenRouter. */
@@ -79,28 +99,53 @@ export function createModels({ apiKey, baseURL, fetch }: {
   const openrouter = createOpenRouter({ apiKey, baseURL, fetch });
   const isAllowed = (id: string): id is ModelId => Object.hasOwn(allowlist, id);
   function modelFor(id: string, outputTokens: number): RegisteredModel {
-    if (!isAllowed(id)) throw new Error(`Model ${JSON.stringify(id)} is not in the model allowlist`);
+    if (!isAllowed(id))
+      throw new Error(
+        `Model ${JSON.stringify(id)} is not in the model allowlist`,
+      );
     return {
       id,
-      label: { provider: "OpenRouter", upstream: [...allowlist[id].upstream], routing: "international", zeroRetention: true },
-      model: openrouter.chat(id, { provider: { zdr: true, data_collection: "deny" }, usage: { include: true } }),
+      label: {
+        provider: "OpenRouter",
+        upstream: [...allowlist[id].upstream],
+        routing: "international",
+        zeroRetention: true,
+      },
+      model: openrouter.chat(id, {
+        provider: { zdr: true, data_collection: "deny" },
+        usage: { include: true },
+      }),
       callSettings: { maxOutputTokens: outputTokens, maxRetries: 0 },
       estimateMicroUsd(texts) {
-        const inputTokens = texts.reduce((sum, text) => sum + encoder.encode(text).byteLength + framingTokens, 0);
-        return Math.ceil((inputTokens * allowlist[id].input + outputTokens * allowlist[id].output) / 1_000_000);
+        const inputTokens = texts.reduce(
+          (sum, text) => sum + encoder.encode(text).byteLength + framingTokens,
+          0,
+        );
+        return Math.ceil(
+          (inputTokens * allowlist[id].input +
+            outputTokens * allowlist[id].output) /
+            1_000_000,
+        );
       },
       actualMicroUsd({ usage, providerMetadata }) {
-        const cost = (providerMetadata?.openrouter?.usage as { cost?: unknown } | undefined)?.cost;
+        const cost = (
+          providerMetadata?.openrouter?.usage as { cost?: unknown } | undefined
+        )?.cost;
         // toPrecision drops float noise such as 0.000123 * 1e6 = 123.00000000000001 before rounding up.
-        if (typeof cost === "number") return Math.ceil(Number((cost * 1_000_000).toPrecision(12)));
-        return Math.ceil(((usage.inputTokens ?? 0) * allowlist[id].input
-          + (usage.outputTokens ?? 0) * allowlist[id].output) / 1_000_000);
+        if (typeof cost === "number")
+          return Math.ceil(Number((cost * 1_000_000).toPrecision(12)));
+        return Math.ceil(
+          ((usage.inputTokens ?? 0) * allowlist[id].input +
+            (usage.outputTokens ?? 0) * allowlist[id].output) /
+            1_000_000,
+        );
       },
     };
   }
   const models: Models = {
-    forTask: task => modelFor(defaults[task], taskOutputTokens[task] ?? maxOutputTokens),
-    byId: id => modelFor(id, maxOutputTokens),
+    forTask: (task) =>
+      modelFor(defaults[task], taskOutputTokens[task] ?? maxOutputTokens),
+    byId: (id) => modelFor(id, maxOutputTokens),
   };
   return models;
 }
@@ -110,6 +155,11 @@ export function createModels({ apiKey, baseURL, fetch }: {
  * answered with a 4xx rejection other than a timeout. Network failures and 5xx responses stay uncertain.
  */
 export function isDefiniteFailure(error: unknown): boolean {
-  if (!APICallError.isInstance(error) || error.statusCode === undefined) return false;
-  return error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
+  if (!APICallError.isInstance(error) || error.statusCode === undefined)
+    return false;
+  return (
+    error.statusCode >= 400 &&
+    error.statusCode < 500 &&
+    error.statusCode !== 408
+  );
 }

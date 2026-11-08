@@ -3,4 +3,7 @@ import { writeFileSync } from "node:fs";
 import { openApiConfig, routes } from "../src/app.js";
 
 const doc = routes.getOpenAPI31Document(openApiConfig);
-writeFileSync(new URL("../openapi.json", import.meta.url), `${JSON.stringify(doc, null, 2)}\n`);
+writeFileSync(
+  new URL("../openapi.json", import.meta.url),
+  `${JSON.stringify(doc, null, 2)}\n`,
+);

@@ -14,7 +14,8 @@ export function createQueryClient(onUnauthorized: () => void) {
     defaultOptions: {
       queries: {
         staleTime: 30_000,
-        retry: (failures, error) => !(error instanceof ApiError && error.status === 401) && failures < 1,
+        retry: (failures, error) =>
+          !(error instanceof ApiError && error.status === 401) && failures < 1,
       },
       mutations: { retry: false },
     },

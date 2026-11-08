@@ -1,12 +1,17 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 
 /** Discard both the browser cache and server-rendered identity when the session changes. */
-export function SessionBoundary({ apiOrigin, initialSessionId, children }: {
+export function SessionBoundary({
+  apiOrigin,
+  initialSessionId,
+  children,
+}: {
   apiOrigin: string;
   initialSessionId: string | null;
   children: ReactNode;
@@ -16,8 +21,11 @@ export function SessionBoundary({ apiOrigin, initialSessionId, children }: {
   const session = auth.useSession();
   const { refetch } = session;
   const queryClient = useQueryClient();
-  const currentId = session.data?.user.emailVerified ? session.data.session.id : null;
-  const changed = !session.isPending && !session.error && currentId !== initialSessionId;
+  const currentId = session.data?.user.emailVerified
+    ? session.data.session.id
+    : null;
+  const changed =
+    !session.isPending && !session.error && currentId !== initialSessionId;
 
   useEffect(() => {
     void refetch();

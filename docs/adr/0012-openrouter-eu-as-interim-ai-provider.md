@@ -1,6 +1,6 @@
 ---
-status: accepted
----
+
+## status: accepted
 
 # OpenRouter EU as the interim AI provider
 

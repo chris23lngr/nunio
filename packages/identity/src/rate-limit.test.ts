@@ -1,6 +1,7 @@
 import { once } from "node:events";
 import { Worker } from "node:worker_threads";
-import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
+import type { TestDatabase } from "@nunio/db/testing";
+import { startTestDatabase } from "@nunio/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 let db: TestDatabase;
@@ -10,7 +11,8 @@ beforeAll(async () => {
   db = await startTestDatabase();
   // Separate workers isolate Better Auth's module-level memory counters, like API instances.
   for (let i = 0; i < 2; i++) {
-    const instance = new Worker(`
+    const instance = new Worker(
+      `
       import { parentPort, workerData } from "node:worker_threads";
       import { createPool, createPrismaClient } from "@nunio/db";
       import { createAuth } from ${JSON.stringify(new URL("./auth.ts", import.meta.url).href)};
@@ -35,23 +37,29 @@ beforeAll(async () => {
         parentPort.postMessage(responses.map(response => response.status));
       });
       parentPort.postMessage("ready");
-    `, {
-      eval: true,
-      execArgv: ["--import", "tsx"],
-      workerData: db.runtimeConnectionString,
-      env: { ...process.env, NODE_ENV: "production" },
-    });
+    `,
+      {
+        eval: true,
+        execArgv: ["--import", "tsx"],
+        workerData: db.runtimeConnectionString,
+        env: { ...process.env, NODE_ENV: "production" },
+      },
+    );
     instances.push(instance);
     await once(instance, "message");
   }
 }, 180_000);
 
 afterAll(async () => {
-  await Promise.all(instances.map(instance => instance.terminate()));
+  await Promise.all(instances.map((instance) => instance.terminate()));
   await db?.stop();
 });
 
-async function attempts(instance: Worker, ip: string, count: number): Promise<number[]> {
+async function attempts(
+  instance: Worker,
+  ip: string,
+  count: number,
+): Promise<number[]> {
   const response = once(instance, "message");
   instance.postMessage({ ip, count });
   const [statuses] = await response;
@@ -67,11 +75,13 @@ describe("shared authentication rate limits", () => {
   });
 
   it("admits only three concurrent sign-in attempts across API instances", async () => {
-    const responses = (await Promise.all(
-      instances.map(instance => attempts(instance, "198.51.100.20", 12)),
-    )).flat();
+    const responses = (
+      await Promise.all(
+        instances.map((instance) => attempts(instance, "198.51.100.20", 12)),
+      )
+    ).flat();
 
-    expect(responses.filter(status => status === 401)).toHaveLength(3);
-    expect(responses.filter(status => status === 429)).toHaveLength(21);
+    expect(responses.filter((status) => status === 401)).toHaveLength(3);
+    expect(responses.filter((status) => status === 429)).toHaveLength(21);
   });
 });
