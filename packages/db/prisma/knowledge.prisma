@@ -22,6 +22,7 @@ model Source {
   courses     SourceCourse[]
   obligations ObligationExtraction[]
   facts       FactExtraction[]
+  chats       ChatSource[]
 
   @@unique([id, studentId])
   @@index([studentId, deletedAt])
@@ -93,6 +94,7 @@ model Course {
   sources     SourceCourse[]
   obligations Obligation[]
   facts       Fact[]
+  chats       ChatCourse[]
 
   @@unique([id, studentId])
   @@index([studentId])
@@ -242,4 +244,86 @@ model FactExtraction {
   @@index([factId])
   @@index([sourceId])
   @@map("fact_extraction")
+}
+
+/// A Chat's explicit selection of Courses and Sources; an empty selection means no material.
+model Chat {
+  id        String   @id
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  courses  ChatCourse[]
+  sources  ChatSource[]
+  messages ChatMessage[]
+
+  @@unique([id, studentId])
+  @@index([studentId])
+  @@map("chat")
+}
+
+model ChatCourse {
+  chatId    String
+  courseId  String
+  studentId String
+  chat      Chat   @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
+  course    Course @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+
+  @@id([chatId, courseId])
+  @@map("chat_course")
+}
+
+model ChatSource {
+  chatId    String
+  sourceId  String
+  studentId String
+  chat      Chat   @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
+  source    Source @relation(fields: [sourceId, studentId], references: [id, studentId], onDelete: Cascade)
+
+  @@id([chatId, sourceId])
+  @@map("chat_source")
+}
+
+enum ChatRole {
+  student
+  assistant
+
+  @@map("chat_role")
+}
+
+/// Citations are stored as CitationRefs only, never snippets, and resolved at display time.
+/// An answer drawn from Sources is encrypted under its own key, wrapped in turn under each of those Sources' keys,
+/// so deleting any of them shreds it (ADR-0007); a question or an answer drawn from no Source is plain UTF-8.
+model ChatMessage {
+  id          String   @id
+  chatId      String
+  studentId   String
+  chat        Chat     @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
+  role        ChatRole
+  content     Bytes
+  /// The message key, wrapped under each `derivedFrom` Source's key in order; null when derived from none.
+  contentKey  Bytes?
+  /// The Sources whose passages the answer was given, in wrapping order.
+  derivedFrom String[] @default([])
+  /// [{ tag, cite }] for the citation tags in the text.
+  citations   Json     @default("[]")
+  createdAt DateTime @default(now())
+
+  @@index([chatId, createdAt])
+  @@map("chat_message")
+}
+
+/// A student's own query vectors, so a repeated question is neither embedded nor metered again. Holds no course material.
+model QueryEmbedding {
+  studentId  String
+  student    User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  model      String
+  /// SHA-256 of the whitespace-normalized query text.
+  queryHash  String
+  dimensions Int
+  embedding  Unsupported("vector")
+  createdAt  DateTime @default(now())
+
+  @@id([studentId, model, queryHash])
+  @@map("query_embedding")
 }

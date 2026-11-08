@@ -48,7 +48,7 @@ async function readySource(p: Principal, title: string, pages: Page[]) {
   await sources.complete(p, upload.source.id);
   const result = await sources.ingest(p, upload.source.id, {
     parse: async () => ({ pages }), delegation,
-    embedder: { model: "test-embedding", dims: 3, estimateMicroUsd: () => 1,
+    embedder: { model: "test-embedding", dims: 3, relevanceFloor: 0.3, estimateMicroUsd: () => 1,
       embed: async texts => ({ vectors: texts.map(() => [1, 0, 0]), usage: { microUsd: 1 } }) },
     scans: { estimateMicroUsd: () => 1, read: async () => ({ text: "", usage: { microUsd: 1 } }) },
   });

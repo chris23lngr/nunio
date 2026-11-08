@@ -239,3 +239,9 @@ The live storage regression is run from `packages/knowledge`: `node --env-file=.
 Staging (2026-11-02): settings provisioned, migration applied and all services deployed. A digital synthetic PDF uploaded through the browser reached `ready`, and three Source deletions completed both physical-cleanup sweeps 20 minutes apart. The first uploads failed because the Render worker lacked its Hetzner credentials; those Sources stayed `queued` instead of `failed`. The worker now validates its settings at startup, so that misconfiguration fails the deploy instead.
 
 Staging acceptance remains: upload a scanned synthetic German syllabus and verify `ready`, test a malformed PDF stays out of sources, verify revoked/deletion-pending accounts cannot start uploads/ingestion, and delete during processing, confirming the immediate tombstone/chunk removal. Representative syllabus retrieval and citation deletion checks follow in Phase 7.
+
+## Chat and retrieval (Phase 7)
+
+- **Vercel API:** now requires `OPENROUTER_API_KEY` and `OPENROUTER_BASE_URL` at startup (query embeddings and Chat answers); the API refuses to start without them. It also uses the existing `SOURCE_KEY_VERSION` and `SOURCE_MASTER_KEYS` to decrypt passages after scope filtering. `AI_DISABLED=true` refuses Chat answers through `meter`.
+- **Migration:** `20261108120000_chats` adds `chat`, `chat_course`, `chat_source`, `chat_message` (answers encrypted under their Sources' keys) and `query_embedding`, owner-scoped by row-level security for `nunio_runtime`.
+- **Retrieval eval:** `apps/worker/node_modules/.bin/tsx --env-file=packages/ai/.env.staging apps/worker/evals/retrieval.ts` writes [phase-7-retrieval-eval.json](phase-7-retrieval-eval.json), including the relevance-floor calibration from unanswerable questions. Public handbook excerpts only; embeddings only, so a run costs well under a cent.

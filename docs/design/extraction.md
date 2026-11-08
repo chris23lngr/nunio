@@ -1,6 +1,6 @@
 # Extraction and review
 
-Status: accepted design, 2026-11-02; slice 2 decisions added 2026-11-03. Slice 1 is implemented. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md). Architecture terms (module, interface, seam, adapter, depth) follow the codebase-design vocabulary. Related: [knowledge-retrieval.md](knowledge-retrieval.md) (the read side of the same tables), ADR-0007, ADR-0011, ADR-0012, Phase 6 in the [implementation plan](../implementation-plan.md).
+Status: accepted design, 2026-11-02; slice 2 decisions added 2026-11-03. All slices are implemented and the eval passed the founder's thresholds, 2026-11-08. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md). Architecture terms (module, interface, seam, adapter, depth) follow the codebase-design vocabulary. Related: [knowledge-retrieval.md](knowledge-retrieval.md) (the read side of the same tables), ADR-0007, ADR-0011, ADR-0012, Phase 6 in the [implementation plan](../implementation-plan.md).
 
 ## Purpose
 
@@ -139,10 +139,12 @@ Also:
 - **Set:** 10–15 public German and English syllabi and module handbooks, plus synthetic scans and one syllabus with injection instructions. Hand-labelled expected Obligations and deadlines live in the repo as JSON. PDFs are committed only when their licence allows it, otherwise fetched by URL. No real student material.
 - **Harness:** runs each document through the real pipeline (local parser container, real OpenRouter). It records precision and recall for Obligations and deadlines, the grounding drop rate, cost and time per document, and the median time from upload to extraction done, in `docs/operations/`.
 - **Models:** Haiku 5.5 first. Sonnet 5.5 is compared only if Haiku misses the founder's thresholds, which are set after the first run.
+- **Thresholds** (set 2026-11-08): Obligations precision ≥ 0.95 and recall ≥ 0.85; deadlines precision ≥ 0.95 and recall ≥ 0.90; no invented dates; median time to a reviewable result ≤ 10 minutes. Haiku 5.5 meets all of them, so Sonnet 5.5 was not compared.
 - **Injection:** the injection document passes only if its output matches its labels exactly and no extra item survives grounding.
 
 ## Accepted limits
 
+- One of 21 eval runs (`wwu-bwl-excerpt`, run 1) failed at ingestion, so extraction never ran; its other runs reached Obligation recall 1.0 and 0.83. The harness lists it under `failedExtractions` and counts it as recall 0.
 - A key mismatch across Sources produces a duplicate rather than a disagreement. The student rejects it.
 - A whole extraction fails if one window fails, so a large Source near the Allowance limit may need the founder to increase the Allowance before re-extracting.
 - `Europe/Berlin` is assumed when a Source gives no time zone, and the uncertainty says so.

@@ -62,6 +62,9 @@ export default async function globalSetup() {
           HETZNER_S3_SECRET_ACCESS_KEY: "test",
           HETZNER_QUARANTINE_BUCKET: "nunio-quarantine-test",
           HETZNER_SOURCES_BUCKET: "nunio-sources-test",
+          // Required at API startup for Chat; no e2e flow asks a question, and the host never resolves.
+          OPENROUTER_API_KEY: "test",
+          OPENROUTER_BASE_URL: "https://openrouter.invalid/api/v1",
         }),
         start("web", {
           ...shared,
