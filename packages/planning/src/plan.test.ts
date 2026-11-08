@@ -73,3 +73,90 @@ it("applies a move only while it matches a fresh proposal", async () => {
     start: at("2026-11-09 09:00"), end: at("2026-11-09 11:00"), placedBy: "nunio", locked: false }]);
   expect(view.proposal.moves).toEqual([]);
 });
+
+it("plans an Obligation through its open Tasks, which the student adds, estimates and completes", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-11", "12:00");
+  const first = await plan.addTask(p, { title: "Aufgaben 1–4", obligationId: sheet });
+  const second = await plan.addTask(p, { title: "Aufgaben 5–8", obligationId: sheet });
+  if (first.status !== "ok" || second.status !== "ok") throw new Error("refused");
+  await plan.estimate(p, { kind: "task", id: first.id }, 60);
+  await plan.estimate(p, { kind: "task", id: second.id }, 90);
+
+  expect(await plan.completeTask(p, first.id, true)).toEqual({ status: "ok" });
+  const view = await plan.view(p);
+
+  expect(view.tasks).toEqual([
+    { id: first.id, title: "Aufgaben 1–4", obligationId: sheet, estimate: { minutes: 60, estimatedBy: "student" }, done: true },
+    { id: second.id, title: "Aufgaben 5–8", obligationId: sheet, estimate: { minutes: 90, estimatedBy: "student" }, done: false },
+  ]);
+  expect(view.proposal.moves).toEqual([
+    { kind: "create", workId: second.id, start: at("2026-11-09 09:00"), end: at("2026-11-09 10:30"), needsApproval: false },
+  ]);
+  expect(await plan.addTask(await student(), { title: "Fremd", obligationId: sheet })).toEqual({ status: "gone" });
+});
+
+it("lets the student place, move, Lock and delete Study Blocks, which a Rebalance then treats as theirs", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-11", "12:00");
+  await plan.estimate(p, { kind: "obligation", id: sheet }, 60);
+  const work = { kind: "obligation" as const, id: sheet };
+
+  const placed = await plan.placeBlock(p, { work, start: at("2026-11-10 14:00"), end: at("2026-11-10 15:00") });
+  if (placed.status !== "ok") throw new Error(placed.status);
+  expect((await plan.view(p)).proposal.moves).toEqual([]);
+  expect(await plan.placeBlock(p, { work, start: at("2026-11-10 15:00"), end: at("2026-11-10 14:00") })).toEqual({ status: "invalid" });
+
+  expect(await plan.moveBlock(p, placed.id, { start: at("2026-11-10 16:00"), end: at("2026-11-10 17:00") })).toEqual({ status: "ok" });
+  expect(await plan.lockBlock(p, placed.id, true)).toEqual({ status: "ok" });
+  expect((await plan.view(p)).studyBlocks).toEqual([{ id: placed.id, work, start: at("2026-11-10 16:00"), end: at("2026-11-10 17:00"),
+    placedBy: "student", locked: true }]);
+
+  expect(await plan.removeBlock(p, placed.id)).toEqual({ status: "ok" });
+  expect((await plan.view(p)).proposal.moves).toEqual([expect.objectContaining({ kind: "create", workId: sheet })]);
+  expect(await plan.moveBlock(await student(), placed.id, { start: at("2026-11-10 16:00"), end: at("2026-11-10 17:00") }))
+    .toEqual({ status: "gone" });
+});
+
+it("plans within the student's Preferences and weekly Protected Time, breaking ties by Course Priority", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const analysis = await obligation(p, "Blatt 3", "2026-11-11", "12:00");
+  const physics = await facts.enterObligation(p, { course: { title: "Physik", code: "PH-1" }, kind: "assignment", title: "Laborbericht",
+    due: { date: "2026-11-11", time: "12:00", timeZone: null }, destination: null });
+  if (physics.status !== "ok") throw new Error(physics.status);
+  await plan.estimate(p, { kind: "obligation", id: analysis }, 60);
+  await plan.estimate(p, { kind: "obligation", id: physics.id }, 60);
+  const physicsCourse = (await facts.review(p)).courses.find(c => c.code === "PH-1")!.id;
+
+  expect(await plan.setPreferences(p, { studyFromMinute: 10 * 60, studyToMinute: 16 * 60, maxMinutesPerDay: 120 })).toEqual({ status: "ok" });
+  expect(await plan.addProtectedTime(p, { weekday: 1, fromMinute: 10 * 60, toMinute: 12 * 60 })).toMatchObject({ status: "ok" });
+  expect(await plan.rankCourses(p, [physicsCourse])).toEqual({ status: "ok" });
+  const view = await plan.view(p);
+
+  expect(view.proposal.moves.map(m => m.kind === "create" && [m.workId, m.start, m.end])).toEqual([
+    [physics.id, at("2026-11-09 12:00"), at("2026-11-09 13:00")],
+    [analysis, at("2026-11-09 13:00"), at("2026-11-09 14:00")],
+  ]);
+  expect(view.limits).toEqual({ preferences: { timeZone: "Europe/Berlin", studyFromMinute: 600, studyToMinute: 960, maxMinutesPerDay: 120 },
+    protectedTime: [{ id: expect.any(String), weekday: 1, fromMinute: 600, toMinute: 720 }] });
+  expect(await plan.setPreferences(p, { studyFromMinute: 900, studyToMinute: 600, maxMinutesPerDay: 120 })).toEqual({ status: "invalid" });
+});
+
+it("expands weekly Protected Time onto every local day, even across the switch to summer time", async () => {
+  // Late Friday evening before Sunday 28 March 2027, when Berlin switches to CEST.
+  now = new Date("2027-03-26T23:30:00+01:00");
+  const p = await student();
+  const lab = await obligation(p, "Laborbericht", "2027-03-29", "18:00");
+  await plan.estimate(p, { kind: "obligation", id: lab }, 60);
+  // Saturday and Sunday are protected all day; nothing may be planned before Monday.
+  // Saturday's span stops before midnight, so Sunday is protected only by its own rule.
+  await plan.addProtectedTime(p, { weekday: 6, fromMinute: 0, toMinute: 23 * 60 });
+  await plan.addProtectedTime(p, { weekday: 7, fromMinute: 0, toMinute: 1440 });
+
+  expect((await plan.view(p)).proposal.moves).toEqual([
+    { kind: "create", workId: lab, start: new Date("2027-03-29T09:00:00+02:00"), end: new Date("2027-03-29T10:00:00+02:00"), needsApproval: false },
+  ]);
+});
