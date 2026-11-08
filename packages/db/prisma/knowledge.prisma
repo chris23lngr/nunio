@@ -22,6 +22,7 @@ model Source {
   courses     SourceCourse[]
   obligations ObligationExtraction[]
   facts       FactExtraction[]
+  chats       ChatSource[]
 
   @@unique([id, studentId])
   @@index([studentId, deletedAt])
@@ -93,6 +94,7 @@ model Course {
   sources     SourceCourse[]
   obligations Obligation[]
   facts       Fact[]
+  chats       ChatCourse[]
 
   @@unique([id, studentId])
   @@index([studentId])
@@ -242,4 +244,65 @@ model FactExtraction {
   @@index([factId])
   @@index([sourceId])
   @@map("fact_extraction")
+}
+
+/// A Chat's explicit selection of Courses and Sources; an empty selection means no material.
+model Chat {
+  id        String   @id
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  courses  ChatCourse[]
+  sources  ChatSource[]
+  messages ChatMessage[]
+
+  @@unique([id, studentId])
+  @@index([studentId])
+  @@map("chat")
+}
+
+model ChatCourse {
+  chatId    String
+  courseId  String
+  studentId String
+  chat      Chat   @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
+  course    Course @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+
+  @@id([chatId, courseId])
+  @@map("chat_course")
+}
+
+model ChatSource {
+  chatId    String
+  sourceId  String
+  studentId String
+  chat      Chat   @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
+  source    Source @relation(fields: [sourceId, studentId], references: [id, studentId], onDelete: Cascade)
+
+  @@id([chatId, sourceId])
+  @@map("chat_source")
+}
+
+enum ChatRole {
+  student
+  assistant
+
+  @@map("chat_role")
+}
+
+/// Citations are stored as CitationRefs only, never snippets, and resolved at display time.
+model ChatMessage {
+  id        String   @id
+  chatId    String
+  studentId String
+  chat      Chat     @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
+  role      ChatRole
+  text      String
+  /// [{ tag, cite }] for the citation tags in `text`.
+  citations Json     @default("[]")
+  createdAt DateTime @default(now())
+
+  @@index([chatId, createdAt])
+  @@map("chat_message")
 }

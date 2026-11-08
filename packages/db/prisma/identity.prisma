@@ -15,6 +15,7 @@ model User {
   allowance        Allowance?
   sources          Source[]
   courses          Course[]
+  chats            Chat[]
 
   @@map("user")
 }
