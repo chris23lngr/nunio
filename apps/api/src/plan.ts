@@ -1,5 +1,4 @@
 import { createRoute, z, type OpenAPIHono } from "@hono/zod-openapi";
-import { principal } from "@nunio/delegation";
 import type { AppBindings } from "./app.js";
 import { body, created, Created, Done, done, ErrorBody, errors, failed, id, json, outcomes, student } from "./outcomes.js";
 
