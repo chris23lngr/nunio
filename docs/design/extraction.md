@@ -37,8 +37,8 @@ export interface Facts {
   use(p: Principal, item: ItemRef, extractionId: string): Promise<void>;  // "Use this"; also Use new
   keepMine(p: Principal, item: ItemRef): Promise<void>;
   decideCourse(p: Principal, courseId: string, decision: "accept" | "reject" | "restore"): Promise<void>;
-  mergeCourses(p: Principal, into: string, from: string): Promise<void>;
-  enterObligation(p: Principal, input: ObligationInput): Promise<string>;  // Provenance `entry`
+  mergeCourses(p: Principal, from: string, into: string): Promise<void>;   // 409 on differing Corrections
+  enterObligation(p: Principal, input: ObligationInput): Promise<string>;  // Provenance `entry`; 409 on an existing key
 }
 
 // packages/ai, next to createScanReader
@@ -97,7 +97,7 @@ The worker calls `facts.extract(...)` from its own Activity, the same way it cal
 - **Re-extraction** replaces the Source's extractions in its final transaction, so a failure leaves the previous ones. Overrule marks carry over by value, and a changed value without a Correction returns the item to `unreviewed`.
 - **No extraction left.** After Source deletion or re-extraction, an item no extraction supports is deleted, including a rejection tied only to it. A corrected item stays, marked `source_deleted` or `not_found`. Unaccepted Courses with no Source and no item go with them.
 - **Merging Courses.** "Merge into…" moves Source links and items, combining items with the same key and pooling their extractions. The target's state and Correction win; a Correction only the merged Course has moves. Two differing Corrections for one key refuse the merge (409). The merged Course stays as a `merged` pointer, so a later Source naming it lands in the target, which the merge accepts.
-- **Manual Obligations** require a Course, either accepted or created in the same form. Their Provenance is `entry`, and they are edited directly, without a Correction.
+- **Manual Obligations** (slice 3) require a Course, either accepted or created and accepted in the same form (`POST /api/me/obligations`). An entry is an ordinary item with `enteredAt` set: confirmed, Provenance `entry`, its values in the Correction columns and validated the same way. Its key is its kind plus its normalized title; a key the Course already has is refused (409), so the student corrects that item instead. A later Source with the same key attaches like it would to a corrected item: a differing deadline is flagged, Keep mine keeps the entry, and Use this turns it into an extracted item. Correct edits it in place; Reject and Restore work as for any item. Only Obligations are entered by hand.
 - **Downstream** (Phase 8) sees `unreviewed` and `confirmed` items, with unreviewed ones marked. How planning treats an unresolved Disagreement is decided there.
 - **Review screen** (`web`): grouped by Course, with each item's decrypted quotes, pages, and Source titles, and the Confirm, Correct, Reject, Use this, and Keep mine actions. Proposed Courses are accepted or rejected there too, and their items stay folded until accepted, so a module handbook's many proposals stay quick to decide. An inline PDF viewer is deferred.
 

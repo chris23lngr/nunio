@@ -3,7 +3,7 @@ import { CourseStatus, FactType, ObligationKind, ReviewState, Unsupported } from
 import { principal } from "@nunio/delegation";
 import type { AppBindings } from "./app.js";
 
-const Provenance = z.discriminatedUnion("kind", [z.object({ kind: z.literal("correction") }),
+const Provenance = z.discriminatedUnion("kind", [z.object({ kind: z.literal("correction") }), z.object({ kind: z.literal("entry") }),
   z.object({ kind: z.literal("source"), sourceId: z.string(), title: z.string(), page: z.number().int(), quote: z.string() })]);
 const Citation = z.object({ extractionId: z.string(), sourceId: z.string(), title: z.string(), page: z.number().int(), quote: z.string() });
 const Due = z.object({ date: z.string().nullable(), time: z.string().nullable(), timeZone: z.string().nullable() });
@@ -86,5 +86,38 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
     const result = await c.get("facts").decideCourse(principal.fromSession(actor), c.req.valid("param").id, c.req.valid("json").decision);
     if (result.status === "gone") return c.json({ error: "gone" }, 404);
     return c.json({ status: "ok" as const }, 200);
+  });
+  routes.openapi(createRoute({ method: "post", path: "/api/me/courses/{id}/merge", description: "Merge this Course into another.", request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: { required: true, content: { "application/json": { schema: z.object({ into: z.string().uuid() }) } } },
+  }, responses: { 200: Done, ...errors,
+    409: json(ErrorBody.extend({ items: z.array(z.object({ kind: itemParams.kind, id: z.string() })) }),
+      "Both Courses hold differing Corrections for these items of the target; resolve them first."),
+  } }), async c => {
+    c.header("cache-control", "no-store");
+    const actor = await c.get("auth").authenticate(c.req.raw);
+    if (!actor) return c.json({ error: "unauthorized" }, 401);
+    const result = await c.get("facts").mergeCourses(principal.fromSession(actor), c.req.valid("param").id, c.req.valid("json").into);
+    if (result.status === "gone") return c.json({ error: "gone" }, 404);
+    if (result.status === "conflict") return c.json({ error: "conflicting_corrections", items: result.items }, 409);
+    return c.json({ status: "ok" as const }, 200);
+  });
+  routes.openapi(createRoute({ method: "post", path: "/api/me/obligations", description: "Enter an Obligation by hand.", request: {
+    body: { required: true, content: { "application/json": { schema: z.object({
+      course: z.union([z.object({ id: z.string().uuid() }).strict(),
+        z.object({ title: z.string().min(1).max(500), code: z.string().max(100).nullable() }).strict()])
+        .describe("An accepted Course, or a new one, accepted with the entry."),
+      kind: z.enum(ObligationKind), title: z.string().min(1).max(500), due: Due, destination: z.string().max(500).nullable(),
+    }) } } },
+  }, responses: { 201: json(z.object({ id: z.string() }), "Entered, confirmed, with Provenance entry."),
+    400: json(ErrorBody, "Not a valid entry."), 409: json(ErrorBody, "The Course already has this Obligation; correct it instead."), ...errors } }), async c => {
+    c.header("cache-control", "no-store");
+    const actor = await c.get("auth").authenticate(c.req.raw);
+    if (!actor) return c.json({ error: "unauthorized" }, 401);
+    const result = await c.get("facts").enterObligation(principal.fromSession(actor), c.req.valid("json"));
+    if (result.status === "invalid") return c.json({ error: "invalid_entry" }, 400);
+    if (result.status === "gone") return c.json({ error: "gone" }, 404);
+    if (result.status === "exists") return c.json({ error: "exists" }, 409);
+    return c.json({ id: result.id }, 201);
   });
 }

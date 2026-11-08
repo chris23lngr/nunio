@@ -706,6 +706,58 @@ it("starts extracting a Source again on request, refusing while it runs and once
   expect((await extract()).status).toBe(404);
 });
 
+it("merges one Course into another, reporting conflicting Corrections and Courses that are gone", async () => {
+  const { cookie, headers } = await reviewFixture("review-merge");
+  const p = principal.fromSession({ studentId: await studentId(cookie) });
+  const upload = await sources.upload(p, { title: "Übersicht.pdf", bytes: 100, type: "application/pdf" });
+  if (upload.status !== "ok") throw new Error("upload refused");
+  await sources.complete(p, upload.source.id);
+  await sources.ingest(p, upload.source.id, { delegation, parse: async () => ({ pages: [{ page: 1, text: "Analysis 1\nAbgabe Blatt 3: 20.11., 12 Uhr" }] }),
+    embedder: { model: "test", dims: 1, estimateMicroUsd: () => 1, embed: async t => ({ vectors: t.map(() => [1]), usage: { microUsd: 1 } }) },
+    scans: { estimateMicroUsd: () => 1, read: async () => ({ text: "", usage: { microUsd: 1 } }) } });
+  await facts.extract(p, upload.source.id, { delegation, extractor: { model: "test", windows: pages => [[...pages]], estimateMicroUsd: () => 1,
+    extract: async () => ({ usage: { microUsd: 1 }, value: { courses: [{ code: null, title: "Analysis 1", page: 1, quote: "Analysis 1" }],
+      obligations: [{ course: "Analysis 1", kind: "assignment", title: "Übungsblatt 3", key: "Blatt 3", destination: null,
+        due: { date: "2026-11-20", time: "12:00", timeZone: "Europe/Berlin", text: "20.11., 12 Uhr" },
+        page: 1, quote: "Abgabe Blatt 3: 20.11., 12 Uhr", uncertainty: null }], facts: [] } }) } });
+  const review = async () => await (await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })).json() as ReviewBody;
+  const [into, from] = (await review()).courses;
+  const correct = (course: typeof into, date: string) => app.request(`${apiOrigin}/api/me/review/obligation/${course!.obligations[0]!.id}/correct`,
+    { method: "POST", headers, body: JSON.stringify({ title: "Blatt 3", due: { date, time: null, timeZone: null }, destination: null }) });
+  await correct(into, "2026-11-21");
+  await correct(from, "2026-11-22");
+  const merge = (id: string, target: string) => app.request(`${apiOrigin}/api/me/courses/${id}/merge`, { method: "POST", headers,
+    body: JSON.stringify({ into: target }) });
+
+  expect((await app.request(`${apiOrigin}/api/me/courses/${from!.id}/merge`, { method: "POST", headers: { cookie, origin: evilOrigin },
+    body: JSON.stringify({ into: into!.id }) })).status).toBe(403);
+  expect((await merge(from!.id, from!.id)).status).toBe(404);
+  const refused = await merge(from!.id, into!.id);
+  expect([refused.status, await refused.json()]).toEqual([409,
+    { error: "conflicting_corrections", items: [{ kind: "obligation", id: into!.obligations[0]!.id }] }]);
+  await correct(from, "2026-11-21");
+  expect((await merge(from!.id, into!.id)).status).toBe(200);
+  expect((await review()).courses).toEqual([expect.objectContaining({ id: into!.id, status: "accepted" })]);
+  expect((await merge(from!.id, into!.id)).status).toBe(404);
+});
+
+it("enters an Obligation by hand, refusing invalid entries, Courses that are not accepted and existing keys", async () => {
+  const { cookie, headers } = await reviewFixture("review-entry");
+  const [course] = (await (await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })).json() as ReviewBody).courses;
+  const enter = (body: unknown, origin = appOrigin) => app.request(`${apiOrigin}/api/me/obligations`, { method: "POST",
+    headers: { ...headers, origin }, body: JSON.stringify(body) });
+  const exam = { course: { id: course!.id }, kind: "exam", title: "Klausur", due: { date: "2027-02-12", time: null, timeZone: null }, destination: null };
+
+  expect((await enter(exam, evilOrigin)).status).toBe(403);
+  expect((await enter(exam)).status).toBe(404);
+  const created = await enter({ ...exam, course: { title: "Lineare Algebra", code: null } });
+  expect([created.status, await created.json()]).toEqual([201, { id: expect.any(String) }]);
+  expect((await enter({ ...exam, course: { title: "Lineare Algebra", code: null }, due: { date: "2027-02-30", time: null, timeZone: null } })).status).toBe(400);
+  await app.request(`${apiOrigin}/api/me/courses/${course!.id}/decision`, { method: "POST", headers, body: JSON.stringify({ decision: "accept" }) });
+  expect((await enter({ ...exam, kind: "assignment", title: "Blatt 3" })).status).toBe(409);
+  expect((await enter(exam)).status).toBe(201);
+});
+
 it("corrects, keeps, uses and restores review items, refusing invalid Corrections and unknown values", async () => {
   const { cookie, headers } = await reviewFixture("review-corrections");
   const review = async () => await (await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })).json() as ReviewBody;

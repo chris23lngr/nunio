@@ -13,12 +13,11 @@ interface ObligationWording { title: string; dueText: string; destination: strin
 interface FactWording { value: string; quote: string; uncertainty: string | null }
 
 export type ItemRef = { kind: "obligation" | "fact"; id: string };
+type ObligationCorrection = { title: string; due: { date: string | null; time: string | null; timeZone: string | null }; destination: string | null };
 /** The student's own value: everything but the item's identity (kind and key). */
-export type Correction =
-  | { title: string; due: { date: string | null; time: string | null; timeZone: string | null }; destination: string | null }
-  | { value: string };
+export type Correction = ObligationCorrection | { value: string };
 type Citation = { extractionId: string; sourceId: string; title: string; page: number; quote: string };
-type Provenance = { kind: "correction" } | { kind: "source"; sourceId: string; title: string; page: number; quote: string };
+type Provenance = { kind: "correction" } | { kind: "entry" } | { kind: "source"; sourceId: string; title: string; page: number; quote: string };
 type DueValue = { date: string | null; time: string | null; timeZone: string | null };
 interface ReviewItem<V> {
   id: string; state: ReviewState; provenance: Provenance; uncertainty: string | null;
@@ -120,11 +119,14 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
           for (const course of kept.courses) {
             const matchCode = course.code ? normalize(course.code) : null, matchTitle = normalize(course.title);
             // By code first, then by title when no code contradicts it; anything ambiguous becomes a new proposal.
-            const byCode = matchCode ? await tx.course.findMany({ where: { matchCode }, select: { id: true } }) : [];
-            const byTitle = byCode.length ? [] : await tx.course.findMany({
-              where: { matchTitle, ...(matchCode ? { matchCode: null } : {}) }, select: { id: true } });
+            // A merged Course stands for its target, so a Source naming either lands in the target.
+            const targets = (rows: { id: string; mergedIntoId: string | null }[]) => [...new Set(rows.map(row => row.mergedIntoId ?? row.id))];
+            const select = { id: true, mergedIntoId: true };
+            const byCode = matchCode ? targets(await tx.course.findMany({ where: { matchCode }, select })) : [];
+            const byTitle = byCode.length ? [] : targets(await tx.course.findMany({
+              where: { matchTitle, ...(matchCode ? { matchCode: null } : {}) }, select }));
             const match = [byCode, byTitle].find(found => found.length === 1)?.[0];
-            const id = match?.id ?? randomUUID();
+            const id = match ?? randomUUID();
             if (!match) await tx.course.create({ data: { id, studentId, code: course.code, title: course.title, matchCode, matchTitle } });
             await tx.sourceCourse.upsert({ where: { sourceId_courseId: { sourceId, courseId: id } }, create: { sourceId, courseId: id, studentId }, update: {} });
             for (const name of [course.code, course.title]) if (name) courses.set(normalize(name), id);
@@ -190,6 +192,30 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
       } finally { key.fill(0); }
     },
 
+    /** Enters an Obligation by hand (Provenance entry) under an accepted Course or a new one, which is accepted with it. */
+    async enterObligation(p: Principal, input: { course: { id: string } | { title: string; code: string | null }; kind: ObligationKind } & ObligationCorrection) {
+      const values = ownValues(input);
+      if (!values || ("title" in input.course && !input.course.title.trim())) return { status: "invalid" } as const;
+      return withOwner(db, p, async (tx, studentId) => {
+        let courseId: string;
+        if ("id" in input.course) {
+          const course = await tx.course.findFirst({ where: { id: input.course.id, status: "accepted" } });
+          if (!course) return { status: "gone" } as const;
+          courseId = course.id;
+        } else {
+          const { title, code } = input.course;
+          courseId = randomUUID();
+          await tx.course.create({ data: { id: courseId, studentId, status: "accepted", title: title.trim(), code: code?.trim() || null,
+            matchTitle: normalize(title), matchCode: code?.trim() ? normalize(code) : null } });
+        }
+        const matchKey = `${input.kind}:${normalize(input.title)}`;
+        if (await tx.obligation.findFirst({ where: { courseId, matchKey } })) return { status: "exists" } as const;
+        const id = randomUUID(), now = clock.now();
+        await tx.obligation.create({ data: { id, studentId, courseId, matchKey, kind: input.kind, state: "confirmed",
+          enteredAt: now, correctedAt: now, ...values } });
+        return { status: "ok", id } as const;
+      });
+    },
     /** "Read again": queues a ready Source for extraction; asking again while it waits only re-dispatches it. */
     async requestExtraction(p: Principal, sourceId: string) {
       return withOwner(db, p, async tx => {
@@ -210,15 +236,10 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
         const now = clock.now();
         let key: string, count: number;
         if (item.kind === "obligation") {
-          if (!("title" in correction)) return { status: "invalid" } as const;
-          const { title, due: { date, time, timeZone }, destination } = correction;
-          if (!title.trim() || (date !== null && !isDate(date)) || (time !== null && (date === null || !isTime(time)))
-            || (timeZone !== null && (date === null || !isTimeZone(timeZone)))) return { status: "invalid" } as const;
-          const value: Due = { dueDate: date ? new Date(`${date}T00:00:00Z`) : null, dueTime: time, timeZone: date ? timeZone ?? defaultTimeZone : null };
-          key = dueKey(value);
-          ({ count } = await tx.obligation.updateMany({ where: { id: item.id }, data: { state: "confirmed", correctedAt: now,
-            correctedTitle: title.trim(), correctedDueDate: value.dueDate, correctedDueTime: value.dueTime, correctedTimeZone: value.timeZone,
-            correctedDestination: destination?.trim() || null } }));
+          const values = "title" in correction ? ownValues(correction) : null;
+          if (!values) return { status: "invalid" } as const;
+          key = dueKey({ dueDate: values.correctedDueDate, dueTime: values.correctedDueTime, timeZone: values.correctedTimeZone });
+          ({ count } = await tx.obligation.updateMany({ where: { id: item.id }, data: { state: "confirmed", correctedAt: now, ...values } }));
         } else {
           if (!("value" in correction) || !correction.value.trim()) return { status: "invalid" } as const;
           key = normalize(correction.value);
@@ -253,7 +274,7 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
         const where = { id: { in: restored } }, data = { overruledAt: null };
         if (item.kind === "obligation") {
           await tx.obligationExtraction.updateMany({ where, data });
-          await tx.obligation.update({ where: { id: item.id }, data: { state: "confirmed", unsupported: null, correctedAt: null,
+          await tx.obligation.update({ where: { id: item.id }, data: { state: "confirmed", unsupported: null, correctedAt: null, enteredAt: null,
             correctedTitle: null, correctedDueDate: null, correctedDueTime: null, correctedTimeZone: null, correctedDestination: null } });
         } else {
           await tx.factExtraction.updateMany({ where, data });
@@ -270,8 +291,68 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
       return withOwner(db, p, async tx => {
         const { count } = decision === "restore"
           ? await tx.course.updateMany({ where: { id: courseId, status: "rejected" }, data: { status: "proposed" } })
-          : await tx.course.updateMany({ where: { id: courseId }, data: { status: decision === "accept" ? "accepted" : "rejected" } });
+          : await tx.course.updateMany({ where: { id: courseId, status: { not: "merged" } }, data: { status: decision === "accept" ? "accepted" : "rejected" } });
         return { status: count ? "ok" : "gone" } as const;
+      });
+    },
+
+    /**
+     * Merges Course `fromId` into `intoId`: Source links and items move, items with the same key combine with their
+     * extractions pooled, and the target's state and Correction win. Differing Corrections for one key refuse the merge.
+     */
+    async mergeCourses(p: Principal, fromId: string, intoId: string) {
+      return withOwner(db, p, async (tx, studentId) => {
+        if (fromId === intoId) return { status: "gone" } as const;
+        await tx.$queryRaw`SELECT "id" FROM "course" WHERE "id" IN (${fromId}, ${intoId}) ORDER BY "id" FOR UPDATE`;
+        const from = await tx.course.findFirst({ where: { id: fromId, status: { in: ["proposed", "accepted"] } },
+          include: { obligations: true, facts: true, sources: true } });
+        const into = await tx.course.findFirst({ where: { id: intoId, status: { in: ["proposed", "accepted"] } },
+          include: { obligations: true, facts: true } });
+        if (!from || !into) return { status: "gone" } as const;
+        const obligationPairs = from.obligations.flatMap(item => {
+          const target = into.obligations.find(other => other.matchKey === item.matchKey);
+          return target ? [{ item, target }] : [];
+        });
+        const factPairs = from.facts.flatMap(item => {
+          const target = into.facts.find(other => other.type === item.type && other.matchKey === item.matchKey);
+          return target ? [{ item, target }] : [];
+        });
+        const correctedDue = (row: { correctedDueDate: Date | null; correctedDueTime: string | null; correctedTimeZone: string | null }) =>
+          dueKey({ dueDate: row.correctedDueDate, dueTime: row.correctedDueTime, timeZone: row.correctedTimeZone });
+        const conflicts = [
+          ...obligationPairs.filter(({ item, target }) => item.correctedAt && target.correctedAt && correctedDue(item) !== correctedDue(target))
+            .map(({ target }) => ({ kind: "obligation" as const, id: target.id })),
+          ...factPairs.filter(({ item, target }) => item.correctedAt && target.correctedAt
+            && normalize(item.correctedValue ?? "") !== normalize(target.correctedValue ?? ""))
+            .map(({ target }) => ({ kind: "fact" as const, id: target.id })),
+        ];
+        if (conflicts.length) return { status: "conflict", items: conflicts } as const;
+
+        for (const { sourceId } of from.sources) {
+          await tx.sourceCourse.upsert({ where: { sourceId_courseId: { sourceId, courseId: intoId } }, create: { sourceId, courseId: intoId, studentId }, update: {} });
+        }
+        await tx.sourceCourse.deleteMany({ where: { courseId: fromId } });
+        for (const { item, target } of obligationPairs) {
+          await tx.obligationExtraction.updateMany({ where: { obligationId: item.id }, data: { obligationId: target.id } });
+          const correction = item.correctedAt && !target.correctedAt ? { state: "confirmed" as const, correctedAt: item.correctedAt,
+            correctedTitle: item.correctedTitle, correctedDueDate: item.correctedDueDate, correctedDueTime: item.correctedDueTime,
+            correctedTimeZone: item.correctedTimeZone, correctedDestination: item.correctedDestination, enteredAt: item.enteredAt } : {};
+          await tx.obligation.update({ where: { id: target.id }, data: { unsupported: null, ...correction } });
+          await tx.obligation.delete({ where: { id: item.id } });
+        }
+        for (const { item, target } of factPairs) {
+          await tx.factExtraction.updateMany({ where: { factId: item.id }, data: { factId: target.id } });
+          const correction = item.correctedAt && !target.correctedAt
+            ? { state: "confirmed" as const, correctedAt: item.correctedAt, correctedValue: item.correctedValue } : {};
+          await tx.fact.update({ where: { id: target.id }, data: { unsupported: null, ...correction } });
+          await tx.fact.delete({ where: { id: item.id } });
+        }
+        await tx.obligation.updateMany({ where: { courseId: fromId }, data: { courseId: intoId } });
+        await tx.fact.updateMany({ where: { courseId: fromId }, data: { courseId: intoId } });
+        await tx.course.updateMany({ where: { mergedIntoId: fromId }, data: { mergedIntoId: intoId } });
+        await tx.course.update({ where: { id: fromId }, data: { status: "merged", mergedIntoId: intoId } });
+        await tx.course.update({ where: { id: intoId }, data: { status: "accepted" } });
+        return { status: "ok" } as const;
       });
     },
 
@@ -280,7 +361,7 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
       return withOwner(db, p, async tx => {
         const extractions = { where: { source: { deletedAt: null } }, orderBy: [{ createdAt: "asc" as const }, { page: "asc" as const }],
           include: { source: { select: { title: true, keyVersion: true, keyCiphertext: true } } } };
-        const rows = await tx.course.findMany({ orderBy: [{ title: "asc" }, { code: "asc" }],
+        const rows = await tx.course.findMany({ where: { status: { not: "merged" } }, orderBy: [{ title: "asc" }, { code: "asc" }],
           include: { obligations: { include: { extractions } }, facts: { include: { extractions } } } });
         const sourceKeys = new Map<string, Buffer>();
         const open = <T>(row: { sourceId: string; ciphertext: Uint8Array; source: { keyVersion: string | null; keyCiphertext: string | null } }) => {
@@ -306,7 +387,7 @@ export function createFacts({ db, keys, clock }: { db: PrismaClient; keys: Sourc
                 values: values.map(value => value.shown) };
               if (corrected !== null || !chosen) return [{ ...shared, title: row.correctedTitle ?? "",
                 due: { ...due({ dueDate: row.correctedDueDate, dueTime: row.correctedDueTime, timeZone: row.correctedTimeZone }), text: null },
-                destination: row.correctedDestination, uncertainty: null, provenance: { kind: "correction" as const } }];
+                destination: row.correctedDestination, uncertainty: null, provenance: { kind: row.enteredAt ? "entry" as const : "correction" as const } }];
               const { extraction, wording } = chosen.first;
               return [{ ...shared, title: wording.title, due: { ...due(extraction), text: wording.dueText },
                 destination: wording.destination, uncertainty: wording.uncertainty, provenance: citation(extraction, wording) }];
@@ -350,6 +431,14 @@ const citation = (extraction: { id: string; sourceId: string; page: number; sour
 /** Whether a new value takes a confirmed item back to review: no extraction had it yet, and no Correction overrides it. */
 const changes = (item: { state: ReviewState; correctedAt: Date | null }, existing: { key: string; overruled: boolean }[], key: string) =>
   item.state === "confirmed" && !item.correctedAt && existing.length > 0 && !existing.some(value => value.key === key);
+
+/** An Obligation's own values, from a Correction or an entry, validated like extraction; null when invalid. */
+function ownValues({ title, due: { date, time, timeZone }, destination }: ObligationCorrection) {
+  if (!title.trim() || (date !== null && !isDate(date)) || (time !== null && (date === null || !isTime(time)))
+    || (timeZone !== null && (date === null || !isTimeZone(timeZone)))) return null;
+  return { correctedTitle: title.trim(), correctedDueDate: date ? new Date(`${date}T00:00:00Z`) : null, correctedDueTime: time,
+    correctedTimeZone: date ? timeZone ?? defaultTimeZone : null, correctedDestination: destination?.trim() || null };
+}
 
 /** Marks the given values overruled, leaving ones that already are untouched. */
 async function overrule(tx: Transaction, kind: ItemRef["kind"], values: { id: string; overruled: boolean }[], now: Date) {

@@ -8,6 +8,7 @@ export async function pruneItems(tx: Transaction, reason: Unsupported) {
   await tx.fact.deleteMany({ where: { ...unsupported, correctedAt: null } });
   await tx.obligation.updateMany({ where: { ...unsupported, unsupported: null }, data: { unsupported: reason } });
   await tx.fact.updateMany({ where: { ...unsupported, unsupported: null }, data: { unsupported: reason } });
-  // Proposals and rejections nothing supports disappear too; an accepted Course is the student's own.
-  await tx.course.deleteMany({ where: { status: { not: "accepted" }, sources: { none: {} }, obligations: { none: {} }, facts: { none: {} } } });
+  // Proposals and rejections nothing supports disappear too; an accepted Course is the student's own, and a merged
+  // one keeps pointing at its target.
+  await tx.course.deleteMany({ where: { status: { in: ["proposed", "rejected"] }, sources: { none: {} }, obligations: { none: {} }, facts: { none: {} } } });
 }
