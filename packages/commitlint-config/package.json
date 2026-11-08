@@ -3,9 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./index.js" },
+  "exports": {
+    ".": "./index.js"
+  },
   "scripts": {
-    "lint": "eslint .",
+    "lint": "biome check .",
     "test": "vitest run"
   },
   "dependencies": {
@@ -14,8 +16,7 @@
   "devDependencies": {
     "@commitlint/lint": "21.2.4",
     "@commitlint/load": "21.2.4",
-    "@nunio/eslint-config": "workspace:*",
-    "eslint": "10.13.0",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "@biomejs/biome": "2.6.3"
   }
 }

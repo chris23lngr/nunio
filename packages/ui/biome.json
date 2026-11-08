@@ -1,46 +1,21 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
-  "vcs": {
-    "enabled": true,
-    "clientKind": "git",
-    "useIgnoreFile": true
-  },
-  "files": {
-    "includes": [
-      "**",
-      "!!**/storybook-static",
-      "!**/.claude/**/*.md",
-      "!!**/dist"
-    ]
-  },
-  "formatter": {
-    "enabled": true,
-    "indentStyle": "space",
-    "indentWidth": 2
-  },
+  "extends": "//",
   "javascript": {
     "formatter": {
-      "quoteStyle": "double",
       "semicolons": "asNeeded"
     }
   },
   "linter": {
-    "enabled": true,
     "rules": {
-      "preset": "recommended",
       "nursery": {
         "useTailwindSortedClasses": {
           "level": "warn",
           "fix": "safe"
         }
-      }
-    }
-  },
-  "assist": {
-    "enabled": true,
-    "actions": {
-      "source": {
-        "organizeImports": "on"
+      },
+      "style": {
+        "noNonNullAssertion": "warn"
       }
     }
   },

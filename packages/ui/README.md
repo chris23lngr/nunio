@@ -57,6 +57,7 @@ CSS is exported directly from `src/styles` so PostCSS can process it in the app.
 - `docs/notion-spec`: original component specifications and reference captures.
 
 Run `tokens` after changing the token input and commit the generated CSS. This
-package preserves the source library's Biome configuration for linting/formatting
-and extends Nunio's shared TypeScript configuration. Stories and tooling are
+package extends the root Biome configuration for linting/formatting, keeps its
+semicolon-free style and Tailwind class sorting, and extends Nunio's shared
+TypeScript configuration. Stories and tooling are
 excluded from the compiled component exports.

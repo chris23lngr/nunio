@@ -28,7 +28,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup
-      - run: bunx turbo run lint ${{ github.event_name == 'pull_request' && '--affected' || '' }} --concurrency=2
+      - run: bun run lint
 
   typecheck:
     runs-on: ubuntu-latest
@@ -192,7 +192,18 @@ jobs:
   # https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-jobs
   checks:
     if: always()
-    needs: [lint, typecheck, backend-tests, temporal-tests, unit-tests, ui-tests, build-e2e, openapi, commits]
+    needs:
+      [
+        lint,
+        typecheck,
+        backend-tests,
+        temporal-tests,
+        unit-tests,
+        ui-tests,
+        build-e2e,
+        openapi,
+        commits,
+      ]
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
