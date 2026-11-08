@@ -5,7 +5,8 @@ import { promisify } from "node:util";
 import { createPool, createPrismaClient, type Pool, type PrismaClient } from "@nunio/db";
 import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
 import { createDelegation, principal, type Delegation } from "@nunio/delegation";
-import { createFacts, createSources, type Facts, type Sources } from "@nunio/knowledge";
+import type { AnswerInput, Answerer, Embedder } from "@nunio/ai";
+import { createChats, createFacts, createKnowledgeReader, createSources, type Facts, type Sources } from "@nunio/knowledge";
 import { createSourceKeys } from "@nunio/keys";
 import { createAuth } from "@nunio/identity";
 import { hashPassword } from "better-auth/crypto";
@@ -33,6 +34,17 @@ let app: ReturnType<typeof createApp>;
 let sources: Sources;
 let facts: Facts;
 let delegation: Delegation;
+/** What the answer model was asked, and what it replies next. */
+const prompts: AnswerInput[] = [];
+let reply = "";
+const answerer: Answerer = { model: "test-answerer", estimateMicroUsd: () => 1,
+  async answer(input) {
+    prompts.push(input);
+    return { value: { text: reply, cited: [...reply.matchAll(/\[(S\d+)\]/g)].map(m => m[1]!) }, usage: { microUsd: 1 } };
+  } };
+/** One dimension per keyword, so a question finds the passages that share its keywords. */
+const chatEmbedder: Embedder = { model: "test-embedding", dims: 2, estimateMicroUsd: () => 1,
+  embed: async texts => ({ vectors: texts.map(t => [t.toLowerCase().includes("klausur") ? 1 : 0, 0.01]), usage: { microUsd: 1 } }) };
 const verificationLinks = new Map<string, string>();
 
 beforeAll(async () => {
@@ -64,7 +76,9 @@ beforeAll(async () => {
     promote: async () => {}, remove: async () => {},
   } });
   facts = createFacts({ db: prisma, keys, clock: { now: () => new Date() } });
-  app = createApp({ auth, prisma, delegation, appOrigin, sources, facts, sourceWorkflows: { start: async (...args) => { started.push(args); } }, spike: { webhookSecret, pool } });
+  const chats = createChats({ db: prisma });
+  const reader = createKnowledgeReader({ db: prisma, keys, embedder: chatEmbedder, delegation });
+  app = createApp({ auth, prisma, delegation, appOrigin, sources, facts, chats, reader, answerer, sourceWorkflows: { start: async (...args) => { started.push(args); } }, spike: { webhookSecret, pool } });
 }, 180_000);
 
 afterAll(async () => {
@@ -782,4 +796,100 @@ it("corrects, keeps, uses and restores review items, refusing invalid Correction
   expect((await decision("reject")).status).toBe(200);
   expect((await decision("restore")).status).toBe(200);
   expect(await review()).toMatchObject({ courses: [{ status: "proposed", obligations: [{ title: "Übungsblatt 3", state: "unreviewed" }] }] });
+});
+
+/** A ready Source with one page, embedded for Chat retrieval. */
+async function chatSource(cookie: string, title: string, text: string) {
+  const p = principal.fromSession({ studentId: await studentId(cookie) });
+  const upload = await sources.upload(p, { title, bytes: 100, type: "application/pdf" });
+  if (upload.status !== "ok") throw new Error("upload refused");
+  await sources.complete(p, upload.source.id);
+  await sources.ingest(p, upload.source.id, { delegation, embedder: chatEmbedder, parse: async () => ({ pages: [{ page: 1, text }] }),
+    scans: { estimateMicroUsd: () => 1, read: async () => ({ text: "", usage: { microUsd: 1 } }) } });
+  return upload.source.id;
+}
+
+describe("Chat", () => {
+  it("answers from the selected Sources only, citing them", async () => {
+    const cookie = await signUp("chat");
+    const headers = { cookie, origin: appOrigin, "content-type": "application/json" };
+    const selected = await chatSource(cookie, "Modulhandbuch.pdf", "Die Klausur ist am 10. Februar.");
+    await chatSource(cookie, "Notizen.pdf", "Klausur: meine private Notiz.");
+    await chatSource(await signUp("chat-stranger"), "Fremd.pdf", "Klausur eines anderen Studenten.");
+    reply = "Am 10. Februar [S1].";
+    prompts.length = 0;
+
+    const created = await app.request(`${apiOrigin}/api/me/chats`, { method: "POST", headers,
+      body: JSON.stringify({ courseIds: [], sourceIds: [selected] }) });
+    expect(created.status).toBe(201);
+    const { id } = await created.json() as { id: string };
+    const asked = await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, { method: "POST", headers,
+      body: JSON.stringify({ text: "Wann ist die Klausur?" }) });
+
+    expect([asked.status, await asked.json()]).toEqual([200, { id: expect.any(String), role: "assistant", text: "Am 10. Februar [S1].",
+      citations: [{ tag: "S1", provenance: { kind: "source", sourceId: selected, title: "Modulhandbuch.pdf", location: { page: 1 } } }] }]);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toMatchObject({ question: "Wann ist die Klausur?", tags: ["S1"] });
+    expect(prompts[0]!.data).toContain("Die Klausur ist am 10. Februar.");
+    expect(prompts[0]!.data).not.toContain("private Notiz");
+    expect(prompts[0]!.data).not.toContain("anderen Studenten");
+  });
+
+  it("lists earlier messages with citations resolved when shown, so a deleted Source shows as gone", async () => {
+    const cookie = await signUp("chat-history");
+    const headers = { cookie, origin: appOrigin, "content-type": "application/json" };
+    const handbook = await chatSource(cookie, "Modulhandbuch.pdf", "Die Klausur ist am 10. Februar.");
+    const { id } = await (await app.request(`${apiOrigin}/api/me/chats`, { method: "POST", headers,
+      body: JSON.stringify({ courseIds: [], sourceIds: [handbook] }) })).json() as { id: string };
+    reply = "Am 10. Februar [S1].";
+    await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, { method: "POST", headers, body: JSON.stringify({ text: "Wann ist die Klausur?" }) });
+    const history = () => app.request(`${apiOrigin}/api/me/chats/${id}/messages`, { headers: { cookie } });
+
+    expect(await (await history()).json()).toEqual([
+      { id: expect.any(String), role: "student", text: "Wann ist die Klausur?", citations: [] },
+      { id: expect.any(String), role: "assistant", text: "Am 10. Februar [S1].",
+        citations: [{ tag: "S1", provenance: { kind: "source", sourceId: handbook, title: "Modulhandbuch.pdf", location: { page: 1 } } }] },
+    ]);
+    await app.request(`${apiOrigin}/api/me/sources/${handbook}`, { method: "DELETE", headers });
+    expect(await (await history()).json()).toMatchObject([{ role: "student" }, { role: "assistant", citations: [{ tag: "S1", provenance: "gone" }] }]);
+    const stranger = await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, { headers: { cookie: await signUp("chat-history-stranger") } });
+    expect(stranger.status).toBe(404);
+  });
+
+  it("refuses a selection with another student's or a deleted Source or Course", async () => {
+    const cookie = await signUp("chat-select");
+    const headers = { cookie, origin: appOrigin, "content-type": "application/json" };
+    const deleted = await chatSource(cookie, "Alt.pdf", "Klausur alt.");
+    await app.request(`${apiOrigin}/api/me/sources/${deleted}`, { method: "DELETE", headers });
+    const { cookie: strangerCookie } = await reviewFixture("chat-select-stranger");
+    const foreignSource = await chatSource(strangerCookie, "Fremd.pdf", "Klausur fremd.");
+    const [foreignCourse] = (await (await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie: strangerCookie } })).json() as ReviewBody).courses;
+    const create = (selection: unknown, origin = appOrigin) => app.request(`${apiOrigin}/api/me/chats`, { method: "POST",
+      headers: { ...headers, origin }, body: JSON.stringify(selection) });
+
+    expect((await create({ courseIds: [], sourceIds: [] }, evilOrigin)).status).toBe(403);
+    for (const selection of [{ courseIds: [], sourceIds: [foreignSource] }, { courseIds: [], sourceIds: [deleted] },
+      { courseIds: [foreignCourse!.id], sourceIds: [] }]) {
+      const refused = await create(selection);
+      expect([refused.status, await refused.json()]).toEqual([404, { error: "gone" }]);
+    }
+    expect((await create({ courseIds: [], sourceIds: [] })).status).toBe(201);
+  });
+
+  it("refuses a question once the Allowance is exhausted, without asking the model or recording it", async () => {
+    const cookie = await signUp("chat-allowance");
+    const headers = { cookie, origin: appOrigin, "content-type": "application/json" };
+    const handbook = await chatSource(cookie, "Modulhandbuch.pdf", "Die Klausur ist am 10. Februar.");
+    const { id } = await (await app.request(`${apiOrigin}/api/me/chats`, { method: "POST", headers,
+      body: JSON.stringify({ courseIds: [], sourceIds: [handbook] }) })).json() as { id: string };
+    await admin.allowance.update({ where: { studentId: await studentId(cookie) }, data: { limitMicroUsd: 0 } });
+    prompts.length = 0;
+
+    const refused = await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, { method: "POST", headers,
+      body: JSON.stringify({ text: "Wann ist die Klausur?" }) });
+
+    expect([refused.status, await refused.json()]).toEqual([403, { error: "allowance_exhausted" }]);
+    expect(prompts).toEqual([]);
+    expect(await (await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, { headers: { cookie } })).json()).toEqual([]);
+  });
 });
