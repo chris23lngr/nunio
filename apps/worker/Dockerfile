@@ -37,6 +37,9 @@ COPY --from=builder --chown=node:node /app/packages/db/dist ./packages/db/dist
 COPY --from=builder --chown=node:node /app/packages/delegation/dist ./packages/delegation/dist
 COPY --from=builder --chown=node:node /app/packages/keys/dist ./packages/keys/dist
 COPY --from=builder --chown=node:node /app/packages/knowledge/dist ./packages/knowledge/dist
+COPY --from=builder --chown=node:node /app/packages/planning/dist ./packages/planning/dist
 USER node
+# Check runtime imports without connecting to Temporal or the database.
+RUN node -e "import('./apps/worker/dist/run-activities.js')"
 # node directly, so SIGTERM reaches the worker, which drains for SHUTDOWN_GRACE_SECONDS.
 CMD ["node", "apps/worker/dist/index.js"]
