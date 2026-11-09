@@ -2704,6 +2704,7 @@ describe("Responsibilities", () => {
         id,
         preset: "keep_course_organized",
         course: { id: s.courseId, title: "Analysis I" },
+        exam: null,
         state: "ended",
         pausedBy: null,
       },
@@ -2730,6 +2731,7 @@ describe("Responsibilities", () => {
           id: asked.responsibilityId,
           preset: "keep_course_organized",
           course: "Analysis I",
+          exam: null,
           state: "active",
         },
       ],
@@ -2766,5 +2768,69 @@ describe("Responsibilities", () => {
         },
       },
     ]);
+  });
+});
+
+describe("'prepare me for this exam'", () => {
+  it("is delegated for one exam, which its screen and the list name, and never for other work", async () => {
+    const s = await withCourse("responsibility-exam");
+    const exam = await facts.enterObligation(
+      principal.fromSession({ studentId: await studentId(s.cookie) }),
+      {
+        course: { id: s.courseId },
+        kind: "exam",
+        title: "Klausur",
+        due: { date: "2099-02-01", time: "10:00", timeZone: null },
+        destination: null,
+      },
+    );
+    if (exam.status !== "ok") throw new Error(exam.status);
+    const delegate = (obligationId: string) =>
+      app.request(`${apiOrigin}/api/me/responsibilities`, {
+        method: "POST",
+        headers: s.headers,
+        body: JSON.stringify({ preset: "prepare_for_exam", obligationId }),
+      });
+
+    expect((await delegate(s.obligationId)).status).toBe(404);
+    const created = await delegate(exam.id);
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+
+    const shown = await app.request(
+      `${apiOrigin}/api/me/responsibilities/${id}`,
+      { headers: { cookie: s.cookie } },
+    );
+    expect(await shown.json()).toMatchObject({
+      preset: "prepare_for_exam",
+      course: { id: s.courseId, title: "Analysis I" },
+      exam: { id: exam.id, title: "Klausur" },
+      grants: ["studyBlock.create", "studyBlock.move"],
+    });
+    const listed = await app.request(`${apiOrigin}/api/me/responsibilities`, {
+      headers: { cookie: s.cookie },
+    });
+    expect(await listed.json()).toEqual([
+      expect.objectContaining({
+        id,
+        preset: "prepare_for_exam",
+        exam: { id: exam.id, title: "Klausur" },
+      }),
+    ]);
+    const home = await app.request(`${apiOrigin}/api/me/home`, {
+      headers: { cookie: s.cookie },
+    });
+    expect(((await home.json()) as { agentWork: unknown[] }).agentWork).toEqual(
+      [
+        {
+          kind: "responsibility",
+          id,
+          preset: "prepare_for_exam",
+          course: "Analysis I",
+          exam: "Klausur",
+          state: "active",
+        },
+      ],
+    );
   });
 });

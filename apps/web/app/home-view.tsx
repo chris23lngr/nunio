@@ -4,6 +4,7 @@ import type { paths } from "@nunio/api-client";
 import { createApiClient } from "@nunio/api-client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { nameOf } from "@/features/responsibilities/name";
 import {
   hours,
   overlapReasons,
@@ -130,7 +131,10 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
               ) : (
                 <li key={item.id}>
                   <Link href={`/responsibilities/${item.id}`}>
-                    Keep {item.course ?? "a Course that is gone"} organized
+                    {nameOf({
+                      course: item.course ? { title: item.course } : null,
+                      exam: item.exam ? { title: item.exam } : null,
+                    })}
                   </Link>{" "}
                   ({item.state})
                 </li>

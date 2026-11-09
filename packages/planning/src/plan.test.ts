@@ -680,12 +680,42 @@ it("proposes, for one Course, the Rebalance of that Course's work as Actions for
     (o) => o.id === analysis,
   )!.courseId;
 
-  expect(await plan.intentsFor(p, courseId)).toEqual([
+  expect(await plan.intentsFor(p, { courseId })).toEqual([
     {
       kind: "studyBlock.create",
       workId: analysis,
       start: at("2026-11-09 09:00"),
       end: at("2026-11-09 10:00"),
+    },
+  ]);
+});
+
+it("proposes, for one exam, the Rebalance of that exam and its Tasks only", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-11", "12:00");
+  const klausur = await facts.enterObligation(p, {
+    course: { title: "Analysis I", code: "MA-101" },
+    kind: "exam",
+    title: "Klausur",
+    due: { date: "2026-11-13", time: "10:00", timeZone: null },
+    destination: null,
+  });
+  if (klausur.status !== "ok") throw new Error(klausur.status);
+  const task = await plan.addTask(p, {
+    title: "Altklausur 2025",
+    obligationId: klausur.id,
+  });
+  if (task.status !== "ok") throw new Error(task.status);
+  await plan.estimate(p, { kind: "obligation", id: sheet }, 60);
+  await plan.estimate(p, { kind: "task", id: task.id }, 60);
+
+  expect(await plan.intentsFor(p, { obligationId: klausur.id })).toEqual([
+    {
+      kind: "studyBlock.create",
+      workId: task.id,
+      start: expect.any(Date),
+      end: expect.any(Date),
     },
   ]);
 });

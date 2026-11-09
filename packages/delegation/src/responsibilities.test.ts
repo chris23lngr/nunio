@@ -492,3 +492,210 @@ describe("Responsibilities", () => {
     expect(calls).toEqual([`create ${theirs.id}`]);
   });
 });
+
+/** An exam in the student's Course, with one block nunio placed for it. */
+async function exam(s: Awaited<ReturnType<typeof student>>) {
+  const examId = randomUUID(),
+    examBlockId = randomUUID();
+  await admin.obligation.create({
+    data: {
+      id: examId,
+      studentId: s.studentId,
+      courseId: s.courseId,
+      matchKey: "exam",
+      kind: "exam",
+      enteredAt: now,
+      correctedTitle: "Klausur",
+    },
+  });
+  await admin.studyBlock.create({
+    data: {
+      id: examBlockId,
+      studentId: s.studentId,
+      obligationId: examId,
+      placedBy: "nunio",
+      start: new Date("2026-11-10T11:00:00Z"),
+      end: new Date("2026-11-10T12:00:00Z"),
+    },
+  });
+  return { examId, examBlockId };
+}
+
+describe("'prepare me for this exam'", () => {
+  it("lets its Runs act on that exam's blocks without asking, and asks for any other work in the Course", async () => {
+    const s = await student();
+    const { examId, examBlockId } = await exam(s);
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules: fakeSchedules().schedules,
+      clock,
+    });
+    const gate = createDelegation({
+      db: runtime,
+      aiEnabled: () => true,
+      clock,
+      executors: { plan: executor },
+    });
+
+    const created = await responsibilities.create(s.p, {
+      preset: "prepare_for_exam",
+      obligationId: examId,
+      budgetMicroUsd: 50_000,
+    });
+    if (created.status !== "ok") throw new Error(created.status);
+    const runId = (await responsibilities.startRun({
+      studentId: s.studentId,
+      responsibilityId: created.id,
+      runId: randomUUID(),
+      workflowId: "run-workflow",
+    }))!;
+
+    expect(
+      await gate.perform(principal.fromRun(runId), {
+        key: `${runId}:1`,
+        intent: move(examBlockId),
+      }),
+    ).toMatchObject({ status: "done" });
+    expect(
+      await gate.perform(principal.fromRun(runId), {
+        key: `${runId}:2`,
+        intent: move(s.blockId),
+      }),
+    ).toMatchObject({ status: "awaiting_approval" });
+    expect(await responsibilities.view(s.p, created.id)).toMatchObject({
+      preset: "prepare_for_exam",
+      scope: { obligationId: examId },
+      grants: [
+        { kind: "studyBlock.create", obligationId: examId },
+        { kind: "studyBlock.move", obligationId: examId },
+      ],
+    });
+  });
+
+  it("is only for an exam of the student's own", async () => {
+    const s = await student();
+    const other = await student();
+    const { examId: theirExam } = await exam(other);
+    const { schedules, calls } = fakeSchedules();
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules,
+      clock,
+    });
+    const assignment = (
+      await admin.obligation.findFirstOrThrow({
+        where: { studentId: s.studentId, kind: "assignment" },
+      })
+    ).id;
+
+    expect(
+      await responsibilities.create(s.p, {
+        preset: "prepare_for_exam",
+        obligationId: assignment,
+        budgetMicroUsd: 50_000,
+      }),
+    ).toEqual({ status: "gone" });
+    expect(
+      await responsibilities.create(s.p, {
+        preset: "prepare_for_exam",
+        obligationId: theirExam,
+        budgetMicroUsd: 50_000,
+      }),
+    ).toEqual({ status: "gone" });
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses an exam the student rejected, or one in a Course they merged away or rejected", async () => {
+    const s = await student();
+    const { schedules, calls } = fakeSchedules();
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules,
+      clock,
+    });
+    const prepare = (obligationId: string) =>
+      responsibilities.create(s.p, {
+        preset: "prepare_for_exam",
+        obligationId,
+        budgetMicroUsd: 50_000,
+      });
+    const { examId: rejected } = await exam(s);
+    await admin.obligation.update({
+      where: { id: rejected },
+      data: { state: "rejected" },
+    });
+    const inCourse = async (status: "merged" | "rejected") => {
+      const courseId = randomUUID(),
+        examId = randomUUID();
+      await admin.course.create({
+        data: {
+          id: courseId,
+          studentId: s.studentId,
+          title: `Course ${status}`,
+          matchTitle: status,
+          status,
+        },
+      });
+      await admin.obligation.create({
+        data: {
+          id: examId,
+          studentId: s.studentId,
+          courseId,
+          matchKey: `exam-${status}`,
+          kind: "exam",
+          enteredAt: now,
+          correctedTitle: "Klausur",
+        },
+      });
+      return examId;
+    };
+
+    expect(await prepare(rejected)).toEqual({ status: "gone" });
+    expect(await prepare(await inCourse("merged"))).toEqual({ status: "gone" });
+    expect(await prepare(await inCourse("rejected"))).toEqual({
+      status: "gone",
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("gives each Run its Responsibility's scope, exactly as its proposals take it", async () => {
+    const s = await student();
+    const { examId } = await exam(s);
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules: fakeSchedules().schedules,
+      clock,
+    });
+    const runOf = async (
+      input: Parameters<typeof responsibilities.create>[1],
+    ) => {
+      const created = await responsibilities.create(s.p, input);
+      if (created.status !== "ok") throw new Error(created.status);
+      return (await responsibilities.startRun({
+        studentId: s.studentId,
+        responsibilityId: created.id,
+        runId: randomUUID(),
+        workflowId: "run-workflow",
+      }))!;
+    };
+
+    expect(
+      await responsibilities.scopeOfRun(
+        await runOf({
+          preset: "prepare_for_exam",
+          obligationId: examId,
+          budgetMicroUsd: 1,
+        }),
+      ),
+    ).toEqual({ obligationId: examId });
+    expect(
+      await responsibilities.scopeOfRun(
+        await runOf({
+          preset: "keep_course_organized",
+          courseId: s.courseId,
+          budgetMicroUsd: 1,
+        }),
+      ),
+    ).toEqual({ courseId: s.courseId });
+  });
+});
