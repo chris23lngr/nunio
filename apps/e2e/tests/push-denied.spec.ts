@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createPool, createPrismaClient } from "@nunio/db";
 import { expect, test } from "@playwright/test";
 import { hashPassword } from "better-auth/crypto";
-import { origins } from "../origins.js";
+import { origins, target } from "../origins.js";
 
 const password = "correct horse battery staple";
 
@@ -14,7 +14,8 @@ async function createStudent(): Promise<string> {
   );
   const userId = randomUUID();
   try {
-    await prisma.rateLimit.deleteMany();
+    // Only a disposable local database may lose its limiter state; staging is shared.
+    if (target === "local") await prisma.rateLimit.deleteMany();
     await prisma.user.create({
       data: {
         id: userId,
@@ -31,14 +32,18 @@ async function createStudent(): Promise<string> {
         },
       },
     });
-    // Its work does not exist, so the Inbox shows it as gone; closing it still works.
-    await prisma.intervention.create({
-      data: {
-        id: randomUUID(),
-        studentId: userId,
-        kind: "shortfall",
-        dedupeKey: `shortfall:${randomUUID()}`,
-      },
+    // Its work does not exist, so the Inbox shows it as gone; closing it still works. As its owner,
+    // so the insert passes forced RLS whether or not the fixture connection bypasses it.
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.owner_id', ${userId}, true)`;
+      await tx.intervention.create({
+        data: {
+          id: randomUUID(),
+          studentId: userId,
+          kind: "shortfall",
+          dedupeKey: `shortfall:${randomUUID()}`,
+        },
+      });
     });
   } finally {
     await prisma.$disconnect();
