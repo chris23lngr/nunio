@@ -472,6 +472,10 @@ export const TemplateHelpers: Story = {
     await expect(getComputedStyle(disabled).opacity).toBe("0.5")
     const course = canvas.getByRole("button", { name: "Course" })
     const more = canvas.getByRole("button", { name: "More" })
+    if (import.meta.env.MODE === "test") {
+      const { userEvent: browser } = await import("vitest/browser")
+      await browser.hover(canvas.getByTestId("outside-trigger"))
+    }
     await expect(getComputedStyle(more).opacity).toBe("0")
     course.focus()
     await expect(getComputedStyle(more).opacity).toBe("1")
