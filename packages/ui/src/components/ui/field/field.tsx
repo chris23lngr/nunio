@@ -1,8 +1,10 @@
 "use client"
 
-import { cva, type VariantProps } from "class-variance-authority"
+import type { VariantProps } from "class-variance-authority"
+import { cva } from "class-variance-authority"
 import { cn } from "cn"
-import { type ComponentProps, type ReactNode, useMemo } from "react"
+import type { ComponentProps, ReactNode } from "react"
+import { useMemo } from "react"
 
 import { Separator } from "../separator/separator.js"
 
@@ -11,7 +13,7 @@ function FieldSet({ className, ...props }: ComponentProps<"fieldset">) {
     <fieldset
       data-slot="field-set"
       className={cn(
-        "flex flex-col gap-4 font-sans text-base-800 has-[>[data-slot=checkbox-group]]:gap-3 has-[>[data-slot=radio-group]]:gap-3",
+        "text-base-800 flex flex-col gap-4 font-sans has-[>[data-slot=checkbox-group]]:gap-3 has-[>[data-slot=radio-group]]:gap-3",
         className,
       )}
       {...props}
@@ -29,7 +31,7 @@ function FieldLegend({
       data-slot="field-legend"
       data-variant={variant}
       className={cn(
-        "mb-1.5 font-medium text-base-800 data-[variant=label]:text-sm data-[variant=legend]:text-base",
+        "text-base-800 mb-1.5 font-medium data-[variant=label]:text-sm data-[variant=legend]:text-base",
         className,
       )}
       {...props}
@@ -42,7 +44,7 @@ function FieldGroup({ className, ...props }: ComponentProps<"div">) {
     <div
       data-slot="field-group"
       className={cn(
-        "group/field-group @container/field-group flex w-full flex-col gap-5 font-sans text-base-800 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4",
+        "group/field-group text-base-800 @container/field-group flex w-full flex-col gap-5 font-sans data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4",
         className,
       )}
       {...props}
@@ -51,7 +53,7 @@ function FieldGroup({ className, ...props }: ComponentProps<"div">) {
 }
 
 const fieldVariants = cva(
-  "group/field flex w-full gap-2 font-sans text-base-800 data-[invalid=true]:text-destructive-700",
+  "group/field text-base-800 data-[invalid=true]:text-destructive-700 flex w-full gap-2 font-sans",
   {
     variants: {
       orientation: {
@@ -104,7 +106,7 @@ function FieldLabel({ className, ...props }: ComponentProps<"label">) {
     <label
       data-slot="field-label"
       className={cn(
-        "group/field-label peer/field-label flex w-fit items-center gap-2 text-sm leading-snug font-medium text-base-800 select-none group-data-[disabled=true]/field:opacity-50 group-data-[invalid=true]/field:text-destructive-700 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 has-data-checked:border-primary-500/30 has-data-checked:bg-primary-500/5 has-[>[data-slot=field]]:rounded-lg has-[>[data-slot=field]]:border has-[>[data-slot=field]]:border-base-200 has-[>[data-slot=field]]:not-has-[:disabled,[data-disabled]]:hover:bg-base-100/50 has-[>[data-slot=field]]:has-[:focus-visible]:border-primary-500 has-[>[data-slot=field]]:has-[:focus-visible]:ring-3 has-[>[data-slot=field]]:has-[:focus-visible]:ring-primary-500/50 *:data-[slot=field]:p-2.5 dark:has-data-checked:border-primary-500/20 dark:has-data-checked:bg-primary-500/10",
+        "group/field-label peer/field-label text-base-800 group-data-[invalid=true]/field:text-destructive-700 has-data-checked:border-primary-500/30 has-data-checked:bg-primary-500/5 has-[>[data-slot=field]]:border-base-200 has-[>[data-slot=field]]:not-has-[:disabled,[data-disabled]]:hover:bg-base-100/50 has-[>[data-slot=field]]:has-[:focus-visible]:border-primary-500 has-[>[data-slot=field]]:has-[:focus-visible]:ring-primary-500/50 dark:has-data-checked:border-primary-500/20 dark:has-data-checked:bg-primary-500/10 flex w-fit items-center gap-2 text-sm leading-snug font-medium select-none group-data-[disabled=true]/field:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 has-[>[data-slot=field]]:rounded-lg has-[>[data-slot=field]]:border has-[>[data-slot=field]]:has-[:focus-visible]:ring-3 *:data-[slot=field]:p-2.5",
         "has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col",
         className,
       )}
@@ -118,7 +120,7 @@ function FieldTitle({ className, ...props }: ComponentProps<"div">) {
     <div
       data-slot="field-label"
       className={cn(
-        "flex w-fit items-center gap-2 text-sm font-medium text-base-800 group-data-[disabled=true]/field:opacity-50",
+        "text-base-800 flex w-fit items-center gap-2 text-sm font-medium group-data-[disabled=true]/field:opacity-50",
         className,
       )}
       {...props}
@@ -131,9 +133,9 @@ function FieldDescription({ className, ...props }: ComponentProps<"p">) {
     <p
       data-slot="field-description"
       className={cn(
-        "text-left text-sm leading-normal font-normal text-base-500 group-has-data-horizontal/field:text-balance [[data-variant=legend]+&]:-mt-1.5",
+        "text-base-500 text-left text-sm leading-normal font-normal group-has-data-horizontal/field:text-balance [[data-variant=legend]+&]:-mt-1.5",
         "last:mt-0 nth-last-2:-mt-1",
-        "[&>a]:underline [&>a]:underline-offset-4 [&>a:hover]:text-primary-500",
+        "[&>a:hover]:text-primary-500 [&>a]:underline [&>a]:underline-offset-4",
         className,
       )}
       {...props}
@@ -161,7 +163,7 @@ function FieldSeparator({
       <Separator className="absolute inset-0 top-1/2" />
       {children && (
         <span
-          className="relative mx-auto block w-fit bg-white px-2 text-base-500"
+          className="text-base-500 relative mx-auto block w-fit bg-white px-2"
           data-slot="field-separator-content"
         >
           {children}
@@ -214,7 +216,7 @@ function FieldError({
     <div
       role="alert"
       data-slot="field-error"
-      className={cn("text-sm font-normal text-destructive-700", className)}
+      className={cn("text-destructive-700 text-sm font-normal", className)}
       {...props}
     >
       {content}

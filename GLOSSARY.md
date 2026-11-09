@@ -17,7 +17,7 @@ _Avoid_: Bot, assistant, automation
 ### Organization
 
 **Course**:
-A unit of study the student is taking that ends in one assessment and grade (a German *Modul*), holding its long-lived academic context such as materials and rules. A Course may bundle a lecture, tutorial, and lab.
+A unit of study the student is taking that ends in one assessment and grade (a German _Modul_), holding its long-lived academic context such as materials and rules. A Course may bundle a lecture, tutorial, and lab.
 _Avoid_: Module, class, subject, Lehrveranstaltung
 
 **Project**:

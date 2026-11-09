@@ -11,27 +11,13 @@
       "queryCount": 10,
       "recallAt1": 1,
       "recallAt3": 1,
-      "ranks": [
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1
-      ],
+      "ranks": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
       "pricing": {
         "prompt": "0.00000001",
         "completion": "0"
       },
       "expirationDate": null,
-      "zdrProviders": [
-        "Parasail",
-        "DeepInfra"
-      ],
+      "zdrProviders": ["Parasail", "DeepInfra"],
       "usage": {
         "prompt_tokens": 336,
         "total_tokens": 336,
@@ -51,26 +37,13 @@
       "queryCount": 10,
       "recallAt1": 1,
       "recallAt3": 1,
-      "ranks": [
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1
-      ],
+      "ranks": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
       "pricing": {
         "prompt": "0.00000002",
         "completion": "0"
       },
       "expirationDate": null,
-      "zdrProviders": [
-        "Amazon Bedrock"
-      ],
+      "zdrProviders": ["Amazon Bedrock"],
       "usage": {
         "prompt_tokens": 332,
         "total_tokens": 332,

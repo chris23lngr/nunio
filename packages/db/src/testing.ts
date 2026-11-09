@@ -41,7 +41,10 @@ export async function startTestDatabase(): Promise<TestDatabase> {
     migrate(connectionString);
     return {
       connectionString,
-      runtimeConnectionString: await createRuntimeLogin(connectionString, connectionString),
+      runtimeConnectionString: await createRuntimeLogin(
+        connectionString,
+        connectionString,
+      ),
       stop: async () => {
         await container.stop();
       },
@@ -53,7 +56,9 @@ export async function startTestDatabase(): Promise<TestDatabase> {
 }
 
 function migrate(url: string): void {
-  const prismaCli = createRequire(import.meta.url).resolve("prisma/build/index.js");
+  const prismaCli = createRequire(import.meta.url).resolve(
+    "prisma/build/index.js",
+  );
   execFileSync(process.execPath, [prismaCli, "migrate", "deploy"], {
     cwd: packageDir,
     env: { ...process.env, DATABASE_URL: url },
@@ -62,13 +67,18 @@ function migrate(url: string): void {
 }
 
 /** Creates a uniquely named runtime login, so concurrent suites never share one; returns `target` as it. */
-async function createRuntimeLogin(adminUrl: string, target: string): Promise<string> {
+async function createRuntimeLogin(
+  adminUrl: string,
+  target: string,
+): Promise<string> {
   const user = `nunio_runtime_test_${randomBytes(6).toString("hex")}`;
   const password = randomBytes(24).toString("hex");
   const client = new pg.Client({ connectionString: adminUrl });
   await client.connect();
   try {
-    await client.query(`CREATE ROLE ${user} LOGIN PASSWORD '${password}' IN ROLE nunio_runtime`);
+    await client.query(
+      `CREATE ROLE ${user} LOGIN PASSWORD '${password}' IN ROLE nunio_runtime`,
+    );
   } finally {
     await client.end();
   }

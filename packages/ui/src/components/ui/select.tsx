@@ -55,7 +55,7 @@ function SelectTrigger({
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       className={cn(
-        "border-primary-translucent text-primary hover:bg-interactive-translucent focus-visible:bg-interactive-translucent data-popup-open:bg-interactive-translucent active:bg-interactive-translucent-150 inline-flex h-7 w-fit cursor-pointer items-center justify-center gap-1.5 rounded-md border px-2 text-sm leading-[1.2] font-medium whitespace-nowrap outline-hidden transition-[background-color] duration-[20ms] ease-in select-none focus-visible:shadow-focus-button data-disabled:cursor-default data-disabled:opacity-40",
+        "border-primary-translucent text-primary hover:bg-interactive-translucent focus-visible:bg-interactive-translucent data-popup-open:bg-interactive-translucent active:bg-interactive-translucent-150 focus-visible:shadow-focus-button inline-flex h-7 w-fit cursor-pointer items-center justify-center gap-1.5 rounded-md border px-2 text-sm leading-[1.2] font-medium whitespace-nowrap outline-hidden transition-[background-color] duration-[20ms] ease-in select-none data-disabled:cursor-default data-disabled:opacity-40",
         className,
       )}
       {...props}
@@ -173,7 +173,7 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "text-primary data-highlighted:bg-interactive-translucent active:bg-interactive-translucent-200 flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-sm leading-[1.2] outline-hidden transition-[background-color] duration-[20ms] ease-in select-none data-disabled:pointer-events-none data-disabled:opacity-40 in-data-[nav=keyboard]:data-highlighted:shadow-focus-button",
+        "text-primary data-highlighted:bg-interactive-translucent active:bg-interactive-translucent-200 in-data-[nav=keyboard]:data-highlighted:shadow-focus-button flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-sm leading-[1.2] outline-hidden transition-[background-color] duration-[20ms] ease-in select-none data-disabled:pointer-events-none data-disabled:opacity-40",
         className,
       )}
       {...props}

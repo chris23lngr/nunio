@@ -2,5 +2,9 @@
   "name": "@nunio/typescript-config",
   "version": "0.0.0",
   "private": true,
-  "files": ["base.json", "library.json", "nextjs.json"]
+  "files": [
+    "base.json",
+    "library.json",
+    "nextjs.json"
+  ]
 }

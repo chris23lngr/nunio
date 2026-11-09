@@ -19,7 +19,9 @@ export function createActivities({ parserUrl }: ActivityDeps) {
 
     /** Proves the worker reaches the parser over the private network. */
     async checkParser(): Promise<{ status: string }> {
-      const res = await fetch(`${parserUrl}/health`, { signal: AbortSignal.timeout(5_000) });
+      const res = await fetch(`${parserUrl}/health`, {
+        signal: AbortSignal.timeout(5_000),
+      });
       if (!res.ok) throw new Error(`parser health returned ${res.status}`);
       return (await res.json()) as { status: string };
     },

@@ -16,7 +16,7 @@
     "dev": "tsx watch src/dev.ts",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
+    "lint": "biome check .",
     "test": "vitest run",
     "openapi": "tsx scripts/write-openapi.ts"
   },
@@ -37,13 +37,12 @@
   },
   "devDependencies": {
     "@hono/node-server": "2.1.5",
-    "@nunio/eslint-config": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
     "better-auth": "1.7.14",
-    "eslint": "10.13.0",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "@biomejs/biome": "2.6.3"
   }
 }

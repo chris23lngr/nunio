@@ -14,7 +14,8 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 function required(name: string): string {
   const value = process.env[name];
-  if (!value) throw new Error(`${name} is not set (packages/knowledge/.env.staging)`);
+  if (!value)
+    throw new Error(`${name} is not set (packages/knowledge/.env.staging)`);
   return value;
 }
 
@@ -40,7 +41,9 @@ export function sseCHeaders(key: Buffer): Record<string, string> {
   return {
     "x-amz-server-side-encryption-customer-algorithm": "AES256",
     "x-amz-server-side-encryption-customer-key": key.toString("base64"),
-    "x-amz-server-side-encryption-customer-key-md5": createHash("md5").update(key).digest("base64"),
+    "x-amz-server-side-encryption-customer-key-md5": createHash("md5")
+      .update(key)
+      .digest("base64"),
   };
 }
 
@@ -56,7 +59,12 @@ interface ObjectRef {
 
 export function presignPut(
   s3: S3Client,
-  { bucket, objectKey, key, contentLength }: ObjectRef & { contentLength: number },
+  {
+    bucket,
+    objectKey,
+    key,
+    contentLength,
+  }: ObjectRef & { contentLength: number },
 ) {
   const command = new PutObjectCommand({
     Bucket: bucket,
@@ -72,7 +80,10 @@ export function presignPut(
   });
 }
 
-export function presignGet(s3: S3Client, { bucket, objectKey, key }: ObjectRef) {
+export function presignGet(
+  s3: S3Client,
+  { bucket, objectKey, key }: ObjectRef,
+) {
   const command = new GetObjectCommand({
     Bucket: bucket,
     Key: objectKey,
@@ -90,9 +101,17 @@ const maxPartBytes = 5 * 1024 ** 3;
  */
 export async function promote(
   s3: S3Client,
-  { from, to, objectKey, key }: { from: string; to: string; objectKey: string; key: Buffer },
+  {
+    from,
+    to,
+    objectKey,
+    key,
+  }: { from: string; to: string; objectKey: string; key: Buffer },
 ) {
-  const ssec = { SSECustomerAlgorithm: "AES256", SSECustomerKey: key.toString("base64") };
+  const ssec = {
+    SSECustomerAlgorithm: "AES256",
+    SSECustomerKey: key.toString("base64"),
+  };
   const copySource = {
     CopySource: `${from}/${objectKey}`,
     CopySourceSSECustomerAlgorithm: "AES256",
@@ -102,10 +121,16 @@ export async function promote(
     new HeadObjectCommand({ Bucket: from, Key: objectKey, ...ssec }),
   );
   const target = { Bucket: to, Key: objectKey };
-  const { UploadId } = await s3.send(new CreateMultipartUploadCommand({ ...target, ...ssec }));
+  const { UploadId } = await s3.send(
+    new CreateMultipartUploadCommand({ ...target, ...ssec }),
+  );
   try {
     const parts = [];
-    for (let start = 0, PartNumber = 1; start < size || PartNumber === 1; start += maxPartBytes, PartNumber++) {
+    for (
+      let start = 0, PartNumber = 1;
+      start < size || PartNumber === 1;
+      start += maxPartBytes, PartNumber++
+    ) {
       const end = Math.min(start + maxPartBytes, size) - 1;
       const { CopyPartResult } = await s3.send(
         new UploadPartCopyCommand({
@@ -114,13 +139,19 @@ export async function promote(
           ...copySource,
           UploadId,
           PartNumber,
-          ...(size > maxPartBytes && { CopySourceRange: `bytes=${start}-${end}` }),
+          ...(size > maxPartBytes && {
+            CopySourceRange: `bytes=${start}-${end}`,
+          }),
         }),
       );
       parts.push({ PartNumber, ETag: CopyPartResult?.ETag });
     }
     const { VersionId } = await s3.send(
-      new CompleteMultipartUploadCommand({ ...target, UploadId, MultipartUpload: { Parts: parts } }),
+      new CompleteMultipartUploadCommand({
+        ...target,
+        UploadId,
+        MultipartUpload: { Parts: parts },
+      }),
     );
     return { versionId: VersionId };
   } catch (error) {

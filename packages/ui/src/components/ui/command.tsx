@@ -73,7 +73,7 @@ function CommandDialog({
         <DialogPrimitive.Popup
           data-slot="command-dialog"
           className={cn(
-            "bg-popover-frosted text-primary fixed top-[9vh] left-1/2 z-50 flex h-[calc(91vh-16px)] w-[1006px] max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col overflow-hidden rounded-[20px] shadow-screen outline-hidden backdrop-blur-[40px]",
+            "bg-popover-frosted text-primary shadow-screen fixed top-[9vh] left-1/2 z-50 flex h-[calc(91vh-16px)] w-[1006px] max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col overflow-hidden rounded-[20px] outline-hidden backdrop-blur-[40px]",
             className,
           )}
         >
@@ -203,7 +203,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "text-primary hover:bg-interactive-translucent data-[selected=true]:bg-interactive-translucent active:bg-interactive-translucent-200 [&_svg:not([class*='text-'])]:text-icon-secondary relative flex min-h-9 cursor-pointer items-center gap-2.5 rounded-xl px-2 py-1 text-sm leading-5 font-medium outline-hidden transition-[background-color] duration-[20ms] ease-in select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40 in-data-[nav=keyboard]:data-[selected=true]:shadow-focus-button [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px]",
+        "text-primary hover:bg-interactive-translucent data-[selected=true]:bg-interactive-translucent active:bg-interactive-translucent-200 [&_svg:not([class*='text-'])]:text-icon-secondary in-data-[nav=keyboard]:data-[selected=true]:shadow-focus-button relative flex min-h-9 cursor-pointer items-center gap-2.5 rounded-xl px-2 py-1 text-sm leading-5 font-medium outline-hidden transition-[background-color] duration-[20ms] ease-in select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px]",
         className,
       )}
       {...props}

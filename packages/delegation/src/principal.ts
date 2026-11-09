@@ -3,7 +3,10 @@ import type { PrismaClient } from "@nunio/db";
 declare const brand: unique symbol;
 
 /** Authority is never passed in. A Principal can only be minted server-side. */
-export type Principal = ({ kind: "student"; studentId: string } | { kind: "run"; runId: string }) & {
+export type Principal = (
+  | { kind: "student"; studentId: string }
+  | { kind: "run"; runId: string }
+) & {
   readonly [brand]: "Principal";
 };
 
@@ -18,7 +21,9 @@ export const principal = {
   },
 };
 
-export type Transaction = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
+export type Transaction = Parameters<
+  Parameters<PrismaClient["$transaction"]>[0]
+>[0];
 
 /** Runs `fn` in a transaction whose RLS owner context is the Principal's student. */
 export async function withOwner<T>(
@@ -26,8 +31,9 @@ export async function withOwner<T>(
   p: Principal,
   fn: (tx: Transaction, studentId: string) => Promise<T>,
 ): Promise<T> {
-  if (p.kind !== "student") throw new Error("Run principals are not authorized until Phase 9");
-  return prisma.$transaction(async tx => {
+  if (p.kind !== "student")
+    throw new Error("Run principals are not authorized until Phase 9");
+  return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.owner_id', ${p.studentId}, true)`;
     return fn(tx, p.studentId);
   });

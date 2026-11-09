@@ -1,6 +1,6 @@
 import { embedMany, generateText, Output } from "ai";
-import { z } from "zod";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { createModels } from "../src/models.ts";
 import { spikeModels } from "./openrouter.ts";
 
@@ -8,7 +8,10 @@ describe("OpenRouter (spike f)", () => {
   const models = spikeModels();
 
   it("answers through a zero-retention Claude endpoint", async () => {
-    const { text } = await generateText({ model: models.chat, prompt: "Reply with the single word: pong" });
+    const { text } = await generateText({
+      model: models.chat,
+      prompt: "Reply with the single word: pong",
+    });
     expect(text.toLowerCase()).toContain("pong");
   });
 
@@ -25,9 +28,13 @@ describe("OpenRouter (spike f)", () => {
     const { output } = await generateText({
       model: recording.chat,
       output: Output.object({ schema }),
-      prompt: "Which city is the capital of Germany? Answer with the city and its country.",
+      prompt:
+        "Which city is the capital of Germany? Answer with the city and its country.",
     });
-    expect(schema.parse(output)).toEqual({ city: "Berlin", country: "Germany" });
+    expect(schema.parse(output)).toEqual({
+      city: "Berlin",
+      country: "Germany",
+    });
 
     const [body] = bodies;
     expect(body).toMatchObject({ response_format: { type: "json_schema" } });
@@ -37,14 +44,18 @@ describe("OpenRouter (spike f)", () => {
 
   it("reads a cached prompt prefix on the second call", async () => {
     // Above Claude's minimum cacheable length; unique per run so the first call writes the cache.
-    const reference = `Run ${Date.now()}.\n` + "Facts are recorded per Source and cited in answers. ".repeat(600);
+    const reference =
+      `Run ${Date.now()}.\n` +
+      "Facts are recorded per Source and cited in answers. ".repeat(600);
     const ask = () =>
       generateText({
         model: models.chat,
         instructions: {
           role: "system",
           content: reference,
-          providerOptions: { openrouter: { cacheControl: { type: "ephemeral" } } },
+          providerOptions: {
+            openrouter: { cacheControl: { type: "ephemeral" } },
+          },
         },
         prompt: "Reply with the single word: ok",
       });
@@ -57,7 +68,10 @@ describe("OpenRouter (spike f)", () => {
   it("embeds German text through a zero-retention endpoint", async () => {
     const { embeddings } = await embedMany({
       model: models.embedding,
-      values: ["Die Photosynthese findet in den Chloroplasten statt.", "Wo findet die Photosynthese statt?"],
+      values: [
+        "Die Photosynthese findet in den Chloroplasten statt.",
+        "Wo findet die Photosynthese statt?",
+      ],
     });
     expect(embeddings).toHaveLength(2);
     expect(embeddings[0]).toHaveLength(1024);
@@ -67,17 +81,30 @@ describe("OpenRouter (spike f)", () => {
 // Phase 4: the registry's cost accounting and estimate bound, against the live API.
 describe("the model registry against OpenRouter", () => {
   it("reports a real call's cost, within the registry's estimate", async () => {
-    const models = createModels({ apiKey: process.env.OPENROUTER_API_KEY!, baseURL: process.env.OPENROUTER_BASE_URL! });
+    const models = createModels({
+      apiKey: process.env.OPENROUTER_API_KEY!,
+      baseURL: process.env.OPENROUTER_BASE_URL!,
+    });
     const haiku = models.byId("anthropic/claude-haiku-5.5");
-    const prompt = "Fasse in einem Satz zusammen: Die Prüfungsleistung ist eine Hausarbeit (15 Seiten), "
-      + "Abgabe bis zum Ende der Vorlesungszeit. Übungsblätter sind Zulassungsvoraussetzung.";
+    const prompt =
+      "Fasse in einem Satz zusammen: Die Prüfungsleistung ist eine Hausarbeit (15 Seiten), " +
+      "Abgabe bis zum Ende der Vorlesungszeit. Übungsblätter sind Zulassungsvoraussetzung.";
 
-    const result = await generateText({ model: haiku.model, ...haiku.callSettings, prompt });
+    const result = await generateText({
+      model: haiku.model,
+      ...haiku.callSettings,
+      prompt,
+    });
 
-    expect(result.providerMetadata?.openrouter?.usage).toMatchObject({ cost: expect.any(Number) });
-    expect(result.usage.inputTokens).toBeLessThanOrEqual(new TextEncoder().encode(prompt).byteLength + 200);
+    expect(result.providerMetadata?.openrouter?.usage).toMatchObject({
+      cost: expect.any(Number),
+    });
+    expect(result.usage.inputTokens).toBeLessThanOrEqual(
+      new TextEncoder().encode(prompt).byteLength + 200,
+    );
     expect(haiku.actualMicroUsd(result)).toBeGreaterThan(0);
-    expect(haiku.actualMicroUsd(result)).toBeLessThanOrEqual(haiku.estimateMicroUsd([prompt]));
+    expect(haiku.actualMicroUsd(result)).toBeLessThanOrEqual(
+      haiku.estimateMicroUsd([prompt]),
+    );
   });
 });
-

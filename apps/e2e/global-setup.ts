@@ -1,11 +1,19 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { request } from "node:https";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
+import type { TestDatabase } from "@nunio/db/testing";
+import { startTestDatabase } from "@nunio/db/testing";
 import { createCerts } from "./certs.js";
-import { cookieDomain, origins, ports, spikeWebhookSecret, target } from "./origins.js";
+import {
+  cookieDomain,
+  origins,
+  ports,
+  spikeWebhookSecret,
+  target,
+} from "./origins.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -16,7 +24,11 @@ export default async function globalSetup() {
     new URL(origins.evil).hostname,
   ]);
   const ca = readFileSync(certs.caPath);
-  const tls = { NODE_EXTRA_CA_CERTS: certs.caPath, TLS_KEY: certs.keyPath, TLS_CERT: certs.certPath };
+  const tls = {
+    NODE_EXTRA_CA_CERTS: certs.caPath,
+    TLS_KEY: certs.keyPath,
+    TLS_CERT: certs.certPath,
+  };
   const children: ChildProcess[] = [];
   let db: TestDatabase | undefined;
   const cleanup = async () => {
@@ -26,13 +38,19 @@ export default async function globalSetup() {
 
   try {
     if (target === "staging") {
-      const evil = start("evil", { ...process.env, ...tls, PORT: String(ports.evil) });
+      const evil = start("evil", {
+        ...process.env,
+        ...tls,
+        PORT: String(ports.evil),
+      });
       children.push(evil);
       await waitFor(`${origins.evil}/`, ca, evil);
     } else {
       // Browser fixtures reset limiter state; they must never share an externally supplied database.
       if (process.env.DATABASE_URL && process.env.DATABASE_URL_UNPOOLED) {
-        throw new Error("Local browser tests require a disposable database; unset DATABASE_URL and DATABASE_URL_UNPOOLED");
+        throw new Error(
+          "Local browser tests require a disposable database; unset DATABASE_URL and DATABASE_URL_UNPOOLED",
+        );
       }
       db = await startTestDatabase();
       const shared = {
@@ -55,7 +73,9 @@ export default async function globalSetup() {
           SCW_SECRET_KEY: "test-key",
           AUTH_EMAIL_FROM: "accounts@nunio.test",
           SOURCE_KEY_VERSION: "test",
-          SOURCE_MASTER_KEYS: JSON.stringify({ test: Buffer.alloc(32, 1).toString("base64") }),
+          SOURCE_MASTER_KEYS: JSON.stringify({
+            test: Buffer.alloc(32, 1).toString("base64"),
+          }),
           HETZNER_S3_ENDPOINT: "https://fsn1.your-objectstorage.com",
           HETZNER_S3_REGION: "fsn1",
           HETZNER_S3_ACCESS_KEY_ID: "test",
@@ -92,10 +112,14 @@ export default async function globalSetup() {
 }
 
 function start(name: string, env: NodeJS.ProcessEnv): ChildProcess {
-  const child = spawn(process.execPath, ["--import", "tsx", join(here, "servers", `${name}.ts`)], {
-    env,
-    stdio: ["ignore", "inherit", "inherit"],
-  });
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", join(here, "servers", `${name}.ts`)],
+    {
+      env,
+      stdio: ["ignore", "inherit", "inherit"],
+    },
+  );
   child.on("exit", (code) => {
     if (code) console.error(`[${name}] exited with code ${code}`);
   });
@@ -103,7 +127,8 @@ function start(name: string, env: NodeJS.ProcessEnv): ChildProcess {
 }
 
 async function stop(child: ChildProcess): Promise<void> {
-  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null)
+    return;
   await new Promise<void>((resolve) => {
     const timeout = setTimeout(() => child.kill("SIGKILL"), 5_000);
     child.once("exit", () => {
@@ -114,10 +139,16 @@ async function stop(child: ChildProcess): Promise<void> {
   });
 }
 
-async function waitFor(url: string, ca: Buffer, child: ChildProcess, timeoutMs = 60_000): Promise<void> {
+async function waitFor(
+  url: string,
+  ca: Buffer,
+  child: ChildProcess,
+  timeoutMs = 60_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null || child.signalCode !== null) throw new Error(`${url} server exited before readiness`);
+    if (child.exitCode !== null || child.signalCode !== null)
+      throw new Error(`${url} server exited before readiness`);
     const ok = await new Promise<boolean>((resolve) => {
       const req = request(url, { ca, timeout: 1_000 }, (res) => {
         res.resume();

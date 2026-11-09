@@ -75,12 +75,7 @@
           "buildId": "@temporalio/worker@1.25.0+3254c092fabdbb1481d59193239d6d1c450c74efa415466941a9671a6ad71f0c"
         },
         "sdkMetadata": {
-          "coreUsedFlags": [
-            1,
-            2,
-            4,
-            3
-          ],
+          "coreUsedFlags": [1, 2, 4, 3],
           "sdkName": "temporal-typescript",
           "sdkVersion": "1.25.0"
         },

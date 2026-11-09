@@ -1,0 +1,11 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
+  "extends": "//",
+  "linter": {
+    "rules": {
+      "correctness": {
+        "usePlaywrightValidDescribeCallback": "off"
+      }
+    }
+  }
+}

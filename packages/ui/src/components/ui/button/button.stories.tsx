@@ -130,7 +130,7 @@ export const Icons: Story = {
       <Button data-testid="custom-icon" className={() => "px-4"}>
         <ArrowUpCircle
           data-icon="inline-start"
-          className="size-5 text-base-600"
+          className="text-base-600 size-5"
         />
         Custom icon
       </Button>

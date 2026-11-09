@@ -23,21 +23,21 @@ Consolidated from [foundation.md](research/foundation.md), [durable-ai.md](resea
 
 ### Version baseline
 
-| Package | Version | Note |
-|---|---|---|
-| `next` | 16.4.3 | middleware is now `proxy.ts` (Node runtime) |
-| `hono` | 4.13.14 | `export default app`; `hono/vercel` `handle` is deprecated |
-| `@hono/zod-openapi` / `zod` | 1.6.3 / 4.x | requires Zod 4; import `z` from `@hono/zod-openapi` |
-| `openapi-typescript` / `openapi-fetch` | 7.13.0 / 0.17.0 | openapi-fetch is 0.x, so pin it exactly |
-| `better-auth` | 1.7.14 | |
-| `prisma`, `@prisma/client`, `@prisma/adapter-pg` | **7.10.1** | `latest` is 8.0.0-rc.28: always install `@7.10.1` |
-| `@temporalio/*` | 1.24.x or 1.25.0 | 1.25.0 shipped 2026-10-27; pin all `@temporalio/*` to one version |
-| `testcontainers`, `@testcontainers/postgresql` | 12.2.1 | image `pgvector/pgvector:0.8.7-pg18`, matching Neon's PG major |
-| `turbo` | ≥ 2.10 (2.11.10 latest) | for Bun `bun.lock` pruning |
-| `vercel` CLI | 65.8.0 | |
-| `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` | 3.1160.0 | |
-| `@vercel/functions` | 3.10.5 | `awsCredentialsProvider` from `@vercel/functions/oidc` |
-| `@openrouter/ai-sdk-provider` | 3.1.0 | peer `ai ^7`; base URL `https://eu.openrouter.ai/api/v1` (ADR-0012) |
+| Package                                               | Version                 | Note                                                                |
+| ----------------------------------------------------- | ----------------------- | ------------------------------------------------------------------- |
+| `next`                                                | 16.4.3                  | middleware is now `proxy.ts` (Node runtime)                         |
+| `hono`                                                | 4.13.14                 | `export default app`; `hono/vercel` `handle` is deprecated          |
+| `@hono/zod-openapi` / `zod`                           | 1.6.3 / 4.x             | requires Zod 4; import `z` from `@hono/zod-openapi`                 |
+| `openapi-typescript` / `openapi-fetch`                | 7.13.0 / 0.17.0         | openapi-fetch is 0.x, so pin it exactly                             |
+| `better-auth`                                         | 1.7.14                  |                                                                     |
+| `prisma`, `@prisma/client`, `@prisma/adapter-pg`      | **7.10.1**              | `latest` is 8.0.0-rc.28: always install `@7.10.1`                   |
+| `@temporalio/*`                                       | 1.24.x or 1.25.0        | 1.25.0 shipped 2026-10-27; pin all `@temporalio/*` to one version   |
+| `testcontainers`, `@testcontainers/postgresql`        | 12.2.1                  | image `pgvector/pgvector:0.8.7-pg18`, matching Neon's PG major      |
+| `turbo`                                               | ≥ 2.10 (2.11.10 latest) | for Bun `bun.lock` pruning                                          |
+| `vercel` CLI                                          | 65.8.0                  |                                                                     |
+| `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` | 3.1160.0                |                                                                     |
+| `@vercel/functions`                                   | 3.10.5                  | `awsCredentialsProvider` from `@vercel/functions/oidc`              |
+| `@openrouter/ai-sdk-provider`                         | 3.1.0                   | peer `ai ^7`; base URL `https://eu.openrouter.ai/api/v1` (ADR-0012) |
 
 ### Allowed APIs (copy from these locations)
 
@@ -295,11 +295,11 @@ Manual staging evidence (2026-11-02): the founder confirmed all manual Phase 4 c
    2. The browser uploads via `fetch()`.
    3. The API is notified and starts the ingestion workflow.
 3. **Ingestion workflow (worker):**
-   - Signature sniffing and size, page, and decompression limits. *Accepted deviation:* these run in the parser, not the worker, so untrusted bytes are inspected only inside the secretless sandbox (ADR-0009).
+   - Signature sniffing and size, page, and decompression limits. _Accepted deviation:_ these run in the parser, not the worker, so untrusted bytes are inspected only inside the secretless sandbox (ADR-0009).
    - The parser is called with a presigned GET plus the single file's key, and returns structured text.
    - Scanned pages are detected and routed to Claude image input via `meter` (ADR-0011).
    - Snapshot uploads to a worker-only key inside quarantine before parsing; on success, promote that snapshot to `sources` with SSE-C multipart copy and delete the quarantine copies (ADR-0007 amendment).
-4. Chunking, with chunk text encrypted under the Source key ([knowledge-retrieval.md](design/knowledge-retrieval.md)). Embeddings via an in-region OpenRouter embedding model from spike f, chosen by the German eval (run the eval here; deprecation check first). *Accepted exception:* the chosen model is not in-region; see the ADR-0012 Phase 5 amendment.
+4. Chunking, with chunk text encrypted under the Source key ([knowledge-retrieval.md](design/knowledge-retrieval.md)). Embeddings via an in-region OpenRouter embedding model from spike f, chosen by the German eval (run the eval here; deprecation check first). _Accepted exception:_ the chosen model is not in-region; see the ADR-0012 Phase 5 amendment.
 5. **Source deletion:** shred the key, delete embedding rows and derived rows in one transaction, and delete objects. Visible immediately everywhere.
 6. Upload and AI entry points refuse students with a pending deletion request or a non-active pilot entitlement ([identity-and-pilot-access.md](design/identity-and-pilot-access.md)).
 
@@ -335,7 +335,7 @@ Implementation evidence and deployment settings: [PDF Sources runbook](operation
    - Disagreement from a newer Source is flagged, never applied.
    - Re-uploading a Source never silently overwrites a Correction (glossary: Correction).
 3. A **review screen** in `web`: grouped by Course, each item showing its source passage, with Confirm, Correct, or Reject actions. Progress and timing from upload to the first reviewable result is instrumented.
-4. Manual Obligation entry. *Moved:* Projects are implemented in Phase 8, where planning first uses them (decided 2026-11-02).
+4. Manual Obligation entry. _Moved:_ Projects are implemented in Phase 8, where planning first uses them (decided 2026-11-02).
 
 The accepted design, including slicing, matching, and the eval, is [extraction.md](design/extraction.md).
 
@@ -362,7 +362,7 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
    - explicit selection of Courses and Sources (empty means no Sources);
    - Sonnet 5.5 answers via `meter`, with retrieved data in a data slot;
    - citations stored as `CitationRef`s only and resolved via `cite()` at display time.
-3. A Chat can start a Run. Proposing Actions from Chat waits for Phase 9. *Moved:* `pin`, Run snapshots, widening, and starting a Run from a Chat move to Phase 9, where Runs and Run Principals exist (decided 2026-11-08).
+3. A Chat can start a Run. Proposing Actions from Chat waits for Phase 9. _Moved:_ `pin`, Run snapshots, widening, and starting a Run from a Chat move to Phase 9, where Runs and Run Principals exist (decided 2026-11-08).
 
 **Documentation references.** [knowledge-retrieval.md](design/knowledge-retrieval.md) (entire); [durable-ai.md](research/durable-ai.md) "Postgres and pgvector" and invariant 5; OWASP Prompt Injection Cheat Sheet.
 
@@ -544,7 +544,6 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 ## Phase 13: Verification
 
 > **How this serves the primary goal:** this phase confirms that the system the students will use matches the decisions and designs it was planned against.
-
 1. **Docs vs code.** Each module's interface matches its design doc (delegation, knowledge), and the ADRs match the deployed configuration (regions, retention, origins, models).
 2. **Anti-pattern greps.** No hits on any of:
    - `prisma-client-js`, `directUrl`, `postgresqlExtensions`, `hono/vercel`, `middleware.ts`, `payloadCodecPath`, `cronSchedule`;

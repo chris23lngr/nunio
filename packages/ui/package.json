@@ -23,7 +23,7 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "tokens": "bun scripts/build-tokens.ts && biome format --write src/styles/tokens.css",
-    "format": "biome check --write ."
+    "format": "biome format --write ."
   },
   "devDependencies": {
     "@nunio/typescript-config": "workspace:*",

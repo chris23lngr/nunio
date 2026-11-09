@@ -59,7 +59,7 @@ function DemoContent({ manyCourses = false }: { manyCourses?: boolean }) {
     <>
       <SidebarHeader>
         <div className="flex h-9 min-w-0 items-center justify-between gap-4">
-          <span className="truncate text-sm text-base-500 group-data-[collapsible=icon]:hidden">
+          <span className="text-base-500 truncate text-sm group-data-[collapsible=icon]:hidden">
             Header placeholder
           </span>
           <SidebarTrigger />
@@ -147,7 +147,7 @@ function DemoContent({ manyCourses = false }: { manyCourses?: boolean }) {
 function MainContent() {
   return (
     <SidebarInset>
-      <header className="flex h-16 shrink-0 items-center gap-3 px-4 text-sm text-base-500">
+      <header className="text-base-500 flex h-16 shrink-0 items-center gap-3 px-4 text-sm">
         <SidebarTrigger data-testid="outside-trigger" />
         <span>Content placeholder</span>
       </header>
