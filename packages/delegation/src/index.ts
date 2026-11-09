@@ -39,3 +39,9 @@ export {
   type Transaction,
   withOwner,
 } from "./principal.js";
+export {
+  createResponsibilities,
+  type Preset,
+  type Responsibilities,
+  type Schedules,
+} from "./responsibilities.js";
