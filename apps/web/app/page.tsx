@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ApprovalsPanel } from "@/features/approvals/approvals-panel";
 import { SourcesScreen } from "@/features/sources/sources-screen";
 import { apiOrigin, getSession } from "@/lib/session";
 import { HomeView } from "./home-view";
@@ -17,7 +18,9 @@ export default async function HomePage() {
       <Link href="/chat">Chat</Link>
       <Link href="/plan">Plan</Link>
       <Link href="/projects">Projects</Link>
+      <Link href="/responsibilities">Responsibilities</Link>
       <SignOutButton apiOrigin={apiOrigin()} />
+      <ApprovalsPanel apiOrigin={apiOrigin()} />
       <HomeView apiOrigin={apiOrigin()} />
       <SourcesScreen apiOrigin={apiOrigin()} />
     </main>
