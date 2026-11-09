@@ -488,7 +488,7 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 
 **Verification checklist.**
 - [x] Duplicate triggers produce one Intervention (`packages/outreach/src/tick.test.ts`, "raising Interventions from their causes").
-- [x] Denied push permission leaves the product fully usable (`apps/web/test/push.test.tsx`). Delivery on real Chrome, Firefox and iOS Home Screen devices is still to be checked after deploying.
+- [x] Denied push permission leaves the product fully usable (`apps/web/test/push.test.tsx`, `apps/e2e/tests/push-denied.spec.ts`). Delivery on real Chrome, Firefox and iOS Home Screen devices is still to be checked after deploying.
 - [x] A push delivery never marks anything complete (`tick.test.ts`, "push").
 - [x] Dismissal and acknowledgement are recorded separately (`packages/outreach/src/inbox.test.ts`, `apps/web/test/inbox.test.tsx`).
 
