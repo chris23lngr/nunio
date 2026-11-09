@@ -445,13 +445,22 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 
 **Verification checklist.**
 - [ ] All gate-suite and contract-suite scenarios in the design doc pass.
-- [ ] Killing the worker while a Run awaits Approval loses neither the Approval nor the continuation.
-- [ ] A Pause between two Actions stops the second.
-- [ ] Repeated Approval clicks dispatch once.
+- [x] Killing the worker while a Run awaits Approval loses neither the Approval nor the continuation (`apps/worker/src/runs.test.ts`).
+- [x] A Pause between two Actions stops the second (`gate.test.ts`, `runs.test.ts`).
+- [x] Repeated Approval clicks dispatch once (`gate.test.ts`, `runs.test.ts`).
 - [ ] A stale Artifact version is refused.
-- [ ] Replaying recorded workflow histories against the current code succeeds in CI.
+- [x] Replaying recorded workflow histories against the current code succeeds in CI (`apps/worker/src/replay.test.ts`, including `responsibility-run`).
 
-**Progress (2026-11-10).** The gate in `packages/delegation` is implemented: the gate suite (`gate.test.ts`), the contract suite (`kinds.test.ts`) and the table-driven decision core (`decision.test.ts`), with the pilot deviations recorded in [delegation-gate.md](design/delegation-gate.md). It covers "a Pause between two Actions stops the second", "repeated Approval clicks dispatch once", and, standing in for a stale Artifact version, a moved block refused with `approval_mismatch`. Still to do: Responsibilities and Runs in the worker, the production Plan executor, the Approval cards and Responsibility screen, and the presets.
+**Progress (2026-11-10).** The gate in `packages/delegation` is implemented: the gate suite (`gate.test.ts`), the contract suite (`kinds.test.ts`) and the table-driven decision core (`decision.test.ts`), with the pilot deviations recorded in [delegation-gate.md](design/delegation-gate.md). It covers "a Pause between two Actions stops the second", "repeated Approval clicks dispatch once", and, standing in for a stale Artifact version, a moved block refused with `approval_mismatch`.
+
+**Progress (2026-11-11).** Responsibilities and Runs are implemented:
+- `createResponsibilities` (create, pause, resume, end, view, startRun) with a `Schedules` port; the Temporal adapter in `apps/api` starts a Run daily at 06:00 in the student's time zone and skips a day while a Run still waits.
+- The `responsibilityRun` workflow performs the preset's Actions under `runId:step` keys, waits on the `approvalDecided` signal or the Approval's expiry, raises an Intervention for an expired Approval or an Unconfirmed Action, and stops on Paused or Ended. Its tests (`apps/worker/src/runs.test.ts`) cover a worker restart while awaiting Approval, a Pause between Actions, and repeated Approval clicks; its recorded history replays in CI.
+- `reconcileActions` runs every five minutes on a Schedule the worker ensures at start.
+- The Plan executor (`createPlanExecutor`) records each key's effect with the effect itself, so its `lookup` is always certain; "keep this course organized" proposes the Rebalance of its Course (`plan.intentsFor`).
+- Interventions are minimal records (`intervention`), deduplicated per trigger, for Phase 10's inbox.
+
+Still to do: the API routes and Approval cards (wiring the Schedules adapter and signalling `approvalDecided` after `decide`), the Responsibility screen, and the "prepare me for this exam" preset.
 
 **Anti-pattern guards.** No app code checks Grants itself. `delegation` never imports Temporal. Free text is never treated as an Approval. There are no global Grants.
 
