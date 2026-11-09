@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
-import { DeletionForm } from "@/app/account/deletion-form";
+import { DeletionForm } from "@/app/(app)/account/deletion-form";
 import { ResetPasswordForm } from "@/app/reset-password/reset-password-form";
 import { api } from "./api";
 import { TestProviders } from "./providers";
