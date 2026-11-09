@@ -695,6 +695,23 @@ describe("the daily limit", () => {
     await sender.tick();
     expect(mailTo(p)).toHaveLength(3);
   });
+
+  it("counts the whole local day on the day summer time ends", async () => {
+    // 2026-10-25 in Berlin: 00:30 is still CEST (UTC+2), 10:00 is CET (UTC+1).
+    now = new Date("2026-10-25T00:30:00+02:00");
+    const p = await student();
+    await outreach.updateSettings(p, { dailyLimit: 1, briefingAtMinute: null });
+    await dueTomorrow(p, 30 * 60, "2026-10-26");
+    await sender.tick();
+    expect(mailTo(p)).toHaveLength(1);
+
+    now = new Date("2026-10-25T10:00:00+01:00");
+    await dueTomorrow(p, 30 * 60, "2026-10-26");
+    await sender.tick();
+
+    expect(await open(p)).toHaveLength(2);
+    expect(mailTo(p)).toHaveLength(1);
+  });
 });
 
 describe("one-click unsubscribe", () => {

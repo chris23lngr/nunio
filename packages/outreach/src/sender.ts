@@ -52,6 +52,23 @@ function wallClock(at: Date, timeZone: string) {
   };
 }
 
+/** When the student's local day containing `at` began, in their time zone; DST days are 23 or 25 hours long. */
+function startOfDay(at: Date, timeZone: string): Date {
+  /** How far the wall clock is ahead of UTC at `instant`. */
+  const offsetAt = (instant: number) => {
+    const { date, minute } = wallClock(new Date(instant), timeZone);
+    return (
+      Date.parse(`${date}T00:00Z`) +
+      minute * 60_000 -
+      (instant - (instant % 60_000))
+    );
+  };
+  const midnightAsUtc = Date.parse(`${wallClock(at, timeZone).date}T00:00Z`);
+  // Twice, in case the offset at midnight differs from the one at the first guess.
+  const guess = midnightAsUtc - offsetAt(midnightAsUtc);
+  return new Date(midnightAsUtc - offsetAt(guess));
+}
+
 /** Sends one email; true external, so it is injected. */
 export interface Mailer {
   send(
@@ -214,7 +231,8 @@ export function createOutreachSender({
   /** Sends what is due on each channel; every message is content-free and points to the Inbox. */
   async function deliver(p: Principal, view: PlanView) {
     const at = clock.now();
-    const { minute } = wallClock(at, view.limits.preferences.timeZone);
+    const { timeZone } = view.limits.preferences;
+    const { minute } = wallClock(at, timeZone);
     const settings = settingsOf(
       await withOwner(db, p, (tx) => tx.outreachSettings.findFirst()),
     );
@@ -237,9 +255,7 @@ export function createOutreachSender({
       );
       const { email, briefingEmail, dailyLimit } = settings;
       // A tick's announcements share one sentAt across channels, so each counts once.
-      const midnight = new Date(
-        at.getTime() - minute * 60_000 - (at.getTime() % 60_000),
-      );
+      const midnight = startOfDay(at, timeZone);
       const announcedToday = (
         await tx.delivery.findMany({
           where: { interventionId: { not: null }, sentAt: { gte: midnight } },
