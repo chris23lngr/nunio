@@ -81,7 +81,7 @@ function DialogContent({
             <DialogPrimitive.Popup
               data-slot="dialog-content"
               className={cn(
-                "bg-elevated text-primary relative max-h-full max-w-[90vw] overflow-hidden rounded-xl shadow-screen outline-hidden",
+                "bg-elevated text-primary shadow-screen relative max-h-full max-w-[90vw] overflow-hidden rounded-xl outline-hidden",
                 className,
               )}
               render={

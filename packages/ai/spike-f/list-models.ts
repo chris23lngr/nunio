@@ -20,22 +20,42 @@ async function get<T>(path: string): Promise<T> {
 const covered = /fable|mythos/i;
 
 const zdr = await get<ZdrEndpoint[]>("/endpoints/zdr");
-const embeddingIds = new Set((await get<{ id: string }[]>("/embeddings/models")).map((m) => m.id));
+const embeddingIds = new Set(
+  (await get<{ id: string }[]>("/embeddings/models")).map((m) => m.id),
+);
 
-const byModel = new Map<string, { providers: Set<string>; structured: boolean }>();
+const byModel = new Map<
+  string,
+  { providers: Set<string>; structured: boolean }
+>();
 for (const endpoint of zdr) {
   const isClaude = endpoint.model_id.startsWith("anthropic/");
-  if (!(isClaude || embeddingIds.has(endpoint.model_id)) || covered.test(endpoint.model_id)) continue;
-  const entry = byModel.get(endpoint.model_id) ?? { providers: new Set(), structured: false };
+  if (
+    !(isClaude || embeddingIds.has(endpoint.model_id)) ||
+    covered.test(endpoint.model_id)
+  )
+    continue;
+  const entry = byModel.get(endpoint.model_id) ?? {
+    providers: new Set(),
+    structured: false,
+  };
   entry.providers.add(endpoint.provider_name);
-  entry.structured ||= Boolean(endpoint.supported_parameters?.includes("structured_outputs"));
+  entry.structured ||= Boolean(
+    endpoint.supported_parameters?.includes("structured_outputs"),
+  );
   byModel.set(endpoint.model_id, entry);
 }
 
-console.log(`Zero-retention endpoints on OpenRouter, ${new Date().toISOString().slice(0, 10)}:\n`);
+console.log(
+  `Zero-retention endpoints on OpenRouter, ${new Date().toISOString().slice(0, 10)}:\n`,
+);
 console.log("| Model | Kind | ZDR providers | `structured_outputs` |");
 console.log("| --- | --- | --- | --- |");
-for (const [id, { providers, structured }] of [...byModel].sort(([a], [b]) => a.localeCompare(b))) {
+for (const [id, { providers, structured }] of [...byModel].sort(([a], [b]) =>
+  a.localeCompare(b),
+)) {
   const kind = embeddingIds.has(id) ? "embedding" : "chat";
-  console.log(`| \`${id}\` | ${kind} | ${[...providers].sort().join(", ")} | ${kind === "chat" ? (structured ? "yes" : "no") : "–"} |`);
+  console.log(
+    `| \`${id}\` | ${kind} | ${[...providers].sort().join(", ")} | ${kind === "chat" ? (structured ? "yes" : "no") : "–"} |`,
+  );
 }

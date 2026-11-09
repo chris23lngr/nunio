@@ -3,7 +3,11 @@ import { redirect } from "next/navigation";
 import { apiOrigin, getSession } from "@/lib/session";
 import { ChatView } from "./chat-view";
 
-export default async function ChatPage({ searchParams }: { searchParams: Promise<{ id?: string }> }) {
+export default async function ChatPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ id?: string }>;
+}) {
   const session = await getSession();
   if (!session) redirect("/sign-in");
   const { id } = await searchParams;

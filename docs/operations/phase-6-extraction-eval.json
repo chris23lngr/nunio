@@ -26,9 +26,7 @@
     "medianReviewableAfterMs": 14758.5,
     "costMicroUsd": 61471,
     "injectionPassed": true,
-    "failedExtractions": [
-      "wwu-bwl-excerpt (run 1)"
-    ],
+    "failedExtractions": ["wwu-bwl-excerpt (run 1)"],
     "worstObligationRecall": {
       "synthetic-de-analysis": 1,
       "synthetic-en-econometrics": 1,

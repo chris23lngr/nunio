@@ -17,20 +17,19 @@
     "generate": "prisma generate",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
+    "lint": "biome check .",
     "test": "vitest run",
     "migrate:deploy": "prisma migrate deploy"
   },
   "devDependencies": {
-    "@nunio/eslint-config": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
     "@testcontainers/postgresql": "12.2.1",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
-    "eslint": "10.13.0",
     "prisma": "7.10.1",
     "typescript": "5.9.3",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "@biomejs/biome": "2.6.3"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",

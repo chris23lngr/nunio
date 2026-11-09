@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 
@@ -21,11 +21,13 @@ export function SessionList({ apiOrigin }: { apiOrigin: string }) {
 
   useEffect(() => {
     const client = authClient(apiOrigin);
-    void Promise.all([client.listSessions(), client.getSession()]).then(([listed, session]) => {
-      if (listed.error) return setError("Could not load your sessions.");
-      setSessions(listed.data);
-      setCurrent(session.data?.session.token ?? null);
-    });
+    void Promise.all([client.listSessions(), client.getSession()]).then(
+      ([listed, session]) => {
+        if (listed.error) return setError("Could not load your sessions.");
+        setSessions(listed.data);
+        setCurrent(session.data?.session.token ?? null);
+      },
+    );
   }, [apiOrigin, version]);
 
   async function revoke(token: string) {
@@ -47,14 +49,21 @@ export function SessionList({ apiOrigin }: { apiOrigin: string }) {
       <ul>
         {sessions.map((session) => (
           <li key={session.token}>
-            {session.userAgent ?? "Unknown device"}, signed in {new Date(session.createdAt).toLocaleString()}
-            {session.token === current
-              ? " (This device)"
-              : <button type="button" onClick={() => revoke(session.token)}>Sign out</button>}
+            {session.userAgent ?? "Unknown device"}, signed in{" "}
+            {new Date(session.createdAt).toLocaleString()}
+            {session.token === current ? (
+              " (This device)"
+            ) : (
+              <button type="button" onClick={() => revoke(session.token)}>
+                Sign out
+              </button>
+            )}
           </li>
         ))}
       </ul>
-      <button type="button" onClick={signOutEverywhere}>Sign out everywhere</button>
+      <button type="button" onClick={signOutEverywhere}>
+        Sign out everywhere
+      </button>
       {error && <p role="alert">{error}</p>}
     </>
   );

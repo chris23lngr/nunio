@@ -5,8 +5,17 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { PrismaClient } from "./generated/prisma/client.js";
 
+export {
+  CourseStatus,
+  ExtractionStatus,
+  FactType,
+  ObligationKind,
+  ReviewState,
+  SourceFailure,
+  SourceStatus,
+  Unsupported,
+} from "./generated/prisma/enums.js";
 export { PrismaClient };
-export { CourseStatus, ExtractionStatus, FactType, ObligationKind, ReviewState, SourceFailure, SourceStatus, Unsupported } from "./generated/prisma/enums.js";
 export type Pool = pg.Pool;
 
 /**
@@ -19,5 +28,7 @@ export function createPool(connectionString: string): Pool {
 
 /** Runtime client over `pool`; `$disconnect()` ends the pool. */
 export function createPrismaClient(pool: Pool): PrismaClient {
-  return new PrismaClient({ adapter: new PrismaPg(pool, { disposeExternalPool: true }) });
+  return new PrismaClient({
+    adapter: new PrismaPg(pool, { disposeExternalPool: true }),
+  });
 }

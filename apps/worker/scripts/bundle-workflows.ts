@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { bundleWorkflowCode } from "@temporalio/worker";
 
 const { code } = await bundleWorkflowCode({
-  workflowsPath: fileURLToPath(new URL("../dist/workflows.js", import.meta.url)),
+  workflowsPath: fileURLToPath(
+    new URL("../dist/workflows.js", import.meta.url),
+  ),
 });
 writeFileSync(new URL("../dist/workflow-bundle.js", import.meta.url), code);

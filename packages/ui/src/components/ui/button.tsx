@@ -1,14 +1,15 @@
 "use client"
 
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
-import { cva, type VariantProps } from "class-variance-authority"
+import type { VariantProps } from "class-variance-authority"
+import { cva } from "class-variance-authority"
 import { cn } from "../../lib/utils.js"
 
 // Spec: docs/notion-spec/components/button.md
 // `size` is declared before `variant`: variants that own their geometry (pill, assistant)
 // come later in the class list, so cn() lets them override the size.
 const buttonVariants = cva(
-  "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md text-sm leading-[1.2] whitespace-nowrap outline-hidden transition-[background-color] duration-100 ease-in-out select-none focus-visible:shadow-focus-button data-disabled:pointer-events-none data-disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "focus-visible:shadow-focus-button inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md text-sm leading-[1.2] whitespace-nowrap outline-hidden transition-[background-color] duration-100 ease-in-out select-none data-disabled:pointer-events-none data-disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       size: {

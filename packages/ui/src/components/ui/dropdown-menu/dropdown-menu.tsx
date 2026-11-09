@@ -45,7 +45,7 @@ function DropdownMenuContent({
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
           className={cn(
-            "z-50 max-h-(--available-height) w-max min-w-[max(--spacing(32),var(--anchor-width))] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-white p-0 font-sans text-base-700 shadow-md outline-1 outline-base-700/15 data-closed:overflow-hidden",
+            "text-base-700 outline-base-700/15 z-50 max-h-(--available-height) w-max min-w-[max(--spacing(32),var(--anchor-width))] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-white p-0 font-sans shadow-md outline-1 data-closed:overflow-hidden",
             className,
           )}
           {...props}
@@ -82,7 +82,7 @@ function DropdownMenuLabel({
       data-slot="dropdown-menu-label"
       data-inset={inset}
       className={cn(
-        "px-1.5 text-xs leading-4.5 font-medium text-base-500",
+        "text-base-500 px-1.5 text-xs leading-4.5 font-medium",
         className,
       )}
       {...props}
@@ -243,7 +243,7 @@ function DropdownMenuSeparator({
   return (
     <MenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
-      className={cn("h-px shrink-0 bg-base-200", className)}
+      className={cn("bg-base-200 h-px shrink-0", className)}
       {...props}
     />
   )
@@ -257,7 +257,7 @@ function DropdownMenuShortcut({
     <span
       data-slot="dropdown-menu-shortcut"
       className={cn(
-        "ml-auto shrink-0 text-sm font-normal text-base-500",
+        "text-base-500 ml-auto shrink-0 text-sm font-normal",
         className,
       )}
       {...props}

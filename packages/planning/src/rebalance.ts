@@ -1,34 +1,86 @@
-export interface Interval { start: Date; end: Date }
+export interface Interval {
+  start: Date;
+  end: Date;
+}
 
 export interface PlanState {
   now: Date;
   /** The student's time zone; study windows and daily limits apply to its local days. */
   timeZone: string;
   /** `dailyLimitMinutes` is the work's own Preference, already resolved task over course; the global limit still caps each day. */
-  obligations: { id: string; due: Date | null; estimateMinutes: number | null; priority: number; dailyLimitMinutes?: number | null }[];
-  tasks: { id: string; obligationId: string | null; estimateMinutes: number | null; done: boolean; dailyLimitMinutes?: number | null }[];
-  studyBlocks: { id: string; workId: string; start: Date; end: Date; placedBy: "nunio" | "student"; locked: boolean }[];
+  obligations: {
+    id: string;
+    due: Date | null;
+    estimateMinutes: number | null;
+    priority: number;
+    dailyLimitMinutes?: number | null;
+  }[];
+  tasks: {
+    id: string;
+    obligationId: string | null;
+    estimateMinutes: number | null;
+    done: boolean;
+    dailyLimitMinutes?: number | null;
+  }[];
+  studyBlocks: {
+    id: string;
+    workId: string;
+    start: Date;
+    end: Date;
+    placedBy: "nunio" | "student";
+    locked: boolean;
+  }[];
   fixedEvents: Interval[];
   protectedTime: Interval[];
-  preferences: { studyWindow: { fromMinute: number; toMinute: number }; maxMinutesPerDay: number };
+  preferences: {
+    studyWindow: { fromMinute: number; toMinute: number };
+    maxMinutesPerDay: number;
+  };
 }
 
 export type Move =
-  | { kind: "create"; workId: string; start: Date; end: Date; needsApproval: boolean }
+  | {
+      kind: "create";
+      workId: string;
+      start: Date;
+      end: Date;
+      needsApproval: boolean;
+    }
   /** Moving a block the student placed needs Approval; a Locked block is never moved. */
-  | { kind: "move"; blockId: string; workId: string; from: Interval; to: Interval; needsApproval: boolean };
+  | {
+      kind: "move";
+      blockId: string;
+      workId: string;
+      from: Interval;
+      to: Interval;
+      needsApproval: boolean;
+    };
 
 /** A way to close a Shortfall; the student chooses, nunio never resolves it silently. */
 export type Tradeoff =
   /** Study beyond the daily limit: breaking a Preference needs Approval. */
   | { kind: "exceed_daily_limit"; gainedMinutes: number; needsApproval: true }
   /** Give up blocks planned for lower-Priority work before the deadline; the student's own need Approval to move. */
-  | { kind: "free_time_from"; workId: string; blockIds: string[]; gainedMinutes: number; needsApproval: boolean }
+  | {
+      kind: "free_time_from";
+      workId: string;
+      blockIds: string[];
+      gainedMinutes: number;
+      needsApproval: boolean;
+    }
   | { kind: "reduce_estimate"; workId: string; byMinutes: number };
 
-export interface Shortfall { workId: string; due: Date; shortMinutes: number; tradeoffs: Tradeoff[] }
+export interface Shortfall {
+  workId: string;
+  due: Date;
+  shortMinutes: number;
+  tradeoffs: Tradeoff[];
+}
 
-export type Unplanned = { workId: string; reason: "no_estimate" | "no_deadline" | "past_due" };
+export type Unplanned = {
+  workId: string;
+  reason: "no_estimate" | "no_deadline" | "past_due";
+};
 
 /** A Study Block the calendar now overlaps that stays put: Locked, or with no time left to move it to before its deadline. */
 export type Overlap = { blockId: string; reason: "locked" | "no_room" };
@@ -48,24 +100,48 @@ const dayMs = 24 * 60 * 60_000;
 
 /** The local calendar date and minute of day of an instant. */
 function local(ms: number, timeZone: string) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone, hourCycle: "h23",
-    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
-    .formatToParts(ms).map(part => [part.type, part.value]));
-  return { date: `${parts.year}-${parts.month}-${parts.day}`, minute: Number(parts.hour) * 60 + Number(parts.minute) };
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+      .formatToParts(ms)
+      .map((part) => [part.type, part.value]),
+  );
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    minute: Number(parts.hour) * 60 + Number(parts.minute),
+  };
 }
 
 const overlaps = (intervals: readonly Interval[], start: number, end: number) =>
-  intervals.some(interval => interval.start.getTime() < end && start < interval.end.getTime());
+  intervals.some(
+    (interval) =>
+      interval.start.getTime() < end && start < interval.end.getTime(),
+  );
 
 /** Counts an interval's minutes towards the local days it falls on. */
-function addMinutes(perDay: Map<string, number>, { start, end }: Interval, timeZone: string) {
+function addMinutes(
+  perDay: Map<string, number>,
+  { start, end }: Interval,
+  timeZone: string,
+) {
   for (let ms = start.getTime(); ms < end.getTime(); ms += slotMs) {
     const { date } = local(ms, timeZone);
-    perDay.set(date, (perDay.get(date) ?? 0) + Math.min(slotMs, end.getTime() - ms) / 60_000);
+    perDay.set(
+      date,
+      (perDay.get(date) ?? 0) + Math.min(slotMs, end.getTime() - ms) / 60_000,
+    );
   }
 }
 
-const minutes = ({ start, end }: Interval) => (end.getTime() - start.getTime()) / 60_000;
+const minutes = ({ start, end }: Interval) =>
+  (end.getTime() - start.getTime()) / 60_000;
 /** How far ahead work without a deadline may be placed. */
 const horizonMs = 14 * dayMs;
 
@@ -75,26 +151,53 @@ const horizonMs = 14 * dayMs;
  */
 function workOf({ obligations, tasks }: PlanState) {
   return [
-    ...obligations.flatMap(obligation => {
-      const own = tasks.filter(task => task.obligationId === obligation.id);
-      if (!own.length) return [{ ...obligation, dailyLimitMinutes: obligation.dailyLimitMinutes ?? null }];
-      return own.filter(task => !task.done).map(task => ({ id: task.id, due: obligation.due, estimateMinutes: task.estimateMinutes,
-        priority: obligation.priority, dailyLimitMinutes: task.dailyLimitMinutes ?? null }));
+    ...obligations.flatMap((obligation) => {
+      const own = tasks.filter((task) => task.obligationId === obligation.id);
+      if (!own.length)
+        return [
+          {
+            ...obligation,
+            dailyLimitMinutes: obligation.dailyLimitMinutes ?? null,
+          },
+        ];
+      return own
+        .filter((task) => !task.done)
+        .map((task) => ({
+          id: task.id,
+          due: obligation.due,
+          estimateMinutes: task.estimateMinutes,
+          priority: obligation.priority,
+          dailyLimitMinutes: task.dailyLimitMinutes ?? null,
+        }));
     }),
-    ...tasks.filter(task => !task.obligationId && !task.done).map(task => ({ id: task.id, due: null, estimateMinutes: task.estimateMinutes,
-      priority: Infinity, dailyLimitMinutes: task.dailyLimitMinutes ?? null })),
+    ...tasks
+      .filter((task) => !task.obligationId && !task.done)
+      .map((task) => ({
+        id: task.id,
+        due: null,
+        estimateMinutes: task.estimateMinutes,
+        priority: Infinity,
+        dailyLimitMinutes: task.dailyLimitMinutes ?? null,
+      })),
   ];
 }
 
 /** Pure: proposes how to arrange the Plan, writing nothing. */
 export function rebalance(state: PlanState): Proposal {
-  const { timeZone, preferences: { studyWindow, maxMinutesPerDay } } = state;
+  const {
+    timeZone,
+    preferences: { studyWindow, maxMinutesPerDay },
+  } = state;
   const calendar = [...state.fixedEvents, ...state.protectedTime];
-  const conflicting = state.studyBlocks.filter(block => overlaps(calendar, block.start.getTime(), block.end.getTime()));
-  const overlapping: Overlap[] = conflicting.filter(block => block.locked).map(block => ({ blockId: block.id, reason: "locked" }));
+  const conflicting = state.studyBlocks.filter((block) =>
+    overlaps(calendar, block.start.getTime(), block.end.getTime()),
+  );
+  const overlapping: Overlap[] = conflicting
+    .filter((block) => block.locked)
+    .map((block) => ({ blockId: block.id, reason: "locked" }));
   // A block the calendar now overlaps leaves the Plan to be placed again, unless it is Locked.
-  const displaced = conflicting.filter(block => !block.locked);
-  const kept = state.studyBlocks.filter(block => !displaced.includes(block));
+  const displaced = conflicting.filter((block) => !block.locked);
+  const kept = state.studyBlocks.filter((block) => !displaced.includes(block));
   const usedPerDay = new Map<string, number>();
   for (const block of kept) addMinutes(usedPerDay, block, timeZone);
   const busy: Interval[] = [...calendar, ...kept];
@@ -103,38 +206,67 @@ export function rebalance(state: PlanState): Proposal {
   const shortfalls: Shortfall[] = [];
   const first = Math.ceil(state.now.getTime() / slotMs) * slotMs;
   const works = workOf(state);
-  const dueOf = (workId: string) => works.find(work => work.id === workId)?.due?.getTime() ?? first + horizonMs;
+  const dueOf = (workId: string) =>
+    works.find((work) => work.id === workId)?.due?.getTime() ??
+    first + horizonMs;
 
   /** Minutes placed per work and local day, for work with its own daily limit. */
   const usedByWork = new Map<string, number>();
-  const limitOf = (workId: string) => works.find(work => work.id === workId)?.dailyLimitMinutes ?? null;
+  const limitOf = (workId: string) =>
+    works.find((work) => work.id === workId)?.dailyLimitMinutes ?? null;
   /** A study slot nothing occupies; `withinLimit` also keeps the day, and the work's own day, within their limits. */
   const open = (slot: number, withinLimit: boolean, workId?: string) => {
     const { date, minute } = local(slot, timeZone);
-    if (minute < studyWindow.fromMinute || minute + slotMinutes > studyWindow.toMinute || taken.has(slot) || overlaps(busy, slot, slot + slotMs)) return false;
+    if (
+      minute < studyWindow.fromMinute ||
+      minute + slotMinutes > studyWindow.toMinute ||
+      taken.has(slot) ||
+      overlaps(busy, slot, slot + slotMs)
+    )
+      return false;
     if (!withinLimit) return true;
     const own = workId ? limitOf(workId) : null;
-    return (usedPerDay.get(date) ?? 0) + slotMinutes <= maxMinutesPerDay
-      && (own === null || (usedByWork.get(`${workId}|${date}`) ?? 0) + slotMinutes <= own);
+    return (
+      (usedPerDay.get(date) ?? 0) + slotMinutes <= maxMinutesPerDay &&
+      (own === null ||
+        (usedByWork.get(`${workId}|${date}`) ?? 0) + slotMinutes <= own)
+    );
   };
   const take = (slot: number, workId: string) => {
     const { date } = local(slot, timeZone);
     usedPerDay.set(date, (usedPerDay.get(date) ?? 0) + slotMinutes);
-    usedByWork.set(`${workId}|${date}`, (usedByWork.get(`${workId}|${date}`) ?? 0) + slotMinutes);
+    usedByWork.set(
+      `${workId}|${date}`,
+      (usedByWork.get(`${workId}|${date}`) ?? 0) + slotMinutes,
+    );
     taken.add(slot);
   };
 
   const moved: { workId: string; to: Interval }[] = [];
   for (const block of displaced) {
-    const slots = Math.ceil(minutes(block) / slotMinutes), due = dueOf(block.workId);
+    const slots = Math.ceil(minutes(block) / slotMinutes),
+      due = dueOf(block.workId);
     let placed = false;
-    for (let start = first; start + slots * slotMs <= due && !placed; start += slotMs) {
+    for (
+      let start = first;
+      start + slots * slotMs <= due && !placed;
+      start += slotMs
+    ) {
       const run = Array.from({ length: slots }, (_, i) => start + i * slotMs);
-      if (!run.every(slot => open(slot, true, block.workId))) continue;
-      run.forEach(slot => take(slot, block.workId));
-      const to = { start: new Date(start), end: new Date(start + slots * slotMs) };
-      moves.push({ kind: "move", blockId: block.id, workId: block.workId, from: { start: block.start, end: block.end }, to,
-        needsApproval: block.placedBy === "student" });
+      if (!run.every((slot) => open(slot, true, block.workId))) continue;
+      for (const slot of run) take(slot, block.workId);
+      const to = {
+        start: new Date(start),
+        end: new Date(start + slots * slotMs),
+      };
+      moves.push({
+        kind: "move",
+        blockId: block.id,
+        workId: block.workId,
+        from: { start: block.start, end: block.end },
+        to,
+        needsApproval: block.placedBy === "student",
+      });
       moved.push({ workId: block.workId, to });
       placed = true;
     }
@@ -142,44 +274,110 @@ export function rebalance(state: PlanState): Proposal {
   }
 
   const unplanned = works.flatMap((work): Unplanned[] =>
-    !work.due ? [{ workId: work.id, reason: "no_deadline" }]
-      : work.due.getTime() <= state.now.getTime() ? [{ workId: work.id, reason: "past_due" }]
-      : !work.estimateMinutes ? [{ workId: work.id, reason: "no_estimate" }] : []);
+    !work.due
+      ? [{ workId: work.id, reason: "no_deadline" }]
+      : work.due.getTime() <= state.now.getTime()
+        ? [{ workId: work.id, reason: "past_due" }]
+        : !work.estimateMinutes
+          ? [{ workId: work.id, reason: "no_estimate" }]
+          : [],
+  );
   // Earliest deadline first: it fits the most work before each deadline. Priority (1 is highest) breaks ties.
-  const ordered = [...works].sort((a, b) =>
-    (a.due?.getTime() ?? Infinity) - (b.due?.getTime() ?? Infinity) || a.priority - b.priority);
+  const ordered = [...works].sort(
+    (a, b) =>
+      (a.due?.getTime() ?? Infinity) - (b.due?.getTime() ?? Infinity) ||
+      a.priority - b.priority,
+  );
   for (const work of ordered) {
-    if (!work.due || !work.estimateMinutes || unplanned.some(u => u.workId === work.id)) continue;
+    if (
+      !work.due ||
+      !work.estimateMinutes ||
+      unplanned.some((u) => u.workId === work.id)
+    )
+      continue;
     const due = work.due.getTime();
     // Time the Plan already holds for this work before its deadline counts towards the Estimate.
-    const planned = [...kept.filter(block => block.workId === work.id), ...moved.filter(m => m.workId === work.id).map(m => m.to)]
-      .filter(interval => interval.end.getTime() <= due);
-    let remaining = work.estimateMinutes - planned.reduce((sum, interval) => sum + minutes(interval), 0);
-    for (let slot = first; slot + slotMs <= due && remaining > 0; slot += slotMs) {
+    const planned = [
+      ...kept.filter((block) => block.workId === work.id),
+      ...moved.filter((m) => m.workId === work.id).map((m) => m.to),
+    ].filter((interval) => interval.end.getTime() <= due);
+    let remaining =
+      work.estimateMinutes -
+      planned.reduce((sum, interval) => sum + minutes(interval), 0);
+    for (
+      let slot = first;
+      slot + slotMs <= due && remaining > 0;
+      slot += slotMs
+    ) {
       if (!open(slot, true, work.id)) continue;
       take(slot, work.id);
       remaining -= slotMinutes;
       const previous = moves.at(-1);
-      if (previous?.kind === "create" && previous.workId === work.id && previous.end.getTime() === slot) previous.end = new Date(slot + slotMs);
-      else moves.push({ kind: "create", workId: work.id, start: new Date(slot), end: new Date(slot + slotMs), needsApproval: false });
+      if (
+        previous?.kind === "create" &&
+        previous.workId === work.id &&
+        previous.end.getTime() === slot
+      )
+        previous.end = new Date(slot + slotMs);
+      else
+        moves.push({
+          kind: "create",
+          workId: work.id,
+          start: new Date(slot),
+          end: new Date(slot + slotMs),
+          needsApproval: false,
+        });
     }
     if (remaining > 0) {
       let beyondLimit = 0;
-      for (let slot = first; slot + slotMs <= due; slot += slotMs) if (open(slot, false)) beyondLimit += slotMinutes;
+      for (let slot = first; slot + slotMs <= due; slot += slotMs)
+        if (open(slot, false)) beyondLimit += slotMinutes;
       const tradeoffs: Tradeoff[] = [];
-      if (beyondLimit) tradeoffs.push({ kind: "exceed_daily_limit", gainedMinutes: Math.min(beyondLimit, remaining), needsApproval: true });
-      const lower = works.filter(other => other.priority > work.priority);
+      if (beyondLimit)
+        tradeoffs.push({
+          kind: "exceed_daily_limit",
+          gainedMinutes: Math.min(beyondLimit, remaining),
+          needsApproval: true,
+        });
+      const lower = works.filter((other) => other.priority > work.priority);
       for (const other of lower) {
         // Existing blocks, and time this proposal just placed for it, before the deadline.
-        const blocks = kept.filter(block => block.workId === other.id && !block.locked && block.start.getTime() < due);
-        const proposed = moves.filter(move => move.kind === "create" && move.workId === other.id && move.start.getTime() < due) as Extract<Move, { kind: "create" }>[];
-        const gainedMinutes = [...blocks, ...proposed].reduce((sum, interval) => sum + minutes(interval), 0);
+        const blocks = kept.filter(
+          (block) =>
+            block.workId === other.id &&
+            !block.locked &&
+            block.start.getTime() < due,
+        );
+        const proposed = moves.filter(
+          (move) =>
+            move.kind === "create" &&
+            move.workId === other.id &&
+            move.start.getTime() < due,
+        ) as Extract<Move, { kind: "create" }>[];
+        const gainedMinutes = [...blocks, ...proposed].reduce(
+          (sum, interval) => sum + minutes(interval),
+          0,
+        );
         if (!gainedMinutes) continue;
-        tradeoffs.push({ kind: "free_time_from", workId: other.id, blockIds: blocks.map(block => block.id), gainedMinutes,
-          needsApproval: blocks.some(block => block.placedBy === "student") });
+        tradeoffs.push({
+          kind: "free_time_from",
+          workId: other.id,
+          blockIds: blocks.map((block) => block.id),
+          gainedMinutes,
+          needsApproval: blocks.some((block) => block.placedBy === "student"),
+        });
       }
-      tradeoffs.push({ kind: "reduce_estimate", workId: work.id, byMinutes: remaining });
-      shortfalls.push({ workId: work.id, due: work.due, shortMinutes: remaining, tradeoffs });
+      tradeoffs.push({
+        kind: "reduce_estimate",
+        workId: work.id,
+        byMinutes: remaining,
+      });
+      shortfalls.push({
+        workId: work.id,
+        due: work.due,
+        shortMinutes: remaining,
+        tradeoffs,
+      });
     }
   }
   return { moves, unplanned, shortfalls, overlaps: overlapping };

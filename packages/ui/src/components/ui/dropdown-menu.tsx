@@ -1,7 +1,8 @@
 "use client"
 
 import { Menu as MenuPrimitive } from "@base-ui/react/menu"
-import { cva, type VariantProps } from "class-variance-authority"
+import type { VariantProps } from "class-variance-authority"
+import { cva } from "class-variance-authority"
 import { Check, ChevronRight, Search } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import * as React from "react"
@@ -185,7 +186,7 @@ function DropdownMenuGroup({ className, ...props }: MenuPrimitive.Group.Props) {
 // Notion draws ~15px filled glyphs in a 20px box; 16px Lucide icons match that
 // visually, and leading icons get 2px margins to keep the 20px slot.
 const itemVariants = cva(
-  "text-primary data-highlighted:bg-interactive-translucent active:bg-interactive-translucent-200 [&_svg:not([class*='text-'])]:text-icon-primary flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-sm leading-[1.2] outline-hidden transition-[background-color] duration-[20ms] ease-in select-none data-disabled:pointer-events-none data-disabled:opacity-40 in-data-[nav=keyboard]:data-highlighted:shadow-focus-button [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&>svg:not([data-slot])]:mx-0.5",
+  "text-primary data-highlighted:bg-interactive-translucent active:bg-interactive-translucent-200 [&_svg:not([class*='text-'])]:text-icon-primary in-data-[nav=keyboard]:data-highlighted:shadow-focus-button flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-sm leading-[1.2] outline-hidden transition-[background-color] duration-[20ms] ease-in select-none data-disabled:pointer-events-none data-disabled:opacity-40 [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&>svg:not([data-slot])]:mx-0.5",
   {
     variants: {
       variant: {
@@ -353,7 +354,7 @@ function DropdownMenuSearch({
       data-slot="dropdown-menu-search"
       className={cn("shrink-0 px-3 pt-3 pb-2", className)}
     >
-      <div className="bg-secondary-translucent flex h-7 cursor-text items-center gap-1.5 rounded-md px-1.5 py-[3px] shadow-input focus-within:shadow-focus-input">
+      <div className="bg-secondary-translucent shadow-input focus-within:shadow-focus-input flex h-7 cursor-text items-center gap-1.5 rounded-md px-1.5 py-[3px]">
         <Search className="text-icon-tertiary size-4 shrink-0" />
         <MenuPrimitive.Input
           className="text-primary placeholder:text-tertiary min-w-0 flex-1 bg-transparent text-sm leading-5 outline-hidden"

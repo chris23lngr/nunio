@@ -18,11 +18,11 @@ Commit `5f33db3` explicitly records Chromium starvation and fixes it by excludin
 
 Recent failure evidence:
 
-| Run | Observed failure | Interpretation |
-| --- | --- | --- |
+| Run                                                                          | Observed failure                                                                               | Interpretation                                                                                         |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | [41132004895](https://github.com/chris23lngr/nunio/actions/runs/41132004895) | Storybook Chromium suite `dropdown-menu.stories.tsx` failed during the combined workspace step | Historical motivation for the serial UI workaround; commit `5f33db3` documents the resource hypothesis |
-| [41137158700](https://github.com/chris23lngr/nunio/actions/runs/41137158700) | `apps/worker/src/replay.test.ts:8`, timeout at 30,000 ms | Existing longer timeout did not prevent failure |
-| [41137845348](https://github.com/chris23lngr/nunio/actions/runs/41137845348) | `packages/identity/src/auth.test.ts:114`, password-reset test timeout at 15,000 ms | Failure moved to another expensive suite on the next revision |
+| [41137158700](https://github.com/chris23lngr/nunio/actions/runs/41137158700) | `apps/worker/src/replay.test.ts:8`, timeout at 30,000 ms                                       | Existing longer timeout did not prevent failure                                                        |
+| [41137845348](https://github.com/chris23lngr/nunio/actions/runs/41137845348) | `packages/identity/src/auth.test.ts:114`, password-reset test timeout at 15,000 ms             | Failure moved to another expensive suite on the next revision                                          |
 
 These logs prove timeouts and changing failure locations. CPU/memory contention is strongly supported by the topology and history, but **not proven by resource telemetry**, which is absent. Do not conclude there is no application defect until the exact suites are reproduced on isolated runners. The `temporary pilot activation failure` error in API logs is deliberately injected by a recovery test; it is not the failing assertion in the identity run.
 
@@ -206,15 +206,15 @@ The first parallel [PR validation](https://github.com/chris23lngr/nunio/actions/
 
 Local verification on the follow-up implementation:
 
-| Check | Result |
-| --- | --- |
-| Full lint / typecheck | 20 / 29 Turbo tasks passed, in separate invocations |
-| Database/API integration tests | 89 tests passed, with one package and file worker at a time |
-| Temporal tests | 5 tests passed |
-| Lightweight tests | 41 tests passed in Phase 5; their sources are unchanged |
-| Storybook browser tests | 57 tests across 16 files passed |
-| Production builds / local E2E | 18 build tasks and all 9 browser tests passed |
-| Workflow and installation validation | actionlint and frozen-lockfile dry installation passed |
+| Check                                | Result                                                      |
+| ------------------------------------ | ----------------------------------------------------------- |
+| Full lint / typecheck                | 20 / 29 Turbo tasks passed, in separate invocations         |
+| Database/API integration tests       | 89 tests passed, with one package and file worker at a time |
+| Temporal tests                       | 5 tests passed                                              |
+| Lightweight tests                    | 41 tests passed in Phase 5; their sources are unchanged     |
+| Storybook browser tests              | 57 tests across 16 files passed                             |
+| Production builds / local E2E        | 18 build tasks and all 9 browser tests passed               |
+| Workflow and installation validation | actionlint and frozen-lockfile dry installation passed      |
 
 Earlier probes also verified byte-identical generated-artifact restoration, contract/schema/shared-configuration affected selection, startup-failure cleanup, aggregate failure/skip handling, and missing-configuration rejection. Staging discovery selects eight cases; live calls were not executed locally. The redundant delegation-only file-serialization override was removed: CI owns its worker budget through `--maxWorkers=1`. Integration/setup timeouts remain explicit budgets for real password hashing, database startup and operator subprocesses; no timeout was increased to hide a failing test.
 

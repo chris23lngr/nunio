@@ -1,0 +1,23 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
+  "extends": "//",
+  "linter": {
+    "domains": {
+      "next": "recommended",
+      "react": "recommended"
+    },
+    "rules": {
+      "correctness": {
+        "noBeforeInteractiveScriptOutsideDocument": "warn",
+        "noNextAsyncClientComponent": "warn",
+        "useExhaustiveDependencies": "warn",
+        "useHookAtTopLevel": "error",
+        "useInlineScriptId": "error"
+      },
+      "performance": {
+        "noSyncScripts": "error",
+        "noImgElement": "warn"
+      }
+    }
+  }
+}

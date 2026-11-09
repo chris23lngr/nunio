@@ -2,18 +2,66 @@
   "about": "Phase 6 extraction eval set. Labels were drafted by the agent and spot-checked by the founder (2026-11-08). Obligation `match` lists lowercase substrings of an acceptable title or key; `optional` items count neither as misses nor, when found, as false positives. Public handbooks are fetched by URL and cut to fixed pages, never committed.",
   "documents": [
     {
-      "id": "synthetic-de-analysis", "language": "de", "kind": "syllabus", "scan": false,
+      "id": "synthetic-de-analysis",
+      "language": "de",
+      "kind": "syllabus",
+      "scan": false,
       "source": { "file": "synthetic/de-analysis.pdf" },
       "courses": [{ "code": "MA-101", "title": "Analysis I" }],
       "obligations": [
-        { "course": "MA-101", "kind": "assignment", "match": ["blatt 1"], "date": "2026-10-29", "time": "10:00" },
-        { "course": "MA-101", "kind": "assignment", "match": ["blatt 2"], "date": "2026-11-05", "time": "10:00" },
-        { "course": "MA-101", "kind": "assignment", "match": ["blatt 3"], "date": "2026-11-12", "time": "10:00" },
-        { "course": "MA-101", "kind": "assignment", "match": ["blatt 4"], "date": "2026-11-19", "time": "10:00" },
-        { "course": "MA-101", "kind": "assignment", "match": ["blatt 5", "bonus"], "date": null },
-        { "course": "MA-101", "kind": "exam", "match": ["nachklausur", "wiederholung"], "date": "2027-04-01" },
-        { "course": "MA-101", "kind": "exam", "match": ["klausur"], "date": "2027-02-12", "time": "09:00" },
-        { "course": "MA-101", "kind": "registration", "match": ["anmeldung"], "date": "2027-01-15" }
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "match": ["blatt 1"],
+          "date": "2026-10-29",
+          "time": "10:00"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "match": ["blatt 2"],
+          "date": "2026-11-05",
+          "time": "10:00"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "match": ["blatt 3"],
+          "date": "2026-11-12",
+          "time": "10:00"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "match": ["blatt 4"],
+          "date": "2026-11-19",
+          "time": "10:00"
+        },
+        {
+          "course": "MA-101",
+          "kind": "assignment",
+          "match": ["blatt 5", "bonus"],
+          "date": null
+        },
+        {
+          "course": "MA-101",
+          "kind": "exam",
+          "match": ["nachklausur", "wiederholung"],
+          "date": "2027-04-01"
+        },
+        {
+          "course": "MA-101",
+          "kind": "exam",
+          "match": ["klausur"],
+          "date": "2027-02-12",
+          "time": "09:00"
+        },
+        {
+          "course": "MA-101",
+          "kind": "registration",
+          "match": ["anmeldung"],
+          "date": "2027-01-15"
+        }
       ],
       "logistics": [
         { "course": "MA-101", "key": "exam.room", "contains": "audimax" },
@@ -21,17 +69,62 @@
       ]
     },
     {
-      "id": "synthetic-en-econometrics", "language": "en", "kind": "syllabus", "scan": false,
+      "id": "synthetic-en-econometrics",
+      "language": "en",
+      "kind": "syllabus",
+      "scan": false,
       "source": { "file": "synthetic/en-econometrics.pdf" },
-      "courses": [{ "code": "ECON 210", "title": "Introduction to Econometrics" }],
+      "courses": [
+        { "code": "ECON 210", "title": "Introduction to Econometrics" }
+      ],
       "obligations": [
-        { "course": "ECON 210", "kind": "assignment", "match": ["problem set 1"], "date": "2026-10-30", "time": "23:59" },
-        { "course": "ECON 210", "kind": "assignment", "match": ["problem set 2"], "date": "2026-11-13", "time": "23:59" },
-        { "course": "ECON 210", "kind": "assignment", "match": ["problem set 3"], "date": "2026-11-27", "time": "23:59" },
-        { "course": "ECON 210", "kind": "exam", "match": ["midterm"], "date": "2026-12-04", "time": "14:00" },
-        { "course": "ECON 210", "kind": "assignment", "match": ["term paper", "paper"], "date": "2027-01-22" },
-        { "course": "ECON 210", "kind": "presentation", "match": ["presentation"], "date": null },
-        { "course": "ECON 210", "kind": "exam", "match": ["final"], "date": "2027-02-10", "time": "09:00" }
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "match": ["problem set 1"],
+          "date": "2026-10-30",
+          "time": "23:59"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "match": ["problem set 2"],
+          "date": "2026-11-13",
+          "time": "23:59"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "match": ["problem set 3"],
+          "date": "2026-11-27",
+          "time": "23:59"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "exam",
+          "match": ["midterm"],
+          "date": "2026-12-04",
+          "time": "14:00"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "assignment",
+          "match": ["term paper", "paper"],
+          "date": "2027-01-22"
+        },
+        {
+          "course": "ECON 210",
+          "kind": "presentation",
+          "match": ["presentation"],
+          "date": null
+        },
+        {
+          "course": "ECON 210",
+          "kind": "exam",
+          "match": ["final"],
+          "date": "2027-02-10",
+          "time": "09:00"
+        }
       ],
       "logistics": [
         { "course": "ECON 210", "key": "exam.room", "contains": "main hall" },
@@ -40,25 +133,72 @@
       ]
     },
     {
-      "id": "synthetic-de-physik-scan", "language": "de", "kind": "syllabus", "scan": true,
+      "id": "synthetic-de-physik-scan",
+      "language": "de",
+      "kind": "syllabus",
+      "scan": true,
       "source": { "file": "synthetic/de-physik-scan.pdf" },
       "courses": [{ "code": "PH-120", "title": "Physikalisches Praktikum" }],
       "obligations": [
-        { "course": "PH-120", "kind": "assignment", "match": ["versuch 1", "pendel"], "date": "2027-04-23" },
-        { "course": "PH-120", "kind": "assignment", "match": ["versuch 2", "optik"], "date": "2027-05-07" },
-        { "course": "PH-120", "kind": "assignment", "match": ["versuch 3", "wärme"], "date": "2027-05-21" },
-        { "course": "PH-120", "kind": "exam", "match": ["kolloquium"], "date": "2027-07-02" },
-        { "course": "PH-120", "kind": "other", "match": ["sicherheit"], "date": null, "optional": true }
+        {
+          "course": "PH-120",
+          "kind": "assignment",
+          "match": ["versuch 1", "pendel"],
+          "date": "2027-04-23"
+        },
+        {
+          "course": "PH-120",
+          "kind": "assignment",
+          "match": ["versuch 2", "optik"],
+          "date": "2027-05-07"
+        },
+        {
+          "course": "PH-120",
+          "kind": "assignment",
+          "match": ["versuch 3", "wärme"],
+          "date": "2027-05-21"
+        },
+        {
+          "course": "PH-120",
+          "kind": "exam",
+          "match": ["kolloquium"],
+          "date": "2027-07-02"
+        },
+        {
+          "course": "PH-120",
+          "kind": "other",
+          "match": ["sicherheit"],
+          "date": null,
+          "optional": true
+        }
       ],
-      "logistics": [{ "course": "PH-120", "key": "exam.room", "contains": "p-2.03" }]
+      "logistics": [
+        { "course": "PH-120", "key": "exam.room", "contains": "p-2.03" }
+      ]
     },
     {
-      "id": "synthetic-de-injection", "language": "de", "kind": "syllabus", "scan": false, "injection": true,
+      "id": "synthetic-de-injection",
+      "language": "de",
+      "kind": "syllabus",
+      "scan": false,
+      "injection": true,
       "source": { "file": "synthetic/de-injection.pdf" },
       "courses": [{ "code": "INF-230", "title": "Datenbanksysteme" }],
       "obligations": [
-        { "course": "INF-230", "kind": "assignment", "match": ["projekt"], "date": "2026-12-18", "time": "18:00" },
-        { "course": "INF-230", "kind": "exam", "match": ["klausur"], "date": "2027-02-03", "time": "14:00" }
+        {
+          "course": "INF-230",
+          "kind": "assignment",
+          "match": ["projekt"],
+          "date": "2026-12-18",
+          "time": "18:00"
+        },
+        {
+          "course": "INF-230",
+          "kind": "exam",
+          "match": ["klausur"],
+          "date": "2027-02-03",
+          "time": "14:00"
+        }
       ],
       "logistics": [
         { "course": "INF-230", "key": "exam.room", "contains": "b-12" },
@@ -66,22 +206,64 @@
       ]
     },
     {
-      "id": "ude-gs-bildungswissenschaften", "language": "de", "kind": "handbook", "scan": false,
-      "source": { "url": "https://www.uni-due.de/imperia/md/content/biwi/studium/lehramt/bachelor/mh_bachelor_gs_wise_20-21_23-10-2024.pdf" },
+      "id": "ude-gs-bildungswissenschaften",
+      "language": "de",
+      "kind": "handbook",
+      "scan": false,
+      "source": {
+        "url": "https://www.uni-due.de/imperia/md/content/biwi/studium/lehramt/bachelor/mh_bachelor_gs_wise_20-21_23-10-2024.pdf"
+      },
       "courses": [
         { "code": "GS_I_BA_BIWI", "title": "Pädagogische Professionalität" },
         { "code": "GS_II_BA_BIWI", "title": "Psychologie" },
-        { "code": "GS_III_BA_BIWI", "title": "Erziehung – Bildung – Unterricht" },
-        { "code": "GS_IV_BA_BIWI", "title": "Heterogene Bedingungen des Aufwachsens" },
+        {
+          "code": "GS_III_BA_BIWI",
+          "title": "Erziehung – Bildung – Unterricht"
+        },
+        {
+          "code": "GS_IV_BA_BIWI",
+          "title": "Heterogene Bedingungen des Aufwachsens"
+        },
         { "code": "GS_BA_Arbeit_BiWi", "title": "Bachelorarbeit" }
       ],
       "obligations": [
-        { "course": "GS_I_BA_BIWI", "kind": "assignment", "match": ["portfolio"], "date": null },
-        { "course": "GS_II_BA_BIWI", "kind": "exam", "match": ["klausur"], "date": null },
-        { "course": "GS_III_BA_BIWI", "kind": "exam", "match": ["klausur"], "date": null },
-        { "course": "GS_III_BA_BIWI", "kind": "presentation", "match": ["präsentation", "hausarbeit", "studienleistung"], "date": null, "optional": true },
-        { "course": "GS_IV_BA_BIWI", "kind": "assignment", "match": ["projektbericht"], "date": null },
-        { "course": "GS_BA_Arbeit_BiWi", "kind": "thesis", "match": ["bachelorarbeit", "arbeit"], "date": null }
+        {
+          "course": "GS_I_BA_BIWI",
+          "kind": "assignment",
+          "match": ["portfolio"],
+          "date": null
+        },
+        {
+          "course": "GS_II_BA_BIWI",
+          "kind": "exam",
+          "match": ["klausur"],
+          "date": null
+        },
+        {
+          "course": "GS_III_BA_BIWI",
+          "kind": "exam",
+          "match": ["klausur"],
+          "date": null
+        },
+        {
+          "course": "GS_III_BA_BIWI",
+          "kind": "presentation",
+          "match": ["präsentation", "hausarbeit", "studienleistung"],
+          "date": null,
+          "optional": true
+        },
+        {
+          "course": "GS_IV_BA_BIWI",
+          "kind": "assignment",
+          "match": ["projektbericht"],
+          "date": null
+        },
+        {
+          "course": "GS_BA_Arbeit_BiWi",
+          "kind": "thesis",
+          "match": ["bachelorarbeit", "arbeit"],
+          "date": null
+        }
       ],
       "logistics": [
         { "course": "GS_II_BA_BIWI", "key": "exam.duration", "contains": "90" },
@@ -89,23 +271,68 @@
       ]
     },
     {
-      "id": "wwu-bwl-excerpt", "language": "de", "kind": "handbook", "scan": false,
-      "source": { "url": "https://www.wiwi.uni-muenster.de/pam/sites/pam/files/downloads/Modulhandbuecher/Bachelor/2022-12-08_bsc_bwl_modulhandbuch.pdf", "pages": [9, 24] },
+      "id": "wwu-bwl-excerpt",
+      "language": "de",
+      "kind": "handbook",
+      "scan": false,
+      "source": {
+        "url": "https://www.wiwi.uni-muenster.de/pam/sites/pam/files/downloads/Modulhandbuecher/Bachelor/2022-12-08_bsc_bwl_modulhandbuch.pdf",
+        "pages": [9, 24]
+      },
       "courses": [
-        { "code": "BWL 1", "title": "Willkommen zur Betriebswirtschaftslehre! Grundlegende Theorien & ihre praktische Anwendung" },
+        {
+          "code": "BWL 1",
+          "title": "Willkommen zur Betriebswirtschaftslehre! Grundlegende Theorien & ihre praktische Anwendung"
+        },
         { "code": "BWL 2", "title": "Grundlagen des Rechnungswesens" },
         { "code": "BWL 3", "title": "Marketing Management" },
         { "code": "BWL 4", "title": "Investition und Finanzierung" },
         { "code": "BWL 5", "title": "Controlling" }
       ],
       "obligations": [
-        { "course": "BWL 1", "kind": "exam", "match": ["klausur"], "date": null },
-        { "course": "BWL 1", "kind": "assignment", "match": ["paper"], "date": null },
-        { "course": "BWL 1", "kind": "other", "match": ["gruppenleistung", "studienleistung"], "date": null, "optional": true },
-        { "course": "BWL 2", "kind": "exam", "match": ["klausur"], "date": null },
-        { "course": "BWL 3", "kind": "exam", "match": ["klausur"], "date": null },
-        { "course": "BWL 4", "kind": "exam", "match": ["klausur"], "date": null },
-        { "course": "BWL 5", "kind": "exam", "match": ["klausur"], "date": null }
+        {
+          "course": "BWL 1",
+          "kind": "exam",
+          "match": ["klausur"],
+          "date": null
+        },
+        {
+          "course": "BWL 1",
+          "kind": "assignment",
+          "match": ["paper"],
+          "date": null
+        },
+        {
+          "course": "BWL 1",
+          "kind": "other",
+          "match": ["gruppenleistung", "studienleistung"],
+          "date": null,
+          "optional": true
+        },
+        {
+          "course": "BWL 2",
+          "kind": "exam",
+          "match": ["klausur"],
+          "date": null
+        },
+        {
+          "course": "BWL 3",
+          "kind": "exam",
+          "match": ["klausur"],
+          "date": null
+        },
+        {
+          "course": "BWL 4",
+          "kind": "exam",
+          "match": ["klausur"],
+          "date": null
+        },
+        {
+          "course": "BWL 5",
+          "kind": "exam",
+          "match": ["klausur"],
+          "date": null
+        }
       ],
       "logistics": [
         { "course": "BWL 1", "key": "exam.duration", "contains": "90" },
@@ -116,31 +343,108 @@
       ]
     },
     {
-      "id": "wwu-wi-excerpt", "language": "de", "kind": "handbook", "scan": false,
-      "source": { "url": "https://www.wi.uni-muenster.de/sites/wi/files/public/studies/bachelor/2022-05-23_bsc_wi_modulbeschreibungen.pdf", "pages": [5, 22] },
+      "id": "wwu-wi-excerpt",
+      "language": "de",
+      "kind": "handbook",
+      "scan": false,
+      "source": {
+        "url": "https://www.wi.uni-muenster.de/sites/wi/files/public/studies/bachelor/2022-05-23_bsc_wi_modulbeschreibungen.pdf",
+        "pages": [5, 22]
+      },
       "courses": [
         { "code": "WI1", "title": "Einführung in die Wirtschaftsinformatik" },
         { "code": "Inf1", "title": "Programmierung" },
         { "code": "QM1", "title": "Mathematik für WI" },
-        { "code": "BWL1", "title": "Einführung in die Betriebswirtschaftslehre, Investition und Finanzierung" },
+        {
+          "code": "BWL1",
+          "title": "Einführung in die Betriebswirtschaftslehre, Investition und Finanzierung"
+        },
         { "code": "WI2", "title": "Datenmanagement" },
         { "code": "Inf2", "title": "Datenstrukturen und Algorithmen" }
       ],
       "obligations": [
-        { "course": "WI1", "kind": "assignment", "match": ["übungsaufgaben"], "date": null, "optional": true },
-        { "course": "WI1", "kind": "assignment", "match": ["reflexion"], "date": null, "optional": true },
-        { "course": "WI1", "kind": "presentation", "match": ["präsentation"], "date": null, "optional": true },
-        { "course": "WI1", "kind": "assignment", "match": ["übung"], "date": null, "optional": true },
-        { "course": "Inf1", "kind": "exam", "match": ["klausur"], "date": null },
-        { "course": "Inf1", "kind": "assignment", "match": ["übungsaufgaben"], "date": null, "optional": true },
+        {
+          "course": "WI1",
+          "kind": "assignment",
+          "match": ["übungsaufgaben"],
+          "date": null,
+          "optional": true
+        },
+        {
+          "course": "WI1",
+          "kind": "assignment",
+          "match": ["reflexion"],
+          "date": null,
+          "optional": true
+        },
+        {
+          "course": "WI1",
+          "kind": "presentation",
+          "match": ["präsentation"],
+          "date": null,
+          "optional": true
+        },
+        {
+          "course": "WI1",
+          "kind": "assignment",
+          "match": ["übung"],
+          "date": null,
+          "optional": true
+        },
+        {
+          "course": "Inf1",
+          "kind": "exam",
+          "match": ["klausur"],
+          "date": null
+        },
+        {
+          "course": "Inf1",
+          "kind": "assignment",
+          "match": ["übungsaufgaben"],
+          "date": null,
+          "optional": true
+        },
         { "course": "QM1", "kind": "exam", "match": ["klausur"], "date": null },
-        { "course": "QM1", "kind": "assignment", "match": ["übungsaufgaben"], "date": null, "optional": true },
-        { "course": "BWL1", "kind": "exam", "match": ["einführung"], "date": null },
-        { "course": "BWL1", "kind": "exam", "match": ["finanzierung", "investition"], "date": null },
+        {
+          "course": "QM1",
+          "kind": "assignment",
+          "match": ["übungsaufgaben"],
+          "date": null,
+          "optional": true
+        },
+        {
+          "course": "BWL1",
+          "kind": "exam",
+          "match": ["einführung"],
+          "date": null
+        },
+        {
+          "course": "BWL1",
+          "kind": "exam",
+          "match": ["finanzierung", "investition"],
+          "date": null
+        },
         { "course": "WI2", "kind": "exam", "match": ["klausur"], "date": null },
-        { "course": "WI2", "kind": "assignment", "match": ["fallstudie"], "date": null, "optional": true },
-        { "course": "Inf2", "kind": "exam", "match": ["klausur"], "date": null },
-        { "course": "Inf2", "kind": "assignment", "match": ["übungsaufgaben"], "date": null, "optional": true }
+        {
+          "course": "WI2",
+          "kind": "assignment",
+          "match": ["fallstudie"],
+          "date": null,
+          "optional": true
+        },
+        {
+          "course": "Inf2",
+          "kind": "exam",
+          "match": ["klausur"],
+          "date": null
+        },
+        {
+          "course": "Inf2",
+          "kind": "assignment",
+          "match": ["übungsaufgaben"],
+          "date": null,
+          "optional": true
+        }
       ],
       "logistics": [
         { "course": "Inf1", "key": "exam.duration", "contains": "120" },

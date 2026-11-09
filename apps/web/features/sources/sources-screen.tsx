@@ -1,9 +1,15 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { uploadSource, deleteSource, readSourceAgain } from "./api/source-mutations";
-import { sourceQueries, type Source } from "./api/source-queries";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { FormEvent } from "react";
+import { useState } from "react";
+import {
+  deleteSource,
+  readSourceAgain,
+  uploadSource,
+} from "./api/source-mutations";
+import type { Source } from "./api/source-queries";
+import { sourceQueries } from "./api/source-queries";
 import { SourceList } from "./components/source-list";
 import { SourceUploadForm } from "./components/source-upload-form";
 
@@ -14,13 +20,19 @@ export function SourcesScreen({ apiOrigin }: { apiOrigin: string }) {
   const [error, setError] = useState<string | null>(null);
   const deleteMutation = useMutation(deleteSource(apiOrigin, queryClient));
   const uploadMutation = useMutation(uploadSource(apiOrigin, queryClient));
-  const readAgainMutation = useMutation(readSourceAgain(apiOrigin, queryClient));
-  const busy = deleteMutation.isPending || uploadMutation.isPending || readAgainMutation.isPending;
+  const readAgainMutation = useMutation(
+    readSourceAgain(apiOrigin, queryClient),
+  );
+  const busy =
+    deleteMutation.isPending ||
+    uploadMutation.isPending ||
+    readAgainMutation.isPending;
 
   function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    const file = (form.elements.namedItem("source") as HTMLInputElement).files?.[0];
+    const file = (form.elements.namedItem("source") as HTMLInputElement)
+      .files?.[0];
     if (!file) return setError("Choose a PDF up to 20 MB.");
     setError(null);
     readAgainMutation.reset();
@@ -29,7 +41,12 @@ export function SourcesScreen({ apiOrigin }: { apiOrigin: string }) {
   }
 
   function remove(source: Source) {
-    if (!window.confirm(`Delete ${source.title}? Its contents will be removed from nunio.`)) return;
+    if (
+      !window.confirm(
+        `Delete ${source.title}? Its contents will be removed from nunio.`,
+      )
+    )
+      return;
     setError(null);
     readAgainMutation.reset();
     uploadMutation.reset();
@@ -46,13 +63,41 @@ export function SourcesScreen({ apiOrigin }: { apiOrigin: string }) {
   return (
     <section aria-labelledby="sources-title">
       <h1 id="sources-title">Sources</h1>
-      <p>Upload course PDFs, including scans. Up to 20 MB and 100 pages per Source.</p>
-      <SourceUploadForm onSubmit={upload} disabled={busy} uploading={uploadMutation.isPending} />
-      {(error || uploadMutation.error || deleteMutation.error || readAgainMutation.error || query.error) && <p role="alert">{error ?? uploadMutation.error?.message ?? deleteMutation.error?.message ?? readAgainMutation.error?.message ?? query.error?.message}</p>}
+      <p>
+        Upload course PDFs, including scans. Up to 20 MB and 100 pages per
+        Source.
+      </p>
+      <SourceUploadForm
+        onSubmit={upload}
+        disabled={busy}
+        uploading={uploadMutation.isPending}
+      />
+      {(error ||
+        uploadMutation.error ||
+        deleteMutation.error ||
+        readAgainMutation.error ||
+        query.error) && (
+        <p role="alert">
+          {error ??
+            uploadMutation.error?.message ??
+            deleteMutation.error?.message ??
+            readAgainMutation.error?.message ??
+            query.error?.message}
+        </p>
+      )}
       {query.isPending && <p role="status">Loading Sources…</p>}
-      {query.isSuccess && sources.length === 0 && <p>No Sources yet. Upload a course PDF to get started.</p>}
-      <SourceList sources={sources} disabled={busy}
-        deletingId={deleteMutation.isPending ? deleteMutation.variables : undefined} onDelete={remove} onReadAgain={readAgain} />
+      {query.isSuccess && sources.length === 0 && (
+        <p>No Sources yet. Upload a course PDF to get started.</p>
+      )}
+      <SourceList
+        sources={sources}
+        disabled={busy}
+        deletingId={
+          deleteMutation.isPending ? deleteMutation.variables : undefined
+        }
+        onDelete={remove}
+        onReadAgain={readAgain}
+      />
     </section>
   );
 }

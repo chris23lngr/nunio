@@ -16,7 +16,8 @@ const instanceId = randomUUID();
 
 /** Tags every response with the instance that served it and its pool counts before and after. */
 export function spikePoolHeader(pool: Pool) {
-  const counts = () => `total=${pool.totalCount} idle=${pool.idleCount} waiting=${pool.waitingCount}`;
+  const counts = () =>
+    `total=${pool.totalCount} idle=${pool.idleCount} waiting=${pool.waitingCount}`;
   return createMiddleware(async (c, next) => {
     const before = counts();
     await next();

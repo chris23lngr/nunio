@@ -11,7 +11,13 @@ export interface AnswerInput {
 
 export interface Answerer {
   estimateMicroUsd(input: AnswerInput): number;
-  answer(input: AnswerInput, options: { signal: AbortSignal }): Promise<{ value: { text: string; cited: string[] }; usage: { microUsd: number } }>;
+  answer(
+    input: AnswerInput,
+    options: { signal: AbortSignal },
+  ): Promise<{
+    value: { text: string; cited: string[] };
+    usage: { microUsd: number };
+  }>;
 }
 
 const instructions = [
@@ -24,21 +30,42 @@ const instructions = [
 
 export function createAnswerer(models: Models): Answerer {
   const model = models.forTask("explanation");
-  const dataMessage = (data: string) => `Course material for the next question:\n${data}`;
+  const dataMessage = (data: string) =>
+    `Course material for the next question:\n${data}`;
   return {
-    estimateMicroUsd: input => model.estimateMicroUsd([instructions, dataMessage(input.data), input.question]),
+    estimateMicroUsd: (input) =>
+      model.estimateMicroUsd([
+        instructions,
+        dataMessage(input.data),
+        input.question,
+      ]),
     async answer(input, { signal }) {
-      const result = await generateText({ model: model.model, ...model.callSettings, abortSignal: signal,
+      const result = await generateText({
+        model: model.model,
+        ...model.callSettings,
+        abortSignal: signal,
         instructions: { role: "system", content: instructions },
         messages: [
-          { role: "user", content: [{ type: "text", text: dataMessage(input.data) }] },
+          {
+            role: "user",
+            content: [{ type: "text", text: dataMessage(input.data) }],
+          },
           { role: "user", content: [{ type: "text", text: input.question }] },
-        ] });
-      if (result.finishReason !== "stop") throw new Error(`Answer ended early (${result.finishReason})`);
+        ],
+      });
+      if (result.finishReason !== "stop")
+        throw new Error(`Answer ended early (${result.finishReason})`);
       // A tag the data did not contain cites nothing; it is removed rather than shown as a citation.
-      const text = result.text.replace(/\s*\[(S\d+)\]/g, (tag, name: string) => input.tags.includes(name) ? tag : "");
-      const cited = [...new Set([...text.matchAll(/\[(S\d+)\]/g)].map(match => match[1]!))];
-      return { value: { text, cited }, usage: { microUsd: model.actualMicroUsd(result) } };
+      const text = result.text.replace(/\s*\[(S\d+)\]/g, (tag, name: string) =>
+        input.tags.includes(name) ? tag : "",
+      );
+      const cited = [
+        ...new Set([...text.matchAll(/\[(S\d+)\]/g)].map((match) => match[1]!)),
+      ];
+      return {
+        value: { text, cited },
+        usage: { microUsd: model.actualMicroUsd(result) },
+      };
     },
   };
 }

@@ -1,16 +1,18 @@
 // Creates or updates the two buckets of ADR-0007; safe to re-run. Usage, from packages/knowledge:
 //   set -a; . ./.env.staging; set +a; node spike-e/provision.ts
+import type { S3Client } from "@aws-sdk/client-s3";
 import {
   CreateBucketCommand,
   HeadBucketCommand,
   PutBucketCorsCommand,
   PutBucketLifecycleConfigurationCommand,
   PutBucketVersioningCommand,
-  type S3Client,
 } from "@aws-sdk/client-s3";
 import { hetzner } from "./hetzner.ts";
 
-const appOrigins = (process.env.HETZNER_CORS_ORIGINS ?? "").split(",").filter(Boolean);
+const appOrigins = (process.env.HETZNER_CORS_ORIGINS ?? "")
+  .split(",")
+  .filter(Boolean);
 if (appOrigins.length === 0) throw new Error("HETZNER_CORS_ORIGINS is not set");
 
 // Browsers send the Source's key with every request, so CORS must allow the SSE-C headers.
@@ -31,7 +33,11 @@ async function createBucket(s3: S3Client, bucket: string) {
   }
 }
 
-async function allowBrowser(s3: S3Client, bucket: string, method: "PUT" | "GET") {
+async function allowBrowser(
+  s3: S3Client,
+  bucket: string,
+  method: "PUT" | "GET",
+) {
   await s3.send(
     new PutBucketCorsCommand({
       Bucket: bucket,
@@ -58,7 +64,14 @@ await s3.send(
   new PutBucketLifecycleConfigurationCommand({
     Bucket: buckets.quarantine,
     LifecycleConfiguration: {
-      Rules: [{ ID: "expire-after-7-days", Status: "Enabled", Filter: { Prefix: "" }, Expiration: { Days: 7 } }],
+      Rules: [
+        {
+          ID: "expire-after-7-days",
+          Status: "Enabled",
+          Filter: { Prefix: "" },
+          Expiration: { Days: 7 },
+        },
+      ],
     },
   }),
 );
@@ -67,7 +80,10 @@ await allowBrowser(s3, buckets.quarantine, "PUT");
 // sources: versioned, noncurrent versions expire after 30 days.
 await createBucket(s3, buckets.sources);
 await s3.send(
-  new PutBucketVersioningCommand({ Bucket: buckets.sources, VersioningConfiguration: { Status: "Enabled" } }),
+  new PutBucketVersioningCommand({
+    Bucket: buckets.sources,
+    VersioningConfiguration: { Status: "Enabled" },
+  }),
 );
 await s3.send(
   new PutBucketLifecycleConfigurationCommand({

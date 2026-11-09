@@ -6,7 +6,8 @@ import { createAuthClient } from "better-auth/react";
 const browserClients = new Map<string, ReturnType<typeof createAuthClient>>();
 
 export function authClient(apiOrigin: string) {
-  if (typeof window === "undefined") return createAuthClient({ baseURL: apiOrigin });
+  if (typeof window === "undefined")
+    return createAuthClient({ baseURL: apiOrigin });
   let client = browserClients.get(apiOrigin);
   if (!client) {
     client = createAuthClient({ baseURL: apiOrigin });

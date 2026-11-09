@@ -2,7 +2,8 @@
 
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
-import { cva, type VariantProps } from "class-variance-authority"
+import type { VariantProps } from "class-variance-authority"
+import { cva } from "class-variance-authority"
 import { PanelLeft } from "lucide-react"
 import * as React from "react"
 import { cn } from "../../lib/utils.js"
@@ -123,7 +124,7 @@ function Sidebar({
       data-state={state}
       data-collapsible={state === "collapsed" ? "offcanvas" : ""}
       className={cn(
-        "group peer relative h-full w-(--sidebar-width) shrink-0 overflow-hidden transition-[width] duration-200 ease-standard data-[state=collapsed]:w-0",
+        "group peer ease-standard relative h-full w-(--sidebar-width) shrink-0 overflow-hidden transition-[width] duration-200 data-[state=collapsed]:w-0",
         className,
       )}
       {...props}
@@ -133,7 +134,7 @@ function Sidebar({
         aria-label={label}
         inert={state === "collapsed"}
         data-slot="sidebar-inner"
-        className="bg-secondary text-primary flex h-full w-(--sidebar-width) flex-col shadow-[inset_-1px_0_0_0_var(--border-color-secondary)] transition-[opacity,translate] duration-200 ease-standard group-data-[state=collapsed]:-translate-x-[250px] group-data-[state=collapsed]:opacity-0"
+        className="bg-secondary text-primary ease-standard flex h-full w-(--sidebar-width) flex-col shadow-[inset_-1px_0_0_0_var(--border-color-secondary)] transition-[opacity,translate] duration-200 group-data-[state=collapsed]:-translate-x-[250px] group-data-[state=collapsed]:opacity-0"
       >
         {children}
       </nav>
@@ -327,7 +328,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 // Icons default to Notion's 18px page glyph in a 22px slot; give navigation
 // icons `size-[22px]` to fill the slot
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button data-active:bg-interactive-translucent data-active:text-primary focus-visible:bg-interactive-translucent active:bg-interactive-translucent-200 flex h-[30px] w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-[5px] text-left text-sm leading-[21px] font-normal outline-hidden select-none focus-visible:shadow-focus-button disabled:pointer-events-none disabled:opacity-40 aria-disabled:pointer-events-none aria-disabled:opacity-40 [&_svg]:shrink-0 [&>span:last-child]:truncate [&>svg:not([class*='size-'])]:mx-0.5 [&>svg:not([class*='size-'])]:size-[18px]",
+  "peer/menu-button data-active:bg-interactive-translucent data-active:text-primary focus-visible:bg-interactive-translucent active:bg-interactive-translucent-200 focus-visible:shadow-focus-button flex h-[30px] w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-[5px] text-left text-sm leading-[21px] font-normal outline-hidden select-none disabled:pointer-events-none disabled:opacity-40 aria-disabled:pointer-events-none aria-disabled:opacity-40 [&_svg]:shrink-0 [&>span:last-child]:truncate [&>svg:not([class*='size-'])]:mx-0.5 [&>svg:not([class*='size-'])]:size-[18px]",
   {
     variants: {
       variant: {
