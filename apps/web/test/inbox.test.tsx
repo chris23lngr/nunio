@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { BriefingSettings } from "@/features/inbox/briefing-settings";
 import { EmailSettings } from "@/features/inbox/email-settings";
 import { InboxScreen } from "@/features/inbox/inbox-screen";
+import { QuietSettings } from "@/features/inbox/quiet-settings";
 import { api } from "./api";
 import { TestProviders } from "./providers";
 
@@ -243,5 +244,54 @@ test("the student turns email off and on again", async () => {
 
   await waitFor(() =>
     expect(patches).toEqual([{ email: false }, { email: true }]),
+  );
+});
+
+test("the student sets Quiet Hours across midnight, turns them off, and changes the daily limit", async () => {
+  const patches: unknown[] = [];
+  let settings: {
+    briefingAtMinute: number | null;
+    email: boolean;
+    quietHours: { fromMinute: number; toMinute: number } | null;
+    dailyLimit: number;
+  } = { briefingAtMinute: 420, email: true, quietHours: null, dailyLimit: 3 };
+  api.route("GET", "/api/me/outreach-settings", () => Response.json(settings));
+  api.route("PATCH", "/api/me/outreach-settings", async (request) => {
+    const patch = (await request.json()) as Partial<typeof settings>;
+    patches.push(patch);
+    settings = { ...settings, ...patch };
+    return Response.json(settings);
+  });
+  const user = userEvent.setup();
+  render(
+    <TestProviders>
+      <QuietSettings apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  await user.click(
+    await screen.findByRole("button", { name: "Turn Quiet Hours on" }),
+  );
+  const from = await screen.findByLabelText("Quiet from");
+  const until = screen.getByLabelText("until");
+  await user.clear(from);
+  await user.type(from, "22:00");
+  await user.clear(until);
+  await user.type(until, "07:00");
+  await user.click(screen.getByRole("button", { name: "Save Quiet Hours" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Turn Quiet Hours off" }),
+  );
+  const limit = screen.getByLabelText("At most this many alerts a day");
+  await user.clear(limit);
+  await user.type(limit, "5");
+  await user.click(screen.getByRole("button", { name: "Save limit" }));
+
+  await waitFor(() =>
+    expect(patches).toEqual([
+      { quietHours: { fromMinute: 1320, toMinute: 420 } },
+      { quietHours: null },
+      { dailyLimit: 5 },
+    ]),
   );
 });

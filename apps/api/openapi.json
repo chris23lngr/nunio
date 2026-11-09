@@ -2332,11 +2332,42 @@
           "email": {
             "type": "boolean",
             "description": "Whether nunio emails the student; the Inbox has everything either way."
+          },
+          "quietHours": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "fromMinute": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1439
+              },
+              "toMinute": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1439
+              }
+            },
+            "required": [
+              "fromMinute",
+              "toMinute"
+            ],
+            "description": "When nothing goes out outside the app, in the Plan's time zone; may wrap midnight. Null when off."
+          },
+          "dailyLimit": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50,
+            "description": "Announcements of Interventions per day, email and push combined; Briefings do not count."
           }
         },
         "required": [
           "briefingAtMinute",
-          "email"
+          "email",
+          "quietHours",
+          "dailyLimit"
         ]
       },
       "PushSubscription": {
@@ -8334,6 +8365,35 @@
                   "email": {
                     "type": "boolean",
                     "description": "Whether nunio emails the student; the Inbox has everything either way."
+                  },
+                  "quietHours": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "fromMinute": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1439
+                      },
+                      "toMinute": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1439
+                      }
+                    },
+                    "required": [
+                      "fromMinute",
+                      "toMinute"
+                    ],
+                    "description": "When nothing goes out outside the app, in the Plan's time zone; may wrap midnight. Null when off."
+                  },
+                  "dailyLimit": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 50,
+                    "description": "Announcements of Interventions per day, email and push combined; Briefings do not count."
                   }
                 }
               }

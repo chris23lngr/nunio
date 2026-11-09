@@ -35,18 +35,54 @@ export type OutreachSettings = {
   briefingAtMinute: number | null;
   /** Whether nunio emails the student; the Inbox has everything either way. */
   email: boolean;
+  /** When nothing goes out outside the app, in the Plan's time zone; may wrap midnight. */
+  quietHours: { fromMinute: number; toMinute: number } | null;
+  /** Announcements of Interventions per local day, email and push combined; Briefings do not count. */
+  dailyLimit: number;
 };
 
 type Bundled = Omit<BriefingView, "id" | "madeAt">;
 type PlanView = Awaited<ReturnType<Plan["view"]>>;
 
-const defaults: OutreachSettings = { briefingAtMinute: 7 * 60, email: true };
+const defaults: OutreachSettings = {
+  briefingAtMinute: 7 * 60,
+  email: true,
+  quietHours: null,
+  dailyLimit: 3,
+};
 const settingsOf = (
-  stored: { briefingAtMinute: number | null; email: boolean } | null,
+  stored: {
+    briefingAtMinute: number | null;
+    email: boolean;
+    quietFromMinute: number | null;
+    quietToMinute: number | null;
+    dailyLimit: number;
+  } | null,
 ): OutreachSettings =>
   stored
-    ? { briefingAtMinute: stored.briefingAtMinute, email: stored.email }
+    ? {
+        briefingAtMinute: stored.briefingAtMinute,
+        email: stored.email,
+        quietHours:
+          stored.quietFromMinute === null || stored.quietToMinute === null
+            ? null
+            : {
+                fromMinute: stored.quietFromMinute,
+                toMinute: stored.quietToMinute,
+              },
+        dailyLimit: stored.dailyLimit,
+      }
     : defaults;
+
+/** Whether `minute` of the day falls in Quiet Hours, which may wrap midnight. */
+const quiet = (
+  minute: number,
+  hours: OutreachSettings["quietHours"],
+): boolean =>
+  hours !== null &&
+  (hours.fromMinute <= hours.toMinute
+    ? minute >= hours.fromMinute && minute < hours.toMinute
+    : minute >= hours.fromMinute || minute < hours.toMinute);
 
 /** The date and minute of the day on the student's wall clock. */
 function wallClock(at: Date, timeZone: string) {
@@ -228,8 +264,14 @@ export function createOutreach({
   }
 
   /** Sends what is due on each channel; every message is content-free and points to the Inbox. */
-  async function deliver(p: Principal) {
+  async function deliver(p: Principal, view: PlanView) {
     const at = clock.now();
+    const { minute } = wallClock(at, view.limits.preferences.timeZone);
+    const settings = settingsOf(
+      await withOwner(db, p, (tx) => tx.outreachSettings.findFirst()),
+    );
+    // Nothing leaves the app in Quiet Hours; what is due waits for the first tick after them.
+    if (quiet(minute, settings.quietHours)) return;
     const pending = await withOwner(db, p, async (tx, studentId) => {
       const queued = await tx.delivery.findMany({
         where: { sentAt: null, droppedAt: null, dueAt: { lte: at } },
@@ -247,7 +289,18 @@ export function createOutreach({
           })
         ).map((i) => i.id),
       );
-      const { email } = settingsOf(await tx.outreachSettings.findFirst());
+      const { email, dailyLimit } = settings;
+      // A tick's announcements share one sentAt across channels, so each counts once.
+      const midnight = new Date(
+        at.getTime() - minute * 60_000 - (at.getTime() % 60_000),
+      );
+      const announcedToday = (
+        await tx.delivery.findMany({
+          where: { interventionId: { not: null }, sentAt: { gte: midnight } },
+          distinct: ["sentAt"],
+          select: { sentAt: true },
+        })
+      ).length;
       const subscriptions = await tx.pushSubscription.findMany();
       // A message about an Intervention that closed meanwhile no longer applies.
       const closed = queued.filter(
@@ -258,9 +311,20 @@ export function createOutreach({
           !closed.includes(d) &&
           (d.channel === "email" ? !email : !subscriptions.length),
       );
+      // Past the limit, an Intervention waits in the Inbox and the next Briefing instead.
+      const limited =
+        announcedToday < dailyLimit
+          ? []
+          : queued.filter(
+              (d) =>
+                d.interventionId &&
+                !closed.includes(d) &&
+                !disabled.includes(d),
+            );
       for (const [reason, dropped] of [
         ["closed", closed],
         ["disabled", disabled],
+        ["limit", limited],
       ] as const)
         if (dropped.length)
           await tx.delivery.updateMany({
@@ -268,7 +332,12 @@ export function createOutreach({
             data: { droppedAt: at, dropReason: reason },
           });
       return {
-        due: queued.filter((d) => !closed.includes(d) && !disabled.includes(d)),
+        due: queued.filter(
+          (d) =>
+            !closed.includes(d) &&
+            !disabled.includes(d) &&
+            !limited.includes(d),
+        ),
         to: (await tx.user.findUniqueOrThrow({ where: { id: studentId } }))
           .email,
         subscriptions,
@@ -277,7 +346,7 @@ export function createOutreach({
     for (const channel of channels) {
       // One channel failing leaves its messages due; the others still go out.
       try {
-        await send(p, channel, {
+        await send(p, channel, at, {
           ...pending,
           due: pending.due.filter((d) => d.channel === channel),
         });
@@ -290,6 +359,7 @@ export function createOutreach({
   async function send(
     p: Principal,
     channel: Channel,
+    at: Date,
     {
       due,
       to,
@@ -309,7 +379,6 @@ export function createOutreach({
       }[];
     },
   ) {
-    const at = clock.now();
     const announcing = due.filter((d) => d.interventionId);
     const briefing = due.filter((d) => d.briefingId);
     for (const [batch, message, urgency] of [
@@ -365,7 +434,7 @@ export function createOutreach({
           const view = await plan.view(p);
           await sync(p, view);
           await brief(p, view);
-          await deliver(p);
+          await deliver(p, view);
         } catch (error) {
           console.error("Outreach tick failed for a student", error);
         }
@@ -446,13 +515,20 @@ export function createOutreach({
     /** A changed time applies from the next Briefing; one already made or skipped today stays so. */
     async updateSettings(
       student: Principal,
-      patch: Partial<OutreachSettings>,
+      { quietHours, ...patch }: Partial<OutreachSettings>,
     ): Promise<OutreachSettings> {
+      const columns = {
+        ...patch,
+        ...(quietHours !== undefined && {
+          quietFromMinute: quietHours?.fromMinute ?? null,
+          quietToMinute: quietHours?.toMinute ?? null,
+        }),
+      };
       const stored = await withOwner(db, student, (tx, studentId) =>
         tx.outreachSettings.upsert({
           where: { studentId },
-          create: { studentId, ...patch },
-          update: patch,
+          create: { studentId, ...columns },
+          update: columns,
         }),
       );
       return settingsOf(stored);

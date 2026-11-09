@@ -122,12 +122,12 @@ async function student(): Promise<Principal> {
 }
 
 /** An Obligation due tomorrow at noon whose Estimate decides whether there is a Shortfall. */
-async function dueTomorrow(p: Principal, minutes: number) {
+async function dueTomorrow(p: Principal, minutes: number, date = "2026-11-10") {
   const entered = await facts.enterObligation(p, {
     course: { title: "Analysis I", code: "MA-101" },
     kind: "assignment",
-    title: "Problem sheet 3",
-    due: { date: "2026-11-10", time: "12:00", timeZone: null },
+    title: `Problem sheet due ${date} (${randomUUID().slice(0, 4)})`,
+    due: { date, time: "12:00", timeZone: null },
     destination: null,
   });
   if (entered.status !== "ok") throw new Error(entered.status);
@@ -378,11 +378,18 @@ describe("the daily Briefing", () => {
     expect(await outreach.settings(p)).toEqual({
       briefingAtMinute: 7 * 60,
       email: true,
+      quietHours: null,
+      dailyLimit: 3,
     });
 
     expect(
       await outreach.updateSettings(p, { briefingAtMinute: 9 * 60 }),
-    ).toEqual({ briefingAtMinute: 9 * 60, email: true });
+    ).toEqual({
+      briefingAtMinute: 9 * 60,
+      email: true,
+      quietHours: null,
+      dailyLimit: 3,
+    });
     now = at("2026-11-09 08:00");
     await outreach.tick();
     expect((await outreach.inbox(p)).briefings).toEqual([]);
@@ -547,5 +554,123 @@ describe("push", () => {
 
     expect(mailTo(p)).toHaveLength(1);
     expect(pushesTo(phone)).toHaveLength(1);
+  });
+});
+
+describe("Quiet Hours", () => {
+  it("holds a message until Quiet Hours end, then sends it", async () => {
+    now = at("2026-11-09 23:00");
+    const p = await student();
+    await outreach.updateSettings(p, {
+      briefingAtMinute: null,
+      quietHours: { fromMinute: 22 * 60, toMinute: 6 * 60 + 30 },
+    });
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+    now = at("2026-11-10 06:25");
+    await outreach.tick();
+    expect(mailTo(p)).toEqual([]);
+
+    now = at("2026-11-10 06:30");
+    await outreach.tick();
+
+    expect(mailTo(p).map((m) => m.subject)).toEqual([
+      "nunio: 1 item needs your attention",
+    ]);
+  });
+
+  it("sends nothing held about an Intervention the student closed during Quiet Hours", async () => {
+    now = at("2026-11-09 23:00");
+    const p = await student();
+    await outreach.updateSettings(p, {
+      briefingAtMinute: null,
+      quietHours: { fromMinute: 22 * 60, toMinute: 6 * 60 + 30 },
+    });
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+    const [shortfall] = await open(p);
+    await outreach.close(p, shortfall!.id, "dismissed");
+
+    now = at("2026-11-10 06:30");
+    await outreach.tick();
+
+    expect(mailTo(p)).toEqual([]);
+  });
+
+  it("makes the Briefing on time but holds its email and push until Quiet Hours end", async () => {
+    now = at("2026-11-10 07:05");
+    const p = await student();
+    const phone = await device(p);
+    await outreach.updateSettings(p, {
+      quietHours: { fromMinute: 22 * 60, toMinute: 8 * 60 },
+    });
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+    expect((await outreach.inbox(p)).briefings).toHaveLength(1);
+    expect([...mailTo(p), ...pushesTo(phone)]).toEqual([]);
+
+    now = at("2026-11-10 08:00");
+    await outreach.tick();
+
+    expect(mailTo(p).map((m) => m.subject)).toEqual([
+      "nunio: 1 item needs your attention",
+      "Your nunio Briefing is ready",
+    ]);
+    expect(pushesTo(phone)).toHaveLength(2);
+  });
+
+  it("follows the time zone of the student's Plan", async () => {
+    // 05:00 in Berlin is 23:00 the evening before in New York.
+    now = at("2026-11-10 05:00");
+    const p = await student();
+    if (p.kind !== "student") throw new Error("a student");
+    await admin.planPreference.create({
+      data: { studentId: p.studentId, timeZone: "America/New_York" },
+    });
+    await outreach.updateSettings(p, {
+      briefingAtMinute: null,
+      quietHours: { fromMinute: 22 * 60, toMinute: 5 * 60 },
+    });
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+    expect(mailTo(p)).toEqual([]);
+
+    // 11:00 in Berlin is 05:00 in New York, an hour before the Obligation is due.
+    now = at("2026-11-10 11:00");
+    await outreach.tick();
+
+    expect(mailTo(p)).toHaveLength(1);
+  });
+});
+
+describe("the daily limit", () => {
+  it("drops announcements past the day's limit, keeps Briefings, and starts again the next day", async () => {
+    now = at("2026-11-09 05:00");
+    const p = await student();
+    const phone = await device(p);
+    expect(await outreach.updateSettings(p, { dailyLimit: 1 })).toEqual(
+      expect.objectContaining({ dailyLimit: 1 }),
+    );
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+
+    now = at("2026-11-09 06:00");
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+    expect(mailTo(p)).toHaveLength(1);
+    expect(pushesTo(phone)).toHaveLength(1);
+    expect(await open(p)).toHaveLength(2);
+
+    now = at("2026-11-09 07:05");
+    await outreach.tick();
+    expect(mailTo(p).map((m) => m.subject)).toEqual([
+      "nunio: 1 item needs your attention",
+      "Your nunio Briefing is ready",
+    ]);
+
+    now = at("2026-11-10 05:00");
+    await dueTomorrow(p, 20 * 60, "2026-11-11");
+    await outreach.tick();
+    expect(mailTo(p)).toHaveLength(3);
   });
 });

@@ -3,14 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { settingsQueries, updateSettings } from "./api/settings-queries";
+import { asMinute, asTime } from "./time";
 
 const defaultMinute = 7 * 60;
-const asTime = (minute: number) =>
-  `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
-const asMinute = (time: string) => {
-  const [hours, minutes] = time.split(":").map(Number);
-  return hours! * 60 + minutes!;
-};
 
 /** When the daily Briefing comes, in the time zone of the student's Plan, or that it does not. */
 export function BriefingSettings({ apiOrigin }: { apiOrigin: string }) {

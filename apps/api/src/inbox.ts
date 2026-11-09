@@ -22,6 +22,23 @@ const Settings = z
       .describe(
         "Whether nunio emails the student; the Inbox has everything either way.",
       ),
+    quietHours: z
+      .object({
+        fromMinute: z.number().int().min(0).max(1439),
+        toMinute: z.number().int().min(0).max(1439),
+      })
+      .nullable()
+      .describe(
+        "When nothing goes out outside the app, in the Plan's time zone; may wrap midnight. Null when off.",
+      ),
+    dailyLimit: z
+      .number()
+      .int()
+      .min(0)
+      .max(50)
+      .describe(
+        "Announcements of Interventions per day, email and push combined; Briefings do not count.",
+      ),
   })
   .openapi("OutreachSettings");
 
