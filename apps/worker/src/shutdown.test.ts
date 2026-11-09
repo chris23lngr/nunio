@@ -77,6 +77,15 @@ describe("the worker process", () => {
       HETZNER_SOURCES_BUCKET: "sources",
       OPENROUTER_API_KEY: "test",
       OPENROUTER_BASE_URL: "https://openrouter.invalid",
+      SCW_PROJECT_ID: "test",
+      NOTIFY_SCW_SECRET_KEY: "test",
+      NOTIFY_EMAIL_FROM: "notifications@nunio.test",
+      APP_ORIGIN: "https://app.nunio.test",
+      VAPID_PUBLIC_KEY: "test",
+      VAPID_PRIVATE_KEY: "test",
+      VAPID_SUBJECT: "mailto:founder@nunio.test",
+      UNSUBSCRIBE_SECRET: "test",
+      API_ORIGIN: "https://api.nunio.test",
     });
     await logged("worker running");
 

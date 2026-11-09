@@ -908,6 +908,21 @@ describe("history", () => {
     ]);
   });
 
+  it("shows only the Actions asked for by ID, whatever their status", async () => {
+    const s = await student();
+    const r = await run(s);
+    const g = gate(fakeExecutor().executor);
+    const first = await g.perform(r.p, {
+      key: `${r.runId}:1`,
+      intent: move(s, 14),
+    });
+    await g.perform(r.p, { key: `${r.runId}:2`, intent: move(s, 16) });
+
+    const history = await g.history(s.p, { ids: [first.actionId] });
+
+    expect(history.map((a) => a.id)).toEqual([first.actionId]);
+  });
+
   it("shows a student none of another student's Actions", async () => {
     const s = await student();
     const other = await student();

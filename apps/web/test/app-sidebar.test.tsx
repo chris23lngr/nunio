@@ -28,18 +28,19 @@ test("each navigation link has its own decorative icon", () => {
   );
 
   const links = screen.getAllByRole("link");
-  expect(links).toHaveLength(7);
+  expect(links).toHaveLength(8);
   const glyphs = links.map((link) => {
     const icon = link.querySelector("svg");
     expect(icon).not.toBeNull();
     expect(icon!.getAttribute("aria-hidden")).toBe("true");
     return icon!.innerHTML;
   });
-  expect(new Set(glyphs).size).toBe(7);
+  expect(new Set(glyphs).size).toBe(8);
 });
 
 test.each([
   ["/", "Home"],
+  ["/inbox", "Inbox"],
   ["/account", "Account"],
   ["/review", "Review"],
   ["/chat", "Chat"],

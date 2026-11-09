@@ -32,6 +32,8 @@
     "@nunio/ai": "workspace:*",
     "@nunio/db": "workspace:*",
     "@nunio/delegation": "workspace:*",
-    "@nunio/planning": "workspace:*"
+    "@nunio/planning": "workspace:*",
+    "@nunio/outreach": "workspace:*",
+    "@nunio/identity": "workspace:*"
   }
 }

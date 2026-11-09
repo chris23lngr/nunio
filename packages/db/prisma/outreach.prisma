@@ -5,17 +5,87 @@ model Intervention {
   id             String    @id
   studentId      String
   student        User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  /// approval_expired or unconfirmed for now.
+  /// shortfall, disagreement, approval_expired or unconfirmed.
   kind           String
-  /// What triggered it, such as the Action whose Approval expired; one Intervention per trigger.
+  /// Its cause, such as `shortfall:<workId>`; one open Intervention per cause (a partial unique index in SQL).
   dedupeKey      String
   actionId       String?
   createdAt      DateTime  @default(now())
   /// Seen or acknowledged; distinct from a Dismissal, which means it was not useful.
   acknowledgedAt DateTime?
   dismissedAt    DateTime?
+  /// When its cause stopped holding; a Lapse when neither acknowledged nor dismissed by then.
+  causeEndedAt   DateTime?
 
-  @@unique([studentId, dedupeKey])
   @@index([studentId, createdAt])
   @@map("intervention")
+}
+
+/// How the student wants to hear from nunio. Without a row, the defaults apply.
+model OutreachSettings {
+  studentId        String  @id
+  student          User    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// Minutes after local midnight, in the Plan's time zone; null turns Briefings off.
+  briefingAtMinute Int?    @default(420)
+  /// The last local date a Briefing was due, made or skipped as empty.
+  lastBriefingOn   String?
+  /// Whether nunio emails the student; the Inbox has everything either way.
+  email            Boolean @default(true)
+  /// Whether Briefings are also emailed; off after a one-click unsubscribe. Briefings stay in the Inbox.
+  briefingEmail    Boolean @default(true)
+  /// Quiet Hours in minutes after local midnight, in the Plan's time zone; both null when off. May wrap midnight.
+  quietFromMinute  Int?
+  quietToMinute    Int?
+  /// Announcements of Interventions per local day, email and push combined; Briefings do not count.
+  dailyLimit       Int     @default(3)
+
+  @@map("outreach_settings")
+}
+
+/// One message outside the app announcing an Intervention or a Briefing; settled once, as sent or dropped.
+model Delivery {
+  id             String    @id
+  studentId      String
+  student        User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// email or push.
+  channel        String
+  interventionId String?
+  briefingId     String?
+  dueAt          DateTime
+  sentAt         DateTime?
+  droppedAt      DateTime?
+  /// closed or disabled.
+  dropReason     String?
+
+  @@index([studentId, dueAt])
+  @@map("delivery")
+}
+
+/// A scheduled summary, never edited once made: which Interventions, Approvals and Responsibilities it bundled.
+model Briefing {
+  id        String   @id
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  localDate String
+  createdAt DateTime @default(now())
+  items     Json
+
+  @@unique([studentId, localDate])
+  @@map("briefing")
+}
+
+/// One device's opt-in to empty push messages. The endpoint is a capability URL and never logged.
+model PushSubscription {
+  id             String    @id
+  studentId      String
+  student        User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  endpoint       String    @unique
+  p256dh         String
+  auth           String
+  expirationTime DateTime?
+  /// The public VAPID key it was created with; a rotated key needs every device to subscribe again.
+  vapidKeyId     String
+  createdAt      DateTime  @default(now())
+
+  @@map("push_subscription")
 }

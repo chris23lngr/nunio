@@ -33,7 +33,8 @@
     "@nunio/keys": "workspace:*",
     "@nunio/ai": "workspace:*",
     "@temporalio/client": "1.25.0",
-    "@nunio/planning": "workspace:*"
+    "@nunio/planning": "workspace:*",
+    "@nunio/outreach": "workspace:*"
   },
   "devDependencies": {
     "@temporalio/testing": "1.25.0",

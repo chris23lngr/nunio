@@ -37,6 +37,7 @@ async function sendEmail(
   to: string,
   subject: string,
   text: string,
+  headers?: Record<string, string>,
 ) {
   const response = await (options.fetch ?? globalThis.fetch)(
     "https://api.scaleway.com/transactional-email/v1alpha1/regions/fr-par/emails",
@@ -52,8 +53,28 @@ async function sendEmail(
         to: [{ email: to }],
         subject,
         text,
+        ...(headers && {
+          additional_headers: Object.entries(headers).map(([key, value]) => ({
+            key,
+            value,
+          })),
+        }),
       }),
     },
   );
-  if (!response.ok) throw new Error("Authentication email delivery failed");
+  if (!response.ok) throw new Error("Scaleway did not accept the email");
+}
+
+/** Outreach's mailer: the same Scaleway request as authentication email, with its own key and sender. */
+export function createScalewayMailer(options: ScalewayEmailOptions) {
+  return {
+    send: (
+      to: string,
+      {
+        subject,
+        text,
+        headers,
+      }: { subject: string; text: string; headers?: Record<string, string> },
+    ) => sendEmail(options, to, subject, text, headers),
+  };
 }

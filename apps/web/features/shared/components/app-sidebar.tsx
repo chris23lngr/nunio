@@ -12,6 +12,7 @@ import {
   ClipboardCheck,
   FolderKanban,
   House,
+  Inbox,
   ListChecks,
   MessageSquare,
   UserRound,
@@ -21,6 +22,7 @@ import { usePathname } from "next/navigation";
 
 const menuItems = [
   { title: "Home", href: "/", icon: House },
+  { title: "Inbox", href: "/inbox", icon: Inbox },
   { title: "Account", href: "/account", icon: UserRound },
   { title: "Review", href: "/review", icon: ClipboardCheck },
   { title: "Chat", href: "/chat", icon: MessageSquare },

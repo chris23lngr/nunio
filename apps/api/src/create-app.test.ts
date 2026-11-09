@@ -28,6 +28,7 @@ import {
   createProjects,
   createSources,
 } from "@nunio/knowledge";
+import { createOutreach } from "@nunio/outreach";
 import { createPlan } from "@nunio/planning";
 import { hashPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -201,6 +202,12 @@ beforeAll(async () => {
     plan,
     estimator,
     projects: createProjects({ db: prisma }),
+    outreach: createOutreach({
+      db: prisma,
+      clock: { now: () => new Date() },
+      vapidPublicKey: "test-vapid-key",
+      unsubscribeSecret: "test-unsubscribe-secret",
+    }),
     sourceWorkflows: {
       start: async (...args) => {
         started.push(args);
@@ -2832,5 +2839,93 @@ describe("'prepare me for this exam'", () => {
         },
       ],
     );
+  });
+});
+
+describe("one-click unsubscribe from Briefing emails", () => {
+  /** RFC 8058: a mail provider POSTs this, with no cookie and no Origin of ours. */
+  const unsubscribe = (s: string, t: string, method = "POST") =>
+    app.request(`${apiOrigin}/unsubscribe/briefing-email?s=${s}&t=${t}`, {
+      method,
+      headers:
+        method === "POST"
+          ? { "content-type": "application/x-www-form-urlencoded" }
+          : {},
+      body: method === "POST" ? "List-Unsubscribe=One-Click" : undefined,
+    });
+  const tokenFor = (id: string) =>
+    createHmac("sha256", "test-unsubscribe-secret").update(id).digest("hex");
+  const settingsOf = async (cookie: string) =>
+    (await (
+      await app.request(`${apiOrigin}/api/me/outreach-settings`, {
+        headers: { cookie },
+      })
+    ).json()) as { briefingEmail: boolean; email: boolean };
+
+  it("stops Briefing emails without a session, answering without a redirect", async () => {
+    const cookie = await signUp("unsubscribe-one-click");
+    const id = await studentId(cookie);
+
+    const response = await unsubscribe(id, tokenFor(id));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    expect(await settingsOf(cookie)).toEqual(
+      expect.objectContaining({ briefingEmail: false, email: true }),
+    );
+  });
+
+  it("refuses a link that was not signed for the student, and ignores a GET", async () => {
+    const cookie = await signUp("unsubscribe-refused");
+    const id = await studentId(cookie);
+
+    expect((await unsubscribe(id, "0".repeat(64))).status).toBe(403);
+    expect((await unsubscribe(id, tokenFor(id), "GET")).status).not.toBe(200);
+    expect(await settingsOf(cookie)).toEqual(
+      expect.objectContaining({ briefingEmail: true }),
+    );
+  });
+});
+
+describe("a Briefing's Approvals", () => {
+  it("shows each bundled Approval as it stands now, not as it stood then", async () => {
+    const asked = await askedForApproval("briefing-approval-state");
+    const id = await studentId(asked.cookie);
+    await admin.briefing.create({
+      data: {
+        id: randomUUID(),
+        studentId: id,
+        localDate: "2099-01-01",
+        items: {
+          interventions: [],
+          approvals: [asked.asking.actionId],
+          responsibilities: [],
+        },
+      },
+    });
+    const stateNow = async () => {
+      const inbox = (await (
+        await app.request(`${apiOrigin}/api/me/inbox`, {
+          headers: { cookie: asked.cookie },
+        })
+      ).json()) as { briefings: { approvals: { state: string }[] }[] };
+      return inbox.briefings[0]!.approvals[0]!.state;
+    };
+
+    expect(await stateNow()).toBe("waiting");
+    await admin.approval.update({
+      where: { actionId: asked.asking.actionId },
+      data: { expiresAt: new Date("2000-01-01T00:00:00Z") },
+    });
+    expect(await stateNow()).toBe("expired");
+    await app.request(
+      `${apiOrigin}/api/me/approvals/${asked.asking.actionId}`,
+      {
+        method: "POST",
+        headers: asked.headers,
+        body: JSON.stringify({ decision: "deny" }),
+      },
+    );
+    expect(await stateNow()).toBe("denied");
   });
 });

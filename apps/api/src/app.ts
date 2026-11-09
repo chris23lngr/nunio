@@ -6,10 +6,16 @@ import type { Delegation, Responsibilities } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 import type { Chats, Facts, Projects, Sources } from "@nunio/knowledge";
+import type { Outreach } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import { registerApprovalRoutes } from "./approvals.js";
 import { registerChatRoutes } from "./chats.js";
 import { registerHomeRoutes } from "./home.js";
+import {
+  registerInboxRoutes,
+  registerOutreachSettingsRoutes,
+  registerPushRoutes,
+} from "./inbox.js";
 import { registerPlanRoutes } from "./plan.js";
 import { registerProjectRoutes } from "./projects.js";
 import { registerResponsibilityRoutes } from "./responsibilities.js";
@@ -33,6 +39,7 @@ export interface AppBindings {
     projects: Projects;
     responsibilities: Responsibilities;
     runWorkflows: RunWorkflows;
+    outreach: Outreach;
   };
 }
 
@@ -201,3 +208,6 @@ registerProjectRoutes(routes);
 registerHomeRoutes(routes);
 registerApprovalRoutes(routes);
 registerResponsibilityRoutes(routes);
+registerInboxRoutes(routes);
+registerOutreachSettingsRoutes(routes);
+registerPushRoutes(routes);

@@ -21,6 +21,8 @@ import {
   createSources,
   sourceStorageFromEnv,
 } from "@nunio/knowledge";
+import type { Outreach } from "@nunio/outreach";
+import { createOutreach, InvalidUnsubscribeError } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import { createPlan } from "@nunio/planning";
 import { attachDatabasePool } from "@vercel/functions";
@@ -49,6 +51,7 @@ export interface AppDeps {
   projects: Projects;
   responsibilities: Responsibilities;
   runWorkflows: RunWorkflows;
+  outreach: Outreach;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
   /** Mounts the spike c routes when set. */
@@ -71,6 +74,7 @@ export function createApp({
   projects,
   responsibilities,
   runWorkflows,
+  outreach,
 }: AppDeps) {
   const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
@@ -100,7 +104,22 @@ export function createApp({
     c.set("projects", projects);
     c.set("responsibilities", responsibilities);
     c.set("runWorkflows", runWorkflows);
+    c.set("outreach", outreach);
     await next();
+  });
+  // RFC 8058 one-click unsubscribe: a mail provider POSTs without a session or our Origin, and must not be redirected.
+  app.post("/unsubscribe/briefing-email", async (c) => {
+    try {
+      await outreach.stopBriefingEmail(
+        c.req.query("s") ?? "",
+        c.req.query("t") ?? "",
+      );
+    } catch (error) {
+      if (error instanceof InvalidUnsubscribeError)
+        return c.text("This link is not valid.", 403);
+      throw error;
+    }
+    return c.text("You will no longer get Briefing emails from nunio.", 200);
   });
   app.route("/", routes);
   if (spike) app.route("/", spikeRoutes(spike));
@@ -162,11 +181,17 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     clock,
   });
   const { runWorkflows, schedules } = runWorkflowsFromEnv(env);
+  const plan = createPlan({ db: prisma, facts, clock });
+  const responsibilities = createResponsibilities({
+    db: prisma,
+    schedules,
+    clock,
+  });
   return createApp({
     auth,
     prisma,
     delegation,
-    responsibilities: createResponsibilities({ db: prisma, schedules, clock }),
+    responsibilities,
     runWorkflows,
     appOrigin,
     spike,
@@ -175,8 +200,15 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     sourceWorkflows: sourceWorkflowsFromEnv(env),
     chats: createChats({ db: prisma, keys, reader, delegation }),
     answerer: createAnswerer(models),
-    plan: createPlan({ db: prisma, facts, clock }),
+    plan,
     estimator: createEstimator(models),
     projects: createProjects({ db: prisma }),
+    // Only the worker sends; the API reads the Inbox and settings, and holds no notification key.
+    outreach: createOutreach({
+      db: prisma,
+      clock,
+      vapidPublicKey: required("VAPID_PUBLIC_KEY"),
+      unsubscribeSecret: required("UNSUBSCRIBE_SECRET"),
+    }),
   });
 }

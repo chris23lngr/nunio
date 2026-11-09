@@ -9,6 +9,7 @@ import { NativeConnection, Worker } from "@temporalio/worker";
 import { createActivities } from "./activities.js";
 import { createDecisionNotifier } from "./decision-notifier.js";
 import { log } from "./log.js";
+import { ensureOutreachSchedule } from "./outreach-schedule.js";
 import { ensureReconcileSchedule } from "./reconcile-schedule.js";
 import { runActivitiesFromEnv } from "./run-activities.js";
 import { createSourceActivities } from "./source-activities.js";
@@ -39,7 +40,7 @@ const workflows = existsSync(here("./workflow-bundle.js"))
 
 const sourceActivities = createSourceActivities(process.env);
 
-// The reconcile Schedule lives in Temporal; creating it again on each start is a no-op.
+// The reconcile and outreach Schedules live in Temporal; creating them again on each start is a no-op.
 const clientConnection = await Connection.connect({
   address: required("TEMPORAL_ADDRESS"),
   ...(apiKey && { tls: true, apiKey }),
@@ -54,6 +55,7 @@ const runActivities = runActivitiesFromEnv(
   createDecisionNotifier(client),
 );
 await ensureReconcileSchedule(client, taskQueue);
+await ensureOutreachSchedule(client, taskQueue);
 const worker = await Worker.create({
   connection,
   namespace: required("TEMPORAL_NAMESPACE"),
