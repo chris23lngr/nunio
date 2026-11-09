@@ -604,4 +604,27 @@ describe("'prepare me for this exam'", () => {
     ).toEqual({ status: "gone" });
     expect(calls).toEqual([]);
   });
+
+  it("refuses an exam the student rejected, or one in a Course they merged away or rejected", async () => {
+    const s = await student();
+    const { schedules, calls } = fakeSchedules();
+    const responsibilities = createResponsibilities({ db: runtime, schedules, clock });
+    const prepare = (obligationId: string) =>
+      responsibilities.create(s.p, { preset: "prepare_for_exam", obligationId, budgetMicroUsd: 50_000 });
+    const { examId: rejected } = await exam(s);
+    await admin.obligation.update({ where: { id: rejected }, data: { state: "rejected" } });
+    const inCourse = async (status: "merged" | "rejected") => {
+      const courseId = randomUUID(), examId = randomUUID();
+      await admin.course.create({ data: { id: courseId, studentId: s.studentId, title: `Course ${status}`, matchTitle: status, status } });
+      await admin.obligation.create({
+        data: { id: examId, studentId: s.studentId, courseId, matchKey: `exam-${status}`, kind: "exam", enteredAt: now, correctedTitle: "Klausur" },
+      });
+      return examId;
+    };
+
+    expect(await prepare(rejected)).toEqual({ status: "gone" });
+    expect(await prepare(await inCourse("merged"))).toEqual({ status: "gone" });
+    expect(await prepare(await inCourse("rejected"))).toEqual({ status: "gone" });
+    expect(calls).toEqual([]);
+  });
 });

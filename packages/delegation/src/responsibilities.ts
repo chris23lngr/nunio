@@ -73,7 +73,14 @@ export function createResponsibilities({
               ? { courseId: input.courseId, obligationId: null }
               : null
             : await tx.obligation
-                .findFirst({ where: { id: input.obligationId, kind: "exam" } })
+                .findFirst({
+                  where: {
+                    id: input.obligationId,
+                    kind: "exam",
+                    state: { not: "rejected" },
+                    course: { status: { notIn: ["merged", "rejected"] } },
+                  },
+                })
                 .then((o) =>
                   o ? { courseId: o.courseId, obligationId: o.id } : null,
                 );
