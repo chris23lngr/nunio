@@ -9,14 +9,23 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run src"
   },
   "devDependencies": {
     "@nunio/eslint-config": "workspace:*",
+    "@nunio/keys": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
     "eslint": "10.13.0",
     "typescript": "5.9.3",
     "vitest": "5.0.5"
+  },
+  "dependencies": {
+    "@nunio/ai": "workspace:*",
+    "@nunio/db": "workspace:*",
+    "@nunio/delegation": "workspace:*",
+    "@nunio/knowledge": "workspace:*",
+    "ical.js": "2.2.1"
   }
 }
