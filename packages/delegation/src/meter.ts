@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
+import { createGate, type ActionOutcome, type ActionRecord, type Approve, type Clock, type Deny, type Executors, type HistoryQuery, type Resolve } from "./gate.js";
+import type { ActionIntent } from "./kinds.js";
 import { withOwner, type Principal, type Transaction } from "./principal.js";
 
 /** AI usage in micro-USD, as OpenRouter reports cost. */
@@ -9,7 +11,8 @@ export interface Usage {
 
 export type Metered<T> =
   | { status: "ok"; value: T; usage: Usage }
-  | { status: "refused"; reason: "allowance_exhausted" | "ai_disabled" | "not_entitled" | "deletion_pending" };
+  | { status: "refused"; reason: "allowance_exhausted" | "ai_disabled" | "not_entitled" | "deletion_pending"
+    | "budget_exhausted" | "paused" | "ended" };
 
 /** Thrown by a metered call that certainly incurred no usage, such as a provider's 4xx rejection. */
 export class DefiniteFailure extends Error {
@@ -30,6 +33,12 @@ export interface HeldReservation {
 }
 
 export interface Delegation {
+  /** Takes one Action exactly once per key, on a Grant or the student's Approval, rechecked at dispatch. */
+  perform(p: Principal, req: { key: string; intent: ActionIntent }): Promise<ActionOutcome>;
+  /** The student's answer to a request for Approval, or their resolution of an Unconfirmed Action. Never dispatches. */
+  decide(student: Principal, d: Approve | Deny | Resolve): Promise<ActionRecord>;
+  reconcile(): Promise<number>;
+  history(student: Principal, q?: HistoryQuery): Promise<ActionRecord[]>;
   /**
    * Reserves `estimate` against the Allowance, runs `call`, then settles its actual usage. A call that throws
    * after it may have been sent (a timeout, abort or network error) keeps its reservation held.
@@ -49,31 +58,67 @@ export async function accessRefusal(tx: Transaction, studentId: string) {
   return undefined;
 }
 
-export function createDelegation({ db, aiEnabled }: {
+export function createDelegation({ db, aiEnabled, clock = { now: () => new Date() }, executors, deadlineOf }: {
   db: PrismaClient;
   /** The global AI kill switch, checked before every reservation. */
   aiEnabled: () => boolean;
+  clock?: Clock;
+  /** Needed only to perform Actions. */
+  executors?: Executors;
+  /** An Obligation's deadline, which caps how long a request for Approval stays open. */
+  deadlineOf?: (studentId: string, obligationId: string) => Promise<Date | null>;
 }): Delegation {
   return {
+    ...createGate({ db, clock, executors, deadlineOf }),
     async meter(p, estimate, call, { timeoutMs = 120_000 } = {}) {
       if (!aiEnabled()) return { status: "refused", reason: "ai_disabled" };
       const reservationId = randomUUID();
+      let responsibilityId: string | null = null;
       const refusal = await withOwner(db, p, async (tx, studentId) => {
         const denied = await accessRefusal(tx, studentId);
         if (denied) return denied;
+        if (p.kind === "run") {
+          responsibilityId = (await tx.run.findUnique({ where: { id: p.runId } }))?.responsibilityId ?? null;
+        }
+        if (responsibilityId) {
+          // One conditional UPDATE against the Budget too; its row lock serializes the Responsibility's Runs.
+          const budgeted = await tx.$executeRaw`
+            UPDATE "responsibility" SET "heldMicroUsd" = "heldMicroUsd" + ${estimate.microUsd}
+            WHERE "id" = ${responsibilityId} AND "state" = 'active'
+              AND "budgetMicroUsd" - "usedMicroUsd" - "heldMicroUsd" >= ${estimate.microUsd}`;
+          if (budgeted === 0) {
+            const { state } = await tx.responsibility.findUniqueOrThrow({ where: { id: responsibilityId }, select: { state: true } });
+            if (state !== "active") return state;
+            // Budget exhaustion pauses in the reserving transaction; only the student resumes it.
+            await tx.responsibility.update({ where: { id: responsibilityId }, data: { state: "paused", pausedBy: "budget" } });
+            return "budget_exhausted";
+          }
+        }
         // One conditional UPDATE: the row lock serializes concurrent reservations against the same Allowance.
         const reserved = await tx.$executeRaw`
           UPDATE "allowance" SET "heldMicroUsd" = "heldMicroUsd" + ${estimate.microUsd}, "updatedAt" = now()
           WHERE "studentId" = ${studentId}
             AND "limitMicroUsd" - "usedMicroUsd" - "heldMicroUsd" >= ${estimate.microUsd}`;
-        if (reserved === 0) return "allowance_exhausted";
+        if (reserved === 0) {
+          if (responsibilityId) {
+            await tx.responsibility.update({ where: { id: responsibilityId }, data: { heldMicroUsd: { decrement: estimate.microUsd } } });
+          }
+          return "allowance_exhausted";
+        }
         await tx.$executeRaw`
-          INSERT INTO "usage_reservation" ("id", "studentId", "estimateMicroUsd")
-          VALUES (${reservationId}, ${studentId}, ${estimate.microUsd})`;
+          INSERT INTO "usage_reservation" ("id", "studentId", "estimateMicroUsd", "responsibilityId")
+          VALUES (${reservationId}, ${studentId}, ${estimate.microUsd}, ${responsibilityId})`;
         return undefined;
       });
       if (refusal) return { status: "refused", reason: refusal };
       const settle = (usage: Usage, status: "settled" | "released") => withOwner(db, p, async (tx, studentId) => {
+        // The Responsibility before the Allowance, in the order reserving locks them, so the two never deadlock.
+        if (responsibilityId) {
+          await tx.responsibility.update({
+            where: { id: responsibilityId },
+            data: { heldMicroUsd: { decrement: estimate.microUsd }, usedMicroUsd: { increment: usage.microUsd } },
+          });
+        }
         await tx.allowance.update({
           where: { studentId },
           data: { heldMicroUsd: { decrement: estimate.microUsd }, usedMicroUsd: { increment: usage.microUsd } },
