@@ -15,9 +15,10 @@ import { createFacts } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
 import { createPlan } from "@nunio/planning";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { Outreach } from "./index.js";
+import type { Outreach, OutreachSender } from "./index.js";
 import {
   createOutreach,
+  createOutreachSender,
   InvalidUnsubscribeError,
   NotOpenError,
 } from "./index.js";
@@ -30,6 +31,7 @@ let runtime: PrismaClient;
 let facts: Facts;
 let plan: Plan;
 let outreach: Outreach;
+let sender: OutreachSender;
 /** A Berlin wall-clock time in November (CET, UTC+1). */
 const at = (local: string) => new Date(`${local.replace(" ", "T")}:00+01:00`);
 let now = at("2026-11-09 08:00");
@@ -65,7 +67,6 @@ const push = {
   failing: false,
 };
 const pusher = {
-  keyId: "test-vapid-key",
   async send(
     subscription: { endpoint: string },
     options: { ttlSeconds: number; urgency: "low" | "normal" },
@@ -103,6 +104,12 @@ beforeAll(async () => {
   });
   plan = createPlan({ db: runtime, facts, clock });
   outreach = createOutreach({
+    db: runtime,
+    clock,
+    vapidPublicKey: "test-vapid-key",
+    unsubscribeSecret: "test-unsubscribe-secret",
+  });
+  sender = createOutreachSender({
     db: runtime,
     clock,
     plan,
@@ -158,8 +165,8 @@ describe("raising Interventions from their causes", () => {
     const p = await student();
     const work = await dueTomorrow(p, 20 * 60);
 
-    await outreach.tick();
-    await outreach.tick();
+    await sender.tick();
+    await sender.tick();
 
     expect(await open(p)).toEqual([
       expect.objectContaining({
@@ -173,15 +180,15 @@ describe("raising Interventions from their causes", () => {
     now = at("2026-11-09 08:00");
     const p = await student();
     const work = await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     const [first] = await open(p);
 
     await plan.estimate(p, work, 30);
-    await outreach.tick();
+    await sender.tick();
     expect(await open(p)).toEqual([]);
 
     await plan.estimate(p, work, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
 
     const { interventions } = await outreach.inbox(p);
     expect(interventions).toEqual([
@@ -201,18 +208,18 @@ describe("raising Interventions from their causes", () => {
       now = at("2026-11-09 08:00");
       const p = await student();
       const work = await dueTomorrow(p, 20 * 60);
-      await outreach.tick();
+      await sender.tick();
       const [first] = await open(p);
       await outreach.close(p, first!.id, as);
 
       await plan.estimate(p, work, 22 * 60);
-      await outreach.tick();
+      await sender.tick();
       expect(await open(p)).toEqual([]);
 
       await plan.estimate(p, work, 30);
-      await outreach.tick();
+      await sender.tick();
       await plan.estimate(p, work, 20 * 60);
-      await outreach.tick();
+      await sender.tick();
 
       const { interventions } = await outreach.inbox(p);
       expect(interventions.map((i) => i.state)).toEqual(["open", as]);
@@ -233,7 +240,7 @@ describe("raising Interventions from their causes", () => {
         status: "unconfirmed",
       },
     });
-    await outreach.tick();
+    await sender.tick();
     expect(await open(p)).toEqual([
       expect.objectContaining({
         kind: "unconfirmed",
@@ -245,21 +252,68 @@ describe("raising Interventions from their causes", () => {
       where: { id: actionId },
       data: { status: "done" },
     });
-    await outreach.tick();
+    await sender.tick();
 
     expect((await outreach.inbox(p)).interventions).toEqual([
       expect.objectContaining({ kind: "unconfirmed", state: "lapsed" }),
     ]);
   });
 
+  it("queues messages only for the Interventions it raised, not one a Run raised meanwhile", async () => {
+    now = at("2026-11-09 08:00");
+    const p = await student();
+    if (p.kind !== "student") throw new Error("a student");
+    const actionId = randomUUID();
+    await admin.action.create({
+      data: {
+        id: actionId,
+        studentId: p.studentId,
+        key: `chat:${actionId}`,
+        kind: "studyBlock.create",
+        args: {},
+        status: "unconfirmed",
+      },
+    });
+    // Phase 9's raiseIntervention wins the race: its row lands between sync's read and insert.
+    const trigger = `raced_${actionId.replaceAll("-", "")}`;
+    await admin.$executeRawUnsafe(`
+      CREATE FUNCTION ${trigger}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+      BEGIN
+        IF pg_trigger_depth() = 1 AND NEW."actionId" = '${actionId}' THEN
+          INSERT INTO intervention (id, "studentId", kind, "dedupeKey", "actionId")
+          VALUES (gen_random_uuid()::text, NEW."studentId", NEW.kind, NEW."dedupeKey", NEW."actionId");
+        END IF;
+        RETURN NEW;
+      END $$`);
+    await admin.$executeRawUnsafe(
+      `CREATE TRIGGER ${trigger} BEFORE INSERT ON intervention FOR EACH ROW EXECUTE FUNCTION ${trigger}()`,
+    );
+    try {
+      await sender.tick();
+    } finally {
+      await admin.$executeRawUnsafe(
+        `DROP TRIGGER ${trigger} ON intervention; DROP FUNCTION ${trigger}()`,
+      );
+    }
+
+    const [raised] = await open(p);
+    expect(raised).toEqual(
+      expect.objectContaining({ subject: { kind: "action", id: actionId } }),
+    );
+    const queued = await admin.delivery.findMany({
+      where: { studentId: p.studentId, interventionId: { not: null } },
+    });
+    expect(queued.filter((d) => d.interventionId !== raised!.id)).toEqual([]);
+  });
+
   it("does not let the student close a lapsed Intervention", async () => {
     now = at("2026-11-09 08:00");
     const p = await student();
     const work = await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     const [first] = await open(p);
     await plan.estimate(p, work, 30);
-    await outreach.tick();
+    await sender.tick();
 
     await expect(outreach.close(p, first!.id, "dismissed")).rejects.toThrow(
       NotOpenError,
@@ -272,14 +326,14 @@ describe("the daily Briefing", () => {
     now = at("2026-11-09 06:50");
     const p = await student();
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     const [shortfall] = await open(p);
     expect((await outreach.inbox(p)).briefings).toEqual([]);
 
     now = at("2026-11-09 07:05");
-    await outreach.tick();
+    await sender.tick();
     now = at("2026-11-09 07:10");
-    await outreach.tick();
+    await sender.tick();
 
     expect((await outreach.inbox(p)).briefings).toEqual([
       {
@@ -295,15 +349,15 @@ describe("the daily Briefing", () => {
   it("makes no Briefing on a day with nothing to bundle, not even once something comes up later that day", async () => {
     now = at("2026-11-09 07:05");
     const p = await student();
-    await outreach.tick();
+    await sender.tick();
 
     now = at("2026-11-09 09:00");
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     expect((await outreach.inbox(p)).briefings).toEqual([]);
 
     now = at("2026-11-10 07:05");
-    await outreach.tick();
+    await sender.tick();
     expect((await outreach.inbox(p)).briefings).toHaveLength(1);
   });
 
@@ -311,12 +365,12 @@ describe("the daily Briefing", () => {
     now = at("2026-11-09 07:05");
     const p = await student();
     const work = await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     const [shortfall] = await open(p);
 
     now = at("2026-11-09 09:00");
     await plan.estimate(p, work, 30);
-    await outreach.tick();
+    await sender.tick();
 
     const [briefing] = (await outreach.inbox(p)).briefings;
     expect(briefing!.interventions).toEqual([shortfall!.id]);
@@ -330,12 +384,12 @@ describe("the daily Briefing", () => {
       data: { studentId: p.studentId, timeZone: "America/New_York" },
     });
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     expect((await outreach.inbox(p)).briefings).toEqual([]);
 
     // 13:05 in Berlin is 07:05 in New York.
     now = at("2026-11-09 13:05");
-    await outreach.tick();
+    await sender.tick();
     expect((await outreach.inbox(p)).briefings).toHaveLength(1);
   });
 
@@ -374,7 +428,7 @@ describe("the daily Briefing", () => {
       ],
     });
 
-    await outreach.tick();
+    await sender.tick();
 
     expect((await outreach.inbox(p)).briefings).toEqual([
       expect.objectContaining({
@@ -406,15 +460,15 @@ describe("the daily Briefing", () => {
       dailyLimit: 3,
     });
     now = at("2026-11-09 08:00");
-    await outreach.tick();
+    await sender.tick();
     expect((await outreach.inbox(p)).briefings).toEqual([]);
     now = at("2026-11-09 09:05");
-    await outreach.tick();
+    await sender.tick();
     expect((await outreach.inbox(p)).briefings).toHaveLength(1);
 
     await outreach.updateSettings(p, { briefingAtMinute: null });
     now = at("2026-11-10 09:05");
-    await outreach.tick();
+    await sender.tick();
     expect((await outreach.inbox(p)).briefings).toHaveLength(1);
   });
 });
@@ -425,8 +479,8 @@ describe("email", () => {
     const p = await student();
     await dueTomorrow(p, 20 * 60);
 
-    await outreach.tick();
-    await outreach.tick();
+    await sender.tick();
+    await sender.tick();
 
     expect(mailTo(p)).toEqual([
       {
@@ -445,12 +499,12 @@ describe("email", () => {
 
     mail.failing = true;
     try {
-      await outreach.tick();
+      await sender.tick();
     } finally {
       mail.failing = false;
     }
     expect(mailTo(p)).toEqual([]);
-    await outreach.tick();
+    await sender.tick();
 
     expect(mailTo(p)).toHaveLength(1);
   });
@@ -461,14 +515,14 @@ describe("email", () => {
     await dueTomorrow(p, 20 * 60);
     mail.failing = true;
     try {
-      await outreach.tick();
+      await sender.tick();
     } finally {
       mail.failing = false;
     }
     const [shortfall] = await open(p);
 
     await outreach.close(p, shortfall!.id, "acknowledged");
-    await outreach.tick();
+    await sender.tick();
 
     expect(mailTo(p)).toEqual([]);
   });
@@ -480,10 +534,10 @@ describe("email", () => {
       expect.objectContaining({ email: false }),
     );
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
 
     await outreach.updateSettings(p, { email: true });
-    await outreach.tick();
+    await sender.tick();
 
     expect(mailTo(p)).toEqual([]);
     expect(await open(p)).toHaveLength(1);
@@ -493,10 +547,10 @@ describe("email", () => {
     now = at("2026-11-09 06:00");
     const p = await student();
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
 
     now = at("2026-11-09 07:05");
-    await outreach.tick();
+    await sender.tick();
 
     expect(mailTo(p).map((m) => m.subject)).toEqual([
       "nunio: 1 item needs your attention",
@@ -513,8 +567,8 @@ describe("push", () => {
     const [phone, laptop] = [await device(p), await device(p)];
     await dueTomorrow(p, 20 * 60);
 
-    await outreach.tick();
-    await outreach.tick();
+    await sender.tick();
+    await sender.tick();
 
     for (const endpoint of [phone, laptop])
       expect(pushesTo(endpoint)).toEqual([
@@ -528,10 +582,10 @@ describe("push", () => {
     const p = await student();
     const phone = await device(p);
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
 
     now = at("2026-11-09 07:05");
-    await outreach.tick();
+    await sender.tick();
 
     expect(pushesTo(phone).map((s) => s.urgency)).toEqual(["normal", "low"]);
   });
@@ -543,11 +597,11 @@ describe("push", () => {
     push.gone.add(expired);
     await outreach.unsubscribe(p, turnedOff);
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     push.gone.delete(expired);
 
     now = at("2026-11-09 07:05");
-    await outreach.tick();
+    await sender.tick();
 
     expect([...pushesTo(expired), ...pushesTo(turnedOff)]).toEqual([]);
   });
@@ -560,12 +614,12 @@ describe("push", () => {
 
     mail.failing = true;
     try {
-      await outreach.tick();
+      await sender.tick();
     } finally {
       mail.failing = false;
     }
     expect(pushesTo(phone)).toHaveLength(1);
-    await outreach.tick();
+    await sender.tick();
 
     expect(mailTo(p)).toHaveLength(1);
     expect(pushesTo(phone)).toHaveLength(1);
@@ -581,13 +635,13 @@ describe("Quiet Hours", () => {
       quietHours: { fromMinute: 22 * 60, toMinute: 6 * 60 + 30 },
     });
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     now = at("2026-11-10 06:25");
-    await outreach.tick();
+    await sender.tick();
     expect(mailTo(p)).toEqual([]);
 
     now = at("2026-11-10 06:30");
-    await outreach.tick();
+    await sender.tick();
 
     expect(mailTo(p).map((m) => m.subject)).toEqual([
       "nunio: 1 item needs your attention",
@@ -602,12 +656,12 @@ describe("Quiet Hours", () => {
       quietHours: { fromMinute: 22 * 60, toMinute: 6 * 60 + 30 },
     });
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     const [shortfall] = await open(p);
     await outreach.close(p, shortfall!.id, "dismissed");
 
     now = at("2026-11-10 06:30");
-    await outreach.tick();
+    await sender.tick();
 
     expect(mailTo(p)).toEqual([]);
   });
@@ -620,12 +674,12 @@ describe("Quiet Hours", () => {
       quietHours: { fromMinute: 22 * 60, toMinute: 8 * 60 },
     });
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     expect((await outreach.inbox(p)).briefings).toHaveLength(1);
     expect([...mailTo(p), ...pushesTo(phone)]).toEqual([]);
 
     now = at("2026-11-10 08:00");
-    await outreach.tick();
+    await sender.tick();
 
     expect(mailTo(p).map((m) => m.subject)).toEqual([
       "nunio: 1 item needs your attention",
@@ -647,12 +701,12 @@ describe("Quiet Hours", () => {
       quietHours: { fromMinute: 22 * 60, toMinute: 5 * 60 },
     });
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     expect(mailTo(p)).toEqual([]);
 
     // 11:00 in Berlin is 05:00 in New York, an hour before the Obligation is due.
     now = at("2026-11-10 11:00");
-    await outreach.tick();
+    await sender.tick();
 
     expect(mailTo(p)).toHaveLength(1);
   });
@@ -667,17 +721,17 @@ describe("the daily limit", () => {
       expect.objectContaining({ dailyLimit: 1 }),
     );
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
 
     now = at("2026-11-09 06:00");
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     expect(mailTo(p)).toHaveLength(1);
     expect(pushesTo(phone)).toHaveLength(1);
     expect(await open(p)).toHaveLength(2);
 
     now = at("2026-11-09 07:05");
-    await outreach.tick();
+    await sender.tick();
     expect(mailTo(p).map((m) => m.subject)).toEqual([
       "nunio: 1 item needs your attention",
       "Your nunio Briefing is ready",
@@ -685,8 +739,70 @@ describe("the daily limit", () => {
 
     now = at("2026-11-10 05:00");
     await dueTomorrow(p, 20 * 60, "2026-11-11");
-    await outreach.tick();
+    await sender.tick();
     expect(mailTo(p)).toHaveLength(3);
+  });
+
+  it("counts an announcement once when one of its channels is retried", async () => {
+    now = at("2026-11-09 05:00");
+    const p = await student();
+    const phone = await device(p);
+    await outreach.updateSettings(p, { dailyLimit: 2 });
+    await dueTomorrow(p, 20 * 60);
+    mail.failing = true;
+    try {
+      await sender.tick();
+    } finally {
+      mail.failing = false;
+    }
+    now = at("2026-11-09 05:05");
+    await sender.tick();
+    expect(mailTo(p)).toHaveLength(1);
+    expect(pushesTo(phone)).toHaveLength(1);
+
+    now = at("2026-11-09 06:00");
+    await dueTomorrow(p, 20 * 60);
+    await sender.tick();
+
+    expect(mailTo(p)).toHaveLength(2);
+    expect(pushesTo(phone)).toHaveLength(2);
+  });
+
+  it("still retries a channel of an announcement that reached the limit", async () => {
+    now = at("2026-11-09 05:00");
+    const p = await student();
+    const phone = await device(p);
+    await outreach.updateSettings(p, { dailyLimit: 1 });
+    await dueTomorrow(p, 20 * 60);
+    mail.failing = true;
+    try {
+      await sender.tick();
+    } finally {
+      mail.failing = false;
+    }
+    expect(pushesTo(phone)).toHaveLength(1);
+
+    now = at("2026-11-09 05:05");
+    await sender.tick();
+
+    expect(mailTo(p)).toHaveLength(1);
+  });
+
+  it("counts the whole local day on the day summer time ends", async () => {
+    // 2026-10-25 in Berlin: 00:30 is still CEST (UTC+2), 10:00 is CET (UTC+1).
+    now = new Date("2026-10-25T00:30:00+02:00");
+    const p = await student();
+    await outreach.updateSettings(p, { dailyLimit: 1, briefingAtMinute: null });
+    await dueTomorrow(p, 30 * 60, "2026-10-26");
+    await sender.tick();
+    expect(mailTo(p)).toHaveLength(1);
+
+    now = new Date("2026-10-25T10:00:00+01:00");
+    await dueTomorrow(p, 30 * 60, "2026-10-26");
+    await sender.tick();
+
+    expect(await open(p)).toHaveLength(2);
+    expect(mailTo(p)).toHaveLength(1);
   });
 });
 
@@ -696,9 +812,9 @@ describe("one-click unsubscribe", () => {
     const p = await student();
     if (p.kind !== "student") throw new Error("a student");
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     now = at("2026-11-09 07:05");
-    await outreach.tick();
+    await sender.tick();
 
     const [announcement, briefing] = mailTo(p);
     expect(announcement!.headers).toBeUndefined();
@@ -716,9 +832,9 @@ describe("one-click unsubscribe", () => {
     now = at("2026-11-09 06:00");
     const p = await student();
     await dueTomorrow(p, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     now = at("2026-11-09 07:05");
-    await outreach.tick();
+    await sender.tick();
     const link = new URL(
       mailTo(p)[1]!.headers!["List-Unsubscribe"]!.slice(1, -1),
     );
@@ -733,9 +849,9 @@ describe("one-click unsubscribe", () => {
     );
     now = at("2026-11-10 05:00");
     await dueTomorrow(p, 20 * 60, "2026-11-11");
-    await outreach.tick();
+    await sender.tick();
     now = at("2026-11-10 07:05");
-    await outreach.tick();
+    await sender.tick();
     expect((await outreach.inbox(p)).briefings).toHaveLength(2);
     expect(mailTo(p).map((m) => m.subject)).toEqual([
       "nunio: 1 item needs your attention",
@@ -751,7 +867,7 @@ describe("one-click unsubscribe", () => {
     if (p.kind !== "student" || other.kind !== "student")
       throw new Error("students");
     await dueTomorrow(other, 20 * 60);
-    await outreach.tick();
+    await sender.tick();
     const theirs = new URL(
       mailTo(other)
         .find((m) => m.headers)!

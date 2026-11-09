@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Cause } from "./causes.js";
-import { causesOf } from "./causes.js";
+import { causeOf, causesOf, keyOf } from "./causes.js";
 
 type State = Parameters<typeof causesOf>[0];
 const none: State = {
@@ -24,7 +24,7 @@ describe("causesOf", () => {
           },
         ],
       },
-      cause: { kind: "shortfall", key: "shortfall:w1", actionId: null },
+      cause: { kind: "shortfall", subject: { kind: "work", id: "w1" } },
     },
     {
       holds: "a Disagreement over an Obligation",
@@ -41,8 +41,7 @@ describe("causesOf", () => {
       },
       cause: {
         kind: "disagreement",
-        key: "disagreement:obligation:o1",
-        actionId: null,
+        subject: { kind: "obligation", id: "o1" },
       },
     },
     {
@@ -58,11 +57,7 @@ describe("causesOf", () => {
           ],
         },
       },
-      cause: {
-        kind: "disagreement",
-        key: "disagreement:fact:f1",
-        actionId: null,
-      },
+      cause: { kind: "disagreement", subject: { kind: "fact", id: "f1" } },
     },
     {
       holds: "an Approval that expired",
@@ -72,8 +67,7 @@ describe("causesOf", () => {
       },
       cause: {
         kind: "approval_expired",
-        key: "approval_expired:a1",
-        actionId: "a1",
+        subject: { kind: "action", id: "a1" },
       },
     },
     {
@@ -82,7 +76,7 @@ describe("causesOf", () => {
         ...none,
         actions: [{ id: "a2", status: "unconfirmed", refusal: null }],
       },
-      cause: { kind: "unconfirmed", key: "unconfirmed:a2", actionId: "a2" },
+      cause: { kind: "unconfirmed", subject: { kind: "action", id: "a2" } },
     },
   ] satisfies { holds: string; state: State; cause: Cause }[])(
     "finds $holds",
@@ -109,5 +103,44 @@ describe("causesOf", () => {
         ],
       }),
     ).toEqual([]);
+  });
+});
+
+describe("cause keys", () => {
+  it.each([
+    [
+      "shortfall:w1",
+      { kind: "shortfall", subject: { kind: "work", id: "w1" } },
+    ],
+    [
+      "disagreement:obligation:o1",
+      { kind: "disagreement", subject: { kind: "obligation", id: "o1" } },
+    ],
+    [
+      "disagreement:fact:f1",
+      { kind: "disagreement", subject: { kind: "fact", id: "f1" } },
+    ],
+    // As Phase 9 Runs already stored them.
+    [
+      "approval_expired:a1",
+      { kind: "approval_expired", subject: { kind: "action", id: "a1" } },
+    ],
+    [
+      "unconfirmed:a2",
+      { kind: "unconfirmed", subject: { kind: "action", id: "a2" } },
+    ],
+  ] satisfies [string, Cause][])("stores and reads back %s", (key, cause) => {
+    expect(keyOf(cause)).toBe(key);
+    expect(causeOf(key)).toEqual(cause);
+  });
+
+  it.each([
+    "",
+    "shortfall",
+    "disagreement:fact:",
+    "disagreement:course:c1",
+    "lapse:x",
+  ])("refuses %j, which is no cause key", (key) => {
+    expect(() => causeOf(key)).toThrow();
   });
 });

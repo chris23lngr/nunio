@@ -1,5 +1,5 @@
 import webpush from "web-push";
-import type { Pusher } from "./outreach.js";
+import type { Pusher } from "./sender.js";
 
 /**
  * The Pusher as the worker runs it: web-push builds the VAPID-signed request and `fetch` sends it.
@@ -18,7 +18,6 @@ export function createWebPusher({
   fetch?: typeof globalThis.fetch;
 }): Pusher {
   return {
-    keyId: publicKey,
     async send(subscription, { ttlSeconds, urgency }) {
       const request = webpush.generateRequestDetails(subscription, null, {
         TTL: ttlSeconds,

@@ -205,17 +205,8 @@ beforeAll(async () => {
     outreach: createOutreach({
       db: prisma,
       clock: { now: () => new Date() },
-      plan,
-      facts,
-      delegation,
-      responsibilities,
-      mailer: { send: async () => {} },
-      pusher: { keyId: "test-vapid-key", send: async () => "sent" as const },
-      inboxUrl: `${appOrigin}/inbox`,
-      unsubscribe: {
-        secret: "test-unsubscribe-secret",
-        url: `${apiOrigin}/unsubscribe/briefing-email`,
-      },
+      vapidPublicKey: "test-vapid-key",
+      unsubscribeSecret: "test-unsubscribe-secret",
     }),
     sourceWorkflows: {
       start: async (...args) => {

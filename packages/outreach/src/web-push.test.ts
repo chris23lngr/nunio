@@ -79,8 +79,4 @@ describe("the web push sender", () => {
       }),
     ).rejects.toThrow();
   });
-
-  it("names its public key, which each subscription records", () => {
-    expect(pusherFor(pushService(201).fetch).keyId).toBe(keys.publicKey);
-  });
 });
