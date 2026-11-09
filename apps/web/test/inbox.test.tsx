@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { BriefingSettings } from "@/features/inbox/briefing-settings";
 import { InboxScreen } from "@/features/inbox/inbox-screen";
 import { api } from "./api";
 import { TestProviders } from "./providers";
@@ -136,4 +137,79 @@ test("a lapsed Intervention says it no longer applies and cannot be closed", asy
   });
   expect(within(item).getByText("No longer applies")).toBeTruthy();
   expect(within(item).queryByRole("button")).toBeNull();
+});
+
+test("a Briefing lists what it bundled when it was made", async () => {
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [{ ...expired, state: "acknowledged" }],
+      briefings: [
+        {
+          id: "b-1",
+          madeAt: "2026-11-10T06:05:00.000Z",
+          interventions: [expired.id],
+          approvals: [],
+          responsibilities: [
+            {
+              id: "r-1",
+              preset: "keep_course_organized",
+              course: "Analysis I",
+              exam: null,
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  render(
+    <TestProviders>
+      <InboxScreen apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  const briefings = await screen.findByRole("region", { name: "Briefings" });
+  const [briefing] = within(briefings).getAllByRole("article");
+  expect(
+    within(briefing!).getByText(
+      "An approval expired: move the block for Problem sheet 1",
+    ),
+  ).toBeTruthy();
+  expect(within(briefing!).getByText("Keep Analysis I organized")).toBeTruthy();
+});
+
+test("the student moves the daily Briefing, or turns it off", async () => {
+  const patches: unknown[] = [];
+  let settings: { briefingAtMinute: number | null } = {
+    briefingAtMinute: 420,
+  };
+  api.route("GET", "/api/me/outreach-settings", () => Response.json(settings));
+  api.route("PATCH", "/api/me/outreach-settings", async (request) => {
+    const patch = (await request.json()) as typeof settings;
+    patches.push(patch);
+    settings = { ...settings, ...patch };
+    return Response.json(settings);
+  });
+  const user = userEvent.setup();
+  render(
+    <TestProviders>
+      <BriefingSettings apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  const time = await screen.findByLabelText("Daily Briefing at");
+  expect((time as HTMLInputElement).value).toBe("07:00");
+  await user.clear(time);
+  await user.type(time, "08:30");
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Turn Briefings off" }),
+  );
+
+  expect(patches).toEqual([
+    { briefingAtMinute: 510 },
+    { briefingAtMinute: null },
+  ]);
+  expect(
+    await screen.findByRole("button", { name: "Turn Briefings on" }),
+  ).toBeTruthy();
 });

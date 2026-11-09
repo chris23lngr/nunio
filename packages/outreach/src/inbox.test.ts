@@ -3,7 +3,11 @@ import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
-import { createDelegation, principal } from "@nunio/delegation";
+import {
+  createDelegation,
+  createResponsibilities,
+  principal,
+} from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import { createFacts } from "@nunio/knowledge";
 import { createPlan } from "@nunio/planning";
@@ -50,6 +54,7 @@ function make() {
     facts,
     plan: createPlan({ db: runtime, facts, clock }),
     delegation: createDelegation({ db: runtime, aiEnabled: () => true }),
+    responsibilities: createResponsibilities({ db: runtime, clock }),
   });
 }
 

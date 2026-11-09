@@ -4,6 +4,21 @@ import { NotOpenError, UnknownInterventionError } from "@nunio/outreach";
 import type { AppBindings } from "./app.js";
 import { ActionShown, describeAction } from "./approvals.js";
 import { body, Done, errors, json, outcomes, student } from "./outcomes.js";
+import { scopeNames } from "./responsibilities.js";
+
+const Settings = z
+  .object({
+    briefingAtMinute: z
+      .number()
+      .int()
+      .min(0)
+      .max(1439)
+      .nullable()
+      .describe(
+        "Minutes after local midnight in the Plan's time zone; null turns Briefings off.",
+      ),
+  })
+  .openapi("OutreachSettings");
 
 const Intervention = z
   .object({
@@ -33,6 +48,30 @@ const Intervention = z
   })
   .openapi("Intervention");
 
+const Briefing = z
+  .object({
+    id: z.string(),
+    madeAt: z.date(),
+    interventions: z
+      .array(z.string())
+      .describe("The Interventions it bundled, by their id in this Inbox."),
+    approvals: z.array(
+      z.object({
+        actionId: z.string(),
+        action: z.lazy(() => ActionShown).nullable(),
+      }),
+    ),
+    responsibilities: z.array(
+      z.object({
+        id: z.string(),
+        preset: z.enum(["keep_course_organized", "prepare_for_exam"]),
+        course: z.string().nullable(),
+        exam: z.string().nullable(),
+      }),
+    ),
+  })
+  .openapi("Briefing");
+
 const gone = "Something that is gone";
 
 export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
@@ -42,8 +81,13 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
       path: "/api/me/inbox",
       responses: {
         200: json(
-          z.object({ interventions: z.array(Intervention) }),
-          "The student's Interventions, open ones first.",
+          z.object({
+            interventions: z.array(Intervention),
+            briefings: z
+              .array(Briefing)
+              .describe("The last seven, newest first."),
+          }),
+          "The student's Interventions, open ones first, and recent Briefings.",
         ),
         401: errors[401],
       },
@@ -51,18 +95,30 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
-      const { interventions } = await c.get("outreach").inbox(p);
-      if (!interventions.length) return c.json({ interventions: [] }, 200);
-      const ids = interventions.flatMap((i) =>
-        i.subject.kind === "action" ? [i.subject.id] : [],
-      );
-      const [plan, review, actions] = await Promise.all([
+      const { interventions, briefings } = await c.get("outreach").inbox(p);
+      if (!interventions.length && !briefings.length)
+        return c.json({ interventions: [], briefings: [] }, 200);
+      const ids = [
+        ...interventions.flatMap((i) =>
+          i.subject.kind === "action" ? [i.subject.id] : [],
+        ),
+        ...briefings.flatMap((b) => b.approvals),
+      ];
+      const [plan, review, actions, delegated] = await Promise.all([
         c.get("plan").view(p),
-        interventions.some((i) => i.kind === "disagreement")
+        interventions.some((i) => i.kind === "disagreement") ||
+        briefings.some((b) => b.responsibilities.length)
           ? c.get("facts").review(p)
           : null,
         ids.length ? c.get("delegation").history(p, { ids }) : [],
+        briefings.some((b) => b.responsibilities.length)
+          ? c.get("responsibilities").list(p)
+          : [],
       ]);
+      const shown = (actionId: string) => {
+        const a = actions.find((x) => x.id === actionId);
+        return a ? describeAction(plan, a.kind, a.args) : null;
+      };
       const work = new Map([
         ...plan.obligations.map(
           (o) => [o.id, { title: o.title, course: o.course }] as const,
@@ -93,11 +149,7 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
       return c.json(
         {
           interventions: interventions.map(({ subject, ...i }) => {
-            const a = actions.find((x) => x.id === subject.id);
-            const action =
-              subject.kind === "action" && a
-                ? describeAction(plan, a.kind, a.args)
-                : null;
+            const action = subject.kind === "action" ? shown(subject.id) : null;
             const about =
               subject.kind === "work"
                 ? work.get(subject.id)
@@ -117,6 +169,26 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
                   : null,
             };
           }),
+          briefings: briefings.map((b) => ({
+            ...b,
+            approvals: b.approvals.map((actionId) => ({
+              actionId,
+              action: shown(actionId),
+            })),
+            responsibilities: b.responsibilities.flatMap((id) => {
+              const r = delegated.find((x) => x.id === id);
+              if (!r || !review) return [];
+              const { course, exam } = scopeNames(review, r.scope);
+              return [
+                {
+                  id,
+                  preset: r.preset,
+                  course: course?.title ?? null,
+                  exam: exam?.title ?? null,
+                },
+              ];
+            }),
+          })),
         },
         200,
       );
@@ -155,6 +227,46 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
         throw error;
       }
       return c.json({ status: "ok" as const }, 200);
+    },
+  );
+}
+
+export function registerOutreachSettingsRoutes(
+  routes: OpenAPIHono<AppBindings>,
+) {
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/outreach-settings",
+      responses: {
+        200: json(Settings, "How the student wants to hear from nunio."),
+        401: errors[401],
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return c.json(await c.get("outreach").settings(p), 200);
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "patch",
+      path: "/api/me/outreach-settings",
+      request: { ...body(Settings.partial()) },
+      responses: {
+        200: json(Settings, "The settings as they now are."),
+        400: outcomes[400],
+        401: errors[401],
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return c.json(
+        await c.get("outreach").updateSettings(p, c.req.valid("json")),
+        200,
+      );
     },
   );
 }

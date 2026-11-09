@@ -2229,6 +2229,110 @@
           "state",
           "closedAt"
         ]
+      },
+      "Briefing": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "madeAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "interventions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The Interventions it bundled, by their id in this Inbox."
+          },
+          "approvals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actionId": {
+                  "type": "string"
+                },
+                "action": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ActionShown"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "actionId",
+                "action"
+              ]
+            }
+          },
+          "responsibilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "preset": {
+                  "type": "string",
+                  "enum": [
+                    "keep_course_organized",
+                    "prepare_for_exam"
+                  ]
+                },
+                "course": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "exam": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "preset",
+                "course",
+                "exam"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "madeAt",
+          "interventions",
+          "approvals",
+          "responsibilities"
+        ]
+      },
+      "OutreachSettings": {
+        "type": "object",
+        "properties": {
+          "briefingAtMinute": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1439,
+            "description": "Minutes after local midnight in the Plan's time zone; null turns Briefings off."
+          }
+        },
+        "required": [
+          "briefingAtMinute"
+        ]
       }
     },
     "parameters": {}
@@ -7953,7 +8057,7 @@
       "get": {
         "responses": {
           "200": {
-            "description": "The student's Interventions, open ones first.",
+            "description": "The student's Interventions, open ones first, and recent Briefings.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7964,10 +8068,18 @@
                       "items": {
                         "$ref": "#/components/schemas/Intervention"
                       }
+                    },
+                    "briefings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Briefing"
+                      },
+                      "description": "The last seven, newest first."
                     }
                   },
                   "required": [
-                    "interventions"
+                    "interventions",
+                    "briefings"
                   ]
                 }
               }
@@ -8108,6 +8220,111 @@
           },
           "409": {
             "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/outreach-settings": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "How the student wants to hear from nunio.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "briefingAtMinute": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 1439,
+                    "description": "Minutes after local midnight in the Plan's time zone; null turns Briefings off."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The settings as they now are.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
             "content": {
               "application/json": {
                 "schema": {

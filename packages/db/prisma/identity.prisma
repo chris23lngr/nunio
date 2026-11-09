@@ -30,6 +30,8 @@ model User {
   actions          Action[]
   planEffects      PlanEffect[]
   interventions    Intervention[]
+  outreachSettings OutreachSettings?
+  briefings        Briefing[]
 
   @@map("user")
 }

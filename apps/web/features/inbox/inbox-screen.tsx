@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { hours } from "@/app/(app)/plan-wording";
+import { nameOf } from "@/features/responsibilities/name";
 import { closeIntervention } from "./api/inbox-mutations";
 import type { Intervention } from "./api/inbox-queries";
 import { inboxQueries } from "./api/inbox-queries";
@@ -34,6 +35,7 @@ export function InboxScreen({ apiOrigin }: { apiOrigin: string }) {
   const interventions = query.data?.interventions ?? [];
   const open = interventions.filter((i) => i.state === "open");
   const closed = interventions.filter((i) => i.state !== "open");
+  const briefings = query.data?.briefings ?? [];
   return (
     <>
       <h1>Inbox</h1>
@@ -64,6 +66,39 @@ export function InboxScreen({ apiOrigin }: { apiOrigin: string }) {
               </button>
             </article>
           ))}
+        </section>
+      )}
+      {briefings.length > 0 && (
+        <section aria-label="Briefings">
+          <h2>Briefings</h2>
+          {briefings.map((b) => {
+            const heading = `Briefing of ${new Date(b.madeAt).toLocaleString()}`;
+            return (
+              <article key={b.id} aria-label={heading}>
+                <h3>{heading}</h3>
+                <ul>
+                  {b.interventions.flatMap((id) => {
+                    const i = interventions.find((x) => x.id === id);
+                    return i ? [<li key={id}>{headingOf(i)}</li>] : [];
+                  })}
+                  {b.approvals.map(({ actionId, action }) => (
+                    <li key={actionId}>
+                      Waiting for your Approval:{" "}
+                      {action ? action.work.title : "an Action that is gone"}
+                    </li>
+                  ))}
+                  {b.responsibilities.map((r) => (
+                    <li key={r.id}>
+                      {nameOf({
+                        course: r.course === null ? null : { title: r.course },
+                        exam: r.exam === null ? null : { title: r.exam },
+                      })}
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            );
+          })}
         </section>
       )}
       {closed.length > 0 && (

@@ -11,7 +11,10 @@ import type { Plan } from "@nunio/planning";
 import { registerApprovalRoutes } from "./approvals.js";
 import { registerChatRoutes } from "./chats.js";
 import { registerHomeRoutes } from "./home.js";
-import { registerInboxRoutes } from "./inbox.js";
+import {
+  registerInboxRoutes,
+  registerOutreachSettingsRoutes,
+} from "./inbox.js";
 import { registerPlanRoutes } from "./plan.js";
 import { registerProjectRoutes } from "./projects.js";
 import { registerResponsibilityRoutes } from "./responsibilities.js";
@@ -205,3 +208,4 @@ registerHomeRoutes(routes);
 registerApprovalRoutes(routes);
 registerResponsibilityRoutes(routes);
 registerInboxRoutes(routes);
+registerOutreachSettingsRoutes(routes);

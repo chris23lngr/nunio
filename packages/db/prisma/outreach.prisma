@@ -20,3 +20,28 @@ model Intervention {
   @@index([studentId, createdAt])
   @@map("intervention")
 }
+
+/// How the student wants to hear from nunio. Without a row, the defaults apply.
+model OutreachSettings {
+  studentId        String  @id
+  student          User    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// Minutes after local midnight, in the Plan's time zone; null turns Briefings off.
+  briefingAtMinute Int?    @default(420)
+  /// The last local date a Briefing was due, made or skipped as empty.
+  lastBriefingOn   String?
+
+  @@map("outreach_settings")
+}
+
+/// A scheduled summary, never edited once made: which Interventions, Approvals and Responsibilities it bundled.
+model Briefing {
+  id        String   @id
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  localDate String
+  createdAt DateTime @default(now())
+  items     Json
+
+  @@unique([studentId, localDate])
+  @@map("briefing")
+}

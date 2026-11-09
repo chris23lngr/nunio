@@ -4,7 +4,11 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import type { Principal } from "@nunio/delegation";
-import { createDelegation, principal } from "@nunio/delegation";
+import {
+  createDelegation,
+  createResponsibilities,
+  principal,
+} from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import type { Facts } from "@nunio/knowledge";
 import { createFacts } from "@nunio/knowledge";
@@ -46,6 +50,7 @@ beforeAll(async () => {
     plan,
     facts,
     delegation: createDelegation({ db: runtime, aiEnabled: () => true }),
+    responsibilities: createResponsibilities({ db: runtime, clock }),
   });
 }, 180_000);
 
@@ -194,5 +199,145 @@ describe("raising Interventions from their causes", () => {
     await expect(outreach.close(p, first!.id, "dismissed")).rejects.toThrow(
       NotOpenError,
     );
+  });
+});
+
+describe("the daily Briefing", () => {
+  it("bundles the open Interventions once a day, after the student's Briefing time", async () => {
+    now = at("2026-11-09 06:50");
+    const p = await student();
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+    const [shortfall] = await open(p);
+    expect((await outreach.inbox(p)).briefings).toEqual([]);
+
+    now = at("2026-11-09 07:05");
+    await outreach.tick();
+    now = at("2026-11-09 07:10");
+    await outreach.tick();
+
+    expect((await outreach.inbox(p)).briefings).toEqual([
+      {
+        id: expect.any(String),
+        madeAt: at("2026-11-09 07:05"),
+        interventions: [shortfall!.id],
+        approvals: [],
+        responsibilities: [],
+      },
+    ]);
+  });
+
+  it("makes no Briefing on a day with nothing to bundle, not even once something comes up later that day", async () => {
+    now = at("2026-11-09 07:05");
+    const p = await student();
+    await outreach.tick();
+
+    now = at("2026-11-09 09:00");
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+    expect((await outreach.inbox(p)).briefings).toEqual([]);
+
+    now = at("2026-11-10 07:05");
+    await outreach.tick();
+    expect((await outreach.inbox(p)).briefings).toHaveLength(1);
+  });
+
+  it("keeps what it bundled when an Intervention in it lapses afterwards", async () => {
+    now = at("2026-11-09 07:05");
+    const p = await student();
+    const work = await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+    const [shortfall] = await open(p);
+
+    now = at("2026-11-09 09:00");
+    await plan.estimate(p, work, 30);
+    await outreach.tick();
+
+    const [briefing] = (await outreach.inbox(p)).briefings;
+    expect(briefing!.interventions).toEqual([shortfall!.id]);
+  });
+
+  it("follows the time zone of the student's Plan", async () => {
+    now = at("2026-11-09 07:05");
+    const p = await student();
+    if (p.kind !== "student") throw new Error("a student");
+    await admin.planPreference.create({
+      data: { studentId: p.studentId, timeZone: "America/New_York" },
+    });
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+    expect((await outreach.inbox(p)).briefings).toEqual([]);
+
+    // 13:05 in Berlin is 07:05 in New York.
+    now = at("2026-11-09 13:05");
+    await outreach.tick();
+    expect((await outreach.inbox(p)).briefings).toHaveLength(1);
+  });
+
+  it("bundles the Approvals nunio waits for and the Responsibilities still active", async () => {
+    now = at("2026-11-09 07:05");
+    const p = await student();
+    if (p.kind !== "student") throw new Error("a student");
+    const { studentId } = p;
+    const actionId = randomUUID();
+    await admin.action.create({
+      data: {
+        id: actionId,
+        studentId,
+        key: `chat:${actionId}`,
+        kind: "studyBlock.move",
+        args: {},
+        status: "awaiting_approval",
+      },
+    });
+    const [active, ended] = [randomUUID(), randomUUID()];
+    await admin.responsibility.createMany({
+      data: [
+        {
+          id: active,
+          studentId,
+          preset: "keep_course_organized",
+          budgetMicroUsd: 1_000_000,
+        },
+        {
+          id: ended,
+          studentId,
+          preset: "keep_course_organized",
+          budgetMicroUsd: 1_000_000,
+          state: "ended",
+        },
+      ],
+    });
+
+    await outreach.tick();
+
+    expect((await outreach.inbox(p)).briefings).toEqual([
+      expect.objectContaining({
+        interventions: [],
+        approvals: [actionId],
+        responsibilities: [active],
+      }),
+    ]);
+  });
+
+  it("comes at 07:00 until the student moves it, and never once turned off", async () => {
+    const p = await student();
+    await dueTomorrow(p, 20 * 60);
+    expect(await outreach.settings(p)).toEqual({ briefingAtMinute: 7 * 60 });
+
+    expect(
+      await outreach.updateSettings(p, { briefingAtMinute: 9 * 60 }),
+    ).toEqual({ briefingAtMinute: 9 * 60 });
+    now = at("2026-11-09 08:00");
+    await outreach.tick();
+    expect((await outreach.inbox(p)).briefings).toEqual([]);
+    now = at("2026-11-09 09:05");
+    await outreach.tick();
+    expect((await outreach.inbox(p)).briefings).toHaveLength(1);
+
+    await outreach.updateSettings(p, { briefingAtMinute: null });
+    now = at("2026-11-10 09:05");
+    await outreach.tick();
+    expect((await outreach.inbox(p)).briefings).toHaveLength(1);
   });
 });

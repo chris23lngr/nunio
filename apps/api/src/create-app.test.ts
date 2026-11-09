@@ -208,6 +208,7 @@ beforeAll(async () => {
       plan,
       facts,
       delegation,
+      responsibilities,
     }),
     sourceWorkflows: {
       start: async (...args) => {

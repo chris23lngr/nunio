@@ -133,7 +133,14 @@ export function runActivitiesFromEnv(
       )?.due ?? null,
   });
   const responsibilities = createResponsibilities({ db, clock });
-  const outreach = createOutreach({ db, clock, plan, facts, delegation });
+  const outreach = createOutreach({
+    db,
+    clock,
+    plan,
+    facts,
+    delegation,
+    responsibilities,
+  });
   /** Each preset's Actions: the Rebalance of the Responsibility's Course, or of its one exam. */
   const propose = async (runId: string) => {
     const scope = await responsibilities.scopeOfRun(runId);

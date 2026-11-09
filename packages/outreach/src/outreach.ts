@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
-import type { Clock, Delegation, Principal } from "@nunio/delegation";
+import type {
+  Clock,
+  Delegation,
+  Principal,
+  Responsibilities,
+} from "@nunio/delegation";
 import { principal, withOwner } from "@nunio/delegation";
 import type { Facts } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
@@ -16,27 +21,65 @@ export type InterventionView = {
   closedAt: Date | null;
 };
 
+/** What a Briefing bundled when it was made; it is never edited afterwards. */
+export type BriefingView = {
+  id: string;
+  madeAt: Date;
+  interventions: string[];
+  approvals: string[];
+  responsibilities: string[];
+};
+
+export type OutreachSettings = {
+  /** Minutes after local midnight in the Plan's time zone; null turns Briefings off. */
+  briefingAtMinute: number | null;
+};
+
+type Bundled = Omit<BriefingView, "id" | "madeAt">;
+type PlanView = Awaited<ReturnType<Plan["view"]>>;
+
+const defaultBriefingAtMinute = 7 * 60;
+
+/** The date and minute of the day on the student's wall clock. */
+function wallClock(at: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(at);
+  const part = (type: string) => parts.find((p) => p.type === type)!.value;
+  return {
+    date: `${part("year")}-${part("month")}-${part("day")}`,
+    minute: Number(part("hour")) * 60 + Number(part("minute")),
+  };
+}
+
 export class NotOpenError extends Error {}
 export class UnknownInterventionError extends Error {}
 
-/** Interventions raised from their causes, the Inbox, and how the student closes what is in it. */
+/** Interventions raised from their causes, Briefings, the Inbox, and how the student closes what is in it. */
 export function createOutreach({
   db,
   clock,
   plan,
   facts,
   delegation,
+  responsibilities,
 }: {
   db: PrismaClient;
   clock: Clock;
   plan: Plan;
   facts: Facts;
   delegation: Delegation;
+  responsibilities: Responsibilities;
 }) {
   /** Raises an Intervention for each new cause, and ends the causes that no longer hold. */
-  async function sync(p: Principal) {
-    const [{ proposal }, review, expired, unconfirmed] = await Promise.all([
-      plan.view(p),
+  async function sync(p: Principal, { proposal }: PlanView) {
+    const [review, expired, unconfirmed] = await Promise.all([
       facts.review(p),
       delegation.history(p, { status: "refused", limit: 500 }),
       delegation.history(p, { status: "unconfirmed", limit: 500 }),
@@ -79,20 +122,78 @@ export function createOutreach({
     });
   }
 
+  /** Makes the day's Briefing once the student's Briefing time has passed; a day with nothing to bundle has none. */
+  async function brief(p: Principal, view: PlanView) {
+    const at = clock.now();
+    const { date, minute } = wallClock(at, view.limits.preferences.timeZone);
+    const settings = await withOwner(db, p, (tx) =>
+      tx.outreachSettings.findFirst(),
+    );
+    const briefingAt = settings
+      ? settings.briefingAtMinute
+      : defaultBriefingAtMinute;
+    if (briefingAt === null || minute < briefingAt) return;
+    if (settings?.lastBriefingOn === date) return;
+    const [approvals, delegated] = await Promise.all([
+      delegation.history(p, { status: "awaiting_approval" }),
+      responsibilities.list(p),
+    ]);
+    await withOwner(db, p, async (tx, studentId) => {
+      const open = await tx.intervention.findMany({
+        where: { acknowledgedAt: null, dismissedAt: null, causeEndedAt: null },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+      const items: Bundled = {
+        interventions: open.map((i) => i.id),
+        approvals: approvals.map((a) => a.id),
+        responsibilities: delegated
+          .filter((r) => r.state === "active")
+          .map((r) => r.id),
+      };
+      if (Object.values(items).some((ids) => ids.length))
+        await tx.briefing.createMany({
+          data: [
+            {
+              id: randomUUID(),
+              studentId,
+              localDate: date,
+              createdAt: at,
+              items,
+            },
+          ],
+          skipDuplicates: true,
+        });
+      await tx.outreachSettings.upsert({
+        where: { studentId },
+        create: { studentId, lastBriefingOn: date },
+        update: { lastBriefingOn: date },
+      });
+    });
+  }
+
   return {
-    /** Worker only: brings every active student's Interventions up to date with their causes. */
+    /** Worker only: brings every active student's Interventions up to date with their causes, and makes due Briefings. */
     async tick(): Promise<void> {
       const students = await db.$queryRaw<
         { studentId: string }[]
       >`SELECT "studentId" FROM outreach_students()`;
-      for (const { studentId } of students)
-        await sync(principal.fromSession({ studentId }));
+      for (const { studentId } of students) {
+        const p = principal.fromSession({ studentId });
+        const view = await plan.view(p);
+        await sync(p, view);
+        await brief(p, view);
+      }
     },
-    async inbox(
-      student: Principal,
-    ): Promise<{ interventions: InterventionView[] }> {
-      const rows = await withOwner(db, student, (tx) =>
-        tx.intervention.findMany({ orderBy: { createdAt: "desc" } }),
+    async inbox(student: Principal): Promise<{
+      interventions: InterventionView[];
+      briefings: BriefingView[];
+    }> {
+      const [rows, briefings] = await withOwner(db, student, (tx) =>
+        Promise.all([
+          tx.intervention.findMany({ orderBy: { createdAt: "desc" } }),
+          tx.briefing.findMany({ orderBy: { createdAt: "desc" }, take: 7 }),
+        ]),
       );
       const views = rows.map(
         (r): InterventionView => ({
@@ -115,7 +216,36 @@ export function createOutreach({
           ...views.filter((v) => v.state === "open"),
           ...views.filter((v) => v.state !== "open"),
         ],
+        briefings: briefings.map((b) => ({
+          id: b.id,
+          madeAt: b.createdAt,
+          ...(b.items as Bundled),
+        })),
       };
+    },
+    async settings(student: Principal): Promise<OutreachSettings> {
+      const stored = await withOwner(db, student, (tx) =>
+        tx.outreachSettings.findFirst(),
+      );
+      return {
+        briefingAtMinute: stored
+          ? stored.briefingAtMinute
+          : defaultBriefingAtMinute,
+      };
+    },
+    /** A changed time applies from the next Briefing; one already made or skipped today stays so. */
+    async updateSettings(
+      student: Principal,
+      patch: Partial<OutreachSettings>,
+    ): Promise<OutreachSettings> {
+      const stored = await withOwner(db, student, (tx, studentId) =>
+        tx.outreachSettings.upsert({
+          where: { studentId },
+          create: { studentId, ...patch },
+          update: patch,
+        }),
+      );
+      return { briefingAtMinute: stored.briefingAtMinute };
     },
     async close(
       student: Principal,
