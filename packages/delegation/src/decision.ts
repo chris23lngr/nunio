@@ -71,13 +71,13 @@ export function decideAction<K extends Kind>(s: Snapshot<K>): Decision {
     return refuse("restricted");
 
   if (approval?.decision === "denied") return refuse("approval_denied");
+  if (approval && s.now >= approval.expiresAt)
+    return refuse("approval_expired");
   if (approval?.decision === "approved") {
     return approval.fingerprint === s.fingerprint
       ? { outcome: "dispatch", authority: { approvalId: approval.id } }
       : refuse("approval_mismatch");
   }
-  if (approval && s.now >= approval.expiresAt)
-    return refuse("approval_expired");
 
   const definition = definitions[intent.kind] as unknown as {
     grantCovers(scope: GrantScope, args: Args<K>, subject: Subject<K>): boolean;
