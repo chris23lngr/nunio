@@ -35,8 +35,10 @@ COPY --from=builder --chown=node:node /app/apps/worker/dist ./apps/worker/dist
 COPY --from=builder --chown=node:node /app/packages/ai/dist ./packages/ai/dist
 COPY --from=builder --chown=node:node /app/packages/db/dist ./packages/db/dist
 COPY --from=builder --chown=node:node /app/packages/delegation/dist ./packages/delegation/dist
+COPY --from=builder --chown=node:node /app/packages/identity/dist ./packages/identity/dist
 COPY --from=builder --chown=node:node /app/packages/keys/dist ./packages/keys/dist
 COPY --from=builder --chown=node:node /app/packages/knowledge/dist ./packages/knowledge/dist
+COPY --from=builder --chown=node:node /app/packages/outreach/dist ./packages/outreach/dist
 COPY --from=builder --chown=node:node /app/packages/planning/dist ./packages/planning/dist
 USER node
 # Check runtime imports without connecting to Temporal or the database.
