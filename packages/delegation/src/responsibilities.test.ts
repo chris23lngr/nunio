@@ -492,3 +492,116 @@ describe("Responsibilities", () => {
     expect(calls).toEqual([`create ${theirs.id}`]);
   });
 });
+
+/** An exam in the student's Course, with one block nunio placed for it. */
+async function exam(s: Awaited<ReturnType<typeof student>>) {
+  const examId = randomUUID(),
+    examBlockId = randomUUID();
+  await admin.obligation.create({
+    data: {
+      id: examId,
+      studentId: s.studentId,
+      courseId: s.courseId,
+      matchKey: "exam",
+      kind: "exam",
+      enteredAt: now,
+      correctedTitle: "Klausur",
+    },
+  });
+  await admin.studyBlock.create({
+    data: {
+      id: examBlockId,
+      studentId: s.studentId,
+      obligationId: examId,
+      placedBy: "nunio",
+      start: new Date("2026-11-10T11:00:00Z"),
+      end: new Date("2026-11-10T12:00:00Z"),
+    },
+  });
+  return { examId, examBlockId };
+}
+
+describe("'prepare me for this exam'", () => {
+  it("lets its Runs act on that exam's blocks without asking, and asks for any other work in the Course", async () => {
+    const s = await student();
+    const { examId, examBlockId } = await exam(s);
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules: fakeSchedules().schedules,
+      clock,
+    });
+    const gate = createDelegation({
+      db: runtime,
+      aiEnabled: () => true,
+      clock,
+      executors: { plan: executor },
+    });
+
+    const created = await responsibilities.create(s.p, {
+      preset: "prepare_for_exam",
+      obligationId: examId,
+      budgetMicroUsd: 50_000,
+    });
+    if (created.status !== "ok") throw new Error(created.status);
+    const runId = (await responsibilities.startRun({
+      studentId: s.studentId,
+      responsibilityId: created.id,
+      runId: randomUUID(),
+      workflowId: "run-workflow",
+    }))!;
+
+    expect(
+      await gate.perform(principal.fromRun(runId), {
+        key: `${runId}:1`,
+        intent: move(examBlockId),
+      }),
+    ).toMatchObject({ status: "done" });
+    expect(
+      await gate.perform(principal.fromRun(runId), {
+        key: `${runId}:2`,
+        intent: move(s.blockId),
+      }),
+    ).toMatchObject({ status: "awaiting_approval" });
+    expect(await responsibilities.view(s.p, created.id)).toMatchObject({
+      preset: "prepare_for_exam",
+      scope: { courseId: s.courseId, obligationId: examId },
+      grants: [
+        { kind: "studyBlock.create", obligationId: examId },
+        { kind: "studyBlock.move", obligationId: examId },
+      ],
+    });
+  });
+
+  it("is only for an exam of the student's own", async () => {
+    const s = await student();
+    const other = await student();
+    const { examId: theirExam } = await exam(other);
+    const { schedules, calls } = fakeSchedules();
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules,
+      clock,
+    });
+    const assignment = (
+      await admin.obligation.findFirstOrThrow({
+        where: { studentId: s.studentId, kind: "assignment" },
+      })
+    ).id;
+
+    expect(
+      await responsibilities.create(s.p, {
+        preset: "prepare_for_exam",
+        obligationId: assignment,
+        budgetMicroUsd: 50_000,
+      }),
+    ).toEqual({ status: "gone" });
+    expect(
+      await responsibilities.create(s.p, {
+        preset: "prepare_for_exam",
+        obligationId: theirExam,
+        budgetMicroUsd: 50_000,
+      }),
+    ).toEqual({ status: "gone" });
+    expect(calls).toEqual([]);
+  });
+});
