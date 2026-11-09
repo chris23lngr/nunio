@@ -30,6 +30,7 @@ beforeAll(async () => {
     `GRANT SELECT, UPDATE ("status", "actualMicroUsd", "settledAt", "settledBy") ON "usage_reservation" TO ${user}`);
   await admin.$executeRawUnsafe(
     `GRANT SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd", "updatedAt") ON "allowance" TO ${user}`);
+  await admin.$executeRawUnsafe(`GRANT SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd") ON "responsibility" TO ${user}`);
   const url = new URL(db.connectionString);
   url.username = user;
   url.password = password;
@@ -64,6 +65,22 @@ async function studentWithHeldCall(): Promise<{ id: string; p: Principal; reserv
 }
 
 describe("settle-held under a least-privilege operator role", () => {
+  it("frees a held call's estimate from the Budget of the Responsibility whose Run made it", async () => {
+    const { id, p } = await studentWithHeldCall();
+    const responsibilityId = randomUUID(), runId = randomUUID();
+    await admin.responsibility.create({ data: { id: responsibilityId, studentId: id, preset: "keep_course_organized", budgetMicroUsd: 500 } });
+    await admin.run.create({ data: { id: runId, studentId: id, responsibilityId } });
+    const sentThenHung = (signal: AbortSignal) => new Promise<never>((_, reject) =>
+      signal.addEventListener("abort", () => reject(signal.reason)));
+    await delegation.meter(principal.fromRun(runId), { microUsd: 200 }, sentThenHung, { timeoutMs: 50 }).catch(() => undefined);
+    const held = (await delegation.held(p)).find(r => r.estimateMicroUsd === 200)!;
+
+    await settleHeld(id, held.id, "0.00015");
+
+    expect(await admin.responsibility.findUniqueOrThrow({ where: { id: responsibilityId } }))
+      .toMatchObject({ usedMicroUsd: 150n, heldMicroUsd: 0n });
+  });
+
   it("charges a held call at the cost the founder found, and frees the rest of its estimate", async () => {
     const { id, p, reservationId } = await studentWithHeldCall();
 
