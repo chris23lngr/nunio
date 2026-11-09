@@ -4,6 +4,7 @@ import type { AppBindings } from "./app.js";
 import { describeAction } from "./approvals.js";
 import { errors, json, student } from "./outcomes.js";
 import { Tradeoff } from "./plan.js";
+import { scopeNames } from "./responsibilities.js";
 
 const Attention = z.discriminatedUnion("kind", [
   z.object({
@@ -72,8 +73,12 @@ const HomeView = z
           z.object({
             kind: z.literal("responsibility"),
             id: z.string(),
-            preset: z.literal("keep_course_organized"),
+            preset: z.enum(["keep_course_organized", "prepare_for_exam"]),
             course: z.string().nullable(),
+            exam: z
+              .string()
+              .nullable()
+              .describe("The exam it prepares for; null for a Course."),
             state: z.enum(["active", "paused", "ended"]),
           }),
         ]),
@@ -111,15 +116,17 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
           title: describeAction(plan, a.kind, a.args).work.title,
           expiresAt: a.approval!.expiresAt,
         })),
-        ...delegated.map((r) => ({
-          kind: "responsibility" as const,
-          id: r.id,
-          preset: r.preset,
-          course:
-            review.courses.find((course) => course.id === r.scope.courseId)
-              ?.title ?? null,
-          state: r.state,
-        })),
+        ...delegated.map((r) => {
+          const { course, exam } = scopeNames(review, r.scope);
+          return {
+            kind: "responsibility" as const,
+            id: r.id,
+            preset: r.preset,
+            course: course?.title ?? null,
+            exam: exam?.title ?? null,
+            state: r.state,
+          };
+        }),
       ];
       const work = new Map([
         ...plan.obligations.map(

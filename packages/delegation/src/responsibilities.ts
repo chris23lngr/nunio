@@ -23,8 +23,20 @@ export interface Schedules {
 /** The pilot presets and the Grants each holds on its scope. */
 const presets = {
   keep_course_organized: ["studyBlock.create", "studyBlock.move"] as Kind[],
+  prepare_for_exam: ["studyBlock.create", "studyBlock.move"] as Kind[],
 };
 export type Preset = keyof typeof presets;
+
+/** What a Responsibility covers: one Course, or one exam. Its Grants and its Runs' proposals take exactly this. */
+export type ResponsibilityScope =
+  | { courseId: string }
+  | { obligationId: string };
+/** The scope as stored: an exam's row also keeps the exam's Course, for showing. */
+const scopeOf = (r: {
+  courseId: string | null;
+  obligationId: string | null;
+}): ResponsibilityScope =>
+  r.obligationId ? { obligationId: r.obligationId } : { courseId: r.courseId! };
 
 /** Ongoing delegations the student owns: records plus the Schedules that start their Runs. */
 export function createResponsibilities({
@@ -56,28 +68,48 @@ export function createResponsibilities({
   return {
     async create(
       p: Principal,
-      input: {
-        preset: "keep_course_organized";
-        courseId: string;
-        budgetMicroUsd: number;
-      },
+      input: (
+        | { preset: "keep_course_organized"; courseId: string }
+        | { preset: "prepare_for_exam"; obligationId: string }
+      ) & { budgetMicroUsd: number },
     ) {
       if (p.kind !== "student") return { status: "gone" } as const;
       return withOwner(db, p, async (tx, studentId) => {
-        if (
-          !(await tx.course.findFirst({
-            where: { id: input.courseId, status: { not: "merged" } },
-          }))
-        ) {
-          return { status: "gone" } as const;
-        }
+        // The scope, and the Course stored beside it: the Course itself, or the exam's.
+        const found =
+          input.preset === "keep_course_organized"
+            ? (await tx.course.findFirst({
+                where: { id: input.courseId, status: { not: "merged" } },
+              }))
+              ? {
+                  scope: { courseId: input.courseId },
+                  courseId: input.courseId,
+                }
+              : null
+            : await tx.obligation
+                .findFirst({
+                  where: {
+                    id: input.obligationId,
+                    kind: "exam",
+                    state: { not: "rejected" },
+                    course: { status: { notIn: ["merged", "rejected"] } },
+                  },
+                })
+                .then((o) =>
+                  o
+                    ? { scope: { obligationId: o.id }, courseId: o.courseId }
+                    : null,
+                );
+        if (!found) return { status: "gone" } as const;
+        const { scope } = found;
         const id = randomUUID();
         await tx.responsibility.create({
           data: {
             id,
             studentId,
             preset: input.preset,
-            courseId: input.courseId,
+            courseId: found.courseId,
+            obligationId: "obligationId" in scope ? scope.obligationId : null,
             budgetMicroUsd: input.budgetMicroUsd,
           },
         });
@@ -87,7 +119,7 @@ export function createResponsibilities({
             studentId,
             responsibilityId: id,
             kind,
-            courseId: input.courseId,
+            ...scope,
           })),
         });
         const timeZone =
@@ -159,7 +191,7 @@ export function createResponsibilities({
         ).map((r) => ({
           id: r.id,
           preset: r.preset as Preset,
-          scope: { courseId: r.courseId },
+          scope: scopeOf(r),
           state: r.state as "active" | "paused" | "ended",
           pausedBy: r.pausedBy as "student" | "budget" | null,
         })),
@@ -177,12 +209,13 @@ export function createResponsibilities({
         return {
           id: r.id,
           preset: r.preset as Preset,
-          scope: { courseId: r.courseId },
+          scope: scopeOf(r),
           state: r.state as "active" | "paused" | "ended",
           pausedBy: r.pausedBy as "student" | "budget" | null,
           grants: r.grants.map((g) => ({
             kind: g.kind as Kind,
             courseId: g.courseId,
+            obligationId: g.obligationId,
           })),
           budget: {
             limitMicroUsd: Number(r.budgetMicroUsd),
@@ -190,6 +223,17 @@ export function createResponsibilities({
             heldMicroUsd: Number(r.heldMicroUsd),
           },
         };
+      });
+    },
+
+    /** The scope of the Responsibility a Run belongs to; null for a Run without one. */
+    async scopeOfRun(runId: string): Promise<ResponsibilityScope | null> {
+      return withOwner(db, mint.fromRun(runId), async (tx) => {
+        const run = await tx.run.findUnique({
+          where: { id: runId },
+          include: { responsibility: true },
+        });
+        return run?.responsibility ? scopeOf(run.responsibility) : null;
       });
     },
 

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { controlResponsibility } from "./api/responsibility-mutations";
 import type { Responsibility } from "./api/responsibility-queries";
 import { responsibilityQueries } from "./api/responsibility-queries";
+import { nameOf } from "./name";
 
 type Shown = Responsibility["recentActions"][number]["action"];
 const when = (value: string) =>
@@ -57,7 +58,10 @@ export function ResponsibilityScreen({
   if (!r) return query.error ? <p role="alert">{query.error.message}</p> : null;
   return (
     <section aria-label="Responsibility">
-      <h1>Keep {r.course?.title ?? "a Course that is gone"} organized</h1>
+      <h1>
+        {nameOf(r)}
+        {r.exam && r.course && ` (${r.course.title})`}
+      </h1>
       <p>
         {r.state === "ended"
           ? "Ended: it holds no Grants anymore. Its history stays below."
