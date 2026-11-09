@@ -134,10 +134,10 @@ export function runActivitiesFromEnv(
         (o) => o.id === obligationId,
       )?.due ?? null,
   });
-  /** "Keep this course organized": the Rebalance of the Responsibility's Course. */
+  /** Each preset's Actions: the Rebalance of the Responsibility's Course, or of its one exam. */
   const propose = async (runId: string) => {
     const p = principal.fromRun(runId);
-    const courseId = await withOwner(
+    const r = await withOwner(
       db,
       p,
       async (tx) =>
@@ -146,9 +146,11 @@ export function runActivitiesFromEnv(
             where: { id: runId },
             include: { responsibility: true },
           })
-        )?.responsibility?.courseId,
+        )?.responsibility,
     );
-    return courseId ? plan.intentsFor(p, courseId) : [];
+    if (r?.obligationId)
+      return plan.intentsFor(p, { obligationId: r.obligationId });
+    return r?.courseId ? plan.intentsFor(p, { courseId: r.courseId }) : [];
   };
   return {
     activities: createRunActivities({
