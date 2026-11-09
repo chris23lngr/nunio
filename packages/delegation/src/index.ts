@@ -45,5 +45,6 @@ export {
   createResponsibilities,
   type Preset,
   type Responsibilities,
+  type ResponsibilityScope,
   type Schedules,
 } from "./responsibilities.js";

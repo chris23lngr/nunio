@@ -5,6 +5,7 @@ import type {
   ActionIntent,
   Delegation,
   Principal,
+  ResponsibilityScope,
   Transaction,
 } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
@@ -282,23 +283,32 @@ export function createPlan({
       return withOwner(db, p, (tx) => planView(p, tx));
     },
     /**
-     * "Keep this course organized": the Rebalance moves for one Course's Obligations and their Tasks, as Actions for the
+     * The Rebalance moves for one Course's Obligations, or one exam, and their Tasks, as Actions for the
      * gate, which decides which of them need the student's Approval.
      */
-    async intentsFor(p: Principal, courseId: string): Promise<ActionIntent[]> {
+    async intentsFor(
+      p: Principal,
+      scope: ResponsibilityScope,
+    ): Promise<ActionIntent[]> {
       const {
         obligations: items,
         tasks,
         proposal,
       } = await withOwner(db, p, (tx) => planView(p, tx));
-      const inCourse = new Set(
-        items.filter((o) => o.courseId === courseId).map((o) => o.id),
+      const inScope = new Set(
+        items
+          .filter((o) =>
+            "courseId" in scope
+              ? o.courseId === scope.courseId
+              : o.id === scope.obligationId,
+          )
+          .map((o) => o.id),
       );
       for (const task of tasks)
-        if (task.obligationId && inCourse.has(task.obligationId))
-          inCourse.add(task.id);
+        if (task.obligationId && inScope.has(task.obligationId))
+          inScope.add(task.id);
       return proposal.moves
-        .filter((move) => inCourse.has(move.workId))
+        .filter((move) => inScope.has(move.workId))
         .map(
           (move): ActionIntent =>
             move.kind === "create"
