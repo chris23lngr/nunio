@@ -1,0 +1,155 @@
+// The student's Plan, owned by @nunio/planning. rebalance() itself reads none of this: it is handed a PlanState.
+enum PlanActor {
+  nunio
+  student
+
+  @@map("plan_actor")
+}
+
+/// A visible, completable step, optionally toward one Obligation.
+model Task {
+  id              String     @id
+  studentId       String
+  student         User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  obligationId    String?
+  obligation      Obligation? @relation(fields: [obligationId, studentId], references: [id, studentId], onDelete: Cascade)
+  title           String
+  estimateMinutes Int?
+  estimatedBy     PlanActor?
+  /// Why nunio proposed the Estimate; null for the student's own.
+  estimateRationale String?
+  /// The student's own daily limit for this Task, which wins over its Course's.
+  maxMinutesPerDay Int?
+  doneAt          DateTime?
+  createdAt       DateTime   @default(now())
+
+  studyBlocks StudyBlock[]
+
+  @@unique([id, studentId])
+  @@index([studentId])
+  @@map("task")
+}
+
+/// An Obligation's Estimate: proposed by nunio, or the student's own, which a proposal never replaces.
+model ObligationEstimate {
+  obligationId String     @id
+  studentId    String
+  obligation   Obligation @relation(fields: [obligationId, studentId], references: [id, studentId], onDelete: Cascade)
+  minutes      Int
+  estimatedBy  PlanActor
+  /// Why nunio proposed this amount; null for the student's own.
+  rationale    String?
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([obligationId, studentId])
+  @@index([studentId])
+  @@map("obligation_estimate")
+}
+
+/// Time in nunio's Plan for exactly one Obligation or Task.
+model StudyBlock {
+  id           String      @id
+  studentId    String
+  student      User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  obligationId String?
+  obligation   Obligation? @relation(fields: [obligationId, studentId], references: [id, studentId], onDelete: Cascade)
+  taskId       String?
+  task         Task?       @relation(fields: [taskId, studentId], references: [id, studentId], onDelete: Cascade)
+  start        DateTime
+  end          DateTime
+  /// Who placed or last moved it; moving the student's own needs their Approval.
+  placedBy     PlanActor
+  lockedAt     DateTime?
+  createdAt    DateTime    @default(now())
+
+  @@index([studentId, start])
+  @@map("study_block")
+}
+
+/// Time the student marked off-limits, weekly or once; nunio never schedules into it.
+model ProtectedTime {
+  id         String    @id
+  studentId  String
+  student    User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// A weekly span: ISO weekday (1 is Monday, 7 is Sunday) and local minutes. Null for a one-off span.
+  weekday    Int?
+  fromMinute Int?
+  toMinute   Int?
+  /// A one-off span, such as a trip. Null for a weekly span.
+  start      DateTime?
+  end        DateTime?
+
+  @@index([studentId])
+  @@map("protected_time")
+}
+
+model PlanPreference {
+  studentId        String @id
+  student          User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  timeZone         String @default("Europe/Berlin")
+  studyFromMinute  Int    @default(540)
+  studyToMinute    Int    @default(1080)
+  maxMinutesPerDay Int    @default(240)
+
+  @@map("plan_preference")
+}
+
+/// One entry in the student's single ranking of Courses, Projects and Obligations; rank 1 matters most.
+model Priority {
+  id           String      @id
+  studentId    String
+  student      User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  courseId     String?
+  course       Course?     @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+  projectId    String?
+  project      Project?    @relation(fields: [projectId, studentId], references: [id, studentId], onDelete: Cascade)
+  obligationId String?
+  obligation   Obligation? @relation(fields: [obligationId, studentId], references: [id, studentId], onDelete: Cascade)
+  rank         Int
+
+  @@index([studentId])
+  @@map("priority")
+}
+
+/// The student's own daily limit for one Course, which wins over the global one for that Course's work.
+model CoursePreference {
+  courseId         String @id
+  studentId        String
+  course           Course @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+  maxMinutesPerDay Int
+
+  @@unique([courseId, studentId])
+  @@index([studentId])
+  @@map("course_preference")
+}
+
+/// A calendar file the student added as a Source of Fixed Events; deleting it removes every event read from it.
+model CalendarSource {
+  id         String   @id
+  studentId  String
+  student    User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  name       String
+  addedAt    DateTime @default(now())
+
+  events FixedEvent[]
+
+  @@unique([id, studentId])
+  @@index([studentId])
+  @@map("calendar_source")
+}
+
+/// A calendar event nunio did not create: an operational Fact it plans around and never changes.
+model FixedEvent {
+  id        String          @id
+  studentId String
+  student   User            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// Null for an event the student entered by hand.
+  calendarId String?
+  calendar   CalendarSource? @relation(fields: [calendarId, studentId], references: [id, studentId], onDelete: Cascade)
+  title     String
+  start     DateTime
+  end       DateTime
+
+  @@index([studentId, start])
+  @@map("fixed_event")
+}

@@ -13,6 +13,7 @@ import type { Chats } from "./chats.js";
 import { createChats } from "./chats.js";
 import type { Facts } from "./facts.js";
 import { createFacts } from "./facts.js";
+import { createProjects } from "./projects.js";
 import type { Item, KnowledgeReader } from "./reader.js";
 import {
   createKnowledgeReader,
@@ -780,4 +781,68 @@ it("reports when the limit cut off relevant passages, and a revision that change
     throw new Error("refused");
   expect(cut.revision).toBe(whole.revision);
   expect(after.revision).not.toBe(whole.revision);
+});
+
+it("narrows passages to a Project's Courses within the selection, and to nothing for another student's Project", async () => {
+  const p = await student();
+  const analysis = await readySource(p, "Analysis.pdf", [
+    "MA-101 Analysis I",
+    "Klausur im Februar.",
+  ]);
+  const physics = await readySource(p, "Physik.pdf", [
+    "PH-1 Physik",
+    "Klausur im März.",
+  ]);
+  const analysisCourse = await acceptedCourse(p, analysis, {
+    code: "MA-101",
+    title: "Analysis I",
+    quote: "MA-101 Analysis I",
+  });
+  await acceptedCourse(p, physics, {
+    code: "PH-1",
+    title: "Physik",
+    quote: "PH-1 Physik",
+  });
+  const projects = createProjects({ db: runtime });
+  const project = await projects.create(p, {
+    name: "Klausurvorbereitung",
+    courseIds: [analysisCourse],
+    obligationId: null,
+  });
+  if (project.status !== "ok") throw new Error(project.status);
+  const other = await student();
+  const foreign = await projects.create(other, {
+    name: "Fremd",
+    courseIds: [],
+    obligationId: null,
+  });
+  if (foreign.status !== "ok") throw new Error(foreign.status);
+  const chat = await createChat(p, {
+    courseIds: [],
+    sourceIds: [analysis, physics],
+  });
+  const sourcesOf = async (projectId: string) => {
+    const result = await reader.retrieve(
+      p,
+      { chatId: chat.id },
+      { kind: "passages", text: "Klausur", narrow: { projectId } },
+    );
+    if (result.status !== "ok") throw new Error(result.status);
+    return passages(result.items).map((i) => i.provenance.sourceId);
+  };
+
+  expect(await sourcesOf(project.id)).toEqual([analysis]);
+  expect(await sourcesOf(foreign.id)).toEqual([]);
+});
+
+it("keeps Fixed Events, operational context, out of a Chat's scope", async () => {
+  const p = await student();
+  const chat = await createChat(p, { courseIds: [], sourceIds: [] });
+  await expect(
+    reader.retrieve(
+      p,
+      { chatId: chat.id },
+      { kind: "facts", types: ["fixed_event"] },
+    ),
+  ).rejects.toThrow(InvalidQueryError);
 });

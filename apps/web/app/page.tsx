@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SourcesScreen } from "@/features/sources/sources-screen";
 import { apiOrigin, getSession } from "@/lib/session";
+import { HomeView } from "./home-view";
 import { SignOutButton } from "./sign-out-button";
 
 export default async function HomePage() {
@@ -14,7 +15,10 @@ export default async function HomePage() {
       <Link href="/account">Account</Link>
       <Link href="/review">Review</Link>
       <Link href="/chat">Chat</Link>
+      <Link href="/plan">Plan</Link>
+      <Link href="/projects">Projects</Link>
       <SignOutButton apiOrigin={apiOrigin()} />
+      <HomeView apiOrigin={apiOrigin()} />
       <SourcesScreen apiOrigin={apiOrigin()} />
     </main>
   );

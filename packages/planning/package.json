@@ -12,13 +12,22 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check ."
+    "lint": "biome check .",
+    "test": "vitest run src"
   },
   "devDependencies": {
+    "@nunio/keys": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
     "typescript": "5.9.3",
     "vitest": "5.0.5",
     "@biomejs/biome": "2.6.3"
+  },
+  "dependencies": {
+    "@nunio/ai": "workspace:*",
+    "@nunio/db": "workspace:*",
+    "@nunio/delegation": "workspace:*",
+    "@nunio/knowledge": "workspace:*",
+    "ical.js": "2.2.1"
   }
 }

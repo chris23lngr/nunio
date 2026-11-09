@@ -139,6 +139,39 @@ async function requestPasswordReset(address: string) {
 }
 
 describe("email and password sessions", () => {
+  it("remembers sessions for 30 days and uses a session cookie when unchecked", async () => {
+    const address = email("remember-me");
+    await call("/sign-up/email", {
+      invitation: await invite(address),
+      body: { name: "Remember me", email: address, password },
+    });
+    await verifyEmail(address);
+
+    for (const rememberMe of [true, false]) {
+      const before = Date.now();
+      const response = await call("/sign-in/email", {
+        body: { email: address, password, rememberMe },
+      });
+      expect(response.status).toBe(200);
+      const cookie = response.headers
+        .getSetCookie()
+        .find((value) => value.startsWith("better-auth.session_token="))!;
+      if (rememberMe) expect(cookie).toContain("Max-Age=2592000");
+      else expect(cookie).not.toMatch(/Max-Age=|Expires=/i);
+      const session = await auth.api.getSession({
+        headers: new Headers({ cookie: sessionCookie(response) }),
+        query: { disableRefresh: true },
+      });
+      const duration = (rememberMe ? 30 : 1) * 24 * 60 * 60 * 1000;
+      expect(session!.session.expiresAt.getTime()).toBeGreaterThanOrEqual(
+        before + duration - 1000,
+      );
+      expect(session!.session.expiresAt.getTime()).toBeLessThanOrEqual(
+        Date.now() + duration,
+      );
+    }
+  });
+
   it("changes the password and revokes all sessions after an emailed reset", async () => {
     const address = email("password-reset");
     await call("/sign-up/email", {

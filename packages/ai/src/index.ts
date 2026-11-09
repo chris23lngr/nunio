@@ -4,6 +4,12 @@
 
 export { type Answerer, type AnswerInput, createAnswerer } from "./answer.js";
 export {
+  createEstimator,
+  type EstimateRequest,
+  type Estimator,
+  type ProposedEstimate,
+} from "./estimation.js";
+export {
   createExtractor,
   type Extracted,
   type Extractor,

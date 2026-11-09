@@ -1,5 +1,10 @@
-import type { Answerer } from "@nunio/ai";
-import { createAnswerer, createEmbedder, createModels } from "@nunio/ai";
+import type { Answerer, Estimator } from "@nunio/ai";
+import {
+  createAnswerer,
+  createEmbedder,
+  createEstimator,
+  createModels,
+} from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { Delegation } from "@nunio/delegation";
@@ -7,14 +12,17 @@ import { createDelegation } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 import { createAuth } from "@nunio/identity";
 import { sourceKeysFromEnv } from "@nunio/keys";
-import type { Chats, Facts, Sources } from "@nunio/knowledge";
+import type { Chats, Facts, Projects, Sources } from "@nunio/knowledge";
 import {
   createChats,
   createFacts,
   createKnowledgeReader,
+  createProjects,
   createSources,
   sourceStorageFromEnv,
 } from "@nunio/knowledge";
+import type { Plan } from "@nunio/planning";
+import { createPlan } from "@nunio/planning";
 import { attachDatabasePool } from "@vercel/functions";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -34,6 +42,9 @@ export interface AppDeps {
   sourceWorkflows: SourceWorkflows;
   chats: Chats;
   answerer: Answerer;
+  plan: Plan;
+  estimator: Estimator;
+  projects: Projects;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
   /** Mounts the spike c routes when set. */
@@ -51,6 +62,9 @@ export function createApp({
   sourceWorkflows,
   chats,
   answerer,
+  plan,
+  estimator,
+  projects,
 }: AppDeps) {
   const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
@@ -75,6 +89,9 @@ export function createApp({
     c.set("sourceWorkflows", sourceWorkflows);
     c.set("chats", chats);
     c.set("answerer", answerer);
+    c.set("plan", plan);
+    c.set("estimator", estimator);
+    c.set("projects", projects);
     await next();
   });
   app.route("/", routes);
@@ -128,6 +145,7 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     apiKey: required("OPENROUTER_API_KEY"),
     baseURL: required("OPENROUTER_BASE_URL"),
   };
+  const models = createModels(provider);
   const reader = createKnowledgeReader({
     db: prisma,
     keys,
@@ -145,6 +163,9 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     facts,
     sourceWorkflows: sourceWorkflowsFromEnv(env),
     chats: createChats({ db: prisma, keys, reader, delegation }),
-    answerer: createAnswerer(createModels(provider)),
+    answerer: createAnswerer(models),
+    plan: createPlan({ db: prisma, facts, clock }),
+    estimator: createEstimator(models),
+    projects: createProjects({ db: prisma }),
   });
 }

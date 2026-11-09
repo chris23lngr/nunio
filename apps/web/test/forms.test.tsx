@@ -9,18 +9,13 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { DeletionForm } from "@/app/account/deletion-form";
 import { ResetPasswordForm } from "@/app/reset-password/reset-password-form";
-import { SignInForm } from "@/app/sign-in/sign-in-form";
 import { api } from "./api";
 import { TestProviders } from "./providers";
 
 const { router, client } = vi.hoisted(() => ({
   router: { replace: vi.fn(), refresh: vi.fn() },
   client: {
-    signIn: { email: vi.fn() },
-    signUp: { email: vi.fn() },
     resetPassword: vi.fn(),
-    requestPasswordReset: vi.fn(),
-    sendVerificationEmail: vi.fn(),
   },
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
@@ -28,74 +23,7 @@ vi.mock("@/lib/auth-client", () => ({ authClient: () => client }));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  client.signIn.email.mockResolvedValue({ error: null });
-  client.signUp.email.mockResolvedValue({ error: null });
   client.resetPassword.mockResolvedValue({ error: null });
-  client.requestPasswordReset.mockResolvedValue({ error: null });
-  client.sendVerificationEmail.mockResolvedValue({ error: null });
-});
-
-async function fillCredentials() {
-  const user = userEvent.setup();
-  await user.type(screen.getByLabelText("Email"), "student@example.com");
-  await user.type(screen.getByLabelText("Password"), "password123");
-  return user;
-}
-
-test("sign-in submits current values and refreshes the protected route", async () => {
-  render(<SignInForm apiOrigin={api.origin} invitation="invitation-token" />);
-  const user = await fillCredentials();
-  await user.click(screen.getByRole("button", { name: "Sign in" }));
-  await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"));
-  expect(client.signIn.email).toHaveBeenCalledWith({
-    email: "student@example.com",
-    password: "password123",
-  });
-  expect(client.signUp.email).not.toHaveBeenCalled();
-  expect(router.refresh).toHaveBeenCalled();
-});
-
-test("sign-up preserves the invitation and offers verification without navigating", async () => {
-  render(<SignInForm apiOrigin={api.origin} invitation="invitation-token" />);
-  const user = await fillCredentials();
-  await user.type(screen.getByLabelText("Name"), "Student");
-  await user.click(screen.getByRole("button", { name: "Sign up" }));
-  await screen.findByText(
-    "Check your email to verify your account, then sign in.",
-  );
-  expect(client.signUp.email).toHaveBeenCalledWith({
-    name: "Student",
-    email: "student@example.com",
-    password: "password123",
-    callbackURL: `${window.location.origin}/sign-in`,
-    fetchOptions: { headers: { "x-invitation-token": "invitation-token" } },
-  });
-  expect(client.signIn.email).not.toHaveBeenCalled();
-  expect(router.replace).not.toHaveBeenCalled();
-  await user.click(
-    screen.getByRole("button", { name: "Resend verification email" }),
-  );
-  await screen.findByText(
-    "If verification is needed, a new email has been sent.",
-  );
-  expect(client.sendVerificationEmail).toHaveBeenCalledWith({
-    email: "student@example.com",
-    callbackURL: `${window.location.origin}/sign-in`,
-  });
-});
-
-test("forgot password uses the email without requiring a password", async () => {
-  render(<SignInForm apiOrigin={api.origin} />);
-  const user = userEvent.setup();
-  await user.type(screen.getByLabelText("Email"), "student@example.com");
-  await user.click(screen.getByRole("button", { name: "Forgot password?" }));
-  await screen.findByText(
-    "If an account exists for that email address, check your email for a reset link.",
-  );
-  expect(client.requestPasswordReset).toHaveBeenCalledWith({
-    email: "student@example.com",
-    redirectTo: `${window.location.origin}/reset-password`,
-  });
 });
 
 test("password reset validates length, blocks duplicate submissions, and can retry a server error", async () => {

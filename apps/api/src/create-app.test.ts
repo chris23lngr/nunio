@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import type { Answerer, AnswerInput, Embedder } from "@nunio/ai";
+import type { Answerer, AnswerInput, Embedder, Estimator } from "@nunio/ai";
 import type { Pool, PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -16,8 +16,10 @@ import {
   createChats,
   createFacts,
   createKnowledgeReader,
+  createProjects,
   createSources,
 } from "@nunio/knowledge";
+import { createPlan } from "@nunio/planning";
 import { hashPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "./create-app.js";
@@ -55,6 +57,17 @@ const answerer: Answerer = {
         text: reply,
         cited: [...reply.matchAll(/\[(S\d+)\]/g)].map((m) => m[1]!),
       },
+      usage: { microUsd: 1 },
+    };
+  },
+};
+let estimatorCalls = 0;
+const estimator: Estimator = {
+  estimateMicroUsd: () => 1,
+  async estimate(items) {
+    estimatorCalls++;
+    return {
+      value: items.map(() => ({ minutes: 120, rationale: "Two proofs." })),
       usage: { microUsd: 1 },
     };
   },
@@ -139,6 +152,11 @@ beforeAll(async () => {
     clock: { now: () => new Date() },
   });
   const chats = createChats({ db: prisma, keys, reader, delegation });
+  const plan = createPlan({
+    db: prisma,
+    facts,
+    clock: { now: () => new Date() },
+  });
   app = createApp({
     auth,
     prisma,
@@ -148,6 +166,9 @@ beforeAll(async () => {
     facts,
     chats,
     answerer,
+    plan,
+    estimator,
+    projects: createProjects({ db: prisma }),
     sourceWorkflows: {
       start: async (...args) => {
         started.push(args);
@@ -1689,5 +1710,440 @@ describe("Chat", () => {
         })
       ).json(),
     ).toEqual([]);
+  });
+});
+
+describe("Plan", () => {
+  /** A student with one entered Obligation due in three days at noon. */
+  async function planFixture(name: string) {
+    const cookie = await signUp(name);
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const due = new Date(Date.now() + 3 * 24 * 60 * 60_000)
+      .toISOString()
+      .slice(0, 10);
+    const entered = await app.request(`${apiOrigin}/api/me/obligations`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        course: { title: "Analysis I", code: "MA-101" },
+        kind: "assignment",
+        title: "Blatt 3",
+        due: { date: due, time: "12:00", timeZone: null },
+        destination: null,
+      }),
+    });
+    const { id } = (await entered.json()) as { id: string };
+    return { cookie, headers, obligationId: id };
+  }
+  type PlanBody = {
+    obligations: { id: string; estimate: unknown }[];
+    studyBlocks: { placedBy: string }[];
+    proposal: {
+      moves: { kind: string; workId: string; start: string; end: string }[];
+    };
+  };
+
+  it("proposes Estimates, then applies a proposed move as a Study Block, through origin-protected routes", async () => {
+    const { cookie, headers, obligationId } = await planFixture("plan");
+    const plan = async () =>
+      (await (
+        await app.request(`${apiOrigin}/api/me/plan`, { headers: { cookie } })
+      ).json()) as PlanBody;
+
+    expect(
+      (
+        await app.request(`${apiOrigin}/api/me/plan/estimates`, {
+          method: "POST",
+          headers: { ...headers, origin: evilOrigin },
+        })
+      ).status,
+    ).toBe(403);
+    const proposed = await app.request(`${apiOrigin}/api/me/plan/estimates`, {
+      method: "POST",
+      headers,
+    });
+    expect([proposed.status, await proposed.json()]).toEqual([
+      200,
+      { proposed: 1 },
+    ]);
+    const before = await plan();
+    expect(before.obligations).toEqual([
+      expect.objectContaining({
+        id: obligationId,
+        estimate: {
+          minutes: 120,
+          estimatedBy: "nunio",
+          rationale: "Two proofs.",
+        },
+      }),
+    ]);
+    const [move] = before.proposal.moves;
+    expect(move).toMatchObject({ kind: "create", workId: obligationId });
+
+    const apply = (body: unknown) =>
+      app.request(`${apiOrigin}/api/me/plan/apply`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+    expect((await apply(move)).status).toBe(200);
+    expect((await apply(move)).status).toBe(409);
+    expect((await plan()).studyBlocks).toEqual([
+      expect.objectContaining({ placedBy: "nunio" }),
+    ]);
+    const corrected = await app.request(
+      `${apiOrigin}/api/me/estimates/obligation/${obligationId}`,
+      { method: "PUT", headers, body: JSON.stringify({ minutes: 60 }) },
+    );
+    expect(corrected.status).toBe(200);
+    const stranger = await app.request(
+      `${apiOrigin}/api/me/estimates/obligation/${obligationId}`,
+      {
+        method: "PUT",
+        headers: { ...headers, cookie: await signUp("plan-stranger") },
+        body: JSON.stringify({ minutes: 60 }),
+      },
+    );
+    expect(stranger.status).toBe(404);
+  });
+
+  it("refuses proposing Estimates once the Allowance is exhausted, without asking the model", async () => {
+    const { cookie, headers } = await planFixture("plan-allowance");
+    await admin.allowance.update({
+      where: { studentId: await studentId(cookie) },
+      data: { limitMicroUsd: 0 },
+    });
+    estimatorCalls = 0;
+
+    const refused = await app.request(`${apiOrigin}/api/me/plan/estimates`, {
+      method: "POST",
+      headers,
+    });
+
+    expect([refused.status, await refused.json()]).toEqual([
+      403,
+      { error: "allowance_exhausted" },
+    ]);
+    expect(estimatorCalls).toBe(0);
+  });
+
+  it("edits Tasks, Study Blocks and Limits through the student's own routes", async () => {
+    const { cookie, headers, obligationId } = await planFixture("plan-edits");
+    const call = (method: string, path: string, body?: unknown) =>
+      app.request(`${apiOrigin}/api/me${path}`, {
+        method,
+        headers,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+
+    const task = await call("POST", "/tasks", {
+      title: "Aufgaben 1–4",
+      obligationId,
+    });
+    expect(task.status).toBe(201);
+    const { id: taskId } = (await task.json()) as { id: string };
+    expect(
+      (await call("POST", `/tasks/${taskId}/done`, { done: true })).status,
+    ).toBe(200);
+    const start = new Date(Date.now() + 24 * 60 * 60_000),
+      end = new Date(start.getTime() + 60 * 60_000);
+    const placed = await call("POST", "/study-blocks", {
+      work: { kind: "obligation", id: obligationId },
+      start,
+      end,
+    });
+    expect(placed.status).toBe(201);
+    const { id: blockId } = (await placed.json()) as { id: string };
+    expect(
+      (await call("POST", `/study-blocks/${blockId}/lock`, { locked: true }))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await call("PUT", "/preferences", {
+          studyFromMinute: 600,
+          studyToMinute: 960,
+          maxMinutesPerDay: 120,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("PUT", "/preferences", {
+          studyFromMinute: 960,
+          studyToMinute: 600,
+          maxMinutesPerDay: 120,
+        })
+      ).status,
+    ).toBe(400);
+    const off = await call("POST", "/protected-time", {
+      weekday: 7,
+      fromMinute: 0,
+      toMinute: 1440,
+    });
+    expect(off.status).toBe(201);
+    const trip = await call("POST", "/protected-time", {
+      start: new Date(Date.now() + 30 * 24 * 60 * 60_000),
+      end: new Date(Date.now() + 33 * 24 * 60 * 60_000),
+    });
+    expect(trip.status).toBe(201);
+    const courseId = (
+      (await (
+        await app.request(`${apiOrigin}/api/me/plan`, { headers: { cookie } })
+      ).json()) as { obligations: { courseId: string }[] }
+    ).obligations[0]!.courseId;
+    expect(
+      (
+        await call("PUT", `/courses/${courseId}/limit`, {
+          maxMinutesPerDay: 60,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await call("PUT", `/tasks/${taskId}/limit`, { maxMinutesPerDay: 90 }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await call("PUT", `/tasks/${taskId}/limit`, { maxMinutesPerDay: 5 }))
+        .status,
+    ).toBe(400);
+    expect(
+      (
+        await call("PUT", "/priorities", {
+          items: [
+            { kind: "obligation", id: obligationId },
+            { kind: "course", id: courseId },
+          ],
+        })
+      ).status,
+    ).toBe(200);
+    const view = (await (
+      await app.request(`${apiOrigin}/api/me/plan`, { headers: { cookie } })
+    ).json()) as {
+      tasks: { done: boolean }[];
+      studyBlocks: { locked: boolean; placedBy: string }[];
+      limits: { protectedTime: unknown[] };
+      priorities: unknown[];
+    };
+    expect(view).toMatchObject({
+      tasks: [{ done: true, maxMinutesPerDay: 90 }],
+      studyBlocks: [{ locked: true, placedBy: "student" }],
+      limits: {
+        courses: [{ courseId, maxMinutesPerDay: 60 }],
+        protectedTime: [{ weekday: 7 }, { start: expect.any(String) }],
+      },
+      priorities: [
+        { kind: "obligation", id: obligationId },
+        { kind: "course", id: courseId },
+      ],
+    });
+    const { id: offId } = (await off.json()) as { id: string };
+    expect((await call("DELETE", `/protected-time/${offId}`)).status).toBe(200);
+    expect((await call("DELETE", `/study-blocks/${blockId}`)).status).toBe(200);
+    expect((await call("DELETE", `/study-blocks/${blockId}`)).status).toBe(404);
+  });
+
+  it("enters Fixed Events and imports a calendar file, refusing one it cannot read", async () => {
+    const { cookie, headers } = await planFixture("plan-calendar");
+    const call = (method: string, path: string, body?: unknown) =>
+      app.request(`${apiOrigin}/api/me${path}`, {
+        method,
+        headers,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    const start = new Date(Date.now() + 24 * 60 * 60_000),
+      end = new Date(start.getTime() + 60 * 60_000);
+    const stamp = (d: Date) =>
+      d.toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//test//EN",
+      "BEGIN:VEVENT",
+      "UID:a@test",
+      `DTSTAMP:${stamp(start)}`,
+      "SUMMARY:Vorlesung",
+      `DTSTART:${stamp(start)}`,
+      `DTEND:${stamp(end)}`,
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    expect(
+      (await call("POST", "/fixed-events", { title: "Schicht", start, end }))
+        .status,
+    ).toBe(201);
+    const imported = await call("POST", "/calendar-sources", {
+      name: "Stundenplan.ics",
+      ics,
+    });
+    expect([imported.status, await imported.json()]).toEqual([
+      201,
+      {
+        id: expect.any(String),
+        events: 1,
+        skipped: { allDay: 0, outsideWindow: 0, truncated: false },
+      },
+    ]);
+    expect(
+      (
+        await call("POST", "/calendar-sources", {
+          name: "kaputt.ics",
+          ics: "nope",
+        })
+      ).status,
+    ).toBe(400);
+    const view = (await (
+      await app.request(`${apiOrigin}/api/me/plan`, { headers: { cookie } })
+    ).json()) as {
+      fixedEvents: { title: string }[];
+      calendars: { id: string; events: number }[];
+    };
+    expect(view.fixedEvents.map((e) => e.title).sort()).toEqual([
+      "Schicht",
+      "Vorlesung",
+    ]);
+    expect(
+      (await call("DELETE", `/calendar-sources/${view.calendars[0]!.id}`))
+        .status,
+    ).toBe(200);
+  });
+});
+
+it("creates, renames, relates and deletes Projects through origin-protected routes", async () => {
+  const { cookie, headers } = await reviewFixture("projects");
+  const [course] = (
+    (await (
+      await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })
+    ).json()) as ReviewBody
+  ).courses;
+  const call = (
+    method: string,
+    path: string,
+    body?: unknown,
+    origin = appOrigin,
+  ) =>
+    app.request(`${apiOrigin}/api/me/projects${path}`, {
+      method,
+      headers: { ...headers, origin },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  expect(
+    (
+      await call(
+        "POST",
+        "",
+        { name: "Klausur", courseIds: [], obligationId: null },
+        evilOrigin,
+      )
+    ).status,
+  ).toBe(403);
+  const created = await call("POST", "", {
+    name: "Klausurvorbereitung",
+    courseIds: [course!.id],
+    obligationId: course!.obligations[0]!.id,
+  });
+  expect(created.status).toBe(201);
+  const { id } = (await created.json()) as { id: string };
+  expect(
+    (await call("PATCH", `/${id}`, { name: "Prüfungsphase" })).status,
+  ).toBe(200);
+  expect(
+    (
+      await call("PUT", `/${id}/relations`, {
+        courseIds: [],
+        obligationId: null,
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    await (
+      await app.request(`${apiOrigin}/api/me/projects`, { headers: { cookie } })
+    ).json(),
+  ).toEqual([{ id, name: "Prüfungsphase", courseIds: [], obligationId: null }]);
+  expect(
+    (
+      await app.request(`${apiOrigin}/api/me/projects/${id}`, {
+        method: "PATCH",
+        headers: { origin: appOrigin, "content-type": "application/json" },
+        body: JSON.stringify({ name: "x" }),
+      })
+    ).status,
+  ).toBe(401);
+  expect((await call("DELETE", `/${id}`)).status).toBe(200);
+  expect((await call("DELETE", `/${id}`)).status).toBe(404);
+});
+
+describe("Home", () => {
+  it("surfaces an overload's Shortfall with its tradeoffs, beside placeholders for later work", async () => {
+    const { cookie, headers } = await reviewFixture("home");
+    const [course] = (
+      (await (
+        await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })
+      ).json()) as ReviewBody
+    ).courses;
+    await app.request(`${apiOrigin}/api/me/courses/${course!.id}/decision`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ decision: "accept" }),
+    });
+    // An exam tomorrow at noon needing 20 hours cannot fit: at most 4 hours a day before it.
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60_000)
+      .toISOString()
+      .slice(0, 10);
+    const entered = await app.request(`${apiOrigin}/api/me/obligations`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        course: { id: course!.id },
+        kind: "exam",
+        title: "Klausur",
+        due: { date: tomorrow, time: "12:00", timeZone: null },
+        destination: null,
+      }),
+    });
+    const { id: examId } = (await entered.json()) as { id: string };
+    await app.request(`${apiOrigin}/api/me/estimates/obligation/${examId}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ minutes: 1200 }),
+    });
+
+    const home = await app.request(`${apiOrigin}/api/me/home`, {
+      headers: { cookie },
+    });
+
+    expect(home.status).toBe(200);
+    const body = (await home.json()) as {
+      attention: { kind: string }[];
+      ongoing: unknown[];
+      artifacts: unknown[];
+      agentWork: unknown[];
+    };
+    expect(body.attention).toContainEqual({
+      kind: "shortfall",
+      workId: examId,
+      title: "Klausur",
+      course: "Analysis I",
+      due: expect.any(String),
+      shortMinutes: expect.any(Number),
+      tradeoffs: expect.arrayContaining([
+        expect.objectContaining({ kind: "reduce_estimate", workId: examId }),
+      ]),
+      unreviewed: false,
+    });
+    expect(body).toMatchObject({ ongoing: [], artifacts: [], agentWork: [] });
+    expect(
+      (
+        await app.request(`${apiOrigin}/api/me/home`, {
+          headers: { cookie: "" },
+        })
+      ).status,
+    ).toBe(401);
   });
 });

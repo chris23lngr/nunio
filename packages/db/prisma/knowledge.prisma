@@ -95,6 +95,9 @@ model Course {
   obligations Obligation[]
   facts       Fact[]
   chats       ChatCourse[]
+  priorities  Priority[]
+  preference  CoursePreference?
+  projects    ProjectCourse[]
 
   @@unique([id, studentId])
   @@index([studentId])
@@ -171,6 +174,11 @@ model Obligation {
   createdAt            DateTime       @default(now())
 
   extractions ObligationExtraction[]
+  tasks       Task[]
+  estimate    ObligationEstimate?
+  studyBlocks StudyBlock[]
+  projects    Project[]
+  priorities  Priority[]
 
   @@unique([id, studentId])
   @@unique([courseId, matchKey])
@@ -326,4 +334,33 @@ model QueryEmbedding {
 
   @@id([studentId, model, queryHash])
   @@map("query_embedding")
+}
+
+/// An optional, outcome-oriented workspace related to zero or more Courses and optionally one Obligation.
+model Project {
+  id           String      @id
+  studentId    String
+  student      User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  name         String
+  obligationId String?
+  obligation   Obligation? @relation(fields: [obligationId, studentId], references: [id, studentId], onDelete: SetNull)
+  createdAt    DateTime    @default(now())
+
+  courses    ProjectCourse[]
+  priorities Priority[]
+
+  @@unique([id, studentId])
+  @@index([studentId])
+  @@map("project")
+}
+
+model ProjectCourse {
+  projectId String
+  courseId  String
+  studentId String
+  project   Project @relation(fields: [projectId, studentId], references: [id, studentId], onDelete: Cascade)
+  course    Course  @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+
+  @@id([projectId, courseId])
+  @@map("project_course")
 }

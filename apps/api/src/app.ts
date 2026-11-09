@@ -1,12 +1,16 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import type { Answerer } from "@nunio/ai";
+import type { Answerer, Estimator } from "@nunio/ai";
 import { pilotStatus } from "@nunio/billing";
 import type { PrismaClient } from "@nunio/db";
 import type { Delegation } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
-import type { Chats, Facts, Sources } from "@nunio/knowledge";
+import type { Chats, Facts, Projects, Sources } from "@nunio/knowledge";
+import type { Plan } from "@nunio/planning";
 import { registerChatRoutes } from "./chats.js";
+import { registerHomeRoutes } from "./home.js";
+import { registerPlanRoutes } from "./plan.js";
+import { registerProjectRoutes } from "./projects.js";
 import { registerReviewRoutes } from "./review.js";
 import type { SourceWorkflows } from "./source-workflows.js";
 import { registerSourceRoutes } from "./sources.js";
@@ -21,6 +25,9 @@ export interface AppBindings {
     sourceWorkflows: SourceWorkflows;
     chats: Chats;
     answerer: Answerer;
+    plan: Plan;
+    estimator: Estimator;
+    projects: Projects;
   };
 }
 
@@ -184,3 +191,6 @@ export const openApiConfig = {
 registerSourceRoutes(routes);
 registerReviewRoutes(routes);
 registerChatRoutes(routes);
+registerPlanRoutes(routes);
+registerProjectRoutes(routes);
+registerHomeRoutes(routes);

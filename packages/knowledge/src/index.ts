@@ -7,6 +7,8 @@ export {
   type Facts,
   type ItemRef,
 } from "./facts.js";
+export { createProjects, type Projects } from "./projects.js";
+export { definitely } from "./provider.js";
 export {
   type Channel,
   type Citation,

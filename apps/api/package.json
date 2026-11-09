@@ -32,7 +32,8 @@
     "@nunio/knowledge": "workspace:*",
     "@nunio/keys": "workspace:*",
     "@nunio/ai": "workspace:*",
-    "@temporalio/client": "1.25.0"
+    "@temporalio/client": "1.25.0",
+    "@nunio/planning": "workspace:*"
   },
   "devDependencies": {
     "@hono/node-server": "2.1.5",
