@@ -661,3 +661,31 @@ it("serves Fixed Events to the planning scope as operational Facts, apart from c
   await plan.removeCalendar(p, calendar.id);
   expect((await reader.cite(p, [ref])).get(ref)).toBe("gone");
 });
+
+it("proposes, for one Course, the Rebalance of that Course's work as Actions for the gate", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const analysis = await obligation(p, "Blatt 3", "2026-11-11", "12:00");
+  const other = await facts.enterObligation(p, {
+    course: { title: "Physik I", code: "PH-101" },
+    kind: "assignment",
+    title: "Übung 2",
+    due: { date: "2026-11-12", time: "12:00", timeZone: null },
+    destination: null,
+  });
+  if (other.status !== "ok") throw new Error(other.status);
+  await plan.estimate(p, { kind: "obligation", id: analysis }, 60);
+  await plan.estimate(p, { kind: "obligation", id: other.id }, 60);
+  const courseId = (await plan.view(p)).obligations.find(
+    (o) => o.id === analysis,
+  )!.courseId;
+
+  expect(await plan.intentsFor(p, courseId)).toEqual([
+    {
+      kind: "studyBlock.create",
+      workId: analysis,
+      start: at("2026-11-09 09:00"),
+      end: at("2026-11-09 10:00"),
+    },
+  ]);
+});
