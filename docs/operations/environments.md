@@ -144,6 +144,8 @@ Vercel applies environment changes only to new deployments, so provision the log
 
 Staging (2026-10-30): `nunio_api` is provisioned in `nunio_runtime` without `BYPASSRLS` and the API connects through the pooler with it; production has no runtime login yet.
 
+The `SECURITY DEFINER` functions that look across students (`run_owner`, `stale_attempts`, `pending_approval_decisions`, `outreach_students`) run as the migration role and rely on it bypassing forced RLS: Neon's `neondb_owner` has `BYPASSRLS` on staging and production (checked 2026-11-09). If migrations ever run as a role without it, these functions return no rows and reconciliation and Outreach stop silently; tests cannot catch this, because the test container's owner is a superuser.
+
 Operator commands keep separate connections. `revoke-pilot` sets `app.owner_id` to the target student inside its transaction, so it needs neither superuser nor `BYPASSRLS`: `USAGE` on the schema and `SELECT, UPDATE` on `pilot_entitlement` suffice.
 
 ## Notification email (Phase 10)
