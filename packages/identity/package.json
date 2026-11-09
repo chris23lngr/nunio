@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./email": {
+      "types": "./dist/email.d.ts",
+      "default": "./dist/email.js"
     }
   },
   "scripts": {
