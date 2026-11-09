@@ -941,12 +941,26 @@
                         "nunio",
                         "student"
                       ]
+                    },
+                    "rationale": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
                     "minutes",
-                    "estimatedBy"
+                    "estimatedBy",
+                    "rationale"
                   ]
+                },
+                "maxMinutesPerDay": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "description": "The Task's own daily limit, which wins over its Course's."
                 },
                 "done": {
                   "type": "boolean"
@@ -957,6 +971,7 @@
                 "title",
                 "obligationId",
                 "estimate",
+                "maxMinutesPerDay",
                 "done"
               ]
             }
@@ -1037,11 +1052,12 @@
                   "type": "string",
                   "format": "date-time"
                 },
-                "importId": {
+                "calendarId": {
                   "type": [
                     "string",
                     "null"
-                  ]
+                  ],
+                  "description": "The calendar Source it was read from; null when entered by hand."
                 }
               },
               "required": [
@@ -1049,11 +1065,11 @@
                 "title",
                 "start",
                 "end",
-                "importId"
+                "calendarId"
               ]
             }
           },
-          "imports": {
+          "calendars": {
             "type": "array",
             "items": {
               "type": "object",
@@ -1074,6 +1090,31 @@
                 "events"
               ]
             }
+          },
+          "priorities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "course",
+                    "project",
+                    "obligation"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "required": [
+                "kind",
+                "id"
+              ]
+            },
+            "description": "The student's single ranking, most important first."
           },
           "limits": {
             "type": "object",
@@ -1101,35 +1142,79 @@
                   "maxMinutesPerDay"
                 ]
               },
-              "protectedTime": {
+              "courses": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "properties": {
-                    "id": {
+                    "courseId": {
                       "type": "string"
                     },
-                    "weekday": {
-                      "type": "integer"
-                    },
-                    "fromMinute": {
-                      "type": "integer"
-                    },
-                    "toMinute": {
+                    "maxMinutesPerDay": {
                       "type": "integer"
                     }
                   },
                   "required": [
-                    "id",
-                    "weekday",
-                    "fromMinute",
-                    "toMinute"
+                    "courseId",
+                    "maxMinutesPerDay"
+                  ]
+                }
+              },
+              "protectedTime": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "weekday": {
+                          "type": "integer"
+                        },
+                        "fromMinute": {
+                          "type": "integer"
+                        },
+                        "toMinute": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "weekday",
+                        "fromMinute",
+                        "toMinute"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "start": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "end": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "start",
+                        "end"
+                      ]
+                    }
                   ]
                 }
               }
             },
             "required": [
               "preferences",
+              "courses",
               "protectedTime"
             ]
           },
@@ -1183,88 +1268,7 @@
                     "tradeoffs": {
                       "type": "array",
                       "items": {
-                        "oneOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
-                                "type": "string",
-                                "enum": [
-                                  "exceed_daily_limit"
-                                ]
-                              },
-                              "gainedMinutes": {
-                                "type": "integer"
-                              },
-                              "needsApproval": {
-                                "type": "boolean",
-                                "enum": [
-                                  true
-                                ]
-                              }
-                            },
-                            "required": [
-                              "kind",
-                              "gainedMinutes",
-                              "needsApproval"
-                            ]
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
-                                "type": "string",
-                                "enum": [
-                                  "free_time_from"
-                                ]
-                              },
-                              "workId": {
-                                "type": "string"
-                              },
-                              "blockIds": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              },
-                              "gainedMinutes": {
-                                "type": "integer"
-                              },
-                              "needsApproval": {
-                                "type": "boolean"
-                              }
-                            },
-                            "required": [
-                              "kind",
-                              "workId",
-                              "blockIds",
-                              "gainedMinutes",
-                              "needsApproval"
-                            ]
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
-                                "type": "string",
-                                "enum": [
-                                  "reduce_estimate"
-                                ]
-                              },
-                              "workId": {
-                                "type": "string"
-                              },
-                              "byMinutes": {
-                                "type": "integer"
-                              }
-                            },
-                            "required": [
-                              "kind",
-                              "workId",
-                              "byMinutes"
-                            ]
-                          }
-                        ]
+                        "$ref": "#/components/schemas/Tradeoff"
                       }
                     }
                   },
@@ -1276,18 +1280,35 @@
                   ]
                 }
               },
-              "lockedConflicts": {
+              "overlaps": {
                 "type": "array",
                 "items": {
-                  "type": "string"
-                }
+                  "type": "object",
+                  "properties": {
+                    "blockId": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "locked",
+                        "no_room"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "blockId",
+                    "reason"
+                  ]
+                },
+                "description": "Blocks the calendar now overlaps that stay put: Locked, or with no time left before their deadline."
               }
             },
             "required": [
               "moves",
               "unplanned",
               "shortfalls",
-              "lockedConflicts"
+              "overlaps"
             ],
             "description": "What a Rebalance would change now. Moves the student applies count as their own decisions."
           }
@@ -1297,7 +1318,8 @@
           "tasks",
           "studyBlocks",
           "fixedEvents",
-          "imports",
+          "calendars",
+          "priorities",
           "limits",
           "proposal"
         ]
@@ -1418,6 +1440,90 @@
           }
         ]
       },
+      "Tradeoff": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "exceed_daily_limit"
+                ]
+              },
+              "gainedMinutes": {
+                "type": "integer"
+              },
+              "needsApproval": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "gainedMinutes",
+              "needsApproval"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "free_time_from"
+                ]
+              },
+              "workId": {
+                "type": "string"
+              },
+              "blockIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "gainedMinutes": {
+                "type": "integer"
+              },
+              "needsApproval": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "workId",
+              "blockIds",
+              "gainedMinutes",
+              "needsApproval"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "reduce_estimate"
+                ]
+              },
+              "workId": {
+                "type": "string"
+              },
+              "byMinutes": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "workId",
+              "byMinutes"
+            ]
+          }
+        ]
+      },
       "Project": {
         "type": "object",
         "properties": {
@@ -1485,9 +1591,12 @@
                     "tradeoffs": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "additionalProperties": {}
+                        "$ref": "#/components/schemas/Tradeoff"
                       }
+                    },
+                    "unreviewed": {
+                      "type": "boolean",
+                      "description": "The Obligation was extracted and not yet reviewed, so its deadline or Estimate may be wrong."
                     }
                   },
                   "required": [
@@ -1497,7 +1606,8 @@
                     "course",
                     "due",
                     "shortMinutes",
-                    "tradeoffs"
+                    "tradeoffs",
+                    "unreviewed"
                   ]
                 },
                 {
@@ -1548,16 +1658,28 @@
                     "kind": {
                       "type": "string",
                       "enum": [
-                        "locked_conflict"
+                        "overlap"
                       ]
                     },
                     "blockId": {
                       "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "locked",
+                        "no_room"
+                      ]
                     }
                   },
                   "required": [
                     "kind",
-                    "blockId"
+                    "blockId",
+                    "title",
+                    "reason"
                   ]
                 },
                 {
@@ -4613,24 +4735,53 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "weekday": {
-                    "type": "integer"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "weekday": {
+                        "type": "integer"
+                      },
+                      "fromMinute": {
+                        "type": "integer"
+                      },
+                      "toMinute": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "weekday",
+                      "fromMinute",
+                      "toMinute"
+                    ],
+                    "additionalProperties": false
                   },
-                  "fromMinute": {
-                    "type": "integer"
-                  },
-                  "toMinute": {
-                    "type": "integer"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "start": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "end": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "start",
+                      "end"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "weekday",
-                  "fromMinute",
-                  "toMinute"
                 ],
-                "additionalProperties": false
+                "description": "A weekly span, or a one-off span such as a trip."
               }
             }
           }
@@ -5080,7 +5231,7 @@
         }
       }
     },
-    "/api/me/calendar-imports": {
+    "/api/me/calendar-sources": {
       "post": {
         "requestBody": {
           "required": true,
@@ -5108,7 +5259,7 @@
         },
         "responses": {
           "201": {
-            "description": "Timed events of the coming year, with what was skipped.",
+            "description": "The calendar Source, with its timed events of the coming year and what was skipped.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5224,7 +5375,7 @@
         }
       }
     },
-    "/api/me/calendar-imports/{id}": {
+    "/api/me/calendar-sources/{id}": {
       "delete": {
         "parameters": [
           {
@@ -5343,17 +5494,298 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "courseIds": {
+                  "items": {
                     "type": "array",
                     "items": {
-                      "type": "string",
-                      "format": "uuid"
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "course",
+                            "project",
+                            "obligation"
+                          ]
+                        },
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id"
+                      ]
                     },
-                    "maxItems": 100
+                    "maxItems": 200
                   }
                 },
                 "required": [
-                  "courseIds"
+                  "items"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/courses/{id}/limit": {
+      "put": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maxMinutesPerDay": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "maxMinutesPerDay"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/tasks/{id}/limit": {
+      "put": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maxMinutesPerDay": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "maxMinutesPerDay"
                 ],
                 "additionalProperties": false
               }

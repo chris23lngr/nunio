@@ -972,9 +972,19 @@ describe("Plan", () => {
     expect((await call("PUT", "/preferences", { studyFromMinute: 960, studyToMinute: 600, maxMinutesPerDay: 120 })).status).toBe(400);
     const off = await call("POST", "/protected-time", { weekday: 7, fromMinute: 0, toMinute: 1440 });
     expect(off.status).toBe(201);
+    const trip = await call("POST", "/protected-time", { start: new Date(Date.now() + 30 * 24 * 60 * 60_000), end: new Date(Date.now() + 33 * 24 * 60 * 60_000) });
+    expect(trip.status).toBe(201);
+    const courseId = (await (await app.request(`${apiOrigin}/api/me/plan`, { headers: { cookie } })).json() as { obligations: { courseId: string }[] })
+      .obligations[0]!.courseId;
+    expect((await call("PUT", `/courses/${courseId}/limit`, { maxMinutesPerDay: 60 })).status).toBe(200);
+    expect((await call("PUT", `/tasks/${taskId}/limit`, { maxMinutesPerDay: 90 })).status).toBe(200);
+    expect((await call("PUT", `/tasks/${taskId}/limit`, { maxMinutesPerDay: 5 })).status).toBe(400);
+    expect((await call("PUT", "/priorities", { items: [{ kind: "obligation", id: obligationId }, { kind: "course", id: courseId }] })).status).toBe(200);
     const view = await (await app.request(`${apiOrigin}/api/me/plan`, { headers: { cookie } })).json() as
-      { tasks: { done: boolean }[]; studyBlocks: { locked: boolean; placedBy: string }[]; limits: { protectedTime: unknown[] } };
-    expect(view).toMatchObject({ tasks: [{ done: true }], studyBlocks: [{ locked: true, placedBy: "student" }], limits: { protectedTime: [{ weekday: 7 }] } });
+      { tasks: { done: boolean }[]; studyBlocks: { locked: boolean; placedBy: string }[]; limits: { protectedTime: unknown[] }; priorities: unknown[] };
+    expect(view).toMatchObject({ tasks: [{ done: true, maxMinutesPerDay: 90 }], studyBlocks: [{ locked: true, placedBy: "student" }],
+      limits: { courses: [{ courseId, maxMinutesPerDay: 60 }], protectedTime: [{ weekday: 7 }, { start: expect.any(String) }] },
+      priorities: [{ kind: "obligation", id: obligationId }, { kind: "course", id: courseId }] });
     const { id: offId } = await off.json() as { id: string };
     expect((await call("DELETE", `/protected-time/${offId}`)).status).toBe(200);
     expect((await call("DELETE", `/study-blocks/${blockId}`)).status).toBe(200);
@@ -991,14 +1001,14 @@ describe("Plan", () => {
       "SUMMARY:Vorlesung", `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`, "END:VEVENT", "END:VCALENDAR"].join("\r\n");
 
     expect((await call("POST", "/fixed-events", { title: "Schicht", start, end })).status).toBe(201);
-    const imported = await call("POST", "/calendar-imports", { name: "Stundenplan.ics", ics });
+    const imported = await call("POST", "/calendar-sources", { name: "Stundenplan.ics", ics });
     expect([imported.status, await imported.json()]).toEqual([201, { id: expect.any(String), events: 1,
       skipped: { allDay: 0, outsideWindow: 0, truncated: false } }]);
-    expect((await call("POST", "/calendar-imports", { name: "kaputt.ics", ics: "nope" })).status).toBe(400);
+    expect((await call("POST", "/calendar-sources", { name: "kaputt.ics", ics: "nope" })).status).toBe(400);
     const view = await (await app.request(`${apiOrigin}/api/me/plan`, { headers: { cookie } })).json() as
-      { fixedEvents: { title: string }[]; imports: { id: string; events: number }[] };
+      { fixedEvents: { title: string }[]; calendars: { id: string; events: number }[] };
     expect(view.fixedEvents.map(e => e.title).sort()).toEqual(["Schicht", "Vorlesung"]);
-    expect((await call("DELETE", `/calendar-imports/${view.imports[0]!.id}`)).status).toBe(200);
+    expect((await call("DELETE", `/calendar-sources/${view.calendars[0]!.id}`)).status).toBe(200);
   });
 });
 
@@ -1039,7 +1049,8 @@ describe("Home", () => {
     expect(home.status).toBe(200);
     const body = await home.json() as { attention: { kind: string }[]; ongoing: unknown[]; artifacts: unknown[]; agentWork: unknown[] };
     expect(body.attention).toContainEqual({ kind: "shortfall", workId: examId, title: "Klausur", course: "Analysis I", due: expect.any(String),
-      shortMinutes: expect.any(Number), tradeoffs: expect.arrayContaining([expect.objectContaining({ kind: "reduce_estimate", workId: examId })]) });
+      shortMinutes: expect.any(Number), tradeoffs: expect.arrayContaining([expect.objectContaining({ kind: "reduce_estimate", workId: examId })]),
+      unreviewed: false });
     expect(body).toMatchObject({ ongoing: [], artifacts: [], agentWork: [] });
     expect((await app.request(`${apiOrigin}/api/me/home`, { headers: { cookie: "" } })).status).toBe(401);
   });
