@@ -374,13 +374,12 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
     });
   }
 
-  /** Calls the executor outside any transaction; a throw leaves the Attempt to recovery. */
-  async function dispatch(job: Job): Promise<ActionOutcome> {
+  /** One executor call outside any transaction. A failure leaves the Attempt in flight for lookup. */
+  async function execute(job: Job) {
     if (!executors)
       throw new Error("createDelegation needs executors to perform Actions");
-    let result: Awaited<ReturnType<Executor["execute"]>>;
     try {
-      result = await executors.plan.execute(
+      return await executors.plan.execute(
         {
           studentId: job.studentId,
           actionId: job.actionId,
@@ -392,7 +391,19 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
         },
       );
     } catch {
-      // The call is over but its fate is unknown: ask, never retry blindly.
+      throw new DelegationUnavailable(
+        `Action ${job.actionId} could not be confirmed; retry with the same key`,
+      );
+    }
+  }
+
+  /** A new dispatch gets one lookup and, only if absent, one recovery dispatch. */
+  async function dispatch(job: Job): Promise<ActionOutcome> {
+    let result: Awaited<ReturnType<Executor["execute"]>>;
+    try {
+      result = await execute(job);
+    } catch (error) {
+      if (!(error instanceof DelegationUnavailable)) throw error;
       return recover(job);
     }
     return settle(job.studentId, job.actionId, job.attemptId, result);
@@ -410,7 +421,11 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
         status: "done",
         effect: found.effect,
       });
-    if (found.status === "absent") return dispatch(job);
+    if (found.status === "absent") {
+      // Recovery never enters dispatch again: another failure yields to the caller.
+      const result = await execute(job);
+      return settle(job.studentId, job.actionId, job.attemptId, result);
+    }
     return settle(job.studentId, job.actionId, job.attemptId, {
       status: "ambiguous",
     });
@@ -478,22 +493,28 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
           p.kind === "run"
             ? await tx.run.findUnique({
                 where: { id: p.runId },
-                include: { responsibility: { include: { grants: true } } },
               })
             : null;
         if (run?.responsibilityId)
           await tx.$executeRaw`SELECT 1 FROM "responsibility" WHERE "id" = ${run.responsibilityId} FOR UPDATE`;
-        const responsibility = run?.responsibility
+        // Read authority only after the lock, including changes committed while we waited.
+        const current = run?.responsibilityId
+          ? await tx.responsibility.findUniqueOrThrow({
+              where: { id: run.responsibilityId },
+              include: { grants: true },
+            })
+          : null;
+        const responsibility = current
           ? {
-              state: run.responsibility.state,
-              grants: run.responsibility.grants.map((g) => ({
+              state: current.state,
+              grants: current.grants.map((g) => ({
                 id: g.id,
                 kind: g.kind as Kind,
                 scope: (g.courseId
                   ? { courseId: g.courseId }
                   : { obligationId: g.obligationId! }) as GrantScope,
               })),
-              restrictions: run.responsibility.restrictions as Restrictions,
+              restrictions: current.restrictions as Restrictions,
             }
           : null;
         const subject = await subjectOf(tx, parsed);

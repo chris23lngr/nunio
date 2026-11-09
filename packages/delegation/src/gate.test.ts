@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ActionOutcome, Delegation, Executor } from "./index.js";
 import {
   createDelegation,
+  DelegationUnavailable,
   KeyConflictError,
   principal,
   StaleApprovalError,
@@ -383,6 +384,33 @@ describe("Approval", () => {
     expect(dispatched).toEqual([]);
   });
 
+  it.each([7 * day, 2 * day])(
+    "refuses an approved Action at its expiry (%i ms)",
+    async (expiry) => {
+      const s = await student();
+      const { executor, dispatched } = fakeExecutor();
+      const deadline = new Date(now.getTime() + expiry);
+      const g = gate(executor, { [s.obligationId]: deadline });
+      const key = "approved-before-expiry";
+      const asking = await g.perform(s.p, { key, intent: move(s) });
+      expect(asking.status).toBe("awaiting_approval");
+      if (asking.status !== "awaiting_approval") return;
+      await g.decide(s.p, {
+        kind: "approve",
+        actionId: asking.actionId,
+        fingerprint: asking.fingerprint,
+      });
+
+      now = deadline;
+
+      expect(await g.perform(s.p, { key, intent: move(s) })).toMatchObject({
+        status: "refused",
+        reason: "approval_expired",
+      });
+      expect(dispatched).toEqual([]);
+    },
+  );
+
   it("refuses an approval clicked after the request expired", async () => {
     const s = await student();
     const g = gate(fakeExecutor().executor);
@@ -446,6 +474,75 @@ describe("rechecks at dispatch", () => {
     ).toMatchObject({ status: "refused", reason: "paused" });
     expect(dispatched).toHaveLength(1);
   });
+
+  it.each(["paused", "ended", "restricted", "revoked"] as const)(
+    "rechecks authority after waiting for a concurrent %s change",
+    async (change) => {
+      const s = await student();
+      const r = await run(s);
+      const { executor, dispatched } = fakeExecutor();
+      let markLocked!: (pid: number) => void;
+      let release!: () => void;
+      const locked = new Promise<number>((resolve) => {
+        markLocked = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const update = admin.$transaction(
+        async (tx) => {
+          const [backend] = await tx.$queryRaw<
+            { pid: number }[]
+          >`SELECT pg_backend_pid() AS pid`;
+          await tx.responsibility.update({
+            where: { id: r.responsibilityId },
+            data:
+              change === "paused" || change === "ended"
+                ? { state: change }
+                : {
+                    restrictions:
+                      change === "restricted" ? { allowedKinds: [] } : {},
+                  },
+          });
+          if (change === "revoked") {
+            await tx.grant.deleteMany({
+              where: { responsibilityId: r.responsibilityId },
+            });
+          }
+          markLocked(backend!.pid);
+          await released;
+        },
+        { timeout: 15_000 },
+      );
+      const blockerPid = await locked;
+      const pending = gate(executor).perform(r.p, {
+        key: "concurrent-change",
+        intent: move(s),
+      });
+      try {
+        // Observe the actual row-lock wait, rather than relying on query timing.
+        await expect
+          .poll(async () => {
+            const rows = await admin.$queryRaw<{ waiting: boolean }[]>`
+            SELECT EXISTS (
+              SELECT 1 FROM pg_stat_activity
+              WHERE ${blockerPid} = ANY(pg_blocking_pids(pid))
+            ) AS waiting`;
+            return rows[0]!.waiting;
+          })
+          .toBe(true);
+      } finally {
+        release();
+        await update;
+      }
+      expect(await pending).toMatchObject(
+        change === "revoked"
+          ? { status: "awaiting_approval" }
+          : { status: "refused", reason: change },
+      );
+      expect(dispatched).toEqual([]);
+    },
+  );
 
   it("stops a Run whose Responsibility Ended", async () => {
     const s = await student();
@@ -696,6 +793,48 @@ describe("dispatch and recovery", () => {
       }),
     ).toMatchObject({ status: "done" });
     expect(new Set(keys).size).toBe(1);
+  });
+
+  it("yields a retryable error after a failed recovery dispatch and preserves its key", async () => {
+    const s = await student();
+    const r = await run(s);
+    const keys: string[] = [];
+    let available = false;
+    let failures = 0;
+    const executor: Executor = {
+      async execute(_, { idempotencyKey }) {
+        keys.push(idempotencyKey);
+        // Cap the broken implementation's loop so the regression fails without hanging.
+        if (available || ++failures > 2) return { status: "done", effect: {} };
+        throw new Error("provider unavailable");
+      },
+      async lookup() {
+        return { status: "absent" };
+      },
+    };
+    const g = gate(executor);
+    await expect(
+      g.perform(r.p, { key: "outage", intent: move(s) }),
+    ).rejects.toThrow(DelegationUnavailable);
+    expect(keys).toHaveLength(2);
+    expect(
+      await admin.attempt.findMany({ where: { studentId: s.studentId } }),
+    ).toMatchObject([{ status: "in_flight" }]);
+
+    now = new Date(now.getTime() + hour);
+    failures = 1;
+    // Scheduled recovery also yields after one failed retry.
+    await expect(g.reconcile()).rejects.toThrow(DelegationUnavailable);
+    expect(keys).toHaveLength(3);
+    available = true;
+    await expect(
+      g.perform(r.p, { key: "outage", intent: move(s) }),
+    ).resolves.toMatchObject({ status: "done" });
+    expect(keys).toHaveLength(4);
+    expect(new Set(keys).size).toBe(1);
+    expect(
+      await admin.attempt.count({ where: { studentId: s.studentId } }),
+    ).toBe(1);
   });
 
   it("lets reconcile recover a dispatch left in flight by a worker that died", async () => {
