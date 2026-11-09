@@ -1,6 +1,8 @@
+import { getSessionCookie } from "better-auth/cookies";
 import { headers } from "next/headers";
 
 export interface Session {
+  session: { id: string };
   user: { id: string; name: string; email: string; emailVerified: boolean };
 }
 
@@ -13,13 +15,14 @@ export function apiOrigin(): string {
 
 /** Looks the session up on the API by forwarding the browser's cookie; never trusts the cookie alone. */
 export async function getSession(): Promise<Session | null> {
-  const cookie = (await headers()).get("cookie");
-  if (!cookie) return null;
+  const requestHeaders = await headers();
+  if (!getSessionCookie(requestHeaders)) return null;
+  const cookie = requestHeaders.get("cookie")!;
   const res = await fetch(`${apiOrigin()}/api/auth/get-session`, {
     headers: { cookie },
     cache: "no-store",
-  });
-  if (!res.ok) return null;
+  }).catch(() => null);
+  if (!res?.ok) return null;
   const session = (await res.json()) as Session | null;
   return session?.user.emailVerified ? session : null;
 }
