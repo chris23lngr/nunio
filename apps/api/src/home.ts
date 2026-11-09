@@ -1,6 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import type { AppBindings } from "./app.js";
+import { describeAction } from "./approvals.js";
 import { errors, json, student } from "./outcomes.js";
 import { Tradeoff } from "./plan.js";
 
@@ -60,9 +61,26 @@ const HomeView = z
         "Ready Artifacts; always empty until Artifacts exist (Phase 11).",
       ),
     agentWork: z
-      .array(z.unknown())
-      .max(0)
-      .describe("Runs in progress; always empty until Runs exist (Phase 9)."),
+      .array(
+        z.discriminatedUnion("kind", [
+          z.object({
+            kind: z.literal("approval"),
+            actionId: z.string(),
+            title: z.string(),
+            expiresAt: z.date(),
+          }),
+          z.object({
+            kind: z.literal("responsibility"),
+            id: z.string(),
+            preset: z.literal("keep_course_organized"),
+            course: z.string().nullable(),
+            state: z.enum(["active", "paused", "ended"]),
+          }),
+        ]),
+      )
+      .describe(
+        "Approvals the Agent is waiting for first, then each Responsibility the student delegated.",
+      ),
   })
   .openapi("Home");
 
@@ -79,11 +97,30 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
-      const [plan, review, sources] = await Promise.all([
+      const [plan, review, sources, asking, delegated] = await Promise.all([
         c.get("plan").view(p),
         c.get("facts").review(p),
         c.get("sources").list(p),
+        c.get("delegation").history(p, { status: "awaiting_approval" }),
+        c.get("responsibilities").list(p),
       ]);
+      const agentWork = [
+        ...asking.map((a) => ({
+          kind: "approval" as const,
+          actionId: a.id,
+          title: describeAction(plan, a.kind, a.args).work.title,
+          expiresAt: a.approval!.expiresAt,
+        })),
+        ...delegated.map((r) => ({
+          kind: "responsibility" as const,
+          id: r.id,
+          preset: r.preset,
+          course:
+            plan.obligations.find((o) => o.courseId === r.scope.courseId)
+              ?.course ?? null,
+          state: r.state,
+        })),
+      ];
       const work = new Map([
         ...plan.obligations.map(
           (o) =>
@@ -169,7 +206,7 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
             ]
           : [];
       });
-      return c.json({ attention, ongoing, artifacts: [], agentWork: [] }, 200);
+      return c.json({ attention, ongoing, artifacts: [], agentWork }, 200);
     },
   );
 }
