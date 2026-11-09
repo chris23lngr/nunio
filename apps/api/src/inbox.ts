@@ -42,7 +42,7 @@ const Settings = z
       .min(0)
       .max(50)
       .describe(
-        "Announcements of Interventions per day, email and push combined; Briefings do not count.",
+        "Alerts about Interventions per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count.",
       ),
   })
   .openapi("OutreachSettings");
@@ -86,6 +86,11 @@ const Briefing = z
       z.object({
         actionId: z.string(),
         action: z.lazy(() => ActionShown).nullable(),
+        state: z
+          .enum(["waiting", "approved", "denied", "expired"])
+          .describe(
+            "The Approval as it stands now; expired once it can no longer be given.",
+          ),
       }),
     ),
     responsibilities: z.array(
@@ -99,7 +104,7 @@ const Briefing = z
   })
   .openapi("Briefing");
 
-const gone = "Something that is gone";
+const goneTitle = "Something that is gone";
 
 export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
@@ -146,6 +151,16 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
         const a = actions.find((x) => x.id === actionId);
         return a ? describeAction(plan, a.kind, a.args) : null;
       };
+      const now = new Date();
+      const approvalState = (actionId: string) => {
+        const a = actions.find((x) => x.id === actionId);
+        if (a?.approval?.decision) return a.approval.decision;
+        return a?.status === "awaiting_approval" &&
+          a.approval &&
+          now < a.approval.expiresAt
+          ? ("waiting" as const)
+          : ("expired" as const);
+      };
       const work = new Map([
         ...plan.obligations.map(
           (o) => [o.id, { title: o.title, course: o.course }] as const,
@@ -185,7 +200,7 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
                   : flagged.get(subject.id);
             return {
               ...i,
-              title: about?.title ?? gone,
+              title: about?.title ?? goneTitle,
               course: about?.course ?? null,
               action,
               shortMinutes:
@@ -201,6 +216,7 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
             approvals: b.approvals.map((actionId) => ({
               actionId,
               action: shown(actionId),
+              state: approvalState(actionId),
             })),
             responsibilities: b.responsibilities.flatMap((id) => {
               const r = delegated.find((x) => x.id === id);

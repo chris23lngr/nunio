@@ -1,9 +1,8 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { settingsQueries, updateSettings } from "./api/settings-queries";
-import { asMinute, asTime } from "./time";
+import { asMinute, asTime } from "@/lib/time";
+import { useOutreachSettings } from "./use-outreach-settings";
 
 const suggested = { fromMinute: 22 * 60, toMinute: 7 * 60 };
 
@@ -12,9 +11,7 @@ const suggested = { fromMinute: 22 * 60, toMinute: 7 * 60 };
  * push: the Inbox always shows everything at once.
  */
 export function QuietSettings({ apiOrigin }: { apiOrigin: string }) {
-  const queryClient = useQueryClient();
-  const query = useQuery(settingsQueries(apiOrigin));
-  const update = useMutation(updateSettings(apiOrigin, queryClient));
+  const { query, update } = useOutreachSettings(apiOrigin);
   const [draft, setDraft] = useState<{ from: string; until: string } | null>(
     null,
   );

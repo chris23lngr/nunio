@@ -2886,3 +2886,46 @@ describe("one-click unsubscribe from Briefing emails", () => {
     );
   });
 });
+
+describe("a Briefing's Approvals", () => {
+  it("shows each bundled Approval as it stands now, not as it stood then", async () => {
+    const asked = await askedForApproval("briefing-approval-state");
+    const id = await studentId(asked.cookie);
+    await admin.briefing.create({
+      data: {
+        id: randomUUID(),
+        studentId: id,
+        localDate: "2099-01-01",
+        items: {
+          interventions: [],
+          approvals: [asked.asking.actionId],
+          responsibilities: [],
+        },
+      },
+    });
+    const stateNow = async () => {
+      const inbox = (await (
+        await app.request(`${apiOrigin}/api/me/inbox`, {
+          headers: { cookie: asked.cookie },
+        })
+      ).json()) as { briefings: { approvals: { state: string }[] }[] };
+      return inbox.briefings[0]!.approvals[0]!.state;
+    };
+
+    expect(await stateNow()).toBe("waiting");
+    await admin.approval.update({
+      where: { actionId: asked.asking.actionId },
+      data: { expiresAt: new Date("2000-01-01T00:00:00Z") },
+    });
+    expect(await stateNow()).toBe("expired");
+    await app.request(
+      `${apiOrigin}/api/me/approvals/${asked.asking.actionId}`,
+      {
+        method: "POST",
+        headers: asked.headers,
+        body: JSON.stringify({ decision: "deny" }),
+      },
+    );
+    expect(await stateNow()).toBe("denied");
+  });
+});

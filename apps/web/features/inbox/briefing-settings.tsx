@@ -1,17 +1,14 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { settingsQueries, updateSettings } from "./api/settings-queries";
-import { asMinute, asTime } from "./time";
+import { asMinute, asTime } from "@/lib/time";
+import { useOutreachSettings } from "./use-outreach-settings";
 
 const defaultMinute = 7 * 60;
 
 /** When the daily Briefing comes, in the time zone of the student's Plan, or that it does not. */
 export function BriefingSettings({ apiOrigin }: { apiOrigin: string }) {
-  const queryClient = useQueryClient();
-  const query = useQuery(settingsQueries(apiOrigin));
-  const update = useMutation(updateSettings(apiOrigin, queryClient));
+  const { query, update } = useOutreachSettings(apiOrigin);
   const [time, setTime] = useState<string | null>(null);
   if (!query.data)
     return query.error ? <p role="alert">{query.error.message}</p> : null;

@@ -4,6 +4,7 @@ import type { paths } from "@nunio/api-client";
 import { createApiClient } from "@nunio/api-client";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
+import { asMinute, asTime } from "@/lib/time";
 import {
   hours,
   overlapReasons,
@@ -40,12 +41,6 @@ const when = (value: string | null) =>
         hour: "2-digit",
         minute: "2-digit",
       });
-const clock = (minute: number) =>
-  `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
-const minuteOf = (value: string) => {
-  const [h, m] = value.split(":").map(Number);
-  return h! * 60 + m!;
-};
 
 /** The student's Plan, the proposal nunio would make now, and the Limits it plans within. */
 export function PlanView({ apiOrigin }: { apiOrigin: string }) {
@@ -411,8 +406,8 @@ export function PlanView({ apiOrigin }: { apiOrigin: string }) {
               () =>
                 client().PUT("/api/me/preferences", {
                   body: {
-                    studyFromMinute: minuteOf(String(data.get("from"))),
-                    studyToMinute: minuteOf(String(data.get("to"))),
+                    studyFromMinute: asMinute(String(data.get("from"))),
+                    studyToMinute: asMinute(String(data.get("to"))),
                     maxMinutesPerDay: Math.round(Number(data.get("max")) * 60),
                   },
                 }),
@@ -425,7 +420,7 @@ export function PlanView({ apiOrigin }: { apiOrigin: string }) {
             <input
               name="from"
               type="time"
-              defaultValue={clock(limits.preferences.studyFromMinute)}
+              defaultValue={asTime(limits.preferences.studyFromMinute)}
               required
             />
           </label>
@@ -434,7 +429,7 @@ export function PlanView({ apiOrigin }: { apiOrigin: string }) {
             <input
               name="to"
               type="time"
-              defaultValue={clock(limits.preferences.studyToMinute)}
+              defaultValue={asTime(limits.preferences.studyToMinute)}
               required
             />
           </label>
@@ -508,7 +503,7 @@ export function PlanView({ apiOrigin }: { apiOrigin: string }) {
           {limits.protectedTime.map((t) => (
             <li key={t.id}>
               {"weekday" in t
-                ? `Every ${weekdays[t.weekday - 1]} ${clock(t.fromMinute)}–${clock(t.toMinute)}`
+                ? `Every ${weekdays[t.weekday - 1]} ${asTime(t.fromMinute)}–${asTime(t.toMinute)}`
                 : `${when(t.start)} – ${when(t.end)}`}{" "}
               <button
                 type="button"
@@ -536,8 +531,8 @@ export function PlanView({ apiOrigin }: { apiOrigin: string }) {
                 client().POST("/api/me/protected-time", {
                   body: {
                     weekday: Number(data.get("weekday")),
-                    fromMinute: minuteOf(String(data.get("from"))),
-                    toMinute: minuteOf(String(data.get("to"))) || 1440,
+                    fromMinute: asMinute(String(data.get("from"))),
+                    toMinute: asMinute(String(data.get("to"))) || 1440,
                   },
                 }),
               "The time must end after it starts.",

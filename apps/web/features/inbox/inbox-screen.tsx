@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@nunio/ui/components/button/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { hours } from "@/app/(app)/plan-wording";
 import { nameOf } from "@/features/responsibilities/name";
@@ -20,6 +21,13 @@ function headingOf({ kind, action, title, shortMinutes }: Intervention) {
     ? `An approval expired: ${what}`
     : `nunio could not confirm: ${what}`;
 }
+
+const approvalAs = {
+  waiting: "Waiting for your Approval",
+  approved: "Approved",
+  denied: "Denied",
+  expired: "Expired",
+} as const;
 
 const closedAs = {
   acknowledged: "Acknowledged",
@@ -50,20 +58,22 @@ export function InboxScreen({ apiOrigin }: { apiOrigin: string }) {
           {open.map((i) => (
             <article key={i.id} aria-label={headingOf(i)}>
               <h3>{headingOf(i)}</h3>
-              <button
+              <Button
                 type="button"
+                variant="primary"
                 disabled={close.isPending}
                 onClick={() => close.mutate({ id: i.id, as: "acknowledged" })}
               >
                 Got it
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
                 disabled={close.isPending}
                 onClick={() => close.mutate({ id: i.id, as: "dismissed" })}
               >
                 Not useful
-              </button>
+              </Button>
             </article>
           ))}
         </section>
@@ -77,13 +87,17 @@ export function InboxScreen({ apiOrigin }: { apiOrigin: string }) {
               <article key={b.id} aria-label={heading}>
                 <h3>{heading}</h3>
                 <ul>
-                  {b.interventions.flatMap((id) => {
+                  {b.interventions.map((id) => {
                     const i = interventions.find((x) => x.id === id);
-                    return i ? [<li key={id}>{headingOf(i)}</li>] : [];
+                    return (
+                      <li key={id}>
+                        {i ? headingOf(i) : "Something that is gone"}
+                      </li>
+                    );
                   })}
-                  {b.approvals.map(({ actionId, action }) => (
+                  {b.approvals.map(({ actionId, action, state }) => (
                     <li key={actionId}>
-                      Waiting for your Approval:{" "}
+                      {approvalAs[state]}:{" "}
                       {action ? action.work.title : "an Action that is gone"}
                     </li>
                   ))}
