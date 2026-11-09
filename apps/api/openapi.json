@@ -2375,7 +2375,7 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 50,
-            "description": "Announcements of Interventions per day, email and push combined; Briefings do not count."
+            "description": "Alerts about Interventions per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count."
           }
         },
         "required": [
@@ -8413,7 +8413,7 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 50,
-                    "description": "Announcements of Interventions per day, email and push combined; Briefings do not count."
+                    "description": "Alerts about Interventions per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count."
                   }
                 }
               }

@@ -42,7 +42,7 @@ const Settings = z
       .min(0)
       .max(50)
       .describe(
-        "Announcements of Interventions per day, email and push combined; Briefings do not count.",
+        "Alerts about Interventions per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count.",
       ),
   })
   .openapi("OutreachSettings");
@@ -104,7 +104,7 @@ const Briefing = z
   })
   .openapi("Briefing");
 
-const gone = "Something that is gone";
+const goneTitle = "Something that is gone";
 
 export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
@@ -200,7 +200,7 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
                   : flagged.get(subject.id);
             return {
               ...i,
-              title: about?.title ?? gone,
+              title: about?.title ?? goneTitle,
               course: about?.course ?? null,
               action,
               shortMinutes:
