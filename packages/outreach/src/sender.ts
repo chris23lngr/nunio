@@ -254,15 +254,25 @@ export function createOutreachSender({
         ).map((i) => i.id),
       );
       const { email, briefingEmail, dailyLimit } = settings;
-      // A tick's announcements share one sentAt across channels, so each counts once.
-      const midnight = startOfDay(at, timeZone);
-      const announcedToday = (
-        await tx.delivery.findMany({
-          where: { interventionId: { not: null }, sentAt: { gte: midnight } },
-          distinct: ["sentAt"],
-          select: { sentAt: true },
-        })
-      ).length;
+      // An Intervention counts with the first message that announced it, however often another
+      // channel is retried; a tick's messages share one sentAt, so each tick counts once.
+      const firstAnnounced = new Map<string, number>();
+      for (const { interventionId, sentAt } of await tx.delivery.findMany({
+        where: {
+          interventionId: { not: null },
+          sentAt: { gte: startOfDay(at, timeZone) },
+        },
+        select: { interventionId: true, sentAt: true },
+      }))
+        if (interventionId && sentAt)
+          firstAnnounced.set(
+            interventionId,
+            Math.min(
+              sentAt.getTime(),
+              firstAnnounced.get(interventionId) ?? Number.POSITIVE_INFINITY,
+            ),
+          );
+      const announcedToday = new Set(firstAnnounced.values()).size;
       const subscriptions = (await tx.pushSubscription.findMany()).map(
         pushSubscriptionOf,
       );
@@ -275,8 +285,13 @@ export function createOutreachSender({
             : !subscriptions.length
         )
           return "disabled";
-        // Past the limit, an Intervention waits in the Inbox and the next Briefing instead.
-        if (d.interventionId && announcedToday >= dailyLimit) return "limit";
+        // Past the limit, a new Intervention waits in the Inbox and the next Briefing instead.
+        if (
+          d.interventionId &&
+          !firstAnnounced.has(d.interventionId) &&
+          announcedToday >= dailyLimit
+        )
+          return "limit";
         return "send";
       };
       const byReason: Record<ReturnType<typeof reasonOf>, typeof queued> = {

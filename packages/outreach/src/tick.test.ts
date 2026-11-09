@@ -696,6 +696,51 @@ describe("the daily limit", () => {
     expect(mailTo(p)).toHaveLength(3);
   });
 
+  it("counts an announcement once when one of its channels is retried", async () => {
+    now = at("2026-11-09 05:00");
+    const p = await student();
+    const phone = await device(p);
+    await outreach.updateSettings(p, { dailyLimit: 2 });
+    await dueTomorrow(p, 20 * 60);
+    mail.failing = true;
+    try {
+      await sender.tick();
+    } finally {
+      mail.failing = false;
+    }
+    now = at("2026-11-09 05:05");
+    await sender.tick();
+    expect(mailTo(p)).toHaveLength(1);
+    expect(pushesTo(phone)).toHaveLength(1);
+
+    now = at("2026-11-09 06:00");
+    await dueTomorrow(p, 20 * 60);
+    await sender.tick();
+
+    expect(mailTo(p)).toHaveLength(2);
+    expect(pushesTo(phone)).toHaveLength(2);
+  });
+
+  it("still retries a channel of an announcement that reached the limit", async () => {
+    now = at("2026-11-09 05:00");
+    const p = await student();
+    const phone = await device(p);
+    await outreach.updateSettings(p, { dailyLimit: 1 });
+    await dueTomorrow(p, 20 * 60);
+    mail.failing = true;
+    try {
+      await sender.tick();
+    } finally {
+      mail.failing = false;
+    }
+    expect(pushesTo(phone)).toHaveLength(1);
+
+    now = at("2026-11-09 05:05");
+    await sender.tick();
+
+    expect(mailTo(p)).toHaveLength(1);
+  });
+
   it("counts the whole local day on the day summer time ends", async () => {
     // 2026-10-25 in Berlin: 00:30 is still CEST (UTC+2), 10:00 is CET (UTC+1).
     now = new Date("2026-10-25T00:30:00+02:00");
