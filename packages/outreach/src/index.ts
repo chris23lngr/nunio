@@ -8,4 +8,4 @@ export {
   NotOpenError,
   type Outreach,
   UnknownInterventionError,
-} from "./inbox.js";
+} from "./outreach.js";

@@ -8,16 +8,32 @@ import { body, Done, errors, json, outcomes, student } from "./outcomes.js";
 const Intervention = z
   .object({
     id: z.string(),
-    kind: z.enum(["approval_expired", "unconfirmed"]),
+    kind: z.enum([
+      "shortfall",
+      "disagreement",
+      "approval_expired",
+      "unconfirmed",
+    ]),
+    title: z
+      .string()
+      .describe("What it is about: the work, Fact or Action, as it is now."),
+    course: z.string().nullable(),
     action: z
       .lazy(() => ActionShown)
       .nullable()
       .describe("The Action it is about, as it stands now."),
+    shortMinutes: z
+      .number()
+      .int()
+      .nullable()
+      .describe("A Shortfall's current size; null once it is gone."),
     raisedAt: z.date(),
-    state: z.enum(["open", "acknowledged", "dismissed"]),
+    state: z.enum(["open", "acknowledged", "dismissed", "lapsed"]),
     closedAt: z.date().nullable(),
   })
   .openapi("Intervention");
+
+const gone = "Something that is gone";
 
 export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
@@ -36,25 +52,69 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
       const { interventions } = await c.get("outreach").inbox(p);
+      if (!interventions.length) return c.json({ interventions: [] }, 200);
       const ids = interventions.flatMap((i) =>
-        i.actionId ? [i.actionId] : [],
+        i.subject.kind === "action" ? [i.subject.id] : [],
       );
-      const actions = ids.length
-        ? new Map(
-            (await c.get("delegation").history(p, { ids })).map((a) => [
-              a.id,
-              a,
-            ]),
-          )
-        : new Map();
-      const plan = actions.size ? await c.get("plan").view(p) : null;
+      const [plan, review, actions] = await Promise.all([
+        c.get("plan").view(p),
+        interventions.some((i) => i.kind === "disagreement")
+          ? c.get("facts").review(p)
+          : null,
+        ids.length ? c.get("delegation").history(p, { ids }) : [],
+      ]);
+      const work = new Map([
+        ...plan.obligations.map(
+          (o) => [o.id, { title: o.title, course: o.course }] as const,
+        ),
+        ...plan.tasks.map(
+          (t) =>
+            [
+              t.id,
+              {
+                title: t.title,
+                course:
+                  plan.obligations.find((o) => o.id === t.obligationId)
+                    ?.course ?? null,
+              },
+            ] as const,
+        ),
+      ]);
+      const flagged = new Map(
+        (review?.courses ?? []).flatMap((course) => [
+          ...course.obligations.map(
+            (o) => [o.id, { title: o.title, course: course.title }] as const,
+          ),
+          ...course.facts.map(
+            (f) => [f.id, { title: f.value, course: course.title }] as const,
+          ),
+        ]),
+      );
       return c.json(
         {
-          interventions: interventions.map(({ actionId, ...i }) => {
-            const a = actionId ? actions.get(actionId) : undefined;
+          interventions: interventions.map(({ subject, ...i }) => {
+            const a = actions.find((x) => x.id === subject.id);
+            const action =
+              subject.kind === "action" && a
+                ? describeAction(plan, a.kind, a.args)
+                : null;
+            const about =
+              subject.kind === "work"
+                ? work.get(subject.id)
+                : subject.kind === "action"
+                  ? action?.work
+                  : flagged.get(subject.id);
             return {
               ...i,
-              action: a && plan ? describeAction(plan, a.kind, a.args) : null,
+              title: about?.title ?? gone,
+              course: about?.course ?? null,
+              action,
+              shortMinutes:
+                subject.kind === "work"
+                  ? (plan.proposal.shortfalls.find(
+                      (s) => s.workId === subject.id,
+                    )?.shortMinutes ?? null)
+                  : null,
             };
           }),
         },

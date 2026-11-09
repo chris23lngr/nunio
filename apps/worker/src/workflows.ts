@@ -154,3 +154,14 @@ export async function responsibilityRun(ref: RunRef) {
 export async function reconcileActions() {
   return reconcile();
 }
+
+// The next tick retries whatever this one could not finish.
+const { tickOutreach } = proxyActivities<{ tickOutreach(): Promise<void> }>({
+  startToCloseTimeout: "4 minutes",
+  retry: { maximumAttempts: 1 },
+});
+
+/** Started by the outreach Schedule: brings every student's Interventions up to date with their causes. */
+export async function outreachTick() {
+  await tickOutreach();
+}

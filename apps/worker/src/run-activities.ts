@@ -17,6 +17,7 @@ import {
 } from "@nunio/delegation";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createFacts } from "@nunio/knowledge";
+import { createOutreach } from "@nunio/outreach";
 import { createPlan, createPlanExecutor } from "@nunio/planning";
 import { Context } from "@temporalio/activity";
 
@@ -119,11 +120,8 @@ export function runActivitiesFromEnv(
     throw new Error(`Missing settings: ${missing.join(", ")}`);
   const db = createPrismaClient(createPool(env.DATABASE_URL!));
   const clock = { now: () => new Date() };
-  const plan = createPlan({
-    db,
-    facts: createFacts({ db, keys: sourceKeysFromEnv(env), clock }),
-    clock,
-  });
+  const facts = createFacts({ db, keys: sourceKeysFromEnv(env), clock });
+  const plan = createPlan({ db, facts, clock });
   const delegation = createDelegation({
     db,
     aiEnabled: () => env.AI_DISABLED !== "true",
@@ -135,6 +133,7 @@ export function runActivitiesFromEnv(
       )?.due ?? null,
   });
   const responsibilities = createResponsibilities({ db, clock });
+  const outreach = createOutreach({ db, clock, plan, facts, delegation });
   /** Each preset's Actions: the Rebalance of the Responsibility's Course, or of its one exam. */
   const propose = async (runId: string) => {
     const scope = await responsibilities.scopeOfRun(runId);
@@ -142,13 +141,17 @@ export function runActivitiesFromEnv(
   };
 
   return {
-    activities: createRunActivities({
-      db,
-      delegation,
-      responsibilities,
-      propose,
-      notifyDecision,
-    }),
+    activities: {
+      ...createRunActivities({
+        db,
+        delegation,
+        responsibilities,
+        propose,
+        notifyDecision,
+      }),
+      /** Interventions are not Actions: raised and lapsed from their causes, outside the gate. */
+      tickOutreach: () => outreach.tick(),
+    },
     close: () => db.$disconnect(),
   };
 }

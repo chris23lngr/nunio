@@ -22,10 +22,13 @@
     "pg": "8.23.1",
     "typescript": "5.9.3",
     "vitest": "5.0.5",
-    "@biomejs/biome": "2.6.3"
+    "@biomejs/biome": "2.6.3",
+    "@nunio/keys": "workspace:*"
   },
   "dependencies": {
     "@nunio/db": "workspace:*",
-    "@nunio/delegation": "workspace:*"
+    "@nunio/delegation": "workspace:*",
+    "@nunio/knowledge": "workspace:*",
+    "@nunio/planning": "workspace:*"
   }
 }

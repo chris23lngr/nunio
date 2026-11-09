@@ -1,9 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
-import { principal } from "@nunio/delegation";
+import { createDelegation, principal } from "@nunio/delegation";
+import { createSourceKeys } from "@nunio/keys";
+import { createFacts } from "@nunio/knowledge";
+import { createPlan } from "@nunio/planning";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createOutreach,
@@ -31,6 +34,24 @@ afterAll(async () => {
 
 const now = new Date("2026-11-10T07:00:00Z");
 const clock = { now: () => now };
+
+function make() {
+  const facts = createFacts({
+    db: runtime,
+    keys: createSourceKeys({
+      activeVersion: "v1",
+      masters: { v1: randomBytes(32) },
+    }),
+    clock,
+  });
+  return createOutreach({
+    db: runtime,
+    clock,
+    facts,
+    plan: createPlan({ db: runtime, facts, clock }),
+    delegation: createDelegation({ db: runtime, aiEnabled: () => true }),
+  });
+}
 
 async function student() {
   const studentId = randomUUID();
@@ -64,7 +85,7 @@ async function raised(p: ReturnType<typeof principal.fromSession>, at = now) {
 
 describe("the Inbox", () => {
   it("records an Acknowledgement apart from a Dismissal, and either closes the Intervention", async () => {
-    const outreach = createOutreach({ db: runtime, clock });
+    const outreach = make();
     const p = await student();
     const noted = await raised(p);
     const useless = await raised(p);
@@ -90,7 +111,7 @@ describe("the Inbox", () => {
   });
 
   it("closes an Intervention only once, keeping how it was first closed", async () => {
-    const outreach = createOutreach({ db: runtime, clock });
+    const outreach = make();
     const p = await student();
     const { id } = await raised(p);
     await outreach.close(p, id, "acknowledged");
@@ -106,7 +127,7 @@ describe("the Inbox", () => {
   });
 
   it("lists open Interventions first, newest first, then closed ones", async () => {
-    const outreach = createOutreach({ db: runtime, clock });
+    const outreach = make();
     const p = await student();
     const oldest = await raised(p, new Date("2026-11-08T07:00:00Z"));
     const closed = await raised(p, new Date("2026-11-09T07:00:00Z"));
@@ -123,7 +144,7 @@ describe("the Inbox", () => {
   });
 
   it("neither shows nor closes another student's Intervention", async () => {
-    const outreach = createOutreach({ db: runtime, clock });
+    const outreach = make();
     const owner = await student();
     const other = await student();
     const { id } = await raised(owner);

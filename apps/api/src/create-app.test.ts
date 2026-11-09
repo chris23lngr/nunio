@@ -202,7 +202,13 @@ beforeAll(async () => {
     plan,
     estimator,
     projects: createProjects({ db: prisma }),
-    outreach: createOutreach({ db: prisma, clock: { now: () => new Date() } }),
+    outreach: createOutreach({
+      db: prisma,
+      clock: { now: () => new Date() },
+      plan,
+      facts,
+      delegation,
+    }),
     sourceWorkflows: {
       start: async (...args) => {
         started.push(args);

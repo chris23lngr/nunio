@@ -167,6 +167,7 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     clock,
   });
   const { runWorkflows, schedules } = runWorkflowsFromEnv(env);
+  const plan = createPlan({ db: prisma, facts, clock });
   return createApp({
     auth,
     prisma,
@@ -180,9 +181,9 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     sourceWorkflows: sourceWorkflowsFromEnv(env),
     chats: createChats({ db: prisma, keys, reader, delegation }),
     answerer: createAnswerer(models),
-    plan: createPlan({ db: prisma, facts, clock }),
+    plan,
     estimator: createEstimator(models),
     projects: createProjects({ db: prisma }),
-    outreach: createOutreach({ db: prisma, clock }),
+    outreach: createOutreach({ db: prisma, clock, plan, facts, delegation }),
   });
 }

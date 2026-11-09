@@ -1,11 +1,17 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { hours } from "@/app/(app)/plan-wording";
 import { closeIntervention } from "./api/inbox-mutations";
 import type { Intervention } from "./api/inbox-queries";
 import { inboxQueries } from "./api/inbox-queries";
 
-function headingOf({ kind, action }: Intervention) {
+function headingOf({ kind, action, title, shortMinutes }: Intervention) {
+  if (kind === "shortfall")
+    return shortMinutes === null
+      ? `No longer short for ${title}`
+      : `${hours(shortMinutes)} short for ${title}`;
+  if (kind === "disagreement") return `Sources disagree about ${title}`;
   const what = action
     ? `${action.kind === "studyBlock.move" ? "move" : "add"} the block for ${action.work.title}`
     : "an Action that is gone";
@@ -17,6 +23,7 @@ function headingOf({ kind, action }: Intervention) {
 const closedAs = {
   acknowledged: "Acknowledged",
   dismissed: "Dismissed as not useful",
+  lapsed: "No longer applies",
 } as const;
 
 /** The student's Interventions: open ones to acknowledge or dismiss, then how the rest were closed. */

@@ -8,6 +8,9 @@ import { TestProviders } from "./providers";
 const expired = {
   id: "5c1e0a4e-0000-4000-8000-000000000001",
   kind: "approval_expired",
+  title: "Problem sheet 1",
+  course: "Analysis I" as string | null,
+  shortMinutes: null as number | null,
   action: {
     kind: "studyBlock.move",
     work: { title: "Problem sheet 1", course: "Analysis I" },
@@ -77,4 +80,60 @@ test("acknowledging records only that the student noted it", async () => {
   expect(closings).toEqual([{ as: "acknowledged" }]);
   const closed = await screen.findByRole("region", { name: "Closed" });
   expect(await within(closed).findByText(/Acknowledged/)).toBeTruthy();
+});
+
+test("a Shortfall says how much time is missing before its work is due", async () => {
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [
+        {
+          ...expired,
+          kind: "shortfall",
+          title: "Problem sheet 3",
+          action: null,
+          shortMinutes: 600,
+        },
+      ],
+    }),
+  );
+  render(
+    <TestProviders>
+      <InboxScreen apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  expect(
+    await screen.findByRole("article", {
+      name: "10 h short for Problem sheet 3",
+    }),
+  ).toBeTruthy();
+});
+
+test("a lapsed Intervention says it no longer applies and cannot be closed", async () => {
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [
+        {
+          ...expired,
+          kind: "disagreement",
+          title: "Room 101",
+          action: null,
+          state: "lapsed",
+          closedAt: "2026-11-10T08:00:00.000Z",
+        },
+      ],
+    }),
+  );
+  render(
+    <TestProviders>
+      <InboxScreen apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  const closed = await screen.findByRole("region", { name: "Closed" });
+  const item = within(closed).getByRole("article", {
+    name: "Sources disagree about Room 101",
+  });
+  expect(within(item).getByText("No longer applies")).toBeTruthy();
+  expect(within(item).queryByRole("button")).toBeNull();
 });

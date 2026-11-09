@@ -5,17 +5,18 @@ model Intervention {
   id             String    @id
   studentId      String
   student        User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  /// approval_expired or unconfirmed for now.
+  /// shortfall, disagreement, approval_expired or unconfirmed.
   kind           String
-  /// What triggered it, such as the Action whose Approval expired; one Intervention per trigger.
+  /// Its cause, such as `shortfall:<workId>`; one open Intervention per cause (a partial unique index in SQL).
   dedupeKey      String
   actionId       String?
   createdAt      DateTime  @default(now())
   /// Seen or acknowledged; distinct from a Dismissal, which means it was not useful.
   acknowledgedAt DateTime?
   dismissedAt    DateTime?
+  /// When its cause stopped holding; a Lapse when neither acknowledged nor dismissed by then.
+  causeEndedAt   DateTime?
 
-  @@unique([studentId, dedupeKey])
   @@index([studentId, createdAt])
   @@map("intervention")
 }

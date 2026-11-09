@@ -2163,8 +2163,20 @@
           "kind": {
             "type": "string",
             "enum": [
+              "shortfall",
+              "disagreement",
               "approval_expired",
               "unconfirmed"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "What it is about: the work, Fact or Action, as it is now."
+          },
+          "course": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "action": {
@@ -2178,6 +2190,13 @@
             ],
             "description": "The Action it is about, as it stands now."
           },
+          "shortMinutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "A Shortfall's current size; null once it is gone."
+          },
           "raisedAt": {
             "type": "string",
             "format": "date-time"
@@ -2187,7 +2206,8 @@
             "enum": [
               "open",
               "acknowledged",
-              "dismissed"
+              "dismissed",
+              "lapsed"
             ]
           },
           "closedAt": {
@@ -2201,7 +2221,10 @@
         "required": [
           "id",
           "kind",
+          "title",
+          "course",
           "action",
+          "shortMinutes",
           "raisedAt",
           "state",
           "closedAt"
