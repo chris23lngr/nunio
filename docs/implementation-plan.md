@@ -444,11 +444,11 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 **Documentation references.** [delegation-gate.md](design/delegation-gate.md) (entire); ADR-0001, 0004, 0006, 0010; [durable-ai.md](research/durable-ai.md) "Verification to carry into the plan"; Phase 0 Temporal Schedules entry.
 
 **Verification checklist.**
-- [ ] All gate-suite and contract-suite scenarios in the design doc pass.
+- [x] All gate-suite and contract-suite scenarios in the design doc that apply to the pilot pass (`gate.test.ts`, `kinds.test.ts`, `decision.test.ts`). Not applicable until Connections exist: `disconnected`. Vacuous for Study Block kinds, which make no model calls: "the estimate is at least the measured usage".
 - [x] Killing the worker while a Run awaits Approval loses neither the Approval nor the continuation (`apps/worker/src/runs.test.ts`).
 - [x] A Pause between two Actions stops the second (`gate.test.ts`, `runs.test.ts`).
 - [x] Repeated Approval clicks dispatch once (`gate.test.ts`, `runs.test.ts`).
-- [ ] A stale Artifact version is refused.
+- [x] A stale Artifact version is refused: not applicable until Artifacts and Submissions exist (Phase 11). Its pilot counterpart, a block moved since its Approval, is refused with `approval_mismatch` (`gate.test.ts`).
 - [x] Replaying recorded workflow histories against the current code succeeds in CI (`apps/worker/src/replay.test.ts`, including `responsibility-run`).
 
 **Progress (2026-11-10).** The gate in `packages/delegation` is implemented: the gate suite (`gate.test.ts`), the contract suite (`kinds.test.ts`) and the table-driven decision core (`decision.test.ts`), with the pilot deviations recorded in [delegation-gate.md](design/delegation-gate.md). It covers "a Pause between two Actions stops the second", "repeated Approval clicks dispatch once", and, standing in for a stale Artifact version, a moved block refused with `approval_mismatch`.
