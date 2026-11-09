@@ -146,9 +146,9 @@ describe("decideAction", () => {
       refuse("approval_expired"),
     ],
     [
-      "acts on an Approval given before its expiry",
+      "refuses an approved Action at its expiry",
       { responsibility: null, approval: { ...approved, expiresAt: now } },
-      { outcome: "dispatch", authority: { approvalId: "approval-1" } },
+      refuse("approval_expired"),
     ],
   ])("%s", (_, change, expected) => {
     expect(decideAction({ ...base, ...change })).toEqual(expected);
