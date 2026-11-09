@@ -2,6 +2,7 @@
  * Interventions, Briefings, and the messages that point to the Inbox. See docs/design/outreach.md.
  */
 
+export { interventionKinds, type Kind, keyOf } from "./causes.js";
 export {
   createOutreach,
   type InterventionView,

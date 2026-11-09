@@ -3,7 +3,7 @@ import type { PrismaClient } from "@nunio/db";
 import type { Clock, Principal } from "@nunio/delegation";
 import { principal, withOwner } from "@nunio/delegation";
 import type { Kind, Subject } from "./causes.js";
-import { subjectOf } from "./causes.js";
+import { causeOf } from "./causes.js";
 
 export type InterventionView = {
   id: string;
@@ -127,8 +127,7 @@ export function createOutreach({
       const views = rows.map(
         (r): InterventionView => ({
           id: r.id,
-          kind: r.kind as InterventionView["kind"],
-          subject: subjectOf(r.dedupeKey),
+          ...causeOf(r.dedupeKey),
           raisedAt: r.createdAt,
           state: r.acknowledgedAt
             ? "acknowledged"

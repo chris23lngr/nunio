@@ -18,7 +18,7 @@ import {
 import { createScalewayMailer } from "@nunio/identity";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createFacts } from "@nunio/knowledge";
-import { createOutreachSender, createWebPusher } from "@nunio/outreach";
+import { createOutreachSender, createWebPusher, keyOf } from "@nunio/outreach";
 import { createPlan, createPlanExecutor } from "@nunio/planning";
 import { Context } from "@temporalio/activity";
 
@@ -95,7 +95,10 @@ export function createRunActivities({
               studentId,
               kind,
               actionId,
-              dedupeKey: `${kind}:${actionId}`,
+              dedupeKey: keyOf({
+                kind,
+                subject: { kind: "action", id: actionId },
+              }),
             },
           ],
           skipDuplicates: true,

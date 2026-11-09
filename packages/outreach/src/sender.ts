@@ -9,7 +9,7 @@ import type {
 import { principal, withOwner } from "@nunio/delegation";
 import type { Facts } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
-import { causesOf } from "./causes.js";
+import { causesOf, keyOf } from "./causes.js";
 import type { Bundled, OutreachSettings } from "./outreach.js";
 import { openIntervention, settingsOf, unsubscribeToken } from "./outreach.js";
 
@@ -113,15 +113,15 @@ export function createOutreachSender({
         select: { id: true, dedupeKey: true, kind: true },
       });
       const liveKeys = new Set(live.map((r) => r.dedupeKey));
-      const currentKeys = new Set(current.map((c) => c.key));
+      const currentKeys = new Set(current.map(keyOf));
       const raised = current
-        .filter((c) => !liveKeys.has(c.key))
+        .filter((c) => !liveKeys.has(keyOf(c)))
         .map((c) => ({
           id: randomUUID(),
           studentId,
           kind: c.kind,
-          dedupeKey: c.key,
-          actionId: c.actionId,
+          dedupeKey: keyOf(c),
+          actionId: c.subject.kind === "action" ? c.subject.id : null,
           createdAt: at,
         }));
       await tx.intervention.createMany({ data: raised, skipDuplicates: true });
