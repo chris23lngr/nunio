@@ -31,6 +31,8 @@ model OutreachSettings {
   lastBriefingOn   String?
   /// Whether nunio emails the student; the Inbox has everything either way.
   email            Boolean @default(true)
+  /// Whether Briefings are also emailed; off after a one-click unsubscribe. Briefings stay in the Inbox.
+  briefingEmail    Boolean @default(true)
   /// Quiet Hours in minutes after local midnight, in the Plan's time zone; both null when off. May wrap midnight.
   quietFromMinute  Int?
   quietToMinute    Int?

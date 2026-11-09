@@ -68,6 +68,11 @@ services:
         sync: false
       - key: VAPID_SUBJECT
         sync: false
+      # One-click unsubscribe (RFC 8058): signs Briefing-email links; the API holds the same secret.
+      - key: UNSUBSCRIBE_SECRET
+        sync: false
+      - key: API_ORIGIN
+        sync: false
       - key: SOURCE_KEY_VERSION
         value: v1
       - key: HETZNER_S3_ENDPOINT

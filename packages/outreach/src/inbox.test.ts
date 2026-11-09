@@ -58,6 +58,10 @@ function make() {
     mailer: { send: async () => {} },
     pusher: { keyId: "test-vapid-key", send: async () => "sent" as const },
     inboxUrl: "https://app.nunio.test/inbox",
+    unsubscribe: {
+      secret: "test-unsubscribe-secret",
+      url: "https://api.nunio.test/unsubscribe/briefing-email",
+    },
   });
 }
 

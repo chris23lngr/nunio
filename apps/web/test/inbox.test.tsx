@@ -219,7 +219,7 @@ test("the student moves the daily Briefing, or turns it off", async () => {
 
 test("the student turns email off and on again", async () => {
   const patches: unknown[] = [];
-  let settings = { briefingAtMinute: 420, email: true };
+  let settings = { briefingAtMinute: 420, email: true, briefingEmail: true };
   api.route("GET", "/api/me/outreach-settings", () => Response.json(settings));
   api.route("PATCH", "/api/me/outreach-settings", async (request) => {
     const patch = (await request.json()) as Partial<typeof settings>;
@@ -245,6 +245,38 @@ test("the student turns email off and on again", async () => {
   await waitFor(() =>
     expect(patches).toEqual([{ email: false }, { email: true }]),
   );
+});
+
+test("the student stops Briefing emails while keeping other email", async () => {
+  const patches: unknown[] = [];
+  let settings = { briefingAtMinute: 420, email: true, briefingEmail: true };
+  api.route("GET", "/api/me/outreach-settings", () => Response.json(settings));
+  api.route("PATCH", "/api/me/outreach-settings", async (request) => {
+    const patch = (await request.json()) as Partial<typeof settings>;
+    patches.push(patch);
+    settings = { ...settings, ...patch };
+    return Response.json(settings);
+  });
+  const user = userEvent.setup();
+  render(
+    <TestProviders>
+      <EmailSettings apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  const briefing = await screen.findByRole("checkbox", {
+    name: "Also email me my daily Briefing",
+  });
+  await user.click(briefing);
+
+  await waitFor(() => expect(patches).toEqual([{ briefingEmail: false }]));
+  expect(
+    (
+      screen.getByRole("checkbox", {
+        name: "Email me when something needs my attention",
+      }) as HTMLInputElement
+    ).checked,
+  ).toBe(true);
 });
 
 test("the student sets Quiet Hours across midnight, turns them off, and changes the daily limit", async () => {

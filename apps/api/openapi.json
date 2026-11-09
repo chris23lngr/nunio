@@ -2333,6 +2333,10 @@
             "type": "boolean",
             "description": "Whether nunio emails the student; the Inbox has everything either way."
           },
+          "briefingEmail": {
+            "type": "boolean",
+            "description": "Whether Briefings are emailed too; a one-click unsubscribe turns this off."
+          },
           "quietHours": {
             "type": [
               "object",
@@ -2366,6 +2370,7 @@
         "required": [
           "briefingAtMinute",
           "email",
+          "briefingEmail",
           "quietHours",
           "dailyLimit"
         ]
@@ -8365,6 +8370,10 @@
                   "email": {
                     "type": "boolean",
                     "description": "Whether nunio emails the student; the Inbox has everything either way."
+                  },
+                  "briefingEmail": {
+                    "type": "boolean",
+                    "description": "Whether Briefings are emailed too; a one-click unsubscribe turns this off."
                   },
                   "quietHours": {
                     "type": [

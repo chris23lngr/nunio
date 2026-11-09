@@ -84,6 +84,8 @@ describe("the worker process", () => {
       VAPID_PUBLIC_KEY: "test",
       VAPID_PRIVATE_KEY: "test",
       VAPID_SUBJECT: "mailto:founder@nunio.test",
+      UNSUBSCRIBE_SECRET: "test",
+      API_ORIGIN: "https://api.nunio.test",
     });
     await logged("worker running");
 

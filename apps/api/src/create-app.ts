@@ -22,7 +22,7 @@ import {
   sourceStorageFromEnv,
 } from "@nunio/knowledge";
 import type { Outreach } from "@nunio/outreach";
-import { createOutreach } from "@nunio/outreach";
+import { createOutreach, InvalidUnsubscribeError } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import { createPlan } from "@nunio/planning";
 import { attachDatabasePool } from "@vercel/functions";
@@ -106,6 +106,20 @@ export function createApp({
     c.set("runWorkflows", runWorkflows);
     c.set("outreach", outreach);
     await next();
+  });
+  // RFC 8058 one-click unsubscribe: a mail provider POSTs without a session or our Origin, and must not be redirected.
+  app.post("/unsubscribe/briefing-email", async (c) => {
+    try {
+      await outreach.stopBriefingEmail(
+        c.req.query("s") ?? "",
+        c.req.query("t") ?? "",
+      );
+    } catch (error) {
+      if (error instanceof InvalidUnsubscribeError)
+        return c.text("This link is not valid.", 403);
+      throw error;
+    }
+    return c.text("You will no longer get Briefing emails from nunio.", 200);
   });
   app.route("/", routes);
   if (spike) app.route("/", spikeRoutes(spike));
@@ -206,6 +220,11 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
         send: () => Promise.reject(new Error("Only the worker pushes")),
       },
       inboxUrl: `${appOrigin}/inbox`,
+      // The API only verifies links; the worker signs them with the same secret.
+      unsubscribe: {
+        secret: required("UNSUBSCRIBE_SECRET"),
+        url: `${required("BETTER_AUTH_URL")}/unsubscribe/briefing-email`,
+      },
     }),
   });
 }

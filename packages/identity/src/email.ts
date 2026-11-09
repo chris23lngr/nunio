@@ -37,6 +37,7 @@ async function sendEmail(
   to: string,
   subject: string,
   text: string,
+  headers?: Record<string, string>,
 ) {
   const response = await (options.fetch ?? globalThis.fetch)(
     "https://api.scaleway.com/transactional-email/v1alpha1/regions/fr-par/emails",
@@ -52,6 +53,12 @@ async function sendEmail(
         to: [{ email: to }],
         subject,
         text,
+        ...(headers && {
+          additional_headers: Object.entries(headers).map(([key, value]) => ({
+            key,
+            value,
+          })),
+        }),
       }),
     },
   );
@@ -61,7 +68,13 @@ async function sendEmail(
 /** Outreach's mailer: the same Scaleway request as authentication email, with its own key and sender. */
 export function createScalewayMailer(options: ScalewayEmailOptions) {
   return {
-    send: (to: string, { subject, text }: { subject: string; text: string }) =>
-      sendEmail(options, to, subject, text),
+    send: (
+      to: string,
+      {
+        subject,
+        text,
+        headers,
+      }: { subject: string; text: string; headers?: Record<string, string> },
+    ) => sendEmail(options, to, subject, text, headers),
   };
 }

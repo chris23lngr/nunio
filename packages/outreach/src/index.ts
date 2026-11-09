@@ -5,6 +5,7 @@
 export {
   createOutreach,
   type InterventionView,
+  InvalidUnsubscribeError,
   type Mailer,
   NotOpenError,
   type Outreach,

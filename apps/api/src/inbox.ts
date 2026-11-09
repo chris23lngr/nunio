@@ -22,6 +22,11 @@ const Settings = z
       .describe(
         "Whether nunio emails the student; the Inbox has everything either way.",
       ),
+    briefingEmail: z
+      .boolean()
+      .describe(
+        "Whether Briefings are emailed too; a one-click unsubscribe turns this off.",
+      ),
     quietHours: z
       .object({
         fromMinute: z.number().int().min(0).max(1439),

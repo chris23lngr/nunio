@@ -16,7 +16,11 @@ import type { Plan } from "@nunio/planning";
 import { createPlan } from "@nunio/planning";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Outreach } from "./index.js";
-import { createOutreach, NotOpenError } from "./index.js";
+import {
+  createOutreach,
+  InvalidUnsubscribeError,
+  NotOpenError,
+} from "./index.js";
 
 let db: TestDatabase;
 /** Seeds fixtures as the migration role, outside RLS. */
@@ -31,12 +35,17 @@ const at = (local: string) => new Date(`${local.replace(" ", "T")}:00+01:00`);
 let now = at("2026-11-09 08:00");
 const clock = { now: () => now };
 /** Records every email, and fails each send while `failing` is set. */
+type Message = {
+  subject: string;
+  text: string;
+  headers?: Record<string, string>;
+};
 const mail = {
-  sent: [] as { to: string; subject: string; text: string }[],
+  sent: [] as ({ to: string } & Message)[],
   failing: false,
 };
 const mailer = {
-  async send(to: string, message: { subject: string; text: string }) {
+  async send(to: string, message: Message) {
     if (mail.failing) throw new Error("Scaleway is down");
     mail.sent.push({ to, ...message });
   },
@@ -103,6 +112,10 @@ beforeAll(async () => {
     mailer,
     pusher,
     inboxUrl: "https://app.nunio.test/inbox",
+    unsubscribe: {
+      secret: "test-unsubscribe-secret",
+      url: "https://api.nunio.test/unsubscribe/briefing-email",
+    },
   });
 }, 180_000);
 
@@ -378,6 +391,7 @@ describe("the daily Briefing", () => {
     expect(await outreach.settings(p)).toEqual({
       briefingAtMinute: 7 * 60,
       email: true,
+      briefingEmail: true,
       quietHours: null,
       dailyLimit: 3,
     });
@@ -387,6 +401,7 @@ describe("the daily Briefing", () => {
     ).toEqual({
       briefingAtMinute: 9 * 60,
       email: true,
+      briefingEmail: true,
       quietHours: null,
       dailyLimit: 3,
     });
@@ -672,5 +687,84 @@ describe("the daily limit", () => {
     await dueTomorrow(p, 20 * 60, "2026-11-11");
     await outreach.tick();
     expect(mailTo(p)).toHaveLength(3);
+  });
+});
+
+describe("one-click unsubscribe", () => {
+  it("lets a Briefing email be unsubscribed with one click, and no Intervention email", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    if (p.kind !== "student") throw new Error("a student");
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+    now = at("2026-11-09 07:05");
+    await outreach.tick();
+
+    const [announcement, briefing] = mailTo(p);
+    expect(announcement!.headers).toBeUndefined();
+    expect(briefing!.headers).toEqual({
+      "List-Unsubscribe": expect.stringMatching(
+        new RegExp(
+          `^<https://api\\.nunio\\.test/unsubscribe/briefing-email\\?s=${p.studentId}&t=[0-9a-f]{64}>$`,
+        ),
+      ),
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+  });
+
+  it("stops Briefing emails only: Briefings stay in the Inbox and Interventions are still emailed", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+    now = at("2026-11-09 07:05");
+    await outreach.tick();
+    const link = new URL(
+      mailTo(p)[1]!.headers!["List-Unsubscribe"]!.slice(1, -1),
+    );
+
+    await outreach.stopBriefingEmail(
+      link.searchParams.get("s")!,
+      link.searchParams.get("t")!,
+    );
+
+    expect(await outreach.settings(p)).toEqual(
+      expect.objectContaining({ briefingEmail: false, email: true }),
+    );
+    now = at("2026-11-10 05:00");
+    await dueTomorrow(p, 20 * 60, "2026-11-11");
+    await outreach.tick();
+    now = at("2026-11-10 07:05");
+    await outreach.tick();
+    expect((await outreach.inbox(p)).briefings).toHaveLength(2);
+    expect(mailTo(p).map((m) => m.subject)).toEqual([
+      "nunio: 1 item needs your attention",
+      "Your nunio Briefing is ready",
+      "nunio: 1 item needs your attention",
+    ]);
+  });
+
+  it("refuses a tampered link, or one signed for another student, and changes nothing", async () => {
+    now = at("2026-11-09 07:05");
+    const p = await student();
+    const other = await student();
+    if (p.kind !== "student" || other.kind !== "student")
+      throw new Error("students");
+    await dueTomorrow(other, 20 * 60);
+    await outreach.tick();
+    const theirs = new URL(
+      mailTo(other)
+        .find((m) => m.headers)!
+        .headers!["List-Unsubscribe"]!.slice(1, -1),
+    ).searchParams.get("t")!;
+
+    for (const token of [theirs, "0".repeat(64), "short"])
+      await expect(
+        outreach.stopBriefingEmail(p.studentId, token),
+      ).rejects.toThrow(InvalidUnsubscribeError);
+
+    expect(await outreach.settings(p)).toEqual(
+      expect.objectContaining({ briefingEmail: true }),
+    );
   });
 });

@@ -23,6 +23,17 @@ export function EmailSettings({ apiOrigin }: { apiOrigin: string }) {
         />
         Email me when something needs my attention
       </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={query.data.briefingEmail}
+          disabled={update.isPending || !query.data.email}
+          onChange={(event) =>
+            update.mutate({ briefingEmail: event.target.checked })
+          }
+        />
+        Also email me my daily Briefing
+      </label>
       <p>Emails only say how many items wait for you, never what they are.</p>
     </section>
   );

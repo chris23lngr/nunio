@@ -48,6 +48,40 @@ describe("the Scaleway mailer", () => {
     );
   });
 
+  it("passes extra headers on to Scaleway, such as one-click unsubscribe", async () => {
+    const tem = scaleway();
+    const mailer = createScalewayMailer({
+      projectId: "test-project",
+      secretKey: "test-notify-key",
+      from: "notifications@nunio.test",
+      fetch: tem.fetch,
+    });
+
+    await mailer.send("student@example.com", {
+      subject: "Your nunio Briefing is ready",
+      text: "https://app.nunio.test/inbox",
+      headers: {
+        "List-Unsubscribe": "<https://api.nunio.test/unsubscribe?t=1>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      },
+    });
+
+    expect(tem.requests[0]!.body).toEqual(
+      expect.objectContaining({
+        additional_headers: [
+          {
+            key: "List-Unsubscribe",
+            value: "<https://api.nunio.test/unsubscribe?t=1>",
+          },
+          {
+            key: "List-Unsubscribe-Post",
+            value: "List-Unsubscribe=One-Click",
+          },
+        ],
+      }),
+    );
+  });
+
   it("fails when Scaleway does not accept the email", async () => {
     const mailer = createScalewayMailer({
       projectId: "test-project",

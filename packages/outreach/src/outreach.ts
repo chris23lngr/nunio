@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import type {
   Clock,
@@ -35,6 +35,8 @@ export type OutreachSettings = {
   briefingAtMinute: number | null;
   /** Whether nunio emails the student; the Inbox has everything either way. */
   email: boolean;
+  /** Whether Briefings are emailed too; a one-click unsubscribe turns this off. */
+  briefingEmail: boolean;
   /** When nothing goes out outside the app, in the Plan's time zone; may wrap midnight. */
   quietHours: { fromMinute: number; toMinute: number } | null;
   /** Announcements of Interventions per local day, email and push combined; Briefings do not count. */
@@ -47,6 +49,7 @@ type PlanView = Awaited<ReturnType<Plan["view"]>>;
 const defaults: OutreachSettings = {
   briefingAtMinute: 7 * 60,
   email: true,
+  briefingEmail: true,
   quietHours: null,
   dailyLimit: 3,
 };
@@ -54,6 +57,7 @@ const settingsOf = (
   stored: {
     briefingAtMinute: number | null;
     email: boolean;
+    briefingEmail: boolean;
     quietFromMinute: number | null;
     quietToMinute: number | null;
     dailyLimit: number;
@@ -63,6 +67,7 @@ const settingsOf = (
     ? {
         briefingAtMinute: stored.briefingAtMinute,
         email: stored.email,
+        briefingEmail: stored.briefingEmail,
         quietHours:
           stored.quietFromMinute === null || stored.quietToMinute === null
             ? null
@@ -104,7 +109,14 @@ function wallClock(at: Date, timeZone: string) {
 
 /** Sends one email; true external, so it is injected. */
 export interface Mailer {
-  send(to: string, message: { subject: string; text: string }): Promise<void>;
+  send(
+    to: string,
+    message: {
+      subject: string;
+      text: string;
+      headers?: Record<string, string>;
+    },
+  ): Promise<void>;
 }
 
 /** Sends one empty push to one device; true external, so it is injected. */
@@ -130,6 +142,7 @@ type Channel = (typeof channels)[number];
 const pushTtlSeconds = 12 * 60 * 60;
 
 export class NotOpenError extends Error {}
+export class InvalidUnsubscribeError extends Error {}
 export class UnknownInterventionError extends Error {}
 
 /** Interventions raised from their causes, Briefings, the Inbox, and how the student closes what is in it. */
@@ -143,6 +156,7 @@ export function createOutreach({
   mailer,
   pusher,
   inboxUrl,
+  unsubscribe,
 }: {
   db: PrismaClient;
   clock: Clock;
@@ -154,7 +168,12 @@ export function createOutreach({
   pusher: Pusher;
   /** The only link a message outside the app carries. */
   inboxUrl: string;
+  /** Signs the one-click link that stops Briefing emails (RFC 8058); the API verifies it with the same secret. */
+  unsubscribe: { secret: string; url: string };
 }) {
+  const tokenOf = (studentId: string) =>
+    createHmac("sha256", unsubscribe.secret).update(studentId).digest("hex");
+
   /** Raises an Intervention for each new cause, and ends the causes that no longer hold. */
   async function sync(p: Principal, { proposal }: PlanView) {
     const [review, expired, unconfirmed] = await Promise.all([
@@ -289,7 +308,7 @@ export function createOutreach({
           })
         ).map((i) => i.id),
       );
-      const { email, dailyLimit } = settings;
+      const { email, briefingEmail, dailyLimit } = settings;
       // A tick's announcements share one sentAt across channels, so each counts once.
       const midnight = new Date(
         at.getTime() - minute * 60_000 - (at.getTime() % 60_000),
@@ -309,7 +328,9 @@ export function createOutreach({
       const disabled = queued.filter(
         (d) =>
           !closed.includes(d) &&
-          (d.channel === "email" ? !email : !subscriptions.length),
+          (d.channel === "email"
+            ? !email || (d.briefingId !== null && !briefingEmail)
+            : !subscriptions.length),
       );
       // Past the limit, an Intervention waits in the Inbox and the next Briefing instead.
       const limited =
@@ -341,6 +362,7 @@ export function createOutreach({
         to: (await tx.user.findUniqueOrThrow({ where: { id: studentId } }))
           .email,
         subscriptions,
+        studentId,
       };
     });
     for (const channel of channels) {
@@ -364,7 +386,9 @@ export function createOutreach({
       due,
       to,
       subscriptions,
+      studentId,
     }: {
+      studentId: string;
       due: {
         id: string;
         interventionId: string | null;
@@ -395,6 +419,10 @@ export function createOutreach({
         {
           subject: "Your nunio Briefing is ready",
           text: `Your Briefing is in your Inbox:\n\n${inboxUrl}`,
+          headers: {
+            "List-Unsubscribe": `<${unsubscribe.url}?s=${studentId}&t=${tokenOf(studentId)}>`,
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+          },
         },
         "low",
       ],
@@ -532,6 +560,20 @@ export function createOutreach({
         }),
       );
       return settingsOf(stored);
+    },
+    /** The one-click unsubscribe: stops Briefing emails for the student the link was signed for. */
+    async stopBriefingEmail(studentId: string, token: string): Promise<void> {
+      const expected = Buffer.from(tokenOf(studentId));
+      const given = Buffer.from(token);
+      if (expected.length !== given.length || !timingSafeEqual(expected, given))
+        throw new InvalidUnsubscribeError();
+      await withOwner(db, principal.fromSession({ studentId }), (tx, owner) =>
+        tx.outreachSettings.upsert({
+          where: { studentId: owner },
+          create: { studentId: owner, briefingEmail: false },
+          update: { briefingEmail: false },
+        }),
+      );
     },
     async close(
       student: Principal,

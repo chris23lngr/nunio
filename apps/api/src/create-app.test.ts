@@ -212,6 +212,10 @@ beforeAll(async () => {
       mailer: { send: async () => {} },
       pusher: { keyId: "test-vapid-key", send: async () => "sent" as const },
       inboxUrl: `${appOrigin}/inbox`,
+      unsubscribe: {
+        secret: "test-unsubscribe-secret",
+        url: `${apiOrigin}/unsubscribe/briefing-email`,
+      },
     }),
     sourceWorkflows: {
       start: async (...args) => {
@@ -2843,6 +2847,51 @@ describe("'prepare me for this exam'", () => {
           state: "active",
         },
       ],
+    );
+  });
+});
+
+describe("one-click unsubscribe from Briefing emails", () => {
+  /** RFC 8058: a mail provider POSTs this, with no cookie and no Origin of ours. */
+  const unsubscribe = (s: string, t: string, method = "POST") =>
+    app.request(`${apiOrigin}/unsubscribe/briefing-email?s=${s}&t=${t}`, {
+      method,
+      headers:
+        method === "POST"
+          ? { "content-type": "application/x-www-form-urlencoded" }
+          : {},
+      body: method === "POST" ? "List-Unsubscribe=One-Click" : undefined,
+    });
+  const tokenFor = (id: string) =>
+    createHmac("sha256", "test-unsubscribe-secret").update(id).digest("hex");
+  const settingsOf = async (cookie: string) =>
+    (await (
+      await app.request(`${apiOrigin}/api/me/outreach-settings`, {
+        headers: { cookie },
+      })
+    ).json()) as { briefingEmail: boolean; email: boolean };
+
+  it("stops Briefing emails without a session, answering without a redirect", async () => {
+    const cookie = await signUp("unsubscribe-one-click");
+    const id = await studentId(cookie);
+
+    const response = await unsubscribe(id, tokenFor(id));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    expect(await settingsOf(cookie)).toEqual(
+      expect.objectContaining({ briefingEmail: false, email: true }),
+    );
+  });
+
+  it("refuses a link that was not signed for the student, and ignores a GET", async () => {
+    const cookie = await signUp("unsubscribe-refused");
+    const id = await studentId(cookie);
+
+    expect((await unsubscribe(id, "0".repeat(64))).status).toBe(403);
+    expect((await unsubscribe(id, tokenFor(id), "GET")).status).not.toBe(200);
+    expect(await settingsOf(cookie)).toEqual(
+      expect.objectContaining({ briefingEmail: true }),
     );
   });
 });
