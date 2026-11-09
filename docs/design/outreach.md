@@ -11,19 +11,29 @@ A new `packages/outreach` is the single module that decides what nunio tells the
 ```ts
 /** The API's side: the Inbox, settings and push subscriptions. It holds no notification key. */
 export function createOutreach(deps: {
-  db: PrismaClient;                 // local-substitutable; internal seam
-  clock: Clock;                     // in-process; injected
-  vapidPublicKey: string;           // the browser subscribes with it; subscriptions record it
-  unsubscribeSecret: string;        // verifies the one-click link the worker signs
+  db: PrismaClient; // local-substitutable; internal seam
+  clock: Clock; // in-process; injected
+  vapidPublicKey: string; // the browser subscribes with it; subscriptions record it
+  unsubscribeSecret: string; // verifies the one-click link the worker signs
 }): Outreach;
 
 export interface Outreach {
   inbox(student: Principal): Promise<InboxView>;
-  close(student: Principal, interventionId: string, as: "acknowledged" | "dismissed"): Promise<void>;
+  close(
+    student: Principal,
+    interventionId: string,
+    as: "acknowledged" | "dismissed",
+  ): Promise<void>;
   settings(student: Principal): Promise<OutreachSettings>;
-  updateSettings(student: Principal, patch: Partial<OutreachSettings>): Promise<OutreachSettings>;
+  updateSettings(
+    student: Principal,
+    patch: Partial<OutreachSettings>,
+  ): Promise<OutreachSettings>;
   pushKey: string;
-  subscribe(student: Principal, subscription: PushSubscriptionJSON): Promise<void>;
+  subscribe(
+    student: Principal,
+    subscription: PushSubscriptionJSON,
+  ): Promise<void>;
   unsubscribe(student: Principal, endpoint: string): Promise<void>;
   stopBriefingEmail(studentId: string, token: string): Promise<void>;
 }
@@ -32,13 +42,13 @@ export interface Outreach {
 export function createOutreachSender(deps: {
   db: PrismaClient;
   clock: Clock;
-  plan: Plan;                       // Shortfalls, from the Plan's view
-  facts: Facts;                     // Disagreements, from review
-  delegation: Delegation;           // expired Approvals and Unconfirmed Actions, from history
+  plan: Plan; // Shortfalls, from the Plan's view
+  facts: Facts; // Disagreements, from review
+  delegation: Delegation; // expired Approvals and Unconfirmed Actions, from history
   responsibilities: Responsibilities; // ongoing work for Briefings
-  mailer: Mailer;                   // true external; Scaleway adapter and a fake
-  pusher: Pusher;                   // true external; web-push adapter and a fake
-  inboxUrl: string;                 // the only link an email or push carries
+  mailer: Mailer; // true external; Scaleway adapter and a fake
+  pusher: Pusher; // true external; web-push adapter and a fake
+  inboxUrl: string; // the only link an email or push carries
   unsubscribe: { secret: string; url: string }; // signs the one-click link in Briefing emails
 }): OutreachSender;
 
@@ -49,15 +59,27 @@ export interface OutreachSender {
 
 export type OutreachSettings = {
   quietHours: { fromMinute: number; toMinute: number } | null; // in the Plan's time zone; may wrap midnight
-  dailyLimit: number;                                          // email and push combined; Briefings excluded
-  briefingAtMinute: number | null;                             // null turns Briefings off
+  dailyLimit: number; // email and push combined; Briefings excluded
+  briefingAtMinute: number | null; // null turns Briefings off
   email: boolean;
-  briefingEmail: boolean;                                      // the one-click unsubscribe turns it off
+  briefingEmail: boolean; // the one-click unsubscribe turns it off
 };
 
-export interface Mailer { send(to: string, message: { subject: string; text: string; headers?: Record<string, string> }): Promise<void>; }
+export interface Mailer {
+  send(
+    to: string,
+    message: {
+      subject: string;
+      text: string;
+      headers?: Record<string, string>;
+    },
+  ): Promise<void>;
+}
 export interface Pusher {
-  send(subscription: StoredSubscription, options: { ttlSeconds: number; urgency: "low" | "normal" }): Promise<"sent" | "gone">;
+  send(
+    subscription: StoredSubscription,
+    options: { ttlSeconds: number; urgency: "low" | "normal" },
+  ): Promise<"sent" | "gone">;
 }
 ```
 
