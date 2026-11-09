@@ -21,7 +21,8 @@ model User {
   studyBlocks      StudyBlock[]
   protectedTime    ProtectedTime[]
   planPreference   PlanPreference?
-  calendarImports  CalendarImport[]
+  calendarSources  CalendarSource[]
+  priorities       Priority[]
   fixedEvents      FixedEvent[]
   projects         Project[]
 

@@ -4,7 +4,7 @@ import { startTestDatabase, type TestDatabase } from "@nunio/db/testing";
 import type { EstimateRequest, Estimator } from "@nunio/ai";
 import { createDelegation, principal, type Delegation, type Principal } from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
-import { createFacts, type Facts } from "@nunio/knowledge";
+import { createFacts, createKnowledgeReader, createProjects, type Facts } from "@nunio/knowledge";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createPlan, type Plan } from "./plan.js";
 
@@ -92,8 +92,10 @@ it("plans an Obligation through its open Tasks, which the student adds, estimate
   const view = await plan.view(p);
 
   expect(view.tasks).toEqual([
-    { id: first.id, title: "Aufgaben 1–4", obligationId: sheet, estimate: { minutes: 60, estimatedBy: "student" }, done: true },
-    { id: second.id, title: "Aufgaben 5–8", obligationId: sheet, estimate: { minutes: 90, estimatedBy: "student" }, done: false },
+    { id: first.id, title: "Aufgaben 1–4", obligationId: sheet, estimate: { minutes: 60, estimatedBy: "student", rationale: null },
+      maxMinutesPerDay: null, done: true },
+    { id: second.id, title: "Aufgaben 5–8", obligationId: sheet, estimate: { minutes: 90, estimatedBy: "student", rationale: null },
+      maxMinutesPerDay: null, done: false },
   ]);
   expect(view.proposal.moves).toEqual([
     { kind: "create", workId: second.id, start: at("2026-11-09 09:00"), end: at("2026-11-09 10:30"), needsApproval: false },
@@ -137,7 +139,7 @@ it("plans within the student's Preferences and weekly Protected Time, breaking t
 
   expect(await plan.setPreferences(p, { studyFromMinute: 10 * 60, studyToMinute: 16 * 60, maxMinutesPerDay: 120 })).toEqual({ status: "ok" });
   expect(await plan.addProtectedTime(p, { weekday: 1, fromMinute: 10 * 60, toMinute: 12 * 60 })).toMatchObject({ status: "ok" });
-  expect(await plan.rankCourses(p, [physicsCourse])).toEqual({ status: "ok" });
+  expect(await plan.setPriorities(p, [{ kind: "course", id: physicsCourse }])).toEqual({ status: "ok" });
   const view = await plan.view(p);
 
   expect(view.proposal.moves.map(m => m.kind === "create" && [m.workId, m.start, m.end])).toEqual([
@@ -145,7 +147,7 @@ it("plans within the student's Preferences and weekly Protected Time, breaking t
     [analysis, at("2026-11-09 13:00"), at("2026-11-09 14:00")],
   ]);
   expect(view.limits).toEqual({ preferences: { timeZone: "Europe/Berlin", studyFromMinute: 600, studyToMinute: 960, maxMinutesPerDay: 120 },
-    protectedTime: [{ id: expect.any(String), weekday: 1, fromMinute: 600, toMinute: 720 }] });
+    courses: [], protectedTime: [{ id: expect.any(String), weekday: 1, fromMinute: 600, toMinute: 720 }] });
   expect(await plan.setPreferences(p, { studyFromMinute: 900, studyToMinute: 600, maxMinutesPerDay: 120 })).toEqual({ status: "invalid" });
 });
 
@@ -165,23 +167,27 @@ it("expands weekly Protected Time onto every local day, even across the switch t
   ]);
 });
 
-it("proposes Estimates only for Obligations without one, never replacing the student's own", async () => {
+it("proposes Estimates only for Obligations and Tasks without one, never replacing the student's own", async () => {
   now = at("2026-11-09 08:00");
   const p = await student();
   const sheet = await obligation(p, "Blatt 3", "2026-11-11", "12:00");
   const exam = await obligation(p, "Klausur", "2027-02-12", null);
   await plan.estimate(p, { kind: "obligation", id: exam }, 1200);
+  const task = await plan.addTask(p, { title: "Altklausuren rechnen", obligationId: exam });
+  if (task.status !== "ok") throw new Error(task.status);
   const asked: EstimateRequest[][] = [];
   const estimator: Estimator = { estimateMicroUsd: () => 10,
     async estimate(items) { asked.push([...items]); return { value: items.map(() => ({ minutes: 180, rationale: "Four proofs." })), usage: { microUsd: 5 } }; } };
 
-  expect(await plan.proposeEstimates(p, { estimator, delegation })).toEqual({ status: "ok", proposed: 1 });
-  expect(asked).toEqual([[{ kind: "assignment", title: "Blatt 3", course: "Analysis I" }]]);
-  const { obligations } = await plan.view(p);
+  expect(await plan.proposeEstimates(p, { estimator, delegation })).toEqual({ status: "ok", proposed: 2 });
+  expect(asked).toEqual([[{ kind: "assignment", title: "Blatt 3", course: "Analysis I" },
+    { kind: "task", title: "Altklausuren rechnen", course: "Analysis I" }]]);
+  const { obligations, tasks } = await plan.view(p);
   expect(obligations.map(o => [o.id, o.estimate])).toEqual(expect.arrayContaining([
     [sheet, { minutes: 180, estimatedBy: "nunio", rationale: "Four proofs." }],
     [exam, { minutes: 1200, estimatedBy: "student", rationale: null }],
   ]));
+  expect(tasks).toEqual([expect.objectContaining({ id: task.id, estimate: { minutes: 180, estimatedBy: "nunio", rationale: "Four proofs." } })]);
   expect(await plan.proposeEstimates(p, { estimator, delegation })).toEqual({ status: "ok", proposed: 0 });
   expect(asked).toHaveLength(1);
 });
@@ -205,19 +211,101 @@ it("plans around Fixed Events entered by hand or imported from a calendar file, 
     "SUMMARY:Analysis I", "DTSTART:20261109T080000Z", "DTEND:20261109T100000Z", "RRULE:FREQ=WEEKLY;COUNT=10", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
 
   const entered = await plan.addFixedEvent(p, { title: "Schicht", start: at("2026-11-09 11:00"), end: at("2026-11-09 12:00") });
-  const imported = await plan.importCalendar(p, { name: "Stundenplan.ics", ics });
+  const imported = await plan.addCalendar(p, { name: "Stundenplan.ics", ics });
   if (entered.status !== "ok" || imported.status !== "ok") throw new Error("refused");
   expect(imported).toMatchObject({ events: 10, skipped: { allDay: 0, outsideWindow: 0, truncated: false } });
 
   const view = await plan.view(p);
   expect(view.fixedEvents.slice(0, 2)).toEqual([
-    { id: expect.any(String), title: "Analysis I", start: at("2026-11-09 09:00"), end: at("2026-11-09 11:00"), importId: imported.id },
-    { id: entered.id, title: "Schicht", start: at("2026-11-09 11:00"), end: at("2026-11-09 12:00"), importId: null },
+    { id: expect.any(String), title: "Analysis I", start: at("2026-11-09 09:00"), end: at("2026-11-09 11:00"), calendarId: imported.id },
+    { id: entered.id, title: "Schicht", start: at("2026-11-09 11:00"), end: at("2026-11-09 12:00"), calendarId: null },
   ]);
-  expect(view.imports).toEqual([{ id: imported.id, name: "Stundenplan.ics", events: 10 }]);
+  expect(view.calendars).toEqual([{ id: imported.id, name: "Stundenplan.ics", events: 10 }]);
   expect(view.proposal.moves).toEqual([expect.objectContaining({ start: at("2026-11-09 12:00"), end: at("2026-11-09 13:00") })]);
 
-  expect(await plan.removeImport(p, imported.id)).toEqual({ status: "ok" });
+  expect(await plan.removeCalendar(p, imported.id)).toEqual({ status: "ok" });
   expect((await plan.view(p)).fixedEvents).toEqual([expect.objectContaining({ id: entered.id })]);
-  expect(await plan.importCalendar(p, { name: "kaputt.ics", ics: "not a calendar" })).toEqual({ status: "invalid" });
+  expect(await plan.addCalendar(p, { name: "kaputt.ics", ics: "not a calendar" })).toEqual({ status: "invalid" });
+});
+
+it("ranks Courses, Projects and Obligations in one list, an Obligation's own rank winning over its Project's and Course's", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-11", "12:00");
+  const lab = await obligation(p, "Laborbericht", "2026-11-11", "12:00");
+  const talk = await obligation(p, "Referat", "2026-11-11", "12:00");
+  for (const id of [sheet, lab, talk]) await plan.estimate(p, { kind: "obligation", id }, 60);
+  const project = await createProjects({ db: runtime }).create(p, { name: "Labor", courseIds: [], obligationId: lab });
+  if (project.status !== "ok") throw new Error(project.status);
+  const sheetCourse = (await plan.view(p)).obligations.find(o => o.id === sheet)!.courseId;
+
+  // Talk outranks the lab's Project, which outranks the sheet's Course.
+  expect(await plan.setPriorities(p, [{ kind: "obligation", id: talk }, { kind: "project", id: project.id }, { kind: "course", id: sheetCourse }]))
+    .toEqual({ status: "ok" });
+  const view = await plan.view(p);
+
+  expect(view.proposal.moves.map(m => m.kind === "create" && m.workId)).toEqual([talk, lab, sheet]);
+  expect(view.priorities).toEqual([{ kind: "obligation", id: talk }, { kind: "project", id: project.id }, { kind: "course", id: sheetCourse }]);
+  expect(await plan.setPriorities(await student(), [{ kind: "obligation", id: talk }])).toEqual({ status: "gone" });
+});
+
+it("applies a Task's own daily limit over its Course's, and the Course's over the global one", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-13", "12:00");
+  await plan.estimate(p, { kind: "obligation", id: sheet }, 180);
+  const courseId = (await plan.view(p)).obligations[0]!.courseId;
+
+  expect(await plan.setCourseLimit(p, courseId, 60)).toEqual({ status: "ok" });
+  expect((await plan.view(p)).proposal.moves.map(m => m.kind === "create" && [m.start, m.end])).toEqual([
+    [at("2026-11-09 09:00"), at("2026-11-09 10:00")], [at("2026-11-10 09:00"), at("2026-11-10 10:00")],
+    [at("2026-11-11 09:00"), at("2026-11-11 10:00")],
+  ]);
+  const task = await plan.addTask(p, { title: "Beweise", obligationId: sheet });
+  if (task.status !== "ok") throw new Error(task.status);
+  await plan.estimate(p, { kind: "task", id: task.id }, 180);
+  expect(await plan.setTaskLimit(p, task.id, 90)).toEqual({ status: "ok" });
+  expect((await plan.view(p)).proposal.moves.map(m => m.kind === "create" && [m.start, m.end])).toEqual([
+    [at("2026-11-09 09:00"), at("2026-11-09 10:30")], [at("2026-11-10 09:00"), at("2026-11-10 10:30")],
+  ]);
+  expect(await plan.setCourseLimit(p, courseId, 10)).toEqual({ status: "invalid" });
+});
+
+it("never plans into a one-off span of Protected Time, such as a trip", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-13", "12:00");
+  await plan.estimate(p, { kind: "obligation", id: sheet }, 60);
+
+  const trip = await plan.addProtectedTime(p, { start: at("2026-11-09 00:00"), end: at("2026-11-11 00:00") });
+  expect(trip).toMatchObject({ status: "ok" });
+  const view = await plan.view(p);
+
+  expect(view.proposal.moves).toEqual([expect.objectContaining({ start: at("2026-11-11 09:00"), end: at("2026-11-11 10:00") })]);
+  expect(view.limits.protectedTime).toEqual([{ id: expect.any(String), start: at("2026-11-09 00:00"), end: at("2026-11-11 00:00") }]);
+  expect(await plan.addProtectedTime(p, { start: at("2026-11-11 00:00"), end: at("2026-11-09 00:00") })).toEqual({ status: "invalid" });
+});
+
+it("serves Fixed Events to the planning scope as operational Facts, apart from course material", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const shift = await plan.addFixedEvent(p, { title: "Schicht", start: at("2026-11-10 17:00"), end: at("2026-11-10 21:00") });
+  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//test//EN", "BEGIN:VEVENT", "UID:l@test", "DTSTAMP:20261101T000000Z",
+    "SUMMARY:Analysis I", "DTSTART:20261111T080000Z", "DTEND:20261111T100000Z", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+  const calendar = await plan.addCalendar(p, { name: "Stundenplan.ics", ics });
+  if (shift.status !== "ok" || calendar.status !== "ok") throw new Error("refused");
+  const reader = createKnowledgeReader({ db: runtime, keys: createSourceKeys({ activeVersion: "v1", masters: { v1: randomBytes(32) } }), delegation, clock,
+    embedder: { model: "unused", dims: 1, relevanceFloor: 1, estimateMicroUsd: () => 1, embed: async () => { throw new Error("Fact queries never embed"); } } });
+
+  const result = await reader.retrieve(p, { planning: true }, { kind: "facts", types: ["fixed_event"] });
+
+  if (result.status !== "ok") throw new Error(result.status);
+  expect(result.items.map(i => [i.channel, i.label, i.provenance])).toEqual([
+    ["operational", "Fixed Event (entered by the student)", { kind: "entry" }],
+    ["operational", "Fixed Event from Stundenplan.ics", { kind: "calendar", calendarId: calendar.id, name: "Stundenplan.ics" }],
+  ]);
+  expect(result.render().data).toMatch(/^<<<BEGIN operational [0-9a-f]{16}>>>\n\[S1\] Fixed Event \(entered by the student\)\nSchicht, /);
+  const ref = result.items[1]!.cite;
+  await plan.removeCalendar(p, calendar.id);
+  expect((await reader.cite(p, [ref])).get(ref)).toBe("gone");
 });

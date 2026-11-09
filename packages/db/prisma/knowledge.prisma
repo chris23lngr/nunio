@@ -95,7 +95,8 @@ model Course {
   obligations Obligation[]
   facts       Fact[]
   chats       ChatCourse[]
-  priority    CoursePriority?
+  priorities  Priority[]
+  preference  CoursePreference?
   projects    ProjectCourse[]
 
   @@unique([id, studentId])
@@ -177,6 +178,7 @@ model Obligation {
   estimate    ObligationEstimate?
   studyBlocks StudyBlock[]
   projects    Project[]
+  priorities  Priority[]
 
   @@unique([id, studentId])
   @@unique([courseId, matchKey])
@@ -344,7 +346,8 @@ model Project {
   obligation   Obligation? @relation(fields: [obligationId, studentId], references: [id, studentId], onDelete: SetNull)
   createdAt    DateTime    @default(now())
 
-  courses ProjectCourse[]
+  courses    ProjectCourse[]
+  priorities Priority[]
 
   @@unique([id, studentId])
   @@index([studentId])

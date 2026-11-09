@@ -1,5 +1,5 @@
 import ICAL from "ical.js";
-import { deadline } from "./time.js";
+import { deadline, hhmm } from "./time.js";
 
 export type CalendarEvent = { title: string; start: Date; end: Date };
 export type CalendarReading =
@@ -27,8 +27,7 @@ export function readCalendar(ics: string, { from, until, timeZone }: { from: Dat
       const declared = tzid ? zones.get(tzid) : undefined;
       if (declared) return new Date(wall - declared.utcOffset(time) * 1000);
       const date = `${time.year}-${String(time.month).padStart(2, "0")}-${String(time.day).padStart(2, "0")}`;
-      const clock = `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`;
-      return deadline(date, clock, tzid && isTimeZone(tzid) ? tzid : timeZone);
+      return deadline(date, hhmm(time.hour * 60 + time.minute), tzid && isTimeZone(tzid) ? tzid : timeZone);
     };
     const vevents = root.getAllSubcomponents("vevent");
     const events: CalendarEvent[] = [];

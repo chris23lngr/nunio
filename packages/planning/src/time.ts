@@ -15,3 +15,6 @@ export function deadline(date: string, time: string | null, timeZone: string) {
   const guess = wall - offsetMs(wall, timeZone);
   return new Date(wall - offsetMs(guess, timeZone));
 }
+
+/** A local minute of the day as HH:MM. */
+export const hhmm = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
