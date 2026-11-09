@@ -44,7 +44,10 @@ export function PushSettings({ apiOrigin }: { apiOrigin: string }) {
       // Asked only from the student's tap, as Safari requires.
       if ((await Notification.requestPermission()) !== "granted")
         return setState("blocked");
-      await navigator.serviceWorker.register("/sw.js");
+      // The worker reads the API origin from its URL to renew a replaced subscription itself.
+      await navigator.serviceWorker.register(
+        `/sw.js?api=${encodeURIComponent(apiOrigin)}`,
+      );
       const registration = await navigator.serviceWorker.ready;
       const api = createApiClient(apiOrigin);
       const key = await api.GET("/api/me/push-key");

@@ -26,15 +26,16 @@ function browserWithPush(answer: NotificationPermission) {
     permission: "default",
     requestPermission: vi.fn(async () => answer),
   });
+  const register = vi.fn(async (_url: string) => registration);
   Object.defineProperty(navigator, "serviceWorker", {
     configurable: true,
     value: {
-      register: vi.fn(async () => registration),
+      register,
       ready: Promise.resolve(registration),
       getRegistration: async () => undefined,
     },
   });
-  return { subscribe };
+  return { subscribe, register };
 }
 
 afterEach(() => {
@@ -43,7 +44,7 @@ afterEach(() => {
 });
 
 test("allowing notifications subscribes this device with nunio's key", async () => {
-  const { subscribe } = browserWithPush("granted");
+  const { subscribe, register } = browserWithPush("granted");
   const saved: unknown[] = [];
   api.route("GET", "/api/me/push-key", () =>
     Response.json({ publicKey: "BPublicKey" }),
@@ -71,6 +72,10 @@ test("allowing notifications subscribes this device with nunio's key", async () 
     expect.objectContaining({ userVisibleOnly: true }),
   );
   expect(saved).toEqual([subscription]);
+  // The service worker renews a replaced subscription itself, so it must know where the API is.
+  expect(register).toHaveBeenCalledWith(
+    `/sw.js?api=${encodeURIComponent(api.origin)}`,
+  );
 });
 
 test("denying notifications sends nothing, says why, and leaves the Inbox usable", async () => {
