@@ -72,8 +72,12 @@ const HomeView = z
           z.object({
             kind: z.literal("responsibility"),
             id: z.string(),
-            preset: z.literal("keep_course_organized"),
+            preset: z.enum(["keep_course_organized", "prepare_for_exam"]),
             course: z.string().nullable(),
+            exam: z
+              .string()
+              .nullable()
+              .describe("The exam it prepares for; null for a Course."),
             state: z.enum(["active", "paused", "ended"]),
           }),
         ]),
@@ -118,6 +122,10 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
           course:
             review.courses.find((course) => course.id === r.scope.courseId)
               ?.title ?? null,
+          exam: r.scope.obligationId
+            ? (plan.obligations.find((o) => o.id === r.scope.obligationId)
+                ?.title ?? "An exam that is gone")
+            : null,
           state: r.state,
         })),
       ];

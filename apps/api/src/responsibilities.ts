@@ -22,8 +22,12 @@ const defaultBudgetMicroUsd = 1_000_000;
 const Responsibility = z
   .object({
     id: z.string(),
-    preset: z.literal("keep_course_organized"),
+    preset: z.enum(["keep_course_organized", "prepare_for_exam"]),
     course: z.object({ id: z.string(), title: z.string() }).nullable(),
+    exam: z
+      .object({ id: z.string(), title: z.string() })
+      .nullable()
+      .describe("The one exam it prepares for; null for a Course."),
     state: z.enum(["active", "paused", "ended"]),
     pausedBy: z.enum(["student", "budget"]).nullable(),
     grants: z.array(z.enum(["studyBlock.create", "studyBlock.move"])),
@@ -62,6 +66,18 @@ const Responsibility = z
   })
   .openapi("Responsibility");
 
+type PlanView = Awaited<ReturnType<AppBindings["Variables"]["plan"]["view"]>>;
+/** The exam a Responsibility prepares for, as the student named it. */
+const examOf = (plan: PlanView, obligationId: string | null) =>
+  obligationId
+    ? {
+        id: obligationId,
+        title:
+          plan.obligations.find((o) => o.id === obligationId)?.title ??
+          "An exam that is gone",
+      }
+    : null;
+
 /** The next 06:00 in the student's time zone, when the Schedule starts a Run. */
 function nextRun(now: Date, timeZone: string) {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone }).format(now);
@@ -78,10 +94,16 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
       method: "post",
       path: "/api/me/responsibilities",
       request: body(
-        z.object({
-          preset: z.literal("keep_course_organized"),
-          courseId: z.string().uuid(),
-        }),
+        z.discriminatedUnion("preset", [
+          z.object({
+            preset: z.literal("keep_course_organized"),
+            courseId: z.string().uuid(),
+          }),
+          z.object({
+            preset: z.literal("prepare_for_exam"),
+            obligationId: z.string().uuid(),
+          }),
+        ]),
       ),
       responses: { 201: Created, ...outcomes },
     }),
@@ -128,12 +150,20 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
         .history(p, { responsibilityId: r.id, limit: 10 });
       const [next] =
         r.state === "active" && courseId
-          ? await c.get("plan").intentsFor(p, courseId)
+          ? await c
+              .get("plan")
+              .intentsFor(
+                p,
+                r.scope.obligationId
+                  ? { obligationId: r.scope.obligationId }
+                  : { courseId },
+              )
           : [];
       return c.json(
         {
           id: r.id,
           preset: r.preset,
+          exam: examOf(plan, r.scope.obligationId),
           course: courseId
             ? { id: courseId, title: course ?? "A Course that is gone" }
             : null,
@@ -171,6 +201,7 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
               id: true,
               preset: true,
               course: true,
+              exam: true,
               state: true,
               pausedBy: true,
             }),
@@ -189,6 +220,7 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
         listed.map((r) => ({
           id: r.id,
           preset: r.preset,
+          exam: plan ? examOf(plan, r.scope.obligationId) : null,
           course: r.scope.courseId
             ? {
                 id: r.scope.courseId,

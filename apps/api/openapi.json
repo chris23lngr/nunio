@@ -1802,7 +1802,8 @@
                     "preset": {
                       "type": "string",
                       "enum": [
-                        "keep_course_organized"
+                        "keep_course_organized",
+                        "prepare_for_exam"
                       ]
                     },
                     "course": {
@@ -1810,6 +1811,13 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "exam": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The exam it prepares for; null for a Course."
                     },
                     "state": {
                       "type": "string",
@@ -1825,6 +1833,7 @@
                     "id",
                     "preset",
                     "course",
+                    "exam",
                     "state"
                   ]
                 }
@@ -1968,7 +1977,8 @@
           "preset": {
             "type": "string",
             "enum": [
-              "keep_course_organized"
+              "keep_course_organized",
+              "prepare_for_exam"
             ]
           },
           "course": {
@@ -1988,6 +1998,25 @@
               "id",
               "title"
             ]
+          },
+          "exam": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ],
+            "description": "The one exam it prepares for; null for a Course."
           },
           "state": {
             "type": "string",
@@ -2116,6 +2145,7 @@
           "id",
           "preset",
           "course",
+          "exam",
           "state",
           "pausedBy",
           "grants",
@@ -7201,22 +7231,45 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "preset": {
-                    "type": "string",
-                    "enum": [
-                      "keep_course_organized"
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "preset": {
+                        "type": "string",
+                        "enum": [
+                          "keep_course_organized"
+                        ]
+                      },
+                      "courseId": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "preset",
+                      "courseId"
                     ]
                   },
-                  "courseId": {
-                    "type": "string",
-                    "format": "uuid"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "preset": {
+                        "type": "string",
+                        "enum": [
+                          "prepare_for_exam"
+                        ]
+                      },
+                      "obligationId": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "preset",
+                      "obligationId"
+                    ]
                   }
-                },
-                "required": [
-                  "preset",
-                  "courseId"
                 ]
               }
             }
@@ -7332,7 +7385,8 @@
                       "preset": {
                         "type": "string",
                         "enum": [
-                          "keep_course_organized"
+                          "keep_course_organized",
+                          "prepare_for_exam"
                         ]
                       },
                       "course": {
@@ -7352,6 +7406,25 @@
                           "id",
                           "title"
                         ]
+                      },
+                      "exam": {
+                        "type": [
+                          "object",
+                          "null"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title"
+                        ],
+                        "description": "The one exam it prepares for; null for a Course."
                       },
                       "state": {
                         "type": "string",
@@ -7377,6 +7450,7 @@
                       "id",
                       "preset",
                       "course",
+                      "exam",
                       "state",
                       "pausedBy"
                     ]
