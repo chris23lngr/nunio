@@ -1,6 +1,10 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
-import { NotOpenError, UnknownInterventionError } from "@nunio/outreach";
+import {
+  interventionKinds,
+  NotOpenError,
+  UnknownInterventionError,
+} from "@nunio/outreach";
 import type { AppBindings } from "./app.js";
 import { ActionShown, describeAction } from "./approvals.js";
 import { body, Done, errors, json, outcomes, student } from "./outcomes.js";
@@ -50,12 +54,7 @@ const Settings = z
 const Intervention = z
   .object({
     id: z.string(),
-    kind: z.enum([
-      "shortfall",
-      "disagreement",
-      "approval_expired",
-      "unconfirmed",
-    ]),
+    kind: z.enum(interventionKinds),
     title: z
       .string()
       .describe("What it is about: the work, Fact or Action, as it is now."),
