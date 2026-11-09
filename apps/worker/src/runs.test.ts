@@ -7,6 +7,7 @@ import type { ActionIntent, Executor } from "@nunio/delegation";
 import {
   createDelegation,
   createResponsibilities,
+  InvalidIntentError,
   principal,
 } from "@nunio/delegation";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
@@ -197,6 +198,102 @@ describe("a Responsibility's Run", () => {
 
     expect(result).toEqual({ status: "done" });
     expect(dispatched).toHaveLength(2);
+  });
+
+  it("reuses the Run after startup commits but its Activity completion is lost", async () => {
+    const s = await student();
+    const start = s.responsibilities.startRun;
+    let calls = 0;
+    s.responsibilities.startRun = async (ref) => {
+      const id = await start(ref);
+      if (++calls === 1) throw new Error("lost Activity completion");
+      return id;
+    };
+    const { executor } = fakeExecutor();
+    expect(
+      await (await worker(s, executor, [])).runUntil(
+        env.client.workflow.execute("responsibilityRun", {
+          taskQueue,
+          workflowId: `retry-start-${randomUUID()}`,
+          args: [
+            { studentId: s.studentId, responsibilityId: s.responsibilityId },
+          ],
+        }),
+      ),
+    ).toEqual({ status: "done" });
+    expect(calls).toBe(2);
+    expect(
+      await admin.run.count({
+        where: { responsibilityId: s.responsibilityId },
+      }),
+    ).toBe(1);
+  });
+
+  it("consumes an Approval signal received before the Activity reply", async () => {
+    const workflowId = `early-approval-${randomUUID()}`;
+    let calls = 0;
+    const w = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities: {
+        startRun: async () => "early-run",
+        proposeActions: async () => [moveTo("block", 2)],
+        performAction: async () => {
+          if (++calls === 1) {
+            await env.client.workflow
+              .getHandle(workflowId)
+              .signal(approvalDecidedSignal, "early-action");
+            return {
+              status: "awaiting_approval",
+              actionId: "early-action",
+              fingerprint: "fp",
+              expiresAt: "2099-01-01T00:00:00Z",
+            };
+          }
+          return { status: "done", actionId: "early-action", effect: {} };
+        },
+      },
+    });
+    expect(
+      await w.runUntil(
+        env.client.workflow.execute("responsibilityRun", {
+          taskQueue,
+          workflowId,
+          workflowExecutionTimeout: "4 seconds",
+          args: [{ studentId: "student", responsibilityId: "responsibility" }],
+        }),
+      ),
+    ).toEqual({ status: "done" });
+    expect(calls).toBe(2);
+  });
+
+  it("does not retry invalid Action intents", async () => {
+    let calls = 0;
+    const w = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities: {
+        startRun: async () => "invalid-run",
+        proposeActions: async () => [moveTo("block", 2)],
+        performAction: async () => {
+          calls++;
+          throw new InvalidIntentError("invalid");
+        },
+      },
+    });
+    await expect(
+      w.runUntil(
+        env.client.workflow.execute("responsibilityRun", {
+          taskQueue,
+          workflowId: `invalid-${randomUUID()}`,
+          workflowExecutionTimeout: "7 seconds",
+          args: [{ studentId: "student", responsibilityId: "responsibility" }],
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(calls).toBe(1);
   });
 
   it("waits for the student's Approval, then acts once the API signals their decision", async () => {
@@ -433,6 +530,7 @@ describe("reconciliation", () => {
   it("confirms a dispatch a dead worker left in flight, through the executor's lookup", async () => {
     const s = await student();
     const runId = (await s.responsibilities.startRun({
+      runId: randomUUID(),
       studentId: s.studentId,
       responsibilityId: s.responsibilityId,
     }))!;

@@ -27,6 +27,7 @@ describe("replay", () => {
     "ingest-source-before-extraction",
     "ingest-source",
     "responsibility-run",
+    "responsibility-run-approval-wakes",
   ])(
     "replays the recorded %s history with the current workflow code",
     async (name) => {

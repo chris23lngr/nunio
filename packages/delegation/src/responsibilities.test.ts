@@ -146,6 +146,7 @@ describe("Responsibilities", () => {
     });
     if (created.status !== "ok") throw new Error(created.status);
     const runId = await responsibilities.startRun({
+      runId: randomUUID(),
       studentId: s.studentId,
       responsibilityId: created.id,
     });
@@ -181,6 +182,7 @@ describe("Responsibilities", () => {
     });
     if (created.status !== "ok") throw new Error(created.status);
     const runId = (await responsibilities.startRun({
+      runId: randomUUID(),
       studentId: s.studentId,
       responsibilityId: created.id,
     }))!;
@@ -192,6 +194,7 @@ describe("Responsibilities", () => {
     expect(calls).toEqual([`create ${created.id}`, `pause ${created.id}`]);
     expect(
       await responsibilities.startRun({
+        runId: randomUUID(),
         studentId: s.studentId,
         responsibilityId: created.id,
       }),
@@ -225,6 +228,7 @@ describe("Responsibilities", () => {
     });
     if (created.status !== "ok") throw new Error(created.status);
     const runId = (await responsibilities.startRun({
+      runId: randomUUID(),
       studentId: s.studentId,
       responsibilityId: created.id,
     }))!;
@@ -235,6 +239,7 @@ describe("Responsibilities", () => {
     ).toEqual({ status: "refused", reason: "budget_exhausted" });
     expect(
       await responsibilities.startRun({
+        runId: randomUUID(),
         studentId: s.studentId,
         responsibilityId: created.id,
       }),
@@ -247,10 +252,152 @@ describe("Responsibilities", () => {
     expect(calls).toEqual([`create ${created.id}`, `unpause ${created.id}`]);
     expect(
       await responsibilities.startRun({
+        runId: randomUUID(),
         studentId: s.studentId,
         responsibilityId: created.id,
       }),
     ).toEqual(expect.any(String));
+  });
+
+  it("stops Actions even when pausing the Schedule fails", async () => {
+    const s = await student();
+    const { schedules } = fakeSchedules();
+    schedules.pause = async () => {
+      throw new Error("Temporal unavailable");
+    };
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules,
+      clock,
+    });
+    const created = await responsibilities.create(s.p, {
+      preset: "keep_course_organized",
+      courseId: s.courseId,
+      budgetMicroUsd: 50_000,
+    });
+    if (created.status !== "ok") throw new Error(created.status);
+    await expect(responsibilities.pause(s.p, created.id)).rejects.toThrow(
+      "Temporal unavailable",
+    );
+    expect(await responsibilities.view(s.p, created.id)).toMatchObject({
+      state: "paused",
+    });
+  });
+
+  it("orders concurrent pause and resume with their Schedule changes", async () => {
+    const s = await student();
+    const { schedules, calls } = fakeSchedules();
+    let started!: () => void;
+    let release!: () => void;
+    const pauseStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const pauseReleased = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    schedules.pause = async (id) => {
+      started();
+      await pauseReleased;
+      calls.push(`pause ${id}`);
+    };
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules,
+      clock,
+    });
+    const created = await responsibilities.create(s.p, {
+      preset: "keep_course_organized",
+      courseId: s.courseId,
+      budgetMicroUsd: 50_000,
+    });
+    if (created.status !== "ok") throw new Error(created.status);
+    const pausing = responsibilities.pause(s.p, created.id);
+    await pauseStarted;
+    const resuming = responsibilities.resume(s.p, created.id);
+    // Let resume reach the database while the Schedule pause is still in flight.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    release();
+    await Promise.all([pausing, resuming]);
+    expect(calls).toEqual([
+      `create ${created.id}`,
+      `pause ${created.id}`,
+      `unpause ${created.id}`,
+    ]);
+    expect(await responsibilities.view(s.p, created.id)).toMatchObject({
+      state: "active",
+    });
+  });
+
+  it("records one Run when startup is retried, even after a Pause", async () => {
+    const s = await student();
+    const { schedules } = fakeSchedules();
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules,
+      clock,
+    });
+    const created = await responsibilities.create(s.p, {
+      preset: "keep_course_organized",
+      courseId: s.courseId,
+      budgetMicroUsd: 50_000,
+    });
+    if (created.status !== "ok") throw new Error(created.status);
+    const ref = {
+      studentId: s.studentId,
+      responsibilityId: created.id,
+      runId: randomUUID(),
+    };
+    const ids = await Promise.all([
+      responsibilities.startRun(ref),
+      responsibilities.startRun(ref),
+    ]);
+    expect(ids).toEqual([ref.runId, ref.runId]);
+    await responsibilities.pause(s.p, created.id);
+    expect(await responsibilities.startRun(ref)).toBe(ref.runId);
+    expect(
+      await admin.run.count({ where: { responsibilityId: created.id } }),
+    ).toBe(1);
+  });
+
+  it("does not let a Run create Grants or control Responsibilities", async () => {
+    const s = await student();
+    const { schedules, calls } = fakeSchedules();
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules,
+      clock,
+    });
+    const input = {
+      preset: "keep_course_organized" as const,
+      courseId: s.courseId,
+      budgetMicroUsd: 50_000,
+    };
+    const created = await responsibilities.create(s.p, input);
+    if (created.status !== "ok") throw new Error(created.status);
+    const runId = await responsibilities.startRun({
+      studentId: s.studentId,
+      responsibilityId: created.id,
+      runId: randomUUID(),
+    });
+    if (!runId) throw new Error("no Run");
+    const run = principal.fromRun(runId);
+    await responsibilities.pause(s.p, created.id);
+    expect(await responsibilities.create(run, input)).toEqual({
+      status: "gone",
+    });
+    expect(await responsibilities.resume(run, created.id)).toEqual({
+      status: "gone",
+    });
+    expect(await responsibilities.pause(run, created.id)).toEqual({
+      status: "gone",
+    });
+    expect(await responsibilities.end(run, created.id)).toEqual({
+      status: "gone",
+    });
+    expect(await responsibilities.view(s.p, created.id)).toMatchObject({
+      state: "paused",
+    });
+    expect(calls).toEqual([`create ${created.id}`, `pause ${created.id}`]);
   });
 
   it("ends for good: its Grants and Schedule are gone, its history remains", async () => {
@@ -274,6 +421,7 @@ describe("Responsibilities", () => {
     });
     if (created.status !== "ok") throw new Error(created.status);
     const runId = (await responsibilities.startRun({
+      runId: randomUUID(),
       studentId: s.studentId,
       responsibilityId: created.id,
     }))!;

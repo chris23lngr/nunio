@@ -17,6 +17,7 @@ import {
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createFacts } from "@nunio/knowledge";
 import { createPlan, createPlanExecutor } from "@nunio/planning";
+import { Context } from "@temporalio/activity";
 
 export interface RunRef {
   studentId: string;
@@ -44,7 +45,10 @@ export function createRunActivities({
 }) {
   return {
     async startRun(ref: RunRef): Promise<string | null> {
-      return responsibilities.startRun(ref);
+      return responsibilities.startRun({
+        ...ref,
+        runId: Context.current().info.workflowExecution!.runId,
+      });
     },
     async proposeActions(runId: string): Promise<ActionIntent[]> {
       return propose(runId);

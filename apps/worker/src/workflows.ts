@@ -90,6 +90,7 @@ const {
     initialInterval: "5 seconds",
     maximumInterval: "1 minute",
     maximumAttempts: 10,
+    nonRetryableErrorTypes: ["InvalidIntentError", "KeyConflictError"],
   },
 });
 /**
@@ -102,6 +103,7 @@ export const approvalDecidedSignal =
 export async function responsibilityRun(ref: RunRef) {
   const runId = await startRun(ref);
   if (!runId) return { status: "skipped" as const };
+  const consumeWakes = patched("consume-approval-wakes");
   const wakes = new Map<string, number>();
   setHandler(approvalDecidedSignal, (actionId) => {
     wakes.set(actionId, (wakes.get(actionId) ?? 0) + 1);
@@ -112,12 +114,13 @@ export async function responsibilityRun(ref: RunRef) {
     let outcome = await performAction(step);
     while (outcome.status === "awaiting_approval") {
       const { actionId } = outcome;
-      const seen = wakes.get(actionId) ?? 0;
+      const seen = consumeWakes ? 0 : (wakes.get(actionId) ?? 0);
       // Waits for a decision or until the request expires, whichever comes first; the gate then decides again.
       await condition(
         () => (wakes.get(actionId) ?? 0) > seen,
         Math.max(new Date(outcome.expiresAt).getTime() - Date.now(), 1),
       );
+      if (consumeWakes) wakes.delete(actionId);
       outcome = await performAction(step);
     }
     if (outcome.status === "refused" && outcome.reason === "approval_expired") {

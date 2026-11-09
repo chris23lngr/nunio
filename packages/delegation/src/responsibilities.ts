@@ -44,6 +44,15 @@ export function createResponsibilities({
       );
     return schedules;
   };
+  // Re-read committed authority under a lock so a delayed command cannot overwrite a newer Schedule state.
+  const syncSchedule = (p: Principal, id: string) =>
+    withOwner(db, p, async (tx) => {
+      await tx.$executeRaw`SELECT 1 FROM "responsibility" WHERE "id" = ${id} FOR UPDATE`;
+      const r = await tx.responsibility.findUnique({ where: { id } });
+      if (r?.state === "paused") await scheduled().pause(id);
+      else if (r?.state === "active") await scheduled().unpause(id);
+      else if (r?.state === "ended") await scheduled().delete(id);
+    });
   return {
     async create(
       p: Principal,
@@ -53,6 +62,7 @@ export function createResponsibilities({
         budgetMicroUsd: number;
       },
     ) {
+      if (p.kind !== "student") return { status: "gone" } as const;
       return withOwner(db, p, async (tx, studentId) => {
         if (
           !(await tx.course.findFirst({
@@ -90,6 +100,7 @@ export function createResponsibilities({
 
     /** Takes no further Actions, including in a Run under way, while keeping its Grants. */
     async pause(p: Principal, id: string) {
+      if (p.kind !== "student") return { status: "gone" } as const;
       const found = await withOwner(db, p, async (tx) => {
         await tx.responsibility.updateMany({
           where: { id, state: "active" },
@@ -102,12 +113,13 @@ export function createResponsibilities({
       });
       if (!found) return { status: "gone" } as const;
       // After the commit: the record is what the gate checks, so a Run firing meanwhile is refused anyway.
-      await scheduled().pause(id);
+      await syncSchedule(p, id);
       return { status: "ok" } as const;
     },
 
     /** Only the student resumes a Paused Responsibility, whoever paused it. */
     async resume(p: Principal, id: string) {
+      if (p.kind !== "student") return { status: "gone" } as const;
       const found = await withOwner(db, p, async (tx) => {
         await tx.responsibility.updateMany({
           where: { id, state: "paused" },
@@ -119,13 +131,13 @@ export function createResponsibilities({
         );
       });
       if (!found) return { status: "gone" } as const;
-      // A Budget pause leaves the Schedule running (its Runs start nothing), so unpausing is always safe.
-      await scheduled().unpause(id);
+      await syncSchedule(p, id);
       return { status: "ok" } as const;
     },
 
     /** Stops for good: its Grants are gone and its history remains. */
     async end(p: Principal, id: string) {
+      if (p.kind !== "student") return { status: "gone" } as const;
       const found = await withOwner(db, p, async (tx) => {
         await tx.responsibility.updateMany({
           where: { id, state: { not: "ended" } },
@@ -135,7 +147,7 @@ export function createResponsibilities({
         return Boolean(await tx.responsibility.findUnique({ where: { id } }));
       });
       if (!found) return { status: "gone" } as const;
-      await scheduled().delete(id);
+      await syncSchedule(p, id);
       return { status: "ok" } as const;
     },
 
@@ -170,17 +182,26 @@ export function createResponsibilities({
     async startRun({
       studentId,
       responsibilityId,
+      runId,
     }: {
       studentId: string;
       responsibilityId: string;
+      /** Stable across retries of the workflow's startup Activity. */
+      runId: string;
     }) {
       return withOwner(db, mint.fromSession({ studentId }), async (tx) => {
+        await tx.$executeRaw`SELECT 1 FROM "responsibility" WHERE "id" = ${responsibilityId} FOR UPDATE`;
+        const existing = await tx.run.findUnique({ where: { id: runId } });
+        if (existing)
+          return existing.responsibilityId === responsibilityId
+            ? existing.id
+            : null;
         const responsibility = await tx.responsibility.findUnique({
           where: { id: responsibilityId },
         });
         if (responsibility?.state !== "active") return null;
         const run = await tx.run.create({
-          data: { id: randomUUID(), studentId, responsibilityId },
+          data: { id: runId, studentId, responsibilityId },
         });
         return run.id;
       });
