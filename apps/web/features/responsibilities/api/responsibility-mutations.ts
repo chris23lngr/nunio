@@ -3,6 +3,25 @@ import { mutationOptions } from "@tanstack/react-query";
 import { createApiClient } from "@/lib/api-client";
 import { responsibilityListQueries } from "./responsibility-queries";
 
+export function prepareForExam(apiOrigin: string, queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: async (obligationId: string) => {
+      const result = await createApiClient(apiOrigin).POST(
+        "/api/me/responsibilities",
+        {
+          body: { preset: "prepare_for_exam", obligationId },
+        },
+      );
+      if (!result.data) throw new Error("Could not delegate this exam.");
+      return result.data.id;
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({
+        queryKey: responsibilityListQueries(apiOrigin).queryKey,
+      }),
+  });
+}
+
 export function keepCourseOrganized(
   apiOrigin: string,
   queryClient: QueryClient,

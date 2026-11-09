@@ -175,3 +175,106 @@ test("pausing refreshes the list even while its cached state is fresh", async ()
   await screen.findByRole("button", { name: "Resume" });
   await waitFor(() => expect(row.textContent).toContain("paused"));
 });
+
+test("the student delegates 'prepare me for this exam' for one of their exams", async () => {
+  const withExams = [
+    {
+      ...courses[0]!,
+      obligations: [
+        {
+          id: "e0000000-0000-4000-8000-000000000001",
+          kind: "exam",
+          title: "Klausur",
+          state: "confirmed",
+        },
+        {
+          id: "e0000000-0000-4000-8000-000000000002",
+          kind: "assignment",
+          title: "Blatt 3",
+          state: "confirmed",
+        },
+        {
+          id: "e0000000-0000-4000-8000-000000000003",
+          kind: "exam",
+          title: "Probeklausur",
+          state: "rejected",
+        },
+      ],
+    },
+  ];
+  const created: unknown[] = [];
+  api.route("GET", "/api/me/responsibilities", () => Response.json([]));
+  api.route("GET", "/api/me/review", () =>
+    Response.json({ courses: withExams }),
+  );
+  api.route("POST", "/api/me/responsibilities", async (request) => {
+    created.push(await request.json());
+    return Response.json({ id: "r-2" }, { status: 201 });
+  });
+  render(
+    <TestProviders>
+      <ResponsibilitiesScreen apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  const exam = await screen.findByRole("combobox", { name: "Exam" });
+  await within(exam).findByRole("option", { name: "Klausur (Analysis I)" });
+  expect(
+    within(exam).queryByRole("option", { name: /Blatt 3|Probeklausur/ }),
+  ).toBeNull();
+  await userEvent.selectOptions(exam, "Klausur (Analysis I)");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Prepare me for this exam" }),
+  );
+
+  await waitFor(() =>
+    expect(created).toEqual([
+      {
+        preset: "prepare_for_exam",
+        obligationId: "e0000000-0000-4000-8000-000000000001",
+      },
+    ]),
+  );
+});
+
+test("an exam's Responsibility is named for the exam in the list and on its screen", async () => {
+  const exam = { id: "e0000000-0000-4000-8000-000000000001", title: "Klausur" };
+  api.route("GET", "/api/me/responsibilities", () =>
+    Response.json([
+      {
+        id: "r-2",
+        preset: "prepare_for_exam",
+        course: { id: courses[0]!.id, title: "Analysis I" },
+        exam,
+        state: "active",
+        pausedBy: null,
+      },
+    ]),
+  );
+  api.route("GET", "/api/me/review", () => Response.json({ courses }));
+  api.route("GET", "/api/me/responsibilities/r-2", () =>
+    Response.json({
+      ...shown("active"),
+      id: "r-2",
+      preset: "prepare_for_exam",
+      exam,
+    }),
+  );
+  render(
+    <TestProviders>
+      <ResponsibilitiesScreen apiOrigin={api.origin} />
+      <ResponsibilityScreen apiOrigin={api.origin} id="r-2" />
+    </TestProviders>,
+  );
+
+  expect(
+    (
+      await screen.findByRole("link", { name: "Prepare for Klausur" })
+    ).getAttribute("href"),
+  ).toBe("/responsibilities/r-2");
+  expect(
+    await screen.findByRole("heading", {
+      name: "Prepare for Klausur (Analysis I)",
+    }),
+  ).toBeTruthy();
+});
