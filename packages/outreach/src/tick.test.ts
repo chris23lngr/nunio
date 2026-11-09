@@ -259,6 +259,53 @@ describe("raising Interventions from their causes", () => {
     ]);
   });
 
+  it("queues messages only for the Interventions it raised, not one a Run raised meanwhile", async () => {
+    now = at("2026-11-09 08:00");
+    const p = await student();
+    if (p.kind !== "student") throw new Error("a student");
+    const actionId = randomUUID();
+    await admin.action.create({
+      data: {
+        id: actionId,
+        studentId: p.studentId,
+        key: `chat:${actionId}`,
+        kind: "studyBlock.create",
+        args: {},
+        status: "unconfirmed",
+      },
+    });
+    // Phase 9's raiseIntervention wins the race: its row lands between sync's read and insert.
+    const trigger = `raced_${actionId.replaceAll("-", "")}`;
+    await admin.$executeRawUnsafe(`
+      CREATE FUNCTION ${trigger}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+      BEGIN
+        IF pg_trigger_depth() = 1 AND NEW."actionId" = '${actionId}' THEN
+          INSERT INTO intervention (id, "studentId", kind, "dedupeKey", "actionId")
+          VALUES (gen_random_uuid()::text, NEW."studentId", NEW.kind, NEW."dedupeKey", NEW."actionId");
+        END IF;
+        RETURN NEW;
+      END $$`);
+    await admin.$executeRawUnsafe(
+      `CREATE TRIGGER ${trigger} BEFORE INSERT ON intervention FOR EACH ROW EXECUTE FUNCTION ${trigger}()`,
+    );
+    try {
+      await sender.tick();
+    } finally {
+      await admin.$executeRawUnsafe(
+        `DROP TRIGGER ${trigger} ON intervention; DROP FUNCTION ${trigger}()`,
+      );
+    }
+
+    const [raised] = await open(p);
+    expect(raised).toEqual(
+      expect.objectContaining({ subject: { kind: "action", id: actionId } }),
+    );
+    const queued = await admin.delivery.findMany({
+      where: { studentId: p.studentId, interventionId: { not: null } },
+    });
+    expect(queued.filter((d) => d.interventionId !== raised!.id)).toEqual([]);
+  });
+
   it("does not let the student close a lapsed Intervention", async () => {
     now = at("2026-11-09 08:00");
     const p = await student();

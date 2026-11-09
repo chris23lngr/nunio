@@ -150,10 +150,15 @@ export function createOutreachSender({
           actionId: c.subject.kind === "action" ? c.subject.id : null,
           createdAt: at,
         }));
-      await tx.intervention.createMany({ data: raised, skipDuplicates: true });
+      // A Run's raiseIntervention may insert the same cause meanwhile; only what was inserted here is announced.
+      const inserted = await tx.intervention.createManyAndReturn({
+        data: raised,
+        skipDuplicates: true,
+        select: { id: true },
+      });
       await tx.delivery.createMany({
         data: channels.flatMap((channel) =>
-          raised.map((i) => ({
+          inserted.map((i) => ({
             id: randomUUID(),
             studentId,
             channel,
