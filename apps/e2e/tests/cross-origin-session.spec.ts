@@ -143,8 +143,11 @@ test("a student signs out another session and requests deletion from account set
   const phonePage = await phone.newPage();
   await signInAs(phonePage, email);
 
-  await page.getByRole("link", { name: "Account" }).click();
-  const sessions = page.getByRole("listitem");
+  await page
+    .getByRole("navigation", { name: "App navigation" })
+    .getByRole("link", { name: "Account" })
+    .click();
+  const sessions = page.getByRole("main").getByRole("listitem");
   await expect(sessions).toHaveCount(2);
   await sessions
     .filter({ hasNotText: "This device" })
@@ -174,7 +177,10 @@ test("a student signs out everywhere from account settings", async ({
   const phonePage = await phone.newPage();
   await signInAs(phonePage, email);
 
-  await page.getByRole("link", { name: "Account" }).click();
+  await page
+    .getByRole("navigation", { name: "App navigation" })
+    .getByRole("link", { name: "Account" })
+    .click();
   await page.getByRole("button", { name: "Sign out everywhere" }).click();
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
 
@@ -333,7 +339,10 @@ test("account deletion cannot restore cached Sources through browser Back", asyn
   );
   await signIn(page, "cache-delete");
   await expect(page.getByText(/Deleted student's syllabus/)).toBeVisible();
-  await page.getByRole("link", { name: "Account" }).click();
+  await page
+    .getByRole("navigation", { name: "App navigation" })
+    .getByRole("link", { name: "Account" })
+    .click();
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Request account deletion" }).click();
   await expect(page).toHaveURL(`${origins.app}/sign-in?deletion=requested`);
@@ -362,7 +371,10 @@ test("signing out everywhere cannot restore cached Sources through browser Back"
   );
   await signIn(page, "cache-revoke");
   await expect(page.getByText(/Signed-out student's syllabus/)).toBeVisible();
-  await page.getByRole("link", { name: "Account" }).click();
+  await page
+    .getByRole("navigation", { name: "App navigation" })
+    .getByRole("link", { name: "Account" })
+    .click();
   await page.getByRole("button", { name: "Sign out everywhere" }).click();
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
   await page.goBack();
@@ -395,7 +407,10 @@ test("navigation from Review back to Sources reuses the recently loaded collecti
   );
   await signIn(page, "cache-navigation");
   await expect(page.getByText(/Navigation syllabus/)).toBeVisible();
-  await page.getByRole("link", { name: "Review", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "App navigation" })
+    .getByRole("link", { name: "Review", exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Review" })).toBeVisible();
   await page.getByRole("link", { name: "Back to Sources" }).click();
   await expect(page.getByText(/Navigation syllabus/)).toBeVisible();
