@@ -466,7 +466,7 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 - `web` shows the cards on Home (`features/approvals`), and `/responsibilities` with each Responsibility's screen (`features/responsibilities`).
 - Chat-origin Actions are not proposed yet: no Chat proposes an Action until a Chat can, so every card is a Run's.
 
-Still to do: the "prepare me for this exam" preset.
+**Progress (2026-11-13).** "Prepare me for this exam" is implemented as a reduced preset: a Responsibility scoped to one exam Obligation, with Grants to create and move Study Blocks for that exam only, whose Runs propose the Rebalance of that exam and its Tasks (`plan.intentsFor(p, { obligationId })`). Only an exam of the student's own qualifies. Topic coverage and practice scheduling wait for Phase 11, where practice items and Attempts exist; per-Topic Tasks would need a new Action kind.
 
 **Anti-pattern guards.** No app code checks Grants itself. `delegation` never imports Temporal. Free text is never treated as an Approval. There are no global Grants.
 
