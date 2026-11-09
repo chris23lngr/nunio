@@ -1,4 +1,7 @@
-import { SidebarProvider, SidebarTrigger } from "@nunio/ui/components/sidebar";
+import {
+  SidebarProvider,
+  SidebarTrigger,
+} from "@nunio/ui/components/sidebar/sidebar";
 import type { ReactNode } from "react";
 import { AppSidebar } from "@/features/shared/components/app-sidebar";
 
