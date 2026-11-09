@@ -1,0 +1,21 @@
+// Interventions nunio raises toward the student. Phase 10 builds the inbox, Briefings and delivery on these records.
+
+/// Something nunio initiates that asks for the student's attention or a decision. Never an Action.
+model Intervention {
+  id             String    @id
+  studentId      String
+  student        User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// approval_expired or unconfirmed for now.
+  kind           String
+  /// What triggered it, such as the Action whose Approval expired; one Intervention per trigger.
+  dedupeKey      String
+  actionId       String?
+  createdAt      DateTime  @default(now())
+  /// Seen or acknowledged; distinct from a Dismissal, which means it was not useful.
+  acknowledgedAt DateTime?
+  dismissedAt    DateTime?
+
+  @@unique([studentId, dedupeKey])
+  @@index([studentId, createdAt])
+  @@map("intervention")
+}

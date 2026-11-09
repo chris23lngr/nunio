@@ -42,6 +42,8 @@ model Responsibility {
   studentId      String
   student        User                @relation(fields: [studentId], references: [id], onDelete: Cascade)
   preset         String
+  /// Its scope, kept after End removes its Grants.
+  courseId       String?
   state          ResponsibilityState @default(active)
   /// Why it was Paused: by the student, or by exhausting its Budget. Only the student resumes it.
   pausedBy       String?

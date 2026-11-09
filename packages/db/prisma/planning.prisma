@@ -153,3 +153,15 @@ model FixedEvent {
   @@index([studentId, start])
   @@map("fixed_event")
 }
+
+/// Each Action the Plan executor took, under the gate's idempotency key, written with the effect itself.
+model PlanEffect {
+  idempotencyKey String
+  studentId      String
+  student        User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studyBlockId   String
+  createdAt      DateTime @default(now())
+
+  @@id([studentId, idempotencyKey])
+  @@map("plan_effect")
+}
