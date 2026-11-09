@@ -109,6 +109,7 @@
         "@nunio/delegation": "workspace:*",
         "@nunio/keys": "workspace:*",
         "@nunio/knowledge": "workspace:*",
+        "@nunio/planning": "workspace:*",
         "@temporalio/activity": "1.25.0",
         "@temporalio/client": "1.25.0",
         "@temporalio/common": "1.25.0",
