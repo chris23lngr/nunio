@@ -1,6 +1,6 @@
 # Outreach
 
-Status: accepted design, 2026-11-09, for Phase 10 of the [implementation plan](../implementation-plan.md). Domain terms follow [GLOSSARY.md](../../GLOSSARY.md) (Intervention, Acknowledgement, Dismissal, Lapse, Quiet Hours, Briefing, Inbox). Architecture terms (module, interface, seam, adapter, depth) follow the codebase-design vocabulary. Related decisions: ADR-0008 (amendment of 2026-11-09 on push services), ADR-0013, ADR-0014. Delivery facts come from [outreach-delivery.md](../research/outreach-delivery.md).
+Status: accepted design, 2026-11-09, for Phase 10 of the [implementation plan](../implementation-plan.md); implemented the same day, with the deviations recorded in the plan's Phase 10 progress. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md) (Intervention, Acknowledgement, Dismissal, Lapse, Quiet Hours, Briefing, Inbox). Architecture terms (module, interface, seam, adapter, depth) follow the codebase-design vocabulary. Related decisions: ADR-0008 (amendment of 2026-11-09 on push services), ADR-0013, ADR-0014. Delivery facts come from [outreach-delivery.md](../research/outreach-delivery.md).
 
 ## Purpose
 

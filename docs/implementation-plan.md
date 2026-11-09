@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0013](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), and [extraction.md](design/extraction.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -484,13 +484,21 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 4. Opt-in browser push (service worker, `PushManager.subscribe()`, generic payloads).
 5. Quiet hours and frequency settings. Messages are deduplicated, and they are not Actions (glossary).
 
-**Documentation references.** GLOSSARY ("Outreach"); [pilot-delivery.md](research/pilot-delivery.md), "Browser push"; brief "Proactivity and configuration".
+**Documentation references.** GLOSSARY ("Outreach"); [outreach.md](design/outreach.md) (entire); [outreach-delivery.md](research/outreach-delivery.md); [pilot-delivery.md](research/pilot-delivery.md), "Browser push"; ADR-0014 and the ADR-0008 amendment of 2026-11-09; brief "Proactivity and configuration".
 
 **Verification checklist.**
-- [ ] Duplicate triggers produce one Intervention.
-- [ ] Denied push permission leaves the product fully usable.
-- [ ] A push delivery never marks anything complete.
-- [ ] Dismissal and acknowledgement are recorded separately.
+- [x] Duplicate triggers produce one Intervention (`packages/outreach/src/tick.test.ts`, "raising Interventions from their causes").
+- [x] Denied push permission leaves the product fully usable (`apps/web/test/push.test.tsx`). Delivery on real Chrome, Firefox and iOS Home Screen devices is still to be checked after deploying.
+- [x] A push delivery never marks anything complete (`tick.test.ts`, "push").
+- [x] Dismissal and acknowledgement are recorded separately (`packages/outreach/src/inbox.test.ts`, `apps/web/test/inbox.test.tsx`).
+
+**Progress (2026-11-09).** Outreach is implemented in `packages/outreach` per [outreach.md](design/outreach.md):
+- The Inbox lists Interventions, open first, and the last seven Briefings. The student acknowledges or dismisses an open Intervention; either closes it once.
+- A five-minute `outreachTick` Schedule in the worker derives each student's causes (Shortfalls, Disagreements, expired Approvals, Unconfirmed Actions), raises one Intervention per new cause, and lapses those whose cause is gone. Phase 9's `raiseIntervention` stays so recorded Runs replay; its rows use the same cause keys.
+- A daily Briefing, at a time the student sets in their Plan's time zone, bundles open Interventions, waiting Approvals and active Responsibilities; it makes no model calls, and an empty day has none.
+- Email (ADR-0014) and opt-in browser push carry no content: email gives a count and the Inbox link, push is empty and the service worker shows fixed text. Each channel is sent and retried independently; a push service's 404 or 410 deletes the subscription. Quiet Hours hold both; a daily limit counts announcements, not channel copies, and leaves Briefings out.
+- Briefing emails carry RFC 8058 one-click unsubscribe headers, after a staging send confirmed TEM's DKIM signature covers them; the link stops only Briefing emails.
+- Deviations from the design: `Pusher` names the VAPID key it signs with (`keyId`), and push is sent with `web-push` 3.6.7's `generateRequestDetails` and `fetch`, since the library always uses `https`. A `briefingEmail` setting and an `unsubscribe` signing dependency were added for one-click unsubscribe.
 
 **Anti-pattern guards.** Do not route messages through the delegation gate. Do not put personal content in push payloads.
 
