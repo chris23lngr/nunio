@@ -11,7 +11,7 @@ import type { Facts } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
 import { causesOf } from "./causes.js";
 import type { Bundled, OutreachSettings } from "./outreach.js";
-import { settingsOf, unsubscribeToken } from "./outreach.js";
+import { openIntervention, settingsOf, unsubscribeToken } from "./outreach.js";
 
 type PlanView = Awaited<ReturnType<Plan["view"]>>;
 
@@ -164,7 +164,7 @@ export function createOutreachSender({
     ]);
     await withOwner(db, p, async (tx, studentId) => {
       const open = await tx.intervention.findMany({
-        where: { acknowledgedAt: null, dismissedAt: null, causeEndedAt: null },
+        where: openIntervention,
         orderBy: { createdAt: "desc" },
         select: { id: true },
       });
@@ -220,9 +220,7 @@ export function createOutreachSender({
           await tx.intervention.findMany({
             where: {
               id: { in: queued.flatMap((d) => d.interventionId ?? []) },
-              acknowledgedAt: null,
-              dismissedAt: null,
-              causeEndedAt: null,
+              ...openIntervention,
             },
             select: { id: true },
           })

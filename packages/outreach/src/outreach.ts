@@ -78,6 +78,13 @@ export type PushSubscriptionJson = {
   keys: { p256dh: string; auth: string };
 };
 
+/** An Intervention nobody has closed: not acknowledged, not dismissed, and its cause still holds. */
+export const openIntervention = {
+  acknowledgedAt: null,
+  dismissedAt: null,
+  causeEndedAt: null,
+} as const;
+
 /** The token in the one-click link that stops a student's Briefing emails. */
 export const unsubscribeToken = (secret: string, studentId: string) =>
   createHmac("sha256", secret).update(studentId).digest("hex");
@@ -226,9 +233,7 @@ export function createOutreach({
         const { count } = await tx.intervention.updateMany({
           where: {
             id: interventionId,
-            acknowledgedAt: null,
-            dismissedAt: null,
-            causeEndedAt: null,
+            ...openIntervention,
           },
           data:
             as === "acknowledged"
