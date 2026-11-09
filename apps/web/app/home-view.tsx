@@ -119,7 +119,30 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
         ) : (
           <p>Nothing is running.</p>
         )}
-        <p>Work nunio does for you on its own will appear here too.</p>
+        <h3>Delegated to nunio</h3>
+        {home.agentWork.length ? (
+          <ul>
+            {home.agentWork.map((item) =>
+              item.kind === "approval" ? (
+                <li key={item.actionId}>
+                  {item.title}: waiting for your Approval above
+                </li>
+              ) : (
+                <li key={item.id}>
+                  <Link href={`/responsibilities/${item.id}`}>
+                    Keep {item.course ?? "a Course that is gone"} organized
+                  </Link>{" "}
+                  ({item.state})
+                </li>
+              ),
+            )}
+          </ul>
+        ) : (
+          <p>
+            Nothing yet. <Link href="/responsibilities">Delegate a Course</Link>{" "}
+            and nunio keeps its Study Blocks planned.
+          </p>
+        )}
       </section>
     </>
   );

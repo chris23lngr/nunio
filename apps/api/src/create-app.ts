@@ -7,8 +7,8 @@ import {
 } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
-import type { Delegation } from "@nunio/delegation";
-import { createDelegation } from "@nunio/delegation";
+import type { Delegation, Responsibilities } from "@nunio/delegation";
+import { createDelegation, createResponsibilities } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 import { createAuth } from "@nunio/identity";
 import { sourceKeysFromEnv } from "@nunio/keys";
@@ -28,6 +28,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AppBindings } from "./app.js";
 import { routes } from "./app.js";
+import type { RunWorkflows } from "./run-workflows.js";
+import { runWorkflowsFromEnv } from "./run-workflows.js";
 import type { SourceWorkflows } from "./source-workflows.js";
 import { sourceWorkflowsFromEnv } from "./source-workflows.js";
 import type { SpikeDeps } from "./spike.js";
@@ -45,6 +47,8 @@ export interface AppDeps {
   plan: Plan;
   estimator: Estimator;
   projects: Projects;
+  responsibilities: Responsibilities;
+  runWorkflows: RunWorkflows;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
   /** Mounts the spike c routes when set. */
@@ -65,6 +69,8 @@ export function createApp({
   plan,
   estimator,
   projects,
+  responsibilities,
+  runWorkflows,
 }: AppDeps) {
   const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
@@ -92,6 +98,8 @@ export function createApp({
     c.set("plan", plan);
     c.set("estimator", estimator);
     c.set("projects", projects);
+    c.set("responsibilities", responsibilities);
+    c.set("runWorkflows", runWorkflows);
     await next();
   });
   app.route("/", routes);
@@ -153,10 +161,13 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     delegation,
     clock,
   });
+  const { runWorkflows, schedules } = runWorkflowsFromEnv(env);
   return createApp({
     auth,
     prisma,
     delegation,
+    responsibilities: createResponsibilities({ db: prisma, schedules, clock }),
+    runWorkflows,
     appOrigin,
     spike,
     sources,

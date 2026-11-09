@@ -151,6 +151,21 @@ export function createResponsibilities({
       return { status: "ok" } as const;
     },
 
+    /** The student's Responsibilities, newest first, Ended ones included: their history remains. */
+    async list(p: Principal) {
+      return withOwner(db, p, async (tx) =>
+        (
+          await tx.responsibility.findMany({ orderBy: { createdAt: "desc" } })
+        ).map((r) => ({
+          id: r.id,
+          preset: r.preset as Preset,
+          scope: { courseId: r.courseId },
+          state: r.state as "active" | "paused" | "ended",
+          pausedBy: r.pausedBy as "student" | "budget" | null,
+        })),
+      );
+    },
+
     /** Its scope, state, Grants, and usage against its Budget; null when it is not the student's. */
     async view(p: Principal, id: string) {
       return withOwner(db, p, async (tx) => {
@@ -183,11 +198,14 @@ export function createResponsibilities({
       studentId,
       responsibilityId,
       runId,
+      workflowId,
     }: {
       studentId: string;
       responsibilityId: string;
       /** Stable across retries of the workflow's startup Activity. */
       runId: string;
+      /** The workflow to signal once the student decides on one of the Run's Actions. */
+      workflowId: string;
     }) {
       return withOwner(db, mint.fromSession({ studentId }), async (tx) => {
         await tx.$executeRaw`SELECT 1 FROM "responsibility" WHERE "id" = ${responsibilityId} FOR UPDATE`;
@@ -201,7 +219,7 @@ export function createResponsibilities({
         });
         if (responsibility?.state !== "active") return null;
         const run = await tx.run.create({
-          data: { id: runId, studentId, responsibilityId },
+          data: { id: runId, studentId, responsibilityId, workflowId },
         });
         return run.id;
       });

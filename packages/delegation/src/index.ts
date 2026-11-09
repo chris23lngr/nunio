@@ -8,6 +8,7 @@ export {
   type ActionRecord,
   type Approve,
   type Clock,
+  type DecisionNotifier,
   DelegationUnavailable,
   type Deny,
   type Executor,
@@ -16,6 +17,7 @@ export {
   KeyConflictError,
   type Resolve,
   StaleApprovalError,
+  UnknownActionError,
 } from "./gate.js";
 export {
   type ActionIntent,

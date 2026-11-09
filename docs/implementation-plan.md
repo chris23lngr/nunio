@@ -460,7 +460,13 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 - The Plan executor (`createPlanExecutor`) records each key's effect with the effect itself, so its `lookup` is always certain; "keep this course organized" proposes the Rebalance of its Course (`plan.intentsFor`).
 - Interventions are minimal records (`intervention`), deduplicated per trigger, for Phase 10's inbox.
 
-Still to do: the API routes and Approval cards (wiring the Schedules adapter and signalling `approvalDecided` after `decide`), the Responsibility screen, and the "prepare me for this exam" preset.
+**Progress (2026-11-12).** Approval cards and the Responsibility screen are implemented:
+- `GET /api/me/approvals` shows each waiting Action exactly (work, Course, where its block is and would go), with its fingerprint and expiry; `POST /api/me/approvals/{actionId}` approves only the fingerprint shown (409 otherwise, 404 for another student's) or denies, then signals `approvalDecided` to the Run by its stored workflow and run ID. `GET /api/me/actions/unconfirmed` and `POST /api/me/actions/{actionId}/resolve` let the student resolve what nunio could not confirm.
+- Responsibility routes create "keep this course organized" (fixed $1 Budget), list, show (scope, Grants, recent Actions, next Run at 06:00 and its first Action, Budget), pause, resume and end; the API reaches Temporal through `runWorkflowsFromEnv`. Home's Agent work lists the waiting Approvals and each Responsibility.
+- `web` shows the cards on Home (`features/approvals`), and `/responsibilities` with each Responsibility's screen (`features/responsibilities`).
+- Chat-origin Actions are not proposed yet: no Chat proposes an Action until a Chat can, so every card is a Run's.
+
+Still to do: the "prepare me for this exam" preset.
 
 **Anti-pattern guards.** No app code checks Grants itself. `delegation` never imports Temporal. Free text is never treated as an Approval. There are no global Grants.
 

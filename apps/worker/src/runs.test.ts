@@ -14,6 +14,7 @@ import { TestWorkflowEnvironment } from "@temporalio/testing";
 import type { WorkflowBundle } from "@temporalio/worker";
 import { bundleWorkflowCode, Worker } from "@temporalio/worker";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createDecisionNotifier } from "./decision-notifier.js";
 import { ensureReconcileSchedule } from "./reconcile-schedule.js";
 import { createRunActivities } from "./run-activities.js";
 import { approvalDecidedSignal } from "./workflows.js";
@@ -170,6 +171,7 @@ async function worker(
     activities: createRunActivities({
       db: runtime,
       delegation,
+      notifyDecision: createDecisionNotifier(env.client),
       responsibilities: s.responsibilities,
       propose: async () => intents,
     }),
@@ -527,10 +529,84 @@ describe("a worker restart while a Run awaits Approval", () => {
 });
 
 describe("reconciliation", () => {
+  it("retires a pending wake for an ended execution without signalling its replacement", async () => {
+    const workflowId = `ended-decision-${randomUUID()}`;
+    const old = await env.client.workflow.start("responsibilityRun", {
+      taskQueue,
+      workflowId,
+      args: [{}],
+    });
+    await old.terminate();
+    const replacement = await env.client.workflow.start("responsibilityRun", {
+      taskQueue,
+      workflowId,
+      args: [{}],
+    });
+    try {
+      await createDecisionNotifier(env.client)({
+        workflowId,
+        runId: old.firstExecutionRunId,
+        actionId: "old-action",
+      });
+      const history = await replacement.fetchHistory();
+      expect(
+        history.events?.filter(
+          (e) => e.workflowExecutionSignaledEventAttributes,
+        ),
+      ).toEqual([]);
+    } finally {
+      await replacement.terminate();
+    }
+  });
+
+  it("wakes a denied Run after the API stops before delivering its decision signal", async () => {
+    const s = await student({ placedBy: "student" });
+    const { executor, dispatched } = fakeExecutor();
+    const gate = createDelegation({
+      db: runtime,
+      aiEnabled: () => true,
+      clock,
+    });
+    await (await worker(s, executor, [moveTo(s.blockIds[0]!, 2)])).runUntil(
+      async () => {
+        const handle = await env.client.workflow.start("responsibilityRun", {
+          taskQueue,
+          workflowId: `lost-decision-${randomUUID()}`,
+          args: [
+            { studentId: s.studentId, responsibilityId: s.responsibilityId },
+          ],
+        });
+        try {
+          const asking = await awaitingApproval(s.p);
+          // The API commits, then dies before it can make any Temporal call.
+          await gate.decide(s.p, { kind: "deny", actionId: asking.id });
+          expect(
+            await gate.history(s.p, { status: "awaiting_approval" }),
+          ).toEqual([]);
+          await env.client.workflow.execute("reconcileActions", {
+            taskQueue,
+            workflowId: `recover-decision-${randomUUID()}`,
+          });
+          await expect
+            .poll(async () => (await handle.describe()).status.name, {
+              timeout: 3_000,
+            })
+            .toBe("COMPLETED");
+          expect(await handle.result()).toEqual({ status: "done" });
+          expect(dispatched).toEqual([]);
+        } finally {
+          if ((await handle.describe()).status.name === "RUNNING")
+            await handle.terminate();
+        }
+      },
+    );
+  });
+
   it("confirms a dispatch a dead worker left in flight, through the executor's lookup", async () => {
     const s = await student();
     const runId = (await s.responsibilities.startRun({
       runId: randomUUID(),
+      workflowId: "run-workflow",
       studentId: s.studentId,
       responsibilityId: s.responsibilityId,
     }))!;
@@ -572,6 +648,7 @@ describe("reconciliation", () => {
       activities: createRunActivities({
         db: runtime,
         delegation,
+        notifyDecision: createDecisionNotifier(env.client),
         responsibilities: s.responsibilities,
         propose: async () => [],
       }),

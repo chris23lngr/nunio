@@ -16,6 +16,10 @@ export class StaleApprovalError extends Error {
   override name = "StaleApprovalError";
 }
 /** An infrastructure fault, or the same Action is being dispatched right now. Safe to retry with the same key. */
+/** `decide` named no Action of the student's: never theirs, or gone. */
+export class UnknownActionError extends StaleApprovalError {
+  override name = "UnknownActionError";
+}
 export class DelegationUnavailable extends Error {
   override name = "DelegationUnavailable";
 }
@@ -78,6 +82,10 @@ export type Resolve = {
 export interface ActionRecord {
   id: string;
   runId: string | null;
+  /** The Responsibility whose Run asked; null for a Chat. */
+  responsibilityId: string | null;
+  /** The workflow running that Run, to wake it once the student decides. */
+  workflowId: string | null;
   kind: Kind;
   args: unknown;
   status:
@@ -101,8 +109,16 @@ export interface ActionRecord {
 export interface HistoryQuery {
   runId?: string;
   responsibilityId?: string;
+  status?: ActionRecord["status"];
   limit?: number;
 }
+
+/** A wake carries no authority; it may be delivered more than once. */
+export type DecisionNotifier = (notice: {
+  actionId: string;
+  workflowId: string;
+  runId: string;
+}) => Promise<void>;
 
 export interface GateDeps {
   db: PrismaClient;
@@ -130,6 +146,7 @@ type Job = {
 type Row = NonNullable<Awaited<ReturnType<typeof findAction>>>;
 const include = {
   approval: true,
+  run: { select: { responsibilityId: true, workflowId: true } },
   attempts: { orderBy: { startedAt: "asc" } },
   events: { orderBy: { at: "asc" } },
 } as const;
@@ -183,6 +200,8 @@ function recordOf(a: Row): ActionRecord {
   return {
     id: a.id,
     runId: a.runId,
+    responsibilityId: a.run?.responsibilityId ?? null,
+    workflowId: a.run?.workflowId ?? null,
     kind: a.kind as Kind,
     args: a.args,
     status: a.status,
@@ -444,7 +463,35 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
     };
   };
 
+  /** The decision is already durable. Acknowledge its wake only after delivery, never before it. */
+  async function notifyDecision(
+    p: Principal,
+    actionId: string,
+    notify: DecisionNotifier,
+  ) {
+    const action = await withOwner(db, p, (tx) =>
+      findAction(tx, { id: actionId }),
+    );
+    if (
+      !action?.approval?.decision ||
+      !action.runId ||
+      !action.run?.workflowId ||
+      action.events.some((e) => e.type === "decision_notified")
+    )
+      return false;
+    await notify({
+      actionId,
+      runId: action.runId,
+      workflowId: action.run.workflowId,
+    });
+    await withOwner(db, p, (tx, studentId) =>
+      event(tx, studentId, actionId, "decision_notified"),
+    );
+    return true;
+  }
+
   return {
+    notifyDecision,
     async perform(
       p: Principal,
       { key, intent }: { key: string; intent: ActionIntent },
@@ -650,7 +697,7 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
       return withOwner(db, student, async (tx, studentId) => {
         await tx.$executeRaw`SELECT 1 FROM "action" WHERE "id" = ${d.actionId} FOR UPDATE`;
         const action = await findAction(tx, { id: d.actionId });
-        if (!action) throw new StaleApprovalError(`No Action ${d.actionId}`);
+        if (!action) throw new UnknownActionError(`No Action ${d.actionId}`);
         const now = clock.now();
         if (d.kind === "resolve") {
           if (action.status !== "unconfirmed")
@@ -719,8 +766,8 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
       });
     },
 
-    /** Recovers every in-flight Attempt older than the stale threshold through its executor's lookup; returns how many. */
-    async reconcile(): Promise<number> {
+    /** Recovers stale dispatches and pending decision wakes; neither recovery grants authority to act. */
+    async reconcile(notify?: DecisionNotifier): Promise<number> {
       const stale = await db.$queryRaw<
         { actionId: string; studentId: string }[]
       >`
@@ -734,7 +781,23 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
         if (action?.status === "dispatching")
           await recover(jobOf(action, studentId));
       }
-      return stale.length;
+      let notified = 0;
+      if (notify) {
+        const pending = await db.$queryRaw<
+          { actionId: string; studentId: string }[]
+        >`SELECT * FROM pending_approval_decisions()`;
+        for (const { actionId, studentId } of pending) {
+          if (
+            await notifyDecision(
+              mint.fromSession({ studentId }),
+              actionId,
+              notify,
+            )
+          )
+            notified++;
+        }
+      }
+      return stale.length + notified;
     },
 
     async history(
@@ -747,6 +810,7 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
         tx.action.findMany({
           where: {
             ...(q.runId && { runId: q.runId }),
+            ...(q.status && { status: q.status }),
             ...(q.responsibilityId && {
               run: { responsibilityId: q.responsibilityId },
             }),

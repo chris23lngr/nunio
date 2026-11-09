@@ -7,6 +7,7 @@ import { payloadCodecFromEnv } from "@nunio/keys";
 import { Client, Connection } from "@temporalio/client";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import { createActivities } from "./activities.js";
+import { createDecisionNotifier } from "./decision-notifier.js";
 import { log } from "./log.js";
 import { ensureReconcileSchedule } from "./reconcile-schedule.js";
 import { runActivitiesFromEnv } from "./run-activities.js";
@@ -37,25 +38,22 @@ const workflows = existsSync(here("./workflow-bundle.js"))
     };
 
 const sourceActivities = createSourceActivities(process.env);
-const runActivities = runActivitiesFromEnv(process.env);
 
 // The reconcile Schedule lives in Temporal; creating it again on each start is a no-op.
 const clientConnection = await Connection.connect({
   address: required("TEMPORAL_ADDRESS"),
   ...(apiKey && { tls: true, apiKey }),
 });
-try {
-  await ensureReconcileSchedule(
-    new Client({
-      connection: clientConnection,
-      namespace: required("TEMPORAL_NAMESPACE"),
-      dataConverter: { payloadCodecs: [codec] },
-    }),
-    taskQueue,
-  );
-} finally {
-  await clientConnection.close();
-}
+const client = new Client({
+  connection: clientConnection,
+  namespace: required("TEMPORAL_NAMESPACE"),
+  dataConverter: { payloadCodecs: [codec] },
+});
+const runActivities = runActivitiesFromEnv(
+  process.env,
+  createDecisionNotifier(client),
+);
+await ensureReconcileSchedule(client, taskQueue);
 const worker = await Worker.create({
   connection,
   namespace: required("TEMPORAL_NAMESPACE"),
@@ -77,6 +75,7 @@ try {
 } finally {
   await sourceActivities.close();
   await runActivities.close();
+  await clientConnection.close();
 }
 await connection.close();
 log("worker stopped");

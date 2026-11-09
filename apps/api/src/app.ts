@@ -2,16 +2,19 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { Answerer, Estimator } from "@nunio/ai";
 import { pilotStatus } from "@nunio/billing";
 import type { PrismaClient } from "@nunio/db";
-import type { Delegation } from "@nunio/delegation";
+import type { Delegation, Responsibilities } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 import type { Chats, Facts, Projects, Sources } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
+import { registerApprovalRoutes } from "./approvals.js";
 import { registerChatRoutes } from "./chats.js";
 import { registerHomeRoutes } from "./home.js";
 import { registerPlanRoutes } from "./plan.js";
 import { registerProjectRoutes } from "./projects.js";
+import { registerResponsibilityRoutes } from "./responsibilities.js";
 import { registerReviewRoutes } from "./review.js";
+import type { RunWorkflows } from "./run-workflows.js";
 import type { SourceWorkflows } from "./source-workflows.js";
 import { registerSourceRoutes } from "./sources.js";
 
@@ -28,6 +31,8 @@ export interface AppBindings {
     plan: Plan;
     estimator: Estimator;
     projects: Projects;
+    responsibilities: Responsibilities;
+    runWorkflows: RunWorkflows;
   };
 }
 
@@ -194,3 +199,5 @@ registerChatRoutes(routes);
 registerPlanRoutes(routes);
 registerProjectRoutes(routes);
 registerHomeRoutes(routes);
+registerApprovalRoutes(routes);
+registerResponsibilityRoutes(routes);

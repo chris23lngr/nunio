@@ -86,6 +86,8 @@ model Run {
   /// Null for a Run started from a Chat, which has no Grants.
   responsibilityId String?
   responsibility   Responsibility? @relation(fields: [responsibilityId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// The Temporal workflow running it, which the API signals once the student decides on one of its Actions.
+  workflowId       String?
   startedAt        DateTime        @default(now())
 
   actions Action[]

@@ -7,8 +7,17 @@ import type { Pool, PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
-import type { Delegation } from "@nunio/delegation";
-import { createDelegation, principal } from "@nunio/delegation";
+import type {
+  Delegation,
+  Executor,
+  Responsibilities,
+  Schedules,
+} from "@nunio/delegation";
+import {
+  createDelegation,
+  createResponsibilities,
+  principal,
+} from "@nunio/delegation";
 import { createAuth } from "@nunio/identity";
 import { createSourceKeys } from "@nunio/keys";
 import type { Facts, Sources } from "@nunio/knowledge";
@@ -23,6 +32,7 @@ import { createPlan } from "@nunio/planning";
 import { hashPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "./create-app.js";
+import type { RunWorkflows } from "./run-workflows.js";
 
 const appOrigin = "https://app.nunio.test";
 const apiOrigin = "https://api.nunio.test";
@@ -45,6 +55,21 @@ let app: ReturnType<typeof createApp>;
 let sources: Sources;
 let facts: Facts;
 let delegation: Delegation;
+let responsibilities: Responsibilities;
+/** What the API asked of Responsibility Schedules, and which Runs it woke, in order. */
+const scheduled: string[] = [];
+const signalled: { workflowId: string; runId: string; actionId: string }[] = [];
+const runWorkflows: RunWorkflows = {
+  signalDecided: async (run, actionId) =>
+    void signalled.push({ ...run, actionId }),
+};
+const schedules: Schedules = {
+  create: async ({ responsibilityId }) =>
+    void scheduled.push(`create ${responsibilityId}`),
+  pause: async (id) => void scheduled.push(`pause ${id}`),
+  unpause: async (id) => void scheduled.push(`unpause ${id}`),
+  delete: async (id) => void scheduled.push(`delete ${id}`),
+};
 /** What the answer model was asked, and what it replies next. */
 const prompts: AnswerInput[] = [];
 let reply = "";
@@ -157,7 +182,14 @@ beforeAll(async () => {
     facts,
     clock: { now: () => new Date() },
   });
+  responsibilities = createResponsibilities({
+    db: prisma,
+    schedules,
+    clock: { now: () => new Date() },
+  });
   app = createApp({
+    responsibilities,
+    runWorkflows,
     auth,
     prisma,
     delegation,
@@ -2145,5 +2177,594 @@ describe("Home", () => {
         })
       ).status,
     ).toBe(401);
+  });
+});
+
+/** A Plan executor that takes every effect; the API never dispatches, the Run does. */
+const executor: Executor = {
+  async execute(_, { idempotencyKey }) {
+    return { status: "done", effect: { studyBlockId: idempotencyKey } };
+  },
+  async lookup() {
+    return { status: "unknown" };
+  },
+};
+
+/**
+ * A student whose "keep this course organized" Run asked to move a block they placed: the Run's workflow is waiting.
+ */
+async function askedForApproval(
+  name: string,
+  { placedBy = "student" as "student" | "nunio", executes = executor } = {},
+) {
+  const cookie = await signUp(name);
+  const id = await studentId(cookie);
+  const blockId = randomUUID();
+  await admin.allowance.upsert({
+    where: { studentId: id },
+    create: { studentId: id, limitMicroUsd: 1_000_000 },
+    update: {},
+  });
+  const entered = await facts.enterObligation(
+    principal.fromSession({ studentId: id }),
+    {
+      course: { title: "Analysis I", code: "MA-101" },
+      kind: "assignment",
+      title: "Problem sheet 1",
+      due: { date: "2099-01-05", time: "12:00", timeZone: null },
+      destination: null,
+    },
+  );
+  if (entered.status !== "ok") throw new Error(entered.status);
+  const obligationId = entered.id;
+  const { courseId } = await admin.obligation.findUniqueOrThrow({
+    where: { id: obligationId },
+  });
+  await admin.studyBlock.create({
+    data: {
+      id: blockId,
+      studentId: id,
+      obligationId,
+      placedBy,
+      start: new Date("2099-01-01T09:00:00Z"),
+      end: new Date("2099-01-01T10:00:00Z"),
+    },
+  });
+  const created = await responsibilities.create(
+    principal.fromSession({ studentId: id }),
+    {
+      preset: "keep_course_organized",
+      courseId,
+      budgetMicroUsd: 1_000_000,
+    },
+  );
+  if (created.status !== "ok") throw new Error(created.status);
+  const runId = randomUUID(),
+    workflowId = `run/${created.id}-2099-01-01T06:00:00Z`;
+  await responsibilities.startRun({
+    studentId: id,
+    responsibilityId: created.id,
+    runId,
+    workflowId,
+  });
+  const intent = {
+    kind: "studyBlock.move" as const,
+    studyBlockId: blockId,
+    start: new Date("2099-01-02T14:00:00Z"),
+    end: new Date("2099-01-02T15:00:00Z"),
+  };
+  const gate = createDelegation({
+    db: prisma,
+    aiEnabled: () => true,
+    executors: { plan: executes },
+  });
+  const outcome = await gate.perform(principal.fromRun(runId), {
+    key: `${runId}:1`,
+    intent,
+  });
+  const asking = outcome as Extract<
+    typeof outcome,
+    { status: "awaiting_approval" }
+  >;
+  return {
+    cookie,
+    outcome,
+    headers: { cookie, origin: appOrigin, "content-type": "application/json" },
+    asking,
+    runId,
+    workflowId,
+    responsibilityId: created.id,
+    blockId,
+    obligationId,
+  };
+}
+
+describe("Approvals", () => {
+  it.each(["approve", "deny"] as const)(
+    "saves %s while Temporal is unavailable and later delivers its wake without another click",
+    async (decision) => {
+      const asked = await askedForApproval(`approval-unavailable-${decision}`);
+      const signal = vi
+        .spyOn(runWorkflows, "signalDecided")
+        .mockRejectedValueOnce(new Error("Temporal unavailable"));
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const response = await app.request(
+          `${apiOrigin}/api/me/approvals/${asked.asking.actionId}`,
+          {
+            method: "POST",
+            headers: asked.headers,
+            body: JSON.stringify(
+              decision === "approve"
+                ? { decision, fingerprint: asked.asking.fingerprint }
+                : { decision },
+            ),
+          },
+        );
+        expect(response.status).toBe(200);
+        expect(signal).toHaveBeenCalledTimes(1);
+        expect(log).toHaveBeenCalled();
+        expect(signalled).not.toContainEqual(
+          expect.objectContaining({ actionId: asked.asking.actionId }),
+        );
+        await delegation.reconcile(({ workflowId, runId, actionId }) =>
+          runWorkflows.signalDecided({ workflowId, runId }, actionId),
+        );
+        expect(signalled).toContainEqual({
+          workflowId: asked.workflowId,
+          runId: asked.runId,
+          actionId: asked.asking.actionId,
+        });
+        expect(signal).toHaveBeenCalledTimes(2);
+        await delegation.reconcile(({ workflowId, runId, actionId }) =>
+          runWorkflows.signalDecided({ workflowId, runId }, actionId),
+        );
+        expect(signal).toHaveBeenCalledTimes(2);
+      } finally {
+        signal.mockRestore();
+        log.mockRestore();
+      }
+    },
+  );
+
+  it("shows the student the exact Action a Run asked about, with its fingerprint and expiry", async () => {
+    const asked = await askedForApproval("approval-list");
+
+    const response = await app.request(`${apiOrigin}/api/me/approvals`, {
+      headers: { cookie: asked.cookie },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([
+      {
+        actionId: asked.asking.actionId,
+        action: {
+          kind: "studyBlock.move",
+          work: { title: "Problem sheet 1", course: "Analysis I" },
+          from: {
+            start: "2099-01-01T09:00:00.000Z",
+            end: "2099-01-01T10:00:00.000Z",
+          },
+          to: {
+            start: "2099-01-02T14:00:00.000Z",
+            end: "2099-01-02T15:00:00.000Z",
+          },
+        },
+        fingerprint: asked.asking.fingerprint,
+        expiresAt: asked.asking.expiresAt.toISOString(),
+        responsibility: {
+          id: asked.responsibilityId,
+          preset: "keep_course_organized",
+        },
+      },
+    ]);
+  });
+
+  it("records an Approval of the fingerprint the student was shown, then wakes the Run", async () => {
+    const asked = await askedForApproval("approval-approve");
+
+    const response = await app.request(
+      `${apiOrigin}/api/me/approvals/${asked.asking.actionId}`,
+      {
+        method: "POST",
+        headers: asked.headers,
+        body: JSON.stringify({
+          decision: "approve",
+          fingerprint: asked.asking.fingerprint,
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(signalled).toContainEqual({
+      workflowId: asked.workflowId,
+      runId: asked.runId,
+      actionId: asked.asking.actionId,
+    });
+    expect(
+      (
+        await delegation.history(
+          principal.fromSession({ studentId: await studentId(asked.cookie) }),
+          {},
+        )
+      )[0],
+    ).toMatchObject({ approval: { decision: "approved" } });
+  });
+
+  it("refuses an Approval of any other fingerprint and wakes no Run", async () => {
+    const asked = await askedForApproval("approval-stale");
+    const before = signalled.length;
+
+    const response = await app.request(
+      `${apiOrigin}/api/me/approvals/${asked.asking.actionId}`,
+      {
+        method: "POST",
+        headers: asked.headers,
+        body: JSON.stringify({
+          decision: "approve",
+          fingerprint: "not-what-was-shown",
+        }),
+      },
+    );
+
+    expect(response.status).toBe(409);
+    expect(signalled).toHaveLength(before);
+  });
+
+  it("answers another student's Action as gone", async () => {
+    const theirs = await askedForApproval("approval-theirs");
+    const cookie = await signUp("approval-intruder");
+
+    const response = await app.request(
+      `${apiOrigin}/api/me/approvals/${theirs.asking.actionId}`,
+      {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: appOrigin,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          decision: "approve",
+          fingerprint: theirs.asking.fingerprint,
+        }),
+      },
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  it("records a denial and wakes the Run, which then takes no Action", async () => {
+    const asked = await askedForApproval("approval-deny");
+
+    const response = await app.request(
+      `${apiOrigin}/api/me/approvals/${asked.asking.actionId}`,
+      {
+        method: "POST",
+        headers: asked.headers,
+        body: JSON.stringify({ decision: "deny" }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(signalled).toContainEqual({
+      workflowId: asked.workflowId,
+      runId: asked.runId,
+      actionId: asked.asking.actionId,
+    });
+    const listed = await app.request(`${apiOrigin}/api/me/approvals`, {
+      headers: { cookie: asked.cookie },
+    });
+    expect(await listed.json()).toEqual([]);
+  });
+});
+
+describe("an Unconfirmed Action", () => {
+  it("is listed for the student, as the exact Action nunio could not confirm", async () => {
+    const ambiguous: Executor = {
+      ...executor,
+      execute: async () => ({ status: "ambiguous" }),
+    };
+    const unconfirmed = await askedForApproval("unconfirmed-list", {
+      placedBy: "nunio",
+      executes: ambiguous,
+    });
+
+    const listed = await app.request(
+      `${apiOrigin}/api/me/actions/unconfirmed`,
+      { headers: { cookie: unconfirmed.cookie } },
+    );
+
+    expect(await listed.json()).toEqual([
+      {
+        actionId: unconfirmed.outcome.actionId,
+        action: expect.objectContaining({
+          kind: "studyBlock.move",
+          work: { title: "Problem sheet 1", course: "Analysis I" },
+        }),
+      },
+    ]);
+  });
+
+  it("is resolved by the student, as having happened or not", async () => {
+    const ambiguous: Executor = {
+      ...executor,
+      execute: async () => ({ status: "ambiguous" }),
+    };
+    const unconfirmed = await askedForApproval("unconfirmed-resolve", {
+      placedBy: "nunio",
+      executes: ambiguous,
+    });
+    expect(unconfirmed.outcome).toMatchObject({ status: "unconfirmed" });
+
+    const response = await app.request(
+      `${apiOrigin}/api/me/actions/${unconfirmed.outcome.actionId}/resolve`,
+      {
+        method: "POST",
+        headers: unconfirmed.headers,
+        body: JSON.stringify({ resolution: "did_not_happen" }),
+      },
+    );
+    const again = await app.request(
+      `${apiOrigin}/api/me/actions/${unconfirmed.outcome.actionId}/resolve`,
+      {
+        method: "POST",
+        headers: unconfirmed.headers,
+        body: JSON.stringify({ resolution: "happened" }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(again.status).toBe(409);
+    expect(
+      (
+        await delegation.history(
+          principal.fromSession({
+            studentId: await studentId(unconfirmed.cookie),
+          }),
+          {},
+        )
+      )[0],
+    ).toMatchObject({ status: "failed" });
+  });
+});
+
+/** A student with one entered Obligation in "Analysis I", estimated so the Plan proposes work for it. */
+async function withCourse(name: string) {
+  const cookie = await signUp(name);
+  const id = await studentId(cookie);
+  const headers = {
+    cookie,
+    origin: appOrigin,
+    "content-type": "application/json",
+  };
+  const entered = await facts.enterObligation(
+    principal.fromSession({ studentId: id }),
+    {
+      course: { title: "Analysis I", code: "MA-101" },
+      kind: "assignment",
+      title: "Problem sheet 1",
+      due: { date: "2099-01-05", time: "12:00", timeZone: null },
+      destination: null,
+    },
+  );
+  if (entered.status !== "ok") throw new Error(entered.status);
+  await app.request(`${apiOrigin}/api/me/estimates/obligation/${entered.id}`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ minutes: 60 }),
+  });
+  const { courseId } = await admin.obligation.findUniqueOrThrow({
+    where: { id: entered.id },
+  });
+  return { cookie, headers, courseId, obligationId: entered.id };
+}
+
+describe("Responsibilities", () => {
+  it("keeps an empty Course identifiable in its Responsibility detail, list and Home", async () => {
+    const cookie = await signUp("responsibility-empty-course");
+    const courseId = randomUUID();
+    await admin.course.create({
+      data: {
+        id: courseId,
+        studentId: await studentId(cookie),
+        title: "Analysis I",
+        matchTitle: "analysis i",
+        status: "accepted",
+      },
+    });
+    const response = await app.request(`${apiOrigin}/api/me/responsibilities`, {
+      method: "POST",
+      headers: {
+        cookie,
+        origin: appOrigin,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ preset: "keep_course_organized", courseId }),
+    });
+    expect(response.status).toBe(201);
+    const { id } = (await response.json()) as { id: string };
+    const course = { id: courseId, title: "Analysis I" };
+    const detail = await app.request(
+      `${apiOrigin}/api/me/responsibilities/${id}`,
+      { headers: { cookie } },
+    );
+    const list = await app.request(`${apiOrigin}/api/me/responsibilities`, {
+      headers: { cookie },
+    });
+    const home = await app.request(`${apiOrigin}/api/me/home`, {
+      headers: { cookie },
+    });
+    expect(await detail.json()).toMatchObject({ id, course });
+    expect(await list.json()).toEqual([
+      expect.objectContaining({ id, course }),
+    ]);
+    expect(await home.json()).toMatchObject({
+      agentWork: [expect.objectContaining({ id, course: "Analysis I" })],
+    });
+  });
+
+  it("delegates 'keep this course organized' and shows its scope, Grants, Budget and next planned Action", async () => {
+    const s = await withCourse("responsibility-create");
+
+    const created = await app.request(`${apiOrigin}/api/me/responsibilities`, {
+      method: "POST",
+      headers: s.headers,
+      body: JSON.stringify({
+        preset: "keep_course_organized",
+        courseId: s.courseId,
+      }),
+    });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+    const shown = await app.request(
+      `${apiOrigin}/api/me/responsibilities/${id}`,
+      { headers: { cookie: s.cookie } },
+    );
+
+    expect(scheduled).toContain(`create ${id}`);
+    expect(shown.status).toBe(200);
+    const body = (await shown.json()) as { next: { runAt: string } };
+    expect(body).toMatchObject({
+      id,
+      preset: "keep_course_organized",
+      course: { id: s.courseId, title: "Analysis I" },
+      state: "active",
+      pausedBy: null,
+      grants: ["studyBlock.create", "studyBlock.move"],
+      budget: { limitMicroUsd: 1_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
+      recentActions: [],
+      next: {
+        action: {
+          kind: "studyBlock.create",
+          work: { title: "Problem sheet 1", course: "Analysis I" },
+        },
+      },
+    });
+    // The next Run starts at 06:00 in the student's time zone, within a day.
+    const runAt = new Date(body.next.runAt);
+    expect(runAt.getTime() - Date.now()).toBeGreaterThan(0);
+    expect(runAt.getTime() - Date.now()).toBeLessThanOrEqual(24 * 60 * 60_000);
+    expect(
+      runAt.toLocaleTimeString("en-GB", {
+        timeZone: "Europe/Berlin",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    ).toBe("06:00");
+  });
+
+  it("pauses, resumes and ends through its Schedule, and lists it with its state", async () => {
+    const s = await withCourse("responsibility-control");
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/responsibilities`, {
+        method: "POST",
+        headers: s.headers,
+        body: JSON.stringify({
+          preset: "keep_course_organized",
+          courseId: s.courseId,
+        }),
+      })
+    ).json()) as { id: string };
+    const control = (action: string) =>
+      app.request(`${apiOrigin}/api/me/responsibilities/${id}/${action}`, {
+        method: "POST",
+        headers: s.headers,
+      });
+    const shown = async () =>
+      (await (
+        await app.request(`${apiOrigin}/api/me/responsibilities/${id}`, {
+          headers: { cookie: s.cookie },
+        })
+      ).json()) as object;
+
+    expect((await control("pause")).status).toBe(200);
+    expect(await shown()).toMatchObject({
+      state: "paused",
+      pausedBy: "student",
+      next: { runAt: null, action: null },
+    });
+    expect((await control("resume")).status).toBe(200);
+    expect(await shown()).toMatchObject({ state: "active", pausedBy: null });
+    expect((await control("end")).status).toBe(200);
+    expect(await shown()).toMatchObject({ state: "ended", grants: [] });
+    expect((await control("resume")).status).toBe(404);
+
+    expect(scheduled.filter((call) => call.endsWith(id))).toEqual([
+      `create ${id}`,
+      `pause ${id}`,
+      `unpause ${id}`,
+      `delete ${id}`,
+    ]);
+    const listed = await app.request(`${apiOrigin}/api/me/responsibilities`, {
+      headers: { cookie: s.cookie },
+    });
+    expect(await listed.json()).toEqual([
+      {
+        id,
+        preset: "keep_course_organized",
+        course: { id: s.courseId, title: "Analysis I" },
+        state: "ended",
+        pausedBy: null,
+      },
+    ]);
+  });
+
+  it("show on Home as Agent work: the Approvals waiting first, then each Responsibility", async () => {
+    const asked = await askedForApproval("responsibility-home");
+
+    const home = await app.request(`${apiOrigin}/api/me/home`, {
+      headers: { cookie: asked.cookie },
+    });
+
+    expect(((await home.json()) as { agentWork: unknown[] }).agentWork).toEqual(
+      [
+        {
+          kind: "approval",
+          actionId: asked.asking.actionId,
+          title: "Problem sheet 1",
+          expiresAt: asked.asking.expiresAt.toISOString(),
+        },
+        {
+          kind: "responsibility",
+          id: asked.responsibilityId,
+          preset: "keep_course_organized",
+          course: "Analysis I",
+          state: "active",
+        },
+      ],
+    );
+  });
+
+  it("shows its recent Actions on its screen, each as the exact Action", async () => {
+    const asked = await askedForApproval("responsibility-recent");
+
+    const shown = await app.request(
+      `${apiOrigin}/api/me/responsibilities/${asked.responsibilityId}`,
+      { headers: { cookie: asked.cookie } },
+    );
+
+    expect(
+      ((await shown.json()) as { recentActions: unknown[] }).recentActions,
+    ).toEqual([
+      {
+        id: asked.asking.actionId,
+        status: "awaiting_approval",
+        refusal: null,
+        at: expect.any(String),
+        action: {
+          kind: "studyBlock.move",
+          work: { title: "Problem sheet 1", course: "Analysis I" },
+          from: {
+            start: "2099-01-01T09:00:00.000Z",
+            end: "2099-01-01T10:00:00.000Z",
+          },
+          to: {
+            start: "2099-01-02T14:00:00.000Z",
+            end: "2099-01-02T15:00:00.000Z",
+          },
+        },
+      },
+    ]);
   });
 });
