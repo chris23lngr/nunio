@@ -46,9 +46,9 @@ async function createStudent(name: string): Promise<string> {
 
 async function signInAs(page: Page, email: string): Promise<void> {
   await page.goto(`${origins.app}/sign-in`);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  const submit = page.getByRole("button", { name: "Sign in", exact: true });
+  await page.getByLabel("E-Mail").fill(email);
+  await page.getByLabel("Passwort").fill(password);
+  const submit = page.getByRole("button", { name: "Mit E-Mail anmelden", exact: true });
   await submit.click();
   await expect(page).toHaveURL(`${origins.app}/`);
 }
@@ -127,7 +127,7 @@ test("a student signs out another session and requests deletion from account set
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Request account deletion" }).click();
   await expect(page).toHaveURL(`${origins.app}/sign-in?deletion=requested`);
-  await expect(page.getByText("Your account deletion request was received")).toBeVisible();
+  await expect(page.getByText("Deine Anfrage zur Kontolöschung ist eingegangen.")).toBeVisible();
   await page.goto(`${origins.app}/`);
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
   await phone.close();
@@ -170,7 +170,7 @@ test("an expired session removes cached Sources from an open page", async ({ pag
   await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
   await expect(page.getByText(/Private biology syllabus/)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mit E-Mail anmelden", exact: true })).toBeVisible();
   expect(await page.evaluate(() => Reflect.get(window, "foundationDocument"))).toBe("kept");
 });
 
@@ -187,9 +187,9 @@ test("signing out and switching students never reuses the previous student's Sou
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
   title = "Grace's private syllabus";
   // Stay in the same document: a page.goto would hide an in-memory cache leak.
-  await page.getByLabel("Email").fill(second);
-  await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByLabel("E-Mail").fill(second);
+  await page.getByLabel("Passwort", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Mit E-Mail anmelden", exact: true }).click();
   await expect(page.getByText(/Grace's private syllabus/)).toBeVisible();
   await expect(page.getByText(/Ada's private syllabus/)).toHaveCount(0);
   expect(await page.evaluate(() => Reflect.get(window, "foundationDocument"))).toBe("kept");
@@ -231,7 +231,7 @@ test("account deletion cannot restore cached Sources through browser Back", asyn
   await expect(page).toHaveURL(`${origins.app}/sign-in?deletion=requested`);
   await page.goBack();
   await expect(page.getByText(/Deleted student's syllabus/)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mit E-Mail anmelden", exact: true })).toBeVisible();
 });
 
 test("signing out everywhere cannot restore cached Sources through browser Back", async ({ page }) => {
@@ -245,7 +245,7 @@ test("signing out everywhere cannot restore cached Sources through browser Back"
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
   await page.goBack();
   await expect(page.getByText(/Signed-out student's syllabus/)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mit E-Mail anmelden", exact: true })).toBeVisible();
 });
 
 test("navigation from Review back to Sources reuses the recently loaded collection", async ({ page }) => {

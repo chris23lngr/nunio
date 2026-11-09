@@ -143,7 +143,7 @@ export function createAuth({ prisma, baseURL, trustedOrigins, secret, email, coo
       },
     }],
     // Authorization decisions must read the session row, never a cached cookie.
-    session: { cookieCache: { enabled: false } },
+    session: { expiresIn: 60 * 60 * 24 * 30, cookieCache: { enabled: false } },
     advanced: {
       // Better Auth skips both checks when NODE_ENV=test or TEST is set; never let the environment decide.
       disableOriginCheck: false,
