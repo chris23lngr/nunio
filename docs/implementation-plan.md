@@ -451,6 +451,8 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 - [ ] A stale Artifact version is refused.
 - [ ] Replaying recorded workflow histories against the current code succeeds in CI.
 
+**Progress (2026-11-10).** The gate in `packages/delegation` is implemented: the gate suite (`gate.test.ts`), the contract suite (`kinds.test.ts`) and the table-driven decision core (`decision.test.ts`), with the pilot deviations recorded in [delegation-gate.md](design/delegation-gate.md). It covers "a Pause between two Actions stops the second", "repeated Approval clicks dispatch once", and, standing in for a stale Artifact version, a moved block refused with `approval_mismatch`. Still to do: Responsibilities and Runs in the worker, the production Plan executor, the Approval cards and Responsibility screen, and the presets.
+
 **Anti-pattern guards.** No app code checks Grants itself. `delegation` never imports Temporal. Free text is never treated as an Approval. There are no global Grants.
 
 ---
