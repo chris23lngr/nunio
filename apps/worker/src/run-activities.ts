@@ -15,7 +15,8 @@ import {
   principal,
   withOwner,
 } from "@nunio/delegation";
-import { createScalewayMailer } from "@nunio/identity";
+// The mailer alone: the package root also loads Better Auth, which the worker image does not carry.
+import { createScalewayMailer } from "@nunio/identity/email";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createFacts } from "@nunio/knowledge";
 import { createOutreachSender, createWebPusher, keyOf } from "@nunio/outreach";
