@@ -327,3 +327,14 @@ test("the student sets Quiet Hours across midnight, turns them off, and changes 
     ]),
   );
 });
+
+test("acknowledging and dismissing do not look alike", async () => {
+  serveInbox();
+  const item = await screen.findByRole("article", {
+    name: /approval expired.*Problem sheet 1/i,
+  });
+
+  const gotIt = within(item).getByRole("button", { name: "Got it" });
+  const notUseful = within(item).getByRole("button", { name: "Not useful" });
+  expect(gotIt.className).not.toBe(notUseful.className);
+});

@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@nunio/ui/components/button/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { hours } from "@/app/(app)/plan-wording";
 import { nameOf } from "@/features/responsibilities/name";
@@ -50,20 +51,22 @@ export function InboxScreen({ apiOrigin }: { apiOrigin: string }) {
           {open.map((i) => (
             <article key={i.id} aria-label={headingOf(i)}>
               <h3>{headingOf(i)}</h3>
-              <button
+              <Button
                 type="button"
+                variant="primary"
                 disabled={close.isPending}
                 onClick={() => close.mutate({ id: i.id, as: "acknowledged" })}
               >
                 Got it
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
                 disabled={close.isPending}
                 onClick={() => close.mutate({ id: i.id, as: "dismissed" })}
               >
                 Not useful
-              </button>
+              </Button>
             </article>
           ))}
         </section>
