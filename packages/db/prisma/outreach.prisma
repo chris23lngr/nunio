@@ -40,7 +40,7 @@ model Delivery {
   id             String    @id
   studentId      String
   student        User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  /// email for now.
+  /// email or push.
   channel        String
   interventionId String?
   briefingId     String?
@@ -65,4 +65,20 @@ model Briefing {
 
   @@unique([studentId, localDate])
   @@map("briefing")
+}
+
+/// One device's opt-in to empty push messages. The endpoint is a capability URL and never logged.
+model PushSubscription {
+  id             String    @id
+  studentId      String
+  student        User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  endpoint       String    @unique
+  p256dh         String
+  auth           String
+  expirationTime DateTime?
+  /// The public VAPID key it was created with; a rotated key needs every device to subscribe again.
+  vapidKeyId     String
+  createdAt      DateTime  @default(now())
+
+  @@map("push_subscription")
 }

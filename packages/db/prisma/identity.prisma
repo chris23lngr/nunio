@@ -33,6 +33,7 @@ model User {
   outreachSettings OutreachSettings?
   briefings        Briefing[]
   deliveries       Delivery[]
+  pushSubscriptions PushSubscription[]
 
   @@map("user")
 }

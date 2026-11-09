@@ -81,6 +81,9 @@ describe("the worker process", () => {
       NOTIFY_SCW_SECRET_KEY: "test",
       NOTIFY_EMAIL_FROM: "notifications@nunio.test",
       APP_ORIGIN: "https://app.nunio.test",
+      VAPID_PUBLIC_KEY: "test",
+      VAPID_PRIVATE_KEY: "test",
+      VAPID_SUBJECT: "mailto:founder@nunio.test",
     });
     await logged("worker running");
 

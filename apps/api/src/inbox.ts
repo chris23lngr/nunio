@@ -275,3 +275,61 @@ export function registerOutreachSettingsRoutes(
     },
   );
 }
+
+const Subscription = z
+  .object({
+    endpoint: z.string().url().startsWith("https://"),
+    expirationTime: z.number().nullable(),
+    keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
+  })
+  .describe("The device's PushSubscription.toJSON(); its endpoint is a secret.")
+  .openapi("PushSubscription");
+
+export function registerPushRoutes(routes: OpenAPIHono<AppBindings>) {
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/push-key",
+      responses: {
+        200: json(
+          z.object({ publicKey: z.string() }),
+          "The VAPID public key a device subscribes with.",
+        ),
+        401: errors[401],
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return c.json({ publicKey: c.get("outreach").pushKey }, 200);
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/push-subscriptions",
+      request: { ...body(Subscription) },
+      responses: { 200: Done, 400: outcomes[400], 401: errors[401] },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      await c.get("outreach").subscribe(p, c.req.valid("json"));
+      return c.json({ status: "ok" as const }, 200);
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "delete",
+      path: "/api/me/push-subscriptions",
+      request: { ...body(z.object({ endpoint: z.string() })) },
+      responses: { 200: Done, 400: outcomes[400], 401: errors[401] },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      await c.get("outreach").unsubscribe(p, c.req.valid("json").endpoint);
+      return c.json({ status: "ok" as const }, 200);
+    },
+  );
+}

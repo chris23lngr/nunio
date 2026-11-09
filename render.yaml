@@ -61,6 +61,13 @@ services:
       # The app origin the Inbox link in every email points to.
       - key: APP_ORIGIN
         sync: false
+      # Browser push (ADR-0008 amendment of 2026-11-09): the VAPID key pair and a mailto: contact.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
       - key: SOURCE_KEY_VERSION
         value: v1
       - key: HETZNER_S3_ENDPOINT

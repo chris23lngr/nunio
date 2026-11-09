@@ -18,7 +18,7 @@ import {
 import { createScalewayMailer } from "@nunio/identity";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createFacts } from "@nunio/knowledge";
-import { createOutreach } from "@nunio/outreach";
+import { createOutreach, createWebPusher } from "@nunio/outreach";
 import { createPlan, createPlanExecutor } from "@nunio/planning";
 import { Context } from "@temporalio/activity";
 
@@ -120,6 +120,9 @@ export function runActivitiesFromEnv(
     "NOTIFY_SCW_SECRET_KEY",
     "NOTIFY_EMAIL_FROM",
     "APP_ORIGIN",
+    "VAPID_PUBLIC_KEY",
+    "VAPID_PRIVATE_KEY",
+    "VAPID_SUBJECT",
   ].filter((name) => !env[name]);
   if (missing.length)
     throw new Error(`Missing settings: ${missing.join(", ")}`);
@@ -150,6 +153,11 @@ export function runActivitiesFromEnv(
       projectId: env.SCW_PROJECT_ID!,
       secretKey: env.NOTIFY_SCW_SECRET_KEY!,
       from: env.NOTIFY_EMAIL_FROM!,
+    }),
+    pusher: createWebPusher({
+      publicKey: env.VAPID_PUBLIC_KEY!,
+      privateKey: env.VAPID_PRIVATE_KEY!,
+      subject: env.VAPID_SUBJECT!,
     }),
     inboxUrl: `${env.APP_ORIGIN}/inbox`,
   });

@@ -56,6 +56,7 @@ function make() {
     delegation: createDelegation({ db: runtime, aiEnabled: () => true }),
     responsibilities: createResponsibilities({ db: runtime, clock }),
     mailer: { send: async () => {} },
+    pusher: { keyId: "test-vapid-key", send: async () => "sent" as const },
     inboxUrl: "https://app.nunio.test/inbox",
   });
 }

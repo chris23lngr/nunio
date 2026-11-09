@@ -200,6 +200,11 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
       mailer: {
         send: () => Promise.reject(new Error("Only the worker sends email")),
       },
+      // The public key only: subscriptions record it, and the browser subscribes with it.
+      pusher: {
+        keyId: required("VAPID_PUBLIC_KEY"),
+        send: () => Promise.reject(new Error("Only the worker pushes")),
+      },
       inboxUrl: `${appOrigin}/inbox`,
     }),
   });

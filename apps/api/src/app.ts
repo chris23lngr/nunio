@@ -14,6 +14,7 @@ import { registerHomeRoutes } from "./home.js";
 import {
   registerInboxRoutes,
   registerOutreachSettingsRoutes,
+  registerPushRoutes,
 } from "./inbox.js";
 import { registerPlanRoutes } from "./plan.js";
 import { registerProjectRoutes } from "./projects.js";
@@ -209,3 +210,4 @@ registerApprovalRoutes(routes);
 registerResponsibilityRoutes(routes);
 registerInboxRoutes(routes);
 registerOutreachSettingsRoutes(routes);
+registerPushRoutes(routes);

@@ -210,6 +210,7 @@ beforeAll(async () => {
       delegation,
       responsibilities,
       mailer: { send: async () => {} },
+      pusher: { keyId: "test-vapid-key", send: async () => "sent" as const },
       inboxUrl: `${appOrigin}/inbox`,
     }),
     sourceWorkflows: {

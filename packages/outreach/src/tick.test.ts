@@ -45,6 +45,40 @@ const mailTo = (p: Principal) =>
   mail.sent.filter(
     (m) => p.kind === "student" && m.to === `${p.studentId}@example.com`,
   );
+/** Records every push by endpoint; endpoints in `gone` answer as a push service does for an expired subscription. */
+const push = {
+  sent: [] as {
+    endpoint: string;
+    ttlSeconds: number;
+    urgency: "low" | "normal";
+  }[],
+  gone: new Set<string>(),
+  failing: false,
+};
+const pusher = {
+  keyId: "test-vapid-key",
+  async send(
+    subscription: { endpoint: string },
+    options: { ttlSeconds: number; urgency: "low" | "normal" },
+  ) {
+    if (push.failing) throw new Error("push service is down");
+    if (push.gone.has(subscription.endpoint)) return "gone" as const;
+    push.sent.push({ endpoint: subscription.endpoint, ...options });
+    return "sent" as const;
+  },
+};
+/** Opts one new device of the student's in to push, returning its endpoint. */
+async function device(p: Principal) {
+  const endpoint = `https://push.example.test/${randomUUID()}`;
+  await outreach.subscribe(p, {
+    endpoint,
+    expirationTime: null,
+    keys: { p256dh: "BNcR-test-key", auth: "test-auth" },
+  });
+  return endpoint;
+}
+const pushesTo = (endpoint: string) =>
+  push.sent.filter((s) => s.endpoint === endpoint);
 
 beforeAll(async () => {
   db = await startTestDatabase();
@@ -67,6 +101,7 @@ beforeAll(async () => {
     delegation: createDelegation({ db: runtime, aiEnabled: () => true }),
     responsibilities: createResponsibilities({ db: runtime, clock }),
     mailer,
+    pusher,
     inboxUrl: "https://app.nunio.test/inbox",
   });
 }, 180_000);
@@ -446,5 +481,71 @@ describe("email", () => {
       "Your nunio Briefing is ready",
     ]);
     expect(mailTo(p)[1]!.text).toContain("https://app.nunio.test/inbox");
+  });
+});
+
+describe("push", () => {
+  it("pushes once to each device about a new Intervention, which stays open", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    const [phone, laptop] = [await device(p), await device(p)];
+    await dueTomorrow(p, 20 * 60);
+
+    await outreach.tick();
+    await outreach.tick();
+
+    for (const endpoint of [phone, laptop])
+      expect(pushesTo(endpoint)).toEqual([
+        { endpoint, ttlSeconds: 12 * 60 * 60, urgency: "normal" },
+      ]);
+    expect(await open(p)).toHaveLength(1);
+  });
+
+  it("pushes a Briefing at low urgency", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    const phone = await device(p);
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+
+    now = at("2026-11-09 07:05");
+    await outreach.tick();
+
+    expect(pushesTo(phone).map((s) => s.urgency)).toEqual(["normal", "low"]);
+  });
+
+  it("stops pushing to a device its push service says is gone, and to one the student turned off", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    const [expired, turnedOff] = [await device(p), await device(p)];
+    push.gone.add(expired);
+    await outreach.unsubscribe(p, turnedOff);
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+    push.gone.delete(expired);
+
+    now = at("2026-11-09 07:05");
+    await outreach.tick();
+
+    expect([...pushesTo(expired), ...pushesTo(turnedOff)]).toEqual([]);
+  });
+
+  it("still pushes when email fails, and emails again on the next look", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    const phone = await device(p);
+    await dueTomorrow(p, 20 * 60);
+
+    mail.failing = true;
+    try {
+      await outreach.tick();
+    } finally {
+      mail.failing = false;
+    }
+    expect(pushesTo(phone)).toHaveLength(1);
+    await outreach.tick();
+
+    expect(mailTo(p)).toHaveLength(1);
+    expect(pushesTo(phone)).toHaveLength(1);
   });
 });

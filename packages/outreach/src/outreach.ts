@@ -71,6 +71,28 @@ export interface Mailer {
   send(to: string, message: { subject: string; text: string }): Promise<void>;
 }
 
+/** Sends one empty push to one device; true external, so it is injected. */
+export interface Pusher {
+  /** The public VAPID key it signs with, stored with each subscription. */
+  keyId: string;
+  send(
+    subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
+    options: { ttlSeconds: number; urgency: "low" | "normal" },
+  ): Promise<"sent" | "gone">;
+}
+
+/** A device's subscription as the browser's PushSubscription.toJSON() gives it. */
+export type PushSubscriptionJson = {
+  endpoint: string;
+  expirationTime: number | null;
+  keys: { p256dh: string; auth: string };
+};
+
+const channels = ["email", "push"] as const;
+type Channel = (typeof channels)[number];
+/** Long enough to reach a phone that was off overnight, never the library's four weeks. */
+const pushTtlSeconds = 12 * 60 * 60;
+
 export class NotOpenError extends Error {}
 export class UnknownInterventionError extends Error {}
 
@@ -83,6 +105,7 @@ export function createOutreach({
   delegation,
   responsibilities,
   mailer,
+  pusher,
   inboxUrl,
 }: {
   db: PrismaClient;
@@ -92,6 +115,7 @@ export function createOutreach({
   delegation: Delegation;
   responsibilities: Responsibilities;
   mailer: Mailer;
+  pusher: Pusher;
   /** The only link a message outside the app carries. */
   inboxUrl: string;
 }) {
@@ -127,13 +151,15 @@ export function createOutreach({
         }));
       await tx.intervention.createMany({ data: raised, skipDuplicates: true });
       await tx.delivery.createMany({
-        data: raised.map((i) => ({
-          id: randomUUID(),
-          studentId,
-          channel: "email",
-          interventionId: i.id,
-          dueAt: at,
-        })),
+        data: channels.flatMap((channel) =>
+          raised.map((i) => ({
+            id: randomUUID(),
+            studentId,
+            channel,
+            interventionId: i.id,
+            dueAt: at,
+          })),
+        ),
       });
       // An expired Approval stays expired, so its cause never ends by itself.
       const ended = live.filter(
@@ -184,14 +210,14 @@ export function createOutreach({
           })
         ).count > 0;
       if (made)
-        await tx.delivery.create({
-          data: {
+        await tx.delivery.createMany({
+          data: channels.map((channel) => ({
             id: randomUUID(),
             studentId,
-            channel: "email",
+            channel,
             briefingId: id,
             dueAt: at,
-          },
+          })),
         });
       await tx.outreachSettings.upsert({
         where: { studentId },
@@ -201,10 +227,10 @@ export function createOutreach({
     });
   }
 
-  /** Sends what is due as one content-free email that points to the Inbox. */
+  /** Sends what is due on each channel; every message is content-free and points to the Inbox. */
   async function deliver(p: Principal) {
     const at = clock.now();
-    const { due, to } = await withOwner(db, p, async (tx, studentId) => {
+    const pending = await withOwner(db, p, async (tx, studentId) => {
       const queued = await tx.delivery.findMany({
         where: { sentAt: null, droppedAt: null, dueAt: { lte: at } },
       });
@@ -222,11 +248,16 @@ export function createOutreach({
         ).map((i) => i.id),
       );
       const { email } = settingsOf(await tx.outreachSettings.findFirst());
+      const subscriptions = await tx.pushSubscription.findMany();
       // A message about an Intervention that closed meanwhile no longer applies.
       const closed = queued.filter(
         (d) => d.interventionId && !open.has(d.interventionId),
       );
-      const disabled = email ? [] : queued.filter((d) => !closed.includes(d));
+      const disabled = queued.filter(
+        (d) =>
+          !closed.includes(d) &&
+          (d.channel === "email" ? !email : !subscriptions.length),
+      );
       for (const [reason, dropped] of [
         ["closed", closed],
         ["disabled", disabled],
@@ -237,20 +268,58 @@ export function createOutreach({
             data: { droppedAt: at, dropReason: reason },
           });
       return {
-        due: email ? queued.filter((d) => !closed.includes(d)) : [],
+        due: queued.filter((d) => !closed.includes(d) && !disabled.includes(d)),
         to: (await tx.user.findUniqueOrThrow({ where: { id: studentId } }))
           .email,
+        subscriptions,
       };
     });
+    for (const channel of channels) {
+      // One channel failing leaves its messages due; the others still go out.
+      try {
+        await send(p, channel, {
+          ...pending,
+          due: pending.due.filter((d) => d.channel === channel),
+        });
+      } catch (error) {
+        console.error(`Outreach ${channel} failed for a student`, error);
+      }
+    }
+  }
+
+  async function send(
+    p: Principal,
+    channel: Channel,
+    {
+      due,
+      to,
+      subscriptions,
+    }: {
+      due: {
+        id: string;
+        interventionId: string | null;
+        briefingId: string | null;
+      }[];
+      to: string;
+      subscriptions: {
+        id: string;
+        endpoint: string;
+        p256dh: string;
+        auth: string;
+      }[];
+    },
+  ) {
+    const at = clock.now();
     const announcing = due.filter((d) => d.interventionId);
     const briefing = due.filter((d) => d.briefingId);
-    for (const [batch, message] of [
+    for (const [batch, message, urgency] of [
       [
         announcing,
         {
           subject: `nunio: ${announcing.length} ${announcing.length === 1 ? "item needs" : "items need"} your attention`,
           text: `Open your Inbox to see what needs your attention:\n\n${inboxUrl}`,
         },
+        "normal",
       ],
       [
         briefing,
@@ -258,10 +327,22 @@ export function createOutreach({
           subject: "Your nunio Briefing is ready",
           text: `Your Briefing is in your Inbox:\n\n${inboxUrl}`,
         },
+        "low",
       ],
     ] as const) {
       if (!batch.length) continue;
-      await mailer.send(to, message);
+      if (channel === "email") await mailer.send(to, message);
+      else
+        for (const s of subscriptions) {
+          const outcome = await pusher.send(
+            { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+            { ttlSeconds: pushTtlSeconds, urgency },
+          );
+          if (outcome === "gone")
+            await withOwner(db, p, (tx) =>
+              tx.pushSubscription.deleteMany({ where: { id: s.id } }),
+            );
+        }
       await withOwner(db, p, (tx) =>
         tx.delivery.updateMany({
           where: { id: { in: batch.map((d) => d.id) } },
@@ -327,6 +408,35 @@ export function createOutreach({
           ...(b.items as Bundled),
         })),
       };
+    },
+    /** The public VAPID key a browser subscribes with. */
+    pushKey: pusher.keyId,
+    /** Opts one device in to push; subscribing the same device again changes nothing. */
+    async subscribe(student: Principal, subscription: PushSubscriptionJson) {
+      await withOwner(db, student, (tx, studentId) =>
+        tx.pushSubscription.createMany({
+          data: [
+            {
+              id: randomUUID(),
+              studentId,
+              endpoint: subscription.endpoint,
+              p256dh: subscription.keys.p256dh,
+              auth: subscription.keys.auth,
+              expirationTime:
+                subscription.expirationTime === null
+                  ? null
+                  : new Date(subscription.expirationTime),
+              vapidKeyId: pusher.keyId,
+            },
+          ],
+          skipDuplicates: true,
+        }),
+      );
+    },
+    async unsubscribe(student: Principal, endpoint: string) {
+      await withOwner(db, student, (tx) =>
+        tx.pushSubscription.deleteMany({ where: { endpoint } }),
+      );
     },
     async settings(student: Principal): Promise<OutreachSettings> {
       return settingsOf(

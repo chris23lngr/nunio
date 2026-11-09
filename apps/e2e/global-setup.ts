@@ -72,6 +72,7 @@ export default async function globalSetup() {
           SCW_PROJECT_ID: "test-project",
           SCW_SECRET_KEY: "test-key",
           AUTH_EMAIL_FROM: "accounts@nunio.test",
+          VAPID_PUBLIC_KEY: "test-vapid-key",
           SOURCE_KEY_VERSION: "test",
           SOURCE_MASTER_KEYS: JSON.stringify({
             test: Buffer.alloc(32, 1).toString("base64"),

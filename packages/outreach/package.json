@@ -16,19 +16,21 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.3",
+    "@nunio/keys": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
+    "@types/web-push": "3.6.4",
     "pg": "8.23.1",
     "typescript": "5.9.3",
-    "vitest": "5.0.5",
-    "@biomejs/biome": "2.6.3",
-    "@nunio/keys": "workspace:*"
+    "vitest": "5.0.5"
   },
   "dependencies": {
     "@nunio/db": "workspace:*",
     "@nunio/delegation": "workspace:*",
     "@nunio/knowledge": "workspace:*",
-    "@nunio/planning": "workspace:*"
+    "@nunio/planning": "workspace:*",
+    "web-push": "3.6.7"
   }
 }

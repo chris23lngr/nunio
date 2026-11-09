@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { BriefingSettings } from "@/features/inbox/briefing-settings";
 import { EmailSettings } from "@/features/inbox/email-settings";
 import { InboxScreen } from "@/features/inbox/inbox-screen";
+import { PushSettings } from "@/features/inbox/push-settings";
 import { apiOrigin, getSession } from "@/lib/session";
 
 export default async function InboxPage() {
@@ -15,6 +16,7 @@ export default async function InboxPage() {
       <InboxScreen apiOrigin={apiOrigin()} />
       <BriefingSettings apiOrigin={apiOrigin()} />
       <EmailSettings apiOrigin={apiOrigin()} />
+      <PushSettings apiOrigin={apiOrigin()} />
     </main>
   );
 }
