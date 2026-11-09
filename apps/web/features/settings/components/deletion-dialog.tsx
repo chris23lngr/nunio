@@ -1,12 +1,15 @@
 import { Button } from "@nunio/ui/components/button/button";
 import {
   Dialog,
+  DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,
+  DialogFooter,
+  DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@nunio/ui/components/dialog";
+} from "@nunio/ui/components/dialog/dialog";
 import { Field, FieldLabel } from "@nunio/ui/components/field/field";
 import { Input } from "@nunio/ui/components/input/input";
 import { useId, useState } from "react";
@@ -51,58 +54,52 @@ export function DeletionDialog({
       <DialogTrigger render={<Button variant="destructive" />}>
         Konto löschen
       </DialogTrigger>
-      <DialogContent
-        showCloseButton={false}
-        className="w-md max-w-[calc(100vw-2rem)] overflow-y-auto bg-white p-6 text-base-800 shadow-lg outline-1 outline-base-700/15"
-      >
-        <DialogTitle className="text-lg leading-7 font-semibold">
-          Konto löschen?
-        </DialogTitle>
-        <DialogDescription className="mt-2 text-sm leading-5 text-base-600">
-          Dein Konto wird zur manuellen Löschung vorgemerkt. Du wirst sofort auf
-          allen Geräten abgemeldet und kannst dich danach nicht mehr anmelden.
-        </DialogDescription>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Konto löschen?</DialogTitle>
+          <DialogDescription>
+            Dein Konto wird zur manuellen Löschung vorgemerkt. Du wirst sofort
+            auf allen Geräten abgemeldet und kannst dich danach nicht mehr
+            anmelden.
+          </DialogDescription>
+        </DialogHeader>
         <form
-          className="mt-6"
           onSubmit={(event) => {
             event.preventDefault();
             if (!pending) void form.handleSubmit();
           }}
         >
-          <form.Field name="password">
-            {(field) => (
-              <Field>
-                <FieldLabel htmlFor={passwordId}>Passwort</FieldLabel>
-                <Input
-                  id={passwordId}
-                  name={field.name}
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={field.state.value}
-                  onChange={(event) => field.handleChange(event.target.value)}
-                  onBlur={field.handleBlur}
-                  aria-invalid={!!error || undefined}
-                  aria-describedby={error ? `${passwordId}-error` : undefined}
-                />
-              </Field>
+          <DialogBody>
+            <form.Field name="password">
+              {(field) => (
+                <Field>
+                  <FieldLabel htmlFor={passwordId}>Passwort</FieldLabel>
+                  <Input
+                    id={passwordId}
+                    name={field.name}
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={field.state.value}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    onBlur={field.handleBlur}
+                    aria-invalid={!!error || undefined}
+                    aria-describedby={error ? `${passwordId}-error` : undefined}
+                  />
+                </Field>
+              )}
+            </form.Field>
+            {error && (
+              <p
+                id={`${passwordId}-error`}
+                role="alert"
+                className="mt-3 text-sm text-destructive-700"
+              >
+                {error}
+              </p>
             )}
-          </form.Field>
-          {error && (
-            <p
-              id={`${passwordId}-error`}
-              role="alert"
-              className="mt-3 text-sm text-destructive-700"
-            >
-              {error}
-            </p>
-          )}
-          <div className="mt-6 flex flex-wrap justify-end gap-3">
-            <DialogClose
-              render={<Button variant="outline" disabled={pending} />}
-            >
-              Abbrechen
-            </DialogClose>
+          </DialogBody>
+          <DialogFooter>
             <form.Subscribe
               selector={(state) => [state.canSubmit, state.isSubmitting]}
             >
@@ -117,7 +114,12 @@ export function DeletionDialog({
                 </Button>
               )}
             </form.Subscribe>
-          </div>
+            <DialogClose
+              render={<Button variant="outline" disabled={pending} />}
+            >
+              Abbrechen
+            </DialogClose>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
