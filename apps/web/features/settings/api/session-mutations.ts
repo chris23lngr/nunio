@@ -1,8 +1,13 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { mutationOptions } from "@tanstack/react-query";
 import { ApiError } from "@/lib/api-client";
 import { authClient } from "@/lib/auth-client";
+import { sessionQueries } from "./session-queries";
 
-export function revokeSessionMutation(apiOrigin: string) {
+export function revokeSessionMutation(
+  apiOrigin: string,
+  queryClient: QueryClient,
+) {
   return mutationOptions({
     mutationFn: async (token: string) => {
       const result = await authClient(apiOrigin).revokeSession({ token });
@@ -12,6 +17,7 @@ export function revokeSessionMutation(apiOrigin: string) {
           "Diese Sitzung konnte nicht abgemeldet werden. Bitte versuche es erneut.",
         );
     },
+    onSuccess: () => queryClient.invalidateQueries(sessionQueries(apiOrigin)),
   });
 }
 

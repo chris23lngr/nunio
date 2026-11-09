@@ -19,10 +19,7 @@ export function SecurityScreen({ apiOrigin }: { apiOrigin: string }) {
   const sessions = useQuery(sessionQueries(apiOrigin));
   const queryClient = useQueryClient();
   const router = useRouter();
-  const revoke = useMutation({
-    ...revokeSessionMutation(apiOrigin),
-    onSuccess: () => queryClient.invalidateQueries(sessionQueries(apiOrigin)),
-  });
+  const revoke = useMutation(revokeSessionMutation(apiOrigin, queryClient));
   const signOut = useMutation({
     ...signOutMutation(apiOrigin),
     onSuccess: () => {
