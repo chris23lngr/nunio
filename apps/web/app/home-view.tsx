@@ -3,36 +3,25 @@
 import { createApiClient, type paths } from "@nunio/api-client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { hours, overlapReasons, tradeoffText, unplannedReasons } from "./plan-wording";
 
 type Home = paths["/api/me/home"]["get"]["responses"][200]["content"]["application/json"];
 type Attention = Home["attention"][number];
-const hours = (minutes: number) => `${Math.round((minutes / 60) * 10) / 10} h`;
-const unplanned: Record<Extract<Attention, { kind: "unplanned" }>["reason"], string> = {
-  no_estimate: "needs an Estimate before it can be planned", no_deadline: "has no deadline, so it is not planned",
-  past_due: "is past its deadline",
-};
-
-/** One tradeoff the student may choose; nunio never picks one silently. */
-function tradeoff(item: Record<string, unknown>) {
-  const kind = item.kind;
-  if (kind === "exceed_daily_limit") return `Study beyond your daily limit (gains ${hours(Number(item.gainedMinutes))}, needs your Approval)`;
-  if (kind === "free_time_from") return `Use time planned for lower-priority work (${hours(Number(item.gainedMinutes))})`;
-  if (kind === "reduce_estimate") return `Plan ${hours(Number(item.byMinutes))} less for it`;
-  return String(kind);
-}
 
 function Item({ item }: { item: Attention }) {
   if (item.kind === "shortfall") return <li>
     <strong>{item.title}</strong>{item.course && ` (${item.course})`} is {hours(item.shortMinutes)} short before{" "}
-    {new Date(item.due).toLocaleString()}. Options:
-    <ul>{item.tradeoffs.map((t, i) => <li key={i}>{tradeoff(t)}</li>)}</ul>
+    {new Date(item.due).toLocaleString()}.{item.unreviewed && " It is not reviewed yet, so check its deadline and Estimate."} Options:
+    <ul>{item.tradeoffs.map((t, i) => <li key={i}>{tradeoffText(t)}</li>)}</ul>
     <Link href="/plan">Open the Plan</Link>
   </li>;
   if (item.kind === "disagreement") return <li>
     A newer Source disagrees about <strong>{item.title}</strong> ({item.course}). <Link href="/review">Review it</Link>
   </li>;
-  if (item.kind === "locked_conflict") return <li>A Locked Study Block now overlaps your calendar. <Link href="/plan">Open the Plan</Link></li>;
-  return <li><strong>{item.title}</strong> {unplanned[item.reason]}. <Link href="/plan">Open the Plan</Link></li>;
+  if (item.kind === "overlap") return <li>
+    A Study Block for <strong>{item.title}</strong> now overlaps your calendar and {overlapReasons[item.reason]}. <Link href="/plan">Open the Plan</Link>
+  </li>;
+  return <li><strong>{item.title}</strong> {unplannedReasons[item.reason]}. <Link href="/plan">Open the Plan</Link></li>;
 }
 
 /** The actionable day: what needs attention, what is ready, and what is still running. */
