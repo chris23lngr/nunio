@@ -1,16 +1,9 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
-import {
-  createDelegation,
-  createResponsibilities,
-  principal,
-} from "@nunio/delegation";
-import { createSourceKeys } from "@nunio/keys";
-import { createFacts } from "@nunio/knowledge";
-import { createPlan } from "@nunio/planning";
+import { principal } from "@nunio/delegation";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createOutreach,
@@ -40,28 +33,11 @@ const now = new Date("2026-11-10T07:00:00Z");
 const clock = { now: () => now };
 
 function make() {
-  const facts = createFacts({
-    db: runtime,
-    keys: createSourceKeys({
-      activeVersion: "v1",
-      masters: { v1: randomBytes(32) },
-    }),
-    clock,
-  });
   return createOutreach({
     db: runtime,
     clock,
-    facts,
-    plan: createPlan({ db: runtime, facts, clock }),
-    delegation: createDelegation({ db: runtime, aiEnabled: () => true }),
-    responsibilities: createResponsibilities({ db: runtime, clock }),
-    mailer: { send: async () => {} },
-    pusher: { keyId: "test-vapid-key", send: async () => "sent" as const },
-    inboxUrl: "https://app.nunio.test/inbox",
-    unsubscribe: {
-      secret: "test-unsubscribe-secret",
-      url: "https://api.nunio.test/unsubscribe/briefing-email",
-    },
+    vapidPublicKey: "test-vapid-key",
+    unsubscribeSecret: "test-unsubscribe-secret",
   });
 }
 

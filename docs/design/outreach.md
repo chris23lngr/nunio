@@ -4,32 +4,47 @@ Status: accepted design, 2026-11-09, for Phase 10 of the [implementation plan](.
 
 ## Purpose
 
-A new `packages/outreach` is the single module that decides what nunio tells the student and when. It works out which Interventions are open, records Acknowledgements and Dismissals, makes Briefings, and sends the content-free email and push that point to the Inbox. The API and the worker call it through the same interface. No other code inserts Interventions, checks Quiet Hours, or sends a notification. Outreach never goes through the delegation gate: messages are not Actions.
+A new `packages/outreach` is the single module that decides what nunio tells the student and when. It works out which Interventions are open, records Acknowledgements and Dismissals, makes Briefings, and sends the content-free email and push that point to the Inbox. The API reads and changes the student's side through `createOutreach`; only the worker raises, makes and sends, through `createOutreachSender`. No other code inserts Interventions, checks Quiet Hours, or sends a notification. Outreach never goes through the delegation gate: messages are not Actions.
 
 ## Interface
 
 ```ts
+/** The API's side: the Inbox, settings and push subscriptions. It holds no notification key. */
 export function createOutreach(deps: {
   db: PrismaClient;                 // local-substitutable; internal seam
+  clock: Clock;                     // in-process; injected
+  vapidPublicKey: string;           // the browser subscribes with it; subscriptions record it
+  unsubscribeSecret: string;        // verifies the one-click link the worker signs
+}): Outreach;
+
+export interface Outreach {
+  inbox(student: Principal): Promise<InboxView>;
+  close(student: Principal, interventionId: string, as: "acknowledged" | "dismissed"): Promise<void>;
+  settings(student: Principal): Promise<OutreachSettings>;
+  updateSettings(student: Principal, patch: Partial<OutreachSettings>): Promise<OutreachSettings>;
+  pushKey: string;
+  subscribe(student: Principal, subscription: PushSubscriptionJSON): Promise<void>;
+  unsubscribe(student: Principal, endpoint: string): Promise<void>;
+  stopBriefingEmail(studentId: string, token: string): Promise<void>;
+}
+
+/** The worker's side: raises Interventions, makes Briefings, and sends what is due. */
+export function createOutreachSender(deps: {
+  db: PrismaClient;
+  clock: Clock;
   plan: Plan;                       // Shortfalls, from the Plan's view
   facts: Facts;                     // Disagreements, from review
   delegation: Delegation;           // expired Approvals and Unconfirmed Actions, from history
   responsibilities: Responsibilities; // ongoing work for Briefings
   mailer: Mailer;                   // true external; Scaleway adapter and a fake
   pusher: Pusher;                   // true external; web-push adapter and a fake
-  clock: Clock;                     // in-process; injected
   inboxUrl: string;                 // the only link an email or push carries
-}): Outreach;
+  unsubscribe: { secret: string; url: string }; // signs the one-click link in Briefing emails
+}): OutreachSender;
 
-export interface Outreach {
-  /** Worker only, every five minutes: for each active student, sync Interventions, make a due Briefing, send what is due. */
+export interface OutreachSender {
+  /** Every five minutes: for each active student, sync Interventions, make a due Briefing, send what is due. */
   tick(): Promise<void>;
-  inbox(student: Principal): Promise<InboxView>;
-  close(student: Principal, interventionId: string, as: "acknowledged" | "dismissed"): Promise<void>;
-  settings(student: Principal): Promise<OutreachSettings>;
-  updateSettings(student: Principal, patch: Partial<OutreachSettings>): Promise<OutreachSettings>;
-  subscribe(student: Principal, subscription: PushSubscriptionJSON): Promise<void>;
-  unsubscribe(student: Principal, endpoint: string): Promise<void>;
 }
 
 export type OutreachSettings = {
@@ -37,9 +52,10 @@ export type OutreachSettings = {
   dailyLimit: number;                                          // email and push combined; Briefings excluded
   briefingAtMinute: number | null;                             // null turns Briefings off
   email: boolean;
+  briefingEmail: boolean;                                      // the one-click unsubscribe turns it off
 };
 
-export interface Mailer { send(to: string, message: { subject: string; text: string }): Promise<void>; }
+export interface Mailer { send(to: string, message: { subject: string; text: string; headers?: Record<string, string> }): Promise<void>; }
 export interface Pusher {
   send(subscription: StoredSubscription, options: { ttlSeconds: number; urgency: "low" | "normal" }): Promise<"sent" | "gone">;
 }
@@ -94,7 +110,7 @@ All tables are owned by the student under the same row-level security policy as 
 
 ## Testing
 
-Through the `Outreach` interface over real Postgres, with a fake clock, `Mailer` and `Pusher`:
+Through `Outreach` and `OutreachSender` over real Postgres, with a fake clock, `Mailer` and `Pusher`:
 
 - Two ticks with the same causes raise one Intervention; a cause that ends lapses it; its return raises a new one; an acknowledged or dismissed Intervention with a continuing cause raises nothing.
 - Acknowledgement and Dismissal are recorded separately, and `close` twice throws `NotOpenError`.

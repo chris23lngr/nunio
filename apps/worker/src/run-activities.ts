@@ -18,7 +18,7 @@ import {
 import { createScalewayMailer } from "@nunio/identity";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createFacts } from "@nunio/knowledge";
-import { createOutreach, createWebPusher } from "@nunio/outreach";
+import { createOutreachSender, createWebPusher } from "@nunio/outreach";
 import { createPlan, createPlanExecutor } from "@nunio/planning";
 import { Context } from "@temporalio/activity";
 
@@ -143,7 +143,7 @@ export function runActivitiesFromEnv(
       )?.due ?? null,
   });
   const responsibilities = createResponsibilities({ db, clock });
-  const outreach = createOutreach({
+  const outreach = createOutreachSender({
     db,
     clock,
     plan,

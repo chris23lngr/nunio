@@ -6,11 +6,15 @@ export {
   createOutreach,
   type InterventionView,
   InvalidUnsubscribeError,
-  type Mailer,
   NotOpenError,
   type Outreach,
-  type Pusher,
   type PushSubscriptionJson,
   UnknownInterventionError,
 } from "./outreach.js";
+export {
+  createOutreachSender,
+  type Mailer,
+  type OutreachSender,
+  type Pusher,
+} from "./sender.js";
 export { createWebPusher } from "./web-push.js";

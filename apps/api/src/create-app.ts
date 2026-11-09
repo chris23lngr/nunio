@@ -203,28 +203,12 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     plan,
     estimator: createEstimator(models),
     projects: createProjects({ db: prisma }),
+    // Only the worker sends; the API reads the Inbox and settings, and holds no notification key.
     outreach: createOutreach({
       db: prisma,
       clock,
-      plan,
-      facts,
-      delegation,
-      responsibilities,
-      // Only the worker sends; the API reads the Inbox and settings, and holds no notification key.
-      mailer: {
-        send: () => Promise.reject(new Error("Only the worker sends email")),
-      },
-      // The public key only: subscriptions record it, and the browser subscribes with it.
-      pusher: {
-        keyId: required("VAPID_PUBLIC_KEY"),
-        send: () => Promise.reject(new Error("Only the worker pushes")),
-      },
-      inboxUrl: `${appOrigin}/inbox`,
-      // The API only verifies links; the worker signs them with the same secret.
-      unsubscribe: {
-        secret: required("UNSUBSCRIBE_SECRET"),
-        url: `${required("BETTER_AUTH_URL")}/unsubscribe/briefing-email`,
-      },
+      vapidPublicKey: required("VAPID_PUBLIC_KEY"),
+      unsubscribeSecret: required("UNSUBSCRIBE_SECRET"),
     }),
   });
 }
