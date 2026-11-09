@@ -411,3 +411,9 @@ it("narrows passages to a Project's Courses within the selection, and to nothing
   expect(await sourcesOf(project.id)).toEqual([analysis]);
   expect(await sourcesOf(foreign.id)).toEqual([]);
 });
+
+it("keeps Fixed Events, operational context, out of a Chat's scope", async () => {
+  const p = await student();
+  const chat = await createChat(p, { courseIds: [], sourceIds: [] });
+  await expect(reader.retrieve(p, { chatId: chat.id }, { kind: "facts", types: ["fixed_event"] })).rejects.toThrow(InvalidQueryError);
+});

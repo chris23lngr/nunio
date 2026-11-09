@@ -16,11 +16,11 @@ export class KnowledgeUnavailable extends Error { override name = "KnowledgeUnav
 /** A programmer error: the scope does not belong to this kind of Principal. Do not retry. */
 export class ScopeMismatchError extends Error { override name = "ScopeMismatchError"; }
 /** The Plan spans every Course, so planning sees their Facts; course content always stays under explicit selection. */
-const planningTypes: readonly FactType[] = ["obligation", "course_rule", "topic"];
+const planningTypes: readonly FactType[] = ["obligation", "course_rule", "topic", "fixed_event"];
 /** Intersected with the selection, never unioned. A Project narrows to its Courses. */
 export type Narrow = { courseIds?: string[]; sourceIds?: string[]; projectId?: string };
-/** Fixed Events arrive with planning in Phase 8. */
-export type FactType = "obligation" | "topic" | "course_rule" | "exam_logistics";
+/** Fixed Events are operational Facts, read only in planning scope. */
+export type FactType = "obligation" | "topic" | "course_rule" | "exam_logistics" | "fixed_event";
 export type Query =
   | { kind: "passages"; text: string; limit?: number; narrow?: Narrow }
   /** Facts come from selected Courses only; a Source-only selection yields passages, never Facts. */
@@ -28,7 +28,9 @@ export type Query =
 export type Provenance =
   | { kind: "source"; sourceId: string; title: string; location: { page: number } }
   | { kind: "correction" }
-  | { kind: "entry" };
+  | { kind: "entry" }
+  /** A Fixed Event read from a calendar file the student added. */
+  | { kind: "calendar"; calendarId: string; name: string };
 declare const citationRef: unique symbol;
 /** What a stored Chat message keeps instead of text; resolved through `cite()` at display time. */
 export type CitationRef = string & { readonly [citationRef]: "CitationRef" };
@@ -46,10 +48,13 @@ export type PromptData = { data: string; citations: Citation[] };
 const passageRef = (sourceId: string, chunkId: string) => `passage:${sourceId}:${chunkId}` as CitationRef;
 const factRef = (type: FactType, id: string) => `${type === "obligation" ? "obligation" : "fact"}:${id}` as CitationRef;
 /** Facts carry no score, so they tie, and ties break in this order (a stable sort keeps the review order within each). */
-const provenanceOrder: readonly Provenance["kind"][] = ["correction", "entry", "source"];
-const typeLabels: Record<FactType, string> = { obligation: "Obligation", topic: "Topic", course_rule: "Course rule", exam_logistics: "Exam logistics" };
+const provenanceOrder: readonly Provenance["kind"][] = ["correction", "entry", "calendar", "source"];
+const typeLabels: Record<FactType, string> = { obligation: "Obligation", topic: "Topic", course_rule: "Course rule", exam_logistics: "Exam logistics",
+  fixed_event: "Fixed Event" };
 const origin = (provenance: Provenance) => provenance.kind === "correction" ? "(corrected by the student)"
-  : provenance.kind === "entry" ? "(entered by the student)" : `from ${provenance.title}, page ${provenance.location.page}`;
+  : provenance.kind === "entry" ? "(entered by the student)" : provenance.kind === "calendar" ? `from ${provenance.name}`
+  : `from ${provenance.title}, page ${provenance.location.page}`;
+const fixedEventRef = (id: string) => `fixed_event:${id}` as CitationRef;
 const dueText = (due: { date: string | null; time: string | null; timeZone: string | null }) =>
   due.date ? `due ${due.date}${due.time ? ` ${due.time} (${due.timeZone})` : ""}` : "no deadline stated";
 export type Retrieval =
@@ -87,6 +92,19 @@ export function createKnowledgeReader({ db, keys, embedder, delegation, clock }:
   db: PrismaClient; keys: SourceKeys; embedder: Embedder; delegation: Delegation; clock: { now(): Date };
 }) {
   const facts = createFacts({ db, keys, clock });
+  /** The student's Fixed Events (by default only upcoming ones): operational Facts, kept apart from course material. */
+  async function fixedEventItems(p: Principal, { upcoming = true } = {}) {
+    const events = await withOwner(db, p, tx => tx.fixedEvent.findMany({ where: upcoming ? { end: { gt: clock.now() } } : {},
+      orderBy: [{ start: "asc" }, { end: "asc" }], include: { calendar: { select: { name: true } } } }));
+    const items = events.map((event): Item => {
+      const provenance: Provenance = event.calendarId && event.calendar
+        ? { kind: "calendar", calendarId: event.calendarId, name: event.calendar.name } : { kind: "entry" };
+      return { kind: "fact", channel: "operational", factId: event.id, type: "fixed_event", cite: fixedEventRef(event.id), provenance,
+        label: `${typeLabels.fixed_event} ${origin(provenance)}`,
+        value: Untrusted.of(`${event.title}, ${event.start.toISOString()} to ${event.end.toISOString()}`) };
+    });
+    return { items, revision: digest(["fixed_events", ...events.map(e => `${e.id}|${e.start.toISOString()}|${e.end.toISOString()}`)]) };
+  }
   /** Every Fact the student sees in review, one Item each, with the Correction merge done by the write side. */
   async function factItems(p: Principal, courseIds: string[] | null, types: readonly FactType[]) {
     const courses = (await facts.review(p)).courses.filter(course => course.status !== "rejected" && (!courseIds || courseIds.includes(course.id)));
@@ -148,9 +166,12 @@ export function createKnowledgeReader({ db, keys, embedder, delegation, clock }:
         if (query.kind !== "facts" || query.types.some(type => !planningTypes.includes(type))) {
           throw new InvalidQueryError("Planning scope reads only planning Facts");
         }
-        const { items, revision } = await factItems(p, query.narrow?.courseIds ?? null, query.types);
-        return ok(items, revision);
+        const course = await factItems(p, query.narrow?.courseIds ?? null, query.types.filter(type => type !== "fixed_event"));
+        const operational = query.types.includes("fixed_event") ? await fixedEventItems(p) : { items: [], revision: "" };
+        return ok([...course.items, ...operational.items], digest([course.revision, operational.revision]));
       }
+      // Operational context stays out of a Chat's selection; widening to it needs the student's authorization.
+      if (query.kind === "facts" && query.types.includes("fixed_event")) throw new InvalidQueryError("Fixed Events are read only in planning scope");
       const { chatId } = scope;
       const selection = await withOwner(db, p, async (tx, studentId) => {
         const chat = await tx.chat.findUnique({ where: { id: chatId },
@@ -214,7 +235,8 @@ export function createKnowledgeReader({ db, keys, embedder, delegation, clock }:
     /** Resolves stored refs; a deleted Source, or one the Principal does not own, is "gone". */
     async cite(p: Principal, refs: CitationRef[]): Promise<Map<CitationRef, Provenance | "gone">> {
       const items = refs.some(ref => !ref.startsWith("passage:"))
-        ? new Map((await factItems(p, null, Object.keys(typeLabels) as FactType[])).items.map(item => [item.cite, item.provenance]))
+        ? new Map([...(await factItems(p, null, Object.keys(typeLabels) as FactType[])).items, ...(await fixedEventItems(p, { upcoming: false })).items]
+          .map(item => [item.cite, item.provenance]))
         : new Map<CitationRef, Provenance>();
       const parsed = refs.map(ref => ({ ref, match: /^passage:([^:]+):([^:]+)$/.exec(ref) }));
       const chunkIds = parsed.flatMap(({ match }) => match ? [match[2]!] : []);
