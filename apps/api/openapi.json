@@ -2264,11 +2264,22 @@
                       "type": "null"
                     }
                   ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "waiting",
+                    "approved",
+                    "denied",
+                    "expired"
+                  ],
+                  "description": "The Approval as it stands now; expired once it can no longer be given."
                 }
               },
               "required": [
                 "actionId",
-                "action"
+                "action",
+                "state"
               ]
             }
           },

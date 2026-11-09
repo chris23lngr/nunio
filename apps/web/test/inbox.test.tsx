@@ -338,3 +338,47 @@ test("acknowledging and dismissing do not look alike", async () => {
   const notUseful = within(item).getByRole("button", { name: "Not useful" });
   expect(gotIt.className).not.toBe(notUseful.className);
 });
+
+test("a Briefing says where each of its Approvals stands now, and keeps what is gone", async () => {
+  const approval = (actionId: string, state: string) => ({
+    actionId,
+    action: expired.action,
+    state,
+  });
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [],
+      briefings: [
+        {
+          id: "b-1",
+          madeAt: "2026-11-10T06:05:00.000Z",
+          interventions: [expired.id],
+          approvals: [
+            approval("a-1", "waiting"),
+            approval("a-2", "approved"),
+            approval("a-3", "denied"),
+            approval("a-4", "expired"),
+          ],
+          responsibilities: [],
+        },
+      ],
+    }),
+  );
+  render(
+    <TestProviders>
+      <InboxScreen apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  const briefings = await screen.findByRole("region", { name: "Briefings" });
+  const items = within(briefings)
+    .getAllByRole("listitem")
+    .map((li) => li.textContent);
+  expect(items).toEqual([
+    "Something that is gone",
+    "Waiting for your Approval: Problem sheet 1",
+    "Approved: Problem sheet 1",
+    "Denied: Problem sheet 1",
+    "Expired: Problem sheet 1",
+  ]);
+});
