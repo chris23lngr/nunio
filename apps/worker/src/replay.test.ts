@@ -23,7 +23,11 @@ describe("replay", () => {
     );
     await Worker.runReplayHistory({ workflowBundle }, history);
   });
-  it.each(["ingest-source-before-extraction", "ingest-source"])(
+  it.each([
+    "ingest-source-before-extraction",
+    "ingest-source",
+    "responsibility-run",
+  ])(
     "replays the recorded %s history with the current workflow code",
     async (name) => {
       const history = JSON.parse(

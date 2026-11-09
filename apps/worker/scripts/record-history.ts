@@ -1,11 +1,11 @@
-// Records awaitApproval and ingestSource histories for the replay test (src/replay.test.ts). Usage, from apps/worker:
+// Records awaitApproval, ingestSource and responsibilityRun histories for the replay test (src/replay.test.ts). Usage, from apps/worker:
 //   node scripts/record-history.ts [workflows file] [ingestSource history name]
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { historyToJSON } from "@temporalio/common/proto-utils";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { Worker } from "@temporalio/worker";
-import { approvalSignal } from "../src/workflows.ts";
+import { approvalDecidedSignal, approvalSignal } from "../src/workflows.ts";
 
 const workflowsPath = new URL(
   process.argv[2] ?? "../src/workflows.ts",
@@ -19,6 +19,7 @@ const write = (name: string, history: Parameters<typeof historyToJSON>[0]) => {
   );
   console.log(`wrote ${path.pathname}`);
 };
+let performed = 0;
 const env = await TestWorkflowEnvironment.createLocal();
 try {
   const taskQueue = "record-history";
@@ -31,6 +32,29 @@ try {
       activities: {
         processSource: async () => ({ status: "ready" }),
         extractFacts: async () => ({ status: "done", dropped: 0 }),
+        // A Run that asks once, is approved, and acts.
+        startRun: async () => "run",
+        proposeActions: async () => [
+          {
+            kind: "studyBlock.move",
+            studyBlockId: "block",
+            start: "2026-12-01T14:00:00.000Z",
+            end: "2026-12-01T15:00:00.000Z",
+          },
+        ],
+        performAction: async () =>
+          performed++ === 0
+            ? {
+                status: "awaiting_approval",
+                actionId: "action",
+                fingerprint: "fingerprint",
+                expiresAt: "2099-01-01T00:00:00.000Z",
+              }
+            : {
+                status: "done",
+                actionId: "action",
+                effect: { studyBlockId: "block" },
+              },
       },
     });
   const workflowId = `approval-${randomUUID()}`;
@@ -57,6 +81,23 @@ try {
   write(
     process.argv[3] ?? "ingest-source",
     await env.client.workflow.getHandle(sourceWorkflowId).fetchHistory(),
+  );
+  const runWorkflowId = `run-${randomUUID()}`;
+  await (await worker()).runUntil(async () => {
+    const handle = await env.client.workflow.start("responsibilityRun", {
+      taskQueue,
+      workflowId: runWorkflowId,
+      args: [{ studentId: "student", responsibilityId: "responsibility" }],
+    });
+    // Signalled once the Run waits, as the API does after the student decides.
+    while (performed === 0)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    await handle.signal(approvalDecidedSignal, "action");
+    await handle.result();
+  });
+  write(
+    "responsibility-run",
+    await env.client.workflow.getHandle(runWorkflowId).fetchHistory(),
   );
 } finally {
   await env.teardown();
