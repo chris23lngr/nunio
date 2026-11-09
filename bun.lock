@@ -23,6 +23,7 @@
         "@nunio/identity": "workspace:*",
         "@nunio/keys": "workspace:*",
         "@nunio/knowledge": "workspace:*",
+        "@nunio/outreach": "workspace:*",
         "@nunio/planning": "workspace:*",
         "@temporalio/client": "1.25.0",
         "@vercel/functions": "3.10.5",
@@ -283,6 +284,23 @@
         "@biomejs/biome": "2.6.3",
         "@nunio/typescript-config": "workspace:*",
         "@types/node": "24.19.2",
+        "typescript": "5.9.3",
+        "vitest": "5.0.5",
+      },
+    },
+    "packages/outreach": {
+      "name": "@nunio/outreach",
+      "version": "0.0.0",
+      "dependencies": {
+        "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
+      },
+      "devDependencies": {
+        "@biomejs/biome": "2.6.3",
+        "@nunio/typescript-config": "workspace:*",
+        "@types/node": "24.19.2",
+        "@types/pg": "8.23.1",
+        "pg": "8.23.1",
         "typescript": "5.9.3",
         "vitest": "5.0.5",
       },
@@ -800,6 +818,8 @@
     "@nunio/keys": ["@nunio/keys@workspace:packages/keys"],
 
     "@nunio/knowledge": ["@nunio/knowledge@workspace:packages/knowledge"],
+
+    "@nunio/outreach": ["@nunio/outreach@workspace:packages/outreach"],
 
     "@nunio/parser": ["@nunio/parser@workspace:apps/parser"],
 

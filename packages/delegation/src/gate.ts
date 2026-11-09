@@ -107,6 +107,8 @@ export interface ActionRecord {
   events: { at: Date; type: string; detail: unknown }[];
 }
 export interface HistoryQuery {
+  /** These Actions only, whatever their status. */
+  ids?: string[];
   runId?: string;
   responsibilityId?: string;
   status?: ActionRecord["status"];
@@ -809,6 +811,7 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
       const rows = await withOwner(db, student, (tx) =>
         tx.action.findMany({
           where: {
+            ...(q.ids && { id: { in: q.ids } }),
             ...(q.runId && { runId: q.runId }),
             ...(q.status && { status: q.status }),
             ...(q.responsibilityId && {

@@ -12,6 +12,7 @@ import { usePathname } from "next/navigation";
 
 const menuItems = [
   { title: "Home", href: "/" },
+  { title: "Inbox", href: "/inbox" },
   { title: "Account", href: "/account" },
   { title: "Review", href: "/review" },
   { title: "Chat", href: "/chat" },

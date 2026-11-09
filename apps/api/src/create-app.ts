@@ -21,6 +21,8 @@ import {
   createSources,
   sourceStorageFromEnv,
 } from "@nunio/knowledge";
+import type { Outreach } from "@nunio/outreach";
+import { createOutreach } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import { createPlan } from "@nunio/planning";
 import { attachDatabasePool } from "@vercel/functions";
@@ -49,6 +51,7 @@ export interface AppDeps {
   projects: Projects;
   responsibilities: Responsibilities;
   runWorkflows: RunWorkflows;
+  outreach: Outreach;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
   /** Mounts the spike c routes when set. */
@@ -71,6 +74,7 @@ export function createApp({
   projects,
   responsibilities,
   runWorkflows,
+  outreach,
 }: AppDeps) {
   const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
@@ -100,6 +104,7 @@ export function createApp({
     c.set("projects", projects);
     c.set("responsibilities", responsibilities);
     c.set("runWorkflows", runWorkflows);
+    c.set("outreach", outreach);
     await next();
   });
   app.route("/", routes);
@@ -178,5 +183,6 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     plan: createPlan({ db: prisma, facts, clock }),
     estimator: createEstimator(models),
     projects: createProjects({ db: prisma }),
+    outreach: createOutreach({ db: prisma, clock }),
   });
 }

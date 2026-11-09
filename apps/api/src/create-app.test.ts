@@ -28,6 +28,7 @@ import {
   createProjects,
   createSources,
 } from "@nunio/knowledge";
+import { createOutreach } from "@nunio/outreach";
 import { createPlan } from "@nunio/planning";
 import { hashPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -201,6 +202,7 @@ beforeAll(async () => {
     plan,
     estimator,
     projects: createProjects({ db: prisma }),
+    outreach: createOutreach({ db: prisma, clock: { now: () => new Date() } }),
     sourceWorkflows: {
       start: async (...args) => {
         started.push(args);
