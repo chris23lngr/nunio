@@ -68,16 +68,17 @@ describe("rebalance", () => {
     it.each([
       { name: "nunio placed is moved without Approval", placedBy: "nunio" as const, locked: false,
         moves: [{ kind: "move", blockId: "b1", workId: "sheet-3", from: lecture, to: span("2026-11-09 10:00", "2026-11-09 11:00"), needsApproval: false }],
-        lockedConflicts: [] },
+        overlaps: [] },
       { name: "the student placed is moved only with Approval", placedBy: "student" as const, locked: false,
         moves: [{ kind: "move", blockId: "b1", workId: "sheet-3", from: lecture, to: span("2026-11-09 10:00", "2026-11-09 11:00"), needsApproval: true }],
-        lockedConflicts: [] },
-      { name: "Locked is never moved, only reported", placedBy: "student" as const, locked: true, moves: [], lockedConflicts: ["b1"] },
-    ])("$name", ({ placedBy, locked, moves, lockedConflicts }) => {
+        overlaps: [] },
+      { name: "Locked is never moved, only reported", placedBy: "student" as const, locked: true, moves: [],
+        overlaps: [{ blockId: "b1", reason: "locked" }] },
+    ])("$name", ({ placedBy, locked, moves, overlaps }) => {
       const proposal = rebalance({ ...base, obligations: [{ ...sheet, estimateMinutes: 60 }], fixedEvents: [lecture],
         studyBlocks: [block(placedBy, locked)] });
       expect(proposal.moves).toEqual(moves);
-      expect(proposal.lockedConflicts).toEqual(lockedConflicts);
+      expect(proposal.overlaps).toEqual(overlaps);
     });
   });
 
@@ -139,6 +140,36 @@ describe("rebalance", () => {
       // Sunday 28 March switches to CEST at 02:00; the window still opens at 09:00 local time.
       { start: summer("2027-03-28 09:00"), end: summer("2027-03-28 13:00") },
       { start: summer("2027-03-29 09:00"), end: summer("2027-03-29 10:00") },
+    ]);
+  });
+
+  it("reports a block the calendar now overlaps when no time is left to move it to, never dropping it silently", () => {
+    const lecture = span("2026-11-09 09:00", "2026-11-09 10:00");
+    const block = { id: "b1", workId: "sheet-3", placedBy: "nunio" as const, locked: false, ...lecture };
+    // Due at 10:00 the same morning: nowhere to move the block before the deadline.
+    const proposal = rebalance({ ...base, obligations: [{ ...sheet, due: at("2026-11-09 10:00"), estimateMinutes: 60 }],
+      fixedEvents: [lecture], studyBlocks: [block] });
+    expect(proposal.moves).toEqual([]);
+    expect(proposal.overlaps).toEqual([{ blockId: "b1", reason: "no_room" }]);
+  });
+
+  it("offers time just proposed for lower-Priority work due earlier as a tradeoff", () => {
+    // The quiz is due first, so it is placed first, but the exam matters more.
+    const quiz = { id: "quiz", due: at("2026-11-09 13:00"), estimateMinutes: 120, priority: 2 };
+    const exam = { id: "exam", due: at("2026-11-10 10:00"), estimateMinutes: 360, priority: 1 };
+    const [shortfall] = rebalance({ ...base, obligations: [quiz, exam] }).shortfalls;
+    expect(shortfall?.workId).toBe("exam");
+    expect(shortfall?.tradeoffs).toContainEqual({ kind: "free_time_from", workId: "quiz", blockIds: [], gainedMinutes: 120, needsApproval: false });
+  });
+
+  it("keeps work within its own daily limit while the global limit still caps the day", () => {
+    const thesis = { id: "thesis", due: at("2026-11-11 12:00"), estimateMinutes: 120, priority: 1, dailyLimitMinutes: 60 };
+    const reading = { id: "reading", due: at("2026-11-11 12:00"), estimateMinutes: 240, priority: 2 };
+    expect(creates({ ...base, obligations: [thesis, reading] }).map(m => [m.workId, m.start, m.end])).toEqual([
+      ["thesis", at("2026-11-09 09:00"), at("2026-11-09 10:00")],
+      ["thesis", at("2026-11-10 09:00"), at("2026-11-10 10:00")],
+      ["reading", at("2026-11-09 10:00"), at("2026-11-09 13:00")],
+      ["reading", at("2026-11-10 10:00"), at("2026-11-10 11:00")],
     ]);
   });
 });
