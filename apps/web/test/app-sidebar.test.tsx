@@ -28,14 +28,14 @@ test("each navigation link has its own decorative icon", () => {
   );
 
   const links = screen.getAllByRole("link");
-  expect(links).toHaveLength(8);
+  expect(links).toHaveLength(9);
   const glyphs = links.map((link) => {
     const icon = link.querySelector("svg");
     expect(icon).not.toBeNull();
     expect(icon!.getAttribute("aria-hidden")).toBe("true");
     return icon!.innerHTML;
   });
-  expect(new Set(glyphs).size).toBe(8);
+  expect(new Set(glyphs).size).toBe(9);
 });
 
 test.each([

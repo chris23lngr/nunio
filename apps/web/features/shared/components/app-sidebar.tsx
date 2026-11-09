@@ -3,9 +3,11 @@
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@nunio/ui/components/sidebar/sidebar";
 import {
   CalendarDays,
@@ -15,6 +17,7 @@ import {
   Inbox,
   ListChecks,
   MessageSquare,
+  Settings,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -33,6 +36,8 @@ const menuItems = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const { setOpenMobile } = useSidebar();
+  const settingsActive = pathname.startsWith("/settings/");
 
   return (
     <Sidebar>
@@ -58,6 +63,22 @@ export function AppSidebar() {
           })}
         </SidebarMenu>
       </SidebarContent>
+      <SidebarFooter role="navigation" aria-label="Weitere Navigation">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              render={<Link href="/settings/security" />}
+              isActive={settingsActive}
+              aria-current={settingsActive ? "page" : undefined}
+              tooltip="Einstellungen"
+              onClick={() => setOpenMobile(false)}
+            >
+              <Settings aria-hidden="true" />
+              <span>Einstellungen</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
     </Sidebar>
   );
 }

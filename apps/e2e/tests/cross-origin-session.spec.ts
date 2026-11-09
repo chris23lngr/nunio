@@ -79,6 +79,129 @@ test("a visitor without a session is sent to sign-in", {
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
 });
 
+test("security settings require a verified session", async ({ page }) => {
+  await page.goto(`${origins.app}/settings/security`);
+  await expect(page).toHaveURL(`${origins.app}/sign-in`);
+});
+
+test("security settings reject an invalid session cookie", async ({
+  page,
+  context,
+}) => {
+  await context.addCookies([
+    {
+      name: "__Secure-better-auth.session_token",
+      value: "expired-session.invalid-signature",
+      domain: `.${cookieDomain}`,
+      path: "/",
+      secure: true,
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+  await page.goto(`${origins.app}/settings/security`);
+  await expect(page).toHaveURL(`${origins.app}/sign-in`);
+});
+
+test("a signed-in student can open security settings without changing the account page", async ({
+  page,
+}) => {
+  await signIn(page, "settings");
+  await page.goto(`${origins.app}/settings/security`);
+  await expect(
+    page.getByRole("heading", { name: "Einstellungen", level: 1 }),
+  ).toBeVisible();
+  await expect(page.getByText("Dieses Gerät")).toBeVisible();
+  await page.goto(`${origins.app}/account`);
+  await expect(page).toHaveURL(`${origins.app}/account`);
+  await expect(
+    page.getByRole("heading", { name: "Account", exact: true }),
+  ).toBeVisible();
+});
+
+test("settings open from the sidebar footer and stack below navigation on mobile", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1728, height: 1117 });
+  await signIn(page, "settings-layout");
+  const settingsLink = page.getByRole("link", {
+    name: "Einstellungen",
+    exact: true,
+  });
+  await settingsLink.click();
+  await expect(page).toHaveURL(`${origins.app}/settings/security`);
+  await expect(settingsLink).toHaveAttribute("aria-current", "page");
+  const navigation = page.getByRole("navigation", {
+    name: "Einstellungen",
+    exact: true,
+  });
+  await expect(navigation.getByRole("link")).toHaveCount(1);
+  const sessions = page.getByRole("region", { name: "Aktive Sitzungen" });
+  await expect(sessions.getByText("Dieses Gerät")).toBeVisible();
+  const desktopNav = (await navigation.boundingBox())!;
+  const desktopSessions = (await sessions.boundingBox())!;
+  expect(desktopNav.x + desktopNav.width).toBeLessThan(desktopSessions.x);
+  expect(Math.abs(desktopNav.y - desktopSessions.y)).toBeLessThan(2);
+  const footer = (await settingsLink.boundingBox())!;
+  expect(footer.y).toBeGreaterThan(900);
+  await page.screenshot({
+    path: testInfo.outputPath("settings-desktop.png"),
+    fullPage: true,
+  });
+
+  for (const width of [768, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    const tabletNav = (await navigation.boundingBox())!;
+    const tabletSessions = (await sessions.boundingBox())!;
+    expect(tabletNav.y + tabletNav.height).toBeLessThan(tabletSessions.y);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(width);
+  }
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(settingsLink).toBeHidden();
+  const mobileNav = (await navigation.boundingBox())!;
+  const mobileSessions = (await sessions.boundingBox())!;
+  expect(mobileNav.y + mobileNav.height).toBeLessThan(mobileSessions.y);
+  const mobileDetails = (await sessions
+    .getByText(/Angemeldet am/)
+    .boundingBox())!;
+  const mobileSignOut = (await sessions
+    .getByRole("button", { name: "Abmelden", exact: true })
+    .boundingBox())!;
+  expect(mobileDetails.width).toBeGreaterThan(200);
+  expect(mobileSignOut.y).toBeGreaterThanOrEqual(
+    mobileDetails.y + mobileDetails.height,
+  );
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    375,
+  );
+  await page.getByRole("button", { name: "Toggle Sidebar" }).click();
+  await expect(settingsLink).toBeVisible();
+  await settingsLink.click();
+  await expect(settingsLink).toBeHidden();
+  await expect(
+    page.getByRole("heading", { name: "Einstellungen", level: 1 }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("settings-mobile.png"),
+    fullPage: true,
+  });
+
+  await page
+    .getByRole("button", { name: "Konto löschen", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Konto löschen?" });
+  await expect(dialog.getByLabel("Passwort")).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Löschung anfordern" }),
+  ).toBeVisible();
+  expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(375);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+});
+
 test("signing in on app. sets a parent-domain cookie the app's server can use", {
   tag: "@staging",
 }, async ({ page, context }) => {
