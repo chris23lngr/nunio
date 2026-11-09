@@ -531,6 +531,7 @@ describe("reconciliation", () => {
     const s = await student();
     const runId = (await s.responsibilities.startRun({
       runId: randomUUID(),
+      workflowId: "run-workflow",
       studentId: s.studentId,
       responsibilityId: s.responsibilityId,
     }))!;

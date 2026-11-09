@@ -147,6 +147,7 @@ describe("Responsibilities", () => {
     if (created.status !== "ok") throw new Error(created.status);
     const runId = await responsibilities.startRun({
       runId: randomUUID(),
+      workflowId: "run-workflow",
       studentId: s.studentId,
       responsibilityId: created.id,
     });
@@ -183,6 +184,7 @@ describe("Responsibilities", () => {
     if (created.status !== "ok") throw new Error(created.status);
     const runId = (await responsibilities.startRun({
       runId: randomUUID(),
+      workflowId: "run-workflow",
       studentId: s.studentId,
       responsibilityId: created.id,
     }))!;
@@ -195,6 +197,7 @@ describe("Responsibilities", () => {
     expect(
       await responsibilities.startRun({
         runId: randomUUID(),
+        workflowId: "run-workflow",
         studentId: s.studentId,
         responsibilityId: created.id,
       }),
@@ -229,6 +232,7 @@ describe("Responsibilities", () => {
     if (created.status !== "ok") throw new Error(created.status);
     const runId = (await responsibilities.startRun({
       runId: randomUUID(),
+      workflowId: "run-workflow",
       studentId: s.studentId,
       responsibilityId: created.id,
     }))!;
@@ -240,6 +244,7 @@ describe("Responsibilities", () => {
     expect(
       await responsibilities.startRun({
         runId: randomUUID(),
+        workflowId: "run-workflow",
         studentId: s.studentId,
         responsibilityId: created.id,
       }),
@@ -253,6 +258,7 @@ describe("Responsibilities", () => {
     expect(
       await responsibilities.startRun({
         runId: randomUUID(),
+        workflowId: "run-workflow",
         studentId: s.studentId,
         responsibilityId: created.id,
       }),
@@ -346,6 +352,7 @@ describe("Responsibilities", () => {
       studentId: s.studentId,
       responsibilityId: created.id,
       runId: randomUUID(),
+      workflowId: "run-workflow",
     };
     const ids = await Promise.all([
       responsibilities.startRun(ref),
@@ -378,6 +385,7 @@ describe("Responsibilities", () => {
       studentId: s.studentId,
       responsibilityId: created.id,
       runId: randomUUID(),
+      workflowId: "run-workflow",
     });
     if (!runId) throw new Error("no Run");
     const run = principal.fromRun(runId);
@@ -422,6 +430,7 @@ describe("Responsibilities", () => {
     if (created.status !== "ok") throw new Error(created.status);
     const runId = (await responsibilities.startRun({
       runId: randomUUID(),
+      workflowId: "run-workflow",
       studentId: s.studentId,
       responsibilityId: created.id,
     }))!;

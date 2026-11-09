@@ -16,6 +16,10 @@ export class StaleApprovalError extends Error {
   override name = "StaleApprovalError";
 }
 /** An infrastructure fault, or the same Action is being dispatched right now. Safe to retry with the same key. */
+/** `decide` named no Action of the student's: never theirs, or gone. */
+export class UnknownActionError extends StaleApprovalError {
+  override name = "UnknownActionError";
+}
 export class DelegationUnavailable extends Error {
   override name = "DelegationUnavailable";
 }
@@ -78,6 +82,10 @@ export type Resolve = {
 export interface ActionRecord {
   id: string;
   runId: string | null;
+  /** The Responsibility whose Run asked; null for a Chat. */
+  responsibilityId: string | null;
+  /** The workflow running that Run, to wake it once the student decides. */
+  workflowId: string | null;
   kind: Kind;
   args: unknown;
   status:
@@ -101,6 +109,7 @@ export interface ActionRecord {
 export interface HistoryQuery {
   runId?: string;
   responsibilityId?: string;
+  status?: ActionRecord["status"];
   limit?: number;
 }
 
@@ -130,6 +139,7 @@ type Job = {
 type Row = NonNullable<Awaited<ReturnType<typeof findAction>>>;
 const include = {
   approval: true,
+  run: { select: { responsibilityId: true, workflowId: true } },
   attempts: { orderBy: { startedAt: "asc" } },
   events: { orderBy: { at: "asc" } },
 } as const;
@@ -183,6 +193,8 @@ function recordOf(a: Row): ActionRecord {
   return {
     id: a.id,
     runId: a.runId,
+    responsibilityId: a.run?.responsibilityId ?? null,
+    workflowId: a.run?.workflowId ?? null,
     kind: a.kind as Kind,
     args: a.args,
     status: a.status,
@@ -650,7 +662,7 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
       return withOwner(db, student, async (tx, studentId) => {
         await tx.$executeRaw`SELECT 1 FROM "action" WHERE "id" = ${d.actionId} FOR UPDATE`;
         const action = await findAction(tx, { id: d.actionId });
-        if (!action) throw new StaleApprovalError(`No Action ${d.actionId}`);
+        if (!action) throw new UnknownActionError(`No Action ${d.actionId}`);
         const now = clock.now();
         if (d.kind === "resolve") {
           if (action.status !== "unconfirmed")
@@ -747,6 +759,7 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
         tx.action.findMany({
           where: {
             ...(q.runId && { runId: q.runId }),
+            ...(q.status && { status: q.status }),
             ...(q.responsibilityId && {
               run: { responsibilityId: q.responsibilityId },
             }),

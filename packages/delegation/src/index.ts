@@ -16,6 +16,7 @@ export {
   KeyConflictError,
   type Resolve,
   StaleApprovalError,
+  UnknownActionError,
 } from "./gate.js";
 export {
   type ActionIntent,

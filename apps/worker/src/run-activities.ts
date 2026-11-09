@@ -48,6 +48,7 @@ export function createRunActivities({
       return responsibilities.startRun({
         ...ref,
         runId: Context.current().info.workflowExecution!.runId,
+        workflowId: Context.current().info.workflowExecution!.workflowId,
       });
     },
     async proposeActions(runId: string): Promise<ActionIntent[]> {
