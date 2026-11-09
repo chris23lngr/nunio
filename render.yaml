@@ -51,6 +51,16 @@ services:
         sync: false
       - key: OPENROUTER_API_KEY
         sync: false
+      # Notification email (ADR-0014): a send-only Scaleway key and sender of the worker's own.
+      - key: NOTIFY_SCW_SECRET_KEY
+        sync: false
+      - key: SCW_PROJECT_ID
+        sync: false
+      - key: NOTIFY_EMAIL_FROM
+        sync: false
+      # The app origin the Inbox link in every email points to.
+      - key: APP_ORIGIN
+        sync: false
       - key: SOURCE_KEY_VERSION
         value: v1
       - key: HETZNER_S3_ENDPOINT

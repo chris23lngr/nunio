@@ -55,5 +55,13 @@ async function sendEmail(
       }),
     },
   );
-  if (!response.ok) throw new Error("Authentication email delivery failed");
+  if (!response.ok) throw new Error("Scaleway did not accept the email");
+}
+
+/** Outreach's mailer: the same Scaleway request as authentication email, with its own key and sender. */
+export function createScalewayMailer(options: ScalewayEmailOptions) {
+  return {
+    send: (to: string, { subject, text }: { subject: string; text: string }) =>
+      sendEmail(options, to, subject, text),
+  };
 }

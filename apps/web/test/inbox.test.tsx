@@ -1,7 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { BriefingSettings } from "@/features/inbox/briefing-settings";
+import { EmailSettings } from "@/features/inbox/email-settings";
 import { InboxScreen } from "@/features/inbox/inbox-screen";
 import { api } from "./api";
 import { TestProviders } from "./providers";
@@ -179,8 +180,9 @@ test("a Briefing lists what it bundled when it was made", async () => {
 
 test("the student moves the daily Briefing, or turns it off", async () => {
   const patches: unknown[] = [];
-  let settings: { briefingAtMinute: number | null } = {
+  let settings: { briefingAtMinute: number | null; email: boolean } = {
     briefingAtMinute: 420,
+    email: true,
   };
   api.route("GET", "/api/me/outreach-settings", () => Response.json(settings));
   api.route("PATCH", "/api/me/outreach-settings", async (request) => {
@@ -212,4 +214,34 @@ test("the student moves the daily Briefing, or turns it off", async () => {
   expect(
     await screen.findByRole("button", { name: "Turn Briefings on" }),
   ).toBeTruthy();
+});
+
+test("the student turns email off and on again", async () => {
+  const patches: unknown[] = [];
+  let settings = { briefingAtMinute: 420, email: true };
+  api.route("GET", "/api/me/outreach-settings", () => Response.json(settings));
+  api.route("PATCH", "/api/me/outreach-settings", async (request) => {
+    const patch = (await request.json()) as Partial<typeof settings>;
+    patches.push(patch);
+    settings = { ...settings, ...patch };
+    return Response.json(settings);
+  });
+  const user = userEvent.setup();
+  render(
+    <TestProviders>
+      <EmailSettings apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  const email = await screen.findByRole("checkbox", {
+    name: "Email me when something needs my attention",
+  });
+  expect((email as HTMLInputElement).checked).toBe(true);
+  await user.click(email);
+  await waitFor(() => expect((email as HTMLInputElement).checked).toBe(false));
+  await user.click(email);
+
+  await waitFor(() =>
+    expect(patches).toEqual([{ email: false }, { email: true }]),
+  );
 });

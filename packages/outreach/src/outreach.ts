@@ -33,12 +33,20 @@ export type BriefingView = {
 export type OutreachSettings = {
   /** Minutes after local midnight in the Plan's time zone; null turns Briefings off. */
   briefingAtMinute: number | null;
+  /** Whether nunio emails the student; the Inbox has everything either way. */
+  email: boolean;
 };
 
 type Bundled = Omit<BriefingView, "id" | "madeAt">;
 type PlanView = Awaited<ReturnType<Plan["view"]>>;
 
-const defaultBriefingAtMinute = 7 * 60;
+const defaults: OutreachSettings = { briefingAtMinute: 7 * 60, email: true };
+const settingsOf = (
+  stored: { briefingAtMinute: number | null; email: boolean } | null,
+): OutreachSettings =>
+  stored
+    ? { briefingAtMinute: stored.briefingAtMinute, email: stored.email }
+    : defaults;
 
 /** The date and minute of the day on the student's wall clock. */
 function wallClock(at: Date, timeZone: string) {
@@ -58,6 +66,11 @@ function wallClock(at: Date, timeZone: string) {
   };
 }
 
+/** Sends one email; true external, so it is injected. */
+export interface Mailer {
+  send(to: string, message: { subject: string; text: string }): Promise<void>;
+}
+
 export class NotOpenError extends Error {}
 export class UnknownInterventionError extends Error {}
 
@@ -69,6 +82,8 @@ export function createOutreach({
   facts,
   delegation,
   responsibilities,
+  mailer,
+  inboxUrl,
 }: {
   db: PrismaClient;
   clock: Clock;
@@ -76,6 +91,9 @@ export function createOutreach({
   facts: Facts;
   delegation: Delegation;
   responsibilities: Responsibilities;
+  mailer: Mailer;
+  /** The only link a message outside the app carries. */
+  inboxUrl: string;
 }) {
   /** Raises an Intervention for each new cause, and ends the causes that no longer hold. */
   async function sync(p: Principal, { proposal }: PlanView) {
@@ -97,18 +115,25 @@ export function createOutreach({
       });
       const liveKeys = new Set(live.map((r) => r.dedupeKey));
       const currentKeys = new Set(current.map((c) => c.key));
-      await tx.intervention.createMany({
-        data: current
-          .filter((c) => !liveKeys.has(c.key))
-          .map((c) => ({
-            id: randomUUID(),
-            studentId,
-            kind: c.kind,
-            dedupeKey: c.key,
-            actionId: c.actionId,
-            createdAt: at,
-          })),
-        skipDuplicates: true,
+      const raised = current
+        .filter((c) => !liveKeys.has(c.key))
+        .map((c) => ({
+          id: randomUUID(),
+          studentId,
+          kind: c.kind,
+          dedupeKey: c.key,
+          actionId: c.actionId,
+          createdAt: at,
+        }));
+      await tx.intervention.createMany({ data: raised, skipDuplicates: true });
+      await tx.delivery.createMany({
+        data: raised.map((i) => ({
+          id: randomUUID(),
+          studentId,
+          channel: "email",
+          interventionId: i.id,
+          dueAt: at,
+        })),
       });
       // An expired Approval stays expired, so its cause never ends by itself.
       const ended = live.filter(
@@ -129,9 +154,7 @@ export function createOutreach({
     const settings = await withOwner(db, p, (tx) =>
       tx.outreachSettings.findFirst(),
     );
-    const briefingAt = settings
-      ? settings.briefingAtMinute
-      : defaultBriefingAtMinute;
+    const briefingAt = settingsOf(settings).briefingAtMinute;
     if (briefingAt === null || minute < briefingAt) return;
     if (settings?.lastBriefingOn === date) return;
     const [approvals, delegated] = await Promise.all([
@@ -151,18 +174,24 @@ export function createOutreach({
           .filter((r) => r.state === "active")
           .map((r) => r.id),
       };
-      if (Object.values(items).some((ids) => ids.length))
-        await tx.briefing.createMany({
-          data: [
-            {
-              id: randomUUID(),
-              studentId,
-              localDate: date,
-              createdAt: at,
-              items,
-            },
-          ],
-          skipDuplicates: true,
+      const id = randomUUID();
+      const made =
+        Object.values(items).some((ids) => ids.length) &&
+        (
+          await tx.briefing.createMany({
+            data: [{ id, studentId, localDate: date, createdAt: at, items }],
+            skipDuplicates: true,
+          })
+        ).count > 0;
+      if (made)
+        await tx.delivery.create({
+          data: {
+            id: randomUUID(),
+            studentId,
+            channel: "email",
+            briefingId: id,
+            dueAt: at,
+          },
         });
       await tx.outreachSettings.upsert({
         where: { studentId },
@@ -170,6 +199,76 @@ export function createOutreach({
         update: { lastBriefingOn: date },
       });
     });
+  }
+
+  /** Sends what is due as one content-free email that points to the Inbox. */
+  async function deliver(p: Principal) {
+    const at = clock.now();
+    const { due, to } = await withOwner(db, p, async (tx, studentId) => {
+      const queued = await tx.delivery.findMany({
+        where: { sentAt: null, droppedAt: null, dueAt: { lte: at } },
+      });
+      const open = new Set(
+        (
+          await tx.intervention.findMany({
+            where: {
+              id: { in: queued.flatMap((d) => d.interventionId ?? []) },
+              acknowledgedAt: null,
+              dismissedAt: null,
+              causeEndedAt: null,
+            },
+            select: { id: true },
+          })
+        ).map((i) => i.id),
+      );
+      const { email } = settingsOf(await tx.outreachSettings.findFirst());
+      // A message about an Intervention that closed meanwhile no longer applies.
+      const closed = queued.filter(
+        (d) => d.interventionId && !open.has(d.interventionId),
+      );
+      const disabled = email ? [] : queued.filter((d) => !closed.includes(d));
+      for (const [reason, dropped] of [
+        ["closed", closed],
+        ["disabled", disabled],
+      ] as const)
+        if (dropped.length)
+          await tx.delivery.updateMany({
+            where: { id: { in: dropped.map((d) => d.id) } },
+            data: { droppedAt: at, dropReason: reason },
+          });
+      return {
+        due: email ? queued.filter((d) => !closed.includes(d)) : [],
+        to: (await tx.user.findUniqueOrThrow({ where: { id: studentId } }))
+          .email,
+      };
+    });
+    const announcing = due.filter((d) => d.interventionId);
+    const briefing = due.filter((d) => d.briefingId);
+    for (const [batch, message] of [
+      [
+        announcing,
+        {
+          subject: `nunio: ${announcing.length} ${announcing.length === 1 ? "item needs" : "items need"} your attention`,
+          text: `Open your Inbox to see what needs your attention:\n\n${inboxUrl}`,
+        },
+      ],
+      [
+        briefing,
+        {
+          subject: "Your nunio Briefing is ready",
+          text: `Your Briefing is in your Inbox:\n\n${inboxUrl}`,
+        },
+      ],
+    ] as const) {
+      if (!batch.length) continue;
+      await mailer.send(to, message);
+      await withOwner(db, p, (tx) =>
+        tx.delivery.updateMany({
+          where: { id: { in: batch.map((d) => d.id) } },
+          data: { sentAt: at },
+        }),
+      );
+    }
   }
 
   return {
@@ -180,9 +279,15 @@ export function createOutreach({
       >`SELECT "studentId" FROM outreach_students()`;
       for (const { studentId } of students) {
         const p = principal.fromSession({ studentId });
-        const view = await plan.view(p);
-        await sync(p, view);
-        await brief(p, view);
+        // One student's failure leaves their work to the next tick, not the others'.
+        try {
+          const view = await plan.view(p);
+          await sync(p, view);
+          await brief(p, view);
+          await deliver(p);
+        } catch (error) {
+          console.error("Outreach tick failed for a student", error);
+        }
       }
     },
     async inbox(student: Principal): Promise<{
@@ -224,14 +329,9 @@ export function createOutreach({
       };
     },
     async settings(student: Principal): Promise<OutreachSettings> {
-      const stored = await withOwner(db, student, (tx) =>
-        tx.outreachSettings.findFirst(),
+      return settingsOf(
+        await withOwner(db, student, (tx) => tx.outreachSettings.findFirst()),
       );
-      return {
-        briefingAtMinute: stored
-          ? stored.briefingAtMinute
-          : defaultBriefingAtMinute,
-      };
     },
     /** A changed time applies from the next Briefing; one already made or skipped today stays so. */
     async updateSettings(
@@ -245,7 +345,7 @@ export function createOutreach({
           update: patch,
         }),
       );
-      return { briefingAtMinute: stored.briefingAtMinute };
+      return settingsOf(stored);
     },
     async close(
       student: Principal,

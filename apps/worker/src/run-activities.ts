@@ -15,6 +15,7 @@ import {
   principal,
   withOwner,
 } from "@nunio/delegation";
+import { createScalewayMailer } from "@nunio/identity";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createFacts } from "@nunio/knowledge";
 import { createOutreach } from "@nunio/outreach";
@@ -115,6 +116,10 @@ export function runActivitiesFromEnv(
     "DATABASE_URL",
     "SOURCE_KEY_VERSION",
     "SOURCE_MASTER_KEYS",
+    "SCW_PROJECT_ID",
+    "NOTIFY_SCW_SECRET_KEY",
+    "NOTIFY_EMAIL_FROM",
+    "APP_ORIGIN",
   ].filter((name) => !env[name]);
   if (missing.length)
     throw new Error(`Missing settings: ${missing.join(", ")}`);
@@ -140,6 +145,13 @@ export function runActivitiesFromEnv(
     facts,
     delegation,
     responsibilities,
+    // Its own key and sender, so notification email is tracked apart from authentication email (ADR-0014).
+    mailer: createScalewayMailer({
+      projectId: env.SCW_PROJECT_ID!,
+      secretKey: env.NOTIFY_SCW_SECRET_KEY!,
+      from: env.NOTIFY_EMAIL_FROM!,
+    }),
+    inboxUrl: `${env.APP_ORIGIN}/inbox`,
   });
   /** Each preset's Actions: the Rebalance of the Responsibility's Course, or of its one exam. */
   const propose = async (runId: string) => {

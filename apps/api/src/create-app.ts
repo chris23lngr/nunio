@@ -196,6 +196,11 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
       facts,
       delegation,
       responsibilities,
+      // Only the worker sends; the API reads the Inbox and settings, and holds no notification key.
+      mailer: {
+        send: () => Promise.reject(new Error("Only the worker sends email")),
+      },
+      inboxUrl: `${appOrigin}/inbox`,
     }),
   });
 }

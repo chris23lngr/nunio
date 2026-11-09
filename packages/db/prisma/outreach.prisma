@@ -29,8 +29,29 @@ model OutreachSettings {
   briefingAtMinute Int?    @default(420)
   /// The last local date a Briefing was due, made or skipped as empty.
   lastBriefingOn   String?
+  /// Whether nunio emails the student; the Inbox has everything either way.
+  email            Boolean @default(true)
 
   @@map("outreach_settings")
+}
+
+/// One message outside the app announcing an Intervention or a Briefing; settled once, as sent or dropped.
+model Delivery {
+  id             String    @id
+  studentId      String
+  student        User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// email for now.
+  channel        String
+  interventionId String?
+  briefingId     String?
+  dueAt          DateTime
+  sentAt         DateTime?
+  droppedAt      DateTime?
+  /// closed or disabled.
+  dropReason     String?
+
+  @@index([studentId, dueAt])
+  @@map("delivery")
 }
 
 /// A scheduled summary, never edited once made: which Interventions, Approvals and Responsibilities it bundled.

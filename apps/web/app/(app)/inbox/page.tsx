@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BriefingSettings } from "@/features/inbox/briefing-settings";
+import { EmailSettings } from "@/features/inbox/email-settings";
 import { InboxScreen } from "@/features/inbox/inbox-screen";
 import { apiOrigin, getSession } from "@/lib/session";
 
@@ -13,6 +14,7 @@ export default async function InboxPage() {
       <Link href="/">Back to Home</Link>
       <InboxScreen apiOrigin={apiOrigin()} />
       <BriefingSettings apiOrigin={apiOrigin()} />
+      <EmailSettings apiOrigin={apiOrigin()} />
     </main>
   );
 }

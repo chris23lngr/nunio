@@ -17,6 +17,11 @@ const Settings = z
       .describe(
         "Minutes after local midnight in the Plan's time zone; null turns Briefings off.",
       ),
+    email: z
+      .boolean()
+      .describe(
+        "Whether nunio emails the student; the Inbox has everything either way.",
+      ),
   })
   .openapi("OutreachSettings");
 

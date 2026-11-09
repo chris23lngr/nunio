@@ -2328,10 +2328,15 @@
             "minimum": 0,
             "maximum": 1439,
             "description": "Minutes after local midnight in the Plan's time zone; null turns Briefings off."
+          },
+          "email": {
+            "type": "boolean",
+            "description": "Whether nunio emails the student; the Inbox has everything either way."
           }
         },
         "required": [
-          "briefingAtMinute"
+          "briefingAtMinute",
+          "email"
         ]
       }
     },
@@ -8288,6 +8293,10 @@
                     "minimum": 0,
                     "maximum": 1439,
                     "description": "Minutes after local midnight in the Plan's time zone; null turns Briefings off."
+                  },
+                  "email": {
+                    "type": "boolean",
+                    "description": "Whether nunio emails the student; the Inbox has everything either way."
                   }
                 }
               }

@@ -209,6 +209,8 @@ beforeAll(async () => {
       facts,
       delegation,
       responsibilities,
+      mailer: { send: async () => {} },
+      inboxUrl: `${appOrigin}/inbox`,
     }),
     sourceWorkflows: {
       start: async (...args) => {

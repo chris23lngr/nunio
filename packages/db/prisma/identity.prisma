@@ -32,6 +32,7 @@ model User {
   interventions    Intervention[]
   outreachSettings OutreachSettings?
   briefings        Briefing[]
+  deliveries       Delivery[]
 
   @@map("user")
 }

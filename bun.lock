@@ -108,6 +108,7 @@
         "@nunio/ai": "workspace:*",
         "@nunio/db": "workspace:*",
         "@nunio/delegation": "workspace:*",
+        "@nunio/identity": "workspace:*",
         "@nunio/keys": "workspace:*",
         "@nunio/knowledge": "workspace:*",
         "@nunio/outreach": "workspace:*",

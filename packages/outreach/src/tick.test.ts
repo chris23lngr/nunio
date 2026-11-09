@@ -30,6 +30,21 @@ let outreach: Outreach;
 const at = (local: string) => new Date(`${local.replace(" ", "T")}:00+01:00`);
 let now = at("2026-11-09 08:00");
 const clock = { now: () => now };
+/** Records every email, and fails each send while `failing` is set. */
+const mail = {
+  sent: [] as { to: string; subject: string; text: string }[],
+  failing: false,
+};
+const mailer = {
+  async send(to: string, message: { subject: string; text: string }) {
+    if (mail.failing) throw new Error("Scaleway is down");
+    mail.sent.push({ to, ...message });
+  },
+};
+const mailTo = (p: Principal) =>
+  mail.sent.filter(
+    (m) => p.kind === "student" && m.to === `${p.studentId}@example.com`,
+  );
 
 beforeAll(async () => {
   db = await startTestDatabase();
@@ -51,6 +66,8 @@ beforeAll(async () => {
     facts,
     delegation: createDelegation({ db: runtime, aiEnabled: () => true }),
     responsibilities: createResponsibilities({ db: runtime, clock }),
+    mailer,
+    inboxUrl: "https://app.nunio.test/inbox",
   });
 }, 180_000);
 
@@ -323,11 +340,14 @@ describe("the daily Briefing", () => {
   it("comes at 07:00 until the student moves it, and never once turned off", async () => {
     const p = await student();
     await dueTomorrow(p, 20 * 60);
-    expect(await outreach.settings(p)).toEqual({ briefingAtMinute: 7 * 60 });
+    expect(await outreach.settings(p)).toEqual({
+      briefingAtMinute: 7 * 60,
+      email: true,
+    });
 
     expect(
       await outreach.updateSettings(p, { briefingAtMinute: 9 * 60 }),
-    ).toEqual({ briefingAtMinute: 9 * 60 });
+    ).toEqual({ briefingAtMinute: 9 * 60, email: true });
     now = at("2026-11-09 08:00");
     await outreach.tick();
     expect((await outreach.inbox(p)).briefings).toEqual([]);
@@ -339,5 +359,92 @@ describe("the daily Briefing", () => {
     now = at("2026-11-10 09:05");
     await outreach.tick();
     expect((await outreach.inbox(p)).briefings).toHaveLength(1);
+  });
+});
+
+describe("email", () => {
+  it("emails the student once about a new Intervention, with nothing in it but a count and the Inbox", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    await dueTomorrow(p, 20 * 60);
+
+    await outreach.tick();
+    await outreach.tick();
+
+    expect(mailTo(p)).toEqual([
+      {
+        to: expect.any(String),
+        subject: "nunio: 1 item needs your attention",
+        text: expect.stringContaining("https://app.nunio.test/inbox"),
+      },
+    ]);
+    expect(JSON.stringify(mailTo(p))).not.toMatch(/Problem sheet|Analysis/);
+  });
+
+  it("tries a failed email again on the next look", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    await dueTomorrow(p, 20 * 60);
+
+    mail.failing = true;
+    try {
+      await outreach.tick();
+    } finally {
+      mail.failing = false;
+    }
+    expect(mailTo(p)).toEqual([]);
+    await outreach.tick();
+
+    expect(mailTo(p)).toHaveLength(1);
+  });
+
+  it("sends nothing about an Intervention the student closed before the email got out", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    await dueTomorrow(p, 20 * 60);
+    mail.failing = true;
+    try {
+      await outreach.tick();
+    } finally {
+      mail.failing = false;
+    }
+    const [shortfall] = await open(p);
+
+    await outreach.close(p, shortfall!.id, "acknowledged");
+    await outreach.tick();
+
+    expect(mailTo(p)).toEqual([]);
+  });
+
+  it("emails nothing while email is off, and nothing it held back once it is on again", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    expect(await outreach.updateSettings(p, { email: false })).toEqual(
+      expect.objectContaining({ email: false }),
+    );
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+
+    await outreach.updateSettings(p, { email: true });
+    await outreach.tick();
+
+    expect(mailTo(p)).toEqual([]);
+    expect(await open(p)).toHaveLength(1);
+  });
+
+  it("announces each Briefing in its own email", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    await dueTomorrow(p, 20 * 60);
+    await outreach.tick();
+
+    now = at("2026-11-09 07:05");
+    await outreach.tick();
+
+    expect(mailTo(p).map((m) => m.subject)).toEqual([
+      "nunio: 1 item needs your attention",
+      "Your nunio Briefing is ready",
+    ]);
+    expect(mailTo(p)[1]!.text).toContain("https://app.nunio.test/inbox");
   });
 });

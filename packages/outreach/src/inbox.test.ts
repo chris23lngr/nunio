@@ -55,6 +55,8 @@ function make() {
     plan: createPlan({ db: runtime, facts, clock }),
     delegation: createDelegation({ db: runtime, aiEnabled: () => true }),
     responsibilities: createResponsibilities({ db: runtime, clock }),
+    mailer: { send: async () => {} },
+    inboxUrl: "https://app.nunio.test/inbox",
   });
 }
 
