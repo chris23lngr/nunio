@@ -82,9 +82,15 @@ export type PushSubscriptionJson = {
 export const unsubscribeToken = (secret: string, studentId: string) =>
   createHmac("sha256", secret).update(studentId).digest("hex");
 
-export class NotOpenError extends Error {}
-export class InvalidUnsubscribeError extends Error {}
-export class UnknownInterventionError extends Error {}
+export class NotOpenError extends Error {
+  override name = "NotOpenError";
+}
+export class InvalidUnsubscribeError extends Error {
+  override name = "InvalidUnsubscribeError";
+}
+export class UnknownInterventionError extends Error {
+  override name = "UnknownInterventionError";
+}
 
 /** The Inbox, Outreach settings and push subscriptions: what the API reads and changes for a student. */
 export function createOutreach({

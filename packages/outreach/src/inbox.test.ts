@@ -7,6 +7,7 @@ import { principal } from "@nunio/delegation";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createOutreach,
+  InvalidUnsubscribeError,
   NotOpenError,
   UnknownInterventionError,
 } from "./index.js";
@@ -144,6 +145,20 @@ describe("the Inbox", () => {
     expect((await outreach.inbox(other)).interventions).toEqual([]);
     expect((await outreach.inbox(owner)).interventions).toEqual([
       expect.objectContaining({ id, state: "open", closedAt: null }),
+    ]);
+  });
+
+  it("names its errors, so a log says which one it was", () => {
+    expect(
+      [
+        new NotOpenError(),
+        new UnknownInterventionError(),
+        new InvalidUnsubscribeError(),
+      ].map((e) => e.name),
+    ).toEqual([
+      "NotOpenError",
+      "UnknownInterventionError",
+      "InvalidUnsubscribeError",
     ]);
   });
 });
