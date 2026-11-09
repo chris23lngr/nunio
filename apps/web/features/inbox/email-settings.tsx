@@ -1,13 +1,10 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { settingsQueries, updateSettings } from "./api/settings-queries";
+import { useOutreachSettings } from "./use-outreach-settings";
 
 /** Whether nunio emails the student; every email only points to the Inbox, which has everything either way. */
 export function EmailSettings({ apiOrigin }: { apiOrigin: string }) {
-  const queryClient = useQueryClient();
-  const query = useQuery(settingsQueries(apiOrigin));
-  const update = useMutation(updateSettings(apiOrigin, queryClient));
+  const { query, update } = useOutreachSettings(apiOrigin);
   if (!query.data)
     return query.error ? <p role="alert">{query.error.message}</p> : null;
   return (
