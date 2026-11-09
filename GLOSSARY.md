@@ -160,10 +160,6 @@ _Avoid_: Upload, delivery, hand-in
 nunio preparing a Submission that the student performs themselves, used for every Destination nunio cannot submit to directly.
 _Avoid_: Manual submission, export
 
-**Unconfirmed**:
-The state of a Submission nunio attempted but cannot confirm succeeded. The student must resolve it; nunio never retries it blindly.
-_Avoid_: Pending, failed, unknown
-
 **Reported as Submitted**:
 The state of an Obligation the student says they handed in through a Handoff, which nunio cannot verify. It is distinct from a confirmed Submission.
 _Avoid_: Done, completed, submitted
@@ -197,16 +193,32 @@ _Avoid_: Mastery, score, progress, proficiency
 ### Outreach
 
 **Intervention**:
-Something nunio initiates toward the student that asks for their attention or a decision, such as a deadline risk or a changed exam room. A finished Artifact on its own is not an Intervention.
+Something nunio initiates toward the student that asks for their attention or a decision, such as a deadline risk or a changed exam room. Each concerns one cause, such as one Obligation's Shortfall, and is raised once for as long as that cause continues; it stays open until the student acknowledges or dismisses it, or it lapses. A finished Artifact on its own is not an Intervention.
 _Avoid_: Alert, notification, nudge, suggestion
 
+**Acknowledgement**:
+The student noting an open Intervention, which closes it without judging whether it was useful. Acknowledging never settles a decision the Intervention asks for, such as resolving an Unconfirmed Action.
+_Avoid_: Read, seen, mark done, resolve
+
 **Dismissal**:
-The student's judgment that an Intervention was not useful. Merely seeing or acknowledging an Intervention is not a Dismissal.
+The student's judgment that an Intervention was not useful, which closes it. Merely seeing or acknowledging an Intervention is not a Dismissal.
 _Avoid_: Ignore, close, snooze
 
+**Lapse**:
+An open Intervention closing by itself because its cause no longer holds, such as a Shortfall the student has since made room for. A lapsed Intervention is neither acknowledged nor dismissed; if its cause returns, nunio raises a new Intervention.
+_Avoid_: Resolve, expire, auto-close
+
+**Quiet Hours**:
+A daily window in the student's time zone in which nunio sends them nothing outside the app; what is held goes out afterwards only if it still applies. Quiet Hours are independent of Protected Time.
+_Avoid_: Do not disturb, mute, quiet time
+
 **Briefing**:
-A scheduled summary nunio delivers that bundles the current Interventions, ready Artifacts, and ongoing work.
+A scheduled summary nunio delivers that bundles the current Interventions, ready Artifacts, and ongoing work, as they stood when it was made. A Briefing is not an Intervention and cannot be dismissed; nothing to bundle means no Briefing.
 _Avoid_: Digest, daily summary, report
+
+**Inbox**:
+The place in nunio where the student's Interventions and Briefings live. Anything nunio sends outside the app only points to the Inbox and never closes an Intervention.
+_Avoid_: Notification center, feed, activity
 
 ### Delegation
 
@@ -237,3 +249,7 @@ _Avoid_: Confirmation, consent, permission
 **Grant**:
 Standing authority, given in advance, for a Responsibility to take a kind of Action within a defined scope without per-Action Approval. Grants exist only within a Responsibility.
 _Avoid_: Permission, automation permission, authority
+
+**Unconfirmed**:
+The state of an Action nunio attempted but cannot confirm took effect, such as a Submission whose Destination gave no answer. The student must resolve it; nunio never retries it blindly.
+_Avoid_: Pending, failed, unknown

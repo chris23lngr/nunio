@@ -9,7 +9,7 @@ Pilot students can upload their real course materials and, within ten minutes, r
 ## Decision gates outside the phases
 
 - **Before Phase 12 (deferred by the founder on 2026-10-30):** choose observability and error tracking (EU-hosted or EU-region). The brief requires background-job monitoring before the pilot, so this is a pilot-readiness gate. Until then, rely on platform logs (Vercel, Render) and the Temporal Cloud UI.
-- **Phase 3:** Scaleway Transactional Email is selected for verification and password recovery (EU processing, DPA). The processing boundary is recorded in [ADR-0013](adr/0013-scaleway-for-authentication-email.md); Phase 10 notification routing remains deferred.
+- **Phase 3:** Scaleway Transactional Email is selected for verification and password recovery (EU processing, DPA). The processing boundary is recorded in [ADR-0013](adr/0013-scaleway-for-authentication-email.md). Phase 10 notification email uses the same provider with content-free messages ([ADR-0014](adr/0014-content-free-notification-email-on-scaleway.md)).
 - **Before Phase 9 (optional):** `prototype` the delegation gate's state machine (Approval expiry, Unconfirmed, Pause mid-Run, Budget exhaustion) as a throwaway.
 - **Before connector work (post-pilot):** collect the pilot tool inventory. No Integration or verified Destination is built until then; Submissions are Handoffs during the pilot.
 
