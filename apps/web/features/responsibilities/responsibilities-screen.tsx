@@ -3,10 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useAppForm } from "@/lib/form";
-import {
-  keepCourseOrganized,
-  prepareForExam,
-} from "./api/responsibility-mutations";
+import { delegateResponsibility } from "./api/responsibility-mutations";
 import {
   delegableCourseQueries,
   responsibilityListQueries,
@@ -20,8 +17,9 @@ export function ResponsibilitiesScreen({ apiOrigin }: { apiOrigin: string }) {
   const queryClient = useQueryClient();
   const delegated = useQuery(responsibilityListQueries(apiOrigin)).data ?? [];
   const courses = useQuery(delegableCourseQueries(apiOrigin)).data ?? [];
-  const create = useMutation(keepCourseOrganized(apiOrigin, queryClient));
-  const prepare = useMutation(prepareForExam(apiOrigin, queryClient));
+  // One mutation each, so each form shows only its own error.
+  const create = useMutation(delegateResponsibility(apiOrigin, queryClient));
+  const prepare = useMutation(delegateResponsibility(apiOrigin, queryClient));
   const exams = courses.flatMap((course) =>
     course.obligations
       .filter((o) => o.kind === "exam" && o.state !== "rejected")
@@ -31,17 +29,27 @@ export function ResponsibilitiesScreen({ apiOrigin }: { apiOrigin: string }) {
   const form = useAppForm({
     defaultValues: { courseId: "" },
     onSubmit: async ({ value }) => {
-      await create.mutateAsync(value.courseId).catch(() => {
-        // Query owns the mutation error, rendered below.
-      });
+      await create
+        .mutateAsync({
+          preset: "keep_course_organized",
+          courseId: value.courseId,
+        })
+        .catch(() => {
+          // Query owns the mutation error, rendered below.
+        });
     },
   });
   const examForm = useAppForm({
     defaultValues: { obligationId: "" },
     onSubmit: async ({ value }) => {
-      await prepare.mutateAsync(value.obligationId).catch(() => {
-        // Query owns the mutation error, rendered below.
-      });
+      await prepare
+        .mutateAsync({
+          preset: "prepare_for_exam",
+          obligationId: value.obligationId,
+        })
+        .catch(() => {
+          // Query owns the mutation error, rendered below.
+        });
     },
   });
 
@@ -51,8 +59,8 @@ export function ResponsibilitiesScreen({ apiOrigin }: { apiOrigin: string }) {
       <ul>
         {delegated.map((r) => (
           <li key={r.id}>
-            <Link href={`/responsibilities/${r.id}`}>{nameOf(r)}</Link>{" "}
-            ({states[r.state]}
+            <Link href={`/responsibilities/${r.id}`}>{nameOf(r)}</Link> (
+            {states[r.state]}
             {r.pausedBy === "budget" && ", its Budget is used up"})
           </li>
         ))}
@@ -135,7 +143,9 @@ export function ResponsibilitiesScreen({ apiOrigin }: { apiOrigin: string }) {
           )}
         </examForm.Field>
         <examForm.AppForm>
-          <examForm.SubmitButton>Prepare me for this exam</examForm.SubmitButton>
+          <examForm.SubmitButton>
+            Prepare me for this exam
+          </examForm.SubmitButton>
         </examForm.AppForm>
         <p>
           nunio will plan and move Study Blocks for this exam every morning in
