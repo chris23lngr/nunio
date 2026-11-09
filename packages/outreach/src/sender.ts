@@ -10,13 +10,22 @@ import { principal, withOwner } from "@nunio/delegation";
 import type { Facts } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
 import { causesOf, keyOf } from "./causes.js";
-import type { Bundled, OutreachSettings } from "./outreach.js";
-import { openIntervention, settingsOf, unsubscribeToken } from "./outreach.js";
+import type {
+  BriefingItems,
+  OutreachSettings,
+  StoredSubscription,
+} from "./outreach.js";
+import {
+  openIntervention,
+  pushSubscriptionOf,
+  settingsOf,
+  unsubscribeToken,
+} from "./outreach.js";
 
 type PlanView = Awaited<ReturnType<Plan["view"]>>;
 
 /** Whether `minute` of the day falls in Quiet Hours, which may wrap midnight. */
-const quiet = (
+const inQuietHours = (
   minute: number,
   hours: OutreachSettings["quietHours"],
 ): boolean =>
@@ -58,7 +67,7 @@ export interface Mailer {
 /** Sends one empty push to one device; true external, so it is injected. */
 export interface Pusher {
   send(
-    subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
+    subscription: StoredSubscription,
     options: { ttlSeconds: number; urgency: "low" | "normal" },
   ): Promise<"sent" | "gone">;
 }
@@ -168,7 +177,7 @@ export function createOutreachSender({
         orderBy: { createdAt: "desc" },
         select: { id: true },
       });
-      const items: Bundled = {
+      const items: BriefingItems = {
         interventions: open.map((i) => i.id),
         approvals: approvals.map((a) => a.id),
         responsibilities: delegated
@@ -210,7 +219,7 @@ export function createOutreachSender({
       await withOwner(db, p, (tx) => tx.outreachSettings.findFirst()),
     );
     // Nothing leaves the app in Quiet Hours; what is due waits for the first tick after them.
-    if (quiet(minute, settings.quietHours)) return;
+    if (inQuietHours(minute, settings.quietHours)) return;
     const pending = await withOwner(db, p, async (tx, studentId) => {
       const queued = await tx.delivery.findMany({
         where: { sentAt: null, droppedAt: null, dueAt: { lte: at } },
@@ -238,45 +247,37 @@ export function createOutreachSender({
           select: { sentAt: true },
         })
       ).length;
-      const subscriptions = await tx.pushSubscription.findMany();
-      // A message about an Intervention that closed meanwhile no longer applies.
-      const closed = queued.filter(
-        (d) => d.interventionId && !open.has(d.interventionId),
+      const subscriptions = (await tx.pushSubscription.findMany()).map(
+        pushSubscriptionOf,
       );
-      const disabled = queued.filter(
-        (d) =>
-          !closed.includes(d) &&
-          (d.channel === "email"
+      const reasonOf = (d: (typeof queued)[number]) => {
+        // A message about an Intervention that closed meanwhile no longer applies.
+        if (d.interventionId && !open.has(d.interventionId)) return "closed";
+        if (
+          d.channel === "email"
             ? !email || (d.briefingId !== null && !briefingEmail)
-            : !subscriptions.length),
-      );
-      // Past the limit, an Intervention waits in the Inbox and the next Briefing instead.
-      const limited =
-        announcedToday < dailyLimit
-          ? []
-          : queued.filter(
-              (d) =>
-                d.interventionId &&
-                !closed.includes(d) &&
-                !disabled.includes(d),
-            );
-      for (const [reason, dropped] of [
-        ["closed", closed],
-        ["disabled", disabled],
-        ["limit", limited],
-      ] as const)
-        if (dropped.length)
+            : !subscriptions.length
+        )
+          return "disabled";
+        // Past the limit, an Intervention waits in the Inbox and the next Briefing instead.
+        if (d.interventionId && announcedToday >= dailyLimit) return "limit";
+        return "send";
+      };
+      const byReason: Record<ReturnType<typeof reasonOf>, typeof queued> = {
+        send: [],
+        closed: [],
+        disabled: [],
+        limit: [],
+      };
+      for (const d of queued) byReason[reasonOf(d)].push(d);
+      for (const reason of ["closed", "disabled", "limit"] as const)
+        if (byReason[reason].length)
           await tx.delivery.updateMany({
-            where: { id: { in: dropped.map((d) => d.id) } },
+            where: { id: { in: byReason[reason].map((d) => d.id) } },
             data: { droppedAt: at, dropReason: reason },
           });
       return {
-        due: queued.filter(
-          (d) =>
-            !closed.includes(d) &&
-            !disabled.includes(d) &&
-            !limited.includes(d),
-        ),
+        due: byReason.send,
         to: (await tx.user.findUniqueOrThrow({ where: { id: studentId } }))
           .email,
         subscriptions,
@@ -286,7 +287,7 @@ export function createOutreachSender({
     for (const channel of channels) {
       // One channel failing leaves its messages due; the others still go out.
       try {
-        await send(p, channel, at, {
+        await sendChannel(p, channel, at, {
           ...pending,
           due: pending.due.filter((d) => d.channel === channel),
         });
@@ -296,7 +297,8 @@ export function createOutreachSender({
     }
   }
 
-  async function send(
+  /** Sends one channel's due messages: one for the Interventions it announces, one for a Briefing. */
+  async function sendChannel(
     p: Principal,
     channel: Channel,
     at: Date,
@@ -313,12 +315,7 @@ export function createOutreachSender({
         briefingId: string | null;
       }[];
       to: string;
-      subscriptions: {
-        id: string;
-        endpoint: string;
-        p256dh: string;
-        auth: string;
-      }[];
+      subscriptions: ({ id: string } & StoredSubscription)[];
     },
   ) {
     const announcing = due.filter((d) => d.interventionId);
@@ -349,10 +346,10 @@ export function createOutreachSender({
       if (channel === "email") await mailer.send(to, message);
       else
         for (const s of subscriptions) {
-          const outcome = await pusher.send(
-            { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-            { ttlSeconds: pushTtlSeconds, urgency },
-          );
+          const outcome = await pusher.send(s, {
+            ttlSeconds: pushTtlSeconds,
+            urgency,
+          });
           if (outcome === "gone")
             await withOwner(db, p, (tx) =>
               tx.pushSubscription.deleteMany({ where: { id: s.id } }),

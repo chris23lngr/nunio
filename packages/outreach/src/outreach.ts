@@ -36,7 +36,8 @@ export type OutreachSettings = {
   dailyLimit: number;
 };
 
-export type Bundled = Omit<BriefingView, "id" | "madeAt">;
+/** What a Briefing stores as its items. */
+export type BriefingItems = Omit<BriefingView, "id" | "madeAt">;
 
 const defaults: OutreachSettings = {
   briefingAtMinute: 7 * 60,
@@ -45,6 +46,19 @@ const defaults: OutreachSettings = {
   quietHours: null,
   dailyLimit: 3,
 };
+/** Quiet Hours are stored as two columns, both set or both null. */
+const quietHoursOf = (columns: {
+  quietFromMinute: number | null;
+  quietToMinute: number | null;
+}): OutreachSettings["quietHours"] =>
+  columns.quietFromMinute === null || columns.quietToMinute === null
+    ? null
+    : { fromMinute: columns.quietFromMinute, toMinute: columns.quietToMinute };
+const quietHoursColumns = (quietHours: OutreachSettings["quietHours"]) => ({
+  quietFromMinute: quietHours?.fromMinute ?? null,
+  quietToMinute: quietHours?.toMinute ?? null,
+});
+
 export const settingsOf = (
   stored: {
     briefingAtMinute: number | null;
@@ -60,13 +74,7 @@ export const settingsOf = (
         briefingAtMinute: stored.briefingAtMinute,
         email: stored.email,
         briefingEmail: stored.briefingEmail,
-        quietHours:
-          stored.quietFromMinute === null || stored.quietToMinute === null
-            ? null
-            : {
-                fromMinute: stored.quietFromMinute,
-                toMinute: stored.quietToMinute,
-              },
+        quietHours: quietHoursOf(stored),
         dailyLimit: stored.dailyLimit,
       }
     : defaults;
@@ -77,6 +85,33 @@ export type PushSubscriptionJson = {
   expirationTime: number | null;
   keys: { p256dh: string; auth: string };
 };
+
+/** A device's subscription as the Pusher sends to it. */
+export type StoredSubscription = Pick<
+  PushSubscriptionJson,
+  "endpoint" | "keys"
+>;
+
+/** A push subscription's row, and back; the keys are stored as their own columns. */
+const pushSubscriptionColumns = (subscription: PushSubscriptionJson) => ({
+  endpoint: subscription.endpoint,
+  p256dh: subscription.keys.p256dh,
+  auth: subscription.keys.auth,
+  expirationTime:
+    subscription.expirationTime === null
+      ? null
+      : new Date(subscription.expirationTime),
+});
+export const pushSubscriptionOf = (row: {
+  id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}): { id: string } & StoredSubscription => ({
+  id: row.id,
+  endpoint: row.endpoint,
+  keys: { p256dh: row.p256dh, auth: row.auth },
+});
 
 /** An Intervention nobody has closed: not acknowledged, not dismissed, and its cause still holds. */
 export const openIntervention = {
@@ -147,7 +182,7 @@ export function createOutreach({
         briefings: briefings.map((b) => ({
           id: b.id,
           madeAt: b.createdAt,
-          ...(b.items as Bundled),
+          ...(b.items as BriefingItems),
         })),
       };
     },
@@ -161,13 +196,7 @@ export function createOutreach({
             {
               id: randomUUID(),
               studentId,
-              endpoint: subscription.endpoint,
-              p256dh: subscription.keys.p256dh,
-              auth: subscription.keys.auth,
-              expirationTime:
-                subscription.expirationTime === null
-                  ? null
-                  : new Date(subscription.expirationTime),
+              ...pushSubscriptionColumns(subscription),
               vapidKeyId: vapidPublicKey,
             },
           ],
@@ -192,10 +221,7 @@ export function createOutreach({
     ): Promise<OutreachSettings> {
       const columns = {
         ...patch,
-        ...(quietHours !== undefined && {
-          quietFromMinute: quietHours?.fromMinute ?? null,
-          quietToMinute: quietHours?.toMinute ?? null,
-        }),
+        ...(quietHours !== undefined && quietHoursColumns(quietHours)),
       };
       const stored = await withOwner(db, student, (tx, studentId) =>
         tx.outreachSettings.upsert({
