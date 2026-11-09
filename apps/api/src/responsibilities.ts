@@ -1,5 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
+import type { ResponsibilityScope } from "@nunio/delegation";
 import { deadline } from "@nunio/planning";
 import type { AppBindings } from "./app.js";
 import { ActionShown, describeAction } from "./approvals.js";
@@ -66,17 +67,33 @@ const Responsibility = z
   })
   .openapi("Responsibility");
 
-type PlanView = Awaited<ReturnType<AppBindings["Variables"]["plan"]["view"]>>;
-/** The exam a Responsibility prepares for, as the student named it. */
-const examOf = (plan: PlanView, obligationId: string | null) =>
-  obligationId
-    ? {
-        id: obligationId,
-        title:
-          plan.obligations.find((o) => o.id === obligationId)?.title ??
-          "An exam that is gone",
-      }
-    : null;
+type Review = Awaited<ReturnType<AppBindings["Variables"]["facts"]["review"]>>;
+
+/** Names a Responsibility's scope as the student's review shows it: its Course and, for an exam, the exam. */
+export function scopeNames(review: Review, scope: ResponsibilityScope) {
+  const course =
+    "courseId" in scope
+      ? review.courses.find((c) => c.id === scope.courseId)
+      : review.courses.find((c) =>
+          c.obligations.some((o) => o.id === scope.obligationId),
+        );
+  return {
+    course: course
+      ? { id: course.id, title: course.title }
+      : "courseId" in scope
+        ? { id: scope.courseId, title: "A Course that is gone" }
+        : null,
+    exam:
+      "obligationId" in scope
+        ? {
+            id: scope.obligationId,
+            title:
+              course?.obligations.find((o) => o.id === scope.obligationId)
+                ?.title ?? "An exam that is gone",
+          }
+        : null,
+  };
+}
 
 /** The next 06:00 in the student's time zone, when the Schedule starts a Run. */
 function nextRun(now: Date, timeZone: string) {
@@ -140,33 +157,17 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
         .view(p, c.req.valid("param").id);
       if (!r) return c.json({ error: "gone" }, 404);
       const plan = await c.get("plan").view(p);
-      const courseId = r.scope.courseId;
       const review = await c.get("facts").review(p);
-      const course = review.courses.find(
-        (course) => course.id === courseId,
-      )?.title;
       const history = await c
         .get("delegation")
         .history(p, { responsibilityId: r.id, limit: 10 });
       const [next] =
-        r.state === "active" && courseId
-          ? await c
-              .get("plan")
-              .intentsFor(
-                p,
-                r.scope.obligationId
-                  ? { obligationId: r.scope.obligationId }
-                  : { courseId },
-              )
-          : [];
+        r.state === "active" ? await c.get("plan").intentsFor(p, r.scope) : [];
       return c.json(
         {
           id: r.id,
           preset: r.preset,
-          exam: examOf(plan, r.scope.obligationId),
-          course: courseId
-            ? { id: courseId, title: course ?? "A Course that is gone" }
-            : null,
+          ...scopeNames(review, r.scope),
           state: r.state,
           pausedBy: r.pausedBy,
           grants: r.grants.map((g) => g.kind),
@@ -220,16 +221,7 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
         listed.map((r) => ({
           id: r.id,
           preset: r.preset,
-          exam: plan ? examOf(plan, r.scope.obligationId) : null,
-          course: r.scope.courseId
-            ? {
-                id: r.scope.courseId,
-                title:
-                  review?.courses.find(
-                    (course) => course.id === r.scope.courseId,
-                  )?.title ?? "A Course that is gone",
-              }
-            : null,
+          ...scopeNames(review!, r.scope),
           state: r.state,
           pausedBy: r.pausedBy,
         })),

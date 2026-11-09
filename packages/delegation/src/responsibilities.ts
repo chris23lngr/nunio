@@ -27,6 +27,17 @@ const presets = {
 };
 export type Preset = keyof typeof presets;
 
+/** What a Responsibility covers: one Course, or one exam. Its Grants and its Runs' proposals take exactly this. */
+export type ResponsibilityScope =
+  | { courseId: string }
+  | { obligationId: string };
+/** The scope as stored: an exam's row also keeps the exam's Course, for showing. */
+const scopeOf = (r: {
+  courseId: string | null;
+  obligationId: string | null;
+}): ResponsibilityScope =>
+  r.obligationId ? { obligationId: r.obligationId } : { courseId: r.courseId! };
+
 /** Ongoing delegations the student owns: records plus the Schedules that start their Runs. */
 export function createResponsibilities({
   db,
@@ -64,13 +75,16 @@ export function createResponsibilities({
     ) {
       if (p.kind !== "student") return { status: "gone" } as const;
       return withOwner(db, p, async (tx, studentId) => {
-        // A Course is scoped by itself; an exam by itself, with its Course kept for showing.
-        const scope =
+        // The scope, and the Course stored beside it: the Course itself, or the exam's.
+        const found =
           input.preset === "keep_course_organized"
             ? (await tx.course.findFirst({
                 where: { id: input.courseId, status: { not: "merged" } },
               }))
-              ? { courseId: input.courseId, obligationId: null }
+              ? {
+                  scope: { courseId: input.courseId },
+                  courseId: input.courseId,
+                }
               : null
             : await tx.obligation
                 .findFirst({
@@ -82,16 +96,20 @@ export function createResponsibilities({
                   },
                 })
                 .then((o) =>
-                  o ? { courseId: o.courseId, obligationId: o.id } : null,
+                  o
+                    ? { scope: { obligationId: o.id }, courseId: o.courseId }
+                    : null,
                 );
-        if (!scope) return { status: "gone" } as const;
+        if (!found) return { status: "gone" } as const;
+        const { scope } = found;
         const id = randomUUID();
         await tx.responsibility.create({
           data: {
             id,
             studentId,
             preset: input.preset,
-            ...scope,
+            courseId: found.courseId,
+            obligationId: "obligationId" in scope ? scope.obligationId : null,
             budgetMicroUsd: input.budgetMicroUsd,
           },
         });
@@ -101,9 +119,7 @@ export function createResponsibilities({
             studentId,
             responsibilityId: id,
             kind,
-            ...(scope.obligationId
-              ? { obligationId: scope.obligationId }
-              : { courseId: scope.courseId }),
+            ...scope,
           })),
         });
         const timeZone =
@@ -175,7 +191,7 @@ export function createResponsibilities({
         ).map((r) => ({
           id: r.id,
           preset: r.preset as Preset,
-          scope: { courseId: r.courseId, obligationId: r.obligationId },
+          scope: scopeOf(r),
           state: r.state as "active" | "paused" | "ended",
           pausedBy: r.pausedBy as "student" | "budget" | null,
         })),
@@ -193,7 +209,7 @@ export function createResponsibilities({
         return {
           id: r.id,
           preset: r.preset as Preset,
-          scope: { courseId: r.courseId, obligationId: r.obligationId },
+          scope: scopeOf(r),
           state: r.state as "active" | "paused" | "ended",
           pausedBy: r.pausedBy as "student" | "budget" | null,
           grants: r.grants.map((g) => ({
@@ -207,6 +223,17 @@ export function createResponsibilities({
             heldMicroUsd: Number(r.heldMicroUsd),
           },
         };
+      });
+    },
+
+    /** The scope of the Responsibility a Run belongs to; null for a Run without one. */
+    async scopeOfRun(runId: string): Promise<ResponsibilityScope | null> {
+      return withOwner(db, mint.fromRun(runId), async (tx) => {
+        const run = await tx.run.findUnique({
+          where: { id: runId },
+          include: { responsibility: true },
+        });
+        return run?.responsibility ? scopeOf(run.responsibility) : null;
       });
     },
 

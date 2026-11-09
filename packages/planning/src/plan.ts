@@ -5,6 +5,7 @@ import type {
   ActionIntent,
   Delegation,
   Principal,
+  ResponsibilityScope,
   Transaction,
 } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
@@ -287,14 +288,14 @@ export function createPlan({
      */
     async intentsFor(
       p: Principal,
-      scope: { courseId: string } | { obligationId: string },
+      scope: ResponsibilityScope,
     ): Promise<ActionIntent[]> {
       const {
         obligations: items,
         tasks,
         proposal,
       } = await withOwner(db, p, (tx) => planView(p, tx));
-      const inCourse = new Set(
+      const inScope = new Set(
         items
           .filter((o) =>
             "courseId" in scope
@@ -304,10 +305,10 @@ export function createPlan({
           .map((o) => o.id),
       );
       for (const task of tasks)
-        if (task.obligationId && inCourse.has(task.obligationId))
-          inCourse.add(task.id);
+        if (task.obligationId && inScope.has(task.obligationId))
+          inScope.add(task.id);
       return proposal.moves
-        .filter((move) => inCourse.has(move.workId))
+        .filter((move) => inScope.has(move.workId))
         .map(
           (move): ActionIntent =>
             move.kind === "create"

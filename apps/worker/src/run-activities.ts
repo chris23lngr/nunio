@@ -134,29 +134,18 @@ export function runActivitiesFromEnv(
         (o) => o.id === obligationId,
       )?.due ?? null,
   });
+  const responsibilities = createResponsibilities({ db, clock });
   /** Each preset's Actions: the Rebalance of the Responsibility's Course, or of its one exam. */
   const propose = async (runId: string) => {
-    const p = principal.fromRun(runId);
-    const r = await withOwner(
-      db,
-      p,
-      async (tx) =>
-        (
-          await tx.run.findUnique({
-            where: { id: runId },
-            include: { responsibility: true },
-          })
-        )?.responsibility,
-    );
-    if (r?.obligationId)
-      return plan.intentsFor(p, { obligationId: r.obligationId });
-    return r?.courseId ? plan.intentsFor(p, { courseId: r.courseId }) : [];
+    const scope = await responsibilities.scopeOfRun(runId);
+    return scope ? plan.intentsFor(principal.fromRun(runId), scope) : [];
   };
+
   return {
     activities: createRunActivities({
       db,
       delegation,
-      responsibilities: createResponsibilities({ db, clock }),
+      responsibilities,
       propose,
       notifyDecision,
     }),

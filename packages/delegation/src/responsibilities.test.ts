@@ -564,7 +564,7 @@ describe("'prepare me for this exam'", () => {
     ).toMatchObject({ status: "awaiting_approval" });
     expect(await responsibilities.view(s.p, created.id)).toMatchObject({
       preset: "prepare_for_exam",
-      scope: { courseId: s.courseId, obligationId: examId },
+      scope: { obligationId: examId },
       grants: [
         { kind: "studyBlock.create", obligationId: examId },
         { kind: "studyBlock.move", obligationId: examId },
@@ -608,23 +608,94 @@ describe("'prepare me for this exam'", () => {
   it("refuses an exam the student rejected, or one in a Course they merged away or rejected", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
-    const responsibilities = createResponsibilities({ db: runtime, schedules, clock });
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules,
+      clock,
+    });
     const prepare = (obligationId: string) =>
-      responsibilities.create(s.p, { preset: "prepare_for_exam", obligationId, budgetMicroUsd: 50_000 });
+      responsibilities.create(s.p, {
+        preset: "prepare_for_exam",
+        obligationId,
+        budgetMicroUsd: 50_000,
+      });
     const { examId: rejected } = await exam(s);
-    await admin.obligation.update({ where: { id: rejected }, data: { state: "rejected" } });
+    await admin.obligation.update({
+      where: { id: rejected },
+      data: { state: "rejected" },
+    });
     const inCourse = async (status: "merged" | "rejected") => {
-      const courseId = randomUUID(), examId = randomUUID();
-      await admin.course.create({ data: { id: courseId, studentId: s.studentId, title: `Course ${status}`, matchTitle: status, status } });
+      const courseId = randomUUID(),
+        examId = randomUUID();
+      await admin.course.create({
+        data: {
+          id: courseId,
+          studentId: s.studentId,
+          title: `Course ${status}`,
+          matchTitle: status,
+          status,
+        },
+      });
       await admin.obligation.create({
-        data: { id: examId, studentId: s.studentId, courseId, matchKey: `exam-${status}`, kind: "exam", enteredAt: now, correctedTitle: "Klausur" },
+        data: {
+          id: examId,
+          studentId: s.studentId,
+          courseId,
+          matchKey: `exam-${status}`,
+          kind: "exam",
+          enteredAt: now,
+          correctedTitle: "Klausur",
+        },
       });
       return examId;
     };
 
     expect(await prepare(rejected)).toEqual({ status: "gone" });
     expect(await prepare(await inCourse("merged"))).toEqual({ status: "gone" });
-    expect(await prepare(await inCourse("rejected"))).toEqual({ status: "gone" });
+    expect(await prepare(await inCourse("rejected"))).toEqual({
+      status: "gone",
+    });
     expect(calls).toEqual([]);
+  });
+
+  it("gives each Run its Responsibility's scope, exactly as its proposals take it", async () => {
+    const s = await student();
+    const { examId } = await exam(s);
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules: fakeSchedules().schedules,
+      clock,
+    });
+    const runOf = async (
+      input: Parameters<typeof responsibilities.create>[1],
+    ) => {
+      const created = await responsibilities.create(s.p, input);
+      if (created.status !== "ok") throw new Error(created.status);
+      return (await responsibilities.startRun({
+        studentId: s.studentId,
+        responsibilityId: created.id,
+        runId: randomUUID(),
+        workflowId: "run-workflow",
+      }))!;
+    };
+
+    expect(
+      await responsibilities.scopeOfRun(
+        await runOf({
+          preset: "prepare_for_exam",
+          obligationId: examId,
+          budgetMicroUsd: 1,
+        }),
+      ),
+    ).toEqual({ obligationId: examId });
+    expect(
+      await responsibilities.scopeOfRun(
+        await runOf({
+          preset: "keep_course_organized",
+          courseId: s.courseId,
+          budgetMicroUsd: 1,
+        }),
+      ),
+    ).toEqual({ courseId: s.courseId });
   });
 });
