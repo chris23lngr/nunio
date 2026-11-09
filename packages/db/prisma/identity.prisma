@@ -25,6 +25,9 @@ model User {
   priorities       Priority[]
   fixedEvents      FixedEvent[]
   projects         Project[]
+  responsibilities Responsibility[]
+  runs             Run[]
+  actions          Action[]
 
   @@map("user")
 }
