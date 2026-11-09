@@ -147,3 +147,31 @@ test("a Responsibility's screen shows its scope, Grants, recent and next Actions
   expect(screen.getByText(/Paused by you/)).toBeTruthy();
   expect(controls).toEqual(["pause"]);
 });
+
+test("pausing refreshes the list even while its cached state is fresh", async () => {
+  let state: "active" | "paused" = "active";
+  api.route("GET", "/api/me/review", () => Response.json({ courses }));
+  api.route("GET", "/api/me/responsibilities", () =>
+    Response.json([shown(state)]),
+  );
+  api.route("GET", "/api/me/responsibilities/r-1", () =>
+    Response.json(shown(state)),
+  );
+  api.route("POST", "/api/me/responsibilities/r-1/pause", () => {
+    state = "paused";
+    return Response.json({ status: "ok" });
+  });
+  render(
+    <TestProviders>
+      <ResponsibilitiesScreen apiOrigin={api.origin} />
+      <ResponsibilityScreen apiOrigin={api.origin} id="r-1" />
+    </TestProviders>,
+  );
+  const row = (
+    await screen.findByRole("link", { name: "Keep Analysis I organized" })
+  ).closest("li")!;
+  expect(row.textContent).toContain("active");
+  await userEvent.click(await screen.findByRole("button", { name: "Pause" }));
+  await screen.findByRole("button", { name: "Resume" });
+  await waitFor(() => expect(row.textContent).toContain("paused"));
+});

@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import type { FormEvent } from "react";
+import { useAppForm } from "@/lib/form";
 import { keepCourseOrganized } from "./api/responsibility-mutations";
 import {
   delegableCourseQueries,
@@ -18,11 +18,14 @@ export function ResponsibilitiesScreen({ apiOrigin }: { apiOrigin: string }) {
   const courses = useQuery(delegableCourseQueries(apiOrigin)).data ?? [];
   const create = useMutation(keepCourseOrganized(apiOrigin, queryClient));
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const courseId = new FormData(event.currentTarget).get("course");
-    if (typeof courseId === "string" && courseId) create.mutate(courseId);
-  }
+  const form = useAppForm({
+    defaultValues: { courseId: "" },
+    onSubmit: async ({ value }) => {
+      await create.mutateAsync(value.courseId).catch(() => {
+        // Query owns the mutation error, rendered below.
+      });
+    },
+  });
 
   return (
     <section aria-label="Responsibilities">
@@ -38,23 +41,43 @@ export function ResponsibilitiesScreen({ apiOrigin }: { apiOrigin: string }) {
           </li>
         ))}
       </ul>
-      <form onSubmit={submit}>
-        <label>
-          Course
-          <select name="course" defaultValue="">
-            <option value="" disabled>
-              Choose a Course
-            </option>
-            {courses.map((course) => (
-              <option key={course.id} value={course.id}>
-                {course.title}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" disabled={create.isPending}>
-          Keep this course organized
-        </button>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void form.handleSubmit();
+        }}
+      >
+        <form.Field
+          name="courseId"
+          validators={{
+            onChange: ({ value }) => (value ? undefined : "Choose a Course."),
+          }}
+        >
+          {(field) => (
+            <label>
+              Course
+              <select
+                name={field.name}
+                required
+                value={field.state.value}
+                onBlur={field.handleBlur}
+                onChange={(event) => field.handleChange(event.target.value)}
+              >
+                <option value="" disabled>
+                  Choose a Course
+                </option>
+                {courses.map((course) => (
+                  <option key={course.id} value={course.id}>
+                    {course.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </form.Field>
+        <form.AppForm>
+          <form.SubmitButton>Keep this course organized</form.SubmitButton>
+        </form.AppForm>
         <p>
           nunio will plan and move Study Blocks for this Course every morning.
           Moving blocks you placed always asks you first.

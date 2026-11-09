@@ -5,6 +5,7 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type {
   ActionIntent,
   ActionOutcome,
+  DecisionNotifier,
   Delegation,
   Responsibilities,
 } from "@nunio/delegation";
@@ -36,8 +37,10 @@ export function createRunActivities({
   delegation,
   responsibilities,
   propose,
+  notifyDecision,
 }: {
   db: PrismaClient;
+  notifyDecision: DecisionNotifier;
   delegation: Delegation;
   responsibilities: Responsibilities;
   /** The Responsibility's preset: the Actions this Run should take now. */
@@ -68,9 +71,9 @@ export function createRunActivities({
         intent: revive(intent),
       });
     },
-    /** Recovers in-flight dispatches a dead worker left behind; returns how many it found. */
+    /** Recovers in-flight dispatches and decision wakes a dead API or worker left behind. */
     async reconcileActions(): Promise<number> {
-      return delegation.reconcile();
+      return delegation.reconcile(notifyDecision);
     },
     /** Interventions are not Actions: raised outside the gate, once per Action however often this is retried. */
     async raiseIntervention({
@@ -103,7 +106,10 @@ export function createRunActivities({
 export type RunActivities = ReturnType<typeof createRunActivities>;
 
 /** The Run Activities as the worker runs them: the real gate over the Plan executor, and the presets over the Plan. */
-export function runActivitiesFromEnv(env: NodeJS.ProcessEnv) {
+export function runActivitiesFromEnv(
+  env: NodeJS.ProcessEnv,
+  notifyDecision: DecisionNotifier,
+) {
   const missing = [
     "DATABASE_URL",
     "SOURCE_KEY_VERSION",
@@ -150,6 +156,7 @@ export function runActivitiesFromEnv(env: NodeJS.ProcessEnv) {
       delegation,
       responsibilities: createResponsibilities({ db, clock }),
       propose,
+      notifyDecision,
     }),
     close: () => db.$disconnect(),
   };

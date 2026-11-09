@@ -113,6 +113,13 @@ export interface HistoryQuery {
   limit?: number;
 }
 
+/** A wake carries no authority; it may be delivered more than once. */
+export type DecisionNotifier = (notice: {
+  actionId: string;
+  workflowId: string;
+  runId: string;
+}) => Promise<void>;
+
 export interface GateDeps {
   db: PrismaClient;
   clock: Clock;
@@ -456,7 +463,35 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
     };
   };
 
+  /** The decision is already durable. Acknowledge its wake only after delivery, never before it. */
+  async function notifyDecision(
+    p: Principal,
+    actionId: string,
+    notify: DecisionNotifier,
+  ) {
+    const action = await withOwner(db, p, (tx) =>
+      findAction(tx, { id: actionId }),
+    );
+    if (
+      !action?.approval?.decision ||
+      !action.runId ||
+      !action.run?.workflowId ||
+      action.events.some((e) => e.type === "decision_notified")
+    )
+      return false;
+    await notify({
+      actionId,
+      runId: action.runId,
+      workflowId: action.run.workflowId,
+    });
+    await withOwner(db, p, (tx, studentId) =>
+      event(tx, studentId, actionId, "decision_notified"),
+    );
+    return true;
+  }
+
   return {
+    notifyDecision,
     async perform(
       p: Principal,
       { key, intent }: { key: string; intent: ActionIntent },
@@ -731,8 +766,8 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
       });
     },
 
-    /** Recovers every in-flight Attempt older than the stale threshold through its executor's lookup; returns how many. */
-    async reconcile(): Promise<number> {
+    /** Recovers stale dispatches and pending decision wakes; neither recovery grants authority to act. */
+    async reconcile(notify?: DecisionNotifier): Promise<number> {
       const stale = await db.$queryRaw<
         { actionId: string; studentId: string }[]
       >`
@@ -746,7 +781,23 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
         if (action?.status === "dispatching")
           await recover(jobOf(action, studentId));
       }
-      return stale.length;
+      let notified = 0;
+      if (notify) {
+        const pending = await db.$queryRaw<
+          { actionId: string; studentId: string }[]
+        >`SELECT * FROM pending_approval_decisions()`;
+        for (const { actionId, studentId } of pending) {
+          if (
+            await notifyDecision(
+              mint.fromSession({ studentId }),
+              actionId,
+              notify,
+            )
+          )
+            notified++;
+        }
+      }
+      return stale.length + notified;
     },
 
     async history(

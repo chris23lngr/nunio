@@ -149,15 +149,18 @@ export function registerApprovalRoutes(routes: OpenAPIHono<AppBindings>) {
           return c.json({ error: "stale" }, 409);
         throw error;
       }
-      // Only after the decision committed: the Run then asks the gate again.
-      if (record.runId && record.workflowId) {
-        await c
-          .get("runWorkflows")
-          .signalDecided(
-            { workflowId: record.workflowId, runId: record.runId },
-            actionId,
+      // A committed decision is the durable outbox; reconciliation retries an unacknowledged wake.
+      await c
+        .get("delegation")
+        .notifyDecision(p, record.id, ({ workflowId, runId, actionId }) =>
+          c.get("runWorkflows").signalDecided({ workflowId, runId }, actionId),
+        )
+        .catch((error: unknown) => {
+          console.error(
+            "Approval decision saved; reconciliation will retry its wake",
+            error,
           );
-      }
+        });
       return c.json({ status: "ok" as const }, 200);
     },
   );

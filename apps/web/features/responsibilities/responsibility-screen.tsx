@@ -50,13 +50,9 @@ export function ResponsibilityScreen({
 }) {
   const queryClient = useQueryClient();
   const query = useQuery(responsibilityQueries(apiOrigin, id));
-  const control = useMutation({
-    ...controlResponsibility(apiOrigin, id, queryClient),
-    onSettled: () =>
-      queryClient.invalidateQueries({
-        queryKey: responsibilityQueries(apiOrigin, id).queryKey,
-      }),
-  });
+  const control = useMutation(
+    controlResponsibility(apiOrigin, id, queryClient),
+  );
   const r = query.data;
   if (!r) return query.error ? <p role="alert">{query.error.message}</p> : null;
   return (

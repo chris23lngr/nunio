@@ -119,9 +119,10 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
       if (!r) return c.json({ error: "gone" }, 404);
       const plan = await c.get("plan").view(p);
       const courseId = r.scope.courseId;
-      const course = plan.obligations.find(
-        (o) => o.courseId === courseId,
-      )?.course;
+      const review = await c.get("facts").review(p);
+      const course = review.courses.find(
+        (course) => course.id === courseId,
+      )?.title;
       const history = await c
         .get("delegation")
         .history(p, { responsibilityId: r.id, limit: 10 });
@@ -183,7 +184,7 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
       const listed = await c.get("responsibilities").list(p);
-      const plan = listed.length ? await c.get("plan").view(p) : null;
+      const review = listed.length ? await c.get("facts").review(p) : null;
       return c.json(
         listed.map((r) => ({
           id: r.id,
@@ -192,8 +193,9 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
             ? {
                 id: r.scope.courseId,
                 title:
-                  plan?.obligations.find((o) => o.courseId === r.scope.courseId)
-                    ?.course ?? "A Course that is gone",
+                  review?.courses.find(
+                    (course) => course.id === r.scope.courseId,
+                  )?.title ?? "A Course that is gone",
               }
             : null,
           state: r.state,

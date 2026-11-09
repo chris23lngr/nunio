@@ -69,7 +69,7 @@ type Resolve = { kind: "resolve"; actionId: string; resolution: "happened" | "di
 
 `perform` → `awaiting_approval` → the student calls `decide(approve)`. The caller then calls `perform` again with the **same key**:
 
-- **Run origin:** the API signals the workflow, which waits on the signal or on the `expiresAt` timer (ADR-0006).
+- **Run origin:** the API signals the workflow, which waits on the signal or on the `expiresAt` timer (ADR-0006). The committed decision is also a pending wake until a `decision_notified` event acknowledges delivery. The API attempts delivery immediately; the worker's five-minute reconciliation Schedule retries unacknowledged wakes, including denials no longer shown on a card. A lost delivery acknowledgement can repeat the signal, so the workflow always rechecks the gate. A closed execution needs no further wake.
 - **Chat origin:** the API calls `perform` directly after `decide`.
 
 `decide` never dispatches by itself.

@@ -1006,3 +1006,64 @@ describe("meter in a Run", () => {
     ).toEqual({ status: "refused", reason: "paused" });
   });
 });
+
+describe("durable Approval decision delivery", () => {
+  it.each(["approve", "deny"] as const)(
+    "retries a %s wake after delivery loses its acknowledgement, then stops retrying",
+    async (kind) => {
+      const s = await student();
+      const other = await student();
+      const r = await run(s, { grants: [] });
+      const workflowId = `workflow-${r.runId}`;
+      await admin.run.update({ where: { id: r.runId }, data: { workflowId } });
+      const { executor, dispatched } = fakeExecutor();
+      const g = gate(executor);
+      const asking = await g.perform(r.p, {
+        key: `${r.runId}:1`,
+        intent: move(s),
+      });
+      if (asking.status !== "awaiting_approval") throw new Error(asking.status);
+      const notices: { actionId: string; workflowId: string; runId: string }[] =
+        [];
+      const notify = async (notice: (typeof notices)[number]) => {
+        notices.push(notice);
+      };
+      // Neither an unanswered Approval nor another student's Principal can produce a wake.
+      expect(await g.notifyDecision(s.p, asking.actionId, notify)).toBe(false);
+      await g.decide(
+        s.p,
+        kind === "approve"
+          ? { kind, actionId: asking.actionId, fingerprint: asking.fingerprint }
+          : { kind, actionId: asking.actionId },
+      );
+      expect(await g.notifyDecision(other.p, asking.actionId, notify)).toBe(
+        false,
+      );
+      expect(notices).toEqual([]);
+      // Temporal accepted the signal, but the sender lost the reply before acknowledging it in Postgres.
+      await expect(
+        g.notifyDecision(s.p, asking.actionId, async (notice) => {
+          await notify(notice);
+          throw new Error("lost delivery reply");
+        }),
+      ).rejects.toThrow("lost delivery reply");
+      expect(
+        (await g.history(s.p))[0]!.events.some(
+          (e) => e.type === "decision_notified",
+        ),
+      ).toBe(false);
+      const restarted = gate(executor);
+      await restarted.reconcile(notify);
+      expect(notices).toEqual(
+        Array(2).fill({
+          actionId: asking.actionId,
+          workflowId,
+          runId: r.runId,
+        }),
+      );
+      expect(await restarted.reconcile(notify)).toBe(0);
+      expect(notices).toHaveLength(2);
+      expect(dispatched).toEqual([]);
+    },
+  );
+});

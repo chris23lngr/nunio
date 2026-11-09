@@ -116,8 +116,8 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
           id: r.id,
           preset: r.preset,
           course:
-            plan.obligations.find((o) => o.courseId === r.scope.courseId)
-              ?.course ?? null,
+            review.courses.find((course) => course.id === r.scope.courseId)
+              ?.title ?? null,
           state: r.state,
         })),
       ];

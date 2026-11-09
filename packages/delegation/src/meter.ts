@@ -5,6 +5,7 @@ import type {
   ActionRecord,
   Approve,
   Clock,
+  DecisionNotifier,
   Deny,
   Executors,
   HistoryQuery,
@@ -63,7 +64,14 @@ export interface Delegation {
     student: Principal,
     d: Approve | Deny | Resolve,
   ): Promise<ActionRecord>;
-  reconcile(): Promise<number>;
+  /** Delivers a committed decision's wake, acknowledging it only after the notifier accepts it. */
+  notifyDecision(
+    student: Principal,
+    actionId: string,
+    notify: DecisionNotifier,
+  ): Promise<boolean>;
+  /** Recovers in-flight dispatches and, when supplied a notifier, undelivered decision wakes. */
+  reconcile(notify?: DecisionNotifier): Promise<number>;
   history(student: Principal, q?: HistoryQuery): Promise<ActionRecord[]>;
   /**
    * Reserves `estimate` against the Allowance, runs `call`, then settles its actual usage. A call that throws

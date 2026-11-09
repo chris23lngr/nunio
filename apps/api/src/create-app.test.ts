@@ -32,6 +32,7 @@ import { createPlan } from "@nunio/planning";
 import { hashPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "./create-app.js";
+import type { RunWorkflows } from "./run-workflows.js";
 
 const appOrigin = "https://app.nunio.test";
 const apiOrigin = "https://api.nunio.test";
@@ -58,6 +59,10 @@ let responsibilities: Responsibilities;
 /** What the API asked of Responsibility Schedules, and which Runs it woke, in order. */
 const scheduled: string[] = [];
 const signalled: { workflowId: string; runId: string; actionId: string }[] = [];
+const runWorkflows: RunWorkflows = {
+  signalDecided: async (run, actionId) =>
+    void signalled.push({ ...run, actionId }),
+};
 const schedules: Schedules = {
   create: async ({ responsibilityId }) =>
     void scheduled.push(`create ${responsibilityId}`),
@@ -184,10 +189,7 @@ beforeAll(async () => {
   });
   app = createApp({
     responsibilities,
-    runWorkflows: {
-      signalDecided: async (run, actionId) =>
-        void signalled.push({ ...run, actionId }),
-    },
+    runWorkflows,
     auth,
     prisma,
     delegation,
@@ -2278,6 +2280,53 @@ async function askedForApproval(
 }
 
 describe("Approvals", () => {
+  it.each(["approve", "deny"] as const)(
+    "saves %s while Temporal is unavailable and later delivers its wake without another click",
+    async (decision) => {
+      const asked = await askedForApproval(`approval-unavailable-${decision}`);
+      const signal = vi
+        .spyOn(runWorkflows, "signalDecided")
+        .mockRejectedValueOnce(new Error("Temporal unavailable"));
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const response = await app.request(
+          `${apiOrigin}/api/me/approvals/${asked.asking.actionId}`,
+          {
+            method: "POST",
+            headers: asked.headers,
+            body: JSON.stringify(
+              decision === "approve"
+                ? { decision, fingerprint: asked.asking.fingerprint }
+                : { decision },
+            ),
+          },
+        );
+        expect(response.status).toBe(200);
+        expect(signal).toHaveBeenCalledTimes(1);
+        expect(log).toHaveBeenCalled();
+        expect(signalled).not.toContainEqual(
+          expect.objectContaining({ actionId: asked.asking.actionId }),
+        );
+        await delegation.reconcile(({ workflowId, runId, actionId }) =>
+          runWorkflows.signalDecided({ workflowId, runId }, actionId),
+        );
+        expect(signalled).toContainEqual({
+          workflowId: asked.workflowId,
+          runId: asked.runId,
+          actionId: asked.asking.actionId,
+        });
+        expect(signal).toHaveBeenCalledTimes(2);
+        await delegation.reconcile(({ workflowId, runId, actionId }) =>
+          runWorkflows.signalDecided({ workflowId, runId }, actionId),
+        );
+        expect(signal).toHaveBeenCalledTimes(2);
+      } finally {
+        signal.mockRestore();
+        log.mockRestore();
+      }
+    },
+  );
+
   it("shows the student the exact Action a Run asked about, with its fingerprint and expiry", async () => {
     const asked = await askedForApproval("approval-list");
 
@@ -2512,6 +2561,49 @@ async function withCourse(name: string) {
 }
 
 describe("Responsibilities", () => {
+  it("keeps an empty Course identifiable in its Responsibility detail, list and Home", async () => {
+    const cookie = await signUp("responsibility-empty-course");
+    const courseId = randomUUID();
+    await admin.course.create({
+      data: {
+        id: courseId,
+        studentId: await studentId(cookie),
+        title: "Analysis I",
+        matchTitle: "analysis i",
+        status: "accepted",
+      },
+    });
+    const response = await app.request(`${apiOrigin}/api/me/responsibilities`, {
+      method: "POST",
+      headers: {
+        cookie,
+        origin: appOrigin,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ preset: "keep_course_organized", courseId }),
+    });
+    expect(response.status).toBe(201);
+    const { id } = (await response.json()) as { id: string };
+    const course = { id: courseId, title: "Analysis I" };
+    const detail = await app.request(
+      `${apiOrigin}/api/me/responsibilities/${id}`,
+      { headers: { cookie } },
+    );
+    const list = await app.request(`${apiOrigin}/api/me/responsibilities`, {
+      headers: { cookie },
+    });
+    const home = await app.request(`${apiOrigin}/api/me/home`, {
+      headers: { cookie },
+    });
+    expect(await detail.json()).toMatchObject({ id, course });
+    expect(await list.json()).toEqual([
+      expect.objectContaining({ id, course }),
+    ]);
+    expect(await home.json()).toMatchObject({
+      agentWork: [expect.objectContaining({ id, course: "Analysis I" })],
+    });
+  });
+
   it("delegates 'keep this course organized' and shows its scope, Grants, Budget and next planned Action", async () => {
     const s = await withCourse("responsibility-create");
 
