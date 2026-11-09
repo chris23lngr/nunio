@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Estimator } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
-import type { Delegation, Principal, Transaction } from "@nunio/delegation";
+import type {
+  ActionIntent,
+  Delegation,
+  Principal,
+  Transaction,
+} from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { Facts } from "@nunio/knowledge";
 import { definitely } from "@nunio/knowledge";
@@ -275,6 +280,41 @@ export function createPlan({
     /** The Plan as it stands, and what a Rebalance would change now. */
     async view(p: Principal) {
       return withOwner(db, p, (tx) => planView(p, tx));
+    },
+    /**
+     * "Keep this course organized": the Rebalance moves for one Course's Obligations and their Tasks, as Actions for the
+     * gate, which decides which of them need the student's Approval.
+     */
+    async intentsFor(p: Principal, courseId: string): Promise<ActionIntent[]> {
+      const {
+        obligations: items,
+        tasks,
+        proposal,
+      } = await withOwner(db, p, (tx) => planView(p, tx));
+      const inCourse = new Set(
+        items.filter((o) => o.courseId === courseId).map((o) => o.id),
+      );
+      for (const task of tasks)
+        if (task.obligationId && inCourse.has(task.obligationId))
+          inCourse.add(task.id);
+      return proposal.moves
+        .filter((move) => inCourse.has(move.workId))
+        .map(
+          (move): ActionIntent =>
+            move.kind === "create"
+              ? {
+                  kind: "studyBlock.create",
+                  workId: move.workId,
+                  start: move.start,
+                  end: move.end,
+                }
+              : {
+                  kind: "studyBlock.move",
+                  studyBlockId: move.blockId,
+                  start: move.to.start,
+                  end: move.to.end,
+                },
+        );
     },
     /** Applies one proposed move as the student's own decision, only while it matches a fresh proposal. */
     async apply(p: Principal, move: Move) {

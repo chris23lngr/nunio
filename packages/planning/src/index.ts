@@ -7,6 +7,7 @@ export {
   type CalendarReading,
   readCalendar,
 } from "./calendar.js";
+export { createPlanExecutor } from "./executor.js";
 export {
   createPlan,
   type Plan,

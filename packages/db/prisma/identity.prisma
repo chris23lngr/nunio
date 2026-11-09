@@ -28,6 +28,8 @@ model User {
   responsibilities Responsibility[]
   runs             Run[]
   actions          Action[]
+  planEffects      PlanEffect[]
+  interventions    Intervention[]
 
   @@map("user")
 }

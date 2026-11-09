@@ -4,9 +4,12 @@ import { existsSync } from "node:fs";
 import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { payloadCodecFromEnv } from "@nunio/keys";
+import { Client, Connection } from "@temporalio/client";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import { createActivities } from "./activities.js";
 import { log } from "./log.js";
+import { ensureReconcileSchedule } from "./reconcile-schedule.js";
+import { runActivitiesFromEnv } from "./run-activities.js";
 import { createSourceActivities } from "./source-activities.js";
 
 function required(name: string): string {
@@ -34,6 +37,25 @@ const workflows = existsSync(here("./workflow-bundle.js"))
     };
 
 const sourceActivities = createSourceActivities(process.env);
+const runActivities = runActivitiesFromEnv(process.env);
+
+// The reconcile Schedule lives in Temporal; creating it again on each start is a no-op.
+const clientConnection = await Connection.connect({
+  address: required("TEMPORAL_ADDRESS"),
+  ...(apiKey && { tls: true, apiKey }),
+});
+try {
+  await ensureReconcileSchedule(
+    new Client({
+      connection: clientConnection,
+      namespace: required("TEMPORAL_NAMESPACE"),
+      dataConverter: { payloadCodecs: [codec] },
+    }),
+    taskQueue,
+  );
+} finally {
+  await clientConnection.close();
+}
 const worker = await Worker.create({
   connection,
   namespace: required("TEMPORAL_NAMESPACE"),
@@ -43,6 +65,7 @@ const worker = await Worker.create({
   activities: {
     ...createActivities({ parserUrl: `http://${required("PARSER_HOSTPORT")}` }),
     ...sourceActivities.activities,
+    ...runActivities.activities,
   },
   dataConverter: { payloadCodecs: [codec] },
   shutdownGraceTime: `${Number(process.env.SHUTDOWN_GRACE_SECONDS ?? 25)} seconds`,
@@ -53,6 +76,7 @@ try {
   await worker.run();
 } finally {
   await sourceActivities.close();
+  await runActivities.close();
 }
 await connection.close();
 log("worker stopped");

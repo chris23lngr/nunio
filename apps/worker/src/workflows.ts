@@ -9,6 +9,7 @@ import {
   sleep,
 } from "@temporalio/workflow";
 import type { Activities } from "./activities.js";
+import type { RunActivities, RunRef } from "./run-activities.js";
 import type { SourceActivities, SourceRef } from "./source-activities.js";
 
 const { hold, checkParser: parserHealth } = proxyActivities<Activities>({
@@ -73,4 +74,83 @@ export async function deleteSource(
   const delay = new Date(input.cleanupAfter).getTime() - Date.now();
   if (delay > 0) await sleep(delay);
   await purgeSource({ studentId: input.studentId, sourceId: input.sourceId });
+}
+
+// A Responsibility's Run (ADR-0006): one bounded workflow, started by its Schedule. Domain outcomes come back as values
+// from the gate, so a refused Action is never retried; a thrown Activity error is infrastructure, safe to retry by key.
+const {
+  startRun,
+  proposeActions,
+  performAction,
+  raiseIntervention,
+  reconcileActions: reconcile,
+} = proxyActivities<RunActivities>({
+  startToCloseTimeout: "2 minutes",
+  retry: {
+    initialInterval: "5 seconds",
+    maximumInterval: "1 minute",
+    maximumAttempts: 10,
+    nonRetryableErrorTypes: ["InvalidIntentError", "KeyConflictError"],
+  },
+});
+/**
+ * Wakes a Run once the student decided on one of its Actions. It carries no authority: the decision is recorded through
+ * the gate's `decide`, and the Run only asks the gate again.
+ */
+export const approvalDecidedSignal =
+  defineSignal<[actionId: string]>("approvalDecided");
+
+export async function responsibilityRun(ref: RunRef) {
+  const runId = await startRun(ref);
+  if (!runId) return { status: "skipped" as const };
+  const consumeWakes = patched("consume-approval-wakes");
+  const wakes = new Map<string, number>();
+  setHandler(approvalDecidedSignal, (actionId) => {
+    wakes.set(actionId, (wakes.get(actionId) ?? 0) + 1);
+  });
+  const intents = await proposeActions(runId);
+  for (const [i, intent] of intents.entries()) {
+    const step = { runId, key: `${runId}:${i + 1}`, intent };
+    let outcome = await performAction(step);
+    while (outcome.status === "awaiting_approval") {
+      const { actionId } = outcome;
+      const seen = consumeWakes ? 0 : (wakes.get(actionId) ?? 0);
+      // Waits for a decision or until the request expires, whichever comes first; the gate then decides again.
+      await condition(
+        () => (wakes.get(actionId) ?? 0) > seen,
+        Math.max(new Date(outcome.expiresAt).getTime() - Date.now(), 1),
+      );
+      if (consumeWakes) wakes.delete(actionId);
+      outcome = await performAction(step);
+    }
+    if (outcome.status === "refused" && outcome.reason === "approval_expired") {
+      await raiseIntervention({
+        runId,
+        actionId: outcome.actionId,
+        kind: "approval_expired",
+      });
+    }
+    // Only the student resolves an Unconfirmed Action; the Run neither retries it nor acts on top of it.
+    if (outcome.status === "unconfirmed") {
+      await raiseIntervention({
+        runId,
+        actionId: outcome.actionId,
+        kind: "unconfirmed",
+      });
+      return { status: "stopped" as const, reason: "unconfirmed" as const };
+    }
+    // A Paused or Ended Responsibility takes no further Action, including in this Run.
+    if (
+      outcome.status === "refused" &&
+      (outcome.reason === "paused" || outcome.reason === "ended")
+    ) {
+      return { status: "stopped" as const, reason: outcome.reason };
+    }
+  }
+  return { status: "done" as const };
+}
+
+/** Started by the reconcile Schedule: asks executors about stale in-flight dispatches, never retrying blindly. */
+export async function reconcileActions() {
+  return reconcile();
 }
