@@ -3,6 +3,8 @@ model UsageReservation {
   id               String            @id @default(uuid())
   studentId        String
   allowance        Allowance         @relation(fields: [studentId], references: [studentId], onDelete: Cascade)
+  /// The Responsibility whose Budget the call also counts against; null outside a Responsibility's Run.
+  responsibilityId String?
   estimateMicroUsd BigInt
   actualMicroUsd   BigInt?
   status           ReservationStatus @default(reserved)
@@ -23,4 +25,167 @@ enum ReservationStatus {
   held
 
   @@map("reservation_status")
+}
+
+/// active: may act. paused: takes no further Actions but keeps its Grants. ended: Grants gone, history kept.
+enum ResponsibilityState {
+  active
+  paused
+  ended
+
+  @@map("responsibility_state")
+}
+
+/// An ongoing delegation the student owns: a record plus the Temporal Schedule that starts its Runs (ADR-0006).
+model Responsibility {
+  id             String              @id
+  studentId      String
+  student        User                @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  preset         String
+  state          ResponsibilityState @default(active)
+  /// Why it was Paused: by the student, or by exhausting its Budget. Only the student resumes it.
+  pausedBy       String?
+  /// The Budget: its cap on AI usage in micro-USD, and what its Runs have used and hold.
+  budgetMicroUsd BigInt
+  usedMicroUsd   BigInt              @default(0)
+  heldMicroUsd   BigInt              @default(0)
+  /// Advanced Agent configuration, compiled into Restrictions that can only tighten its Grants.
+  restrictions   Json                @default("{}")
+  createdAt      DateTime            @default(now())
+  endedAt        DateTime?
+
+  grants Grant[]
+  runs   Run[]
+
+  @@unique([id, studentId])
+  @@index([studentId])
+  @@map("responsibility")
+}
+
+/// Standing authority for one kind of Action within one Course or Obligation; Grants exist only within a Responsibility.
+model Grant {
+  id               String         @id
+  studentId        String
+  responsibilityId String
+  responsibility   Responsibility @relation(fields: [responsibilityId, studentId], references: [id, studentId], onDelete: Cascade)
+  kind             String
+  courseId         String?
+  obligationId     String?
+
+  @@index([responsibilityId])
+  @@map("grant")
+}
+
+/// A single, bounded execution of Agent work: one workflow (ADR-0006).
+model Run {
+  id               String          @id
+  studentId        String
+  student          User            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// Null for a Run started from a Chat, which has no Grants.
+  responsibilityId String?
+  responsibility   Responsibility? @relation(fields: [responsibilityId, studentId], references: [id, studentId], onDelete: Cascade)
+  startedAt        DateTime        @default(now())
+
+  actions Action[]
+
+  @@unique([id, studentId])
+  @@index([studentId])
+  @@map("run")
+}
+
+enum ActionStatus {
+  awaiting_approval
+  dispatching
+  done
+  failed
+  refused
+  unconfirmed
+
+  @@map("action_status")
+}
+
+/// One concrete effect a Run or Chat asked the gate for, recorded under the caller's deterministic key.
+model Action {
+  id          String       @id
+  studentId   String
+  student     User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// Null for an Action asked for in a Chat.
+  runId       String?
+  run         Run?         @relation(fields: [runId, studentId], references: [id, studentId], onDelete: Cascade)
+  key         String
+  kind        String
+  args        Json
+  status      ActionStatus
+  refusal     String?
+  /// Why the executor definitely did not take the effect.
+  failure     String?
+  effect      Json?
+  /// The authority it was dispatched on: one of the two.
+  grantId     String?
+  approvalId  String?
+  createdAt   DateTime     @default(now())
+
+  approval Approval?
+  attempts Attempt[]
+  events   ActionEvent[]
+
+  @@unique([studentId, key])
+  @@unique([id, studentId])
+  @@index([runId])
+  @@map("action")
+}
+
+/// The request for, and the student's answer to, their Approval of one exact Action, bound to the fingerprint shown.
+model Approval {
+  id          String    @id
+  studentId   String
+  actionId    String    @unique
+  action      Action    @relation(fields: [actionId, studentId], references: [id, studentId], onDelete: Cascade)
+  fingerprint String
+  expiresAt   DateTime
+  /// approved or denied; null while unanswered.
+  decision    String?
+  decidedAt   DateTime?
+
+  @@unique([actionId, studentId])
+  @@index([studentId])
+  @@map("approval")
+}
+
+enum AttemptStatus {
+  in_flight
+  done
+  failed
+  unconfirmed
+
+  @@map("attempt_status")
+}
+
+/// One dispatch to an executor. An in-flight row is the outbox: recovery asks the executor about its key.
+model Attempt {
+  id             String        @id
+  studentId      String
+  actionId       String
+  action         Action        @relation(fields: [actionId, studentId], references: [id, studentId], onDelete: Cascade)
+  idempotencyKey String        @unique
+  status         AttemptStatus @default(in_flight)
+  startedAt      DateTime
+  finishedAt     DateTime?
+
+  @@index([status, startedAt])
+  @@map("attempt")
+}
+
+/// Append-only history of an Action, written in the same transaction as each change.
+model ActionEvent {
+  id        String   @id @default(uuid())
+  studentId String
+  actionId  String
+  action    Action   @relation(fields: [actionId, studentId], references: [id, studentId], onDelete: Cascade)
+  at        DateTime
+  type      String
+  detail    Json     @default("{}")
+
+  @@index([actionId, at])
+  @@map("action_event")
 }

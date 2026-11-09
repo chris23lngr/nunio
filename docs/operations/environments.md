@@ -115,7 +115,8 @@ node --env-file=.env.operator packages/delegation/dist/settle-held.js STUDENT_ID
 The command charges the actual cost, frees the rest of the estimate, and records the operator. It refuses anything that is not a held reservation of that student, so repeating it never charges twice. The operator connection needs these privileges:
 
 - `SELECT, UPDATE ("status", "actualMicroUsd", "settledAt", "settledBy")` on `usage_reservation`;
-- `SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd", "updatedAt")` on `allowance`.
+- `SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd", "updatedAt")` on `allowance`;
+- `SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd")` on `responsibility`, for calls made in a Responsibility's Run.
 
 Set `AI_DISABLED=true` on `nunio-api` and the Render worker and redeploy both to stop all new model calls; Allowance reads keep working. Verified with Testcontainers under the runtime role. On 2026-11-02 the founder confirmed all manual Phase 4 staging checks passed (Allowance read, founder grant/audit, and kill switch).
 

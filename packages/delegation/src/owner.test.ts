@@ -106,12 +106,12 @@ describe("withOwner under the runtime role", () => {
     }
   });
 
-  it("refuses a run Principal: a run ID alone grants no authority", async () => {
+  it("refuses a run Principal of no persisted Run: a run ID alone grants no authority", async () => {
     await expect(
       withOwner(runtime, principal.fromRun(randomUUID()), (tx) =>
         tx.pilotEntitlement.findMany(),
       ),
-    ).rejects.toThrow(/not authorized/);
+    ).rejects.toThrow(/Unknown Run/);
   });
 
   it("accepts only minted Principals", () => {

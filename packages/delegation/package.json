@@ -25,6 +25,7 @@
     "@biomejs/biome": "2.6.3"
   },
   "dependencies": {
-    "@nunio/db": "workspace:*"
+    "@nunio/db": "workspace:*",
+    "zod": "4.6.7"
   }
 }

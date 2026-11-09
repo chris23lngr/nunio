@@ -32,14 +32,28 @@ try {
     await tx.$executeRaw`SELECT set_config('app.owner_id', ${studentId}, true)`;
     // Only a held reservation can be settled, so repeating the command never charges twice.
     const [reservation] = await tx.$queryRaw<
-      { estimateMicroUsd: bigint; settledAt: Date }[]
+      {
+        estimateMicroUsd: bigint;
+        settledAt: Date;
+        responsibilityId: string | null;
+      }[]
     >`
       UPDATE "usage_reservation"
       SET "status" = ${status}::"reservation_status", "actualMicroUsd" = ${actualMicroUsd},
           "settledAt" = now(), "settledBy" = ${operator}
       WHERE "id" = ${reservationId} AND "studentId" = ${studentId} AND "status" = 'held'
-      RETURNING "estimateMicroUsd", "settledAt"`;
+      RETURNING "estimateMicroUsd", "settledAt", "responsibilityId"`;
     if (!reservation) return null;
+    // A Run's call also counts against its Responsibility's Budget; locked before the Allowance, as meter does.
+    if (reservation.responsibilityId) {
+      await tx.responsibility.update({
+        where: { id: reservation.responsibilityId },
+        data: {
+          heldMicroUsd: { decrement: reservation.estimateMicroUsd },
+          usedMicroUsd: { increment: actualMicroUsd },
+        },
+      });
+    }
     await tx.allowance.update({
       where: { studentId },
       data: {

@@ -15,7 +15,7 @@ export const principal = {
   fromSession(actor: { readonly studentId: string }): Principal {
     return { kind: "student", studentId: actor.studentId } as Principal;
   },
-  /** Grants nothing until Phase 9 resolves persisted Runs to their student and Grants. */
+  /** A persisted Run, resolved to its student and Responsibility on every call. */
   fromRun(runId: string): Principal {
     return { kind: "run", runId } as Principal;
   },
@@ -25,16 +25,24 @@ export type Transaction = Parameters<
   Parameters<PrismaClient["$transaction"]>[0]
 >[0];
 
-/** Runs `fn` in a transaction whose RLS owner context is the Principal's student. */
+/** Runs `fn` in a transaction whose RLS owner context is the Principal's student, or the student whose Run it is. */
 export async function withOwner<T>(
   prisma: PrismaClient,
   p: Principal,
   fn: (tx: Transaction, studentId: string) => Promise<T>,
 ): Promise<T> {
-  if (p.kind !== "student")
-    throw new Error("Run principals are not authorized until Phase 9");
   return prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.owner_id', ${p.studentId}, true)`;
-    return fn(tx, p.studentId);
+    const studentId =
+      p.kind === "student"
+        ? p.studentId
+        : (
+            await tx.$queryRaw<
+              { owner: string | null }[]
+            >`SELECT run_owner(${p.runId}) AS owner`
+          )[0]?.owner;
+    if (!studentId)
+      throw new Error(`Unknown Run ${p.kind === "run" ? p.runId : ""}`);
+    await tx.$executeRaw`SELECT set_config('app.owner_id', ${studentId}, true)`;
+    return fn(tx, studentId);
   });
 }

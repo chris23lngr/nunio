@@ -2,6 +2,27 @@
  * Execution gate, usage metering, Responsibilities, and Runs. See docs/design/delegation-gate.md.
  */
 
+export type { Refusal, Restrictions } from "./decision.js";
+export {
+  type ActionOutcome,
+  type ActionRecord,
+  type Approve,
+  type Clock,
+  DelegationUnavailable,
+  type Deny,
+  type Executor,
+  type Executors,
+  type HistoryQuery,
+  KeyConflictError,
+  type Resolve,
+  StaleApprovalError,
+} from "./gate.js";
+export {
+  type ActionIntent,
+  type GrantScope,
+  InvalidIntentError,
+  type Kind,
+} from "./kinds.js";
 export {
   type AllowanceState,
   accessRefusal,
