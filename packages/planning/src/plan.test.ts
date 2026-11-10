@@ -9,6 +9,7 @@ import { createDelegation, principal } from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import type { Facts } from "@nunio/knowledge";
 import {
+  createCourses,
   createFacts,
   createKnowledgeReader,
   createProjects,
@@ -736,4 +737,32 @@ it("stops planning work the student reported as handed in, while still showing i
     expect.objectContaining({ id: sheet, reportedSubmittedAt: now }),
   ]);
   expect(view.proposal).toMatchObject({ moves: [], shortfalls: [] });
+});
+
+it("leaves an Archived Course's work out of the Plan, and brings it back when unarchived", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-11", "12:00");
+  await plan.estimate(p, { kind: "obligation", id: sheet }, 120);
+  const courses = createCourses({
+    db: runtime,
+    clock,
+    facts,
+    responsibilities: {
+      pauseForCourse: async () => {},
+      endForCourse: async () => {},
+    },
+  });
+  const [course] = (await courses.list(p)).courses;
+
+  await courses.archive(p, course!.id);
+  expect(await plan.view(p)).toMatchObject({
+    obligations: [],
+    proposal: { moves: [], shortfalls: [] },
+  });
+
+  await courses.unarchive(p, course!.id);
+  expect((await plan.view(p)).obligations).toEqual([
+    expect.objectContaining({ id: sheet }),
+  ]);
 });

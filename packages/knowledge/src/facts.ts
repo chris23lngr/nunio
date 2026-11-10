@@ -21,6 +21,9 @@ import { decryptSourceText, encryptSourceText } from "@nunio/keys";
 import type { AiUse, AiUseClass } from "./ai-use.js";
 import { isAiUseClass, resolveAiUse } from "./ai-use.js";
 import { pruneItems } from "./items.js";
+import { newCourse } from "./new-course.js";
+import { normalize } from "./normalize.js";
+import { semesterAt } from "./semester.js";
 import { joinChunks } from "./sources.js";
 
 const defaultTimeZone = "Europe/Berlin";
@@ -357,10 +360,11 @@ export function createFacts({
                 data: {
                   id,
                   studentId,
-                  code: course.code,
-                  title: course.title,
-                  matchCode,
-                  matchTitle,
+                  ...(await newCourse(tx, {
+                    title: course.title,
+                    code: course.code,
+                    semester: semesterAt(clock.now()),
+                  })),
                 },
               });
             await tx.sourceCourse.upsert({
@@ -577,7 +581,7 @@ export function createFacts({
       }
     },
 
-    /** Enters an Obligation by hand (Provenance entry) under an accepted Course or a new one, which is accepted with it. */
+    /** Enters an Obligation by hand (Provenance entry) under an accepted, unarchived Course or a new one, accepted with it. */
     async enterObligation(
       p: Principal,
       input: {
@@ -595,6 +599,8 @@ export function createFacts({
             where: { id: input.course.id, status: "accepted" },
           });
           if (!course) return { status: "gone" } as const;
+          // nunio no longer plans or acts for an Archived Course; the student unarchives it first.
+          if (course.archivedAt) return { status: "course_archived" } as const;
           courseId = course.id;
         } else {
           const { title, code } = input.course;
@@ -604,10 +610,12 @@ export function createFacts({
               id: courseId,
               studentId,
               status: "accepted",
-              title: title.trim(),
-              code: code?.trim() || null,
-              matchTitle: normalize(title),
-              matchCode: code?.trim() ? normalize(code) : null,
+              enteredAt: clock.now(),
+              ...(await newCourse(tx, {
+                title: title.trim(),
+                code: code?.trim() || null,
+                semester: semesterAt(clock.now()),
+              })),
             },
           });
         }
@@ -792,6 +800,14 @@ export function createFacts({
       decision: "accept" | "reject" | "restore",
     ) {
       return withOwner(db, p, async (tx) => {
+        // Rejecting says nunio got it wrong; a Course the student created can only be deleted.
+        if (
+          decision === "reject" &&
+          (await tx.course.findFirst({
+            where: { id: courseId, enteredAt: { not: null } },
+          }))
+        )
+          return { status: "entered" } as const;
         const { count } =
           decision === "restore"
             ? await tx.course.updateMany({
@@ -800,9 +816,11 @@ export function createFacts({
               })
             : await tx.course.updateMany({
                 where: { id: courseId, status: { not: "merged" } },
-                data: {
-                  status: decision === "accept" ? "accepted" : "rejected",
-                },
+                data:
+                  decision === "accept"
+                    ? { status: "accepted" }
+                    : // A rejected Course comes back as a plain proposal, never as an Archived one.
+                      { status: "rejected", archivedAt: null },
               });
         return { status: count ? "ok" : "gone" } as const;
       });
@@ -1228,6 +1246,8 @@ export function createFacts({
                 code: course.code,
                 title: course.title,
                 status: course.status,
+                /** nunio neither plans nor acts for an Archived Course. */
+                archived: course.archivedAt !== null,
                 obligations: obligations.sort(
                   (a, b) =>
                     (a.due.date ?? "\uffff").localeCompare(
@@ -1394,15 +1414,6 @@ function valuesOf<
       });
   }
   return [...values.values()];
-}
-
-/** Case-, width- and whitespace-insensitive form used for matching across Sources. */
-function normalize(text: string) {
-  return text
-    .normalize("NFKC")
-    .toLocaleLowerCase("de")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 /** Undoes line-break hyphenation and soft hyphens, so a quote matches the page text it was read from. */

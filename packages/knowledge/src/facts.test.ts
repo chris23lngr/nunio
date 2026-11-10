@@ -10,8 +10,10 @@ import { createDelegation, principal } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import { createSourceKeys } from "@nunio/keys";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { createCourses } from "./courses.js";
 import type { Facts } from "./facts.js";
 import { createFacts } from "./facts.js";
+import { courseColors } from "./new-course.js";
 import type { SourceStorage, Sources } from "./sources.js";
 import { createSources } from "./sources.js";
 
@@ -171,6 +173,7 @@ it("stores grounded Obligations under a proposed Course and shows them for revie
         code: "MA-101",
         title: "Analysis I",
         status: "proposed",
+        archived: false,
         obligations: [
           {
             id: expect.any(String),
@@ -1666,4 +1669,122 @@ it("records Reported as Submitted and takes it back, but never for an exam", asy
   expect(await facts.reportSubmitted(await student(), sheet, true)).toEqual({
     status: "gone",
   });
+});
+
+/** The Course list as the overview shows it; this file changes no Responsibilities. */
+const coursesOf = () =>
+  createCourses({
+    db: runtime,
+    clock: { now: () => now },
+    facts,
+    responsibilities: {
+      pauseForCourse: async () => {},
+      endForCourse: async () => {},
+    },
+  });
+const courseList = (p: Principal) => coursesOf().list(p);
+
+/** A Course the student created, in a Semester. */
+async function ownCourse(p: Principal, title: string, semester = "2026-ws") {
+  const result = await coursesOf().create(p, { title, code: null, semester });
+  if (result.status !== "ok") throw new Error(result.status);
+  return result.id;
+}
+
+it("gives a Course nunio proposes the current Semester and a color, as not the student's own", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+
+  const [course] = (await courseList(p)).courses;
+  expect(course).toEqual(
+    expect.objectContaining({
+      status: "proposed",
+      semester: "2026-ws",
+      entered: false,
+    }),
+  );
+  expect(courseColors).toContain(course!.color);
+});
+
+it("makes a Course entered with an Obligation the student's own, in the current Semester", async () => {
+  const p = await student();
+  await facts.enterObligation(p, {
+    course: { title: "Lineare Algebra", code: "MA-102" },
+    kind: "exam",
+    title: "Klausur",
+    due: { date: "2027-02-20", time: null, timeZone: null },
+    destination: null,
+  });
+
+  expect((await courseList(p)).courses).toEqual([
+    expect.objectContaining({
+      status: "accepted",
+      semester: "2026-ws",
+      entered: true,
+    }),
+  ]);
+});
+
+it("refuses an Obligation entered under an Archived Course", async () => {
+  const p = await student();
+  const id = await ownCourse(p, "Statistik II");
+  await coursesOf().archive(p, id);
+
+  expect(
+    await facts.enterObligation(p, {
+      course: { id },
+      kind: "exam",
+      title: "Klausur",
+      due: { date: "2027-02-12", time: null, timeZone: null },
+      destination: null,
+    }),
+  ).toEqual({ status: "course_archived" });
+  expect((await facts.review(p)).courses).toEqual([
+    expect.objectContaining({ id, archived: true }),
+  ]);
+});
+
+it("clears Archived when the student rejects a Course, so restoring it brings back a plain proposal", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+  const [course] = (await courseList(p)).courses;
+  await facts.decideCourse(p, course!.id, "accept");
+  await coursesOf().archive(p, course!.id);
+
+  await facts.decideCourse(p, course!.id, "reject");
+  await facts.decideCourse(p, course!.id, "restore");
+
+  expect((await courseList(p)).courses).toEqual([
+    expect.objectContaining({ status: "proposed", archived: false }),
+  ]);
+});
+
+it("keeps the target's Semester, color and Archived state when merging a Course into it", async () => {
+  const p = await student();
+  const target = await ownCourse(p, "Analysis I", "2025-ws");
+  await coursesOf().edit(p, target, { color: "teal" });
+  await coursesOf().archive(p, target);
+  const from = await ownCourse(p, "Analysis 1", "2026-ws");
+
+  expect(await facts.mergeCourses(p, from, target)).toEqual({ status: "ok" });
+  expect((await courseList(p)).courses).toEqual([
+    expect.objectContaining({
+      id: target,
+      semester: "2025-ws",
+      color: "teal",
+      archived: true,
+    }),
+  ]);
+});
+
+it("refuses to reject a Course the student created; only one nunio proposed can be rejected", async () => {
+  const p = await student();
+  const id = await ownCourse(p, "Statistik II");
+
+  expect(await facts.decideCourse(p, id, "reject")).toEqual({
+    status: "entered",
+  });
+  expect((await courseList(p)).courses).toEqual([
+    expect.objectContaining({ id, status: "accepted" }),
+  ]);
 });

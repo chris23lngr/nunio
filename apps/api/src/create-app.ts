@@ -16,9 +16,16 @@ import { createDelegation, createResponsibilities } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 import { createAuth } from "@nunio/identity";
 import { sourceKeysFromEnv } from "@nunio/keys";
-import type { Chats, Facts, Projects, Sources } from "@nunio/knowledge";
+import type {
+  Chats,
+  Courses,
+  Facts,
+  Projects,
+  Sources,
+} from "@nunio/knowledge";
 import {
   createChats,
+  createCourses,
   createFacts,
   createKnowledgeReader,
   createProjects,
@@ -57,6 +64,7 @@ export interface AppDeps {
   plan: Plan;
   estimator: Estimator;
   projects: Projects;
+  courses: Courses;
   responsibilities: Responsibilities;
   runWorkflows: RunWorkflows;
   outreach: Outreach;
@@ -83,6 +91,7 @@ export function createApp({
   plan,
   estimator,
   projects,
+  courses,
   responsibilities,
   runWorkflows,
   outreach,
@@ -116,6 +125,7 @@ export function createApp({
     c.set("plan", plan);
     c.set("estimator", estimator);
     c.set("projects", projects);
+    c.set("courses", courses);
     c.set("responsibilities", responsibilities);
     c.set("runWorkflows", runWorkflows);
     c.set("outreach", outreach);
@@ -231,6 +241,7 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     plan,
     estimator: createEstimator(models),
     projects: createProjects({ db: prisma }),
+    courses: createCourses({ db: prisma, clock, facts, responsibilities }),
     artifacts,
     artifactWorkflows: artifactWorkflowsFromEnv(env),
     understanding: createUnderstanding({

@@ -8,7 +8,7 @@ import {
   delegableCourseQueries,
   responsibilityListQueries,
 } from "./api/responsibility-queries";
-import { nameOf } from "./name";
+import { nameOf, pausedBecause } from "./name";
 
 const states = { active: "active", paused: "paused", ended: "ended" } as const;
 
@@ -61,7 +61,10 @@ export function ResponsibilitiesScreen({ apiOrigin }: { apiOrigin: string }) {
           <li key={r.id}>
             <Link href={`/responsibilities/${r.id}`}>{nameOf(r)}</Link> (
             {states[r.state]}
-            {r.pausedBy === "budget" && ", its Budget is used up"})
+            {r.pausedBy &&
+              pausedBecause[r.pausedBy] &&
+              `, ${pausedBecause[r.pausedBy]}`}
+            )
           </li>
         ))}
       </ul>
