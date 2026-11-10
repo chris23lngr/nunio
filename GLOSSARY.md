@@ -251,7 +251,7 @@ The state of a Responsibility stopped for good: its Grants are gone and its hist
 _Avoid_: Revoked, cancelled, deleted, archived, completed
 
 **Run**:
-A single, bounded execution of Agent work, started either from a Chat or by a Responsibility. Reading or deleting a Source is never a Run.
+A single, bounded execution of Agent work, started either by the student, such as from a Chat, or by a Responsibility. Reading or deleting a Source is never a Run.
 _Avoid_: Job, task, session
 
 **Action**:
