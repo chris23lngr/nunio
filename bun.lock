@@ -94,6 +94,7 @@
       "devDependencies": {
         "@biomejs/biome": "2.6.3",
         "@nunio/typescript-config": "workspace:*",
+        "@playwright/test": "1.64.1",
         "@tailwindcss/postcss": "4.3.3",
         "@testing-library/react": "16.3.3",
         "@testing-library/user-event": "14.6.8",

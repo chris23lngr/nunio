@@ -4,9 +4,11 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
   useSidebar,
 } from "@nunio/ui/components/sidebar/sidebar";
 import {
@@ -23,6 +25,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { UserMenu } from "@/features/auth/user-menu";
 
 const menuItems = [
   { title: "Home", href: "/", icon: House },
@@ -36,13 +39,17 @@ const menuItems = [
   { title: "Responsibilities", href: "/responsibilities", icon: ListChecks },
 ];
 
-export function AppSidebar() {
+export function AppSidebar({ apiOrigin }: { apiOrigin: string }) {
   const pathname = usePathname();
   const { setOpenMobile } = useSidebar();
   const settingsActive = pathname.startsWith("/settings/");
 
   return (
     <Sidebar>
+      <SidebarHeader className="flex-row items-center justify-between gap-4 pr-6.5 pl-3">
+        <UserMenu apiOrigin={apiOrigin} />
+        <SidebarTrigger aria-label="Sidebar schließen" className="-mr-1.25" />
+      </SidebarHeader>
       <SidebarContent role="navigation" aria-label="App navigation">
         <SidebarMenu>
           {menuItems.map(({ title, href, icon: Icon }) => {
