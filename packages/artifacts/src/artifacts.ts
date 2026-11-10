@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Maker, PracticeInput } from "@nunio/ai";
+import type { Flashcard, Maker, PracticeInput, PracticeItem } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
 import type {
   Delegation,
@@ -15,9 +15,10 @@ import type {
   Provenance,
 } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
+import { toAnkiTsv } from "./anki.js";
 
 export type ArtifactRequest = {
-  kind: "practice_set";
+  kind: "practice_set" | "flashcards";
   topicIds: string[];
   /** The material the Run reads, fixed when it starts. */
   from:
@@ -26,7 +27,7 @@ export type ArtifactRequest = {
 };
 export type ArtifactSummary = {
   id: string;
-  kind: "practice_set";
+  kind: ArtifactRequest["kind"];
   status: "making" | "ready" | "failed";
   failure: string | null;
   topicIds: string[];
@@ -35,29 +36,26 @@ export type ArtifactSummary = {
   /** A Source it was drawn from is deleted, so its content is gone. */
   withdrawn: boolean;
 };
+type Item = {
+  id: string;
+  topicIds: string[];
+  question: string;
+  answer: string;
+};
+type Card = { id: string; topicIds: string[]; front: string; back: string };
+/** A practice set's items or a set of flashcards, with citations as `C`. */
+type Content<C> =
+  | { items: (Item & { citations: C[] })[] }
+  | { cards: (Card & { citations: C[] })[] };
 export type ArtifactView = ArtifactSummary & {
   version: number | null;
   /** Null until made, and once withdrawn. */
-  content: {
-    items: {
-      id: string;
-      topicIds: string[];
-      question: string;
-      answer: string;
-      citations: { tag: string; provenance: Provenance | "gone" }[];
-    }[];
-  } | null;
+  content: Content<{ tag: string; provenance: Provenance | "gone" }> | null;
 };
-/** A practice set as sealed: citations are stored as refs, resolved when shown. */
-type StoredContent = {
-  items: {
-    id: string;
-    topicIds: string[];
-    question: string;
-    answer: string;
-    citations: Citation[];
-  }[];
-};
+/** As sealed: citations are stored as refs, resolved when shown. */
+type StoredContent = Content<Citation>;
+const rowsOf = <C>(content: Content<C>) =>
+  "items" in content ? content.items : content.cards;
 
 /** Artifacts: made in Runs the student starts, from material pinned at the start, and shredded with their Sources. */
 export function createArtifacts({
@@ -80,12 +78,29 @@ export function createArtifacts({
   clock: { now(): Date };
 }) {
   const derived = createDerivedText(keys);
-  const makePracticeSet = (run: Principal, input: PracticeInput) =>
-    delegation.meter(
+  /** Asks the Maker for the kind's rows, metered against the Run. */
+  async function makeRows(
+    kind: ArtifactRequest["kind"],
+    run: Principal,
+    input: PracticeInput,
+  ) {
+    return delegation.meter<{ items: PracticeItem[] } | { cards: Flashcard[] }>(
       run,
       { microUsd: maker.estimateMicroUsd(input) },
-      (signal) => definitely(() => maker.practiceSet(input, { signal })),
+      async (signal) => {
+        if (kind === "flashcards") {
+          const { value, usage } = await definitely(() =>
+            maker.flashcards(input, { signal }),
+          );
+          return { value: { cards: value.cards }, usage };
+        }
+        const { value, usage } = await definitely(() =>
+          maker.practiceSet(input, { signal }),
+        );
+        return { value: { items: value.items }, usage };
+      },
     );
+  }
   /** The student's own Topics that are not rejected, with names and Courses; null when any of them is not. */
   async function topicsOf(p: Principal, ids: string[]) {
     const found = (await facts.review(p)).courses
@@ -220,21 +235,27 @@ export function createArtifacts({
         data,
         tags: citations.map((citation) => citation.tag),
       };
-      let made: Awaited<ReturnType<typeof makePracticeSet>>;
+      let made: Awaited<ReturnType<typeof makeRows>>;
       try {
-        made = await makePracticeSet(run, input);
+        made = await makeRows(
+          artifact.kind as ArtifactRequest["kind"],
+          run,
+          input,
+        );
       } catch {
         return fail("maker_failed");
       }
       if (made.status !== "ok") return fail(made.reason);
-      const content: StoredContent = {
-        items: made.value.items.map(({ cited, ...item }) => ({
-          ...item,
-          citations: cited.flatMap((tag) =>
-            citations.filter((citation) => citation.tag === tag),
-          ),
-        })),
-      };
+      const cite = <R extends { cited: string[] }>({ cited, ...row }: R) => ({
+        ...row,
+        citations: cited.flatMap((tag) =>
+          citations.filter((citation) => citation.tag === tag),
+        ),
+      });
+      const content: StoredContent =
+        "cards" in made.value
+          ? { cards: made.value.cards.map(cite) }
+          : { items: made.value.items.map(cite) };
       const derivedFrom = [
         ...new Set(
           retrieval.items.flatMap((item) =>
@@ -281,14 +302,116 @@ export function createArtifacts({
         )
         .map(({ summary }) => summary);
     },
-    /** Shows an Artifact and marks it opened; a withdrawn one comes back without content. */
+    /**
+     * The student's edit of a set of flashcards, kept as a new version sealed under the same Sources. A card keeps
+     * its ID, and so its Anki GUID; a card without one is new. Practice sets cannot be edited.
+     */
+    async edit(
+      student: Principal,
+      artifactId: string,
+      edit: {
+        baseVersion: number;
+        content: { cards: { id?: string; front: string; back: string }[] };
+      },
+    ): Promise<
+      | { status: "ok"; version: number }
+      | { status: "stale" | "withdrawn" | "not_editable" | "gone" }
+    > {
+      return withOwner(db, student, async (tx, studentId) => {
+        const artifact = await tx.artifact.findUnique({
+          where: { id: artifactId },
+          include: { versions: { orderBy: { version: "desc" }, take: 1 } },
+        });
+        if (!artifact) return { status: "gone" };
+        if (artifact.kind !== "flashcards") return { status: "not_editable" };
+        const [latest] = artifact.versions;
+        if (latest?.version !== edit.baseVersion) return { status: "stale" };
+        const text = await derived.open(
+          tx,
+          `${artifactId}:${latest.version}`,
+          latest,
+        );
+        if (!text) return { status: "withdrawn" };
+        const base = rowsOf(JSON.parse(text) as StoredContent);
+        let next = Math.max(0, ...base.map((card) => Number(card.id)));
+        const topicIds = (artifact.request as { topicIds: string[] }).topicIds;
+        const cards = edit.content.cards.map((card) => {
+          const kept = base.find((row) => row.id === card.id);
+          return {
+            id: kept ? kept.id : String(++next),
+            topicIds: kept?.topicIds ?? topicIds,
+            front: card.front,
+            back: card.back,
+            citations: kept?.citations ?? [],
+          };
+        });
+        const version = latest.version + 1;
+        const sealed = await derived.seal(
+          tx,
+          `${artifactId}:${version}`,
+          latest.derivedFrom,
+          JSON.stringify({ cards } satisfies StoredContent),
+        );
+        if (!sealed) return { status: "withdrawn" };
+        // A concurrent edit of the same base took this version first.
+        const { count } = await tx.artifactVersion.createMany({
+          data: [{ artifactId, studentId, version, ...sealed }],
+          skipDuplicates: true,
+        });
+        return count ? { status: "ok", version } : { status: "stale" };
+      });
+    },
+    /** The latest version of a set of flashcards as an Anki text file, its cards tagged with their Topics' names. */
+    async exportFlashcards(
+      student: Principal,
+      artifactId: string,
+    ): Promise<{ filename: string; tsv: string } | "gone"> {
+      const found = await withOwner(db, student, async (tx) => {
+        const artifact = await tx.artifact.findUnique({
+          where: { id: artifactId },
+          include: { versions: { orderBy: { version: "desc" }, take: 1 } },
+        });
+        const [latest] = artifact?.versions ?? [];
+        if (artifact?.kind !== "flashcards" || !latest) return null;
+        const text = await derived.open(
+          tx,
+          `${artifactId}:${latest.version}`,
+          latest,
+        );
+        return text && { artifact, stored: JSON.parse(text) as StoredContent };
+      });
+      if (!found || !("cards" in found.stored)) return "gone";
+      const names = new Map(
+        (await facts.review(student)).courses.flatMap((course) =>
+          course.facts.map((fact) => [fact.id, fact.value] as const),
+        ),
+      );
+      return {
+        filename: `nunio-flashcards-${found.artifact.createdAt.toISOString().slice(0, 10)}.tsv`,
+        tsv: toAnkiTsv(
+          artifactId,
+          found.stored.cards.map((card) => ({
+            id: card.id,
+            front: card.front,
+            back: card.back,
+            tags: card.topicIds.flatMap((id) => names.get(id) ?? []),
+          })),
+        ),
+      };
+    },
+    /** Shows an Artifact, its latest version unless one is named, and marks it opened; a withdrawn one has no content. */
     async open(
       student: Principal,
       artifactId: string,
+      version?: number,
     ): Promise<ArtifactView | "gone"> {
       const [found] = await summaries(student, { id: artifactId });
       if (!found) return "gone";
-      const latest = found.row.versions[0];
+      const latest =
+        version === undefined
+          ? found.row.versions[0]
+          : found.row.versions.find((v) => v.version === version);
+      if (version !== undefined && !latest) return "gone";
       const text = await withOwner(db, student, async (tx) => {
         if (found.row.status === "ready" && !found.row.openedAt)
           await tx.artifact.update({
@@ -302,21 +425,28 @@ export function createArtifacts({
       const stored = text ? (JSON.parse(text) as StoredContent) : null;
       const provenance = await reader.cite(
         student,
-        stored?.items.flatMap((item) => item.citations.map((c) => c.cite)) ??
-          [],
+        stored
+          ? rowsOf(stored).flatMap((row) => row.citations.map((c) => c.cite))
+          : [],
       );
+      const resolve = <R extends { citations: Citation[] }>({
+        citations,
+        ...row
+      }: R) => ({
+        ...row,
+        citations: citations.map(({ tag, cite }) => ({
+          tag,
+          provenance: provenance.get(cite) ?? ("gone" as const),
+        })),
+      });
       return {
         ...found.summary,
         version: latest?.version ?? null,
-        content: stored && {
-          items: stored.items.map(({ citations, ...item }) => ({
-            ...item,
-            citations: citations.map(({ tag, cite }) => ({
-              tag,
-              provenance: provenance.get(cite) ?? "gone",
-            })),
-          })),
-        },
+        content:
+          stored &&
+          ("items" in stored
+            ? { items: stored.items.map(resolve) }
+            : { cards: stored.cards.map(resolve) }),
       };
     },
   };
