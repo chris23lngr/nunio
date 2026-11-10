@@ -150,6 +150,19 @@ export async function responsibilityRun(ref: RunRef) {
   return { status: "done" as const };
 }
 
+// An Artifact's Run (ADR-0006): one workflow, one Activity. A single attempt, like extraction: a model call that
+// failed may already have cost money, so the student asks again instead.
+const { makeArtifact } = proxyActivities<{
+  makeArtifact(runId: string): Promise<"ready" | "failed">;
+}>({
+  startToCloseTimeout: "10 minutes",
+  retry: { maximumAttempts: 1 },
+});
+/** Started by the API once the student asked for an Artifact; its Run is already recorded and pinned. */
+export async function artifactRun(ref: { runId: string }) {
+  return makeArtifact(ref.runId);
+}
+
 /** Started by the reconcile Schedule: asks executors about stale in-flight dispatches, never retrying blindly. */
 export async function reconcileActions() {
   return reconcile();
