@@ -59,6 +59,13 @@ function Item({ item }: { item: Attention }) {
 }
 
 /** The actionable day: what needs attention, what is ready, and what is still running. */
+const artifactNames = {
+  practice_set: "Practice set",
+  flashcards: "Flashcards",
+  draft: "Draft",
+  critique: "Critique",
+};
+
 export function HomeView({ apiOrigin }: { apiOrigin: string }) {
   const [home, setHome] = useState<Home | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +109,19 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
       </section>
       <section aria-labelledby="ready-title">
         <h2 id="ready-title">Ready for you</h2>
-        <p>Practice sets and other results nunio prepares will appear here.</p>
+        {home.artifacts.length ? (
+          <ul>
+            {home.artifacts.map((artifact) => (
+              <li key={artifact.id}>
+                <Link href={`/study/artifacts/${artifact.id}`}>
+                  {artifactNames[artifact.kind]}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>Nothing new from nunio yet.</p>
+        )}
       </section>
       <section aria-labelledby="ongoing-title">
         <h2 id="ongoing-title">In progress</h2>

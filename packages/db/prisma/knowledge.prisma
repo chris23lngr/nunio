@@ -23,6 +23,7 @@ model Source {
   obligations ObligationExtraction[]
   facts       FactExtraction[]
   chats       ChatSource[]
+  runPins     RunPinSource[]
 
   @@unique([id, studentId])
   @@index([studentId, deletedAt])
@@ -95,6 +96,7 @@ model Course {
   obligations Obligation[]
   facts       Fact[]
   chats       ChatCourse[]
+  runPins     RunPinCourse[]
   priorities  Priority[]
   preference  CoursePreference?
   projects    ProjectCourse[]
@@ -170,6 +172,8 @@ model Obligation {
   correctedDestination String?
   /// Set for an Obligation the student entered by hand (Provenance entry); its values live in the corrected* columns.
   enteredAt            DateTime?
+  /// Reported as Submitted: the student says they handed it in through a Handoff; nunio cannot verify it.
+  reportedSubmittedAt  DateTime?
   unsupported          Unsupported?
   createdAt            DateTime       @default(now())
 
@@ -212,6 +216,8 @@ enum FactType {
   topic
   course_rule
   exam_logistics
+  /// Whether AI may be used for assessed work: the value is forbidden, conditional or allowed.
+  ai_use_rule
 
   @@map("fact_type")
 }
@@ -229,7 +235,8 @@ model Fact {
   unsupported    Unsupported?
   createdAt      DateTime     @default(now())
 
-  extractions FactExtraction[]
+  extractions     FactExtraction[]
+  selfAssessments SelfAssessment[]
 
   @@unique([id, studentId])
   @@unique([courseId, type, matchKey])
@@ -264,6 +271,7 @@ model Chat {
   courses  ChatCourse[]
   sources  ChatSource[]
   messages ChatMessage[]
+  runs     Run[]
 
   @@unique([id, studentId])
   @@index([studentId])
@@ -363,4 +371,42 @@ model ProjectCourse {
 
   @@id([projectId, courseId])
   @@map("project_course")
+}
+
+/// A Run's selection, fixed when the student started it: Sources and Facts added later stay out, removals apply live.
+model RunPin {
+  runId     String   @id
+  studentId String
+  run       Run      @relation(fields: [runId, studentId], references: [id, studentId], onDelete: Cascade)
+  pinnedAt  DateTime @default(now())
+
+  courses RunPinCourse[]
+  sources RunPinSource[]
+
+  @@unique([runId, studentId])
+  @@map("run_pin")
+}
+
+/// A pinned Course: the Run reads its Facts.
+model RunPinCourse {
+  runId     String
+  courseId  String
+  studentId String
+  pin       RunPin @relation(fields: [runId, studentId], references: [runId, studentId], onDelete: Cascade)
+  course    Course @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+
+  @@id([runId, courseId])
+  @@map("run_pin_course")
+}
+
+/// A pinned Source, chosen directly or through a pinned Course when the Run started: the Run reads its passages.
+model RunPinSource {
+  runId     String
+  sourceId  String
+  studentId String
+  pin       RunPin @relation(fields: [runId, studentId], references: [runId, studentId], onDelete: Cascade)
+  source    Source @relation(fields: [sourceId, studentId], references: [id, studentId], onDelete: Cascade)
+
+  @@id([runId, sourceId])
+  @@map("run_pin_source")
 }

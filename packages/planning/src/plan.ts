@@ -80,6 +80,8 @@ export function createPlan({
               title: o.title,
               kind: o.kind as ObligationKind,
               state: o.state as ReviewState,
+              /** Reported as Submitted: shown, but no longer planned. */
+              reportedSubmittedAt: o.reportedSubmittedAt,
               due: o.due.date
                 ? deadline(
                     o.due.date,
@@ -208,10 +210,12 @@ export function createPlan({
       now.getTime(),
       ...items.flatMap((o) => (o.due ? [o.due.getTime()] : [])),
     );
+    // Work the student reported as handed in needs no more time, and so causes no Shortfall.
+    const planned = items.filter((o) => !o.reportedSubmittedAt);
     const state: PlanState = {
       now,
       timeZone: preferences.timeZone,
-      obligations: items.map((o) => ({
+      obligations: planned.map((o) => ({
         id: o.id,
         due: o.due,
         estimateMinutes: o.estimate?.minutes ?? null,
@@ -219,15 +223,24 @@ export function createPlan({
         dailyLimitMinutes: courseLimit(o.courseId),
       })),
       // A Task's own daily limit wins over its Course's.
-      tasks: tasks.map((task) => ({
-        id: task.id,
-        obligationId: task.obligationId,
-        estimateMinutes: task.estimate?.minutes ?? null,
-        done: task.done,
-        dailyLimitMinutes:
-          task.maxMinutesPerDay ??
-          courseLimit(items.find((o) => o.id === task.obligationId)?.courseId),
-      })),
+      tasks: tasks
+        .filter(
+          (task) =>
+            !items.some(
+              (o) => o.id === task.obligationId && o.reportedSubmittedAt,
+            ),
+        )
+        .map((task) => ({
+          id: task.id,
+          obligationId: task.obligationId,
+          estimateMinutes: task.estimate?.minutes ?? null,
+          done: task.done,
+          dailyLimitMinutes:
+            task.maxMinutesPerDay ??
+            courseLimit(
+              items.find((o) => o.id === task.obligationId)?.courseId,
+            ),
+        })),
       fixedEvents: fixedEvents.map(({ start, end }) => ({ start, end })),
       protectedTime: [
         ...weekly(

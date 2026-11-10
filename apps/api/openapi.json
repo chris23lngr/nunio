@@ -330,6 +330,14 @@
               "other"
             ]
           },
+          "reportedSubmittedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Reported as Submitted: the student's word, never verified."
+          },
           "title": {
             "type": "string"
           },
@@ -459,6 +467,7 @@
           "disagreement",
           "unsupported",
           "kind",
+          "reportedSubmittedAt",
           "title",
           "due",
           "destination",
@@ -568,7 +577,8 @@
             "enum": [
               "topic",
               "course_rule",
-              "exam_logistics"
+              "exam_logistics",
+              "ai_use_rule"
             ]
           },
           "value": {
@@ -702,6 +712,124 @@
               "value"
             ],
             "additionalProperties": false
+          }
+        ]
+      },
+      "AiUse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "uncertain",
+                  "disagreement"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "reason"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "forbidden",
+                  "conditional",
+                  "allowed"
+                ]
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "obligation",
+                  "course"
+                ]
+              },
+              "text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The rule as its Source words it; null for the student's own."
+              },
+              "provenance": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "correction"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "entry"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "source"
+                        ]
+                      },
+                      "sourceId": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "page": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "sourceId",
+                      "title",
+                      "page"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "level",
+              "text",
+              "provenance"
+            ]
           }
         ]
       },
@@ -865,6 +993,14 @@
                     "rejected"
                   ]
                 },
+                "reportedSubmittedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Reported as Submitted: the student's word, never verified; such work is no longer planned."
+                },
                 "due": {
                   "type": [
                     "string",
@@ -909,6 +1045,7 @@
                 "title",
                 "kind",
                 "state",
+                "reportedSubmittedAt",
                 "due",
                 "estimate"
               ]
@@ -1757,9 +1894,10 @@
           },
           "artifacts": {
             "type": "array",
-            "items": {},
-            "maxItems": 0,
-            "description": "Ready Artifacts; always empty until Artifacts exist (Phase 11)."
+            "items": {
+              "$ref": "#/components/schemas/ArtifactSummary"
+            },
+            "description": "Ready Artifacts: finished, not yet opened, and not withdrawn."
           },
           "agentWork": {
             "type": "array",
@@ -1852,6 +1990,75 @@
           "ongoing",
           "artifacts",
           "agentWork"
+        ]
+      },
+      "ArtifactSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "practice_set",
+              "flashcards",
+              "draft",
+              "critique"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "making",
+              "ready",
+              "failed"
+            ]
+          },
+          "failure": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "topicIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "obligationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "openedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "description": "A Source it was drawn from is deleted, so its content is gone."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "failure",
+          "topicIds",
+          "obligationId",
+          "createdAt",
+          "openedAt",
+          "withdrawn"
         ]
       },
       "Approval": {
@@ -2427,6 +2634,1024 @@
           "keys"
         ],
         "description": "The device's PushSubscription.toJSON(); its endpoint is a secret."
+      },
+      "ArtifactRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "practice_set",
+                  "flashcards"
+                ]
+              },
+              "topicIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "minItems": 1,
+                "maxItems": 20
+              },
+              "from": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "chatId": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "chatId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "selection": {
+                        "type": "object",
+                        "properties": {
+                          "courseIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "maxItems": 50
+                          },
+                          "sourceIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "maxItems": 200
+                          }
+                        },
+                        "required": [
+                          "courseIds",
+                          "sourceIds"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "selection"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "topicIds",
+              "from"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "draft"
+                ]
+              },
+              "obligationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "instructions": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "conditionsConfirmed": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "from": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "chatId": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "chatId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "selection": {
+                        "type": "object",
+                        "properties": {
+                          "courseIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "maxItems": 50
+                          },
+                          "sourceIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "maxItems": 200
+                          }
+                        },
+                        "required": [
+                          "courseIds",
+                          "sourceIds"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "selection"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "obligationId",
+              "instructions",
+              "from"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "critique"
+                ]
+              },
+              "obligationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "of": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "ownWork": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50000
+                      }
+                    },
+                    "required": [
+                      "ownWork"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "artifactId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "version": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": [
+                      "artifactId",
+                      "version"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "conditionsConfirmed": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "from": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "chatId": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "chatId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "selection": {
+                        "type": "object",
+                        "properties": {
+                          "courseIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "maxItems": 50
+                          },
+                          "sourceIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "maxItems": 200
+                          }
+                        },
+                        "required": [
+                          "courseIds",
+                          "sourceIds"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "selection"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "obligationId",
+              "of",
+              "from"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Artifact": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ArtifactSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "content": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "topicIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "question": {
+                              "type": "string"
+                            },
+                            "answer": {
+                              "type": "string"
+                            },
+                            "citations": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "tag": {
+                                    "type": "string"
+                                  },
+                                  "provenance": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "correction"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "kind"
+                                        ]
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "entry"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "kind"
+                                        ]
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "source"
+                                            ]
+                                          },
+                                          "sourceId": {
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "location": {
+                                            "type": "object",
+                                            "properties": {
+                                              "page": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "page"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "sourceId",
+                                          "title",
+                                          "location"
+                                        ]
+                                      },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "gone"
+                                        ]
+                                      }
+                                    ],
+                                    "description": "Resolved when shown; \"gone\" once its Source is deleted."
+                                  }
+                                },
+                                "required": [
+                                  "tag",
+                                  "provenance"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "topicIds",
+                            "question",
+                            "answer",
+                            "citations"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "items"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "cards": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "topicIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "front": {
+                              "type": "string"
+                            },
+                            "back": {
+                              "type": "string"
+                            },
+                            "citations": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "tag": {
+                                    "type": "string"
+                                  },
+                                  "provenance": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "correction"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "kind"
+                                        ]
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "entry"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "kind"
+                                        ]
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "source"
+                                            ]
+                                          },
+                                          "sourceId": {
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "location": {
+                                            "type": "object",
+                                            "properties": {
+                                              "page": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "page"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "sourceId",
+                                          "title",
+                                          "location"
+                                        ]
+                                      },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "gone"
+                                        ]
+                                      }
+                                    ],
+                                    "description": "Resolved when shown; \"gone\" once its Source is deleted."
+                                  }
+                                },
+                                "required": [
+                                  "tag",
+                                  "provenance"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "topicIds",
+                            "front",
+                            "back",
+                            "citations"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "cards"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      },
+                      "citations": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "tag": {
+                              "type": "string"
+                            },
+                            "provenance": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "correction"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "entry"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "source"
+                                      ]
+                                    },
+                                    "sourceId": {
+                                      "type": "string"
+                                    },
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "location": {
+                                      "type": "object",
+                                      "properties": {
+                                        "page": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "page"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "sourceId",
+                                    "title",
+                                    "location"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "gone"
+                                  ]
+                                }
+                              ],
+                              "description": "Resolved when shown; \"gone\" once its Source is deleted."
+                            }
+                          },
+                          "required": [
+                            "tag",
+                            "provenance"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "citations"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Null until made, and once withdrawn."
+              }
+            },
+            "required": [
+              "version",
+              "content"
+            ]
+          }
+        ]
+      },
+      "Attempt": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "artifactId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "topicIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "text": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "correct",
+              "partial",
+              "incorrect",
+              null
+            ],
+            "description": "Null while ungraded; an ungraded Attempt does not count."
+          },
+          "feedback": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "citations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "tag": {
+                      "type": "string"
+                    },
+                    "provenance": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "correction"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "entry"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "source"
+                              ]
+                            },
+                            "sourceId": {
+                              "type": "string"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "location": {
+                              "type": "object",
+                              "properties": {
+                                "page": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "page"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "sourceId",
+                            "title",
+                            "location"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "gone"
+                          ]
+                        }
+                      ],
+                      "description": "Resolved when shown; \"gone\" once its Source is deleted."
+                    }
+                  },
+                  "required": [
+                    "tag",
+                    "provenance"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "text",
+              "citations"
+            ],
+            "description": "Null while ungraded, and once a Source of its practice set is deleted."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "artifactId",
+          "itemId",
+          "topicIds",
+          "text",
+          "verdict",
+          "feedback",
+          "createdAt"
+        ]
+      },
+      "UnderstandingLevel": {
+        "type": "object",
+        "properties": {
+          "topicId": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "not_yet_practiced",
+              "shaky",
+              "solid",
+              "disputed"
+            ]
+          },
+          "fromAttempts": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "shaky",
+              "solid",
+              null
+            ],
+            "description": "What the Attempts alone show; disputed is this against the Self-assessment."
+          },
+          "selfAssessment": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "shaky",
+              "solid",
+              null
+            ]
+          },
+          "lastEvidenceAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "topicId",
+          "level",
+          "fromAttempts",
+          "selfAssessment",
+          "lastEvidenceAt"
+        ]
+      },
+      "Evidence": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "attempt"
+                ]
+              },
+              "attempt": {
+                "$ref": "#/components/schemas/Attempt"
+              }
+            },
+            "required": [
+              "kind",
+              "attempt"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "self_assessment"
+                ]
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "shaky",
+                  "solid"
+                ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "kind",
+              "level",
+              "at"
+            ]
+          }
+        ]
+      },
+      "Handoff": {
+        "type": "object",
+        "properties": {
+          "obligation": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "due": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "time": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "timeZone": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "date",
+                  "time",
+                  "timeZone"
+                ]
+              },
+              "destination": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "As the Source states it, or the student's Correction; never verified."
+              },
+              "reportedSubmittedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "due",
+              "destination",
+              "reportedSubmittedAt"
+            ]
+          },
+          "rule": {
+            "$ref": "#/components/schemas/AiUse"
+          },
+          "drafts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "version",
+                "createdAt"
+              ]
+            }
+          }
+        },
+        "required": [
+          "obligation",
+          "rule",
+          "drafts"
+        ]
       }
     },
     "parameters": {}
@@ -3941,6 +5166,287 @@
           },
           "409": {
             "description": "The Course already has this Obligation; correct it instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/obligations/{id}/ai-use": {
+      "get": {
+        "description": "The AI-use Rule that applies: the Obligation's own, else its Course's. While unknown, ask the student.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The rule that applies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiUse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item or Course is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "The student's own answer: the AI-use Rule for this Obligation, or for its whole Course.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "level": {
+                    "type": "string",
+                    "enum": [
+                      "obligation",
+                      "course"
+                    ]
+                  },
+                  "value": {
+                    "type": "string",
+                    "enum": [
+                      "forbidden",
+                      "conditional",
+                      "allowed"
+                    ]
+                  }
+                },
+                "required": [
+                  "level",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item or Course is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/obligations/{id}/reported-submitted": {
+      "post": {
+        "description": "Reported as Submitted, or taken back: the student says they handed it in through a Handoff.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reported": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "reported"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item or Course is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing is handed in for an exam or registration.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8851,6 +10357,986 @@
           },
           "401": {
             "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/artifacts": {
+      "post": {
+        "description": "Ask for an Artifact. Its Run is recorded and pinned, and its workflow started; poll the Artifact until it is ready or failed.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Being made.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "artifactId": {
+                      "type": "string"
+                    },
+                    "runId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "artifactId",
+                    "runId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not the student's, or gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refused: ai_use_unknown (ask the student), ai_use_forbidden, ai_use_conditions (show the rule and confirm), or not_handed_in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ],
+              "description": "Only finished Artifacts the student has not opened."
+            },
+            "required": false,
+            "description": "Only finished Artifacts the student has not opened.",
+            "name": "ready",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Only those deleting this Source would withdraw."
+            },
+            "required": false,
+            "description": "Only those deleting this Source would withdraw.",
+            "name": "derivedFrom",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ArtifactSummary"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not the student's, or gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/artifacts/{id}": {
+      "get": {
+        "description": "Shows an Artifact, its latest version unless one is named, and marks it opened.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": false,
+            "name": "version",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Artifact.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Artifact"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not the student's, or gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/artifacts/{id}/versions": {
+      "post": {
+        "description": "The student's edit of a set of flashcards or a draft, as a new version. A card keeps its id, and so its Anki GUID; a card without one is new.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "baseVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "content": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "cards": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 20
+                                },
+                                "front": {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                "back": {
+                                  "type": "string",
+                                  "maxLength": 8000
+                                }
+                              },
+                              "required": [
+                                "front",
+                                "back"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 500
+                          }
+                        },
+                        "required": [
+                          "cards"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string",
+                            "maxLength": 100000
+                          }
+                        },
+                        "required": [
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "baseVersion",
+                  "content"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "version"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not the student's, or gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "stale (edited meanwhile; reload), withdrawn (a Source is deleted), or not_editable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/artifacts/{id}/anki.tsv": {
+      "get": {
+        "description": "The latest version of a set of flashcards as an Anki text file; re-importing an edited version updates the notes.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Anki text file, as a download.",
+            "content": {
+              "text/tab-separated-values": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not the student's, or gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/attempts": {
+      "post": {
+        "description": "The student's answer to a Practice Item, recorded and then graded. A failed grading keeps it, ungraded.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "artifactId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "itemId": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20000
+                  }
+                },
+                "required": [
+                  "artifactId",
+                  "itemId",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "graded"
+                          ]
+                        },
+                        "attempt": {
+                          "$ref": "#/components/schemas/Attempt"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "attempt"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "ungraded"
+                          ]
+                        },
+                        "attemptId": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "grader_failed",
+                            "allowance_exhausted",
+                            "gone"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "attemptId",
+                        "reason"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not the student's, or gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/attempts/{id}/grade": {
+      "post": {
+        "description": "Grades an Attempt again, such as an ungraded one; metered again.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Attempt as it stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Attempt"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not the student's, or gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/topics/{id}/self-assessment": {
+      "post": {
+        "description": "The student's own statement about a Topic, shown beside its Level; it never moves the Level itself.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "level": {
+                    "type": "string",
+                    "enum": [
+                      "shaky",
+                      "solid"
+                    ]
+                  }
+                },
+                "required": [
+                  "level"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not the student's, or gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/courses/{id}/levels": {
+      "get": {
+        "description": "The Understanding Level of each of the Course's Topics. Only graded Attempts move a Level; it never fades.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One per Topic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UnderstandingLevel"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not the student's, or gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/topics/{id}/evidence": {
+      "get": {
+        "description": "A Topic's Evidence, newest first.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Evidence"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not the student's, or gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/obligations/{id}/handoff": {
+      "get": {
+        "description": "What the student needs to hand the Obligation in themselves: its Destination wording, its AI-use Rule (with any conditions, such as declaring AI use) and their drafts. Nothing is sent anywhere; the student then reports it as submitted.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Handoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Handoff"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not the student's, or gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_handed_in: an exam or registration.",
             "content": {
               "application/json": {
                 "schema": {

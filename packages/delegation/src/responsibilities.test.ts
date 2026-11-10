@@ -699,3 +699,72 @@ describe("'prepare me for this exam'", () => {
     ).toEqual({ courseId: s.courseId });
   });
 });
+
+describe("a Run the student started", () => {
+  it("has no Grants, so its Actions ask first, and is recorded once however often it is started", async () => {
+    const s = await student();
+    const chatId = randomUUID();
+    await admin.chat.create({ data: { id: chatId, studentId: s.studentId } });
+    const responsibilities = createResponsibilities({ db: runtime, clock });
+    const gate = createDelegation({
+      db: runtime,
+      aiEnabled: () => true,
+      clock,
+      executors: { plan: executor },
+    });
+    const run = { runId: randomUUID(), workflowId: "artifact-run", chatId };
+
+    expect(
+      await Promise.all([
+        responsibilities.startStudentRun(s.p, run),
+        responsibilities.startStudentRun(s.p, run),
+      ]),
+    ).toEqual([{ status: "ok" }, { status: "ok" }]);
+    expect(await admin.run.findMany({ where: { id: run.runId } })).toEqual([
+      expect.objectContaining({ responsibilityId: null, chatId }),
+    ]);
+    expect(await responsibilities.scopeOfRun(run.runId)).toBeNull();
+    expect(
+      await gate.perform(principal.fromRun(run.runId), {
+        key: `${run.runId}:1`,
+        intent: move(s.blockId),
+      }),
+    ).toMatchObject({ status: "awaiting_approval" });
+  });
+
+  it("never starts from another student's Chat, or reuses a Run started otherwise", async () => {
+    const s = await student();
+    const other = await student();
+    const foreignChat = randomUUID();
+    await admin.chat.create({
+      data: { id: foreignChat, studentId: other.studentId },
+    });
+    const responsibilities = createResponsibilities({ db: runtime, clock });
+    const runId = randomUUID();
+
+    expect(
+      await responsibilities.startStudentRun(s.p, {
+        runId,
+        workflowId: "artifact-run",
+        chatId: foreignChat,
+      }),
+    ).toEqual({ status: "gone" });
+    expect(await admin.run.count({ where: { id: runId } })).toBe(0);
+    await responsibilities.startStudentRun(s.p, {
+      runId,
+      workflowId: "artifact-run",
+    });
+    expect(
+      await responsibilities.startStudentRun(other.p, {
+        runId,
+        workflowId: "artifact-run",
+      }),
+    ).toEqual({ status: "gone" });
+    await expect(
+      responsibilities.startStudentRun(principal.fromRun(runId), {
+        runId: randomUUID(),
+        workflowId: "artifact-run",
+      }),
+    ).rejects.toThrow();
+  });
+});

@@ -17,6 +17,7 @@
       "dependencies": {
         "@hono/zod-openapi": "1.6.3",
         "@nunio/ai": "workspace:*",
+        "@nunio/artifacts": "workspace:*",
         "@nunio/billing": "workspace:*",
         "@nunio/db": "workspace:*",
         "@nunio/delegation": "workspace:*",
@@ -25,6 +26,7 @@
         "@nunio/knowledge": "workspace:*",
         "@nunio/outreach": "workspace:*",
         "@nunio/planning": "workspace:*",
+        "@nunio/understanding": "workspace:*",
         "@temporalio/client": "1.25.0",
         "@vercel/functions": "3.10.5",
         "hono": "4.13.14",
@@ -107,6 +109,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@nunio/ai": "workspace:*",
+        "@nunio/artifacts": "workspace:*",
         "@nunio/db": "workspace:*",
         "@nunio/delegation": "workspace:*",
         "@nunio/identity": "workspace:*",
@@ -159,6 +162,24 @@
         "@nunio/typescript-config": "workspace:*",
         "@types/node": "24.19.2",
         "openapi-typescript": "7.13.0",
+        "typescript": "5.9.3",
+        "vitest": "5.0.5",
+      },
+    },
+    "packages/artifacts": {
+      "name": "@nunio/artifacts",
+      "version": "0.0.0",
+      "dependencies": {
+        "@nunio/ai": "workspace:*",
+        "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
+        "@nunio/keys": "workspace:*",
+        "@nunio/knowledge": "workspace:*",
+      },
+      "devDependencies": {
+        "@biomejs/biome": "2.6.3",
+        "@nunio/typescript-config": "workspace:*",
+        "@types/node": "24.19.2",
         "typescript": "5.9.3",
         "vitest": "5.0.5",
       },
@@ -387,6 +408,14 @@
     "packages/understanding": {
       "name": "@nunio/understanding",
       "version": "0.0.0",
+      "dependencies": {
+        "@nunio/ai": "workspace:*",
+        "@nunio/artifacts": "workspace:*",
+        "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
+        "@nunio/keys": "workspace:*",
+        "@nunio/knowledge": "workspace:*",
+      },
       "devDependencies": {
         "@biomejs/biome": "2.6.3",
         "@nunio/typescript-config": "workspace:*",
@@ -818,6 +847,8 @@
     "@nunio/api": ["@nunio/api@workspace:apps/api"],
 
     "@nunio/api-client": ["@nunio/api-client@workspace:packages/api-client"],
+
+    "@nunio/artifacts": ["@nunio/artifacts@workspace:packages/artifacts"],
 
     "@nunio/billing": ["@nunio/billing@workspace:packages/billing"],
 

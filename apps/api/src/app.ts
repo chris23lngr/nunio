@@ -1,5 +1,6 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { Answerer, Estimator } from "@nunio/ai";
+import type { Artifacts } from "@nunio/artifacts";
 import { pilotStatus } from "@nunio/billing";
 import type { PrismaClient } from "@nunio/db";
 import type { Delegation, Responsibilities } from "@nunio/delegation";
@@ -8,7 +9,9 @@ import type { Auth } from "@nunio/identity";
 import type { Chats, Facts, Projects, Sources } from "@nunio/knowledge";
 import type { Outreach } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
+import type { Understanding } from "@nunio/understanding";
 import { registerApprovalRoutes } from "./approvals.js";
+import type { ArtifactWorkflows } from "./artifact-workflows.js";
 import { registerChatRoutes } from "./chats.js";
 import { registerHomeRoutes } from "./home.js";
 import {
@@ -23,6 +26,7 @@ import { registerReviewRoutes } from "./review.js";
 import type { RunWorkflows } from "./run-workflows.js";
 import type { SourceWorkflows } from "./source-workflows.js";
 import { registerSourceRoutes } from "./sources.js";
+import { registerStudyRoutes } from "./study.js";
 
 export interface AppBindings {
   Variables: {
@@ -40,6 +44,9 @@ export interface AppBindings {
     responsibilities: Responsibilities;
     runWorkflows: RunWorkflows;
     outreach: Outreach;
+    artifacts: Artifacts;
+    artifactWorkflows: ArtifactWorkflows;
+    understanding: Understanding;
   };
 }
 
@@ -211,3 +218,4 @@ registerResponsibilityRoutes(routes);
 registerInboxRoutes(routes);
 registerOutreachSettingsRoutes(routes);
 registerPushRoutes(routes);
+registerStudyRoutes(routes);

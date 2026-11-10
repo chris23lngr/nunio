@@ -7,6 +7,7 @@ import { payloadCodecFromEnv } from "@nunio/keys";
 import { Client, Connection } from "@temporalio/client";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import { createActivities } from "./activities.js";
+import { createArtifactActivities } from "./artifact-activities.js";
 import { createDecisionNotifier } from "./decision-notifier.js";
 import { log } from "./log.js";
 import { ensureOutreachSchedule } from "./outreach-schedule.js";
@@ -39,6 +40,7 @@ const workflows = existsSync(here("./workflow-bundle.js"))
     };
 
 const sourceActivities = createSourceActivities(process.env);
+const artifactActivities = createArtifactActivities(process.env);
 
 // The reconcile and outreach Schedules live in Temporal; creating them again on each start is a no-op.
 const clientConnection = await Connection.connect({
@@ -65,6 +67,7 @@ const worker = await Worker.create({
   activities: {
     ...createActivities({ parserUrl: `http://${required("PARSER_HOSTPORT")}` }),
     ...sourceActivities.activities,
+    ...artifactActivities.activities,
     ...runActivities.activities,
   },
   dataConverter: { payloadCodecs: [codec] },
@@ -76,6 +79,7 @@ try {
   await worker.run();
 } finally {
   await sourceActivities.close();
+  await artifactActivities.close();
   await runActivities.close();
   await clientConnection.close();
 }

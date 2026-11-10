@@ -83,8 +83,20 @@ A slot of time in the student's calendar that nunio created for study work. Cale
 _Avoid_: Session, time block, event
 
 **Artifact**:
-A piece of work nunio produced, such as a practice set, a draft, or flashcards. An Artifact is never evidence of the student's understanding.
+A piece of work nunio produced in a Run, such as a practice set, a draft, or flashcards. It stays an Artifact when the student edits it. An Artifact is never Evidence of the student's understanding.
 _Avoid_: Output, result, deliverable, generation
+
+**Own Work**:
+Work the student produced themselves toward an Obligation, such as their handwritten solutions to a problem set. Own Work is never an Artifact and never Evidence.
+_Avoid_: Draft, homework, student artifact
+
+**Critique**:
+nunio's comments on Own Work or an Artifact before it is handed in. A Critique is not Feedback and never Evidence.
+_Avoid_: Review, Feedback, correction
+
+**AI-use Rule**:
+A Course's or Obligation's rule on whether the student may use AI for assessed work: forbidden, allowed with conditions, or allowed. It is a Fact, and one on the Obligation wins over the Course's; while it is unknown, nunio asks before drafting or giving a Critique.
+_Avoid_: AI policy, academic integrity rule, AI permission
 
 ### Planning
 
@@ -153,7 +165,7 @@ The external place where an Obligation is handed in, such as a specific Moodle c
 _Avoid_: Target, channel, endpoint
 
 **Submission**:
-The Action of handing in an Artifact to a Destination.
+The Action of handing in the student's work for an Obligation, Own Work or an Artifact, to a Destination.
 _Avoid_: Upload, delivery, hand-in
 
 **Handoff**:
@@ -170,24 +182,28 @@ _Avoid_: Done, completed, submitted
 A unit of Course content the student is expected to understand, such as "uniform convergence". Topics are Facts: extracted with Provenance and correctable by the student.
 _Avoid_: Concept, learning objective, skill, chapter
 
+**Practice Item**:
+One question about one or more Topics, from a practice set nunio produced or from the student's own Sources, such as a problem from an old exam.
+_Avoid_: Question, exercise, task, card
+
 **Attempt**:
-The student's own answer to a practice item.
+The student's own answer to a Practice Item, given in nunio. Flashcards reviewed outside nunio produce no Attempts.
 _Avoid_: Answer, response, submission, try
 
 **Feedback**:
-nunio's assessment of an Attempt.
-_Avoid_: Grade, score, correction, evaluation
+nunio's assessment of an Attempt. Only Attempts get Feedback.
+_Avoid_: Grade, score, correction, evaluation, Critique
 
 **Self-assessment**:
 The student's own statement about how well they understand a Topic.
 _Avoid_: Confidence rating, self-report, reflection
 
 **Evidence**:
-Anything that tells nunio something about the student's understanding of a Topic: an Attempt, a Self-assessment, or an external grade. An external grade on work nunio helped produce counts only with that caveat attached; an Artifact on its own is never Evidence.
+Anything that tells nunio something about the student's understanding: an Attempt or a Self-assessment, which concern Topics, or an external grade, which concerns a Course. An external grade on work nunio helped produce counts only with that caveat attached; an Artifact, Own Work, or a Critique is never Evidence.
 _Avoid_: Proof, signal, data point
 
 **Understanding Level**:
-A deliberately coarse judgment of the student's understanding of one Topic, drawn from Evidence: not yet practiced, shaky, solid, or disputed when Self-assessment and Attempts disagree. It never fades on its own; it always shows when Evidence last supported it.
+A deliberately coarse judgment of the student's understanding of one Topic: not yet practiced until there is an Attempt; then shaky or solid as the Attempts show, the most recent counting most; or disputed when Self-assessment and Attempts disagree, in either direction. Only Attempts move it; a Self-assessment alone sits beside it and external grades never set it. It never fades on its own; it always shows when Evidence last supported it.
 _Avoid_: Mastery, score, progress, proficiency
 
 ### Outreach
@@ -235,11 +251,11 @@ The state of a Responsibility stopped for good: its Grants are gone and its hist
 _Avoid_: Revoked, cancelled, deleted, archived, completed
 
 **Run**:
-A single, bounded execution of Agent work, started either from a Chat or by a Responsibility. Reading or deleting a Source is never a Run.
+A single, bounded execution of Agent work, started either by the student, such as from a Chat, or by a Responsibility. Reading or deleting a Source is never a Run.
 _Avoid_: Job, task, session
 
 **Action**:
-One concrete effect a Run has on the student's plan or outside world, such as creating a study block or submitting an artifact. Messages nunio sends the student, such as Interventions and Briefings, are not Actions.
+One concrete effect a Run has on the student's plan or outside world, such as creating a study block or submitting an artifact. Messages nunio sends the student, such as Interventions and Briefings, are not Actions, and neither is making an Artifact.
 _Avoid_: Operation, step, tool call
 
 **Approval**:

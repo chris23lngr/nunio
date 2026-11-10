@@ -84,14 +84,19 @@ model Run {
   id               String          @id
   studentId        String
   student          User            @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  /// Null for a Run started from a Chat, which has no Grants.
+  /// Null for a Run the student started, which has no Grants.
   responsibilityId String?
   responsibility   Responsibility? @relation(fields: [responsibilityId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// The Chat a student's Run was started from, if any.
+  chatId           String?
+  chat             Chat?           @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
   /// The Temporal workflow running it, which the API signals once the student decides on one of its Actions.
   workflowId       String?
   startedAt        DateTime        @default(now())
 
-  actions Action[]
+  actions  Action[]
+  pin      RunPin?
+  artifact Artifact?
 
   @@unique([id, studentId])
   @@index([studentId])

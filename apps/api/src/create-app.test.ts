@@ -2,7 +2,16 @@ import { execFile } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import type { Answerer, AnswerInput, Embedder, Estimator } from "@nunio/ai";
+import type {
+  Answerer,
+  AnswerInput,
+  Embedder,
+  Estimator,
+  Grader,
+  Maker,
+} from "@nunio/ai";
+import type { Artifacts } from "@nunio/artifacts";
+import { createArtifacts } from "@nunio/artifacts";
 import type { Pool, PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -30,8 +39,10 @@ import {
 } from "@nunio/knowledge";
 import { createOutreach } from "@nunio/outreach";
 import { createPlan } from "@nunio/planning";
+import { createUnderstanding } from "@nunio/understanding";
 import { hashPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { ArtifactWorkflows } from "./artifact-workflows.js";
 import { createApp } from "./create-app.js";
 import type { RunWorkflows } from "./run-workflows.js";
 
@@ -57,6 +68,58 @@ let sources: Sources;
 let facts: Facts;
 let delegation: Delegation;
 let responsibilities: Responsibilities;
+let artifacts: Artifacts;
+/** The Artifact Runs the API asked to start, by run ID; the worker would then make each. */
+const artifactRuns: string[] = [];
+const artifactWorkflows: ArtifactWorkflows = {
+  start: async (runId) => void artifactRuns.push(runId),
+};
+const maker: Maker = {
+  estimateMicroUsd: () => 1,
+  practiceSet: async (input) => ({
+    value: {
+      items: [
+        {
+          id: "1",
+          topicIds: [input.topics[0]!.id],
+          question: "Was kommt in der Klausur dran? [S1]",
+          answer: "Konvergenz [S1].",
+          cited: ["S1"],
+        },
+      ],
+    },
+    usage: { microUsd: 1 },
+  }),
+  flashcards: async (input) => ({
+    value: {
+      cards: [
+        {
+          id: "1",
+          topicIds: [input.topics[0]!.id],
+          front: "Klausur",
+          back: "Gleichmäßige Konvergenz\nund mehr [S1].",
+          cited: ["S1"],
+        },
+      ],
+    },
+    usage: { microUsd: 1 },
+  }),
+  draft: async () => ({
+    value: { text: "Entwurf [S1].", cited: ["S1"] },
+    usage: { microUsd: 1 },
+  }),
+  critique: async () => ({
+    value: { text: "Kritik [S1].", cited: ["S1"] },
+    usage: { microUsd: 1 },
+  }),
+};
+const grader: Grader = {
+  estimateMicroUsd: () => 1,
+  grade: async () => ({
+    value: { verdict: "correct", text: "Richtig [S1].", cited: ["S1"] },
+    usage: { microUsd: 1 },
+  }),
+};
 /** What the API asked of Responsibility Schedules, and which Runs it woke, in order. */
 const scheduled: string[] = [];
 const signalled: { workflowId: string; runId: string; actionId: string }[] = [];
@@ -188,7 +251,29 @@ beforeAll(async () => {
     schedules,
     clock: { now: () => new Date() },
   });
+  artifacts = createArtifacts({
+    db: prisma,
+    keys,
+    reader,
+    facts,
+    responsibilities,
+    delegation,
+    maker,
+    clock: { now: () => new Date() },
+  });
   app = createApp({
+    artifacts,
+    artifactWorkflows,
+    understanding: createUnderstanding({
+      db: prisma,
+      keys,
+      artifacts,
+      reader,
+      facts,
+      delegation,
+      grader,
+      clock: { now: () => new Date() },
+    }),
     responsibilities,
     runWorkflows,
     auth,
@@ -1405,6 +1490,63 @@ it("enters an Obligation by hand, refusing invalid entries, Courses that are not
     (await enter({ ...exam, kind: "assignment", title: "Blatt 3" })).status,
   ).toBe(409);
   expect((await enter(exam)).status).toBe(201);
+});
+
+it("tells which AI-use Rule applies, takes the student's own answer, and records Reported as Submitted", async () => {
+  const { cookie, headers } = await reviewFixture("review-ai-use");
+  const obligations = async () =>
+    (
+      (await (
+        await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })
+      ).json()) as {
+        courses: {
+          obligations: { id: string; reportedSubmittedAt: string | null }[];
+        }[];
+      }
+    ).courses[0]!.obligations;
+  const sheet = (await obligations())[0]!.id;
+  const aiUse = async (id = sheet) => {
+    const response = await app.request(
+      `${apiOrigin}/api/me/obligations/${id}/ai-use`,
+      { headers: { cookie } },
+    );
+    return [response.status, await response.json()];
+  };
+  const post = (path: string, body: unknown, origin = appOrigin) =>
+    app.request(`${apiOrigin}/api/me/obligations/${sheet}/${path}`, {
+      method: "POST",
+      headers: { ...headers, origin },
+      body: JSON.stringify(body),
+    });
+
+  expect(await aiUse()).toEqual([200, { status: "unknown", reason: "none" }]);
+  expect((await aiUse(randomUUID()))[0]).toBe(404);
+  const answer = { level: "course", value: "forbidden" };
+  expect((await post("ai-use", answer, evilOrigin)).status).toBe(403);
+  expect((await post("ai-use", { ...answer, value: "maybe" })).status).toBe(
+    400,
+  );
+  expect((await post("ai-use", answer)).status).toBe(200);
+  expect(await aiUse()).toEqual([
+    200,
+    {
+      status: "forbidden",
+      level: "course",
+      text: null,
+      provenance: { kind: "correction" },
+    },
+  ]);
+
+  expect((await post("reported-submitted", { reported: true })).status).toBe(
+    200,
+  );
+  expect((await obligations())[0]!.reportedSubmittedAt).toEqual(
+    expect.any(String),
+  );
+  expect((await post("reported-submitted", { reported: false })).status).toBe(
+    200,
+  );
+  expect((await obligations())[0]!.reportedSubmittedAt).toBeNull();
 });
 
 it("corrects, keeps, uses and restores review items, refusing invalid Corrections and unknown values", async () => {
@@ -3008,5 +3150,374 @@ describe("a Briefing's Approvals", () => {
       },
     );
     expect(await stateNow()).toBe("denied");
+  });
+});
+
+/** A student with Analysis I: a Topic "Klausur" and problem sheet 3, handed in on Moodle, from one ready Source. */
+async function studyFixture(name: string) {
+  const cookie = await signUp(name);
+  const p = principal.fromSession({ studentId: await studentId(cookie) });
+  const upload = await sources.upload(p, {
+    title: "Skript.pdf",
+    bytes: 100,
+    type: "application/pdf",
+  });
+  if (upload.status !== "ok") throw new Error("upload refused");
+  await sources.complete(p, upload.source.id);
+  const pages = [
+    "MA-101 Analysis I",
+    "Klausur: gleichmäßige Konvergenz.",
+    "Blatt 3 zur Klausur, Abgabe über Moodle.",
+  ];
+  await sources.ingest(p, upload.source.id, {
+    delegation,
+    parse: async () => ({
+      pages: pages.map((text, i) => ({ page: i + 1, text })),
+    }),
+    embedder: chatEmbedder,
+    scans: {
+      estimateMicroUsd: () => 1,
+      read: async () => ({ text: "", usage: { microUsd: 1 } }),
+    },
+  });
+  await facts.extract(p, upload.source.id, {
+    delegation,
+    extractor: {
+      model: "test",
+      windows: (all) => [[...all]],
+      estimateMicroUsd: () => 1,
+      extract: async () => ({
+        usage: { microUsd: 1 },
+        value: {
+          courses: [
+            {
+              code: "MA-101",
+              title: "Analysis I",
+              page: 1,
+              quote: "MA-101 Analysis I",
+            },
+          ],
+          obligations: [
+            {
+              course: "MA-101",
+              kind: "assignment",
+              title: "Blatt 3 zur Klausur",
+              key: "Blatt 3",
+              destination: "Moodle",
+              due: { date: "2026-11-20", time: null, timeZone: null, text: "" },
+              page: 3,
+              quote: "Blatt 3 zur Klausur, Abgabe über Moodle.",
+              uncertainty: null,
+            },
+          ],
+          facts: [
+            {
+              course: "MA-101",
+              type: "topic",
+              key: "Klausur",
+              value: "Klausur",
+              page: 2,
+              quote: "Klausur",
+              uncertainty: null,
+            },
+          ],
+        },
+      }),
+    },
+  });
+  const course = (await facts.review(p)).courses[0]!;
+  await facts.decideCourse(p, course.id, "accept");
+  const headers = {
+    cookie,
+    origin: appOrigin,
+    "content-type": "application/json",
+  };
+  const send = (path: string, body: unknown, origin = appOrigin) =>
+    app.request(`${apiOrigin}${path}`, {
+      method: "POST",
+      headers: { ...headers, origin },
+      body: JSON.stringify(body),
+    });
+  const get = (path: string) =>
+    app.request(`${apiOrigin}${path}`, { headers: { cookie } });
+  return {
+    cookie,
+    send,
+    get,
+    courseId: course.id,
+    topicId: course.facts[0]!.id,
+    sheetId: course.obligations[0]!.id,
+    selection: { selection: { courseIds: [course.id], sourceIds: [] } },
+  };
+}
+
+describe("study execution", () => {
+  it("starts an Artifact's Run on request, and shows the Artifact ready on Home until it is opened", async () => {
+    const s = await studyFixture("study-request");
+    const body = {
+      kind: "practice_set",
+      topicIds: [s.topicId],
+      from: s.selection,
+    };
+
+    expect((await s.send("/api/me/artifacts", body, evilOrigin)).status).toBe(
+      403,
+    );
+    expect((await app.request(`${apiOrigin}/api/me/artifacts`)).status).toBe(
+      401,
+    );
+    const requested = await s.send("/api/me/artifacts", body);
+    expect(requested.status).toBe(202);
+    const { artifactId, runId } = (await requested.json()) as {
+      artifactId: string;
+      runId: string;
+    };
+    expect(artifactRuns).toContain(runId);
+    // As the worker's Activity would, once the Run starts.
+    expect(await artifacts.make(runId)).toBe("ready");
+
+    const home = async () =>
+      ((await (await s.get("/api/me/home")).json()) as { artifacts: unknown[] })
+        .artifacts;
+    expect(await home()).toEqual([
+      expect.objectContaining({ id: artifactId, kind: "practice_set" }),
+    ]);
+    const ready = await s.get("/api/me/artifacts?ready=true");
+    expect(await ready.json()).toEqual([
+      expect.objectContaining({ id: artifactId, status: "ready" }),
+    ]);
+    const opened = await s.get(`/api/me/artifacts/${artifactId}`);
+    expect([opened.status, await opened.json()]).toEqual([
+      200,
+      expect.objectContaining({
+        id: artifactId,
+        content: {
+          items: [
+            expect.objectContaining({
+              question: "Was kommt in der Klausur dran? [S1]",
+              citations: [
+                {
+                  tag: "S1",
+                  provenance: expect.objectContaining({ kind: "source" }),
+                },
+              ],
+            }),
+          ],
+        },
+      }),
+    ]);
+    expect(await home()).toEqual([]);
+    const other = await studyFixture("study-request-other");
+    expect((await other.get(`/api/me/artifacts/${artifactId}`)).status).toBe(
+      404,
+    );
+  });
+
+  it("refuses to draft with 409 and the reason until the student answers the AI-use Rule, and 404 for another student's Obligation", async () => {
+    const s = await studyFixture("study-ai-use");
+    const draft = {
+      kind: "draft",
+      obligationId: s.sheetId,
+      instructions: "Nur Aufgabe 1.",
+      from: s.selection,
+    };
+    const runs = artifactRuns.length;
+
+    const refused = await s.send("/api/me/artifacts", draft);
+    expect([refused.status, await refused.json()]).toEqual([
+      409,
+      { error: "ai_use_unknown" },
+    ]);
+    expect(artifactRuns).toHaveLength(runs);
+    expect(
+      (
+        await s.send(`/api/me/obligations/${s.sheetId}/ai-use`, {
+          level: "course",
+          value: "allowed",
+        })
+      ).status,
+    ).toBe(200);
+    expect((await s.send("/api/me/artifacts", draft)).status).toBe(202);
+    const other = await studyFixture("study-ai-use-other");
+    expect((await other.send("/api/me/artifacts", draft)).status).toBe(404);
+  });
+
+  it("saves a student's edit of flashcards as a new version, and downloads them for Anki", async () => {
+    const s = await studyFixture("study-anki");
+    const requested = await s.send("/api/me/artifacts", {
+      kind: "flashcards",
+      topicIds: [s.topicId],
+      from: s.selection,
+    });
+    const { artifactId, runId } = (await requested.json()) as {
+      artifactId: string;
+      runId: string;
+    };
+    await artifacts.make(runId);
+    const edit = {
+      baseVersion: 1,
+      content: { cards: [{ id: "1", front: "Klausur", back: "Kürzer." }] },
+    };
+
+    const edited = await s.send(
+      `/api/me/artifacts/${artifactId}/versions`,
+      edit,
+    );
+    expect([edited.status, await edited.json()]).toEqual([201, { version: 2 }]);
+    const stale = await s.send(
+      `/api/me/artifacts/${artifactId}/versions`,
+      edit,
+    );
+    expect([stale.status, await stale.json()]).toEqual([
+      409,
+      { error: "stale" },
+    ]);
+    const download = await s.get(`/api/me/artifacts/${artifactId}/anki.tsv`);
+    expect(download.status).toBe(200);
+    expect(download.headers.get("content-type")).toBe(
+      "text/tab-separated-values; charset=utf-8",
+    );
+    expect(download.headers.get("content-disposition")).toMatch(
+      /^attachment; filename="nunio-flashcards-\d{4}-\d{2}-\d{2}\.tsv"$/,
+    );
+    expect((await download.text()).split("\n").slice(6, 7)).toEqual([
+      `Klausur\tKürzer.\tKlausur\tnunio-${artifactId}-1`,
+    ]);
+    const other = await studyFixture("study-anki-other");
+    expect(
+      (await other.get(`/api/me/artifacts/${artifactId}/anki.tsv`)).status,
+    ).toBe(404);
+  });
+
+  it("grades the student's Attempts, records Self-assessments, and shows each Topic's Level and Evidence", async () => {
+    const s = await studyFixture("study-practice");
+    const requested = await s.send("/api/me/artifacts", {
+      kind: "practice_set",
+      topicIds: [s.topicId],
+      from: s.selection,
+    });
+    const { artifactId, runId } = (await requested.json()) as {
+      artifactId: string;
+      runId: string;
+    };
+    await artifacts.make(runId);
+    const levels = async () =>
+      (await s.get(`/api/me/courses/${s.courseId}/levels`)).json();
+
+    const attempted = await s.send("/api/me/attempts", {
+      artifactId,
+      itemId: "1",
+      text: "Konvergenz.",
+    });
+    const body = (await attempted.json()) as {
+      status: string;
+      attempt: { id: string };
+    };
+    expect([attempted.status, body]).toEqual([
+      201,
+      {
+        status: "graded",
+        attempt: expect.objectContaining({
+          text: "Konvergenz.",
+          verdict: "correct",
+          feedback: expect.objectContaining({ text: "Richtig [S1]." }),
+        }),
+      },
+    ]);
+    expect(await levels()).toEqual([
+      expect.objectContaining({ topicId: s.topicId, level: "shaky" }),
+    ]);
+    expect(
+      (
+        await s.send(`/api/me/topics/${s.topicId}/self-assessment`, {
+          level: "solid",
+        })
+      ).status,
+    ).toBe(200);
+    expect(await levels()).toEqual([
+      expect.objectContaining({
+        level: "disputed",
+        fromAttempts: "shaky",
+        selfAssessment: "solid",
+      }),
+    ]);
+    expect(
+      await (await s.get(`/api/me/topics/${s.topicId}/evidence`)).json(),
+    ).toEqual([
+      expect.objectContaining({ kind: "self_assessment", level: "solid" }),
+      expect.objectContaining({ kind: "attempt" }),
+    ]);
+    const regraded = await s.send(
+      `/api/me/attempts/${body.attempt.id}/grade`,
+      {},
+    );
+    expect([regraded.status, await regraded.json()]).toEqual([
+      200,
+      expect.objectContaining({ id: body.attempt.id, verdict: "correct" }),
+    ]);
+
+    const other = await studyFixture("study-practice-other");
+    expect(
+      (
+        await other.send("/api/me/attempts", {
+          artifactId,
+          itemId: "1",
+          text: "Fremd.",
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await other.send(`/api/me/topics/${s.topicId}/self-assessment`, {
+          level: "solid",
+        })
+      ).status,
+    ).toBe(404);
+  });
+
+  it("prepares a Handoff with the Destination, the AI-use Rule and the student's drafts, and shows it reported", async () => {
+    const s = await studyFixture("study-handoff");
+    await s.send(`/api/me/obligations/${s.sheetId}/ai-use`, {
+      level: "obligation",
+      value: "conditional",
+    });
+    const requested = await s.send("/api/me/artifacts", {
+      kind: "draft",
+      obligationId: s.sheetId,
+      instructions: "Aufgabe 1.",
+      conditionsConfirmed: true,
+      from: s.selection,
+    });
+    const { artifactId, runId } = (await requested.json()) as {
+      artifactId: string;
+      runId: string;
+    };
+    await artifacts.make(runId);
+    await s.send(`/api/me/obligations/${s.sheetId}/reported-submitted`, {
+      reported: true,
+    });
+
+    const handoff = await s.get(`/api/me/obligations/${s.sheetId}/handoff`);
+
+    expect([handoff.status, await handoff.json()]).toEqual([
+      200,
+      {
+        obligation: expect.objectContaining({
+          id: s.sheetId,
+          title: "Blatt 3 zur Klausur",
+          destination: "Moodle",
+          reportedSubmittedAt: expect.any(String),
+        }),
+        rule: expect.objectContaining({
+          status: "conditional",
+          level: "obligation",
+        }),
+        drafts: [expect.objectContaining({ id: artifactId, version: 1 })],
+      },
+    ]);
+    const other = await studyFixture("study-handoff-other");
+    expect(
+      (await other.get(`/api/me/obligations/${s.sheetId}/handoff`)).status,
+    ).toBe(404);
   });
 });

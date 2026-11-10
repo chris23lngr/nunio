@@ -91,6 +91,12 @@ const PlanView = z
           "other",
         ]),
         state: z.enum(["unreviewed", "confirmed", "rejected"]),
+        reportedSubmittedAt: z
+          .date()
+          .nullable()
+          .describe(
+            "Reported as Submitted: the student's word, never verified; such work is no longer planned.",
+          ),
         due: z.date().nullable(),
         estimate: Estimate.nullable(),
       }),

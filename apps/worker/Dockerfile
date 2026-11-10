@@ -33,6 +33,7 @@ FROM runtime
 COPY --from=deps --chown=node:node /app .
 COPY --from=builder --chown=node:node /app/apps/worker/dist ./apps/worker/dist
 COPY --from=builder --chown=node:node /app/packages/ai/dist ./packages/ai/dist
+COPY --from=builder --chown=node:node /app/packages/artifacts/dist ./packages/artifacts/dist
 COPY --from=builder --chown=node:node /app/packages/db/dist ./packages/db/dist
 COPY --from=builder --chown=node:node /app/packages/delegation/dist ./packages/delegation/dist
 COPY --from=builder --chown=node:node /app/packages/identity/dist ./packages/identity/dist

@@ -8,6 +8,7 @@ import {
   Unsupported,
 } from "@nunio/db";
 import { principal } from "@nunio/delegation";
+import { aiUseClasses } from "@nunio/knowledge";
 import type { AppBindings } from "./app.js";
 
 const Provenance = z.discriminatedUnion("kind", [
@@ -53,6 +54,10 @@ const Obligation = z
   .object({
     ...item,
     kind: z.enum(ObligationKind),
+    reportedSubmittedAt: z
+      .date()
+      .nullable()
+      .describe("Reported as Submitted: the student's word, never verified."),
     title: z.string(),
     due: Due.extend({
       text: z
@@ -113,6 +118,34 @@ const itemParams = {
   id: z.string().uuid(),
 };
 const Done = json(z.object({ status: z.literal("ok") }), "Recorded.");
+export const AiUse = z
+  .discriminatedUnion("status", [
+    z.object({
+      status: z.literal("unknown"),
+      reason: z.enum(["none", "uncertain", "disagreement"]),
+    }),
+    z.object({
+      status: z.enum(aiUseClasses),
+      level: z.enum(["obligation", "course"]),
+      text: z
+        .string()
+        .nullable()
+        .describe(
+          "The rule as its Source words it; null for the student's own.",
+        ),
+      provenance: z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("correction") }),
+        z.object({ kind: z.literal("entry") }),
+        z.object({
+          kind: z.literal("source"),
+          sourceId: z.string(),
+          title: z.string(),
+          page: z.number().int(),
+        }),
+      ]),
+    }),
+  ])
+  .openapi("AiUse");
 
 export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
@@ -373,6 +406,107 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
       if (result.status === "gone") return c.json({ error: "gone" }, 404);
       if (result.status === "exists") return c.json({ error: "exists" }, 409);
       return c.json({ id: result.id }, 201);
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/obligations/{id}/ai-use",
+      description:
+        "The AI-use Rule that applies: the Obligation's own, else its Course's. While unknown, ask the student.",
+      request: { params: z.object({ id: z.string().uuid() }) },
+      responses: { 200: json(AiUse, "The rule that applies."), ...errors },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const result = await c
+        .get("facts")
+        .aiUse(principal.fromSession(actor), c.req.valid("param").id);
+      if (result === "gone") return c.json({ error: "gone" }, 404);
+      return c.json(result, 200);
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/obligations/{id}/ai-use",
+      description:
+        "The student's own answer: the AI-use Rule for this Obligation, or for its whole Course.",
+      request: {
+        params: z.object({ id: z.string().uuid() }),
+        body: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: z
+                .object({
+                  level: z.enum(["obligation", "course"]),
+                  value: z.enum(aiUseClasses),
+                })
+                .strict(),
+            },
+          },
+        },
+      },
+      responses: { 200: Done, ...errors },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const result = await c
+        .get("facts")
+        .enterRule(principal.fromSession(actor), {
+          obligationId: c.req.valid("param").id,
+          ...c.req.valid("json"),
+        });
+      if (result.status === "gone") return c.json({ error: "gone" }, 404);
+      return c.json({ status: "ok" as const }, 200);
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/obligations/{id}/reported-submitted",
+      description:
+        "Reported as Submitted, or taken back: the student says they handed it in through a Handoff.",
+      request: {
+        params: z.object({ id: z.string().uuid() }),
+        body: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: z.object({ reported: z.boolean() }).strict(),
+            },
+          },
+        },
+      },
+      responses: {
+        200: Done,
+        409: json(
+          ErrorBody,
+          "Nothing is handed in for an exam or registration.",
+        ),
+        ...errors,
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const result = await c
+        .get("facts")
+        .reportSubmitted(
+          principal.fromSession(actor),
+          c.req.valid("param").id,
+          c.req.valid("json").reported,
+        );
+      if (result.status === "gone") return c.json({ error: "gone" }, 404);
+      if (result.status === "not_handed_in")
+        return c.json({ error: "not_handed_in" }, 409);
+      return c.json({ status: "ok" as const }, 200);
     },
   );
 }
