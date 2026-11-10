@@ -220,6 +220,23 @@ function fakeMaker() {
         usage: { microUsd: 20 },
       };
     },
+    async flashcards(input) {
+      inputs.push(input);
+      return {
+        value: {
+          cards: [
+            {
+              id: "1",
+              topicIds: [input.topics[0]!.id],
+              front: "Gleichmäßige Konvergenz",
+              back: "Der Abstand wird überall\ngleichzeitig klein [S1].",
+              cited: ["S1"],
+            },
+          ],
+        },
+        usage: { microUsd: 20 },
+      };
+    },
   };
   return { maker, inputs };
 }
@@ -418,12 +435,14 @@ it("fails once when the Maker fails, and never makes it again", async () => {
   const p = await student();
   const { courseId, topicId } = await courseWithTopic(p);
   let calls = 0;
+  const timedOut = async (): Promise<never> => {
+    calls++;
+    throw new Error("provider timed out");
+  };
   const artifacts = artifactsWith({
     estimateMicroUsd: () => 10,
-    async practiceSet() {
-      calls++;
-      throw new Error("provider timed out");
-    },
+    practiceSet: timedOut,
+    flashcards: timedOut,
   });
   const started = await artifacts.request(p, {
     kind: "practice_set",
@@ -487,4 +506,169 @@ it("fails, keeping nothing, when a Source is deleted while the practice set is b
     version: null,
     content: null,
   });
+});
+
+it("makes flashcards on a Topic from the student's material", async () => {
+  const p = await student();
+  const { sourceId, courseId, topicId } = await courseWithTopic(p);
+  const artifacts = artifactsWith(fakeMaker().maker);
+
+  const started = await artifacts.request(p, {
+    kind: "flashcards",
+    topicIds: [topicId],
+    from: { selection: { courseIds: [courseId], sourceIds: [] } },
+  });
+  if (started.status !== "started") throw new Error(started.status);
+  expect(await artifacts.make(started.runId)).toBe("ready");
+
+  expect(await artifacts.open(p, started.artifactId)).toMatchObject({
+    kind: "flashcards",
+    version: 1,
+    content: {
+      cards: [
+        {
+          id: "1",
+          topicIds: [topicId],
+          front: "Gleichmäßige Konvergenz",
+          back: "Der Abstand wird überall\ngleichzeitig klein [S1].",
+          citations: [
+            {
+              tag: "S1",
+              provenance: { kind: "source", sourceId, title: "Skript" },
+            },
+          ],
+        },
+      ],
+    },
+  });
+});
+
+/** Flashcards on the Skript's Topic, made through the interface. */
+async function flashcardsOf(p: Principal) {
+  const course = await courseWithTopic(p);
+  const artifacts = artifactsWith(fakeMaker().maker);
+  const started = await artifacts.request(p, {
+    kind: "flashcards",
+    topicIds: [course.topicId],
+    from: { selection: { courseIds: [course.courseId], sourceIds: [] } },
+  });
+  if (started.status !== "started") throw new Error(started.status);
+  await artifacts.make(started.runId);
+  return { ...course, artifacts, artifactId: started.artifactId };
+}
+
+it("keeps each edit of a set of flashcards as a new version, refusing a stale edit, a practice set and another student's", async () => {
+  const p = await student();
+  const { artifacts, artifactId, topicId, courseId } = await flashcardsOf(p);
+  const edit = {
+    baseVersion: 1,
+    content: {
+      cards: [
+        { id: "1", front: "Gleichmäßige Konvergenz", back: "Kürzer gesagt." },
+        { front: "Punktweise Konvergenz", back: "Für jedes x einzeln." },
+      ],
+    },
+  };
+
+  expect(await artifacts.edit(p, artifactId, edit)).toEqual({
+    status: "ok",
+    version: 2,
+  });
+  expect(await artifacts.open(p, artifactId)).toMatchObject({
+    version: 2,
+    content: {
+      cards: [
+        {
+          id: "1",
+          topicIds: [topicId],
+          back: "Kürzer gesagt.",
+          citations: [{ tag: "S1" }],
+        },
+        {
+          id: "2",
+          topicIds: [topicId],
+          front: "Punktweise Konvergenz",
+          citations: [],
+        },
+      ],
+    },
+  });
+  expect(await artifacts.open(p, artifactId, 1)).toMatchObject({
+    version: 1,
+    content: {
+      cards: [{ back: "Der Abstand wird überall\ngleichzeitig klein [S1]." }],
+    },
+  });
+  expect(await artifacts.edit(p, artifactId, edit)).toEqual({
+    status: "stale",
+  });
+  expect(await artifacts.edit(await student(), artifactId, edit)).toEqual({
+    status: "gone",
+  });
+
+  const practice = await artifacts.request(p, {
+    kind: "practice_set",
+    topicIds: [topicId],
+    from: { selection: { courseIds: [courseId], sourceIds: [] } },
+  });
+  if (practice.status !== "started") throw new Error(practice.status);
+  await artifacts.make(practice.runId);
+  expect(await artifacts.edit(p, practice.artifactId, edit)).toEqual({
+    status: "not_editable",
+  });
+});
+
+it("exports the latest version of a set of flashcards for Anki, and nothing once withdrawn, for a practice set or for another student", async () => {
+  const p = await student();
+  const { artifacts, artifactId, topicId, courseId, sourceId } =
+    await flashcardsOf(p);
+  await artifacts.edit(p, artifactId, {
+    baseVersion: 1,
+    content: {
+      cards: [
+        { id: "1", front: "Gleichmäßige Konvergenz", back: "Kürzer gesagt." },
+      ],
+    },
+  });
+
+  const exported = await artifacts.exportFlashcards(p, artifactId);
+
+  if (exported === "gone") throw new Error("gone");
+  expect(exported.filename).toMatch(
+    /^nunio-flashcards-\d{4}-\d{2}-\d{2}\.tsv$/,
+  );
+  expect(exported.tsv.split("\n").slice(6)).toEqual([
+    `Gleichmäßige Konvergenz\tKürzer gesagt.\tGleichmäßige_Konvergenz\tnunio-${artifactId}-1`,
+    "",
+  ]);
+  expect(await artifacts.exportFlashcards(await student(), artifactId)).toBe(
+    "gone",
+  );
+  const practice = await artifacts.request(p, {
+    kind: "practice_set",
+    topicIds: [topicId],
+    from: { selection: { courseIds: [courseId], sourceIds: [] } },
+  });
+  if (practice.status !== "started") throw new Error(practice.status);
+  await artifacts.make(practice.runId);
+  expect(await artifacts.exportFlashcards(p, practice.artifactId)).toBe("gone");
+
+  await sources.remove(p, sourceId);
+
+  expect(await artifacts.exportFlashcards(p, artifactId)).toBe("gone");
+  expect(
+    await artifacts.edit(p, artifactId, {
+      baseVersion: 2,
+      content: { cards: [] },
+    }),
+  ).toEqual({ status: "withdrawn" });
+});
+
+it("gives no Practice Item from a set of flashcards, which nothing grades", async () => {
+  const p = await student();
+  const { artifacts, artifactId } = await flashcardsOf(p);
+
+  expect(await artifacts.practiceItem(p, { artifactId, itemId: "1" })).toBe(
+    "gone",
+  );
 });

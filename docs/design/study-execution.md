@@ -55,14 +55,17 @@ export interface Artifacts {
     artifactId: string,
     version?: number,
   ): Promise<ArtifactView | "gone">;
-  /** Drafts and flashcards only. */
+  /** Drafts and flashcards only. A card keeps its ID (and Anki GUID); a card without one is new. */
   edit(
     student: Principal,
     artifactId: string,
-    edit: { baseVersion: number; content: EditableContent },
+    edit: {
+      baseVersion: number;
+      content: { cards: { id?: string; front: string; back: string }[] }; // drafts follow in their PR
+    },
   ): Promise<
     | { status: "ok"; version: number }
-    | { status: "stale" | "withdrawn" | "not_editable" }
+    | { status: "stale" | "withdrawn" | "not_editable" | "gone" }
   >;
   exportFlashcards(
     student: Principal,
@@ -224,7 +227,11 @@ export interface Maker {
     input: PracticeInput, // { topics: { id, name }[]; data; tags }
     options: { signal: AbortSignal },
   ): Promise<{ value: { items: PracticeItem[] }; usage: { microUsd: number } }>;
-  // flashcards, draft and critique follow in their PRs
+  flashcards(
+    input: PracticeInput,
+    options: { signal: AbortSignal },
+  ): Promise<{ value: { cards: Flashcard[] }; usage: { microUsd: number } }>;
+  // draft and critique follow in their PR
 }
 export interface Grader {
   estimateMicroUsd(input: GradeInput): number;
@@ -293,11 +300,11 @@ export interface Grader {
   - the value is the class, and the verbatim quote is the rule text;
   - the match key is `course` for a Course's rule, or `obligation:<the Obligation's matchKey>` for an Obligation's, since Facts belong to a Course;
   - a pure `resolveAiUse(obligationRule, courseRule)` picks the Obligation's rule over the Course's, after the usual merge in which a Correction or entry wins. An uncertain value or an open Disagreement gives `unknown`.
-- **Anki export.** A UTF-8 TSV with file headers:
-  - `#separator:tab`, `#html:false`, `#notetype:Basic`, `#columns:Front	Back	Tags`;
-  - `#guid column` with a stable ID per card, derived from the Artifact and card, so a re-import updates notes instead of duplicating them;
-  - Topic names as tags;
-  - fields containing a tab, newline or quote are quoted, with quotes doubled.
+- **Anki export** (a pure `toAnkiTsv`, following the Anki manual's "Text Files"). A UTF-8 TSV with file headers:
+  - `#separator:Tab`, `#html:false`, `#notetype:Basic`, `#columns:Front	Back	Tags	GUID`, `#tags column:3`, `#guid column:4`;
+  - a GUID per card, `nunio-<artifactId>-<cardId>`, so re-importing an edited version updates the notes instead of duplicating them;
+  - Topic names as tags, their spaces made underscores, since Anki separates tags with spaces;
+  - fields containing a tab, line break or quote are quoted, with quotes doubled.
 
   It exports the latest version. The web shows a preview of the rows as Anki will map them before the download.
 - **Reported as Submitted** is a new `reportedSubmittedAt` on the Obligation. `planning` stops planning an Obligation reported as submitted and raises no Shortfall for it. Home shows it as Reported as Submitted, never as done.

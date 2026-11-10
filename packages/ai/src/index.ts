@@ -30,6 +30,7 @@ export {
 } from "./models.js";
 export {
   createMaker,
+  type Flashcard,
   type Maker,
   type PracticeInput,
   type PracticeItem,

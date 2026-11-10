@@ -115,3 +115,53 @@ it("refuses a practice set the model did not finish", async () => {
     maker.practiceSet(input, { signal: new AbortController().signal }),
   ).rejects.toThrow(/ended early/);
 });
+
+it("makes flashcards from fenced material, keeping only the Topics and tags it was given", async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const maker = makerReplying(
+    bodies,
+    JSON.stringify({
+      cards: [
+        {
+          topicIds: ["topic-1"],
+          front: "Gleichmäßige Konvergenz",
+          back: "Der Abstand zur Grenzfunktion wird überall\ngleichzeitig klein [S1] [S5].",
+        },
+        { topicIds: ["topic-7"], front: "Integral", back: "Fläche" },
+      ],
+    }),
+  );
+
+  const made = await maker.flashcards(input, {
+    signal: new AbortController().signal,
+  });
+
+  expect(made).toEqual({
+    value: {
+      cards: [
+        {
+          id: "1",
+          topicIds: ["topic-1"],
+          front: "Gleichmäßige Konvergenz",
+          back: "Der Abstand zur Grenzfunktion wird überall\ngleichzeitig klein [S1].",
+          cited: ["S1"],
+        },
+      ],
+    },
+    usage: { microUsd: 12_000 },
+  });
+  const [system, ...rest] = (
+    bodies[0] as { messages: { role: string; content: unknown }[] }
+  ).messages;
+  expect(JSON.stringify(system)).not.toContain("<data-1234>");
+  expect(JSON.stringify(rest)).toContain("<data-1234>");
+  expect(JSON.stringify(rest)).toMatch(/<topics-([0-9a-f]{32})>/);
+});
+
+it("refuses flashcards the model did not finish", async () => {
+  const maker = makerReplying([], JSON.stringify({ cards: [] }), "length");
+
+  await expect(
+    maker.flashcards(input, { signal: new AbortController().signal }),
+  ).rejects.toThrow(/ended early/);
+});

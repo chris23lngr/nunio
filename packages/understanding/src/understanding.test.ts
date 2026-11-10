@@ -196,6 +196,10 @@ function fakeMaker() {
         usage: { microUsd: 20 },
       };
     },
+    // Only practice sets are made here.
+    async flashcards() {
+      throw new Error("not used");
+    },
   };
   return { maker, inputs };
 }
