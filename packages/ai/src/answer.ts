@@ -19,7 +19,7 @@ export interface Answerer {
       onText?: (text: string) => void | Promise<void>;
     },
   ): Promise<{
-    value: { text: string; cited: string[] };
+    value: { text: string; cited: string[]; reasoning?: string };
     usage: { microUsd: number };
   }>;
 }
@@ -61,7 +61,16 @@ export function createAnswerer(models: Models): Answerer {
         ],
       };
       const result = await (async () => {
-        if (!onText && !onReasoning) return generateText(options);
+        if (!onText && !onReasoning) {
+          const generated = await generateText(options);
+          return {
+            text: generated.text,
+            finishReason: generated.finishReason,
+            usage: generated.usage,
+            providerMetadata: generated.providerMetadata,
+            reasoning: generated.finalStep.reasoningText,
+          };
+        }
         const streaming = streamText({ ...options, onError: () => {} });
         let finished = false;
         for await (const part of streaming.stream) {
@@ -81,6 +90,7 @@ export function createAnswerer(models: Models): Answerer {
           throw new Error("Missing answer usage");
         return {
           text: await streaming.text,
+          reasoning: (await streaming.finalStep).reasoningText,
           finishReason: await streaming.finishReason,
           usage,
           providerMetadata,
@@ -96,7 +106,11 @@ export function createAnswerer(models: Models): Answerer {
         ...new Set([...text.matchAll(/\[(S\d+)\]/g)].map((match) => match[1]!)),
       ];
       return {
-        value: { text, cited },
+        value: {
+          text,
+          cited,
+          ...(result.reasoning ? { reasoning: result.reasoning } : {}),
+        },
         usage: { microUsd: model.actualMicroUsd(result) },
       };
     },

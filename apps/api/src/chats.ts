@@ -31,6 +31,12 @@ const Message = z
       .describe(
         "Null once a Source the answer drew on is deleted: its wording is removed with that Source.",
       ),
+    reasoning: z
+      .string()
+      .optional()
+      .describe(
+        "Model reasoning, absent for older messages or once a dependent Source is deleted.",
+      ),
     citations: z.array(Citation),
   })
   .openapi("ChatMessage");

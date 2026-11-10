@@ -9,6 +9,7 @@ import {
   MessageFooter,
   Message as MessageRoot,
 } from "@nunio/ui/components/message/message";
+import { Reasoning } from "@nunio/ui/components/reasoning/reasoning";
 import { Copy, Pencil } from "lucide-react";
 import { useState } from "react";
 import { sourceReferences } from "@/features/shared/components/source-citations";
@@ -25,6 +26,9 @@ export function ChatMessage({ message }: { message: Message }) {
       aria-label={student ? "Deine Nachricht" : "Antwort von nunio"}
     >
       <MessageContent>
+        {!student && message.text !== null && message.reasoning && (
+          <Reasoning>{message.reasoning}</Reasoning>
+        )}
         {message.text === null ? (
           <p className="max-w-[647px] text-sm text-base-500">
             Diese Antwort wurde entfernt, weil eine verwendete Quelle gelöscht

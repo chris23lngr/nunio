@@ -317,6 +317,9 @@ model ChatMessage {
   chat        Chat     @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
   role        ChatRole
   content     Bytes
+  /// Reasoning uses its own key with the same Source dependencies as the answer.
+  reasoningContent Bytes?
+  reasoningKey Bytes?
   /// The message key, wrapped under each `derivedFrom` Source's key in order; null when derived from none.
   contentKey  Bytes?
   /// The Sources whose passages the answer was given, in wrapping order.

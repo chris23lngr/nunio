@@ -137,6 +137,7 @@ const schedules: Schedules = {
 /** What the answer model was asked, and what it replies next. */
 const prompts: AnswerInput[] = [];
 let reply = "";
+let reasoningText: string | undefined;
 let finishAnswer: Promise<void> | undefined;
 const answerer: Answerer = {
   estimateMicroUsd: () => 1,
@@ -150,6 +151,7 @@ const answerer: Answerer = {
     return {
       value: {
         text: reply,
+        ...(reasoningText ? { reasoning: reasoningText } : {}),
         cited: [...reply.matchAll(/\[(S\d+)\]/g)].map((m) => m[1]!),
       },
       usage: { microUsd: 1 },
@@ -1666,6 +1668,7 @@ describe("Chat", () => {
       release = resolve;
     });
     reply = "Eine schrittweise Antwort.";
+    reasoningText = "Ich prüfe deine Materialien.";
     try {
       const response = await app.request(
         `${apiOrigin}/api/me/chats/${id}/messages/stream`,
@@ -1711,6 +1714,10 @@ describe("Chat", () => {
           headers: { cookie },
         })
       ).json()) as { text: string }[];
+      expect(history[1]).toHaveProperty(
+        "reasoning",
+        "Ich prüfe deine Materialien.",
+      );
       expect(history.map((message) => message.text)).toEqual([
         "Meine Frage",
         reply,
@@ -1718,6 +1725,7 @@ describe("Chat", () => {
     } finally {
       release();
       finishAnswer = undefined;
+      reasoningText = undefined;
     }
   });
 
@@ -1897,6 +1905,7 @@ describe("Chat", () => {
       "Klausur eines anderen Studenten.",
     );
     reply = "Am 10. Februar [S1].";
+    reasoningText = "Die Quelle nennt den Prüfungstermin.";
     prompts.length = 0;
 
     const created = await app.request(`${apiOrigin}/api/me/chats`, {
@@ -1926,6 +1935,7 @@ describe("Chat", () => {
         }),
         role: "assistant",
         text: "Am 10. Februar [S1].",
+        reasoning: "Die Quelle nennt den Prüfungstermin.",
         citations: [
           {
             tag: "S1",
@@ -1969,11 +1979,13 @@ describe("Chat", () => {
       })
     ).json()) as { id: string };
     reply = "Am 10. Februar [S1].";
+    reasoningText = "Die Quelle nennt den Prüfungstermin.";
     await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
       method: "POST",
       headers,
       body: JSON.stringify({ text: "Wann ist die Klausur?" }),
     });
+    reasoningText = undefined;
     const history = () =>
       app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
         headers: { cookie },
@@ -1992,6 +2004,7 @@ describe("Chat", () => {
         createdAt: expect.any(String),
         role: "assistant",
         text: "Am 10. Februar [S1].",
+        reasoning: "Die Quelle nennt den Prüfungstermin.",
         citations: [
           {
             tag: "S1",
@@ -2010,6 +2023,15 @@ describe("Chat", () => {
     expect(
       stored.some((row) =>
         Buffer.from(row.content).toString("utf8").includes("10. Februar"),
+      ),
+    ).toBe(false);
+    expect(
+      stored.some(
+        (row) =>
+          row.reasoningContent &&
+          Buffer.from(row.reasoningContent)
+            .toString("utf8")
+            .includes("Prüfungstermin"),
       ),
     ).toBe(false);
     await app.request(`${apiOrigin}/api/me/sources/${handbook}`, {

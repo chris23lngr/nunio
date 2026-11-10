@@ -163,6 +163,7 @@ test("reopening a Chat restores its locked selection, title, citations and remov
           id: "a",
           role: "assistant",
           text: "Im Februar [S1].",
+          reasoning: "Ich habe den Termin im Handbuch geprüft.",
           createdAt: "2026-11-10T09:48:00Z",
           citations: [
             {
@@ -193,6 +194,14 @@ test("reopening a Chat restores its locked selection, title, citations and remov
       name: "Quelle S1: Handbuch.pdf, Seite 2",
     }),
   );
+  const completedReasoning = screen.getByRole("button", {
+    name: "Gedankengang",
+  });
+  expect(completedReasoning.getAttribute("aria-expanded")).toBe("false");
+  await userEvent.click(completedReasoning);
+  expect(
+    screen.getByText("Ich habe den Termin im Handbuch geprüft."),
+  ).toBeTruthy();
   const link = await screen.findByRole("link", { name: "Quelle öffnen" });
   expect(link.getAttribute("href")).toBe("/sources/source-1?page=2");
 
@@ -350,6 +359,7 @@ test("renders partial Markdown before accepting the committed answer", async () 
                   id: "answer-1",
                   role: "assistant",
                   text: "Die gespeicherte Antwort.",
+                  reasoning: "Ich prüfe deine Materialien.",
                   createdAt: "2026-11-10T09:48:00Z",
                   citations: [],
                   question: {
@@ -385,7 +395,10 @@ test("renders partial Markdown before accepting the committed answer", async () 
     finish();
   }
   await screen.findByText("Die gespeicherte Antwort.");
-  expect(screen.queryByText("Ich prüfe deine Materialien.")).toBeNull();
+  const reasoning = screen.getByRole("button", { name: "Gedankengang" });
+  expect(reasoning.getAttribute("aria-expanded")).toBe("false");
+  await user.click(reasoning);
+  expect(screen.getByText("Ich prüfe deine Materialien.")).toBeTruthy();
   expect(
     screen.queryByRole("heading", { name: "Schrittweise Antwort" }),
   ).toBeNull();

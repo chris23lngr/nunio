@@ -13,6 +13,7 @@ export type ChatMessage = {
   role: "student" | "assistant";
   /** Null once a Source the answer drew on is deleted: its wording is shredded with that Source. */
   text: string | null;
+  reasoning?: string;
   citations: { tag: string; provenance: Provenance | "gone" }[];
   createdAt: string;
 };
@@ -168,6 +169,15 @@ export function createChats({
           derivedFrom,
           answered.value.text,
         );
+        const reasoning = answered.value.reasoning
+          ? await derived.seal(
+              tx,
+              `${id}:reasoning`,
+              derivedFrom,
+              answered.value.reasoning,
+            )
+          : null;
+        if (answered.value.reasoning && !reasoning) return false;
         // A Source deleted while answering takes the answer with it.
         if (!sealed) return false;
         // One timestamp; the role's enum order keeps the question before its answer.
@@ -188,6 +198,8 @@ export function createChats({
             studentId,
             role: "assistant",
             ...sealed,
+            reasoningContent: reasoning?.content,
+            reasoningKey: reasoning?.contentKey,
             citations: cited,
             createdAt,
           },
@@ -199,6 +211,9 @@ export function createChats({
         id,
         role: "assistant",
         text: answered.value.text,
+        ...(answered.value.reasoning
+          ? { reasoning: answered.value.reasoning }
+          : {}),
         createdAt: createdAt.toISOString(),
         citations: await resolve(p, cited),
       };
@@ -229,11 +244,21 @@ export function createChats({
         if (!chat) return null;
         return Promise.all(
           chat.messages.map(async (message) => {
+            const text = await derived.open(tx, message.id, message);
+            const reasoning =
+              text !== null && message.reasoningContent
+                ? await derived.open(tx, `${message.id}:reasoning`, {
+                    content: message.reasoningContent,
+                    contentKey: message.reasoningKey,
+                    derivedFrom: message.derivedFrom,
+                  })
+                : null;
             return {
               id: message.id,
               createdAt: message.createdAt.toISOString(),
               role: message.role as ChatMessage["role"],
-              text: await derived.open(tx, message.id, message),
+              text,
+              ...(reasoning ? { reasoning } : {}),
               citations: message.citations as Citation[],
             };
           }),
