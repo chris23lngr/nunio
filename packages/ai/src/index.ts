@@ -18,6 +18,7 @@ export {
   isTimeZone,
   type Page,
 } from "./extraction.js";
+export { createGrader, type GradeInput, type Grader } from "./grading.js";
 export {
   createModels,
   type DataHandlingLabel,
