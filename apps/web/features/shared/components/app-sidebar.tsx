@@ -13,6 +13,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   FolderKanban,
+  GraduationCap,
   House,
   Inbox,
   ListChecks,
@@ -30,6 +31,7 @@ const menuItems = [
   { title: "Review", href: "/review", icon: ClipboardCheck },
   { title: "Chat", href: "/chat", icon: MessageSquare },
   { title: "Plan", href: "/plan", icon: CalendarDays },
+  { title: "Study", href: "/study", icon: GraduationCap },
   { title: "Projects", href: "/projects", icon: FolderKanban },
   { title: "Responsibilities", href: "/responsibilities", icon: ListChecks },
 ];
