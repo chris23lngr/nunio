@@ -7,9 +7,44 @@ const none: State = {
   shortfalls: [],
   review: { courses: [] },
   actions: [],
+  pausedForArchivedCourse: [],
 };
 
 describe("causesOf", () => {
+  it("holds no expired Approval from a Responsibility Paused because its Course is Archived", () => {
+    expect(
+      causesOf({
+        ...none,
+        actions: [
+          {
+            id: "a1",
+            status: "refused",
+            refusal: "approval_expired",
+            responsibilityId: "r1",
+          },
+        ],
+        pausedForArchivedCourse: ["r1"],
+      }),
+    ).toEqual([]);
+  });
+
+  it("holds no Disagreement in an Archived Course, since nunio no longer acts for it", () => {
+    expect(
+      causesOf({
+        ...none,
+        review: {
+          courses: [
+            {
+              archived: true,
+              obligations: [{ id: "o1", disagreement: true }],
+              facts: [{ id: "f1", disagreement: true }],
+            },
+          ],
+        },
+      }),
+    ).toEqual([]);
+  });
+
   it.each([
     {
       holds: "a Shortfall before a deadline",
@@ -33,6 +68,7 @@ describe("causesOf", () => {
         review: {
           courses: [
             {
+              archived: false,
               obligations: [{ id: "o1", disagreement: true }],
               facts: [],
             },
@@ -51,6 +87,7 @@ describe("causesOf", () => {
         review: {
           courses: [
             {
+              archived: false,
               obligations: [],
               facts: [{ id: "f1", disagreement: true }],
             },
@@ -92,6 +129,7 @@ describe("causesOf", () => {
         review: {
           courses: [
             {
+              archived: false,
               obligations: [{ id: "o1", disagreement: false }],
               facts: [{ id: "f1", disagreement: false }],
             },

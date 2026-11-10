@@ -57,20 +57,29 @@ export function causeOf(key: string): Cause {
 
 type Flagged = { id: string; disagreement: boolean };
 
-/** The causes that hold now, read from the student's current state. */
+/** The causes that hold now, read from the student's current state. Nothing about an Archived Course raises one. */
 export function causesOf({
   shortfalls,
   review,
   actions,
+  pausedForArchivedCourse,
 }: {
   shortfalls: readonly Shortfall[];
   review: {
     courses: readonly {
+      archived: boolean;
       obligations: readonly Flagged[];
       facts: readonly Flagged[];
     }[];
   };
-  actions: readonly { id: string; status: string; refusal: string | null }[];
+  actions: readonly {
+    id: string;
+    status: string;
+    refusal: string | null;
+    responsibilityId?: string | null;
+  }[];
+  /** Responsibilities Paused because their Course is Archived; their Actions raise nothing. */
+  pausedForArchivedCourse: readonly string[];
 }): Cause[] {
   const disagreement = (on: "obligation" | "fact", { id }: Flagged): Cause => ({
     kind: "disagreement",
@@ -83,22 +92,32 @@ export function causesOf({
         subject: { kind: "work", id: s.workId },
       }),
     ),
-    ...review.courses.flatMap((c) => [
-      ...c.obligations
-        .filter((o) => o.disagreement)
-        .map((o) => disagreement("obligation", o)),
-      ...c.facts
-        .filter((f) => f.disagreement)
-        .map((f) => disagreement("fact", f)),
-    ]),
-    ...actions.flatMap((a): Cause[] => {
-      if (a.status === "refused" && a.refusal === "approval_expired")
-        return [
-          { kind: "approval_expired", subject: { kind: "action", id: a.id } },
-        ];
-      if (a.status === "unconfirmed")
-        return [{ kind: "unconfirmed", subject: { kind: "action", id: a.id } }];
-      return [];
-    }),
+    ...review.courses
+      .filter((c) => !c.archived)
+      .flatMap((c) => [
+        ...c.obligations
+          .filter((o) => o.disagreement)
+          .map((o) => disagreement("obligation", o)),
+        ...c.facts
+          .filter((f) => f.disagreement)
+          .map((f) => disagreement("fact", f)),
+      ]),
+    ...actions
+      .filter(
+        (a) =>
+          !a.responsibilityId ||
+          !pausedForArchivedCourse.includes(a.responsibilityId),
+      )
+      .flatMap((a): Cause[] => {
+        if (a.status === "refused" && a.refusal === "approval_expired")
+          return [
+            { kind: "approval_expired", subject: { kind: "action", id: a.id } },
+          ];
+        if (a.status === "unconfirmed")
+          return [
+            { kind: "unconfirmed", subject: { kind: "action", id: a.id } },
+          ];
+        return [];
+      }),
   ];
 }
