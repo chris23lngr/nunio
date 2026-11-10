@@ -198,13 +198,15 @@ interface Responsibilities {
 
 // Shared by chats, artifacts and understanding (packages/knowledge)
 export interface DerivedText {
+  /** `id` is the record the text belongs to; null when a Source is already gone. */
   seal(
     tx: Transaction,
-    sourceIds: readonly string[],
+    id: string,
+    derivedFrom: readonly string[],
     text: string,
-  ): Promise<Sealed | "gone">;
+  ): Promise<Sealed | null>;
   /** Null once any of its Sources is deleted. */
-  open(tx: Transaction, sealed: Sealed): Promise<string | null>;
+  open(tx: Transaction, id: string, sealed: Sealed): Promise<string | null>;
 }
 
 // In @nunio/ai, beside Answerer and Extractor
@@ -298,7 +300,7 @@ export interface Grader {
 - `artifact_version`: Artifact, `version`, the sealed content, `editedByStudent`, `createdAt`.
 - `artifact_source`: an Artifact's `derivedFrom` Sources, so `list` can tell what's ready or withdrawn without decrypting.
 - `practice_item`: Artifact, `itemId`, Topic IDs. This is plain structure, so Levels need no decryption.
-- `attempt`: student, Artifact and `itemId`, text, `verdict` (null while ungraded), sealed Feedback, `createdAt`.
+- `practice_attempt` (`attempt` already names an Action's dispatch attempt): student, Artifact and `itemId`, text, `verdict` (null while ungraded), sealed Feedback, `createdAt`.
 - `self_assessment`: student, Topic, `level`, `createdAt`; a history, never updated in place.
 - `obligation`: gains `reportedSubmittedAt`. `fact_type` gains `ai_use_rule`.
 
