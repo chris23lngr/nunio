@@ -663,3 +663,12 @@ it("exports the latest version of a set of flashcards for Anki, and nothing once
     }),
   ).toEqual({ status: "withdrawn" });
 });
+
+it("gives no Practice Item from a set of flashcards, which nothing grades", async () => {
+  const p = await student();
+  const { artifacts, artifactId } = await flashcardsOf(p);
+
+  expect(await artifacts.practiceItem(p, { artifactId, itemId: "1" })).toBe(
+    "gone",
+  );
+});

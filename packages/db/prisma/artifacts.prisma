@@ -16,6 +16,7 @@ model Artifact {
   createdAt DateTime  @default(now())
 
   versions ArtifactVersion[]
+  attempts PracticeAttempt[]
 
   @@unique([id, studentId])
   @@unique([runId, studentId])
