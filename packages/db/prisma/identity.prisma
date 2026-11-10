@@ -35,6 +35,8 @@ model User {
   deliveries       Delivery[]
   pushSubscriptions PushSubscription[]
   artifacts        Artifact[]
+  practiceAttempts PracticeAttempt[]
+  selfAssessments  SelfAssessment[]
 
   @@map("user")
 }

@@ -281,6 +281,50 @@ export function createArtifacts({
         )
         .map(({ summary }) => summary);
     },
+    /**
+     * For `understanding` only: one Practice Item with what grading needs, without marking the Artifact opened.
+     * "gone" for another student's, a withdrawn set, or an unknown item.
+     */
+    async practiceItem(
+      student: Principal,
+      ref: { artifactId: string; itemId: string },
+    ): Promise<
+      | {
+          topicIds: string[];
+          question: string;
+          answer: string;
+          citations: Citation[];
+          /** Feedback on it is sealed under the same Sources. */
+          derivedFrom: string[];
+        }
+      | "gone"
+    > {
+      const found = await withOwner(db, student, async (tx) => {
+        const latest = await tx.artifactVersion.findFirst({
+          where: { artifactId: ref.artifactId },
+          orderBy: { version: "desc" },
+        });
+        const text =
+          latest &&
+          (await derived.open(
+            tx,
+            `${ref.artifactId}:${latest.version}`,
+            latest,
+          ));
+        return text && latest
+          ? { stored: JSON.parse(text) as StoredContent, latest }
+          : null;
+      });
+      const item = found?.stored.items.find((i) => i.id === ref.itemId);
+      if (!found || !item) return "gone";
+      return {
+        topicIds: item.topicIds,
+        question: item.question,
+        answer: item.answer,
+        citations: item.citations,
+        derivedFrom: found.latest.derivedFrom,
+      };
+    },
     /** Shows an Artifact and marks it opened; a withdrawn one comes back without content. */
     async open(
       student: Principal,

@@ -235,7 +235,8 @@ model Fact {
   unsupported    Unsupported?
   createdAt      DateTime     @default(now())
 
-  extractions FactExtraction[]
+  extractions     FactExtraction[]
+  selfAssessments SelfAssessment[]
 
   @@unique([id, studentId])
   @@unique([courseId, type, matchKey])

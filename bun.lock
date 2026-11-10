@@ -397,6 +397,14 @@
     "packages/understanding": {
       "name": "@nunio/understanding",
       "version": "0.0.0",
+      "dependencies": {
+        "@nunio/ai": "workspace:*",
+        "@nunio/artifacts": "workspace:*",
+        "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
+        "@nunio/keys": "workspace:*",
+        "@nunio/knowledge": "workspace:*",
+      },
       "devDependencies": {
         "@biomejs/biome": "2.6.3",
         "@nunio/typescript-config": "workspace:*",

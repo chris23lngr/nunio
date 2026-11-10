@@ -115,29 +115,37 @@ export type Refusal =
 
 export type PracticeItem = {
   topicIds: string[];
+  question: string; // drawn from course material: the Grader fences it
+  answer: string;
+  citations: Citation[];
   derivedFrom: string[]; // sourceIds; Feedback is sealed under the same Sources
-  prompt: PromptData; // the question, model answer and cited passages, fenced
 };
 
 export function createUnderstanding(deps: {
   db: PrismaClient;
-  derived: DerivedText;
+  keys: SourceKeys; // seals Feedback through DerivedText
   artifacts: Artifacts; // practiceItem() only
+  reader: KnowledgeReader; // cite() only, to show Feedback citations
+  facts: Facts; // the student's Topics
   delegation: Delegation; // meter() only
   grader: Grader; // true external; model adapter and a fake
   clock: Clock;
 }): Understanding;
 
 export interface Understanding {
-  /** Records the Attempt, then grades it. A failed grading keeps the Attempt, ungraded. */
+  /** Records the Attempt whenever its item exists, then grades it. A failed grading keeps it, ungraded. */
   attempt(
     student: Principal,
     item: { artifactId: string; itemId: string },
     text: string,
   ): Promise<
     | { status: "graded"; attempt: AttemptView }
-    | { status: "ungraded"; attemptId: string }
-    | { status: "refused"; reason: "gone" | "allowance_exhausted" }
+    | {
+        status: "ungraded";
+        attemptId: string;
+        reason: "grader_failed" | "allowance_exhausted" | "gone";
+      }
+    | { status: "refused"; reason: "gone" }
   >;
   /** Grades an ungraded Attempt again, or regrades one the student doubts; metered again. */
   grade(student: Principal, attemptId: string): Promise<AttemptView | "gone">;
@@ -145,7 +153,7 @@ export interface Understanding {
     student: Principal,
     topicId: string,
     level: "shaky" | "solid",
-  ): Promise<void>;
+  ): Promise<{ status: "ok" | "gone" }>;
   levels(student: Principal, q: { courseId: string }): Promise<TopicLevel[]>;
   history(student: Principal, topicId: string): Promise<EvidenceView[]>;
 }
@@ -299,8 +307,7 @@ export interface Grader {
 - `run`: gains `chatId` (nullable). Pinned selections are stored as knowledge-retrieval.md describes.
 - `artifact`: student, `kind` (`practice_set` | `flashcards` | `draft` | `critique`), `runId`, Course or Obligation, the request as JSON (Topic IDs, instructions, Own Work), `status` (`making` | `ready` | `failed`) with a failure reason, `openedAt`, `createdAt`.
 - `artifact_version`: Artifact, `version`, the sealed content with its `derivedFrom` Sources (as on a Chat message), `createdAt`. `list` tells what's withdrawn by checking `derivedFrom` against live Sources, without decrypting.
-- `practice_item`: Artifact, `itemId`, Topic IDs. This is plain structure, so Levels need no decryption.
-- `practice_attempt` (`attempt` already names an Action's dispatch attempt): student, Artifact and `itemId`, text, `verdict` (null while ungraded), sealed Feedback, `createdAt`.
+- `practice_attempt` (`attempt` already names an Action's dispatch attempt): student, Artifact and `itemId`, the item's Topic IDs (copied, so Levels need no decryption), text, `verdict` (null while ungraded), sealed Feedback with its citations, `gradedAt`, `createdAt`.
 - `self_assessment`: student, Topic, `level`, `createdAt`; a history, never updated in place.
 - `obligation`: gains `reportedSubmittedAt`. `fact_type` gains `ai_use_rule`.
 
