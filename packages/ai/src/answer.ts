@@ -15,6 +15,7 @@ export interface Answerer {
     input: AnswerInput,
     options: {
       signal: AbortSignal;
+      onReasoning?: (text: string, streaming: boolean) => void | Promise<void>;
       onText?: (text: string) => void | Promise<void>;
     },
   ): Promise<{
@@ -42,7 +43,7 @@ export function createAnswerer(models: Models): Answerer {
         dataMessage(input.data),
         input.question,
       ]),
-    async answer(input, { signal, onText }) {
+    async answer(input, { signal, onText, onReasoning }) {
       const options = {
         model: model.model,
         ...model.callSettings,
@@ -60,14 +61,17 @@ export function createAnswerer(models: Models): Answerer {
         ],
       };
       const result = await (async () => {
-        if (!onText) return generateText(options);
+        if (!onText && !onReasoning) return generateText(options);
         const streaming = streamText({ ...options, onError: () => {} });
         let finished = false;
         for await (const part of streaming.stream) {
           signal.throwIfAborted();
           if (part.type === "error") throw part.error;
           if (part.type === "abort") throw new Error("Answer interrupted");
-          if (part.type === "text-delta") await onText(part.text);
+          if (part.type === "text-delta") await onText?.(part.text);
+          if (part.type === "reasoning-delta")
+            await onReasoning?.(part.text, true);
+          if (part.type === "reasoning-end") await onReasoning?.("", false);
           if (part.type === "finish") finished = true;
         }
         if (!finished) throw new Error("Answer interrupted");

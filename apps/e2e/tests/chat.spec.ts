@@ -89,6 +89,11 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
         const emit = (data: unknown) =>
           responseStream.write(`data: ${JSON.stringify(data)}\n\n`);
         emit({ type: "start" });
+        emit({
+          type: "data-reasoning",
+          data: { delta: "Ich prüfe deine Materialien.", streaming: true },
+          transient: true,
+        });
         emit({ type: "text-start", id: "answer" });
         emit({
           type: "text-delta",
@@ -220,6 +225,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
       page.getByRole("button", { name: "Nachricht senden" }),
     ).toBeDisabled();
     await expect(textarea).toHaveValue("");
+    await expect(page.getByText("Ich prüfe deine Materialien.")).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Eine laufende Antwort" }),
     ).toBeVisible();
@@ -232,6 +238,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
       page.getByRole("heading", { name: "Antwort aus Kursmaterial" }),
     ).toBeAttached();
     await expect(textarea).toHaveValue("");
+    await expect(page.getByText("Ich prüfe deine Materialien.")).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Kurs auswählen" }),
     ).toBeDisabled();
@@ -260,7 +267,10 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
       fullPage: true,
     });
     const popupPromise = context.waitForEvent("page");
-    await page.getByRole("link", { name: "Handbuch.pdf, Seite 2" }).click();
+    await page
+      .getByRole("button", { name: "Quelle S1: Handbuch.pdf, Seite 2" })
+      .click();
+    await page.getByRole("link", { name: "Quelle öffnen" }).click();
     const popup = await popupPromise;
     await expect(popup).toHaveURL(`${origins.app}/sources/${sourceId}?page=2`);
     await expect(
@@ -279,7 +289,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
       page.getByText("Microeconomics", { exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByRole("link", { name: "Handbuch.pdf, Seite 2" }),
+      page.getByRole("button", { name: "Quelle S1: Handbuch.pdf, Seite 2" }),
     ).toBeAttached();
   } finally {
     streamServer.closeAllConnections();

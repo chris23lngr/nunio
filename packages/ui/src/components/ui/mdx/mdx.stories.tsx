@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { expect, userEvent, waitFor, within } from "storybook/test"
+import { Citation } from "../citation/citation.js"
 import { MdxContent } from "./mdx.js"
 
 const meta = {
@@ -139,5 +140,38 @@ export const Image: Story = {
       .getByRole("img", { name: "Lernzyklus" })
       .dispatchEvent(new Event("error"))
     await waitFor(() => expect(canvas.getByText("Lernzyklus")).toBeVisible())
+  },
+}
+
+export const CitationPreviews: Story = {
+  args: {
+    content: "Eine Antwort [S1]. Unbekannt [S9]. Code `[S1]`.",
+    references: [
+      { tag: "S1", label: "Skript, Seite 2", href: "/sources/skript?page=2" },
+    ],
+    renderReference: (reference) => (
+      <Citation
+        tag={reference.tag}
+        title={reference.label}
+        href={reference.href}
+      />
+    ),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.hover(
+      canvas.getByRole("button", { name: "Quelle S1: Skript, Seite 2" }),
+    )
+    const page = within(canvasElement.ownerDocument.body)
+    await expect(
+      await page.findByRole("link", { name: "Quelle öffnen" }),
+    ).toHaveAttribute("href", "/sources/skript?page=2")
+    await expect(canvas.getByText("[S1]", { selector: "code" })).toBeVisible()
+    await expect(
+      canvas.queryByRole("button", { name: /Quelle S9/ }),
+    ).not.toBeInTheDocument()
+    await expect(
+      canvas.queryByRole("heading", { name: "Quellen und Fußnoten" }),
+    ).not.toBeInTheDocument()
   },
 }

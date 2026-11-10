@@ -4,17 +4,13 @@ import type { paths } from "@nunio/api-client";
 import { Button } from "@nunio/ui/components/button/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { SourceCitations } from "@/features/shared/components/source-citations";
 import { createApiClient } from "@/lib/api-client";
 
 type Artifact =
   paths["/api/me/artifacts/{id}"]["get"]["responses"][200]["content"]["application/json"];
 type Attempt =
   paths["/api/me/attempts/{id}/grade"]["post"]["responses"][200]["content"]["application/json"];
-type Citation = Attempt extends { feedback: infer F }
-  ? NonNullable<F> extends { citations: (infer C)[] }
-    ? C
-    : never
-  : never;
 
 const failures: Record<string, string> = {
   no_material: "nothing in your material matched.",
@@ -30,24 +26,6 @@ const verdicts = {
   partial: "Partly correct",
   incorrect: "Not yet correct",
 };
-
-function Citations({ citations }: { citations: Citation[] }) {
-  if (!citations.length) return null;
-  return (
-    <ul>
-      {citations.map(({ tag, provenance }) => (
-        <li key={tag}>
-          [{tag}]{" "}
-          {provenance === "gone"
-            ? "Its Source was deleted"
-            : provenance.kind === "source"
-              ? `${provenance.title}, page ${provenance.location.page}`
-              : "Your own entry"}
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 type Item = Extract<
   NonNullable<Artifact["content"]>,
@@ -93,7 +71,7 @@ function PracticeItem({
   return (
     <article aria-label={item.question}>
       <h2>{item.question}</h2>
-      <Citations citations={item.citations} />
+      <SourceCitations citations={item.citations} />
       <label>
         Your answer
         <textarea value={text} onChange={(e) => setText(e.target.value)} />
@@ -125,7 +103,7 @@ function PracticeItem({
           {attempt.feedback && (
             <>
               <p>{attempt.feedback.text}</p>
-              <Citations citations={attempt.feedback.citations} />
+              <SourceCitations citations={attempt.feedback.citations} />
             </>
           )}
         </section>
@@ -349,7 +327,7 @@ export function ArtifactScreen({
           ) : (
             <p>{artifact.content.text}</p>
           )}
-          <Citations citations={artifact.content.citations} />
+          <SourceCitations citations={artifact.content.citations} />
         </>
       )}
       {artifact?.content && "cards" in artifact.content && (

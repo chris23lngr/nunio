@@ -1,3 +1,4 @@
+import { Approval as ApprovalPresentation } from "@nunio/ui/components/approval/approval";
 import type { Approval } from "../api/approval-queries";
 
 const presets: Record<string, string> = {
@@ -28,30 +29,35 @@ export function ApprovalCard({
   const verb = action.kind === "studyBlock.move" ? "Move" : "Add";
   const heading = `${verb} the block for ${action.work.title}`;
   return (
-    <article aria-label={heading}>
-      <h3>{heading}</h3>
-      <p>
-        {approval.responsibility
-          ? `${presets[approval.responsibility.preset] ?? "A Responsibility"} asks`
-          : "nunio asks"}
-        {action.work.course && ` for ${action.work.course}`}:{" "}
-        {action.from
-          ? `from ${span(action.from)} to ${span(action.to)}`
-          : `on ${span(action.to)}`}
-        .
-      </p>
+    <ApprovalPresentation
+      role="article"
+      aria-label={heading}
+      title={heading}
+      busy={busy}
+      onDecide={onDecide}
+      approveLabel={
+        action.kind === "studyBlock.move"
+          ? "Approve this move"
+          : "Approve this block"
+      }
+      denyLabel="Don't"
+      description={
+        <>
+          {approval.responsibility
+            ? `${presets[approval.responsibility.preset] ?? "A Responsibility"} asks`
+            : "nunio asks"}
+          {action.work.course && ` for ${action.work.course}`}:{" "}
+          {action.from
+            ? `from ${span(action.from)} to ${span(action.to)}`
+            : `on ${span(action.to)}`}
+          .
+        </>
+      }
+    >
       <p>
         Fingerprint <code>{approval.fingerprint.slice(0, 8)}</code>. This
         request expires {when(approval.expiresAt)}.
       </p>
-      <button type="button" disabled={busy} onClick={() => onDecide("approve")}>
-        {action.kind === "studyBlock.move"
-          ? "Approve this move"
-          : "Approve this block"}
-      </button>
-      <button type="button" disabled={busy} onClick={() => onDecide("deny")}>
-        Don't
-      </button>
-    </article>
+    </ApprovalPresentation>
   );
 }

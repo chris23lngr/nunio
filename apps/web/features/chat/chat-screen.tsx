@@ -1,5 +1,6 @@
 "use client";
 
+import { Bubble, BubbleContent } from "@nunio/ui/components/bubble/bubble";
 import { Button, buttonVariants } from "@nunio/ui/components/button/button";
 import {
   DropdownMenu,
@@ -15,6 +16,16 @@ import {
   InputGroupTextarea,
 } from "@nunio/ui/components/input-group/input-group";
 import { MdxContent } from "@nunio/ui/components/mdx/mdx";
+import { Message, MessageContent } from "@nunio/ui/components/message/message";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@nunio/ui/components/message-scroller/message-scroller";
+import { Reasoning } from "@nunio/ui/components/reasoning/reasoning";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Blocks,
@@ -59,11 +70,10 @@ export function ChatScreen({
   const create = useMutation(createChat(apiOrigin));
   const send = useMutation(sendChatMessage(apiOrigin));
   const textarea = useRef<HTMLTextAreaElement>(null);
-  const scrollArea = useRef<HTMLDivElement>(null);
-  const following = useRef(true);
   const route = useRef(chatId);
   const activeRequest = useRef<AbortController | null>(null);
   const [partial, setPartial] = useState("");
+  const [reasoning, setReasoning] = useState({ text: "", streaming: false });
   useEffect(
     () => () => {
       activeRequest.current?.abort();
@@ -79,6 +89,7 @@ export function ChatScreen({
       const controller = new AbortController();
       activeRequest.current = controller;
       setPartial("");
+      setReasoning({ text: "", streaming: false });
       const draft = value.text;
       form.setFieldValue("text", "");
       let activeId = id;
@@ -96,11 +107,17 @@ export function ChatScreen({
           setCreatedId(activeId);
           router.replace(`/chat?id=${activeId}`, { scroll: false });
         }
-        following.current = true;
         const { question, ...answer } = await send.mutateAsync({
           id: activeId,
           text,
           signal: controller.signal,
+          onReasoning: (text, streaming) => {
+            if (
+              !controller.signal.aborted &&
+              activeRequest.current === controller
+            )
+              setReasoning({ text, streaming });
+          },
           onText: (text) => {
             if (
               !controller.signal.aborted &&
@@ -136,6 +153,7 @@ export function ChatScreen({
         if (activeRequest.current === controller) {
           activeRequest.current = null;
           setPartial("");
+          setReasoning({ text: "", streaming: false });
         }
       }
     },
@@ -148,11 +166,11 @@ export function ChatScreen({
       activeRequest.current?.abort();
       activeRequest.current = null;
       setPartial("");
+      setReasoning({ text: "", streaming: false });
       setCreatedId(null);
       form.reset();
       create.reset();
       send.reset();
-      following.current = true;
     }
   }, [chatId, createdId, form, create.reset, send.reset]);
 
@@ -166,11 +184,6 @@ export function ChatScreen({
     ? `${words.slice(0, 6).join(" ")}${words.length > 6 ? " …" : ""}`
     : "Neuer Chat";
   const error = create.error ?? send.error ?? chat.error;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Follow turn changes and pending content, not draft edits.
-  useEffect(() => {
-    if (following.current && scrollArea.current)
-      scrollArea.current.scrollTop = scrollArea.current.scrollHeight;
-  }, [messages.length, busy, partial.length]);
 
   return (
     <main
@@ -207,60 +220,87 @@ export function ChatScreen({
           <Plus className="size-4" aria-hidden="true" />
         </Link>
       </header>
-      <div
-        ref={scrollArea}
-        onScroll={(event) => {
-          const node = event.currentTarget;
-          following.current =
-            node.scrollHeight - node.scrollTop - node.clientHeight < 80;
-        }}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4"
+      <MessageScrollerProvider
+        key={id ?? "new"}
+        autoScroll
+        defaultScrollPosition="end"
       >
-        {!id ? (
-          <div className="flex min-h-full flex-col items-center pt-[min(20vh,200px)] pb-8">
-            <h1 className="max-w-lg text-center text-2xl leading-8 font-medium sm:text-3xl sm:leading-10">
-              Woran möchtest du heute arbeiten, {userName.split(" ")[0]}?
-            </h1>
-            <div className="mt-16 flex max-w-[640px] flex-wrap justify-center gap-x-4 gap-y-3">
-              {prompts.map((prompt) => (
-                <button
-                  type="button"
-                  key={prompt}
-                  className="rounded-full px-2 text-sm leading-6 text-base-600 outline-1 outline-base-700/15 hover:bg-base-50 focus-visible:ring-2 focus-visible:ring-primary-500"
-                  onClick={() => {
-                    form.setFieldValue("text", prompt);
-                    textarea.current?.focus();
-                  }}
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="mx-auto flex w-full max-w-[832px] flex-col gap-10 pt-6 pb-8">
-            {chat.isPending && <p role="status">Chat laden …</p>}
-            {messages.map((message) => (
-              <ChatMessage key={message.id} message={message} />
-            ))}
-            {send.isPending && (
-              <>
-                <div className="ml-auto max-w-[647px] rounded-xl rounded-br-none bg-primary-50 px-4 py-4 text-base leading-7 whitespace-pre-wrap text-primary-900 [overflow-wrap:anywhere]">
-                  {send.variables.text}
+        <MessageScroller className="min-h-0 flex-1">
+          <MessageScrollerViewport aria-label="Nachrichten" className="px-4">
+            {!id ? (
+              <div className="flex min-h-full flex-col items-center pt-[min(20vh,200px)] pb-8">
+                <h1 className="max-w-lg text-center text-2xl leading-8 font-medium sm:text-3xl sm:leading-10">
+                  Woran möchtest du heute arbeiten, {userName.split(" ")[0]}?
+                </h1>
+                <div className="mt-16 flex max-w-[640px] flex-wrap justify-center gap-x-4 gap-y-3">
+                  {prompts.map((prompt) => (
+                    <button
+                      type="button"
+                      key={prompt}
+                      className="rounded-full px-2 text-sm leading-6 text-base-600 outline-1 outline-base-700/15 hover:bg-base-50 focus-visible:ring-2 focus-visible:ring-primary-500"
+                      onClick={() => {
+                        form.setFieldValue("text", prompt);
+                        textarea.current?.focus();
+                      }}
+                    >
+                      {prompt}
+                    </button>
+                  ))}
                 </div>
-                <section aria-label="Laufende Antwort">
-                  {partial && <MdxContent content={partial} />}
-                  <p role="status" className="text-sm text-base-500">
-                    {partial
-                      ? "Antwort wird geschrieben …"
-                      : "nunio antwortet …"}
-                  </p>
-                </section>
-              </>
+              </div>
+            ) : (
+              <MessageScrollerContent className="mx-auto w-full max-w-[832px] gap-10 pt-6 pb-8">
+                {chat.isPending && <p role="status">Chat laden …</p>}
+                {messages.map((message) => (
+                  <MessageScrollerItem
+                    key={message.id}
+                    messageId={message.id}
+                    scrollAnchor={message.role === "student"}
+                  >
+                    <ChatMessage message={message} />
+                  </MessageScrollerItem>
+                ))}
+                {send.isPending && (
+                  <>
+                    <MessageScrollerItem
+                      messageId="pending-question"
+                      scrollAnchor
+                    >
+                      <Message align="end">
+                        <MessageContent>
+                          <Bubble align="end" variant="tinted">
+                            <BubbleContent>{send.variables.text}</BubbleContent>
+                          </Bubble>
+                        </MessageContent>
+                      </Message>
+                    </MessageScrollerItem>
+                    <MessageScrollerItem messageId="pending-answer">
+                      <Message aria-label="Laufende Antwort">
+                        <MessageContent>
+                          {reasoning.text && (
+                            <Reasoning streaming={reasoning.streaming}>
+                              {reasoning.text}
+                            </Reasoning>
+                          )}
+                          {partial && <MdxContent content={partial} />}
+                          <p role="status" className="text-sm text-base-500">
+                            {partial
+                              ? "Antwort wird geschrieben …"
+                              : reasoning.text
+                                ? ""
+                                : "nunio antwortet …"}
+                          </p>
+                        </MessageContent>
+                      </Message>
+                    </MessageScrollerItem>
+                  </>
+                )}
+              </MessageScrollerContent>
             )}
-          </div>
-        )}
-      </div>
+          </MessageScrollerViewport>
+          <MessageScrollerButton aria-label="Zur neuesten Nachricht" />
+        </MessageScroller>
+      </MessageScrollerProvider>
       <form
         className="mx-auto w-full max-w-[688px] shrink-0 px-4 pt-4 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-[max(24px,env(safe-area-inset-bottom))]"
         aria-label="Nachricht verfassen"

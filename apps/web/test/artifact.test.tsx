@@ -100,7 +100,11 @@ test("waits while a practice set is made, then grades the student's answer with 
   expect(
     within(feedback).getByText("Punktweise reicht nicht [S1]."),
   ).toBeTruthy();
-  expect(within(feedback).getByText("[S1] Skript, page 2")).toBeTruthy();
+  expect(
+    within(feedback).getByRole("button", {
+      name: "Quelle S1: Skript, Seite 2",
+    }),
+  ).toBeTruthy();
   expect(sent).toEqual([{ artifactId, itemId: "1", text: "Punktweise." }]);
 });
 
@@ -254,7 +258,9 @@ test("saves the student's rework of a draft as a new version, and shows a Critiq
   });
 
   const draft = await screen.findByLabelText("Draft");
-  expect(screen.getByText("[S1] Skript, page 2")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Quelle S1: Skript, Seite 2" }),
+  ).toBeTruthy();
   await userEvent.clear(draft);
   await userEvent.type(draft, "Meine Fassung.");
   await userEvent.click(

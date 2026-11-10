@@ -106,10 +106,12 @@ export function MdxContent({
   content,
   className,
   references = [],
+  renderReference,
 }: {
   content: string
   className?: string
   references?: readonly MdxReference[]
+  renderReference?: (reference: MdxReference) => ReactNode
 }) {
   const id = useId()
   return (
@@ -124,7 +126,7 @@ export function MdxContent({
           remarkGfm,
           remarkMath,
           callouts,
-          referencePlugin(references),
+          referencePlugin(references, !!renderReference),
         ]}
         rehypePlugins={[rehypeKatex]}
         components={{
@@ -144,17 +146,24 @@ export function MdxContent({
               <p>{children}</p>
             )
           },
-          a: ({ node: _node, href, children, ...props }) => (
-            <a
-              {...props}
-              href={href}
-              {...(href?.startsWith("#")
-                ? {}
-                : { target: "_blank", rel: "noreferrer" })}
-            >
-              {children}
-            </a>
-          ),
+          a: ({ node: _node, href, children, ...props }) => {
+            const reference = href?.startsWith("#citation-")
+              ? references.find(({ tag }) => href === `#citation-${tag}`)
+              : undefined
+            if (reference && renderReference)
+              return <>{renderReference(reference)}</>
+            return (
+              <a
+                {...props}
+                href={href}
+                {...(href?.startsWith("#")
+                  ? {}
+                  : { target: "_blank", rel: "noreferrer" })}
+              >
+                {children}
+              </a>
+            )
+          },
           li: ({ node: _node, children, className, ...props }) => (
             <li {...props} className={className}>
               {className?.includes("task-list-item") ? (

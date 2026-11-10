@@ -140,8 +140,10 @@ let reply = "";
 let finishAnswer: Promise<void> | undefined;
 const answerer: Answerer = {
   estimateMicroUsd: () => 1,
-  async answer(input, { signal, onText }) {
+  async answer(input, { signal, onText, onReasoning }) {
     prompts.push(input);
+    await onReasoning?.("Ich prüfe deine Materialien.", true);
+    await onReasoning?.("", false);
     await onText?.(reply);
     await finishAnswer;
     signal.throwIfAborted();
@@ -1687,6 +1689,8 @@ describe("Chat", () => {
         text += decoder.decode(next.value, { stream: true });
       }
       expect(text).toContain("Eine schrittweise Antwort.");
+      expect(text).toContain("data-reasoning");
+      expect(text).toContain("Ich prüfe deine Materialien.");
       expect(text).not.toContain("data-committed");
       expect(
         await (

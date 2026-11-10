@@ -48,6 +48,8 @@ function Citation({
           {href && (
             <a
               href={href}
+              target="_blank"
+              rel="noreferrer"
               className="text-primary-700 focus-visible:ring-primary-500 rounded underline underline-offset-4 focus-visible:ring-2"
             >
               Quelle öffnen
