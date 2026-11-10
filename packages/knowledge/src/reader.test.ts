@@ -934,10 +934,14 @@ it("freezes what a Run sees when it starts: later Sources and Facts stay out, wh
   );
   expect(await passagesOf(run, { runId })).toEqual([handbook]);
   expect(await obligationsOf(p, { chatId: chat.id })).toHaveLength(2);
-  const frozen = await reader.retrieve(run, { runId }, {
-    kind: "facts",
-    types: ["obligation"],
-  });
+  const frozen = await reader.retrieve(
+    run,
+    { runId },
+    {
+      kind: "facts",
+      types: ["obligation"],
+    },
+  );
   if (frozen.status !== "ok") throw new Error(frozen.status);
   expect(frozen.items).toEqual([
     expect.objectContaining({
@@ -968,10 +972,14 @@ it("pins a selection chosen without a Chat, once, and only from the student's ow
       from: { selection: { courseIds: [], sourceIds: [other] } },
     }),
   ).toEqual({ status: "ok" });
-  const result = await reader.retrieve(principal.fromRun(runId), { runId }, {
-    kind: "passages",
-    text: "Klausur",
-  });
+  const result = await reader.retrieve(
+    principal.fromRun(runId),
+    { runId },
+    {
+      kind: "passages",
+      text: "Klausur",
+    },
+  );
   if (result.status !== "ok") throw new Error(result.status);
   expect(passages(result.items).map((i) => i.provenance.sourceId)).toEqual([
     handbook,
