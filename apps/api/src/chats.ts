@@ -1,6 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import { principal } from "@nunio/delegation";
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import type { AppBindings } from "./app.js";
 
 const Provenance = z.discriminatedUnion("kind", [
@@ -52,6 +53,81 @@ const errors = {
 const chatParams = z.object({ id: z.string().uuid() });
 
 export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/chats/{id}/messages/stream",
+      request: {
+        params: chatParams,
+        body: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: z
+                .object({ text: z.string().trim().min(1).max(4000) })
+                .strict(),
+            },
+          },
+        },
+      },
+      responses: {
+        200: {
+          description:
+            "AI SDK UI message SSE: provisional text, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
+          content: { "text/event-stream": { schema: z.string() } },
+        },
+        ...errors,
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const p = principal.fromSession(actor);
+      const id = c.req.valid("param").id;
+      if (!(await c.get("chats").detail(p, id)))
+        return c.json({ error: "gone" }, 404);
+      const stream = createUIMessageStream({
+        onError: () =>
+          "Die Antwort wurde unterbrochen. Bitte versuche es erneut.",
+        execute: async ({ writer }) => {
+          writer.write({ type: "start" });
+          writer.write({ type: "text-start", id: "answer" });
+          const result = await c
+            .get("chats")
+            .ask(p, id, c.req.valid("json").text, c.get("answerer"), {
+              signal: c.req.raw.signal,
+              onText: (delta) => {
+                writer.write({ type: "text-delta", id: "answer", delta });
+              },
+            });
+          writer.write({ type: "text-end", id: "answer" });
+          if (result.status !== "ok") {
+            writer.write({
+              type: "data-refused",
+              data: {
+                error: result.status === "gone" ? "gone" : result.reason,
+              },
+              transient: true,
+            });
+            return;
+          }
+          writer.write({
+            type: "data-committed",
+            data: { ...result.message, question: result.question },
+            transient: true,
+          });
+          writer.write({ type: "finish" });
+        },
+      });
+      return createUIMessageStreamResponse({
+        stream,
+        keepAliveMs: 15_000,
+        headers: { "cache-control": "no-store", "x-accel-buffering": "no" },
+      });
+    },
+  );
+
   routes.openapi(
     createRoute({
       method: "get",

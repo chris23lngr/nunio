@@ -46,58 +46,56 @@ export function CoursePicker({
 }) {
   return (
     <div className="mb-3 flex min-h-5 flex-wrap items-center gap-x-4 gap-y-2 px-4 text-sm leading-5">
-      {!locked && (
-        <DropdownMenu>
-          <DropdownMenuTrigger className="inline-flex shrink-0 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
-            <Book className="size-3.5 text-base-500" />
-            Kurs auswählen
-            <ChevronDown className="size-3.5 text-base-500" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            side="top"
-            sideOffset={20}
-            className="max-w-[calc(100vw-32px)] min-w-[336px]"
-          >
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Deine Kurse</DropdownMenuLabel>
-              {loading && (
-                <p role="status" className="px-2 text-sm">
-                  Kurse laden …
-                </p>
-              )}
-              {error && (
-                <p role="alert" className="max-w-xs px-2 text-sm">
-                  {error}
-                </p>
-              )}
-              {!loading && !error && !courses.length && (
-                <p className="px-2 text-sm text-base-500">
-                  Noch keine bestätigten Kurse.
-                </p>
-              )}
-              {courses.map((course) => (
-                <DropdownMenuCheckboxItem
-                  key={course.id}
-                  checked={selected.some(({ id }) => id === course.id)}
-                  onCheckedChange={() => onToggle(course.id)}
-                  closeOnClick={false}
-                >
-                  <Dot id={course.id} />
-                  <span className="min-w-0 truncate">{course.title}</span>
-                  {course.code && (
-                    <span className="shrink-0 font-normal text-base-500">
-                      {course.code}
-                    </span>
-                  )}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-      {locked && !selected.length && (
-        <span className="text-xs text-base-500">Keine Kurse ausgewählt</span>
-      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          disabled={locked}
+          className="disabled:opacity-50 inline-flex shrink-0 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+        >
+          <Book className="size-3.5 text-base-500" />
+          Kurs auswählen
+          <ChevronDown className="size-3.5 text-base-500" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side="top"
+          sideOffset={20}
+          className="max-w-[calc(100vw-32px)] min-w-[336px]"
+        >
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Deine Kurse</DropdownMenuLabel>
+            {loading && (
+              <p role="status" className="px-2 text-sm">
+                Kurse laden …
+              </p>
+            )}
+            {error && (
+              <p role="alert" className="max-w-xs px-2 text-sm">
+                {error}
+              </p>
+            )}
+            {!loading && !error && !courses.length && (
+              <p className="px-2 text-sm text-base-500">
+                Noch keine bestätigten Kurse.
+              </p>
+            )}
+            {courses.map((course) => (
+              <DropdownMenuCheckboxItem
+                key={course.id}
+                checked={selected.some(({ id }) => id === course.id)}
+                onCheckedChange={() => onToggle(course.id)}
+                closeOnClick={false}
+              >
+                <Dot id={course.id} />
+                <span className="min-w-0 truncate">{course.title}</span>
+                {course.code && (
+                  <span className="shrink-0 font-normal text-base-500">
+                    {course.code}
+                  </span>
+                )}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
       {selected.map((course) => (
         <span
           key={course.id}

@@ -103,7 +103,12 @@ export function createChats({
       chatId: string,
       question: string,
       answerer: Answerer,
+      options: {
+        signal?: AbortSignal;
+        onText?: (text: string) => void | Promise<void>;
+      } = {},
     ) {
+      options.signal?.throwIfAborted();
       const retrieval = await reader.retrieve(
         p,
         { chatId },
@@ -120,12 +125,22 @@ export function createChats({
         data,
         tags: citations.map((citation) => citation.tag),
       };
+      options.signal?.throwIfAborted();
       const answered = await delegation.meter(
         p,
         { microUsd: answerer.estimateMicroUsd(input) },
-        (signal) => definitely(() => answerer.answer(input, { signal })),
+        (deadline) =>
+          definitely(() =>
+            answerer.answer(input, {
+              signal: options.signal
+                ? AbortSignal.any([deadline, options.signal])
+                : deadline,
+              onText: options.onText,
+            }),
+          ),
       );
       if (answered.status === "refused") return answered;
+      options.signal?.throwIfAborted();
       const cited = answered.value.cited.flatMap((tag) =>
         citations.filter((citation) => citation.tag === tag),
       );

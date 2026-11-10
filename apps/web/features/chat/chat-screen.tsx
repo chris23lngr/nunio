@@ -14,6 +14,7 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from "@nunio/ui/components/input-group/input-group";
+import { MdxContent } from "@nunio/ui/components/mdx/mdx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Blocks,
@@ -21,6 +22,7 @@ import {
   Plus,
   Send,
   Sparkles,
+  Square,
   Upload,
 } from "lucide-react";
 import Link from "next/link";
@@ -60,15 +62,30 @@ export function ChatScreen({
   const scrollArea = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const route = useRef(chatId);
+  const activeRequest = useRef<AbortController | null>(null);
+  const [partial, setPartial] = useState("");
+  useEffect(
+    () => () => {
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+    },
+    [],
+  );
   const form = useAppForm({
     defaultValues: { text: "", courseIds: [] as string[] },
     onSubmit: async ({ value }) => {
       const text = value.text.trim();
       if (!text || text.length > 4000) return;
+      const controller = new AbortController();
+      activeRequest.current = controller;
+      setPartial("");
+      const draft = value.text;
+      form.setFieldValue("text", "");
       let activeId = id;
       try {
         if (!activeId) {
           activeId = await create.mutateAsync(value.courseIds);
+          if (activeRequest.current !== controller) return;
           client.setQueryData(chatQueries(apiOrigin, activeId).queryKey, {
             id: activeId,
             courses: (courses.data ?? []).filter((course) =>
@@ -83,6 +100,14 @@ export function ChatScreen({
         const { question, ...answer } = await send.mutateAsync({
           id: activeId,
           text,
+          signal: controller.signal,
+          onText: (text) => {
+            if (
+              !controller.signal.aborted &&
+              activeRequest.current === controller
+            )
+              setPartial(text);
+          },
         });
         await client.cancelQueries(chatQueries(apiOrigin, activeId));
         client.setQueryData(
@@ -102,10 +127,16 @@ export function ChatScreen({
                 }
               : current,
         );
-        form.setFieldValue("text", "");
       } catch {
+        if (activeRequest.current !== controller) return;
+        form.setFieldValue("text", draft);
         if (activeId)
           await client.invalidateQueries(chatQueries(apiOrigin, activeId));
+      } finally {
+        if (activeRequest.current === controller) {
+          activeRequest.current = null;
+          setPartial("");
+        }
       }
     },
   });
@@ -114,6 +145,9 @@ export function ChatScreen({
     if (route.current === chatId) return;
     route.current = chatId;
     if (chatId !== createdId) {
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+      setPartial("");
       setCreatedId(null);
       form.reset();
       create.reset();
@@ -136,40 +170,43 @@ export function ChatScreen({
   useEffect(() => {
     if (following.current && scrollArea.current)
       scrollArea.current.scrollTop = scrollArea.current.scrollHeight;
-  }, [messages.length, busy]);
+  }, [messages.length, busy, partial.length]);
 
   return (
     <main
-      className="flex h-[calc(100dvh-30px)] min-h-0 flex-col overflow-hidden bg-white font-sans text-base-800"
+      className="flex h-[calc(100dvh-26px)] min-h-0 flex-col overflow-hidden bg-white font-sans text-base-800"
       aria-label="Chat"
     >
-      {id && (
-        <header className="grid min-h-16 shrink-0 grid-cols-[32px_minmax(0,1fr)_32px] sm:grid-cols-[132px_minmax(0,1fr)_132px] items-center gap-3 px-4 sm:px-8">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled
-            title="Modellauswahl ist noch nicht verfügbar"
-          >
-            <Sparkles />
-            <span className="hidden sm:inline">Modell</span>
-            <ChevronDown className="hidden sm:block" />
-          </Button>
+      <header className="grid min-h-16 shrink-0 grid-cols-[32px_minmax(0,1fr)_32px] sm:grid-cols-[132px_minmax(0,1fr)_132px] items-center gap-3 px-4 sm:px-8">
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled
+          title="Modellauswahl ist noch nicht verfügbar"
+          aria-label="Modell auswählen (noch nicht verfügbar)"
+        >
+          <Sparkles />
+          <span className="hidden sm:inline">Modell</span>
+          <ChevronDown className="hidden sm:block" />
+        </Button>
+        {id ? (
           <h1
             className="truncate text-center text-base font-medium"
             title={title}
           >
             {title}
           </h1>
-          <Link
-            href="/chat"
-            aria-label="Neuer Chat"
-            className={`${buttonVariants({ variant: "ghost", size: "icon" })} justify-self-end`}
-          >
-            <Plus className="size-4" aria-hidden="true" />
-          </Link>
-        </header>
-      )}
+        ) : (
+          <span />
+        )}
+        <Link
+          href="/chat"
+          aria-label="Neuer Chat"
+          className={`${buttonVariants({ variant: "ghost", size: "icon" })} justify-self-end`}
+        >
+          <Plus className="size-4" aria-hidden="true" />
+        </Link>
+      </header>
       <div
         ref={scrollArea}
         onScroll={(event) => {
@@ -181,7 +218,7 @@ export function ChatScreen({
       >
         {!id ? (
           <div className="flex min-h-full flex-col items-center pt-[min(20vh,200px)] pb-8">
-            <h1 className="max-w-lg text-center text-3xl leading-10 font-medium sm:text-4xl sm:leading-12">
+            <h1 className="max-w-lg text-center text-2xl leading-8 font-medium sm:text-3xl sm:leading-10">
               Woran möchtest du heute arbeiten, {userName.split(" ")[0]}?
             </h1>
             <div className="mt-16 flex max-w-[640px] flex-wrap justify-center gap-x-4 gap-y-3">
@@ -211,16 +248,21 @@ export function ChatScreen({
                 <div className="ml-auto max-w-[647px] rounded-xl rounded-br-none bg-primary-50 px-4 py-4 text-base leading-7 whitespace-pre-wrap text-primary-900 [overflow-wrap:anywhere]">
                   {send.variables.text}
                 </div>
-                <p role="status" className="text-sm text-base-500">
-                  nunio antwortet …
-                </p>
+                <section aria-label="Laufende Antwort">
+                  {partial && <MdxContent content={partial} />}
+                  <p role="status" className="text-sm text-base-500">
+                    {partial
+                      ? "Antwort wird geschrieben …"
+                      : "nunio antwortet …"}
+                  </p>
+                </section>
               </>
             )}
           </div>
         )}
       </div>
       <form
-        className="mx-auto w-full max-w-[688px] shrink-0 px-4 pt-4 pb-[max(24px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-12"
+        className="mx-auto w-full max-w-[688px] shrink-0 px-4 pt-4 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-[max(24px,env(safe-area-inset-bottom))]"
         aria-label="Nachricht verfassen"
         onSubmit={(event) => {
           event.preventDefault();
@@ -313,6 +355,15 @@ export function ChatScreen({
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
+            {busy && (
+              <InputGroupButton
+                aria-label="Antwort stoppen"
+                onClick={() => activeRequest.current?.abort()}
+                size="icon"
+              >
+                <Square />
+              </InputGroupButton>
+            )}
             <form.Subscribe
               selector={(state) =>
                 [state.values.text, state.isSubmitting] as const
