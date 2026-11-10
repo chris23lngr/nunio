@@ -62,12 +62,15 @@ export function createPlan({
   facts: Facts;
   clock: { now(): Date };
 }) {
-  /** Every Obligation the student has not rejected, with its deadline and Estimate; unreviewed ones are planned but flagged by `state`. */
+  /**
+   * Every Obligation the student has not rejected, outside Archived Courses, with its deadline and Estimate; unreviewed
+   * ones are planned but flagged by `state`.
+   */
   async function obligations(p: Principal, tx: Transaction) {
     const { courses } = await facts.review(p);
     const estimates = await tx.obligationEstimate.findMany();
     return courses
-      .filter((course) => course.status !== "rejected")
+      .filter((course) => course.status !== "rejected" && !course.archived)
       .flatMap((course) =>
         course.obligations
           .filter((o) => o.state !== "rejected")

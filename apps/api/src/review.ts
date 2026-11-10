@@ -284,7 +284,14 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
           },
         },
       },
-      responses: { 200: Done, ...errors },
+      responses: {
+        200: Done,
+        ...errors,
+        409: json(
+          ErrorBody,
+          "The student created this Course, so it cannot be rejected, only deleted (error entered).",
+        ),
+      },
     }),
     async (c) => {
       c.header("cache-control", "no-store");
@@ -298,6 +305,7 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
           c.req.valid("json").decision,
         );
       if (result.status === "gone") return c.json({ error: "gone" }, 404);
+      if (result.status === "entered") return c.json({ error: "entered" }, 409);
       return c.json({ status: "ok" as const }, 200);
     },
   );
@@ -389,7 +397,7 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
         400: json(ErrorBody, "Not a valid entry."),
         409: json(
           ErrorBody,
-          "The Course already has this Obligation; correct it instead.",
+          "The Course already has this Obligation; correct it instead. Or the Course is Archived.",
         ),
         ...errors,
       },
@@ -405,6 +413,8 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
         return c.json({ error: "invalid_entry" }, 400);
       if (result.status === "gone") return c.json({ error: "gone" }, 404);
       if (result.status === "exists") return c.json({ error: "exists" }, 409);
+      if (result.status === "course_archived")
+        return c.json({ error: "course_archived" }, 409);
       return c.json({ id: result.id }, 201);
     },
   );

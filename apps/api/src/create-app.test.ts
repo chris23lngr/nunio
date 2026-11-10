@@ -32,6 +32,7 @@ import { createSourceKeys } from "@nunio/keys";
 import type { Facts, Sources } from "@nunio/knowledge";
 import {
   createChats,
+  createCourses,
   createFacts,
   createKnowledgeReader,
   createProjects,
@@ -295,6 +296,12 @@ beforeAll(async () => {
     plan,
     estimator,
     projects: createProjects({ db: prisma }),
+    courses: createCourses({
+      db: prisma,
+      clock: { now: () => new Date() },
+      facts,
+      responsibilities,
+    }),
     outreach: createOutreach({
       db: prisma,
       clock: { now: () => new Date() },
@@ -2539,6 +2546,162 @@ it("creates, renames, relates and deletes Projects through origin-protected rout
   expect((await call("DELETE", `/${id}`)).status).toBe(404);
 });
 
+type CoursesBody = {
+  current: string;
+  choices: string[];
+  courses: {
+    id: string;
+    title: string;
+    code: string | null;
+    semester: string;
+    color: string;
+    status: string;
+    entered: boolean;
+    archived: boolean;
+    next: unknown;
+  }[];
+};
+
+it("creates, edits, archives and deletes Courses through origin-protected routes", async () => {
+  const cookie = await signUp("courses");
+  const call = (
+    method: string,
+    path: string,
+    body?: unknown,
+    origin = appOrigin,
+  ) =>
+    app.request(`${apiOrigin}/api/me/courses${path}`, {
+      method,
+      headers: { cookie, origin, "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  const listed = async () =>
+    (await (await call("GET", "")).json()) as CoursesBody;
+  const { current, choices } = await listed();
+  expect(choices).toContain(current);
+
+  const analysis = { title: "Analysis I", code: "MA-101", semester: current };
+  expect((await call("POST", "", analysis, evilOrigin)).status).toBe(403);
+  const created = await call("POST", "", analysis);
+  expect(created.status).toBe(201);
+  const { id } = (await created.json()) as { id: string };
+  expect(
+    (await call("POST", "", { ...analysis, semester: "1999-ws" })).status,
+  ).toBe(400);
+  const clash = await call("POST", "", { ...analysis, title: "analysis i" });
+  expect(clash.status).toBe(409);
+  expect(await clash.json()).toEqual({
+    error: "clash",
+    course: { id, title: "Analysis I", status: "accepted", archived: false },
+  });
+
+  expect((await call("PATCH", `/${id}`, { color: "teal" })).status).toBe(200);
+  expect((await listed()).courses).toEqual([
+    {
+      id,
+      title: "Analysis I",
+      code: "MA-101",
+      semester: current,
+      color: "teal",
+      status: "accepted",
+      entered: true,
+      archived: false,
+      next: null,
+    },
+  ]);
+  expect(await (await call("GET", `/${id}/impact`)).json()).toEqual({
+    obligations: 0,
+    tasks: 0,
+    studyBlocks: 0,
+    futureStudyBlocks: 0,
+    responsibilities: 0,
+  });
+  expect((await call("POST", `/${id}/archive`)).status).toBe(200);
+  expect((await listed()).courses[0]!.archived).toBe(true);
+  expect((await call("POST", `/${id}/unarchive`)).status).toBe(200);
+  expect((await listed()).courses[0]!.archived).toBe(false);
+
+  const stranger = await signUp("courses-stranger");
+  expect(
+    (
+      await app.request(`${apiOrigin}/api/me/courses/${id}`, {
+        method: "PATCH",
+        headers: {
+          cookie: stranger,
+          origin: appOrigin,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ title: "Mine" }),
+      })
+    ).status,
+  ).toBe(404);
+  expect((await app.request(`${apiOrigin}/api/me/courses`)).status).toBe(401);
+
+  expect((await call("DELETE", `/${id}`)).status).toBe(200);
+  expect((await call("DELETE", `/${id}`)).status).toBe(404);
+  expect((await listed()).courses).toEqual([]);
+});
+
+it("refuses Obligations and Responsibilities on an Archived Course with a conflict", async () => {
+  const cookie = await signUp("courses-archived");
+  const headers = {
+    cookie,
+    origin: appOrigin,
+    "content-type": "application/json",
+  };
+  const { current } = (await (
+    await app.request(`${apiOrigin}/api/me/courses`, { headers })
+  ).json()) as CoursesBody;
+  const { id } = (await (
+    await app.request(`${apiOrigin}/api/me/courses`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        title: "Statistik II",
+        code: null,
+        semester: current,
+      }),
+    })
+  ).json()) as { id: string };
+  await app.request(`${apiOrigin}/api/me/courses/${id}/archive`, {
+    method: "POST",
+    headers,
+  });
+
+  const obligation = await app.request(`${apiOrigin}/api/me/obligations`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      course: { id },
+      kind: "exam",
+      title: "Klausur",
+      due: { date: "2027-02-12", time: null, timeZone: null },
+      destination: null,
+    }),
+  });
+  expect(obligation.status).toBe(409);
+  const responsibility = await app.request(
+    `${apiOrigin}/api/me/responsibilities`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        preset: "keep_course_organized",
+        courseId: id,
+        budgetMicroUsd: 100_000,
+      }),
+    },
+  );
+  expect(responsibility.status).toBe(409);
+  expect(await responsibility.json()).toEqual({ error: "course_archived" });
+  const rejected = await app.request(
+    `${apiOrigin}/api/me/courses/${id}/decision`,
+    { method: "POST", headers, body: JSON.stringify({ decision: "reject" }) },
+  );
+  expect(rejected.status).toBe(409);
+  expect(await rejected.json()).toEqual({ error: "entered" });
+});
+
 describe("Home", () => {
   it("surfaces an overload's Shortfall with its tradeoffs, beside placeholders for later work", async () => {
     const { cookie, headers } = await reviewFixture("home");
@@ -2998,6 +3161,8 @@ describe("Responsibilities", () => {
         studentId: await studentId(cookie),
         title: "Analysis I",
         matchTitle: "analysis i",
+        semester: "2026-ws",
+        color: "rose",
         status: "accepted",
       },
     });

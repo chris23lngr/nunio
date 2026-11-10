@@ -7,3 +7,10 @@ export function nameOf(r: {
     ? `Prepare for ${r.exam.title}`
     : `Keep ${r.course?.title ?? "a Course that is gone"} organized`;
 }
+
+/** Why a Responsibility is Paused, in words; null when the student paused it. */
+export const pausedBecause = {
+  student: null,
+  budget: "its Budget is used up",
+  course_archived: "its Course is archived",
+} as const;

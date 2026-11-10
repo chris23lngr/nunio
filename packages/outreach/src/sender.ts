@@ -127,10 +127,14 @@ export function createOutreachSender({
       delegation.history(p, { status: "refused", limit: 500 }),
       delegation.history(p, { status: "unconfirmed", limit: 500 }),
     ]);
+    const pausedForArchivedCourse = (await responsibilities.list(p))
+      .filter((r) => r.pausedBy === "course_archived")
+      .map((r) => r.id);
     const current = causesOf({
       shortfalls: proposal.shortfalls,
       review,
       actions: [...expired, ...unconfirmed],
+      pausedForArchivedCourse,
     });
     const at = clock.now();
     await withOwner(db, p, async (tx, studentId) => {

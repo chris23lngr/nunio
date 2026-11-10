@@ -5,6 +5,7 @@ import { deadline } from "@nunio/planning";
 import type { AppBindings } from "./app.js";
 import { ActionShown, describeAction } from "./approvals.js";
 import {
+  archivedOutcomes,
   body,
   Created,
   created,
@@ -13,7 +14,6 @@ import {
   errors,
   id,
   json,
-  outcomes,
   student,
 } from "./outcomes.js";
 
@@ -30,7 +30,7 @@ const Responsibility = z
       .nullable()
       .describe("The one exam it prepares for; null for a Course."),
     state: z.enum(["active", "paused", "ended"]),
-    pausedBy: z.enum(["student", "budget"]).nullable(),
+    pausedBy: z.enum(["student", "budget", "course_archived"]).nullable(),
     grants: z.array(z.enum(["studyBlock.create", "studyBlock.move"])),
     budget: z.object({
       limitMicroUsd: z.number(),
@@ -122,7 +122,7 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
           }),
         ]),
       ),
-      responses: { 201: Created, ...outcomes },
+      responses: { 201: Created, ...archivedOutcomes },
     }),
     async (c) => {
       const p = await student(c);
@@ -235,7 +235,7 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
         method: "post",
         path: `/api/me/responsibilities/{id}/${control}`,
         request: { params: id },
-        responses: { 200: Done, ...outcomes },
+        responses: { 200: Done, ...archivedOutcomes },
       }),
       async (c) => {
         const p = await student(c);

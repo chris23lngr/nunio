@@ -85,6 +85,8 @@ async function student() {
       studentId,
       title: "Analysis I",
       matchTitle: "analysis i",
+      semester: "2026-ws",
+      color: "rose",
     },
   });
   await admin.obligation.create({
@@ -633,6 +635,8 @@ describe("'prepare me for this exam'", () => {
           studentId: s.studentId,
           title: `Course ${status}`,
           matchTitle: status,
+          semester: "2026-ws",
+          color: "rose",
           status,
         },
       });
@@ -766,5 +770,48 @@ describe("a Run the student started", () => {
         workflowId: "artifact-run",
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe("Responsibilities on an Archived Course", () => {
+  it("refuses to start one on an Archived Course, or to resume one while its Course is Archived", async () => {
+    const s = await student();
+    const { schedules } = fakeSchedules();
+    const responsibilities = createResponsibilities({
+      db: runtime,
+      schedules,
+      clock,
+    });
+    const created = await responsibilities.create(s.p, {
+      preset: "keep_course_organized",
+      courseId: s.courseId,
+      budgetMicroUsd: 50_000,
+    });
+    if (created.status !== "ok") throw new Error(created.status);
+    // Archived as the Course overview would leave it.
+    await admin.course.update({
+      where: { id: s.courseId },
+      data: { archivedAt: now },
+    });
+    await responsibilities.pauseForCourse(s.p, s.courseId);
+
+    expect(
+      await responsibilities.create(s.p, {
+        preset: "keep_course_organized",
+        courseId: s.courseId,
+        budgetMicroUsd: 50_000,
+      }),
+    ).toEqual({ status: "course_archived" });
+    expect(await responsibilities.resume(s.p, created.id)).toEqual({
+      status: "course_archived",
+    });
+
+    await admin.course.update({
+      where: { id: s.courseId },
+      data: { archivedAt: null },
+    });
+    expect(await responsibilities.resume(s.p, created.id)).toEqual({
+      status: "ok",
+    });
   });
 });
