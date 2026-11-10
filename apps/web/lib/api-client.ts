@@ -24,3 +24,11 @@ export function createApiClient(apiOrigin: string) {
   });
   return client;
 }
+
+/** SDK streaming requests use the same session-expiry boundary as JSON requests. */
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const response = await fetch(input, init);
+  if (response.status === 401)
+    throw new ApiError(401, "Your session has expired. Please sign in again.");
+  return response;
+}

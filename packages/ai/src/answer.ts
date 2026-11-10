@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { generateText, streamText } from "ai";
 import type { Models } from "./models.js";
 
 export interface AnswerInput {
@@ -13,7 +13,10 @@ export interface Answerer {
   estimateMicroUsd(input: AnswerInput): number;
   answer(
     input: AnswerInput,
-    options: { signal: AbortSignal },
+    options: {
+      signal: AbortSignal;
+      onText?: (text: string) => void | Promise<void>;
+    },
   ): Promise<{
     value: { text: string; cited: string[] };
     usage: { microUsd: number };
@@ -39,20 +42,46 @@ export function createAnswerer(models: Models): Answerer {
         dataMessage(input.data),
         input.question,
       ]),
-    async answer(input, { signal }) {
-      const result = await generateText({
+    async answer(input, { signal, onText }) {
+      const options = {
         model: model.model,
         ...model.callSettings,
         abortSignal: signal,
-        instructions: { role: "system", content: instructions },
+        instructions: { role: "system" as const, content: instructions },
         messages: [
           {
-            role: "user",
-            content: [{ type: "text", text: dataMessage(input.data) }],
+            role: "user" as const,
+            content: [{ type: "text" as const, text: dataMessage(input.data) }],
           },
-          { role: "user", content: [{ type: "text", text: input.question }] },
+          {
+            role: "user" as const,
+            content: [{ type: "text" as const, text: input.question }],
+          },
         ],
-      });
+      };
+      const result = await (async () => {
+        if (!onText) return generateText(options);
+        const streaming = streamText({ ...options, onError: () => {} });
+        let finished = false;
+        for await (const part of streaming.stream) {
+          signal.throwIfAborted();
+          if (part.type === "error") throw part.error;
+          if (part.type === "abort") throw new Error("Answer interrupted");
+          if (part.type === "text-delta") await onText(part.text);
+          if (part.type === "finish") finished = true;
+        }
+        if (!finished) throw new Error("Answer interrupted");
+        const usage = await streaming.usage;
+        const providerMetadata = await streaming.providerMetadata;
+        if (usage.inputTokens === undefined || usage.outputTokens === undefined)
+          throw new Error("Missing answer usage");
+        return {
+          text: await streaming.text,
+          finishReason: await streaming.finishReason,
+          usage,
+          providerMetadata,
+        };
+      })();
       if (result.finishReason !== "stop")
         throw new Error(`Answer ended early (${result.finishReason})`);
       // A tag the data did not contain cites nothing; it is removed rather than shown as a citation.

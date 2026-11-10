@@ -2,6 +2,12 @@
 
 Research date: 2026-11-10. Scope: research only in `feat-ui-textarea`; no implementation, installation, live model calls, commits, or deployment. Inputs: [web conventions](../../apps/web/README.md), [knowledge design](../design/knowledge-retrieval.md), [ADR-0005](../adr/0005-separate-app-and-api-origins.md), [ADR-0012 including amendments](../adr/0012-openrouter-eu-as-interim-ai-provider.md). **Repository observations** below describe the inspected checkout. **Recommendations** are proposed changes, not existing behavior. Official documentation and installed package source were checked; compatibility is not a completed runtime test.
 
+## Implementation status
+
+Implemented on this branch: the Answerer uses `streamText` when a text callback is supplied; Knowledge consumes generation inside the existing meter and persists only complete results. `POST /api/me/chats/{id}/messages/stream` emits AI SDK UI-message SSE, with separate committed/refused outcomes. The JSON endpoint remains available. Chat uses `DefaultChatTransport`, keeps persisted history in React Query, batches provisional Markdown updates every 50ms, and supports Stop, draft recovery, and cancellation on navigation/unmount.
+
+Verified with provider SSE fixtures (including missing usage, truncation, errors and incomplete streams), HTTP/Postgres tests (including Source deletion and held usage after abort), screen tests, and an actual HTTPS streaming browser fixture. Live provider cancellation and deployed proxy buffering/duration still need the staging smoke check described below. Stop cancels answer generation; retrieval embeddings already in progress retain their own existing metering/deadline.
+
 ## Finding and recommendation
 
 Use the Vercel AI SDK already installed, retain OpenRouter and the existing API deployment, and stream **provisional text** through the existing knowledge/meter/persistence flow. The smallest fit for current web rules is a React Query send mutation using `DefaultChatTransport` from `ai` directly, with a small reducer for text and domain-result chunks. Keep Query as owner of persisted history and keep a single ephemeral draft outside its cache. `useChat` is compatible, but making it the message owner would require an explicit exception to the current web convention and careful removal of competing state.

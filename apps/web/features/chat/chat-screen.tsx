@@ -14,6 +14,7 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from "@nunio/ui/components/input-group/input-group";
+import { MdxContent } from "@nunio/ui/components/mdx/mdx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Blocks,
@@ -21,6 +22,7 @@ import {
   Plus,
   Send,
   Sparkles,
+  Square,
   Upload,
 } from "lucide-react";
 import Link from "next/link";
@@ -60,17 +62,30 @@ export function ChatScreen({
   const scrollArea = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const route = useRef(chatId);
+  const activeRequest = useRef<AbortController | null>(null);
+  const [partial, setPartial] = useState("");
+  useEffect(
+    () => () => {
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+    },
+    [],
+  );
   const form = useAppForm({
     defaultValues: { text: "", courseIds: [] as string[] },
     onSubmit: async ({ value }) => {
       const text = value.text.trim();
       if (!text || text.length > 4000) return;
+      const controller = new AbortController();
+      activeRequest.current = controller;
+      setPartial("");
       const draft = value.text;
       form.setFieldValue("text", "");
       let activeId = id;
       try {
         if (!activeId) {
           activeId = await create.mutateAsync(value.courseIds);
+          if (activeRequest.current !== controller) return;
           client.setQueryData(chatQueries(apiOrigin, activeId).queryKey, {
             id: activeId,
             courses: (courses.data ?? []).filter((course) =>
@@ -85,6 +100,14 @@ export function ChatScreen({
         const { question, ...answer } = await send.mutateAsync({
           id: activeId,
           text,
+          signal: controller.signal,
+          onText: (text) => {
+            if (
+              !controller.signal.aborted &&
+              activeRequest.current === controller
+            )
+              setPartial(text);
+          },
         });
         await client.cancelQueries(chatQueries(apiOrigin, activeId));
         client.setQueryData(
@@ -105,9 +128,15 @@ export function ChatScreen({
               : current,
         );
       } catch {
+        if (activeRequest.current !== controller) return;
         form.setFieldValue("text", draft);
         if (activeId)
           await client.invalidateQueries(chatQueries(apiOrigin, activeId));
+      } finally {
+        if (activeRequest.current === controller) {
+          activeRequest.current = null;
+          setPartial("");
+        }
       }
     },
   });
@@ -116,6 +145,9 @@ export function ChatScreen({
     if (route.current === chatId) return;
     route.current = chatId;
     if (chatId !== createdId) {
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+      setPartial("");
       setCreatedId(null);
       form.reset();
       create.reset();
@@ -138,7 +170,7 @@ export function ChatScreen({
   useEffect(() => {
     if (following.current && scrollArea.current)
       scrollArea.current.scrollTop = scrollArea.current.scrollHeight;
-  }, [messages.length, busy]);
+  }, [messages.length, busy, partial.length]);
 
   return (
     <main
@@ -216,9 +248,14 @@ export function ChatScreen({
                 <div className="ml-auto max-w-[647px] rounded-xl rounded-br-none bg-primary-50 px-4 py-4 text-base leading-7 whitespace-pre-wrap text-primary-900 [overflow-wrap:anywhere]">
                   {send.variables.text}
                 </div>
-                <p role="status" className="text-sm text-base-500">
-                  nunio antwortet …
-                </p>
+                <section aria-label="Laufende Antwort">
+                  {partial && <MdxContent content={partial} />}
+                  <p role="status" className="text-sm text-base-500">
+                    {partial
+                      ? "Antwort wird geschrieben …"
+                      : "nunio antwortet …"}
+                  </p>
+                </section>
               </>
             )}
           </div>
@@ -318,6 +355,15 @@ export function ChatScreen({
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
+            {busy && (
+              <InputGroupButton
+                aria-label="Antwort stoppen"
+                onClick={() => activeRequest.current?.abort()}
+                size="icon"
+              >
+                <Square />
+              </InputGroupButton>
+            )}
             <form.Subscribe
               selector={(state) =>
                 [state.values.text, state.isSubmitting] as const

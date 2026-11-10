@@ -74,10 +74,14 @@ const schedules: Schedules = {
 /** What the answer model was asked, and what it replies next. */
 const prompts: AnswerInput[] = [];
 let reply = "";
+let finishAnswer: Promise<void> | undefined;
 const answerer: Answerer = {
   estimateMicroUsd: () => 1,
-  async answer(input) {
+  async answer(input, { signal, onText }) {
     prompts.push(input);
+    await onText?.(reply);
+    await finishAnswer;
+    signal.throwIfAborted();
     return {
       value: {
         text: reply,
@@ -1500,6 +1504,162 @@ async function chatSource(cookie: string, title: string, text: string) {
 }
 
 describe("Chat", () => {
+  it("streams provisional text before committing the canonical turn", async () => {
+    const cookie = await signUp("chat-stream");
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const created = await app.request(`${apiOrigin}/api/me/chats`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+    });
+    const { id } = (await created.json()) as { id: string };
+    let release = () => {};
+    finishAnswer = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    reply = "Eine schrittweise Antwort.";
+    try {
+      const response = await app.request(
+        `${apiOrigin}/api/me/chats/${id}/messages/stream`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ text: "Meine Frage" }),
+        },
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain(
+        "text/event-stream",
+      );
+      expect(response.headers.get("cache-control")).toContain("no-store");
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      while (!text.includes('"text-delta"')) {
+        const next = await reader.read();
+        if (next.done) throw new Error("No provisional text");
+        text += decoder.decode(next.value, { stream: true });
+      }
+      expect(text).toContain("Eine schrittweise Antwort.");
+      expect(text).not.toContain("data-committed");
+      expect(
+        await (
+          await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+            headers: { cookie },
+          })
+        ).json(),
+      ).toEqual([]);
+      release();
+      for (;;) {
+        const next = await reader.read();
+        if (next.done) break;
+        text += decoder.decode(next.value, { stream: true });
+      }
+      expect(text).toContain("data-committed");
+      const history = (await (
+        await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+          headers: { cookie },
+        })
+      ).json()) as { text: string }[];
+      expect(history.map((message) => message.text)).toEqual([
+        "Meine Frage",
+        reply,
+      ]);
+    } finally {
+      release();
+      finishAnswer = undefined;
+    }
+  });
+
+  for (const interruption of ["abort", "source-deletion"] as const) {
+    it(`does not persist a streamed answer after ${interruption}`, async () => {
+      const cookie = await signUp(`stream-${interruption}`);
+      const headers = {
+        cookie,
+        origin: appOrigin,
+        "content-type": "application/json",
+      };
+      const sourceId = await chatSource(
+        cookie,
+        "Notizen.pdf",
+        "Die Klausur ist am 10. Februar.",
+      );
+      const created = await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [sourceId] }),
+      });
+      const { id } = (await created.json()) as { id: string };
+      const controller = new AbortController();
+      let release = () => {};
+      finishAnswer = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      reply = "Die Klausur ist am 10. Februar [S1].";
+      try {
+        const response = await app.request(
+          `${apiOrigin}/api/me/chats/${id}/messages/stream`,
+          {
+            method: "POST",
+            headers,
+            signal: controller.signal,
+            body: JSON.stringify({ text: "Wann ist die Klausur?" }),
+          },
+        );
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let body = "";
+        while (!body.includes('"text-delta"')) {
+          const next = await reader.read();
+          if (next.done) throw new Error("No streamed text");
+          body += decoder.decode(next.value);
+        }
+        if (interruption === "abort") controller.abort();
+        else
+          expect(
+            (
+              await app.request(`${apiOrigin}/api/me/sources/${sourceId}`, {
+                method: "DELETE",
+                headers,
+              })
+            ).status,
+          ).toBe(202);
+        release();
+        for (;;) {
+          const next = await reader.read();
+          if (next.done) break;
+          body += decoder.decode(next.value);
+        }
+        expect(body).not.toContain("data-committed");
+        expect(body).toContain(
+          interruption === "abort" ? '"error"' : "data-refused",
+        );
+        expect(
+          await (
+            await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+              headers: { cookie },
+            })
+          ).json(),
+        ).toEqual([]);
+        if (interruption === "abort") {
+          const allowance = (await (
+            await app.request(`${apiOrigin}/api/me/allowance`, {
+              headers: { cookie },
+            })
+          ).json()) as { heldMicroUsd: number };
+          expect(allowance.heldMicroUsd).toBe(1);
+        }
+      } finally {
+        release();
+        finishAnswer = undefined;
+      }
+    });
+  }
+
   it("opens a ready PDF only for its owner and withdraws access after deletion", async () => {
     const cookie = await signUp("chat-pdf");
     const sourceId = await chatSource(cookie, "Notizen.pdf", "Eine Kursnotiz.");
@@ -1822,6 +1982,18 @@ describe("Chat", () => {
       403,
       { error: "allowance_exhausted" },
     ]);
+    const streaming = await app.request(
+      `${apiOrigin}/api/me/chats/${id}/messages/stream`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ text: "Wann ist die Klausur?" }),
+      },
+    );
+    const streamBody = await streaming.text();
+    expect(streamBody).toContain("data-refused");
+    expect(streamBody).toContain("allowance_exhausted");
+    expect(streamBody).not.toContain("data-committed");
     expect(prompts).toEqual([]);
     expect(
       await (
