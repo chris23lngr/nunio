@@ -93,7 +93,12 @@ test("denying notifications sends nothing, says why, and leaves the Inbox usable
     closedAt: null,
   };
   api.route("GET", "/api/me/inbox", () =>
-    Response.json({ interventions: [intervention], briefings: [] }),
+    Response.json({
+      interventions: [
+        { ...intervention, state: closings.length ? "acknowledged" : "open" },
+      ],
+      briefings: [],
+    }),
   );
   api.route(
     "POST",
@@ -124,6 +129,7 @@ test("denying notifications sends nothing, says why, and leaves the Inbox usable
   });
   await userEvent.click(within(item).getByRole("button", { name: "Got it" }));
   expect(closings).toEqual([{ as: "acknowledged" }]);
+  expect(await screen.findByText("Acknowledged")).toBeTruthy();
 });
 
 test("a browser without push says how to get notifications on an iPhone", async () => {
