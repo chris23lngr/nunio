@@ -118,7 +118,7 @@ const itemParams = {
   id: z.string().uuid(),
 };
 const Done = json(z.object({ status: z.literal("ok") }), "Recorded.");
-const AiUse = z
+export const AiUse = z
   .discriminatedUnion("status", [
     z.object({
       status: z.literal("unknown"),

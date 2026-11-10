@@ -17,6 +17,7 @@
       "dependencies": {
         "@hono/zod-openapi": "1.6.3",
         "@nunio/ai": "workspace:*",
+        "@nunio/artifacts": "workspace:*",
         "@nunio/billing": "workspace:*",
         "@nunio/db": "workspace:*",
         "@nunio/delegation": "workspace:*",
@@ -25,6 +26,7 @@
         "@nunio/knowledge": "workspace:*",
         "@nunio/outreach": "workspace:*",
         "@nunio/planning": "workspace:*",
+        "@nunio/understanding": "workspace:*",
         "@temporalio/client": "1.25.0",
         "@vercel/functions": "3.10.5",
         "hono": "4.13.14",
@@ -107,6 +109,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@nunio/ai": "workspace:*",
+        "@nunio/artifacts": "workspace:*",
         "@nunio/db": "workspace:*",
         "@nunio/delegation": "workspace:*",
         "@nunio/identity": "workspace:*",
