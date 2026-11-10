@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Embedder, ScanReader } from "@nunio/ai";
 import { isDefiniteFailure, SourceModelRejected } from "@nunio/ai";
 import type { PrismaClient, SourceFailure } from "@nunio/db";
@@ -49,6 +49,7 @@ export interface SourceStorage {
   download(
     id: string,
     key: Buffer,
+    location?: "quarantine" | "sources",
   ): Promise<{ url: string; keyBase64: string; etag: string }>;
   promote(id: string, key: Buffer): Promise<void>;
   remove(id: string): Promise<void>;
@@ -96,6 +97,37 @@ export function createSources({
   const sourceLock = (tx: Transaction, id: string) =>
     tx.$queryRaw`SELECT "id" FROM "source" WHERE "id" = ${id} FOR UPDATE`;
   const sources = {
+    async download(p: Principal, id: string) {
+      return withOwner(db, p, async (tx) => {
+        const source = await tx.source.findFirst({
+          where: { id, deletedAt: null, status: "ready" },
+        });
+        if (!source?.keyVersion || !source.keyCiphertext)
+          return { status: "gone" } as const;
+        const key = keys.unwrap(id, {
+          version: source.keyVersion,
+          ciphertext: source.keyCiphertext,
+        });
+        try {
+          const download = await storage.download(id, key, "sources");
+          return {
+            status: "ok",
+            title: source.title,
+            url: download.url,
+            headers: {
+              "x-amz-server-side-encryption-customer-algorithm": "AES256",
+              "x-amz-server-side-encryption-customer-key":
+                key.toString("base64"),
+              "x-amz-server-side-encryption-customer-key-md5": createHash("md5")
+                .update(key)
+                .digest("base64"),
+            },
+          } as const;
+        } finally {
+          key.fill(0);
+        }
+      });
+    },
     async upload(
       p: Principal,
       input: { title: string; bytes: number; type: string },

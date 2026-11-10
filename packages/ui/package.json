@@ -47,7 +47,8 @@
     "tailwindcss": "4.3.3",
     "vite": "8.3.5",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "@types/mdast": "4.0.4"
   },
   "sideEffects": [
     "**/*.css"
@@ -58,7 +59,14 @@
     "cmdk": "1.1.1",
     "cn": "0.5.0",
     "lucide-react": "1.63.0",
-    "motion": "14.7.1"
+    "motion": "14.7.1",
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "katex": "0.19.1",
+    "react-markdown": "10.1.0",
+    "rehype-katex": "7.0.1",
+    "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
+    "unist-util-visit": "5.2.0"
   },
   "peerDependencies": {
     "react": "^19.3.1",

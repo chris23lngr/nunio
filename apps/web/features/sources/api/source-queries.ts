@@ -28,3 +28,38 @@ export function sourceQueries(apiOrigin: string) {
         : false,
   });
 }
+
+export function sourceDocumentQueries(apiOrigin: string, id: string) {
+  return queryOptions({
+    queryKey: [apiOrigin, "source-document", id],
+    staleTime: 0,
+    gcTime: 0,
+    queryFn: async ({ signal }) => {
+      const result = await createApiClient(apiOrigin).GET(
+        "/api/me/sources/{id}/download",
+        { params: { path: { id } }, signal },
+      );
+      if (!result.data)
+        throw new Error(
+          result.response.status === 404
+            ? "Diese Quelle ist nicht mehr verfügbar."
+            : "Das PDF konnte nicht geladen werden.",
+        );
+      const response = await fetch(result.data.url, {
+        headers: result.data.headers,
+        signal,
+        credentials: "omit",
+      });
+      if (!response.ok)
+        throw new Error(
+          "Das PDF konnte nicht geladen werden. Bitte versuche es erneut.",
+        );
+      return {
+        title: result.data.title,
+        blob: new Blob([await response.arrayBuffer()], {
+          type: "application/pdf",
+        }),
+      };
+    },
+  });
+}

@@ -99,7 +99,17 @@ export function createSourceStorage({
         },
       };
     },
-    async download(id, key) {
+    async download(id, key, location = "quarantine") {
+      if (location === "sources") {
+        const target = { Bucket: sources, Key: id, ...ssec(key) };
+        const head = await s3.send(new HeadObjectCommand(target));
+        if (!head.ETag) throw new Error("Missing Source ETag");
+        const url = await getSignedUrl(s3, new GetObjectCommand(target), {
+          expiresIn: 300,
+          unhoistableHeaders,
+        });
+        return { url, keyBase64: key.toString("base64"), etag: head.ETag };
+      }
       // The signed browser PUT can be replayed. Parse a worker-only snapshot inside quarantine;
       // Hetzner does not enforce CopySourceIfMatch on multipart copy (Phase 5 live regression).
       await copy(quarantine, id, quarantine, snapshotPath(id), key);
