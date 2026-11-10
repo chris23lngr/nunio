@@ -364,3 +364,57 @@ describe("Source Runs", () => {
     ).toBe(true);
   });
 });
+
+describe("Artifact Runs", () => {
+  const artifactRun = (activities: {
+    makeArtifact: (runId: string) => Promise<string>;
+  }) =>
+    Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities,
+    });
+
+  it("makes the Artifact with its Run and returns how it ended", async () => {
+    const made: string[] = [];
+    const worker = await artifactRun({
+      makeArtifact: async (runId) => {
+        made.push(runId);
+        return "ready";
+      },
+    });
+
+    const result = await worker.runUntil(
+      env.client.workflow.execute("artifactRun", {
+        taskQueue,
+        workflowId: "artifactRun/run-1",
+        args: [{ runId: "run-1" }],
+      }),
+    );
+
+    expect(result).toBe("ready");
+    expect(made).toEqual(["run-1"]);
+  });
+
+  it("never retries making an Artifact whose model call may have been charged", async () => {
+    let calls = 0;
+    const worker = await artifactRun({
+      makeArtifact: async () => {
+        calls++;
+        throw new Error("uncertain call");
+      },
+    });
+
+    await worker.runUntil(async () => {
+      await expect(
+        env.client.workflow.execute("artifactRun", {
+          taskQueue,
+          workflowId: `artifactRun/${randomUUID()}`,
+          args: [{ runId: "run-2" }],
+        }),
+      ).rejects.toThrow();
+    });
+    expect(calls).toBe(1);
+  });
+});

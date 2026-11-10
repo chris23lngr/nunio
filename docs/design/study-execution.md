@@ -356,9 +356,10 @@ All tables are owned by the student under the same row-level security policy as 
 
 ## API and web
 
-- `POST /api/me/artifacts` (a request), `GET /api/me/artifacts` (with `?derivedFrom=` for the Source deletion dialog), `GET /api/me/artifacts/{id}`, `POST /api/me/artifacts/{id}/versions`, `GET /api/me/artifacts/{id}/anki.tsv`.
+- `POST /api/me/artifacts` (a request: 202 once its `artifactRun/{runId}` workflow is started; 409 with the AI-use refusal or `not_handed_in`), `GET /api/me/artifacts` (with `?ready=true`, and `?derivedFrom=` for the Source deletion dialog), `GET /api/me/artifacts/{id}` (`?version=`), `POST /api/me/artifacts/{id}/versions` (409 `stale`, `withdrawn` or `not_editable`), `GET /api/me/artifacts/{id}/anki.tsv` (a `text/tab-separated-values` download).
 - `GET /api/me/obligations/{id}/ai-use`, `POST /api/me/obligations/{id}/ai-use` (the student's entry), `GET /api/me/obligations/{id}/handoff`, `POST /api/me/obligations/{id}/reported-submitted`.
-- `POST /api/me/attempts`, `POST /api/me/attempts/{id}/grade`, `POST /api/me/topics/{id}/self-assessment`, `GET /api/me/courses/{id}/levels`.
+- `POST /api/me/attempts`, `POST /api/me/attempts/{id}/grade`, `POST /api/me/topics/{id}/self-assessment`, `GET /api/me/courses/{id}/levels`, `GET /api/me/topics/{id}/evidence`.
+- Home's `artifacts` lists ready Artifacts. Briefings do not bundle them yet.
 
 All are authenticated and CSRF-protected like the existing student routes.
 

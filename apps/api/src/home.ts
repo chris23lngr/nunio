@@ -5,6 +5,7 @@ import { describeAction } from "./approvals.js";
 import { errors, json, student } from "./outcomes.js";
 import { Tradeoff } from "./plan.js";
 import { scopeNames } from "./responsibilities.js";
+import { ArtifactSummary } from "./study.js";
 
 const Attention = z.discriminatedUnion("kind", [
   z.object({
@@ -56,10 +57,9 @@ const HomeView = z
       }),
     ),
     artifacts: z
-      .array(z.unknown())
-      .max(0)
+      .array(ArtifactSummary)
       .describe(
-        "Ready Artifacts; always empty until Artifacts exist (Phase 11).",
+        "Ready Artifacts: finished, not yet opened, and not withdrawn.",
       ),
     agentWork: z
       .array(
@@ -213,7 +213,8 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
             ]
           : [];
       });
-      return c.json({ attention, ongoing, artifacts: [], agentWork }, 200);
+      const artifacts = await c.get("artifacts").list(p, { ready: true });
+      return c.json({ attention, ongoing, artifacts, agentWork }, 200);
     },
   );
 }

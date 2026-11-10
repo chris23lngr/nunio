@@ -3,8 +3,12 @@ import {
   createAnswerer,
   createEmbedder,
   createEstimator,
+  createGrader,
+  createMaker,
   createModels,
 } from "@nunio/ai";
+import type { Artifacts } from "@nunio/artifacts";
+import { createArtifacts } from "@nunio/artifacts";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { Delegation, Responsibilities } from "@nunio/delegation";
@@ -25,11 +29,15 @@ import type { Outreach } from "@nunio/outreach";
 import { createOutreach, InvalidUnsubscribeError } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import { createPlan } from "@nunio/planning";
+import type { Understanding } from "@nunio/understanding";
+import { createUnderstanding } from "@nunio/understanding";
 import { attachDatabasePool } from "@vercel/functions";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AppBindings } from "./app.js";
 import { routes } from "./app.js";
+import type { ArtifactWorkflows } from "./artifact-workflows.js";
+import { artifactWorkflowsFromEnv } from "./artifact-workflows.js";
 import type { RunWorkflows } from "./run-workflows.js";
 import { runWorkflowsFromEnv } from "./run-workflows.js";
 import type { SourceWorkflows } from "./source-workflows.js";
@@ -52,6 +60,9 @@ export interface AppDeps {
   responsibilities: Responsibilities;
   runWorkflows: RunWorkflows;
   outreach: Outreach;
+  artifacts: Artifacts;
+  artifactWorkflows: ArtifactWorkflows;
+  understanding: Understanding;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
   /** Mounts the spike c routes when set. */
@@ -75,6 +86,9 @@ export function createApp({
   responsibilities,
   runWorkflows,
   outreach,
+  artifacts,
+  artifactWorkflows,
+  understanding,
 }: AppDeps) {
   const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
@@ -105,6 +119,9 @@ export function createApp({
     c.set("responsibilities", responsibilities);
     c.set("runWorkflows", runWorkflows);
     c.set("outreach", outreach);
+    c.set("artifacts", artifacts);
+    c.set("artifactWorkflows", artifactWorkflows);
+    c.set("understanding", understanding);
     await next();
   });
   // RFC 8058 one-click unsubscribe: a mail provider POSTs without a session or our Origin, and must not be redirected.
@@ -181,10 +198,21 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     clock,
   });
   const { runWorkflows, schedules } = runWorkflowsFromEnv(env);
+
   const plan = createPlan({ db: prisma, facts, clock });
   const responsibilities = createResponsibilities({
     db: prisma,
     schedules,
+    clock,
+  });
+  const artifacts = createArtifacts({
+    db: prisma,
+    keys,
+    reader,
+    facts,
+    responsibilities,
+    delegation,
+    maker: createMaker(models),
     clock,
   });
   return createApp({
@@ -203,6 +231,18 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     plan,
     estimator: createEstimator(models),
     projects: createProjects({ db: prisma }),
+    artifacts,
+    artifactWorkflows: artifactWorkflowsFromEnv(env),
+    understanding: createUnderstanding({
+      db: prisma,
+      keys,
+      artifacts,
+      reader,
+      facts,
+      delegation,
+      grader: createGrader(models),
+      clock,
+    }),
     // Only the worker sends; the API reads the Inbox and settings, and holds no notification key.
     outreach: createOutreach({
       db: prisma,
