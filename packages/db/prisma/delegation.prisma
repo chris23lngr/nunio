@@ -94,8 +94,9 @@ model Run {
   workflowId       String?
   startedAt        DateTime        @default(now())
 
-  actions Action[]
-  pin     RunPin?
+  actions  Action[]
+  pin      RunPin?
+  artifact Artifact?
 
   @@unique([id, studentId])
   @@index([studentId])

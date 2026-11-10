@@ -2,6 +2,7 @@
 
 export { type AiUse, type AiUseClass, aiUseClasses } from "./ai-use.js";
 export { type ChatMessage, type Chats, createChats } from "./chats.js";
+export { createDerivedText, type DerivedText, type Sealed } from "./derived.js";
 export {
   type Correction,
   createFacts,

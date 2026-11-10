@@ -28,6 +28,12 @@ export {
   type Task,
 } from "./models.js";
 export {
+  createMaker,
+  type Maker,
+  type PracticeInput,
+  type PracticeItem,
+} from "./practice.js";
+export {
   createEmbedder,
   createScanReader,
   type Embedder,

@@ -163,6 +163,24 @@
         "vitest": "5.0.5",
       },
     },
+    "packages/artifacts": {
+      "name": "@nunio/artifacts",
+      "version": "0.0.0",
+      "dependencies": {
+        "@nunio/ai": "workspace:*",
+        "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
+        "@nunio/keys": "workspace:*",
+        "@nunio/knowledge": "workspace:*",
+      },
+      "devDependencies": {
+        "@biomejs/biome": "2.6.3",
+        "@nunio/typescript-config": "workspace:*",
+        "@types/node": "24.19.2",
+        "typescript": "5.9.3",
+        "vitest": "5.0.5",
+      },
+    },
     "packages/billing": {
       "name": "@nunio/billing",
       "version": "0.0.0",
@@ -808,6 +826,8 @@
     "@nunio/api": ["@nunio/api@workspace:apps/api"],
 
     "@nunio/api-client": ["@nunio/api-client@workspace:packages/api-client"],
+
+    "@nunio/artifacts": ["@nunio/artifacts@workspace:packages/artifacts"],
 
     "@nunio/billing": ["@nunio/billing@workspace:packages/billing"],
 
