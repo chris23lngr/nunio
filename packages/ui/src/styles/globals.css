@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "./tokens.css";
 @import "./theme.css";
+@import "../components/ui/mdx/mdx.css";
+@import "katex/dist/katex.min.css";
+@import "@fontsource/ibm-plex-mono/400.css";
 
 /* Include library classes when this stylesheet is consumed by a workspace app. */
 @source "../components";

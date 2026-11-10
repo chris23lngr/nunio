@@ -1,0 +1,221 @@
+.nunio-mdx {
+  position: relative;
+  width: 100%;
+  max-width: 647px;
+  min-width: 0;
+  color: var(--base-600);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 28px;
+  overflow-wrap: anywhere;
+  & :where(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, figure, hr) {
+    margin: 0;
+  }
+  & > * + * {
+    margin-top: 24px;
+  }
+  & > :is(h1, h2, h3, h4, h5, h6):where(:not(:first-child)) {
+    margin-top: 32px;
+  }
+  & > :is(h1, h2, h3, h4, h5, h6) + * {
+    margin-top: 12px;
+  }
+  & :is(h1, h2, h3, h4, h5, h6) {
+    color: var(--base-800);
+    font-weight: 500;
+  }
+  & h1 {
+    font-size: 30px;
+    line-height: 36px;
+    font-weight: 600;
+  }
+  & h2 {
+    font-size: 20px;
+    line-height: 28px;
+  }
+  & h3 {
+    font-size: 18px;
+    line-height: 28px;
+  }
+  & :is(h4, h5, h6) {
+    font-size: 16px;
+    line-height: 24px;
+  }
+  & h4 {
+    font-weight: 600;
+  }
+  & strong {
+    color: var(--base-800);
+    font-weight: 500;
+  }
+  & :is(ul, ol) {
+    padding-left: 32px;
+  }
+  & ul {
+    list-style: disc;
+  }
+  & ol {
+    list-style: decimal;
+    font-variant-numeric: tabular-nums;
+  }
+  & li + li,
+  & li > :is(ul, ol) {
+    margin-top: 8px;
+  }
+  & li::marker {
+    color: var(--base-500);
+  }
+  & a {
+    color: var(--primary-600);
+    font-weight: 500;
+    text-decoration: none;
+  }
+  & :focus-visible {
+    outline: 2px solid var(--primary-600);
+    outline-offset: 2px;
+  }
+  & blockquote {
+    border-left: 2px solid var(--primary-500);
+    padding-left: 16px;
+  }
+  & :is(blockquote, aside) > * + * {
+    margin-top: 12px;
+  }
+  & hr {
+    border: 0;
+    border-top: 1px solid var(--base-200);
+  }
+  & :not(pre) > code {
+    background: var(--base-100);
+    border-radius: 2px;
+    padding: 2px 4px;
+    font:
+      14px / 22px "IBM Plex Mono",
+      monospace;
+  }
+  & .mdx-code {
+    overflow: hidden;
+    border: 1px solid var(--base-200);
+    border-radius: 8px;
+    background: var(--base-50);
+  }
+  & .mdx-code-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--base-200);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  & .mdx-code-toolbar button {
+    margin-left: auto;
+    cursor: pointer;
+  }
+  & pre {
+    overflow-x: auto;
+    padding: 16px;
+    font:
+      14px / 22px "IBM Plex Mono",
+      monospace;
+  }
+  & pre code {
+    font: inherit;
+  }
+  & .mdx-table {
+    overflow-x: auto;
+    border: 1px solid var(--base-200);
+    border-radius: 8px;
+  }
+  & table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    line-height: 22px;
+  }
+  & :is(th, td) {
+    min-width: 140px;
+    padding: 12px;
+    text-align: start;
+    border-bottom: 1px solid var(--base-200);
+  }
+  & th {
+    background: var(--base-50);
+    color: var(--base-800);
+    font-weight: 500;
+    line-height: 20px;
+  }
+  & tr:last-child td {
+    border-bottom: 0;
+  }
+  & img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+  }
+  & figcaption {
+    margin-top: 8px;
+    font-size: 14px;
+    line-height: 20px;
+  }
+  & .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    margin: 0;
+    padding: 16px;
+    font-size: 18px;
+  }
+  & aside[data-callout] {
+    position: relative;
+    border: 1px solid var(--primary-200);
+    border-radius: 8px;
+    background: var(--primary-50);
+    padding: 16px 16px 16px 48px;
+  }
+  & aside[data-callout]::before {
+    position: absolute;
+    left: 16px;
+    color: var(--primary-700);
+    content: "ⓘ";
+  }
+  & aside[data-callout="tip"]::before {
+    content: "✓";
+  }
+  & aside[data-callout="warning"] {
+    border: 0;
+    border-left: 3px solid var(--primary-700);
+  }
+  & aside[data-callout="warning"]::before {
+    content: "!";
+  }
+  & .contains-task-list {
+    padding-left: 0;
+    list-style: none;
+  }
+  & .task-list-item {
+    position: relative;
+    padding-left: 32px;
+  }
+  & input[type="checkbox"] {
+    position: absolute;
+    top: 6px;
+    left: 4px;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--primary-400);
+  }
+  & .footnotes {
+    border-top: 1px solid var(--base-200);
+    padding-top: 12px;
+    font-size: 14px;
+    line-height: 20px;
+  }
+  & .footnotes li + li {
+    margin-top: 8px;
+  }
+  & sup {
+    font-size: 12px;
+    line-height: 16px;
+  }
+}
