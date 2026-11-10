@@ -200,6 +200,12 @@ function fakeMaker() {
     async flashcards() {
       throw new Error("not used");
     },
+    async draft() {
+      throw new Error("not used");
+    },
+    async critique() {
+      throw new Error("not used");
+    },
   };
   return { maker, inputs };
 }

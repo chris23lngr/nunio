@@ -29,11 +29,14 @@ export {
   type Task,
 } from "./models.js";
 export {
+  type CritiqueInput,
   createMaker,
+  type DraftInput,
   type Flashcard,
   type Maker,
   type PracticeInput,
   type PracticeItem,
+  type Written,
 } from "./practice.js";
 export {
   createEmbedder,

@@ -61,7 +61,9 @@ export interface Artifacts {
     artifactId: string,
     edit: {
       baseVersion: number;
-      content: { cards: { id?: string; front: string; back: string }[] }; // drafts follow in their PR
+      content:
+        | { cards: { id?: string; front: string; back: string }[] }
+        | { text: string }; // a draft keeps the citations whose tags its text still uses
     },
   ): Promise<
     | { status: "ok"; version: number }
@@ -75,7 +77,7 @@ export interface Artifacts {
   handoff(
     student: Principal,
     obligationId: string,
-  ): Promise<HandoffView | "gone">;
+  ): Promise<HandoffView | "gone" | "not_handed_in">;
   /** For `understanding` only: one item with what grading needs. Does not mark the Artifact opened. */
   practiceItem(
     student: Principal,
@@ -231,7 +233,14 @@ export interface Maker {
     input: PracticeInput,
     options: { signal: AbortSignal },
   ): Promise<{ value: { cards: Flashcard[] }; usage: { microUsd: number } }>;
-  // draft and critique follow in their PR
+  draft(
+    input: DraftInput, // { obligation; rule: string | null; instructions; data; tags }, all fenced
+    options: { signal: AbortSignal },
+  ): Promise<{ value: Written; usage: { microUsd: number } }>; // Written = { text; cited }
+  critique(
+    input: CritiqueInput, // { obligation; rule; work; data; tags }, the work fenced as the student's own
+    options: { signal: AbortSignal },
+  ): Promise<{ value: Written; usage: { microUsd: number } }>;
 }
 export interface Grader {
   estimateMicroUsd(input: GradeInput): number;
@@ -269,7 +278,8 @@ export interface Grader {
   `make` asks again before calling the model, so a rule that changed meanwhile fails the Run. Practice sets and flashcards on the same Topics are never gated, because practice is not assessed work.
 - **Exams get no drafts.** A `draft` or `critique` for an Obligation of kind `exam` or `registration` is refused with `not_handed_in`.
 - **Ready means finished and unopened.** An Artifact is ready from the end of a successful `make` until its first `open`, unless it is withdrawn first. There's no Acknowledgement, and it never raises an Intervention.
-- **Versions are immutable.** `edit` writes a new version against `baseVersion`, and a concurrent edit gets `stale`. Practice sets and Critiques can't be edited, so an Attempt always refers to the item as it was answered.
+- **Versions are immutable.** `edit` writes a new version against `baseVersion`, and a concurrent edit gets `stale`. Practice sets and Critiques can't be edited, so an Attempt always refers to the item as it was answered. An edited draft keeps only the citations whose tags its text still uses.
+- **A Critique covers Own Work or a draft.** A Critique of a draft version reads that version's text and is sealed under its Sources as well as the Obligation's material.
 - **A Handoff is not an Action.** `handoff` only shows what the student needs; `facts.reportSubmitted` records Reported as Submitted, which the student can take back. Nothing is sent anywhere.
 
 ### Error modes

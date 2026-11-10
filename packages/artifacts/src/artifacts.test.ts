@@ -1,5 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type {
+  CritiqueInput,
+  DraftInput,
   Embedder,
   Extracted,
   Extractor,
@@ -200,7 +202,23 @@ async function linkToCourse(p: Principal, sourceId: string) {
 /** A Maker that records what it was given and answers with one item citing the first tag. */
 function fakeMaker() {
   const inputs: PracticeInput[] = [];
+  const drafts: DraftInput[] = [];
+  const critiques: CritiqueInput[] = [];
   const maker: Maker = {
+    async draft(input) {
+      drafts.push(input);
+      return {
+        value: { text: "Entwurf zu Aufgabe 1 [S1].", cited: ["S1"] },
+        usage: { microUsd: 30 },
+      };
+    },
+    async critique(input) {
+      critiques.push(input);
+      return {
+        value: { text: "Aufgabe 1 übersieht etwas [S1].", cited: ["S1"] },
+        usage: { microUsd: 30 },
+      };
+    },
     estimateMicroUsd: () => 10,
     async practiceSet(input) {
       inputs.push(input);
@@ -238,7 +256,7 @@ function fakeMaker() {
       };
     },
   };
-  return { maker, inputs };
+  return { maker, inputs, drafts, critiques };
 }
 
 function artifactsWith(maker: Maker) {
@@ -443,6 +461,8 @@ it("fails once when the Maker fails, and never makes it again", async () => {
     estimateMicroUsd: () => 10,
     practiceSet: timedOut,
     flashcards: timedOut,
+    draft: timedOut,
+    critique: timedOut,
   });
   const started = await artifacts.request(p, {
     kind: "practice_set",
@@ -671,4 +691,376 @@ it("gives no Practice Item from a set of flashcards, which nothing grades", asyn
   expect(await artifacts.practiceItem(p, { artifactId, itemId: "1" })).toBe(
     "gone",
   );
+});
+
+/** Analysis I with problem sheet 3 (handed in on Moodle), an exam and a Topic, all from one Skript. */
+async function courseWithObligations(p: Principal) {
+  const sourceId = await readySource(p, "Skript", [
+    "MA-101 Analysis I",
+    "Übungsblatt 3: Konvergenz. Abgabe am 20.11. über Moodle.",
+    "Klausur am 10.02.2027.",
+  ]);
+  const due = (date: string, text: string) => ({
+    date,
+    time: null,
+    timeZone: null,
+    text,
+  });
+  await facts.extract(p, sourceId, {
+    extractor: {
+      model: "test-extractor",
+      windows: (pages) => [[...pages]],
+      estimateMicroUsd: () => 1,
+      extract: async () => ({
+        value: {
+          courses: [
+            {
+              code: "MA-101",
+              title: "Analysis I",
+              page: 1,
+              quote: "MA-101 Analysis I",
+            },
+          ],
+          obligations: [
+            {
+              course: "MA-101",
+              kind: "assignment",
+              title: "Übungsblatt 3: Konvergenz",
+              key: "Übungsblatt 3",
+              due: due("2026-11-20", "Abgabe am 20.11."),
+              destination: "Moodle",
+              page: 2,
+              quote: "Übungsblatt 3: Konvergenz. Abgabe am 20.11. über Moodle.",
+              uncertainty: null,
+            },
+            {
+              course: "MA-101",
+              kind: "exam",
+              title: "Klausur",
+              key: "Klausur",
+              due: due("2027-02-10", "Klausur am 10.02.2027."),
+              destination: null,
+              page: 3,
+              quote: "Klausur am 10.02.2027.",
+              uncertainty: null,
+            },
+          ],
+          facts: [
+            {
+              course: "MA-101",
+              type: "topic",
+              key: "Konvergenz",
+              value: "Konvergenz",
+              page: 2,
+              quote: "Konvergenz",
+              uncertainty: null,
+            },
+          ],
+        },
+        usage: { microUsd: 1 },
+      }),
+    },
+    delegation,
+  });
+  const course = (await facts.review(p)).courses[0]!;
+  await facts.decideCourse(p, course.id, "accept");
+  const id = (title: string) =>
+    course.obligations.find((o) => o.title === title)!.id;
+  return {
+    sourceId,
+    courseId: course.id,
+    sheetId: id("Übungsblatt 3: Konvergenz"),
+    examId: id("Klausur"),
+    topicId: course.facts[0]!.id,
+  };
+}
+
+it("drafts an Obligation from the student's material and instructions when its AI-use Rule allows it", async () => {
+  const p = await student();
+  const { sourceId, courseId, sheetId } = await courseWithObligations(p);
+  await facts.enterRule(p, {
+    obligationId: sheetId,
+    level: "course",
+    value: "allowed",
+  });
+  const { maker, drafts } = fakeMaker();
+  const artifacts = artifactsWith(maker);
+
+  const started = await artifacts.request(p, {
+    kind: "draft",
+    obligationId: sheetId,
+    instructions: "Nur Aufgabe 1, auf Deutsch.",
+    from: { selection: { courseIds: [courseId], sourceIds: [] } },
+  });
+  if (started.status !== "started") throw new Error(started.status);
+  expect(await artifacts.make(started.runId)).toBe("ready");
+
+  expect(drafts).toEqual([
+    {
+      obligation: "Übungsblatt 3: Konvergenz",
+      rule: null,
+      instructions: "Nur Aufgabe 1, auf Deutsch.",
+      data: expect.stringContaining("Übungsblatt 3: Konvergenz"),
+      tags: ["S1"],
+    },
+  ]);
+  expect(await artifacts.open(p, started.artifactId)).toMatchObject({
+    kind: "draft",
+    obligationId: sheetId,
+    version: 1,
+    content: {
+      text: "Entwurf zu Aufgabe 1 [S1].",
+      citations: [{ tag: "S1", provenance: { kind: "source", sourceId } }],
+    },
+  });
+});
+
+it("refuses to write while the AI-use Rule is unknown, forbidden, or conditional and unconfirmed, and for an exam, while practice stays open", async () => {
+  const p = await student();
+  const { courseId, sheetId, examId, topicId } = await courseWithObligations(p);
+  const artifacts = artifactsWith(fakeMaker().maker);
+  const from = { selection: { courseIds: [courseId], sourceIds: [] } };
+  const draft = (obligationId: string, conditionsConfirmed?: true) =>
+    artifacts.request(p, {
+      kind: "draft",
+      obligationId,
+      instructions: "Alles.",
+      from,
+      ...(conditionsConfirmed ? { conditionsConfirmed } : {}),
+    });
+  const refused = (reason: string) => ({ status: "refused", reason });
+
+  expect(await draft(sheetId)).toEqual(refused("ai_use_unknown"));
+  await facts.enterRule(p, {
+    obligationId: sheetId,
+    level: "course",
+    value: "forbidden",
+  });
+  expect(await draft(sheetId)).toEqual(refused("ai_use_forbidden"));
+  expect(
+    await artifacts.request(p, {
+      kind: "critique",
+      obligationId: sheetId,
+      of: { ownWork: "Meine Lösung." },
+      from,
+    }),
+  ).toEqual(refused("ai_use_forbidden"));
+  expect(
+    await artifacts.request(p, {
+      kind: "practice_set",
+      topicIds: [topicId],
+      from,
+    }),
+  ).toMatchObject({ status: "started" });
+
+  await facts.enterRule(p, {
+    obligationId: sheetId,
+    level: "obligation",
+    value: "conditional",
+  });
+  expect(await draft(sheetId)).toEqual(refused("ai_use_conditions"));
+  expect(await draft(sheetId, true)).toMatchObject({ status: "started" });
+  expect(await draft(examId, true)).toEqual(refused("not_handed_in"));
+  const other = await courseWithObligations(await student());
+  expect(await draft(other.sheetId, true)).toEqual(refused("gone"));
+});
+
+it("fails a draft whose AI-use Rule became forbidden after the student asked, without asking the Maker", async () => {
+  const p = await student();
+  const { courseId, sheetId } = await courseWithObligations(p);
+  await facts.enterRule(p, {
+    obligationId: sheetId,
+    level: "course",
+    value: "allowed",
+  });
+  const { maker, drafts } = fakeMaker();
+  const artifacts = artifactsWith(maker);
+  const started = await artifacts.request(p, {
+    kind: "draft",
+    obligationId: sheetId,
+    instructions: "Alles.",
+    from: { selection: { courseIds: [courseId], sourceIds: [] } },
+  });
+  if (started.status !== "started") throw new Error(started.status);
+  await facts.enterRule(p, {
+    obligationId: sheetId,
+    level: "obligation",
+    value: "forbidden",
+  });
+
+  expect(await artifacts.make(started.runId)).toBe("failed");
+  expect(await artifacts.open(p, started.artifactId)).toMatchObject({
+    status: "failed",
+    failure: "ai_use_forbidden",
+  });
+  expect(drafts).toEqual([]);
+});
+
+it("critiques the student's Own Work, or a version of one of their drafts, but no one else's", async () => {
+  const p = await student();
+  const { courseId, sheetId } = await courseWithObligations(p);
+  await facts.enterRule(p, {
+    obligationId: sheetId,
+    level: "course",
+    value: "allowed",
+  });
+  const { maker, critiques } = fakeMaker();
+  const artifacts = artifactsWith(maker);
+  const from = { selection: { courseIds: [courseId], sourceIds: [] } };
+  const made = async (req: Parameters<typeof artifacts.request>[1]) => {
+    const started = await artifacts.request(p, req);
+    if (started.status !== "started") throw new Error(started.status);
+    expect(await artifacts.make(started.runId)).toBe("ready");
+    return started.artifactId;
+  };
+
+  const ownWork = await made({
+    kind: "critique",
+    obligationId: sheetId,
+    of: { ownWork: "Aufgabe 1: punktweise genügt." },
+    from,
+  });
+  const draft = await made({
+    kind: "draft",
+    obligationId: sheetId,
+    instructions: "Aufgabe 1.",
+    from,
+  });
+  await made({
+    kind: "critique",
+    obligationId: sheetId,
+    of: { artifactId: draft, version: 1 },
+    from,
+  });
+
+  expect(critiques.map((c) => c.work)).toEqual([
+    "Aufgabe 1: punktweise genügt.",
+    "Entwurf zu Aufgabe 1 [S1].",
+  ]);
+  expect(await artifacts.open(p, ownWork)).toMatchObject({
+    kind: "critique",
+    obligationId: sheetId,
+    content: { text: "Aufgabe 1 übersieht etwas [S1]." },
+  });
+  const other = await student();
+  const theirs = await courseWithObligations(other);
+  await facts.enterRule(other, {
+    obligationId: theirs.sheetId,
+    level: "course",
+    value: "allowed",
+  });
+  expect(
+    await artifacts.request(other, {
+      kind: "critique",
+      obligationId: theirs.sheetId,
+      of: { artifactId: draft, version: 1 },
+      from: { selection: { courseIds: [theirs.courseId], sourceIds: [] } },
+    }),
+  ).toEqual({ status: "refused", reason: "gone" });
+});
+
+it("keeps the student's edits of a draft as new versions, with the citations their text still uses, and never edits a Critique", async () => {
+  const p = await student();
+  const { courseId, sheetId } = await courseWithObligations(p);
+  await facts.enterRule(p, {
+    obligationId: sheetId,
+    level: "course",
+    value: "allowed",
+  });
+  const artifacts = artifactsWith(fakeMaker().maker);
+  const from = { selection: { courseIds: [courseId], sourceIds: [] } };
+  const made = async (req: Parameters<typeof artifacts.request>[1]) => {
+    const started = await artifacts.request(p, req);
+    if (started.status !== "started") throw new Error(started.status);
+    await artifacts.make(started.runId);
+    return started.artifactId;
+  };
+  const draft = await made({
+    kind: "draft",
+    obligationId: sheetId,
+    instructions: "Aufgabe 1.",
+    from,
+  });
+
+  expect(
+    await artifacts.edit(p, draft, {
+      baseVersion: 1,
+      content: { text: "Überarbeitet, mit Beleg [S1]." },
+    }),
+  ).toEqual({ status: "ok", version: 2 });
+  expect(
+    await artifacts.edit(p, draft, {
+      baseVersion: 2,
+      content: { text: "Ganz in eigenen Worten." },
+    }),
+  ).toEqual({ status: "ok", version: 3 });
+  expect(await artifacts.open(p, draft, 2)).toMatchObject({
+    content: {
+      text: "Überarbeitet, mit Beleg [S1].",
+      citations: [{ tag: "S1" }],
+    },
+  });
+  expect(await artifacts.open(p, draft)).toMatchObject({
+    version: 3,
+    content: { text: "Ganz in eigenen Worten.", citations: [] },
+  });
+
+  const critique = await made({
+    kind: "critique",
+    obligationId: sheetId,
+    of: { artifactId: draft, version: 3 },
+    from,
+  });
+  expect(
+    await artifacts.edit(p, critique, {
+      baseVersion: 1,
+      content: { text: "Anders." },
+    }),
+  ).toEqual({ status: "not_editable" });
+});
+
+it("prepares a Handoff with the Obligation's Destination, its AI-use Rule and the student's drafts, but none for an exam", async () => {
+  const p = await student();
+  const { courseId, sheetId, examId } = await courseWithObligations(p);
+  await facts.enterRule(p, {
+    obligationId: sheetId,
+    level: "course",
+    value: "conditional",
+  });
+  const artifacts = artifactsWith(fakeMaker().maker);
+  const started = await artifacts.request(p, {
+    kind: "draft",
+    obligationId: sheetId,
+    instructions: "Aufgabe 1.",
+    conditionsConfirmed: true,
+    from: { selection: { courseIds: [courseId], sourceIds: [] } },
+  });
+  if (started.status !== "started") throw new Error(started.status);
+  await artifacts.make(started.runId);
+  await artifacts.edit(p, started.artifactId, {
+    baseVersion: 1,
+    content: { text: "Meine Fassung." },
+  });
+  await facts.reportSubmitted(p, sheetId, true);
+
+  expect(await artifacts.handoff(p, sheetId)).toEqual({
+    obligation: {
+      id: sheetId,
+      title: "Übungsblatt 3: Konvergenz",
+      // Extraction gives a dated deadline the default time zone.
+      due: { date: "2026-11-20", time: null, timeZone: "Europe/Berlin" },
+      destination: "Moodle",
+      reportedSubmittedAt: expect.any(Date),
+    },
+    rule: expect.objectContaining({ status: "conditional", level: "course" }),
+    drafts: [
+      {
+        id: started.artifactId,
+        version: 2,
+        createdAt: expect.any(Date),
+      },
+    ],
+  });
+  expect(await artifacts.handoff(p, examId)).toBe("not_handed_in");
+  expect(await artifacts.handoff(await student(), sheetId)).toBe("gone");
 });
