@@ -33,6 +33,8 @@ function mount(chatId: string | null = null) {
 }
 test("a suggested prompt populates the composer without sending", async () => {
   mount();
+  expect(screen.getByRole("button", { name: /Modell/ })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Neuer Chat" })).toBeTruthy();
   const user = userEvent.setup();
   const prompt = screen.getByRole("button", {
     name: "Wie sieht mein Lernplan für heute aus?",
@@ -44,6 +46,34 @@ test("a suggested prompt populates the composer without sending", async () => {
   ).toBe("Wie sieht mein Lernplan für heute aus?");
   expect(replace).not.toHaveBeenCalled();
   expect(screen.getByRole("heading", { name: /Justus/ })).toBeTruthy();
+});
+
+test("sending clears the composer before the response and restores a failed draft", async () => {
+  let release = () => {};
+  const response = new Promise<Response>((resolve) => {
+    release = () =>
+      resolve(Response.json({ error: "ai_disabled" }, { status: 403 }));
+  });
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  api.route("POST", "/api/me/chats/chat-1/messages", () => response);
+  mount("chat-1");
+  const user = userEvent.setup();
+  await screen.findByRole("heading", { name: "Neuer Chat" });
+  const textarea = screen.getByRole("textbox", {
+    name: "Nachricht",
+  }) as HTMLTextAreaElement;
+  try {
+    await user.type(textarea, "Meine Frage");
+    await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+    expect(textarea.value).toBe("");
+    expect(screen.getByText("Meine Frage", { selector: "div" })).toBeTruthy();
+  } finally {
+    release();
+  }
+  await screen.findByRole("alert");
+  expect(textarea.value).toBe("Meine Frage");
 });
 
 test("first send fixes the selected courses and displays the persisted turn", async () => {
@@ -94,7 +124,13 @@ test("first send fixes the selected courses and displays the persisted turn", as
   expect(
     screen.getByRole("heading", { name: "Erkläre die Grundlagen" }),
   ).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Kurs auswählen" })).toBeNull();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Kurs auswählen",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
   expect(
     (screen.getByRole("textbox", { name: "Nachricht" }) as HTMLTextAreaElement)
       .value,
@@ -152,7 +188,13 @@ test("reopening a Chat restores its locked selection, title, citations and remov
   expect(link.getAttribute("href")).toBe("/sources/source-1?page=2");
   expect(link.getAttribute("target")).toBe("_blank");
   expect(screen.getByText("Microeconomics")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Kurs auswählen" })).toBeNull();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Kurs auswählen",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
   expect(screen.getByText(/Diese Antwort wurde entfernt/)).toBeTruthy();
   expect(
     screen.queryByRole("button", { name: "Antwort bearbeiten" }),

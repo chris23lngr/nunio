@@ -132,6 +132,16 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
   await expect(page).toHaveURL(`${origins.app}/`);
   await page.goto(`${origins.app}/chat`);
   await expect(page.getByRole("heading", { name: /Justus/ })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Modell auswählen/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Neuer Chat", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Justus/ })).toHaveCSS(
+    "font-size",
+    "30px",
+  );
   await page.screenshot({
     path: testInfo.outputPath("chat-empty-desktop.png"),
   });
@@ -155,6 +165,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
   await expect(
     page.getByRole("button", { name: "Nachricht senden" }),
   ).toBeDisabled();
+  await expect(textarea).toHaveValue("");
   await expect.poll(() => typeof answer).toBe("function");
   answer();
   await expect(
@@ -163,7 +174,11 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
   await expect(textarea).toHaveValue("");
   await expect(
     page.getByRole("button", { name: "Kurs auswählen" }),
-  ).toHaveCount(0);
+  ).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Kurs auswählen" })).toHaveCSS(
+    "opacity",
+    "0.5",
+  );
   for (const width of [1728, 768, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await expect(textarea).toBeInViewport();
@@ -173,6 +188,11 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     expect(
       await page.evaluate(() => document.documentElement.scrollHeight),
     ).toBe(844);
+    const group = await page.locator("[data-slot=input-group]").boundingBox();
+    expect(844 - (group!.y + group!.height)).toBeCloseTo(
+      width < 640 ? 12 : 24,
+      0,
+    );
     const box = await textarea.boundingBox();
     expect(box!.y + box!.height).toBeLessThanOrEqual(844);
   }

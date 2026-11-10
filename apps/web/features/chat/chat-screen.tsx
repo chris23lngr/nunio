@@ -65,6 +65,8 @@ export function ChatScreen({
     onSubmit: async ({ value }) => {
       const text = value.text.trim();
       if (!text || text.length > 4000) return;
+      const draft = value.text;
+      form.setFieldValue("text", "");
       let activeId = id;
       try {
         if (!activeId) {
@@ -102,8 +104,8 @@ export function ChatScreen({
                 }
               : current,
         );
-        form.setFieldValue("text", "");
       } catch {
+        form.setFieldValue("text", draft);
         if (activeId)
           await client.invalidateQueries(chatQueries(apiOrigin, activeId));
       }
@@ -140,36 +142,39 @@ export function ChatScreen({
 
   return (
     <main
-      className="flex h-[calc(100dvh-30px)] min-h-0 flex-col overflow-hidden bg-white font-sans text-base-800"
+      className="flex h-[calc(100dvh-26px)] min-h-0 flex-col overflow-hidden bg-white font-sans text-base-800"
       aria-label="Chat"
     >
-      {id && (
-        <header className="grid min-h-16 shrink-0 grid-cols-[32px_minmax(0,1fr)_32px] sm:grid-cols-[132px_minmax(0,1fr)_132px] items-center gap-3 px-4 sm:px-8">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled
-            title="Modellauswahl ist noch nicht verfügbar"
-          >
-            <Sparkles />
-            <span className="hidden sm:inline">Modell</span>
-            <ChevronDown className="hidden sm:block" />
-          </Button>
+      <header className="grid min-h-16 shrink-0 grid-cols-[32px_minmax(0,1fr)_32px] sm:grid-cols-[132px_minmax(0,1fr)_132px] items-center gap-3 px-4 sm:px-8">
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled
+          title="Modellauswahl ist noch nicht verfügbar"
+          aria-label="Modell auswählen (noch nicht verfügbar)"
+        >
+          <Sparkles />
+          <span className="hidden sm:inline">Modell</span>
+          <ChevronDown className="hidden sm:block" />
+        </Button>
+        {id ? (
           <h1
             className="truncate text-center text-base font-medium"
             title={title}
           >
             {title}
           </h1>
-          <Link
-            href="/chat"
-            aria-label="Neuer Chat"
-            className={`${buttonVariants({ variant: "ghost", size: "icon" })} justify-self-end`}
-          >
-            <Plus className="size-4" aria-hidden="true" />
-          </Link>
-        </header>
-      )}
+        ) : (
+          <span />
+        )}
+        <Link
+          href="/chat"
+          aria-label="Neuer Chat"
+          className={`${buttonVariants({ variant: "ghost", size: "icon" })} justify-self-end`}
+        >
+          <Plus className="size-4" aria-hidden="true" />
+        </Link>
+      </header>
       <div
         ref={scrollArea}
         onScroll={(event) => {
@@ -181,7 +186,7 @@ export function ChatScreen({
       >
         {!id ? (
           <div className="flex min-h-full flex-col items-center pt-[min(20vh,200px)] pb-8">
-            <h1 className="max-w-lg text-center text-3xl leading-10 font-medium sm:text-4xl sm:leading-12">
+            <h1 className="max-w-lg text-center text-2xl leading-8 font-medium sm:text-3xl sm:leading-10">
               Woran möchtest du heute arbeiten, {userName.split(" ")[0]}?
             </h1>
             <div className="mt-16 flex max-w-[640px] flex-wrap justify-center gap-x-4 gap-y-3">
@@ -220,7 +225,7 @@ export function ChatScreen({
         )}
       </div>
       <form
-        className="mx-auto w-full max-w-[688px] shrink-0 px-4 pt-4 pb-[max(24px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-12"
+        className="mx-auto w-full max-w-[688px] shrink-0 px-4 pt-4 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-[max(24px,env(safe-area-inset-bottom))]"
         aria-label="Nachricht verfassen"
         onSubmit={(event) => {
           event.preventDefault();
