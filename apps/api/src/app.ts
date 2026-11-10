@@ -6,13 +6,20 @@ import type { PrismaClient } from "@nunio/db";
 import type { Delegation, Responsibilities } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
-import type { Chats, Facts, Projects, Sources } from "@nunio/knowledge";
+import type {
+  Chats,
+  Courses,
+  Facts,
+  Projects,
+  Sources,
+} from "@nunio/knowledge";
 import type { Outreach } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
 import { registerApprovalRoutes } from "./approvals.js";
 import type { ArtifactWorkflows } from "./artifact-workflows.js";
 import { registerChatRoutes } from "./chats.js";
+import { registerCourseRoutes } from "./courses.js";
 import { registerHomeRoutes } from "./home.js";
 import {
   registerInboxRoutes,
@@ -41,6 +48,7 @@ export interface AppBindings {
     plan: Plan;
     estimator: Estimator;
     projects: Projects;
+    courses: Courses;
     responsibilities: Responsibilities;
     runWorkflows: RunWorkflows;
     outreach: Outreach;
@@ -212,6 +220,7 @@ registerReviewRoutes(routes);
 registerChatRoutes(routes);
 registerPlanRoutes(routes);
 registerProjectRoutes(routes);
+registerCourseRoutes(routes);
 registerHomeRoutes(routes);
 registerApprovalRoutes(routes);
 registerResponsibilityRoutes(routes);

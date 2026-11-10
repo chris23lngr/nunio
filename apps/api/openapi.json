@@ -1699,6 +1699,130 @@
           "obligationId"
         ]
       },
+      "CourseSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "proposed",
+              "accepted"
+            ]
+          },
+          "semester": {
+            "type": "string",
+            "pattern": "^\\d{4}-(ws|ss)$",
+            "description": "Starting year and season: \"ws\" for a Wintersemester (October to March), \"ss\" for a Sommersemester."
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "rose",
+              "orange",
+              "amber",
+              "emerald",
+              "teal",
+              "blue",
+              "violet",
+              "fuchsia"
+            ]
+          },
+          "entered": {
+            "type": "boolean",
+            "description": "The student created it, so it can only be deleted, not rejected."
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "next": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "exam",
+                  "assignment",
+                  "presentation",
+                  "thesis",
+                  "registration",
+                  "other"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "due": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "time": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "timeZone": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "date",
+                  "time",
+                  "timeZone"
+                ]
+              },
+              "unreviewed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "title",
+              "due",
+              "unreviewed"
+            ],
+            "description": "The earliest Obligation still ahead, unreviewed ones included and marked."
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "title",
+          "status",
+          "semester",
+          "color",
+          "entered",
+          "archived",
+          "next"
+        ]
+      },
       "Home": {
         "type": "object",
         "properties": {
@@ -2250,6 +2374,7 @@
             "enum": [
               "student",
               "budget",
+              "course_archived",
               null
             ]
           },
@@ -4843,6 +4968,24 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The student created this Course, so it cannot be rejected, only deleted (error entered).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -5169,7 +5312,7 @@
             }
           },
           "409": {
-            "description": "The Course already has this Obligation; correct it instead.",
+            "description": "The Course already has this Obligation; correct it instead. Or the Course is Archived.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8888,6 +9031,823 @@
         }
       }
     },
+    "/api/me/courses": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "The student's proposed and accepted Courses; rejected and merged ones are left out.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "current": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-(ws|ss)$",
+                      "description": "Starting year and season: \"ws\" for a Wintersemester (October to March), \"ss\" for a Sommersemester."
+                    },
+                    "choices": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-(ws|ss)$",
+                        "description": "Starting year and season: \"ws\" for a Wintersemester (October to March), \"ss\" for a Sommersemester."
+                      },
+                      "description": "The Semesters a Course can be given, newest first."
+                    },
+                    "courses": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CourseSummary"
+                      }
+                    }
+                  },
+                  "required": [
+                    "current",
+                    "choices",
+                    "courses"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "Create a Course by hand; it is the student's own.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "semester": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-(ws|ss)$",
+                    "description": "Starting year and season: \"ws\" for a Wintersemester (October to March), \"ss\" for a Sommersemester."
+                  }
+                },
+                "required": [
+                  "title",
+                  "code",
+                  "semester"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another Course has this code or title; the student accepts, restores or unarchives that one instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "course": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "proposed",
+                            "accepted",
+                            "rejected"
+                          ]
+                        },
+                        "archived": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "archived"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "course"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/courses/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "semester": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-(ws|ss)$",
+                    "description": "Starting year and season: \"ws\" for a Wintersemester (October to March), \"ss\" for a Sommersemester."
+                  },
+                  "color": {
+                    "type": "string",
+                    "enum": [
+                      "rose",
+                      "orange",
+                      "amber",
+                      "emerald",
+                      "teal",
+                      "blue",
+                      "violet",
+                      "fuchsia"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another Course has this code or title; the student accepts, restores or unarchives that one instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "course": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "proposed",
+                            "accepted",
+                            "rejected"
+                          ]
+                        },
+                        "archived": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "archived"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "course"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Removes the Course and everything only in it, ending its Responsibilities; its Sources stay.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/courses/{id}/impact": {
+      "get": {
+        "description": "What archiving or deleting the Course touches.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Counts for the student to confirm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "obligations": {
+                      "type": "integer"
+                    },
+                    "tasks": {
+                      "type": "integer"
+                    },
+                    "studyBlocks": {
+                      "type": "integer",
+                      "description": "All of them, which deleting removes."
+                    },
+                    "futureStudyBlocks": {
+                      "type": "integer",
+                      "description": "Those still ahead, which archiving removes."
+                    },
+                    "responsibilities": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "obligations",
+                    "tasks",
+                    "studyBlocks",
+                    "futureStudyBlocks",
+                    "responsibilities"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/courses/{id}/archive": {
+      "post": {
+        "description": "nunio stops planning and acting for the Course: its future Study Blocks go and its Responsibilities are Paused.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/courses/{id}/unarchive": {
+      "post": {
+        "description": "Its Obligations return to the Plan; Paused Responsibilities stay Paused.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/me/home": {
       "get": {
         "responses": {
@@ -9418,7 +10378,7 @@
             }
           },
           "409": {
-            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "description": "It no longer matches what was read, or its Course is Archived (error course_archived): nunio does not act for it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9511,6 +10471,7 @@
                         "enum": [
                           "student",
                           "budget",
+                          "course_archived",
                           null
                         ]
                       }
@@ -9702,7 +10663,7 @@
             }
           },
           "409": {
-            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "description": "It no longer matches what was read, or its Course is Archived (error course_archived): nunio does not act for it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9812,7 +10773,7 @@
             }
           },
           "409": {
-            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "description": "It no longer matches what was read, or its Course is Archived (error course_archived): nunio does not act for it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9922,7 +10883,7 @@
             }
           },
           "409": {
-            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "description": "It no longer matches what was read, or its Course is Archived (error course_archived): nunio does not act for it.",
             "content": {
               "application/json": {
                 "schema": {
