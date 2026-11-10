@@ -206,7 +206,6 @@ All tests cross `pin`, `retrieve`, and `cite`. Scenarios:
 - **Frozen additions.** Passages come from the pinned Sources that are still live. Facts come from the pinned Courses, minus Obligations and Facts first created after the pin. A new Source's differing value for an existing Fact still shows as a Disagreement, so only new items are frozen out.
 - **Derived text.** The Chat answer's key wrapping moved into `createDerivedText`, which Artifacts and Feedback will share.
 
-
 - A Run can see its context shrink mid-task, because removals apply live.
 - The same question can return different results in a Chat and in a Run started from it, because only Runs pin.
 - Exact scans grow linearly with each student's scoped chunks. That is acceptable at pilot scale; an approximate index waits for measured need and the parity suite.

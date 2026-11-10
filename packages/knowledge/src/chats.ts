@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Answerer } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
-import type { Delegation, Principal, Transaction } from "@nunio/delegation";
+import type { Delegation, Principal } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import { createDerivedText } from "./derived.js";
@@ -197,4 +197,3 @@ export function createChats({
   };
 }
 export type Chats = ReturnType<typeof createChats>;
-

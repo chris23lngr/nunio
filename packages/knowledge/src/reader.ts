@@ -15,7 +15,10 @@ import { definitely } from "./provider.js";
 import { renderData, Untrusted } from "./untrusted.js";
 
 /** A reference, not authority: the owner and selection are resolved server-side on every call. */
-export type ScopeRef = { chatId: string } | { runId: string } | { planning: true };
+export type ScopeRef =
+  | { chatId: string }
+  | { runId: string }
+  | { planning: true };
 /** A programmer error: the query can never be valid for its scope. Do not retry. */
 export class InvalidQueryError extends Error {
   override name = "InvalidQueryError";
