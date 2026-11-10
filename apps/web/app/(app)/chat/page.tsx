@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ChatScreen } from "@/features/chat/chat-screen";
 import { apiOrigin, getSession } from "@/lib/session";
-import { ChatView } from "./chat-view";
 
 export default async function ChatPage({
   searchParams,
@@ -11,11 +10,11 @@ export default async function ChatPage({
   const session = await getSession();
   if (!session) redirect("/sign-in");
   const { id } = await searchParams;
-
   return (
-    <main>
-      <Link href="/">Back to Sources</Link>
-      <ChatView apiOrigin={apiOrigin()} chatId={id ?? null} />
-    </main>
+    <ChatScreen
+      apiOrigin={apiOrigin()}
+      chatId={id ?? null}
+      userName={session.user.name}
+    />
   );
 }

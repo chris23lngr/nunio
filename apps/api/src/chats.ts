@@ -23,6 +23,7 @@ const Message = z
   .object({
     id: z.string(),
     role: z.enum(["student", "assistant"]),
+    createdAt: z.string().datetime(),
     text: z
       .string()
       .nullable()
@@ -51,6 +52,39 @@ const errors = {
 const chatParams = z.object({ id: z.string().uuid() });
 
 export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/chats/{id}",
+      request: { params: chatParams },
+      responses: {
+        200: json(
+          z.object({
+            id: z.string(),
+            courses: z.array(
+              z.object({
+                id: z.string(),
+                title: z.string(),
+                code: z.string().nullable(),
+              }),
+            ),
+            messages: z.array(Message),
+          }),
+          "The Chat and its fixed selection.",
+        ),
+        ...errors,
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const chat = await c
+        .get("chats")
+        .detail(principal.fromSession(actor), c.req.valid("param").id);
+      return chat ? c.json(chat, 200) : c.json({ error: "gone" }, 404);
+    },
+  );
   routes.openapi(
     createRoute({
       method: "post",
@@ -120,7 +154,10 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
         },
       },
       responses: {
-        200: json(Message, "The answer, citing the selected material."),
+        200: json(
+          Message.extend({ question: Message }),
+          "The answer and its persisted question.",
+        ),
         403: json(
           ErrorBody,
           "Usage is refused, such as an exhausted Allowance.",
@@ -143,7 +180,7 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
       if (result.status === "gone") return c.json({ error: "gone" }, 404);
       if (result.status === "refused")
         return c.json({ error: result.reason }, 403);
-      return c.json(result.message, 200);
+      return c.json({ ...result.message, question: result.question }, 200);
     },
   );
 }

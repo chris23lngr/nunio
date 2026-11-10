@@ -14,6 +14,7 @@ export type ChatMessage = {
   /** Null once a Source the answer drew on is deleted: its wording is shredded with that Source. */
   text: string | null;
   citations: { tag: string; provenance: Provenance | "gone" }[];
+  createdAt: string;
 };
 
 /** Chats: an explicit selection of Courses and Sources, and questions answered only from it. */
@@ -40,6 +41,25 @@ export function createChats({
     }));
   }
   return {
+    async detail(p: Principal, id: string) {
+      const chat = await withOwner(db, p, (tx) =>
+        tx.chat.findUnique({
+          where: { id },
+          select: {
+            courses: {
+              select: {
+                course: { select: { id: true, title: true, code: true } },
+              },
+            },
+          },
+        }),
+      );
+      if (!chat) return null;
+      const messages = await this.messages(p, id);
+      return messages
+        ? { id, courses: chat.courses.map(({ course }) => course), messages }
+        : null;
+    },
     async create(
       p: Principal,
       selection: { courseIds: string[]; sourceIds: string[] },
@@ -117,6 +137,8 @@ export function createChats({
         ),
       ];
       const id = randomUUID();
+      const questionId = randomUUID();
+      const createdAt = new Date();
       const recorded = await withOwner(db, p, async (tx, studentId) => {
         if (!(await tx.chat.findUnique({ where: { id: chatId } })))
           return false;
@@ -129,10 +151,9 @@ export function createChats({
         // A Source deleted while answering takes the answer with it.
         if (!sealed) return false;
         // One timestamp; the role's enum order keeps the question before its answer.
-        const createdAt = new Date();
         await tx.chatMessage.create({
           data: {
-            id: randomUUID(),
+            id: questionId,
             chatId,
             studentId,
             role: "student",
@@ -158,9 +179,20 @@ export function createChats({
         id,
         role: "assistant",
         text: answered.value.text,
+        createdAt: createdAt.toISOString(),
         citations: await resolve(p, cited),
       };
-      return { status: "ok", message } as const;
+      return {
+        status: "ok",
+        message,
+        question: {
+          id: questionId,
+          role: "student",
+          text: question,
+          citations: [],
+          createdAt: createdAt.toISOString(),
+        } satisfies ChatMessage,
+      } as const;
     },
     /** The Chat's messages, oldest first, with citations resolved now; null when the Chat is gone. */
     async messages(
@@ -179,6 +211,7 @@ export function createChats({
           chat.messages.map(async (message) => {
             return {
               id: message.id,
+              createdAt: message.createdAt.toISOString(),
               role: message.role as ChatMessage["role"],
               text: await derived.open(tx, message.id, message),
               citations: message.citations as Citation[],

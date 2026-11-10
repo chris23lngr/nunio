@@ -64,6 +64,13 @@ export function deleteSource(apiOrigin: string, queryClient: QueryClient) {
       queryClient.setQueryData(sourceQueries(apiOrigin).queryKey, (sources) =>
         sources?.filter((source) => source.id !== id),
       );
+      // Answers may depend on this Source even when it was not explicitly cited.
+      await Promise.all([
+        queryClient.resetQueries({ queryKey: [apiOrigin, "chats"] }),
+        queryClient.resetQueries({
+          queryKey: [apiOrigin, "source-document", id],
+        }),
+      ]);
       await queryClient.invalidateQueries(sourceQueries(apiOrigin));
     },
   });
