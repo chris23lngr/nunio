@@ -25,6 +25,7 @@ const factTypes: Record<Fact["type"], string> = {
   topic: "Topic",
   course_rule: "Course rule",
   exam_logistics: "Exam logistics",
+  ai_use_rule: "AI-use rule",
 };
 const unsupported: Record<NonNullable<Obligation["unsupported"]>, string> = {
   source_deleted: "Its Source was deleted; your Correction is kept.",

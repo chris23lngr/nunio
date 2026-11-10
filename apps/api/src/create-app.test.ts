@@ -1407,6 +1407,63 @@ it("enters an Obligation by hand, refusing invalid entries, Courses that are not
   expect((await enter(exam)).status).toBe(201);
 });
 
+it("tells which AI-use Rule applies, takes the student's own answer, and records Reported as Submitted", async () => {
+  const { cookie, headers } = await reviewFixture("review-ai-use");
+  const obligations = async () =>
+    (
+      (await (
+        await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })
+      ).json()) as {
+        courses: {
+          obligations: { id: string; reportedSubmittedAt: string | null }[];
+        }[];
+      }
+    ).courses[0]!.obligations;
+  const sheet = (await obligations())[0]!.id;
+  const aiUse = async (id = sheet) => {
+    const response = await app.request(
+      `${apiOrigin}/api/me/obligations/${id}/ai-use`,
+      { headers: { cookie } },
+    );
+    return [response.status, await response.json()];
+  };
+  const post = (path: string, body: unknown, origin = appOrigin) =>
+    app.request(`${apiOrigin}/api/me/obligations/${sheet}/${path}`, {
+      method: "POST",
+      headers: { ...headers, origin },
+      body: JSON.stringify(body),
+    });
+
+  expect(await aiUse()).toEqual([200, { status: "unknown", reason: "none" }]);
+  expect((await aiUse(randomUUID()))[0]).toBe(404);
+  const answer = { level: "course", value: "forbidden" };
+  expect((await post("ai-use", answer, evilOrigin)).status).toBe(403);
+  expect((await post("ai-use", { ...answer, value: "maybe" })).status).toBe(
+    400,
+  );
+  expect((await post("ai-use", answer)).status).toBe(200);
+  expect(await aiUse()).toEqual([
+    200,
+    {
+      status: "forbidden",
+      level: "course",
+      text: null,
+      provenance: { kind: "correction" },
+    },
+  ]);
+
+  expect((await post("reported-submitted", { reported: true })).status).toBe(
+    200,
+  );
+  expect((await obligations())[0]!.reportedSubmittedAt).toEqual(
+    expect.any(String),
+  );
+  expect((await post("reported-submitted", { reported: false })).status).toBe(
+    200,
+  );
+  expect((await obligations())[0]!.reportedSubmittedAt).toBeNull();
+});
+
 it("corrects, keeps, uses and restores review items, refusing invalid Corrections and unknown values", async () => {
   const { cookie, headers } = await reviewFixture("review-corrections");
   const review = async () =>

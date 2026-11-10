@@ -37,8 +37,8 @@ export interface Extracted {
   }[];
   facts: {
     course: string;
-    type: "topic" | "course_rule" | "exam_logistics";
-    /** The Topic name, or the logistics field such as "exam.room". */
+    type: "topic" | "course_rule" | "exam_logistics" | "ai_use_rule";
+    /** The Topic name, the logistics field such as "exam.room", or for an AI-use rule "course" or an Obligation's key. */
     key: string;
     value: string;
     page: number;
@@ -136,13 +136,17 @@ const schema = z.object({
   facts: z.array(
     z.object({
       course: z.string(),
-      type: z.enum(["topic", "course_rule", "exam_logistics"]),
+      type: z.enum(["topic", "course_rule", "exam_logistics", "ai_use_rule"]),
       key: z
         .string()
         .describe(
-          "The topic name, or for exam_logistics one of exam.room, exam.duration, exam.aids, exam.format",
+          'The topic name; for exam_logistics one of exam.room, exam.duration, exam.aids, exam.format; for ai_use_rule "course", or the key of the one obligation the rule is about',
         ),
-      value: z.string(),
+      value: z
+        .string()
+        .describe(
+          "For ai_use_rule exactly one of forbidden, conditional (allowed only under conditions, such as declaring its use) or allowed",
+        ),
       ...grounding,
       uncertainty,
     }),
@@ -152,6 +156,7 @@ const instructions = [
   "You extract the structure of university courses from course documents such as syllabi and module handbooks.",
   "Extract only what the document states: courses, obligations the student owes by a deadline (exams, assignments,",
   "presentations, theses, registrations), topics, course rules such as admission requirements, and exam logistics.",
+  "Extract any rule on whether students may use AI tools (such as generative AI or ChatGPT) for assessed work as an ai_use_rule, quoting the rule itself.",
   "A course is a module (German: Modul) that ends in one assessment and grade. Lectures, tutorials, exercises, seminars and labs",
   "that belong to a module are not separate courses: list only the module, and attach their obligations, topics and rules to it.",
   "Never infer, complete or invent an item, a date or a deadline. If a deadline is relative or incomplete, set date to null and explain in uncertainty.",

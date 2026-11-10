@@ -330,6 +330,14 @@
               "other"
             ]
           },
+          "reportedSubmittedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Reported as Submitted: the student's word, never verified."
+          },
           "title": {
             "type": "string"
           },
@@ -459,6 +467,7 @@
           "disagreement",
           "unsupported",
           "kind",
+          "reportedSubmittedAt",
           "title",
           "due",
           "destination",
@@ -568,7 +577,8 @@
             "enum": [
               "topic",
               "course_rule",
-              "exam_logistics"
+              "exam_logistics",
+              "ai_use_rule"
             ]
           },
           "value": {
@@ -702,6 +712,124 @@
               "value"
             ],
             "additionalProperties": false
+          }
+        ]
+      },
+      "AiUse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "uncertain",
+                  "disagreement"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "reason"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "forbidden",
+                  "conditional",
+                  "allowed"
+                ]
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "obligation",
+                  "course"
+                ]
+              },
+              "text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The rule as its Source words it; null for the student's own."
+              },
+              "provenance": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "correction"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "entry"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "source"
+                        ]
+                      },
+                      "sourceId": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "page": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "sourceId",
+                      "title",
+                      "page"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "level",
+              "text",
+              "provenance"
+            ]
           }
         ]
       },
@@ -860,6 +988,14 @@
                     "rejected"
                   ]
                 },
+                "reportedSubmittedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Reported as Submitted: the student's word, never verified; such work is no longer planned."
+                },
                 "due": {
                   "type": [
                     "string",
@@ -904,6 +1040,7 @@
                 "title",
                 "kind",
                 "state",
+                "reportedSubmittedAt",
                 "due",
                 "estimate"
               ]
@@ -3854,6 +3991,287 @@
           },
           "409": {
             "description": "The Course already has this Obligation; correct it instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/obligations/{id}/ai-use": {
+      "get": {
+        "description": "The AI-use Rule that applies: the Obligation's own, else its Course's. While unknown, ask the student.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The rule that applies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiUse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item or Course is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "The student's own answer: the AI-use Rule for this Obligation, or for its whole Course.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "level": {
+                    "type": "string",
+                    "enum": [
+                      "obligation",
+                      "course"
+                    ]
+                  },
+                  "value": {
+                    "type": "string",
+                    "enum": [
+                      "forbidden",
+                      "conditional",
+                      "allowed"
+                    ]
+                  }
+                },
+                "required": [
+                  "level",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item or Course is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/obligations/{id}/reported-submitted": {
+      "post": {
+        "description": "Reported as Submitted, or taken back: the student says they handed it in through a Handoff.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reported": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "reported"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item or Course is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing is handed in for an exam or registration.",
             "content": {
               "application/json": {
                 "schema": {

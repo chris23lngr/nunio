@@ -18,11 +18,20 @@ import type { Delegation, Principal, Transaction } from "@nunio/delegation";
 import { accessRefusal, DefiniteFailure, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import { decryptSourceText, encryptSourceText } from "@nunio/keys";
+import type { AiUse, AiUseClass } from "./ai-use.js";
+import { isAiUseClass, resolveAiUse } from "./ai-use.js";
 import { pruneItems } from "./items.js";
 import { joinChunks } from "./sources.js";
 
 const defaultTimeZone = "Europe/Berlin";
-const factTypes: FactType[] = ["topic", "course_rule", "exam_logistics"];
+const factTypes: FactType[] = [
+  "topic",
+  "course_rule",
+  "exam_logistics",
+  "ai_use_rule",
+];
+/** Obligations nothing is handed in for, so they get no drafts and are never Reported as Submitted. */
+const notHandedIn: ObligationKind[] = ["exam", "registration"];
 /** Extracted wording, encrypted under the Source key; structure stays in plain columns. */
 interface ObligationWording {
   title: string;
@@ -80,6 +89,8 @@ interface ReviewItem<V> {
 }
 interface ReviewObligation extends ReviewItem<{ due: DueValue }> {
   kind: ObligationKind;
+  /** Reported as Submitted: the student's word, never verified. */
+  reportedSubmittedAt: Date | null;
   title: string;
   due: DueValue & { text: string | null };
   destination: string | null;
@@ -153,6 +164,15 @@ export function createFacts({
         key.fill(0);
       }
     });
+  };
+  /** "course" for a Course's AI-use Rule, or `obligation:<its matchKey>` for the one Obligation an extracted key names. */
+  const aiUseKey = async (tx: Transaction, courseId: string, key: string) => {
+    if (normalize(key) === "course") return "course";
+    const named = await tx.obligation.findMany({
+      where: { courseId, matchKey: { endsWith: `:${normalize(key)}` } },
+      select: { matchKey: true },
+    });
+    return named.length === 1 ? `obligation:${named[0]!.matchKey}` : null;
   };
   const facts = {
     async extract(
@@ -451,12 +471,22 @@ export function createFacts({
               dropped++;
               continue;
             }
+            let matchKey = normalize(item.key),
+              value = item.value;
+            if (item.type === "ai_use_rule") {
+              const ruled = await aiUseKey(tx, courseId, item.key);
+              value = normalize(item.value);
+              if (!ruled || !isAiUseClass(value)) {
+                dropped++;
+                continue;
+              }
+              matchKey = ruled;
+            }
             const wording: FactWording = {
-              value: item.value,
+              value,
               quote: item.quote,
               uncertainty: item.uncertainty,
             };
-            const matchKey = normalize(item.key);
             const owned = await tx.fact.upsert({
               where: {
                 courseId_type_matchKey: { courseId, type: item.type, matchKey },
@@ -471,7 +501,7 @@ export function createFacts({
               update: {},
               select: { id: true, state: true, correctedAt: true },
             });
-            const key = normalize(item.value);
+            const key = normalize(value);
             if (
               await repeated(owned.id, key, item.page, (id) =>
                 tx.factExtraction.update({
@@ -643,6 +673,12 @@ export function createFacts({
           }));
         } else {
           if (!("value" in correction) || !correction.value.trim())
+            return { status: "invalid" } as const;
+          const fact = await tx.fact.findUnique({ where: { id: item.id } });
+          if (
+            fact?.type === "ai_use_rule" &&
+            !isAiUseClass(correction.value.trim())
+          )
             return { status: "invalid" } as const;
           key = normalize(correction.value);
           ({ count } = await tx.fact.updateMany({
@@ -913,6 +949,111 @@ export function createFacts({
     },
 
     /** Every Course and its items, grouped by value with their citations; a rejected Course shows no items until restored. */
+    /** Whether nunio may draft or give a Critique for this Obligation: its own AI-use Rule, else its Course's. */
+    async aiUse(p: Principal, obligationId: string): Promise<AiUse | "gone"> {
+      const obligation = await withOwner(db, p, (tx) =>
+        tx.obligation.findUnique({ where: { id: obligationId } }),
+      );
+      if (!obligation) return "gone";
+      const keys = await withOwner(db, p, (tx) =>
+        tx.fact.findMany({
+          where: {
+            courseId: obligation.courseId,
+            type: "ai_use_rule",
+            matchKey: {
+              in: ["course", `obligation:${obligation.matchKey}`],
+            },
+          },
+          select: { id: true, matchKey: true },
+        }),
+      );
+      const shown = (await facts.review(p)).courses
+        .find((course) => course.id === obligation.courseId)
+        ?.facts.filter((fact) => fact.state !== "rejected");
+      const rule = (matchKey: string) =>
+        shown?.find(
+          (fact) =>
+            fact.id === keys.find((key) => key.matchKey === matchKey)?.id,
+        );
+      return resolveAiUse(
+        rule(`obligation:${obligation.matchKey}`),
+        rule("course"),
+      );
+    },
+    /** The student's own answer when the rule is unknown, for this Obligation or its whole Course. */
+    async enterRule(
+      p: Principal,
+      rule: {
+        obligationId: string;
+        level: "obligation" | "course";
+        value: AiUseClass;
+      },
+    ) {
+      return withOwner(db, p, async (tx, studentId) => {
+        const obligation = await tx.obligation.findUnique({
+          where: { id: rule.obligationId },
+        });
+        if (!obligation) return { status: "gone" } as const;
+        const matchKey =
+          rule.level === "course"
+            ? "course"
+            : `obligation:${obligation.matchKey}`;
+        const now = clock.now();
+        const entered = {
+          state: "confirmed" as const,
+          correctedAt: now,
+          correctedValue: rule.value,
+        };
+        const fact = await tx.fact.upsert({
+          where: {
+            courseId_type_matchKey: {
+              courseId: obligation.courseId,
+              type: "ai_use_rule",
+              matchKey,
+            },
+          },
+          create: {
+            id: randomUUID(),
+            studentId,
+            courseId: obligation.courseId,
+            type: "ai_use_rule",
+            matchKey,
+            ...entered,
+          },
+          update: entered,
+        });
+        // Like a Correction: what Sources say now is overruled, and later disagreement is flagged.
+        await overrule(
+          tx,
+          "fact",
+          (await extractedValues(tx, { kind: "fact", id: fact.id })).filter(
+            (value) => value.key !== rule.value,
+          ),
+          now,
+        );
+        return { status: "ok" } as const;
+      });
+    },
+    /** Reported as Submitted, or taken back: the student's word that they handed it in through a Handoff. */
+    async reportSubmitted(
+      p: Principal,
+      obligationId: string,
+      reported: boolean,
+    ) {
+      return withOwner(db, p, async (tx) => {
+        const obligation = await tx.obligation.findUnique({
+          where: { id: obligationId },
+        });
+        if (!obligation) return { status: "gone" } as const;
+        if (notHandedIn.includes(obligation.kind))
+          return { status: "not_handed_in" } as const;
+        await tx.obligation.update({
+          where: { id: obligationId },
+          data: { reportedSubmittedAt: reported ? clock.now() : null },
+        });
+        return { status: "ok" } as const;
+      });
+    },
     async review(p: Principal) {
       return withOwner(db, p, async (tx) => {
         const extractions = {
@@ -984,6 +1125,7 @@ export function createFacts({
                     const shared = {
                       id: row.id,
                       kind: row.kind,
+                      reportedSubmittedAt: row.reportedSubmittedAt,
                       state: row.state,
                       unsupported: row.unsupported,
                       disagreement:
