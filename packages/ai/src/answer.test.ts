@@ -98,3 +98,127 @@ it("refuses a truncated answer rather than showing part of it", async () => {
     ),
   ).rejects.toThrow();
 });
+
+it("streams text before completion and returns sanitized citations and terminal cost", async () => {
+  let finish = () => {};
+  const ending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const encoder = new TextEncoder();
+  const deltas: string[] = [];
+  const answerer = createAnswerer(
+    createModels({
+      apiKey: "test",
+      baseURL: "https://provider.invalid",
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            async start(controller) {
+              const emit = (data: unknown) =>
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
+                );
+              emit({
+                id: "gen-1",
+                choices: [
+                  {
+                    index: 0,
+                    delta: { content: "Eine Antwort [S1] [S7]." },
+                    finish_reason: null,
+                  },
+                ],
+              });
+              await ending;
+              emit({
+                id: "gen-1",
+                choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+                usage: {
+                  prompt_tokens: 1000,
+                  completion_tokens: 200,
+                  total_tokens: 1200,
+                  cost: 0.004,
+                },
+              });
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              controller.close();
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+    }),
+  );
+  const pending = answerer.answer(
+    { question: "Wann?", data: "", tags: ["S1"] },
+    {
+      signal: AbortSignal.timeout(2000),
+      onText: (text: string) => {
+        deltas.push(text);
+      },
+    },
+  );
+  try {
+    await expect.poll(() => deltas.length, { timeout: 1000 }).toBe(1);
+    expect(deltas.join("")).toBe("Eine Antwort [S1] [S7].");
+  } finally {
+    finish();
+  }
+  expect(await pending).toEqual({
+    value: { text: "Eine Antwort [S1].", cited: ["S1"] },
+    usage: { microUsd: 4000 },
+  });
+});
+
+for (const outcome of ["length", "missing-usage", "error", "eof"] as const) {
+  it(`does not complete a stream with ${outcome}`, async () => {
+    const data = [
+      {
+        id: "gen-1",
+        choices: [
+          { index: 0, delta: { content: "Ein Anfang" }, finish_reason: null },
+        ],
+      },
+    ];
+    const terminal =
+      outcome === "error"
+        ? { error: { message: "Unavailable", code: 500 } }
+        : {
+            id: "gen-1",
+            choices: [
+              {
+                index: 0,
+                delta: {},
+                finish_reason: outcome === "length" ? "length" : "stop",
+              },
+            ],
+            ...(outcome === "missing-usage"
+              ? {}
+              : {
+                  usage: {
+                    prompt_tokens: 1,
+                    completion_tokens: 1,
+                    total_tokens: 2,
+                  },
+                }),
+          };
+    const body =
+      [...data, ...(outcome === "eof" ? [] : [terminal])]
+        .map((value) => `data: ${JSON.stringify(value)}\n\n`)
+        .join("") + "data: [DONE]\n\n";
+    const answerer = createAnswerer(
+      createModels({
+        apiKey: "test",
+        baseURL: "https://provider.invalid",
+        fetch: async () =>
+          new Response(body, {
+            headers: { "content-type": "text/event-stream" },
+          }),
+      }),
+    );
+    await expect(
+      answerer.answer(
+        { question: "Wann?", data: "", tags: [] },
+        { signal: AbortSignal.timeout(2000), onText: () => {} },
+      ),
+    ).rejects.toThrow();
+  });
+}

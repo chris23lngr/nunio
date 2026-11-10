@@ -29,7 +29,20 @@ const server = createServer(async (incoming, outgoing) => {
     });
     const response = await handler(request);
     outgoing.writeHead(response.status, Object.fromEntries(response.headers));
-    outgoing.end(Buffer.from(await response.arrayBuffer()));
+    outgoing.flushHeaders();
+    if (response.body) {
+      const reader = response.body.getReader();
+      try {
+        for (;;) {
+          const next = await reader.read();
+          if (next.done) break;
+          outgoing.write(next.value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    }
+    outgoing.end();
   } catch (error) {
     errors.push(error);
     outgoing.writeHead(500).end();
