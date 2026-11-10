@@ -1,6 +1,7 @@
 /** Source lifecycle, Fact extraction and review, Chats, and scoped knowledge retrieval. */
 
 export { type ChatMessage, type Chats, createChats } from "./chats.js";
+export { createDerivedText, type DerivedText, type Sealed } from "./derived.js";
 export {
   type Correction,
   createFacts,

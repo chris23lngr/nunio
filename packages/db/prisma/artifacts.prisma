@@ -1,0 +1,39 @@
+/// A piece of work nunio produced in a Run the student started. Never Evidence of the student's understanding.
+model Artifact {
+  id        String    @id
+  studentId String
+  student   User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// practice_set; flashcards, draft and critique follow.
+  kind      String
+  runId     String    @unique
+  run       Run       @relation(fields: [runId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// What the student asked for, such as the Topics to practise: their own choices, no course material.
+  request   Json
+  /// making, ready or failed. Ready lasts until the student first opens it.
+  status    String    @default("making")
+  failure   String?
+  openedAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  versions ArtifactVersion[]
+
+  @@unique([id, studentId])
+  @@unique([runId, studentId])
+  @@index([studentId, createdAt])
+  @@map("artifact")
+}
+
+/// One immutable version, sealed under every Source it was drawn from, so deleting any of them shreds it (ADR-0007).
+model ArtifactVersion {
+  artifactId  String
+  studentId   String
+  artifact    Artifact @relation(fields: [artifactId, studentId], references: [id, studentId], onDelete: Cascade)
+  version     Int
+  content     Bytes
+  contentKey  Bytes?
+  derivedFrom String[]
+  createdAt   DateTime @default(now())
+
+  @@id([artifactId, version])
+  @@map("artifact_version")
+}
