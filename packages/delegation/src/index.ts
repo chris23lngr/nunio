@@ -43,6 +43,7 @@ export {
 } from "./principal.js";
 export {
   createResponsibilities,
+  type PausedBy,
   type Preset,
   type Responsibilities,
   type ResponsibilityScope,

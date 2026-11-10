@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import type { Clock } from "./gate.js";
 import type { Kind } from "./kinds.js";
-import type { Principal } from "./principal.js";
+import type { Principal, Transaction } from "./principal.js";
 import { principal as mint, withOwner } from "./principal.js";
 
 /**
@@ -38,6 +38,18 @@ const scopeOf = (r: {
 }): ResponsibilityScope =>
   r.obligationId ? { obligationId: r.obligationId } : { courseId: r.courseId! };
 
+/** Why a Responsibility is Paused: by the student, by exhausting its Budget, or by its Course being Archived. */
+export type PausedBy = "student" | "budget" | "course_archived";
+
+/** nunio no longer acts for an Archived Course, so no Responsibility on it may run. */
+const isCourseArchived = async (tx: Transaction, courseId: string | null) =>
+  Boolean(
+    courseId &&
+      (await tx.course.findFirst({
+        where: { id: courseId, archivedAt: { not: null } },
+      })),
+  );
+
 /** Ongoing delegations the student owns: records plus the Schedules that start their Runs. */
 export function createResponsibilities({
   db,
@@ -65,6 +77,31 @@ export function createResponsibilities({
       else if (r?.state === "active") await scheduled().unpause(id);
       else if (r?.state === "ended") await scheduled().delete(id);
     });
+  /** Moves a Course's Responsibilities in `from` to a new state, then syncs each one's Schedule after the commit. */
+  const changeForCourse = async (
+    p: Principal,
+    courseId: string,
+    from: "active" | { not: "ended" },
+    to: () =>
+      | { state: "paused"; pausedBy: PausedBy }
+      | { state: "ended"; endedAt: Date },
+  ) => {
+    if (p.kind !== "student") return;
+    const ids = await withOwner(db, p, async (tx) => {
+      const ids = (
+        await tx.responsibility.findMany({
+          where: { courseId, state: from },
+          select: { id: true },
+        })
+      ).map((r) => r.id);
+      const data = to();
+      await tx.responsibility.updateMany({ where: { id: { in: ids } }, data });
+      if (data.state === "ended")
+        await tx.grant.deleteMany({ where: { responsibilityId: { in: ids } } });
+      return ids;
+    });
+    for (const id of ids) await syncSchedule(p, id);
+  };
   return {
     async create(
       p: Principal,
@@ -101,6 +138,8 @@ export function createResponsibilities({
                     : null,
                 );
         if (!found) return { status: "gone" } as const;
+        if (await isCourseArchived(tx, found.courseId))
+          return { status: "course_archived" } as const;
         const { scope } = found;
         const id = randomUUID();
         await tx.responsibility.create({
@@ -149,10 +188,13 @@ export function createResponsibilities({
       return { status: "ok" } as const;
     },
 
-    /** Only the student resumes a Paused Responsibility, whoever paused it. */
+    /** Only the student resumes a Paused Responsibility, whoever paused it, and not while its Course is Archived. */
     async resume(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
       const found = await withOwner(db, p, async (tx) => {
+        const r = await tx.responsibility.findUnique({ where: { id } });
+        if (r && (await isCourseArchived(tx, r.courseId)))
+          return "course_archived";
         await tx.responsibility.updateMany({
           where: { id, state: "paused" },
           data: { state: "active", pausedBy: null },
@@ -162,6 +204,8 @@ export function createResponsibilities({
           "active"
         );
       });
+      if (found === "course_archived")
+        return { status: "course_archived" } as const;
       if (!found) return { status: "gone" } as const;
       await syncSchedule(p, id);
       return { status: "ok" } as const;
@@ -183,6 +227,22 @@ export function createResponsibilities({
       return { status: "ok" } as const;
     },
 
+    /** Pauses every active Responsibility on an Archived Course; only the student resumes them. */
+    async pauseForCourse(p: Principal, courseId: string) {
+      await changeForCourse(p, courseId, "active", () => ({
+        state: "paused",
+        pausedBy: "course_archived",
+      }));
+    },
+
+    /** Ends every Responsibility on a Course being deleted; their Grants go and their history remains. */
+    async endForCourse(p: Principal, courseId: string) {
+      await changeForCourse(p, courseId, { not: "ended" }, () => ({
+        state: "ended",
+        endedAt: clock.now(),
+      }));
+    },
+
     /** The student's Responsibilities, newest first, Ended ones included: their history remains. */
     async list(p: Principal) {
       return withOwner(db, p, async (tx) =>
@@ -193,7 +253,7 @@ export function createResponsibilities({
           preset: r.preset as Preset,
           scope: scopeOf(r),
           state: r.state as "active" | "paused" | "ended",
-          pausedBy: r.pausedBy as "student" | "budget" | null,
+          pausedBy: r.pausedBy as PausedBy | null,
         })),
       );
     },
@@ -211,7 +271,7 @@ export function createResponsibilities({
           preset: r.preset as Preset,
           scope: scopeOf(r),
           state: r.state as "active" | "paused" | "ended",
-          pausedBy: r.pausedBy as "student" | "budget" | null,
+          pausedBy: r.pausedBy as PausedBy | null,
           grants: r.grants.map((g) => ({
             kind: g.kind as Kind,
             courseId: g.courseId,

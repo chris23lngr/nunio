@@ -110,6 +110,8 @@ async function student() {
       studentId,
       title: "Analysis I",
       matchTitle: "analysis i",
+      semester: "2026-ws",
+      color: "rose",
     },
   });
   await admin.obligation.create({
