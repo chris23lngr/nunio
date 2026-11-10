@@ -175,6 +175,7 @@ it("stores grounded Obligations under a proposed Course and shows them for revie
           {
             id: expect.any(String),
             kind: "assignment",
+            reportedSubmittedAt: null,
             title: "Übungsblatt 3",
             state: "unreviewed",
             due: {
@@ -1356,6 +1357,7 @@ it("enters an Obligation by hand under an accepted Course or a new one, confirme
   ).toEqual({
     id: underAccepted.status === "ok" ? underAccepted.id : "",
     kind: "exam",
+    reportedSubmittedAt: null,
     title: "Klausur",
     state: "confirmed",
     due: {
@@ -1516,4 +1518,152 @@ it("keeps an entered Obligation an entry when a merge moves it onto the target's
       due: expect.objectContaining({ date: "2026-11-21" }),
     }),
   );
+});
+
+/** Extracts the given AI-use rules with sheet 3 and an exam from one Source, returning the Obligations' IDs. */
+async function withRules(p: Principal, rules: Extracted["facts"]) {
+  const text = [
+    "MA-101 Analysis I",
+    "Abgabe Blatt 3: 20.11., 12 Uhr über Moodle.",
+    "Klausur am 10.02.2027.",
+    "KI-Werkzeuge sind bei Hausaufgaben nicht erlaubt.",
+    "Für Blatt 3 ist KI mit Kennzeichnung erlaubt.",
+  ].join("\n");
+  const sourceId = await readySource(p, "Analysis.pdf", [{ page: 1, text }]);
+  const result = await facts.extract(p, sourceId, {
+    extractor: scripted({
+      courses: [analysis],
+      obligations: [
+        sheet3,
+        {
+          ...sheet3,
+          kind: "exam",
+          title: "Klausur",
+          key: "Klausur",
+          due: { ...sheet3.due, date: "2027-02-10", time: null },
+          quote: "Klausur am 10.02.2027.",
+        },
+      ],
+      facts: rules,
+    }),
+    delegation,
+  });
+  const course = (await facts.review(p)).courses[0]!;
+  const id = (title: string) =>
+    course.obligations.find((o) => o.title === title)!.id;
+  return { result, sheet: id("Übungsblatt 3"), exam: id("Klausur") };
+}
+const rule = (key: string, value: string, quote: string) => ({
+  course: "MA-101",
+  type: "ai_use_rule" as const,
+  key,
+  value,
+  page: 1,
+  quote,
+  uncertainty: null,
+});
+
+it("extracts a Course's AI-use Rule and one Obligation's own, which wins for that Obligation", async () => {
+  const p = await student();
+  const { result, sheet, exam } = await withRules(p, [
+    rule(
+      "course",
+      "forbidden",
+      "KI-Werkzeuge sind bei Hausaufgaben nicht erlaubt.",
+    ),
+    rule(
+      "Übungsblatt 3",
+      "conditional",
+      "Für Blatt 3 ist KI mit Kennzeichnung erlaubt.",
+    ),
+    rule("Blatt 9", "allowed", "Für Blatt 3 ist KI mit Kennzeichnung erlaubt."),
+    rule(
+      "course",
+      "sometimes",
+      "KI-Werkzeuge sind bei Hausaufgaben nicht erlaubt.",
+    ),
+  ]);
+
+  expect(result).toMatchObject({ status: "done", dropped: 2 });
+  expect(await facts.aiUse(p, sheet)).toMatchObject({
+    status: "conditional",
+    level: "obligation",
+    provenance: { kind: "source", title: "Analysis.pdf", page: 1 },
+  });
+  expect(await facts.aiUse(p, exam)).toMatchObject({
+    status: "forbidden",
+    level: "course",
+  });
+  expect(await facts.aiUse(await student(), sheet)).toBe("gone");
+});
+
+it("asks while the rule is unknown, then follows the student's own answer and Corrections", async () => {
+  const p = await student();
+  const { sheet, exam } = await withRules(p, []);
+
+  expect(await facts.aiUse(p, sheet)).toEqual({
+    status: "unknown",
+    reason: "none",
+  });
+  expect(
+    await facts.enterRule(p, {
+      obligationId: sheet,
+      level: "course",
+      value: "allowed",
+    }),
+  ).toEqual({ status: "ok" });
+  expect(await facts.aiUse(p, exam)).toEqual({
+    status: "allowed",
+    level: "course",
+    text: null,
+    provenance: { kind: "correction" },
+  });
+  await facts.enterRule(p, {
+    obligationId: sheet,
+    level: "obligation",
+    value: "forbidden",
+  });
+  expect(await facts.aiUse(p, sheet)).toMatchObject({
+    status: "forbidden",
+    level: "obligation",
+  });
+
+  const ruleFact = (await facts.review(p)).courses[0]!.facts.find(
+    (f) => f.type === "ai_use_rule" && f.value === "allowed",
+  )!;
+  expect(
+    await facts.correct(
+      p,
+      { kind: "fact", id: ruleFact.id },
+      { value: "maybe" },
+    ),
+  ).toEqual({ status: "invalid" });
+  expect(
+    await facts.enterRule(await student(), {
+      obligationId: sheet,
+      level: "course",
+      value: "allowed",
+    }),
+  ).toEqual({ status: "gone" });
+});
+
+it("records Reported as Submitted and takes it back, but never for an exam", async () => {
+  const p = await student();
+  const { sheet, exam } = await withRules(p, []);
+  const reported = async () =>
+    (await facts.review(p)).courses[0]!.obligations.find((o) => o.id === sheet)!
+      .reportedSubmittedAt;
+
+  expect(await facts.reportSubmitted(p, sheet, true)).toEqual({ status: "ok" });
+  expect(await reported()).toEqual(now);
+  expect(await facts.reportSubmitted(p, sheet, false)).toEqual({
+    status: "ok",
+  });
+  expect(await reported()).toBeNull();
+  expect(await facts.reportSubmitted(p, exam, true)).toEqual({
+    status: "not_handed_in",
+  });
+  expect(await facts.reportSubmitted(await student(), sheet, true)).toEqual({
+    status: "gone",
+  });
 });

@@ -172,6 +172,8 @@ model Obligation {
   correctedDestination String?
   /// Set for an Obligation the student entered by hand (Provenance entry); its values live in the corrected* columns.
   enteredAt            DateTime?
+  /// Reported as Submitted: the student says they handed it in through a Handoff; nunio cannot verify it.
+  reportedSubmittedAt  DateTime?
   unsupported          Unsupported?
   createdAt            DateTime       @default(now())
 
@@ -214,6 +216,8 @@ enum FactType {
   topic
   course_rule
   exam_logistics
+  /// Whether AI may be used for assessed work: the value is forbidden, conditional or allowed.
+  ai_use_rule
 
   @@map("fact_type")
 }

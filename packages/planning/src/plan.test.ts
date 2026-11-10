@@ -719,3 +719,21 @@ it("proposes, for one exam, the Rebalance of that exam and its Tasks only", asyn
     },
   ]);
 });
+
+it("stops planning work the student reported as handed in, while still showing it", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-09", "12:00");
+  await plan.estimate(p, { kind: "obligation", id: sheet }, 600);
+  expect((await plan.view(p)).proposal.shortfalls).not.toEqual([]);
+
+  expect(await facts.reportSubmitted(p, sheet, true)).toEqual({
+    status: "ok",
+  });
+  const view = await plan.view(p);
+
+  expect(view.obligations).toEqual([
+    expect.objectContaining({ id: sheet, reportedSubmittedAt: now }),
+  ]);
+  expect(view.proposal).toMatchObject({ moves: [], shortfalls: [] });
+});

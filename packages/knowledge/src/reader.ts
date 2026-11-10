@@ -50,6 +50,7 @@ export type FactType =
   | "topic"
   | "course_rule"
   | "exam_logistics"
+  | "ai_use_rule"
   | "fixed_event";
 export type Query =
   | { kind: "passages"; text: string; limit?: number; narrow?: Narrow }
@@ -109,6 +110,7 @@ const typeLabels: Record<FactType, string> = {
   topic: "Topic",
   course_rule: "Course rule",
   exam_logistics: "Exam logistics",
+  ai_use_rule: "AI-use rule",
   fixed_event: "Fixed Event",
 };
 const origin = (provenance: Provenance) =>
