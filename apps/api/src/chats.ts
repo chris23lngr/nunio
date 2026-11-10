@@ -73,7 +73,7 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
       responses: {
         200: {
           description:
-            "AI SDK UI message SSE: provisional text, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
+            "AI SDK UI message SSE: provisional text and transient data-reasoning, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
           content: { "text/event-stream": { schema: z.string() } },
         },
         ...errors,
@@ -97,6 +97,13 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
             .get("chats")
             .ask(p, id, c.req.valid("json").text, c.get("answerer"), {
               signal: c.req.raw.signal,
+              onReasoning: (delta, streaming) => {
+                writer.write({
+                  type: "data-reasoning",
+                  data: { delta, streaming },
+                  transient: true,
+                });
+              },
               onText: (delta) => {
                 writer.write({ type: "text-delta", id: "answer", delta });
               },

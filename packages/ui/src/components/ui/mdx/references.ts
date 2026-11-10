@@ -3,7 +3,10 @@ import { visit } from "unist-util-visit"
 
 export type MdxReference = { tag: string; label: string; href?: string }
 
-export function referencePlugin(references: readonly MdxReference[]) {
+export function referencePlugin(
+  references: readonly MdxReference[],
+  inline = false,
+) {
   return () => (tree: Root) => {
     const used = new Map<string, MdxReference>()
     visit(tree, "text", (node, index, parent) => {
@@ -18,10 +21,18 @@ export function referencePlugin(references: readonly MdxReference[]) {
             type: "text",
             value: node.value.slice(end, match.index),
           })
-        parts.push({
-          type: "footnoteReference",
-          identifier: `citation-${reference.tag.toLowerCase()}`,
-        })
+        parts.push(
+          inline
+            ? {
+                type: "link",
+                url: `#citation-${reference.tag}`,
+                children: [{ type: "text", value: `[${reference.tag}]` }],
+              }
+            : {
+                type: "footnoteReference",
+                identifier: `citation-${reference.tag.toLowerCase()}`,
+              },
+        )
         used.set(reference.tag, reference)
         end = match.index + match[0].length
       }
@@ -31,6 +42,7 @@ export function referencePlugin(references: readonly MdxReference[]) {
       parent.children.splice(index, 1, ...parts)
       return index + parts.length
     })
+    if (inline) return
     for (const reference of used.values()) {
       tree.children.push({
         type: "footnoteDefinition",

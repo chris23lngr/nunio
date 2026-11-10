@@ -105,6 +105,10 @@ export function createChats({
       answerer: Answerer,
       options: {
         signal?: AbortSignal;
+        onReasoning?: (
+          text: string,
+          streaming: boolean,
+        ) => void | Promise<void>;
         onText?: (text: string) => void | Promise<void>;
       } = {},
     ) {
@@ -136,6 +140,7 @@ export function createChats({
                 ? AbortSignal.any([deadline, options.signal])
                 : deadline,
               onText: options.onText,
+              onReasoning: options.onReasoning,
             }),
           ),
       );

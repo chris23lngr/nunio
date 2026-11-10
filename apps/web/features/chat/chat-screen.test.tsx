@@ -188,11 +188,14 @@ test("reopening a Chat restores its locked selection, title, citations and remov
   );
   mount("chat-1");
   await screen.findByRole("heading", { name: "Wann ist die Klausur?" });
-  const link = await screen.findByRole("link", {
-    name: "Handbuch.pdf, Seite 2",
-  });
+  await userEvent.hover(
+    await screen.findByRole("button", {
+      name: "Quelle S1: Handbuch.pdf, Seite 2",
+    }),
+  );
+  const link = await screen.findByRole("link", { name: "Quelle öffnen" });
   expect(link.getAttribute("href")).toBe("/sources/source-1?page=2");
-  expect(link.getAttribute("target")).toBe("_blank");
+
   expect(screen.getByText("Microeconomics")).toBeTruthy();
   expect(
     (
@@ -332,6 +335,10 @@ test("renders partial Markdown before accepting the committed answer", async () 
                 encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
               );
             emit({
+              type: "data-reasoning",
+              data: { delta: "Ich prüfe deine Materialien.", streaming: true },
+            });
+            emit({
               type: "text-delta",
               id: "answer",
               delta: "## Schrittweise Antwort\n\nEin Anfang.",
@@ -371,12 +378,14 @@ test("renders partial Markdown before accepting the committed answer", async () 
   );
   await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
   try {
+    await screen.findByText("Ich prüfe deine Materialien.");
     await screen.findByRole("heading", { name: "Schrittweise Antwort" });
     expect(screen.queryByText("Die gespeicherte Antwort.")).toBeNull();
   } finally {
     finish();
   }
   await screen.findByText("Die gespeicherte Antwort.");
+  expect(screen.queryByText("Ich prüfe deine Materialien.")).toBeNull();
   expect(
     screen.queryByRole("heading", { name: "Schrittweise Antwort" }),
   ).toBeNull();
@@ -427,7 +436,7 @@ test("Stop cancels a pending answer and restores the submitted draft", async () 
           start(controller) {
             controller.enqueue(
               new TextEncoder().encode(
-                `data: ${JSON.stringify({ type: "text-delta", id: "answer", delta: "Ein Anfang" })}\n\n`,
+                `data: ${JSON.stringify({ type: "data-reasoning", data: { delta: "Ich denke nach.", streaming: true } })}\n\ndata: ${JSON.stringify({ type: "text-delta", id: "answer", delta: "Ein Anfang" })}\n\n`,
               ),
             );
             close = () => controller.close();
@@ -446,12 +455,14 @@ test("Stop cancels a pending answer and restores the submitted draft", async () 
     await user.type(textarea, "Meine Frage");
     await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
     await screen.findByText("Ein Anfang");
+    await screen.findByText("Ich denke nach.");
     await user.click(screen.getByRole("button", { name: "Antwort stoppen" }));
     expect((await screen.findByRole("alert")).textContent).toContain(
       "gestoppt",
     );
     expect(textarea.value).toBe("Meine Frage");
     expect(screen.queryByText("Ein Anfang")).toBeNull();
+    expect(screen.queryByText("Ich denke nach.")).toBeNull();
   } finally {
     close();
   }

@@ -42,11 +42,13 @@ export function sendChatMessage(apiOrigin: string) {
       text,
       signal,
       onText,
+      onReasoning,
     }: {
       id: string;
       text: string;
       signal: AbortSignal;
       onText: (text: string) => void;
+      onReasoning: (text: string, streaming: boolean) => void;
     }) => {
       let updateTimer: ReturnType<typeof setTimeout> | undefined;
       try {
@@ -74,6 +76,8 @@ export function sendChatMessage(apiOrigin: string) {
         });
         const reader = stream.getReader();
         let provisional = "";
+        let reasoning = "";
+        let reasoningStreaming = false;
         let committed: Turn | undefined;
         try {
           for (;;) {
@@ -84,12 +88,26 @@ export function sendChatMessage(apiOrigin: string) {
             if (chunk.type === "error") throw answerError();
             if (chunk.type === "data-refused")
               throw answerError((chunk.data as { error: string }).error);
-            if (chunk.type === "text-delta") {
-              provisional += chunk.delta;
+            if (
+              chunk.type === "text-delta" ||
+              chunk.type === "data-reasoning"
+            ) {
+              if (chunk.type === "text-delta") provisional += chunk.delta;
+              else {
+                const data = chunk.data as {
+                  delta: string;
+                  streaming: boolean;
+                };
+                reasoning += data.delta;
+                reasoningStreaming = data.streaming;
+              }
               if (!updateTimer)
                 updateTimer = setTimeout(() => {
                   updateTimer = undefined;
-                  if (!signal.aborted) onText(provisional);
+                  if (!signal.aborted) {
+                    onText(provisional);
+                    onReasoning(reasoning, reasoningStreaming);
+                  }
                 }, 50);
             }
             if (chunk.type === "data-committed") committed = chunk.data as Turn;

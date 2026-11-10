@@ -106,6 +106,7 @@ it("streams text before completion and returns sanitized citations and terminal 
   });
   const encoder = new TextEncoder();
   const deltas: string[] = [];
+  const reasoning: [string, boolean][] = [];
   const answerer = createAnswerer(
     createModels({
       apiKey: "test",
@@ -118,6 +119,16 @@ it("streams text before completion and returns sanitized citations and terminal 
                 controller.enqueue(
                   encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
                 );
+              emit({
+                id: "gen-1",
+                choices: [
+                  {
+                    index: 0,
+                    delta: { reasoning: "Ich prüfe die Quelle." },
+                    finish_reason: null,
+                  },
+                ],
+              });
               emit({
                 id: "gen-1",
                 choices: [
@@ -151,6 +162,9 @@ it("streams text before completion and returns sanitized citations and terminal 
     { question: "Wann?", data: "", tags: ["S1"] },
     {
       signal: AbortSignal.timeout(2000),
+      onReasoning: (text: string, streaming: boolean) => {
+        reasoning.push([text, streaming]);
+      },
       onText: (text: string) => {
         deltas.push(text);
       },
@@ -158,6 +172,10 @@ it("streams text before completion and returns sanitized citations and terminal 
   );
   try {
     await expect.poll(() => deltas.length, { timeout: 1000 }).toBe(1);
+    expect(reasoning).toEqual([
+      ["Ich prüfe die Quelle.", true],
+      ["", false],
+    ]);
     expect(deltas.join("")).toBe("Eine Antwort [S1] [S7].");
   } finally {
     finish();

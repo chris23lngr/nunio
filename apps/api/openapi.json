@@ -5502,7 +5502,7 @@
         },
         "responses": {
           "200": {
-            "description": "AI SDK UI message SSE: provisional text, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
+            "description": "AI SDK UI message SSE: provisional text and transient data-reasoning, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
             "content": {
               "text/event-stream": {
                 "schema": {
