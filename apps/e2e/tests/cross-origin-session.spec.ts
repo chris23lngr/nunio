@@ -177,7 +177,7 @@ test("settings open from the sidebar footer and stack below navigation on mobile
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     375,
   );
-  await page.getByRole("button", { name: "Toggle Sidebar" }).click();
+  await page.getByRole("button", { name: "Sidebar öffnen" }).click();
   await expect(settingsLink).toBeVisible();
   await settingsLink.click();
   await expect(settingsLink).toBeHidden();
