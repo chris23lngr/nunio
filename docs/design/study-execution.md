@@ -209,12 +209,14 @@ export interface DerivedText {
 }
 
 // In @nunio/ai, beside Answerer and Extractor
+// One method per kind of Artifact; Topic names and material arrive fenced, as extracted text.
 export interface Maker {
-  estimateMicroUsd(input: MakerInput): number;
-  make(
-    input: MakerInput,
+  estimateMicroUsd(input: PracticeInput): number;
+  practiceSet(
+    input: PracticeInput, // { topics: { id, name }[]; data; tags }
     options: { signal: AbortSignal },
-  ): Promise<{ value: MadeContent; usage: { microUsd: number } }>;
+  ): Promise<{ value: { items: PracticeItem[] }; usage: { microUsd: number } }>;
+  // flashcards, draft and critique follow in their PRs
 }
 export interface Grader {
   estimateMicroUsd(input: GradeInput): number;
@@ -296,8 +298,7 @@ export interface Grader {
 
 - `run`: gains `chatId` (nullable). Pinned selections are stored as knowledge-retrieval.md describes.
 - `artifact`: student, `kind` (`practice_set` | `flashcards` | `draft` | `critique`), `runId`, Course or Obligation, the request as JSON (Topic IDs, instructions, Own Work), `status` (`making` | `ready` | `failed`) with a failure reason, `openedAt`, `createdAt`.
-- `artifact_version`: Artifact, `version`, the sealed content, `editedByStudent`, `createdAt`.
-- `artifact_source`: an Artifact's `derivedFrom` Sources, so `list` can tell what's ready or withdrawn without decrypting.
+- `artifact_version`: Artifact, `version`, the sealed content with its `derivedFrom` Sources (as on a Chat message), `createdAt`. `list` tells what's withdrawn by checking `derivedFrom` against live Sources, without decrypting.
 - `practice_item`: Artifact, `itemId`, Topic IDs. This is plain structure, so Levels need no decryption.
 - `practice_attempt` (`attempt` already names an Action's dispatch attempt): student, Artifact and `itemId`, text, `verdict` (null while ungraded), sealed Feedback, `createdAt`.
 - `self_assessment`: student, Topic, `level`, `createdAt`; a history, never updated in place.
