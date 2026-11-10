@@ -268,6 +268,39 @@ export function createResponsibilities({
         return run.id;
       });
     },
+
+    /**
+     * Records a Run the student started, from a Chat or elsewhere: it has no Responsibility and so no Grants (ADR-0001).
+     * Idempotent on `runId`; "gone" for a Chat that is not the student's, or a `runId` already used otherwise.
+     */
+    async startStudentRun(
+      student: Principal,
+      {
+        runId,
+        workflowId,
+        chatId,
+      }: { runId: string; workflowId: string; chatId?: string },
+    ): Promise<{ status: "ok" | "gone" }> {
+      if (student.kind !== "student")
+        throw new Error("Only a student starts a Run without a Responsibility");
+      return withOwner(db, student, async (tx, studentId) => {
+        // RLS hides another student's Chat, so it counts as gone like one that never existed.
+        if (chatId && !(await tx.chat.findUnique({ where: { id: chatId } })))
+          return { status: "gone" };
+        // A concurrent start, or another student's Run under the same ID, leaves the existing row in place.
+        await tx.run.createMany({
+          data: [{ id: runId, studentId, workflowId, chatId: chatId ?? null }],
+          skipDuplicates: true,
+        });
+        const run = await tx.run.findUnique({ where: { id: runId } });
+        return {
+          status:
+            run && !run.responsibilityId && run.chatId === (chatId ?? null)
+              ? "ok"
+              : "gone",
+        };
+      });
+    },
   };
 }
 export type Responsibilities = ReturnType<typeof createResponsibilities>;
