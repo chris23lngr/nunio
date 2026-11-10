@@ -1,13 +1,29 @@
-import { render, screen, within } from "@testing-library/react";
+import {
+  render as renderComponent,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import AppLayout from "@/app/(app)/layout";
+import { api } from "./api";
+import { TestProviders } from "./providers";
+
+function render(element: ReactElement) {
+  return renderComponent(<TestProviders>{element}</TestProviders>);
+}
 
 const { route } = vi.hoisted(() => ({ route: { pathname: "/" } }));
-vi.mock("next/navigation", () => ({ usePathname: () => route.pathname }));
+vi.mock("next/navigation", () => ({
+  usePathname: () => route.pathname,
+  useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }),
+}));
 
 beforeEach(() => {
   route.pathname = "/";
+  vi.stubEnv("API_ORIGIN", api.origin);
+  api.route("GET", "/api/auth/get-session", () => Response.json(null));
   vi.stubGlobal(
     "matchMedia",
     vi.fn(() => ({
@@ -18,7 +34,10 @@ beforeEach(() => {
   );
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 test("each navigation link has its own decorative icon", () => {
   render(
@@ -93,9 +112,16 @@ test("the layout trigger and keyboard shortcut toggle the sidebar together", asy
   const sidebar = navigation.closest('[data-slot="sidebar"]')!;
   expect(sidebar.getAttribute("data-state")).toBe("expanded");
 
-  await user.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
+  expect(screen.queryByRole("button", { name: "Sidebar öffnen" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Sidebar schließen" }));
   expect(sidebar.getAttribute("data-state")).toBe("collapsed");
 
+  await user.click(screen.getByRole("button", { name: "Sidebar öffnen" }));
+  expect(sidebar.getAttribute("data-state")).toBe("expanded");
+  expect(screen.queryByRole("button", { name: "Sidebar öffnen" })).toBeNull();
+
+  await user.keyboard("{Control>}b{/Control}");
+  expect(sidebar.getAttribute("data-state")).toBe("collapsed");
   await user.keyboard("{Control>}b{/Control}");
   expect(sidebar.getAttribute("data-state")).toBe("expanded");
   expect(screen.getByRole("main").textContent).toBe("Page content");

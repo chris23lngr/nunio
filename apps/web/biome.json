@@ -4,7 +4,8 @@
   "linter": {
     "domains": {
       "next": "recommended",
-      "react": "recommended"
+      "react": "recommended",
+      "playwright": "none"
     },
     "rules": {
       "correctness": {
@@ -19,5 +20,15 @@
         "noImgElement": "warn"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["test/browser/**"],
+      "linter": {
+        "domains": {
+          "playwright": "recommended"
+        }
+      }
+    }
+  ]
 }

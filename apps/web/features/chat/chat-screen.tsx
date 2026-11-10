@@ -174,7 +174,7 @@ export function ChatScreen({
 
   return (
     <main
-      className="flex h-[calc(100dvh-26px)] min-h-0 flex-col overflow-hidden bg-white font-sans text-base-800"
+      className="flex h-dvh min-h-0 flex-col overflow-hidden bg-white font-sans text-base-800"
       aria-label="Chat"
     >
       <header className="grid min-h-16 shrink-0 grid-cols-[32px_minmax(0,1fr)_32px] sm:grid-cols-[132px_minmax(0,1fr)_132px] items-center gap-3 px-4 sm:px-8">

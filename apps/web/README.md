@@ -101,7 +101,19 @@ From the repository root:
 bunx turbo run test typecheck lint --filter=@nunio/web
 bunx turbo run build --filter=@nunio/e2e^...
 bun run --cwd apps/e2e test:e2e
+bun run --cwd apps/web test:browser
 ```
+
+For a manual sidebar preview, run these commands in separate terminals from the repository root:
+
+```sh
+node apps/web/test/browser/api-server.ts
+API_ORIGIN=http://localhost:3101 bun run --cwd apps/web dev --port 3100
+```
+
+Open <http://localhost:3101/preview> to set the fixture session cookie and enter the app. This uses a test identity; real sign-out requires the normal API.
+
+The web browser suite starts an isolated Next.js app and a controlled authentication HTTP fixture on ports 3100/3101. It checks the sidebar header on desktop and mobile without a database or live account.
 
 Feature tests exercise screens with the real Query provider and typed transport,
 controlling responses through an isolated local Node HTTP server. Browser tests
