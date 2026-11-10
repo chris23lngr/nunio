@@ -135,7 +135,7 @@ test("settings open from the sidebar footer and stack below navigation on mobile
     name: "Einstellungen",
     exact: true,
   });
-  await expect(navigation.getByRole("link")).toHaveCount(1);
+  await expect(navigation.getByRole("link")).toHaveCount(2);
   const sessions = page.getByRole("region", { name: "Aktive Sitzungen" });
   await expect(sessions.getByText("Dieses Gerät")).toBeVisible();
   const desktopNav = (await navigation.boundingBox())!;

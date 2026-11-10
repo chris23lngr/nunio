@@ -48,7 +48,7 @@ function renderSettings() {
   );
 }
 
-test("security settings show real sessions and only the available settings destination", async () => {
+test("security settings show real sessions and the settings destinations", async () => {
   serveSessions();
   renderSettings();
 
@@ -58,7 +58,7 @@ test("security settings show real sessions and only the available settings desti
   const navigation = within(
     screen.getByRole("navigation", { name: "Einstellungen" }),
   );
-  expect(navigation.getAllByRole("link")).toHaveLength(1);
+  expect(navigation.getAllByRole("link")).toHaveLength(2);
   expect(
     navigation
       .getByRole("link", { name: "Sicherheit", current: "page" })

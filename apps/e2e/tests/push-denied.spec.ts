@@ -74,11 +74,19 @@ test("denying notifications leaves every page usable", async ({ page }) => {
   const nav = page.getByRole("navigation", { name: "App navigation" });
   await nav.getByRole("link", { name: "Inbox" }).click();
   await page
-    .getByRole("button", { name: "Turn on notifications on this device" })
+    .getByRole("link", { name: "Benachrichtigungen einstellen" })
     .click();
+  await expect(page).toHaveURL(`${origins.app}/settings/notifications`);
+  const channels = page.getByRole("region", { name: "Benachrichtigungen" });
+  await channels
+    .getByRole("checkbox", { name: "Browser-Push-Benachrichtigungen" })
+    .check();
+  await channels.getByRole("button", { name: "Speichern" }).click();
   await expect(
-    page.getByText(/Notifications are blocked for nunio/),
+    channels.getByText(/Benachrichtigungen sind in diesem Browser blockiert/),
   ).toBeVisible();
+  await channels.getByRole("button", { name: "Abbrechen" }).click();
+  await nav.getByRole("link", { name: "Inbox" }).click();
 
   const open = page.getByRole("region", { name: "Needs attention" });
   await open.getByRole("button", { name: "Got it" }).click();
@@ -102,8 +110,11 @@ test("denying notifications leaves every page usable", async ({ page }) => {
     await expect(page.getByRole("main")).toBeVisible();
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
   }
+  await page
+    .getByRole("link", { name: "Benachrichtigungen einstellen" })
+    .click();
   await expect(
-    page.getByText(/Notifications are blocked for nunio/),
+    channels.getByText(/Benachrichtigungen sind in diesem Browser blockiert/),
   ).toBeVisible();
   expect(errors).toEqual([]);
 });
