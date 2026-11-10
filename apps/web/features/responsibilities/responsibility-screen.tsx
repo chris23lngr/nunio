@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { controlResponsibility } from "./api/responsibility-mutations";
 import type { Responsibility } from "./api/responsibility-queries";
 import { responsibilityQueries } from "./api/responsibility-queries";
-import { nameOf } from "./name";
+import { nameOf, pausedBecause } from "./name";
 
 type Shown = Responsibility["recentActions"][number]["action"];
 const when = (value: string) =>
@@ -69,10 +69,13 @@ export function ResponsibilityScreen({
       </p>
       {r.state === "paused" && (
         <p>
-          {r.pausedBy === "budget"
-            ? "Paused: its Budget is used up."
+          {r.pausedBy && pausedBecause[r.pausedBy]
+            ? `Paused: ${pausedBecause[r.pausedBy]}.`
             : "Paused by you."}{" "}
-          It takes no Actions until you resume it.
+          It takes no Actions until you resume it
+          {r.pausedBy === "course_archived" &&
+            ", after you unarchive its Course"}
+          .
         </p>
       )}
       <p>{`${usd(r.budget.usedMicroUsd + r.budget.heldMicroUsd)} of ${usd(r.budget.limitMicroUsd)} used`}</p>
