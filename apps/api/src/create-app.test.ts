@@ -1500,6 +1500,78 @@ async function chatSource(cookie: string, title: string, text: string) {
 }
 
 describe("Chat", () => {
+  it("opens a ready PDF only for its owner and withdraws access after deletion", async () => {
+    const cookie = await signUp("chat-pdf");
+    const sourceId = await chatSource(cookie, "Notizen.pdf", "Eine Kursnotiz.");
+    const url = `${apiOrigin}/api/me/sources/${sourceId}/download`;
+    const opened = await app.request(url, { headers: { cookie } });
+    expect(opened.status).toBe(200);
+    expect(opened.headers.get("cache-control")).toBe("no-store");
+    expect(await opened.json()).toMatchObject({
+      title: "Notizen.pdf",
+      url: expect.stringContaining(sourceId),
+      headers: {
+        "x-amz-server-side-encryption-customer-algorithm": "AES256",
+        "x-amz-server-side-encryption-customer-key": expect.any(String),
+      },
+    });
+    expect(
+      (
+        await app.request(url, {
+          headers: { cookie: await signUp("chat-pdf-stranger") },
+        })
+      ).status,
+    ).toBe(404);
+    await app.request(`${apiOrigin}/api/me/sources/${sourceId}`, {
+      method: "DELETE",
+      headers: { cookie, origin: appOrigin },
+    });
+    expect((await app.request(url, { headers: { cookie } })).status).toBe(404);
+  });
+  it("reopens a Chat with its locked courses and the canonical question and answer", async () => {
+    const cookie = await signUp("chat-detail");
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+      })
+    ).json()) as { id: string };
+    reply = "Eine Antwort.";
+    const turn = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ text: "Meine erste Frage" }),
+      })
+    ).json()) as { id: string; question: { id: string }; createdAt: string };
+    expect(turn.question.id).toBeTruthy();
+    expect(turn.createdAt).toMatch(/^\d{4}-/);
+    const detail = await app.request(`${apiOrigin}/api/me/chats/${id}`, {
+      headers: { cookie },
+    });
+    expect(detail.status).toBe(200);
+    expect(await detail.json()).toMatchObject({
+      id,
+      courses: [],
+      messages: [
+        { id: turn.question.id, role: "student", text: "Meine erste Frage" },
+        { id: turn.id, role: "assistant" },
+      ],
+    });
+    expect(
+      (
+        await app.request(`${apiOrigin}/api/me/chats/${id}`, {
+          headers: { cookie: await signUp("chat-detail-stranger") },
+        })
+      ).status,
+    ).toBe(404);
+  });
   it("answers from the selected Sources only, citing them", async () => {
     const cookie = await signUp("chat");
     const headers = {
@@ -1541,6 +1613,11 @@ describe("Chat", () => {
       200,
       {
         id: expect.any(String),
+        createdAt: expect.any(String),
+        question: expect.objectContaining({
+          role: "student",
+          text: "Wann ist die Klausur?",
+        }),
         role: "assistant",
         text: "Am 10. Februar [S1].",
         citations: [
@@ -1599,12 +1676,14 @@ describe("Chat", () => {
     expect(await (await history()).json()).toEqual([
       {
         id: expect.any(String),
+        createdAt: expect.any(String),
         role: "student",
         text: "Wann ist die Klausur?",
         citations: [],
       },
       {
         id: expect.any(String),
+        createdAt: expect.any(String),
         role: "assistant",
         text: "Am 10. Februar [S1].",
         citations: [
@@ -1634,12 +1713,14 @@ describe("Chat", () => {
     expect(await (await history()).json()).toEqual([
       {
         id: expect.any(String),
+        createdAt: expect.any(String),
         role: "student",
         text: "Wann ist die Klausur?",
         citations: [],
       },
       {
         id: expect.any(String),
+        createdAt: expect.any(String),
         role: "assistant",
         text: null,
         citations: [{ tag: "S1", provenance: "gone" }],

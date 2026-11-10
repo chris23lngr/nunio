@@ -31,6 +31,38 @@ export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
     createRoute({
       method: "get",
+      path: "/api/me/sources/{id}/download",
+      request: { params },
+      responses: {
+        200: json(
+          z.object({
+            title: z.string(),
+            url: z.string(),
+            headers: z.record(z.string(), z.string()),
+          }),
+          "Owner-authorized PDF download. Send its headers using fetch.",
+        ),
+        401: errors[401],
+        404: errors[404],
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const result = await c
+        .get("sources")
+        .download(principal.fromSession(actor), c.req.valid("param").id);
+      if (result.status === "gone") return c.json({ error: "gone" }, 404);
+      return c.json(
+        { title: result.title, url: result.url, headers: result.headers },
+        200,
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "get",
       path: "/api/me/sources",
       responses: {
         200: json(z.array(Source), "The student's live Sources."),

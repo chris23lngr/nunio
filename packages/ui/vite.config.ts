@@ -24,6 +24,11 @@ export default defineConfig({
       "class-variance-authority",
       "lucide-react",
       "motion/react",
+      "react-markdown",
+      "remark-gfm",
+      "remark-math",
+      "rehype-katex",
+      "unist-util-visit",
     ],
   },
 })
