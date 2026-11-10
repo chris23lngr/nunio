@@ -857,6 +857,10 @@
             ],
             "description": "Null once a Source the answer drew on is deleted: its wording is removed with that Source."
           },
+          "reasoning": {
+            "type": "string",
+            "description": "Model reasoning, absent for older messages or once a dependent Source is deleted."
+          },
           "citations": {
             "type": "array",
             "items": {

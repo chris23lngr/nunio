@@ -6,6 +6,7 @@ function recorded(
   bodies: Record<string, unknown>[],
   content: string,
   finishReason = "stop",
+  reasoning?: string,
 ): typeof fetch {
   return async (_url, init) => {
     bodies.push(JSON.parse(String(init?.body)));
@@ -18,7 +19,7 @@ function recorded(
         {
           index: 0,
           finish_reason: finishReason,
-          message: { role: "assistant", content },
+          message: { role: "assistant", content, reasoning },
         },
       ],
       usage: {
@@ -181,7 +182,11 @@ it("streams text before completion and returns sanitized citations and terminal 
     finish();
   }
   expect(await pending).toEqual({
-    value: { text: "Eine Antwort [S1].", cited: ["S1"] },
+    value: {
+      text: "Eine Antwort [S1].",
+      cited: ["S1"],
+      reasoning: "Ich prüfe die Quelle.",
+    },
     usage: { microUsd: 4000 },
   });
 });
@@ -240,3 +245,22 @@ for (const outcome of ["length", "missing-usage", "error", "eof"] as const) {
     ).rejects.toThrow();
   });
 }
+
+it("returns reasoning with a completed JSON answer", async () => {
+  const answerer = createAnswerer(
+    createModels({
+      apiKey: "test",
+      baseURL: "https://provider.invalid",
+      fetch: recorded([], "Die Antwort [S1].", "stop", "Ich prüfe die Quelle."),
+    }),
+  );
+  const result = await answerer.answer(
+    { question: "Wann?", data: "", tags: ["S1"] },
+    { signal: AbortSignal.timeout(1000) },
+  );
+  expect(result.value).toEqual({
+    text: "Die Antwort [S1].",
+    cited: ["S1"],
+    reasoning: "Ich prüfe die Quelle.",
+  });
+});

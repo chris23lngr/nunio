@@ -111,6 +111,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
         const response = {
           id: randomUUID(),
           role: "assistant",
+          reasoning: "Ich prüfe deine Materialien.",
           text: `## Antwort aus Kursmaterial\n\n${"Ein Absatz zum aktiven Lernen.\n\n".repeat(25)}| Methode | Beschreibung | Minuten |\n| --- | --- | ---: |\n| Abrufen | Eine ausführliche Beschreibung der Lernmethode | 15 |\n\nQuelle [S1].`,
           createdAt: new Date().toISOString(),
           citations: [
@@ -266,6 +267,8 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
       path: testInfo.outputPath("chat-mobile.png"),
       fullPage: true,
     });
+    await page.getByRole("button", { name: "Gedankengang" }).click();
+    await expect(page.getByText("Ich prüfe deine Materialien.")).toBeVisible();
     const popupPromise = context.waitForEvent("page");
     await page
       .getByRole("button", { name: "Quelle S1: Handbuch.pdf, Seite 2" })
@@ -291,6 +294,11 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     await expect(
       page.getByRole("button", { name: "Quelle S1: Handbuch.pdf, Seite 2" }),
     ).toBeAttached();
+    await expect(
+      page.getByRole("button", { name: "Gedankengang" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await page.getByRole("button", { name: "Gedankengang" }).click();
+    await expect(page.getByText("Ich prüfe deine Materialien.")).toBeVisible();
   } finally {
     streamServer.closeAllConnections();
     await new Promise<void>((resolve) => streamServer.close(() => resolve()));
