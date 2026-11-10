@@ -5,7 +5,11 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import type { Delegation, Principal } from "@nunio/delegation";
-import { createDelegation, principal } from "@nunio/delegation";
+import {
+  createDelegation,
+  createResponsibilities,
+  principal,
+} from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import { createSourceKeys } from "@nunio/keys";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
@@ -14,7 +18,7 @@ import { createChats } from "./chats.js";
 import type { Facts } from "./facts.js";
 import { createFacts } from "./facts.js";
 import { createProjects } from "./projects.js";
-import type { Item, KnowledgeReader } from "./reader.js";
+import type { Item, KnowledgeReader, ScopeRef } from "./reader.js";
 import {
   createKnowledgeReader,
   InvalidQueryError,
@@ -845,4 +849,189 @@ it("keeps Fixed Events, operational context, out of a Chat's scope", async () =>
       { kind: "facts", types: ["fixed_event"] },
     ),
   ).rejects.toThrow(InvalidQueryError);
+});
+
+/** Starts a Run as the student would, and pins it from the given selection. */
+async function pinnedRun(
+  p: Principal,
+  from: Parameters<KnowledgeReader["pin"]>[1]["from"],
+) {
+  const runId = randomUUID();
+  const responsibilities = createResponsibilities({ db: runtime, clock });
+  const started = await responsibilities.startStudentRun(p, {
+    runId,
+    workflowId: `artifactRun/${runId}`,
+    ...("chatId" in from ? { chatId: from.chatId } : {}),
+  });
+  if (started.status !== "ok") throw new Error(started.status);
+  expect(await reader.pin(p, { runId, from })).toEqual({ status: "ok" });
+  return runId;
+}
+
+it("freezes what a Run sees when it starts: later Sources and Facts stay out, while deletions and Corrections apply", async () => {
+  const p = await student();
+  const handbook = await readySource(p, "Modulhandbuch", [
+    "MA-101 Analysis I",
+    "Klausur am 10.02.2027",
+  ]);
+  const course = await acceptedCourse(
+    p,
+    handbook,
+    { code: "MA-101", title: "Analysis I", quote: "MA-101 Analysis I" },
+    [exam("2027-02-10", 2, "Klausur am 10.02.2027")],
+  );
+  const chat = await createChat(p, { courseIds: [course], sourceIds: [] });
+  const runId = await pinnedRun(p, { chatId: chat.id });
+  const run = principal.fromRun(runId);
+  const notice = await readySource(p, "Aushang", [
+    "MA-101 Analysis I",
+    "Hausarbeit zur Klausur bis 01.03.2027",
+  ]);
+  await acceptedCourse(
+    p,
+    notice,
+    { code: "MA-101", title: "Analysis I", quote: "MA-101 Analysis I" },
+    [
+      {
+        ...exam("2027-03-01", 2, "Hausarbeit zur Klausur bis 01.03.2027"),
+        kind: "assignment",
+        title: "Hausarbeit",
+        key: "Hausarbeit",
+      },
+    ],
+  );
+  const klausur = (await facts.review(p)).courses[0]!.obligations.find(
+    (o) => o.title === "Klausur",
+  )!;
+  await facts.correct(
+    p,
+    { kind: "obligation", id: klausur.id },
+    {
+      title: "Klausur (Nachschreibtermin)",
+      due: { date: "2027-02-12", time: null, timeZone: null },
+      destination: null,
+    },
+  );
+  const passagesOf = async (who: Principal, scope: ScopeRef) => {
+    const result = await reader.retrieve(who, scope, {
+      kind: "passages",
+      text: "Klausur",
+    });
+    if (result.status !== "ok") throw new Error(result.status);
+    return passages(result.items).map((i) => i.provenance.sourceId);
+  };
+  const obligationsOf = async (who: Principal, scope: ScopeRef) => {
+    const result = await reader.retrieve(who, scope, {
+      kind: "facts",
+      types: ["obligation"],
+    });
+    if (result.status !== "ok") throw new Error(result.status);
+    return result.items.map((i) => String(i.kind === "fact" && i.factId));
+  };
+
+  expect(await passagesOf(p, { chatId: chat.id })).toEqual(
+    expect.arrayContaining([handbook, notice]),
+  );
+  expect(await passagesOf(run, { runId })).toEqual([handbook]);
+  expect(await obligationsOf(p, { chatId: chat.id })).toHaveLength(2);
+  const frozen = await reader.retrieve(
+    run,
+    { runId },
+    {
+      kind: "facts",
+      types: ["obligation"],
+    },
+  );
+  if (frozen.status !== "ok") throw new Error(frozen.status);
+  expect(frozen.items).toEqual([
+    expect.objectContaining({
+      factId: klausur.id,
+      provenance: { kind: "correction" },
+    }),
+  ]);
+
+  await sources.remove(p, handbook);
+
+  expect(await passagesOf(run, { runId })).toEqual([]);
+});
+
+it("pins a selection chosen without a Chat, once, and only from the student's own live Courses and Sources", async () => {
+  const p = await student();
+  const handbook = await readySource(p, "Modulhandbuch", [
+    "Die Klausur ist im Februar.",
+  ]);
+  const other = await readySource(p, "Skript", ["Die Klausur ist im März."]);
+  const foreign = await readySource(await student(), "Fremd", ["Klausur"]);
+  const runId = await pinnedRun(p, {
+    selection: { courseIds: [], sourceIds: [handbook] },
+  });
+
+  expect(
+    await reader.pin(p, {
+      runId,
+      from: { selection: { courseIds: [], sourceIds: [other] } },
+    }),
+  ).toEqual({ status: "ok" });
+  const result = await reader.retrieve(
+    principal.fromRun(runId),
+    { runId },
+    {
+      kind: "passages",
+      text: "Klausur",
+    },
+  );
+  if (result.status !== "ok") throw new Error(result.status);
+  expect(passages(result.items).map((i) => i.provenance.sourceId)).toEqual([
+    handbook,
+  ]);
+
+  const unpinned = randomUUID();
+  await createResponsibilities({ db: runtime, clock }).startStudentRun(p, {
+    runId: unpinned,
+    workflowId: `artifactRun/${unpinned}`,
+  });
+  await sources.remove(p, other);
+  for (const sourceIds of [[foreign], [other]])
+    expect(
+      await reader.pin(p, {
+        runId: unpinned,
+        from: { selection: { courseIds: [], sourceIds } },
+      }),
+    ).toEqual({ status: "gone" });
+  expect(
+    await reader.pin(await student(), {
+      runId,
+      from: { selection: { courseIds: [], sourceIds: [] } },
+    }),
+  ).toEqual({ status: "gone" });
+});
+
+it("lets only the Run itself read its scope, refuses it until pinned, and never lets a Run pin", async () => {
+  const p = await student();
+  const runId = randomUUID();
+  await createResponsibilities({ db: runtime, clock }).startStudentRun(p, {
+    runId,
+    workflowId: `artifactRun/${runId}`,
+  });
+  const run = principal.fromRun(runId);
+  const query = { kind: "passages", text: "Klausur" } as const;
+  embedCalls = 0;
+
+  expect(await reader.retrieve(run, { runId }, query)).toEqual({
+    status: "refused",
+    reason: "run_unpinned",
+  });
+  await expect(reader.retrieve(p, { runId }, query)).rejects.toThrow(
+    ScopeMismatchError,
+  );
+  await expect(
+    reader.retrieve(principal.fromRun(randomUUID()), { runId }, query),
+  ).rejects.toThrow(ScopeMismatchError);
+  await expect(
+    reader.pin(run, {
+      runId,
+      from: { selection: { courseIds: [], sourceIds: [] } },
+    }),
+  ).rejects.toThrow(ScopeMismatchError);
+  expect(embedCalls).toBe(0);
 });

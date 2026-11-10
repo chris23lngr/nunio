@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import type { Embedder } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
-import type { Delegation, Metered, Principal } from "@nunio/delegation";
+import type {
+  Delegation,
+  Metered,
+  Principal,
+  Transaction,
+} from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import { decryptSourceText } from "@nunio/keys";
@@ -9,8 +14,11 @@ import { createFacts } from "./facts.js";
 import { definitely } from "./provider.js";
 import { renderData, Untrusted } from "./untrusted.js";
 
-/** A reference, not authority: the owner and selection are resolved server-side on every call. Runs arrive in Phase 9. */
-export type ScopeRef = { chatId: string } | { planning: true };
+/** A reference, not authority: the owner and selection are resolved server-side on every call. */
+export type ScopeRef =
+  | { chatId: string }
+  | { runId: string }
+  | { planning: true };
 /** A programmer error: the query can never be valid for its scope. Do not retry. */
 export class InvalidQueryError extends Error {
   override name = "InvalidQueryError";
@@ -134,6 +142,8 @@ export type Retrieval =
       status: "refused";
       reason:
         | "not_owner"
+        /** The Run's scope was never pinned, so it reads nothing. */
+        | "run_unpinned"
         | Extract<Metered<never>, { status: "refused" }>["reason"];
     };
 
@@ -408,14 +418,138 @@ export function createKnowledgeReader({
     );
     return { status: "ok", value: embedded.value };
   }
+  /** A Chat's current selection: its Courses, and its Sources with every Source of those Courses. */
+  async function chatSelection(tx: Transaction, chatId: string) {
+    const chat = await tx.chat.findUnique({
+      where: { id: chatId },
+      include: {
+        sources: true,
+        courses: { include: { course: { include: { sources: true } } } },
+      },
+    });
+    return (
+      chat && {
+        courseIds: chat.courses.map((c) => c.courseId),
+        sourceIds: [
+          ...new Set([
+            ...chat.sources.map((s) => s.sourceId),
+            ...chat.courses.flatMap((c) =>
+              c.course.sources.map((s) => s.sourceId),
+            ),
+          ]),
+        ],
+        pinnedAt: null,
+      }
+    );
+  }
+  /** A Run's selection as it was pinned; null when it was never pinned. */
+  async function pinnedSelection(tx: Transaction, runId: string) {
+    const pin = await tx.runPin.findUnique({
+      where: { runId },
+      include: { courses: true, sources: true },
+    });
+    return (
+      pin && {
+        courseIds: pin.courses.map((c) => c.courseId),
+        sourceIds: pin.sources.map((s) => s.sourceId),
+        pinnedAt: pin.pinnedAt,
+      }
+    );
+  }
+  /** The Obligations and Facts of these Courses first extracted or entered after `since`. */
+  async function addedSince(p: Principal, courseIds: string[], since: Date) {
+    const where = { courseId: { in: courseIds }, createdAt: { gt: since } };
+    const [obligations, others] = await withOwner(db, p, (tx) =>
+      Promise.all([
+        tx.obligation.findMany({ where, select: { id: true } }),
+        tx.fact.findMany({ where, select: { id: true } }),
+      ]),
+    );
+    return new Set([...obligations, ...others].map((row) => row.id));
+  }
   const reader = {
+    /**
+     * Fixes a Run's selection when the student starts it, from a Chat's current selection or one chosen directly.
+     * Idempotent on `runId`; "gone" for an unknown Run, or a selection that is not the student's or no longer exists.
+     */
+    async pin(
+      p: Principal,
+      req: {
+        runId: string;
+        from:
+          | { chatId: string }
+          | { selection: { courseIds: string[]; sourceIds: string[] } };
+      },
+    ): Promise<{ status: "ok" | "gone" }> {
+      if (p.kind !== "student")
+        throw new ScopeMismatchError("Only a student pins a Run's scope");
+      return withOwner(db, p, async (tx, studentId) => {
+        const run = await tx.run.findUnique({
+          where: { id: req.runId },
+          include: { pin: true },
+        });
+        if (!run) return { status: "gone" };
+        if (run.pin) return { status: "ok" };
+        let selection: { courseIds: string[]; sourceIds: string[] } | null;
+        if ("chatId" in req.from) {
+          selection = await chatSelection(tx, req.from.chatId);
+        } else {
+          const { courseIds, sourceIds } = req.from.selection;
+          // RLS hides another student's rows, so a foreign ID counts as gone like a deleted one.
+          const courses = await tx.course.findMany({
+            where: { id: { in: courseIds }, status: { not: "merged" } },
+            include: { sources: true },
+          });
+          const sources = await tx.source.count({
+            where: { id: { in: sourceIds }, deletedAt: null },
+          });
+          selection =
+            courses.length === new Set(courseIds).size &&
+            sources === new Set(sourceIds).size
+              ? {
+                  courseIds: courses.map((c) => c.id),
+                  sourceIds: [
+                    ...new Set([
+                      ...sourceIds,
+                      ...courses.flatMap((c) =>
+                        c.sources.map((s) => s.sourceId),
+                      ),
+                    ]),
+                  ],
+                }
+              : null;
+        }
+        if (!selection) return { status: "gone" };
+        await tx.runPin.create({
+          data: { runId: run.id, studentId, pinnedAt: clock.now() },
+        });
+        await tx.runPinCourse.createMany({
+          data: selection.courseIds.map((courseId) => ({
+            runId: run.id,
+            courseId,
+            studentId,
+          })),
+        });
+        await tx.runPinSource.createMany({
+          data: selection.sourceIds.map((sourceId) => ({
+            runId: run.id,
+            sourceId,
+            studentId,
+          })),
+        });
+        return { status: "ok" };
+      });
+    },
     async retrieve(
       p: Principal,
       scope: ScopeRef,
       query: Query,
     ): Promise<Retrieval> {
-      // Chat and planning scopes are the student's own; a Run reads through its pinned scope (Phase 9).
-      if (p.kind !== "student")
+      // Chat and planning scopes are the student's own; a Run reads only through its own pinned scope.
+      if ("runId" in scope) {
+        if (p.kind !== "run" || p.runId !== scope.runId)
+          throw new ScopeMismatchError("Only the Run itself reads its scope");
+      } else if (p.kind !== "student")
         throw new ScopeMismatchError(
           "Only a student reads a Chat or planning scope",
         );
@@ -446,30 +580,22 @@ export function createKnowledgeReader({
         throw new InvalidQueryError(
           "Fixed Events are read only in planning scope",
         );
-      const { chatId } = scope;
       const selection = await withOwner(db, p, async (tx, studentId) => {
-        const chat = await tx.chat.findUnique({
-          where: { id: chatId },
-          include: {
-            sources: true,
-            courses: { include: { course: { include: { sources: true } } } },
-          },
-        });
-        if (!chat) return null;
+        const scoped =
+          "chatId" in scope
+            ? await chatSelection(tx, scope.chatId)
+            : await pinnedSelection(tx, scope.runId);
+        if (!scoped) return null;
         if (query.kind === "facts") {
           const narrowCourses = query.narrow?.courseIds;
-          return chat.courses
-            .map((c) => c.courseId)
-            .filter((id) => !narrowCourses || narrowCourses.includes(id));
-        }
-        let selected = [
-          ...new Set([
-            ...chat.sources.map((s) => s.sourceId),
-            ...chat.courses.flatMap((c) =>
-              c.course.sources.map((s) => s.sourceId),
+          return {
+            ids: scoped.courseIds.filter(
+              (id) => !narrowCourses || narrowCourses.includes(id),
             ),
-          ]),
-        ];
+            pinnedAt: scoped.pinnedAt,
+          };
+        }
+        let selected = scoped.sourceIds;
         const {
           courseIds,
           sourceIds: narrowSources,
@@ -505,17 +631,33 @@ export function createKnowledgeReader({
           },
           select: { id: true },
         });
-        return live.map((s) => s.id).sort();
+        return { ids: live.map((s) => s.id).sort(), pinnedAt: null };
       });
-      // RLS hides another student's Chat, so it is indistinguishable from one that never existed.
-      if (!selection) return { status: "refused", reason: "not_owner" };
+      // RLS hides another student's Chat, so it is indistinguishable from one that never existed. A Run always exists.
+      if (!selection)
+        return {
+          status: "refused",
+          reason: "runId" in scope ? "run_unpinned" : "not_owner",
+        };
       if (query.kind === "facts") {
-        if (!selection.length) return ok([], digest(["facts"]));
-        const { items, revision } = await factItems(p, selection, query.types);
-        return ok(items, revision);
+        if (!selection.ids.length) return ok([], digest(["facts"]));
+        const { items, revision } = await factItems(
+          p,
+          selection.ids,
+          query.types,
+        );
+        if (!selection.pinnedAt) return ok(items, revision);
+        // Additions are frozen for a Run: Facts extracted after its pin stay out.
+        const added = await addedSince(p, selection.ids, selection.pinnedAt);
+        return ok(
+          items.filter(
+            (item) => item.kind !== "fact" || !added.has(item.factId),
+          ),
+          revision,
+        );
       }
-      const revision = digest(["passages", embedder.model, ...selection]);
-      if (!selection.length) return ok([], revision);
+      const revision = digest(["passages", embedder.model, ...selection.ids]);
+      if (!selection.ids.length) return ok([], revision);
       const embedded = await embedQuery(p, query.text);
       if (embedded.status === "refused") return embedded;
       const limit = query.limit ?? defaultLimit;
@@ -539,7 +681,7 @@ export function createKnowledgeReader({
         SELECT c."id", c."sourceId", c."page", c."ciphertext", s."title", s."keyVersion", s."keyCiphertext",
           1 - (c."embedding" <=> ${JSON.stringify(embedded.value)}::vector) AS "score"
         FROM "source_chunk" c JOIN "source" s ON s."id" = c."sourceId" AND s."studentId" = c."studentId"
-        WHERE c."studentId" = ${studentId} AND c."sourceId" = ANY(${selection}) AND s."deletedAt" IS NULL AND s."status" = 'ready'
+        WHERE c."studentId" = ${studentId} AND c."sourceId" = ANY(${selection.ids}) AND s."deletedAt" IS NULL AND s."status" = 'ready'
           AND c."model" = ${embedder.model} AND c."dimensions" = ${embedder.dims}
         ORDER BY c."embedding" <=> ${JSON.stringify(embedded.value)}::vector, c."sourceId", c."ordinal"
         LIMIT ${limit + 1}`,
@@ -635,6 +777,8 @@ export function createKnowledgeReader({
     },
   };
   return {
+    pin: (p: Principal, req: Parameters<typeof reader.pin>[1]) =>
+      unavailableOnFault(() => reader.pin(p, req)),
     retrieve: (p: Principal, scope: ScopeRef, query: Query) =>
       unavailableOnFault(() => reader.retrieve(p, scope, query)),
     cite: (p: Principal, refs: CitationRef[]) =>

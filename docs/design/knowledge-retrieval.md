@@ -1,6 +1,6 @@
 # Knowledge retrieval
 
-Status: accepted design, 2026-10-29; Phase 7 implemented `retrieve`, `cite`, Chat and planning scopes, 2026-11-08 (see "Phase 7 decisions"). `pin`, Run snapshots and widening wait for Runs in Phase 9. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md). Architecture terms (module, interface, seam, adapter, depth) follow the codebase-design vocabulary. Related: [delegation-gate.md](delegation-gate.md), ADR-0007, ADR-0009, invariant 5 in [durable-ai.md](../research/durable-ai.md).
+Status: accepted design, 2026-10-29; Phase 7 implemented `retrieve`, `cite`, Chat and planning scopes, 2026-11-08 (see "Phase 7 decisions"). Phase 11 implemented `pin` and Run snapshots for Runs the student starts, 2026-11-10 (see "Phase 11 decisions"); widening waits for a caller. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md). Architecture terms (module, interface, seam, adapter, depth) follow the codebase-design vocabulary. Related: [delegation-gate.md](delegation-gate.md), ADR-0007, ADR-0009, invariant 5 in [durable-ai.md](../research/durable-ai.md).
 
 ## Purpose
 
@@ -199,7 +199,12 @@ All tests cross `pin`, `retrieve`, and `cite`. Scenarios:
 - **The `Embedder` port** is the one in `@nunio/ai`, shared with ingestion. It carries the model's `relevanceFloor`, since cosine scales differ by model.
 - **Relevance floor.** `baai/bge-m3` uses 0.45, calibrated by the Phase 7 eval: off-topic questions top out near 0.34 and the lowest relevant hit scored 0.474, so 0.45 drops off-topic questions without losing recall on the set. Study questions a document cannot answer still score up to 0.58, so the floor alone does not signal "nothing relevant"; the answer model's instruction to say so remains the main guard.
 
-## Accepted limits
+## Phase 11 decisions
+
+- **`pin` takes `{ chatId }` or `{ selection: { courseIds, sourceIds } }`,** not `{ responsibilityId }`. Only Runs the student starts read course material so far; a Responsibility's Runs still read the Plan alone. `widen` is not implemented. `pin` is called by the student, idempotent on `runId`, and returns `gone` for an unknown Run or a selection that is not the student's or no longer exists. It stores the selection as rows (`run_pin`, `run_pin_course`, `run_pin_source`), with a Course's Sources expanded when pinned.
+- **`{ runId }` is read only by that Run's Principal.** Anyone else gets `ScopeMismatchError`, and an unpinned Run gets `run_unpinned`.
+- **Frozen additions.** Passages come from the pinned Sources that are still live. Facts come from the pinned Courses, minus Obligations and Facts first created after the pin. A new Source's differing value for an existing Fact still shows as a Disagreement, so only new items are frozen out.
+- **Derived text.** The Chat answer's key wrapping moved into `createDerivedText`, which Artifacts and Feedback will share.
 
 - A Run can see its context shrink mid-task, because removals apply live.
 - The same question can return different results in a Chat and in a Run started from it, because only Runs pin.

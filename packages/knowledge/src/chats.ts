@@ -1,15 +1,10 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { Answerer } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
-import type { Delegation, Principal, Transaction } from "@nunio/delegation";
+import type { Delegation, Principal } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
-import {
-  decryptDerivedText,
-  encryptDerivedText,
-  unwrapUnderSource,
-  wrapUnderSource,
-} from "@nunio/keys";
+import { createDerivedText } from "./derived.js";
 import { definitely } from "./provider.js";
 import type { Citation, KnowledgeReader, Provenance } from "./reader.js";
 
@@ -33,29 +28,7 @@ export function createChats({
   reader: KnowledgeReader;
   delegation: Delegation;
 }) {
-  /** The live Source keys, in order; null when any of them is gone. The caller zeroes them. */
-  async function sourceKeys(tx: Transaction, sourceIds: readonly string[]) {
-    const rows = await tx.source.findMany({
-      where: { id: { in: [...sourceIds] }, deletedAt: null },
-      select: { id: true, keyVersion: true, keyCiphertext: true },
-    });
-    const unwrapped: { id: string; key: Buffer }[] = [];
-    for (const id of sourceIds) {
-      const row = rows.find((r) => r.id === id);
-      if (!row?.keyVersion || !row.keyCiphertext) {
-        zero(unwrapped);
-        return null;
-      }
-      unwrapped.push({
-        id,
-        key: keys.unwrap(id, {
-          version: row.keyVersion,
-          ciphertext: row.keyCiphertext,
-        }),
-      });
-    }
-    return unwrapped;
-  }
+  const derived = createDerivedText(keys);
   async function resolve(p: Principal, citations: Citation[]) {
     const provenance = await reader.cite(
       p,
@@ -147,57 +120,38 @@ export function createChats({
       const recorded = await withOwner(db, p, async (tx, studentId) => {
         if (!(await tx.chat.findUnique({ where: { id: chatId } })))
           return false;
-        const layers = await sourceKeys(tx, derivedFrom);
+        const sealed = await derived.seal(
+          tx,
+          id,
+          derivedFrom,
+          answered.value.text,
+        );
         // A Source deleted while answering takes the answer with it.
-        if (!layers) return false;
-        const messageKey = randomBytes(32);
-        try {
-          const sealed = layers.length
-            ? {
-                content: bytes(
-                  encryptDerivedText(messageKey, id, answered.value.text),
-                ),
-                contentKey: bytes(
-                  layers.reduce<Buffer>(
-                    (wrapped, { id: sourceId, key }) =>
-                      wrapUnderSource(key, sourceId, wrapped),
-                    messageKey,
-                  ),
-                ),
-              }
-            : {
-                content: bytes(Buffer.from(answered.value.text)),
-                contentKey: null,
-              };
-          // One timestamp; the role's enum order keeps the question before its answer.
-          const createdAt = new Date();
-          await tx.chatMessage.create({
-            data: {
-              id: randomUUID(),
-              chatId,
-              studentId,
-              role: "student",
-              content: bytes(Buffer.from(question)),
-              createdAt,
-            },
-          });
-          await tx.chatMessage.create({
-            data: {
-              id,
-              chatId,
-              studentId,
-              role: "assistant",
-              ...sealed,
-              derivedFrom,
-              citations: cited,
-              createdAt,
-            },
-          });
-          return true;
-        } finally {
-          messageKey.fill(0);
-          zero(layers);
-        }
+        if (!sealed) return false;
+        // One timestamp; the role's enum order keeps the question before its answer.
+        const createdAt = new Date();
+        await tx.chatMessage.create({
+          data: {
+            id: randomUUID(),
+            chatId,
+            studentId,
+            role: "student",
+            content: new Uint8Array(Buffer.from(question)),
+            createdAt,
+          },
+        });
+        await tx.chatMessage.create({
+          data: {
+            id,
+            chatId,
+            studentId,
+            role: "assistant",
+            ...sealed,
+            citations: cited,
+            createdAt,
+          },
+        });
+        return true;
       });
       if (!recorded) return { status: "gone" } as const;
       const message: ChatMessage = {
@@ -223,20 +177,10 @@ export function createChats({
         if (!chat) return null;
         return Promise.all(
           chat.messages.map(async (message) => {
-            let text: string | null = Buffer.from(message.content).toString(
-              "utf8",
-            );
-            if (message.contentKey) {
-              const layers = await sourceKeys(tx, message.derivedFrom);
-              text =
-                layers &&
-                open(message.id, message.content, message.contentKey, layers);
-              if (layers) zero(layers);
-            }
             return {
               id: message.id,
               role: message.role as ChatMessage["role"],
-              text,
+              text: await derived.open(tx, message.id, message),
               citations: message.citations as Citation[],
             };
           }),
@@ -253,27 +197,3 @@ export function createChats({
   };
 }
 export type Chats = ReturnType<typeof createChats>;
-
-/** Unwraps the message key through each Source key in reverse wrapping order, then decrypts the text. */
-function open(
-  id: string,
-  content: Uint8Array,
-  contentKey: Uint8Array,
-  layers: { id: string; key: Buffer }[],
-) {
-  const messageKey = layers.reduceRight<Buffer>(
-    (wrapped, { id: sourceId, key }) =>
-      unwrapUnderSource(key, sourceId, wrapped),
-    Buffer.from(contentKey),
-  );
-  try {
-    return decryptDerivedText(messageKey, id, content);
-  } finally {
-    messageKey.fill(0);
-  }
-}
-/** Prisma stores bytes from a Uint8Array over its own ArrayBuffer. */
-const bytes = (buffer: Buffer) => new Uint8Array(buffer);
-const zero = (layers: { key: Buffer }[]) => {
-  for (const { key } of layers) key.fill(0);
-};
