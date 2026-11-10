@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
-import type { Flashcard, Maker, PracticeInput, PracticeItem } from "@nunio/ai";
+import type { Flashcard, Maker, PracticeItem, Written } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
 import type {
   Delegation,
+  Metered,
   Principal,
   Responsibilities,
 } from "@nunio/delegation";
 import { principal, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type {
+  AiUse,
   Citation,
   Facts,
   KnowledgeReader,
@@ -17,13 +19,43 @@ import type {
 import { createDerivedText, definitely } from "@nunio/knowledge";
 import { toAnkiTsv } from "./anki.js";
 
-export type ArtifactRequest = {
-  kind: "practice_set" | "flashcards";
-  topicIds: string[];
-  /** The material the Run reads, fixed when it starts. */
-  from:
-    | { chatId: string }
-    | { selection: { courseIds: string[]; sourceIds: string[] } };
+/** The material a Run reads, fixed when it starts. */
+type From =
+  | { chatId: string }
+  | { selection: { courseIds: string[]; sourceIds: string[] } };
+export type ArtifactRequest =
+  | { from: From; kind: "practice_set"; topicIds: string[] }
+  | { from: From; kind: "flashcards"; topicIds: string[] }
+  | {
+      from: From;
+      kind: "draft";
+      obligationId: string;
+      instructions: string;
+      /** The student confirmed a conditional AI-use Rule's conditions for this request. */
+      conditionsConfirmed?: true;
+    }
+  | {
+      from: From;
+      kind: "critique";
+      obligationId: string;
+      /** The student's Own Work, or a version of one of their drafts. */
+      of: { ownWork: string } | { artifactId: string; version: number };
+      conditionsConfirmed?: true;
+    };
+/** Why nunio will not write: drafts and Critiques follow the Obligation's AI-use Rule, and exams get none. */
+export type Refusal =
+  | "gone"
+  | "ai_use_unknown"
+  | "ai_use_forbidden"
+  | "ai_use_conditions"
+  | "not_handed_in";
+/** The request as stored: the student's choices and own words, no course material. */
+type StoredRequest = {
+  topicIds?: string[];
+  obligationId?: string;
+  instructions?: string;
+  of?: { ownWork: string } | { artifactId: string; version: number };
+  conditionsConfirmed?: true;
 };
 export type ArtifactSummary = {
   id: string;
@@ -31,6 +63,7 @@ export type ArtifactSummary = {
   status: "making" | "ready" | "failed";
   failure: string | null;
   topicIds: string[];
+  obligationId: string | null;
   createdAt: Date;
   openedAt: Date | null;
   /** A Source it was drawn from is deleted, so its content is gone. */
@@ -43,10 +76,26 @@ type Item = {
   answer: string;
 };
 type Card = { id: string; topicIds: string[]; front: string; back: string };
-/** A practice set's items or a set of flashcards, with citations as `C`. */
+/** A practice set's items, a set of flashcards, or a draft's or Critique's text, with citations as `C`. */
 type Content<C> =
   | { items: (Item & { citations: C[] })[] }
-  | { cards: (Card & { citations: C[] })[] };
+  | { cards: (Card & { citations: C[] })[] }
+  | { text: string; citations: C[] };
+/** What the student needs to hand an Obligation in themselves: nothing here is sent anywhere. */
+export type HandoffView = {
+  obligation: {
+    id: string;
+    title: string;
+    due: { date: string | null; time: string | null; timeZone: string | null };
+    /** As the Source states it, or the student's Correction; never verified. */
+    destination: string | null;
+    reportedSubmittedAt: Date | null;
+  };
+  /** Its conditions, such as declaring AI use, apply to what is handed in. */
+  rule: AiUse;
+  /** The student's drafts for it, each at its latest version. */
+  drafts: { id: string; version: number; createdAt: Date }[];
+};
 export type ArtifactView = ArtifactSummary & {
   version: number | null;
   /** Null until made, and once withdrawn. */
@@ -55,7 +104,17 @@ export type ArtifactView = ArtifactSummary & {
 /** As sealed: citations are stored as refs, resolved when shown. */
 type StoredContent = Content<Citation>;
 const rowsOf = <C>(content: Content<C>) =>
-  "items" in content ? content.items : content.cards;
+  "items" in content ? content.items : "cards" in content ? content.cards : [];
+const citationsOf = <C>(content: Content<C>) =>
+  "text" in content
+    ? content.citations
+    : rowsOf(content).flatMap((row) => row.citations);
+/** What the Maker returns for each kind. */
+type Made =
+  | { items: PracticeItem[] }
+  | { cards: Flashcard[] }
+  | { written: Written };
+const notHandedIn = ["exam", "registration"];
 
 /** Artifacts: made in Runs the student starts, from material pinned at the start, and shredded with their Sources. */
 export function createArtifacts({
@@ -78,28 +137,154 @@ export function createArtifacts({
   clock: { now(): Date };
 }) {
   const derived = createDerivedText(keys);
-  /** Asks the Maker for the kind's rows, metered against the Run. */
-  async function makeRows(
-    kind: ArtifactRequest["kind"],
+  /**
+   * Whether nunio may draft or critique for this Obligation: one the student has, that is handed in, and whose AI-use
+   * Rule allows it, a conditional one only once the student confirmed its conditions.
+   */
+  async function mayWrite(
+    p: Principal,
+    obligationId: string,
+    conditionsConfirmed: boolean,
+  ): Promise<
+    | { refused: Refusal }
+    | {
+        obligation: { title: string; courseId: string };
+        rule: Exclude<AiUse, { status: "unknown" }>;
+      }
+  > {
+    const obligation = (await facts.review(p)).courses
+      .filter((course) => course.status !== "rejected")
+      .flatMap((course) =>
+        course.obligations
+          .filter((o) => o.state !== "rejected")
+          .map((o) => ({ ...o, courseId: course.id })),
+      )
+      .find((o) => o.id === obligationId);
+    if (!obligation) return { refused: "gone" };
+    if (notHandedIn.includes(obligation.kind))
+      return { refused: "not_handed_in" };
+    const rule = await facts.aiUse(p, obligationId);
+    if (rule === "gone") return { refused: "gone" };
+    if (rule.status === "unknown") return { refused: "ai_use_unknown" };
+    if (rule.status === "forbidden") return { refused: "ai_use_forbidden" };
+    if (rule.status === "conditional" && !conditionsConfirmed)
+      return { refused: "ai_use_conditions" };
+    return { obligation, rule };
+  }
+  /**
+   * What a Run reads and asks the Maker for, per kind: the passages to retrieve, any further Sources its content
+   * derives from, and the call, given the rendered material.
+   */
+  async function planOf(
     run: Principal,
-    input: PracticeInput,
-  ) {
-    return delegation.meter<{ items: PracticeItem[] } | { cards: Flashcard[] }>(
+    artifact: { id: string; kind: string; request: unknown },
+  ): Promise<
+    | { failure: string }
+    | {
+        query: string;
+        courseIds: string[];
+        alsoFrom: string[];
+        call: (
+          data: string,
+          tags: string[],
+        ) => {
+          estimate: number;
+          make: (signal: AbortSignal) => Promise<{
+            value: Made;
+            usage: { microUsd: number };
+          }>;
+        };
+      }
+  > {
+    const request = artifact.request as StoredRequest;
+    if (artifact.kind === "practice_set" || artifact.kind === "flashcards") {
+      const topics = await topicsOf(run, request.topicIds ?? []);
+      if (!topics) return { failure: "gone" };
+      return {
+        query: topics.map((topic) => topic.name).join("; "),
+        courseIds: [...new Set(topics.map((topic) => topic.courseId))],
+        alsoFrom: [],
+        call: (data, tags) => {
+          const input = {
+            topics: topics.map(({ id, name }) => ({ id, name })),
+            data,
+            tags,
+          };
+          return {
+            estimate: maker.estimateMicroUsd(input),
+            make: async (signal) => {
+              if (artifact.kind === "flashcards") {
+                const { value, usage } = await maker.flashcards(input, {
+                  signal,
+                });
+                return { value: { cards: value.cards }, usage };
+              }
+              const { value, usage } = await maker.practiceSet(input, {
+                signal,
+              });
+              return { value: { items: value.items }, usage };
+            },
+          };
+        },
+      };
+    }
+    // A rule that changed since the request fails the Run.
+    const allowed = await mayWrite(
       run,
-      { microUsd: maker.estimateMicroUsd(input) },
-      async (signal) => {
-        if (kind === "flashcards") {
-          const { value, usage } = await definitely(() =>
-            maker.flashcards(input, { signal }),
-          );
-          return { value: { cards: value.cards }, usage };
-        }
-        const { value, usage } = await definitely(() =>
-          maker.practiceSet(input, { signal }),
-        );
-        return { value: { items: value.items }, usage };
-      },
+      request.obligationId!,
+      Boolean(request.conditionsConfirmed),
     );
+    if ("refused" in allowed) return { failure: allowed.refused };
+    const { obligation, rule } = allowed;
+    let work: { text: string; derivedFrom: string[] } | null = null;
+    if (request.of && "ownWork" in request.of)
+      work = { text: request.of.ownWork, derivedFrom: [] };
+    else if (request.of) {
+      const { artifactId, version } = request.of;
+      work = await withOwner(db, run, async (tx) => {
+        const row = await tx.artifactVersion.findUnique({
+          where: { artifactId_version: { artifactId, version } },
+        });
+        const text =
+          row && (await derived.open(tx, `${artifactId}:${version}`, row));
+        const stored = text && (JSON.parse(text) as StoredContent);
+        return row && stored && "text" in stored
+          ? { text: stored.text, derivedFrom: row.derivedFrom }
+          : null;
+      });
+      if (!work) return { failure: "gone" };
+    }
+    return {
+      query: obligation.title,
+      courseIds: [obligation.courseId],
+      alsoFrom: work?.derivedFrom ?? [],
+      call: (data, tags) => {
+        const shared = {
+          obligation: obligation.title,
+          rule: rule.text,
+          data,
+          tags,
+        };
+        if (!work) {
+          const input = { ...shared, instructions: request.instructions ?? "" };
+          return {
+            estimate: maker.estimateMicroUsd(input),
+            make: async (signal) => {
+              const { value, usage } = await maker.draft(input, { signal });
+              return { value: { written: value }, usage };
+            },
+          };
+        }
+        const input = { ...shared, work: work.text };
+        return {
+          estimate: maker.estimateMicroUsd(input),
+          make: async (signal) => {
+            const { value, usage } = await maker.critique(input, { signal });
+            return { value: { written: value }, usage };
+          },
+        };
+      },
+    };
   }
   /** The student's own Topics that are not rejected, with names and Courses; null when any of them is not. */
   async function topicsOf(p: Principal, ids: string[]) {
@@ -147,7 +332,8 @@ export function createArtifacts({
           kind: row.kind as ArtifactSummary["kind"],
           status: row.status as ArtifactSummary["status"],
           failure: row.failure,
-          topicIds: (row.request as { topicIds: string[] }).topicIds,
+          topicIds: (row.request as StoredRequest).topicIds ?? [],
+          obligationId: (row.request as StoredRequest).obligationId ?? null,
           createdAt: row.createdAt,
           openedAt: row.openedAt,
           withdrawn: Boolean(
@@ -164,10 +350,38 @@ export function createArtifacts({
       req: ArtifactRequest,
     ): Promise<
       | { status: "started"; artifactId: string; runId: string }
-      | { status: "refused"; reason: "gone" }
+      | { status: "refused"; reason: Refusal }
     > {
-      if (!(await topicsOf(student, req.topicIds)))
-        return { status: "refused", reason: "gone" };
+      let stored: StoredRequest;
+      if (req.kind === "practice_set" || req.kind === "flashcards") {
+        if (!(await topicsOf(student, req.topicIds)))
+          return { status: "refused", reason: "gone" };
+        stored = { topicIds: req.topicIds };
+      } else {
+        const allowed = await mayWrite(
+          student,
+          req.obligationId,
+          Boolean(req.conditionsConfirmed),
+        );
+        if ("refused" in allowed)
+          return { status: "refused", reason: allowed.refused };
+        if (req.kind === "critique" && "artifactId" in req.of) {
+          const { artifactId, version } = req.of;
+          const draft = await withOwner(db, student, (tx) =>
+            tx.artifactVersion.findFirst({
+              where: { artifactId, version, artifact: { kind: "draft" } },
+            }),
+          );
+          if (!draft) return { status: "refused", reason: "gone" };
+        }
+        stored = {
+          obligationId: req.obligationId,
+          ...(req.kind === "draft"
+            ? { instructions: req.instructions }
+            : { of: req.of }),
+          ...(req.conditionsConfirmed ? { conditionsConfirmed: true } : {}),
+        };
+      }
       const runId = randomUUID(),
         artifactId = randomUUID();
       const started = await responsibilities.startStudentRun(student, {
@@ -187,7 +401,7 @@ export function createArtifacts({
             studentId,
             kind: req.kind,
             runId,
-            request: { topicIds: req.topicIds },
+            request: stored,
           },
         }),
       );
@@ -211,36 +425,30 @@ export function createArtifacts({
         );
         return "failed" as const;
       };
-      const topics = await topicsOf(
-        run,
-        (artifact.request as { topicIds: string[] }).topicIds,
-      );
-      if (!topics) return fail("gone");
+      const plan = await planOf(run, artifact);
+      if ("failure" in plan) return fail(plan.failure);
       const retrieval = await reader.retrieve(
         run,
         { runId },
         {
           kind: "passages",
-          text: topics.map((topic) => topic.name).join("; "),
-          narrow: {
-            courseIds: [...new Set(topics.map((topic) => topic.courseId))],
-          },
+          text: plan.query,
+          narrow: { courseIds: plan.courseIds },
         },
       );
       if (retrieval.status !== "ok") return fail(retrieval.reason);
       if (!retrieval.items.length) return fail("no_material");
       const { data, citations } = retrieval.render();
-      const input = {
-        topics: topics.map(({ id, name }) => ({ id, name })),
+      const call = plan.call(
         data,
-        tags: citations.map((citation) => citation.tag),
-      };
-      let made: Awaited<ReturnType<typeof makeRows>>;
+        citations.map((citation) => citation.tag),
+      );
+      let made: Metered<Made>;
       try {
-        made = await makeRows(
-          artifact.kind as ArtifactRequest["kind"],
+        made = await delegation.meter<Made>(
           run,
-          input,
+          { microUsd: call.estimate },
+          (signal) => definitely(() => call.make(signal)),
         );
       } catch {
         return fail("maker_failed");
@@ -255,13 +463,16 @@ export function createArtifacts({
       const content: StoredContent =
         "cards" in made.value
           ? { cards: made.value.cards.map(cite) }
-          : { items: made.value.items.map(cite) };
+          : "items" in made.value
+            ? { items: made.value.items.map(cite) }
+            : cite(made.value.written);
       const derivedFrom = [
-        ...new Set(
-          retrieval.items.flatMap((item) =>
+        ...new Set([
+          ...retrieval.items.flatMap((item) =>
             item.provenance.kind === "source" ? [item.provenance.sourceId] : [],
           ),
-        ),
+          ...plan.alsoFrom,
+        ]),
       ];
       const stored = await withOwner(db, run, async (tx, studentId) => {
         const sealed = await derived.seal(
@@ -303,15 +514,18 @@ export function createArtifacts({
         .map(({ summary }) => summary);
     },
     /**
-     * The student's edit of a set of flashcards, kept as a new version sealed under the same Sources. A card keeps
-     * its ID, and so its Anki GUID; a card without one is new. Practice sets cannot be edited.
+     * The student's edit of a set of flashcards or a draft, kept as a new version sealed under the same Sources. A
+     * card keeps its ID, and so its Anki GUID; a card without one is new. A draft keeps the citations its text still
+     * uses. Practice sets and Critiques cannot be edited.
      */
     async edit(
       student: Principal,
       artifactId: string,
       edit: {
         baseVersion: number;
-        content: { cards: { id?: string; front: string; back: string }[] };
+        content:
+          | { cards: { id?: string; front: string; back: string }[] }
+          | { text: string };
       },
     ): Promise<
       | { status: "ok"; version: number }
@@ -323,7 +537,10 @@ export function createArtifacts({
           include: { versions: { orderBy: { version: "desc" }, take: 1 } },
         });
         if (!artifact) return { status: "gone" };
-        if (artifact.kind !== "flashcards") return { status: "not_editable" };
+        const editable =
+          (artifact.kind === "flashcards" && "cards" in edit.content) ||
+          (artifact.kind === "draft" && "text" in edit.content);
+        if (!editable) return { status: "not_editable" };
         const [latest] = artifact.versions;
         if (latest?.version !== edit.baseVersion) return { status: "stale" };
         const text = await derived.open(
@@ -332,25 +549,40 @@ export function createArtifacts({
           latest,
         );
         if (!text) return { status: "withdrawn" };
-        const base = rowsOf(JSON.parse(text) as StoredContent);
-        let next = Math.max(0, ...base.map((card) => Number(card.id)));
-        const topicIds = (artifact.request as { topicIds: string[] }).topicIds;
-        const cards = edit.content.cards.map((card) => {
-          const kept = base.find((row) => row.id === card.id);
-          return {
-            id: kept ? kept.id : String(++next),
-            topicIds: kept?.topicIds ?? topicIds,
-            front: card.front,
-            back: card.back,
-            citations: kept?.citations ?? [],
+        const stored = JSON.parse(text) as StoredContent;
+        let content: StoredContent;
+        if ("text" in edit.content) {
+          const edited = edit.content.text;
+          // A citation whose tag the student removed would point at material the text no longer uses.
+          content = {
+            text: edited,
+            citations: citationsOf(stored).filter(({ tag }) =>
+              edited.includes(`[${tag}]`),
+            ),
           };
-        });
+        } else {
+          const base = rowsOf(stored);
+          let next = Math.max(0, ...base.map((card) => Number(card.id)));
+          const topicIds = (artifact.request as StoredRequest).topicIds ?? [];
+          content = {
+            cards: edit.content.cards.map((card) => {
+              const kept = base.find((row) => row.id === card.id);
+              return {
+                id: kept ? kept.id : String(++next),
+                topicIds: kept?.topicIds ?? topicIds,
+                front: card.front,
+                back: card.back,
+                citations: kept?.citations ?? [],
+              };
+            }),
+          };
+        }
         const version = latest.version + 1;
         const sealed = await derived.seal(
           tx,
           `${artifactId}:${version}`,
           latest.derivedFrom,
-          JSON.stringify({ cards } satisfies StoredContent),
+          JSON.stringify(content),
         );
         if (!sealed) return { status: "withdrawn" };
         // A concurrent edit of the same base took this version first.
@@ -360,6 +592,48 @@ export function createArtifacts({
         });
         return count ? { status: "ok", version } : { status: "stale" };
       });
+    },
+    /**
+     * A Handoff: the Obligation's Destination wording, its AI-use Rule, and the drafts to choose from. The student
+     * hands it in and reports it through `facts.reportSubmitted`. Exams and registrations have none.
+     */
+    async handoff(
+      student: Principal,
+      obligationId: string,
+    ): Promise<HandoffView | "gone" | "not_handed_in"> {
+      const obligation = (await facts.review(student)).courses
+        .filter((course) => course.status !== "rejected")
+        .flatMap((course) => course.obligations)
+        .find((o) => o.id === obligationId && o.state !== "rejected");
+      if (!obligation) return "gone";
+      if (notHandedIn.includes(obligation.kind)) return "not_handed_in";
+      const rule = await facts.aiUse(student, obligationId);
+      if (rule === "gone") return "gone";
+      const drafts = (await summaries(student))
+        .filter(
+          ({ summary }) =>
+            summary.kind === "draft" &&
+            summary.obligationId === obligationId &&
+            summary.status === "ready" &&
+            !summary.withdrawn,
+        )
+        .map(({ row, summary }) => ({
+          id: summary.id,
+          version: row.versions[0]!.version,
+          createdAt: summary.createdAt,
+        }));
+      const { date, time, timeZone } = obligation.due;
+      return {
+        obligation: {
+          id: obligation.id,
+          title: obligation.title,
+          due: { date, time, timeZone },
+          destination: obligation.destination,
+          reportedSubmittedAt: obligation.reportedSubmittedAt,
+        },
+        rule,
+        drafts,
+      };
     },
     /** The latest version of a set of flashcards as an Anki text file, its cards tagged with their Topics' names. */
     async exportFlashcards(
@@ -473,9 +747,7 @@ export function createArtifacts({
       const stored = text ? (JSON.parse(text) as StoredContent) : null;
       const provenance = await reader.cite(
         student,
-        stored
-          ? rowsOf(stored).flatMap((row) => row.citations.map((c) => c.cite))
-          : [],
+        stored ? citationsOf(stored).map((c) => c.cite) : [],
       );
       const resolve = <R extends { citations: Citation[] }>({
         citations,
@@ -494,7 +766,9 @@ export function createArtifacts({
           stored &&
           ("items" in stored
             ? { items: stored.items.map(resolve) }
-            : { cards: stored.cards.map(resolve) }),
+            : "cards" in stored
+              ? { cards: stored.cards.map(resolve) }
+              : resolve(stored)),
       };
     },
   };

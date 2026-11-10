@@ -6,4 +6,6 @@ export {
   type Artifacts,
   type ArtifactView,
   createArtifacts,
+  type HandoffView,
+  type Refusal,
 } from "./artifacts.js";
