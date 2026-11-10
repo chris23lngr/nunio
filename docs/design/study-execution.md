@@ -363,12 +363,9 @@ All tables are owned by the student under the same row-level security policy as 
 
 All are authenticated and CSRF-protected like the existing student routes.
 
-In `web`, `features/study` has:
-- a Course's Topics with their Levels and last-Evidence dates, where _disputed_ shows both sides, and "Practice this Topic" (a request from the Topic's Course);
-- the practice view, with an answer box per item and its Feedback;
-- flashcards with the import preview;
-- drafts and Critiques, with the rule shown and the question asked when it is unknown;
-- the Handoff dialog.
+In `web`, `features/study` has two screens:
+- `/study`: each Course's Topics with their Levels and last-Evidence dates, where _disputed_ shows both sides, with "Practice", "Flashcards" and the student's Self-assessment; and each assessed Obligation with a draft request, a Critique of the student's own work (the rule shown, and the question asked when it is unknown) and the Handoff;
+- `/study/artifacts/[id]`: polled while it is made; the practice view with an answer box per item and its Feedback; flashcards with the import preview, editing and the Anki download; a draft to rework; a Critique to read.
 
 ## Testing
 
