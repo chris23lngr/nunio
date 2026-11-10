@@ -516,7 +516,7 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 4. Flashcard export as an Anki-compatible TSV with an import preview ([pilot-delivery.md](research/pilot-delivery.md)).
 5. Assignment drafting and review within the course AI-use rules (ask when they are unknown). Finished work goes through a **Handoff**: the student submits and confirms, which gives Reported as Submitted.
 
-**Documentation references.** GLOSSARY ("Understanding", "Handing in"); ADR-0002; [pilot-delivery.md](research/pilot-delivery.md), "Flashcard export"; brief "Completion, submission, and integrations".
+**Documentation references.** GLOSSARY ("Study work", "Understanding", "Handing in"); [study-execution.md](design/study-execution.md) (entire); ADR-0002; [pilot-delivery.md](research/pilot-delivery.md), "Flashcard export"; brief "Completion, submission, and integrations".
 
 **Verification checklist.**
 - [ ] An Artifact never changes an Understanding Level.
