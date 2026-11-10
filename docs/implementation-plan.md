@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -519,10 +519,17 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 **Documentation references.** GLOSSARY ("Study work", "Understanding", "Handing in"); [study-execution.md](design/study-execution.md) (entire); ADR-0002; [pilot-delivery.md](research/pilot-delivery.md), "Flashcard export"; brief "Completion, submission, and integrations".
 
 **Verification checklist.**
-- [ ] An Artifact never changes an Understanding Level.
-- [ ] Disagreement between Self-assessment and Attempts shows as disputed.
-- [ ] The Anki TSV round-trips German characters, delimiters, and multiline answers in the supported Anki version.
-- [ ] Unknown AI-use rules cause nunio to ask instead of drafting.
+- [x] An Artifact never changes an Understanding Level (`packages/understanding/src/understanding.test.ts`, "moves a Topic's Level only through graded Attempts, never through Artifacts").
+- [x] Disagreement between Self-assessment and Attempts shows as disputed (`levels.test.ts`, both directions; `understanding.test.ts`; `apps/web/test/study.test.tsx`).
+- [ ] The Anki TSV round-trips German characters, delimiters, and multiline answers in the supported Anki version. The file format follows the Anki manual and is pinned by `packages/artifacts/src/anki.test.ts`; importing a file into Anki is still to be done.
+- [x] Unknown AI-use rules cause nunio to ask instead of drafting (`packages/artifacts/src/artifacts.test.ts`, "refuses to write while the AI-use Rule is unknown…"; `apps/web/test/study.test.tsx`, "asks for the AI-use Rule while it is unknown…").
+
+**Progress (2026-11-10).** Study execution is implemented per [study-execution.md](design/study-execution.md):
+- `packages/artifacts` makes practice sets, flashcards, drafts and Critiques in Runs the student starts, from material pinned when they ask; every version is shredded with any Source it was drawn from. Drafts and Critiques follow the Obligation's AI-use Rule, checked at the request and again before the model is called; exams get none. Flashcards export as an Anki text file whose GUIDs survive edits.
+- `packages/understanding` records Attempts with Feedback and Self-assessments; only graded Attempts move a Level, solid after two correct ones in a row.
+- AI-use Rules are a Fact (`ai_use_rule`), and Reported as Submitted is a column on the Obligation that stops its planning.
+- The worker makes each Artifact in an `artifactRun` workflow with a single attempt; the API serves the routes in the design; the web has `/study` (Topics with Levels, practice, flashcards, drafts, Critiques and the Handoff) and `/study/artifacts/[id]`, and Home lists ready Artifacts.
+- Left for later: Briefings bundling ready Artifacts, practice inside the exam Responsibility, Practice Items quoted from the student's own Sources (`quoteFrom`), and photos of handwritten work.
 
 **Anti-pattern guards.** No mastery percentages. No automatic Submission. No Destination is treated as verified.
 
