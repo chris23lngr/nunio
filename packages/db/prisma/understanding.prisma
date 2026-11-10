@@ -1,0 +1,40 @@
+/// The student's own answer to a Practice Item, given in nunio, with nunio's Feedback once graded. Evidence.
+model PracticeAttempt {
+  id          String    @id
+  studentId   String
+  student     User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  artifactId  String
+  artifact    Artifact  @relation(fields: [artifactId, studentId], references: [id, studentId], onDelete: Cascade)
+  itemId      String
+  /// The item's Topics, copied so Understanding Levels need no decryption.
+  topicIds    String[]
+  /// The student's own words, holding no course material, stored as is like a Chat question.
+  text        String
+  /// correct, partial or incorrect; null while ungraded. Structure, so it outlives the Feedback's Sources.
+  verdict     String?
+  /// The Feedback, sealed under the practice set's Sources and shredded with any of them (ADR-0007).
+  feedback    Bytes?
+  feedbackKey Bytes?
+  derivedFrom String[]
+  citations   Json      @default("[]")
+  gradedAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([studentId, createdAt])
+  @@map("practice_attempt")
+}
+
+/// The student's own statement about how well they understand a Topic. A history, never updated in place.
+model SelfAssessment {
+  id        String   @id
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  topicId   String
+  topic     Fact     @relation(fields: [topicId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// shaky or solid.
+  level     String
+  createdAt DateTime @default(now())
+
+  @@index([studentId, topicId])
+  @@map("self_assessment")
+}
