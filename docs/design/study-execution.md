@@ -166,8 +166,7 @@ interface Facts {
     rule: {
       obligationId: string;
       level: "obligation" | "course";
-      class: AiUseClass;
-      text: string;
+      value: AiUseClass; // a Fact holds one value, so the student's entry has no wording
     },
   ): Promise<{ status: "ok" } | { status: "gone" }>;
   /** The student says they handed it in through a Handoff, or takes that back. */
@@ -175,7 +174,7 @@ interface Facts {
     student: Principal,
     obligationId: string,
     reported: boolean,
-  ): Promise<{ status: "ok" | "gone" }>;
+  ): Promise<{ status: "ok" | "gone" | "not_handed_in" }>;
 }
 export type AiUseClass = "forbidden" | "conditional" | "allowed";
 export type AiUse =
@@ -183,7 +182,7 @@ export type AiUse =
   | {
       status: AiUseClass;
       level: "obligation" | "course";
-      text: Untrusted;
+      text: string | null; // the Source's wording, for showing; null for the student's own. A prompt fences it.
       provenance: Provenance;
     };
 
@@ -193,7 +192,7 @@ interface Responsibilities {
   startStudentRun(
     student: Principal,
     run: { runId: string; workflowId: string; chatId?: string },
-  ): Promise<void>;
+  ): Promise<{ status: "ok" | "gone" }>;
 }
 
 // Shared by chats, artifacts and understanding (packages/knowledge)
