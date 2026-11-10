@@ -16,6 +16,8 @@ export default defineConfig({
       "@base-ui/react/menu",
       "@base-ui/react/merge-props",
       "@base-ui/react/popover",
+      "@base-ui/react/preview-card",
+      "@shadcn/react/message-scroller",
       "@base-ui/react/select",
       "@base-ui/react/switch",
       "@base-ui/react/tabs",
