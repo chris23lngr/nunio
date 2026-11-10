@@ -9,7 +9,7 @@ test.beforeEach(async ({ context, page }) => {
       path: "/",
     },
   ]);
-  await page.goto("/account");
+  await page.goto("/settings/security");
 });
 
 test("the header menu fits its content and the opener stays outside page layout", async ({

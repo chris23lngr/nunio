@@ -15,7 +15,7 @@ createServer((request, response) => {
       .writeHead(302, {
         "Set-Cookie":
           "better-auth.session_token=sidebar-browser-test; Path=/; SameSite=Lax",
-        Location: "http://localhost:3100/account",
+        Location: "http://localhost:3100/settings/security",
       })
       .end();
     return;

@@ -89,7 +89,6 @@ test("denying notifications leaves every page usable", async ({ page }) => {
 
   for (const [name, path] of [
     ["Home", "/"],
-    ["Account", "/account"],
     ["Review", "/review"],
     ["Chat", "/chat"],
     ["Plan", "/plan"],

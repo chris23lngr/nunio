@@ -103,7 +103,7 @@ test("security settings reject an invalid session cookie", async ({
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
 });
 
-test("a signed-in student can open security settings without changing the account page", async ({
+test("a signed-in student can manage their account in security settings", async ({
   page,
 }) => {
   await signIn(page, "settings");
@@ -112,11 +112,12 @@ test("a signed-in student can open security settings without changing the accoun
     page.getByRole("heading", { name: "Einstellungen", level: 1 }),
   ).toBeVisible();
   await expect(page.getByText("Dieses Gerät")).toBeVisible();
-  await page.goto(`${origins.app}/account`);
-  await expect(page).toHaveURL(`${origins.app}/account`);
   await expect(
-    page.getByRole("heading", { name: "Account", exact: true }),
+    page.getByRole("button", { name: "Konto löschen", exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Account", exact: true }),
+  ).toHaveCount(0);
 });
 
 test("settings open from the sidebar footer and stack below navigation on mobile", async ({

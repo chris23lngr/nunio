@@ -46,21 +46,25 @@ test("each navigation link has its own decorative icon", () => {
     </AppLayout>,
   );
 
+  expect(screen.queryByRole("link", { name: "Account" })).toBeNull();
+  expect(
+    screen.getByRole("link", { name: "Einstellungen" }).getAttribute("href"),
+  ).toBe("/settings/security");
+
   const links = screen.getAllByRole("link");
-  expect(links).toHaveLength(10);
+  expect(links).toHaveLength(9);
   const glyphs = links.map((link) => {
     const icon = link.querySelector("svg");
     expect(icon).not.toBeNull();
     expect(icon!.getAttribute("aria-hidden")).toBe("true");
     return icon!.innerHTML;
   });
-  expect(new Set(glyphs).size).toBe(10);
+  expect(new Set(glyphs).size).toBe(9);
 });
 
 test.each([
   ["/", "Home"],
   ["/inbox", "Inbox"],
-  ["/account", "Account"],
   ["/review", "Review"],
   ["/chat", "Chat"],
   ["/plan", "Plan"],
