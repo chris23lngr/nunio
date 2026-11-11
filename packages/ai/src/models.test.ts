@@ -20,6 +20,7 @@ describe("the model registry", () => {
   // ADR-0011 starting defaults, confirmed by evaluations before the pilot.
   it.each([
     ["extraction", "anthropic/claude-haiku-5.5"],
+    ["scan", "anthropic/claude-haiku-5.5"],
     ["classification", "anthropic/claude-haiku-5.5"],
     ["estimation", "anthropic/claude-haiku-5.5"],
     ["agent", "anthropic/claude-sonnet-5.5"],

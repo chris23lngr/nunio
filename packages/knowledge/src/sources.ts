@@ -15,6 +15,8 @@ const chunkStride = 1200,
 const embeddingBatch = 16,
   maxChunks = 2000,
   maxTextBytes = 2 * 1024 * 1024;
+/** Page images read at once, each through its own metered call. */
+const scanConcurrency = 4;
 /** Rebuilds each page's text from its chunks in ordinal order, inverting the overlapping split below. */
 export function joinChunks(chunks: readonly { page: number; text: string }[]) {
   const pages = new Map<number, string[]>();
@@ -326,25 +328,43 @@ export function createSources({
           ...download,
           expectedBytes: source.bytes,
         });
+        // Page images are read a few at a time to keep a long slide deck within the ten-minute target.
+        const texts = parsed.pages.map((page) => page.text);
+        let next = 0,
+          failure: { error: unknown } | undefined;
+        await Promise.all(
+          Array.from({ length: scanConcurrency }, async () => {
+            while (!failure && next < parsed.pages.length) {
+              const index = next++;
+              const page = parsed.pages[index]!;
+              if (!page.imageBase64) continue;
+              const image = Buffer.from(page.imageBase64, "base64");
+              try {
+                // Reading supplements, never replaces, whatever text the parser extracted.
+                const reading = await meteredModelCall(
+                  deps.scans.estimateMicroUsd(image, page.text),
+                  async (signal) => {
+                    const result = await deps.scans.read(image, {
+                      text: page.text,
+                      signal,
+                    });
+                    return { value: result.text, usage: result.usage };
+                  },
+                );
+                texts[index] = [page.text.trim(), reading.trim()]
+                  .filter(Boolean)
+                  .join("\n");
+              } catch (error) {
+                failure ??= { error };
+              }
+            }
+          }),
+        );
+        if (failure) throw failure.error;
         const chunks: { page: number; text: string }[] = [];
-        for (const page of parsed.pages) {
-          let text = page.text;
-          if (page.imageBase64) {
-            const image = Buffer.from(page.imageBase64, "base64");
-            // Transcription supplements, never replaces, whatever text the parser extracted.
-            const transcription = await meteredModelCall(
-              deps.scans.estimateMicroUsd(image),
-              async (signal) => {
-                const result = await deps.scans.read(image, { signal });
-                return { value: result.text, usage: result.usage };
-              },
-            );
-            text = [page.text.trim(), transcription.trim()]
-              .filter(Boolean)
-              .join("\n");
-          }
+        for (const [index, page] of parsed.pages.entries()) {
           // Split by Unicode code points, preserving non-ASCII text.
-          const chars = Array.from(text.trim());
+          const chars = Array.from(texts[index]!.trim());
           for (let offset = 0; offset < chars.length; offset += chunkStride) {
             chunks.push({
               page: page.page,

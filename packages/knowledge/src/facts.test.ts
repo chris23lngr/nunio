@@ -497,6 +497,81 @@ it("confirms and rejects items and Courses for their owner only, folding away wh
   expect(await facts.review(stranger)).toEqual({ courses: [] });
 });
 
+it("keeps Facts read only from a figure description with an uncertainty, but drops such Obligations and Courses", async () => {
+  const p = await student();
+  const sourceId = await readySource(p, "Folien.pdf", [
+    {
+      page: 1,
+      text: "MA-101 Analysis I\nInhalte: gleichmäßige Konvergenz.\n[Abbildung] Zeitstrahl: Abgabe Blatt 5 am 27.11., Zulassung ab 50 %, Fourier-Reihen, MA-102 Lineare Algebra.",
+    },
+  ]);
+  const topic = {
+    course: "MA-101",
+    type: "topic" as const,
+    page: 1,
+    uncertainty: null,
+  };
+  const result = await facts.extract(p, sourceId, {
+    delegation,
+    extractor: scripted({
+      courses: [
+        analysis,
+        {
+          code: "MA-102",
+          title: "Lineare Algebra",
+          page: 1,
+          quote: "MA-102 Lineare Algebra",
+        },
+      ],
+      obligations: [
+        {
+          ...sheet3,
+          title: "Übungsblatt 5",
+          key: "Übungsblatt 5",
+          quote: "Abgabe Blatt 5 am 27.11.",
+        },
+      ],
+      facts: [
+        {
+          ...topic,
+          key: "Gleichmäßige Konvergenz",
+          value: "Gleichmäßige Konvergenz",
+          quote: "gleichmäßige Konvergenz",
+        },
+        {
+          ...topic,
+          key: "Fourier-Reihen",
+          value: "Fourier-Reihen",
+          quote: "Fourier-Reihen",
+        },
+        {
+          ...topic,
+          type: "course_rule",
+          key: "exam admission",
+          value: "Zulassung ab 50 %",
+          quote: "Zulassung ab 50 %",
+          uncertainty: "Bezugsgröße fehlt",
+        },
+      ],
+    }),
+  });
+
+  expect(result).toMatchObject({ status: "done", dropped: 2 });
+  const { courses } = await facts.review(p);
+  expect(courses.map((course) => course.code)).toEqual(["MA-101"]);
+  expect(courses[0]?.obligations).toEqual([]);
+  expect(
+    courses[0]?.facts.map((fact) => [fact.value, fact.uncertainty]),
+  ).toEqual([
+    ["Fourier-Reihen", "aus einer Abbildungsbeschreibung abgeleitet"],
+    ["Gleichmäßige Konvergenz", null],
+    [
+      "Zulassung ab 50 %",
+      "Bezugsgröße fehlt; aus einer Abbildungsbeschreibung abgeleitet",
+    ],
+  ]);
+});
+
 it("stores Topics, course rules and exam logistics with their passage", async () => {
   const p = await student();
   const sourceId = await readySource(p, "Analysis.pdf", [

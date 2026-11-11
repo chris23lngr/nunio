@@ -274,14 +274,31 @@ export function createFacts({
           new Uint8Array(
             encryptSourceText(key, sourceId, JSON.stringify(wording)),
           );
+        // A figure description is the scan model's reading, not the page's own words (see figureLines).
         const pageText = new Map(
-          pages.map((page) => [page.page, groundingForm(page.text)]),
+          pages.map((page) => [
+            page.page,
+            groundingForm(figureLines(page.text, false).join("\n")),
+          ]),
+        );
+        const figureText = new Map(
+          pages.map((page) => [
+            page.page,
+            figureLines(page.text, true).map(groundingForm),
+          ]),
         );
         const grounded = (item: { page: number; quote: string }) => {
           const quote = groundingForm(item.quote);
           return (
             quote.length > 0 &&
             Boolean(pageText.get(item.page)?.includes(quote))
+          );
+        };
+        const inFigure = (item: { page: number; quote: string }) => {
+          const quote = groundingForm(item.quote);
+          return (
+            quote.length > 0 &&
+            Boolean(figureText.get(item.page)?.some((l) => l.includes(quote)))
           );
         };
         const all = {
@@ -297,7 +314,21 @@ export function createFacts({
               grounded(course),
           ),
           obligations: all.obligations.filter(grounded),
-          facts: all.facts.filter(grounded),
+          // Facts read only from a figure stay, flagged; Obligations and Courses need the page's own words.
+          facts: all.facts.flatMap((item) =>
+            grounded(item)
+              ? [item]
+              : inFigure(item)
+                ? [
+                    {
+                      ...item,
+                      uncertainty: [item.uncertainty, figureUncertainty]
+                        .filter(Boolean)
+                        .join("; "),
+                    },
+                  ]
+                : [],
+          ),
         };
         let dropped =
           all.courses.length -
@@ -1468,6 +1499,15 @@ function valuesOf<
   return [...values.values()];
 }
 
+/** Marks a line in which the scan model describes a figure; `@nunio/ai`'s scan prompt writes it. */
+const figureMarker = "[Abbildung] ";
+const figureUncertainty = "aus einer Abbildungsbeschreibung abgeleitet";
+/** A page's figure description lines, or every other line. */
+function figureLines(text: string, figures: boolean) {
+  return text
+    .split("\n")
+    .filter((line) => line.trimStart().startsWith(figureMarker) === figures);
+}
 /** Undoes line-break hyphenation and soft hyphens, so a quote matches the page text it was read from. */
 function groundingForm(text: string) {
   return normalize(
