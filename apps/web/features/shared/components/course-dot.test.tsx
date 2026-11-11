@@ -2,16 +2,16 @@ import { render } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { CourseDot } from "./course-dot";
 
-const dot = (id: string) =>
-  render(<CourseDot id={id} />).container.querySelector(
+const dot = (color: Parameters<typeof CourseDot>[0]["color"]) =>
+  render(<CourseDot color={color} />).container.querySelector<HTMLElement>(
     "[data-slot=course-dot]",
   );
 
-test("a Course keeps its color wherever its dot is shown", () => {
-  expect(dot("course-1")?.className).toBe(dot("course-1")?.className);
-  expect(dot("course-1")?.className).not.toBe(dot("course-2")?.className);
+test("the dot shows the Course's color", () => {
+  expect(dot("rose")?.style.backgroundColor).toBe("oklch(0.645 0.246 16.439)");
+  expect(dot("teal")?.style.backgroundColor).toBe("oklch(0.704 0.14 182.503)");
 });
 
 test("the dot is decoration for screen readers", () => {
-  expect(dot("course-1")?.getAttribute("aria-hidden")).toBe("true");
+  expect(dot("rose")?.getAttribute("aria-hidden")).toBe("true");
 });

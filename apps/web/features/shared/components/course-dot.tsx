@@ -1,15 +1,14 @@
-const colors = ["bg-rose-500", "bg-fuchsia-500", "bg-purple-500", "bg-sky-500"];
+import type { CourseColor } from "@/features/courses/api/course-queries";
+import { colors } from "@/features/courses/course-format";
 
-/** A Course's color square; the color follows from its ID, so it matches everywhere. */
-export function CourseDot({ id }: { id: string }) {
-  const index =
-    Array.from(id).reduce((sum, letter) => sum + letter.charCodeAt(0), 0) %
-    colors.length;
+/** A Course's color square. */
+export function CourseDot({ color }: { color: CourseColor }) {
   return (
     <span
       aria-hidden="true"
       data-slot="course-dot"
-      className={`size-2 shrink-0 rounded-xs ${colors[index]}`}
+      className="size-2 shrink-0 rounded-xs"
+      style={{ backgroundColor: colors[color].swatch }}
     />
   );
 }

@@ -8,7 +8,7 @@ import {
 import { InputGroupButton } from "@nunio/ui/components/input-group/input-group";
 import { Blocks, Plus, Upload } from "lucide-react";
 
-/** The composer's "+" menu; its items aren't available yet. */
+/** The composer's "+" menu; its items have no actions yet. */
 export function ComposerAttachMenu() {
   return (
     <DropdownMenu>
@@ -25,11 +25,11 @@ export function ComposerAttachMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top">
         <DropdownMenuGroup>
-          <DropdownMenuItem disabled>
+          <DropdownMenuItem>
             <Upload />
             Datei hochladen
           </DropdownMenuItem>
-          <DropdownMenuItem disabled>
+          <DropdownMenuItem>
             <Blocks />
             Konnektoren verwalten
           </DropdownMenuItem>

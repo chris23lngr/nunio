@@ -17,6 +17,7 @@ const course = {
   title: "Microeconomics",
   code: "MICD",
   status: "accepted",
+  color: "rose",
 };
 beforeEach(() => {
   navigation.params = new URLSearchParams();
@@ -29,7 +30,7 @@ beforeEach(() => {
       removeEventListener: vi.fn(),
     })),
   );
-  api.route("GET", "/api/me/review", () =>
+  api.route("GET", "/api/me/courses", () =>
     Response.json({ courses: [course] }),
   );
 });

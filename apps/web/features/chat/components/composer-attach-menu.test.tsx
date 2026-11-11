@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { ComposerAttachMenu } from "./composer-attach-menu";
 
-test("the menu offers uploads and connectors, both not available yet", async () => {
+test("the menu offers uploads and connectors, both enabled", async () => {
   render(<ComposerAttachMenu />);
 
   await userEvent
@@ -16,7 +16,7 @@ test("the menu offers uploads and connectors, both not available yet", async () 
     "Konnektoren verwalten",
   ]);
   for (const item of items)
-    expect(item.getAttribute("aria-disabled")).toBe("true");
+    expect(item.getAttribute("aria-disabled")).toBeNull();
 });
 
 test("the trigger doesn't submit the surrounding form", () => {

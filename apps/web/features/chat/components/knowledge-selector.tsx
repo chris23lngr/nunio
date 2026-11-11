@@ -13,7 +13,7 @@ import {
 } from "@nunio/ui/components/dropdown-menu/dropdown-menu";
 import { Blocks, BookOpen, ChevronRight, Loader, Upload } from "lucide-react";
 import { CourseDot } from "@/features/shared/components/course-dot";
-import type { Course } from "../api/chat-queries";
+import type { Course, CourseOption } from "../api/chat-queries";
 
 export function KnowledgeSelector({
   courses,
@@ -23,7 +23,7 @@ export function KnowledgeSelector({
   error,
   onToggle,
 }: {
-  courses: Course[];
+  courses: CourseOption[];
   selected: Course[];
   locked: boolean;
   loading: boolean;
@@ -77,23 +77,18 @@ export function KnowledgeSelector({
               onCheckedChange={() => onToggle(course.id)}
               closeOnClick={false}
             >
-              <CourseDot id={course.id} />
+              <CourseDot color={course.color} />
               <span className="min-w-0 truncate">{course.title}</span>
-              {course.code && (
-                <span className="shrink-0 font-normal text-base-500">
-                  {course.code}
-                </span>
-              )}
             </DropdownMenuSwitchItem>
           ))}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem disabled>
+          <DropdownMenuItem>
             <Upload />
             Datei hochladen
           </DropdownMenuItem>
-          <DropdownMenuItem disabled>
+          <DropdownMenuItem>
             <Blocks />
             Konnektoren verwalten
             <ChevronRight className="ml-auto" />
