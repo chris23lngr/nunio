@@ -1,3 +1,4 @@
+import { cn } from "@nunio/ui";
 import {
   InputGroup,
   InputGroupAddon,
@@ -22,6 +23,7 @@ export function ChatComposer({
   textareaRef,
   knowledge,
   alert,
+  className,
   "aria-describedby": describedBy,
 }: {
   value: string;
@@ -38,6 +40,7 @@ export function ChatComposer({
   /** Shown in the bar after the "+" menu. */
   knowledge?: ReactNode;
   alert?: string;
+  className?: string;
   "aria-describedby"?: string;
 }) {
   // The caret to restore once a newline inserted with Alt+Enter is rendered.
@@ -55,7 +58,10 @@ export function ChatComposer({
   return (
     <form
       aria-label="Nachricht verfassen"
-      className="w-full shrink-0 bg-linear-to-b from-transparent to-white px-4 pt-16 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-[max(32px,env(safe-area-inset-bottom))]"
+      className={cn(
+        "w-full shrink-0 bg-linear-to-b from-transparent to-white px-4 pt-16 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-[max(32px,env(safe-area-inset-bottom))]",
+        className,
+      )}
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();

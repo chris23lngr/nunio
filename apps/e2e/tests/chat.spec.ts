@@ -195,12 +195,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     await expect(page).toHaveURL(`${origins.app}/`);
     await page.goto(`${origins.app}/chat`);
     await expect(page.getByRole("heading", { name: /Justus/ })).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /Modell auswählen/ }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("link", { name: "Neuer Chat", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Modell: / })).toBeVisible();
     await expect(page.getByRole("heading", { name: /Justus/ })).toHaveCSS(
       "font-size",
       "30px",
@@ -208,7 +203,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     await page.screenshot({
       path: testInfo.outputPath("chat-empty-desktop.png"),
     });
-    await page.getByRole("button", { name: "Kurs auswählen" }).click();
+    await page.getByRole("button", { name: "Wissen verwalten" }).click();
     await page
       .getByRole("menuitemcheckbox", { name: /Microeconomics/ })
       .click();
@@ -231,8 +226,8 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
         .or(page.getByRole("button", { name: "Denkt nach …" })),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Nachricht senden" }),
-    ).toBeDisabled();
+      page.getByRole("button", { name: "Antwort stoppen" }),
+    ).toBeVisible();
     await expect(textarea).toHaveValue("");
     await expect(page.getByText("Ich prüfe deine Materialien.")).toBeVisible();
     await expect(
@@ -248,12 +243,11 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     ).toBeAttached();
     await expect(textarea).toHaveValue("");
     await expect(page.getByText("Ich prüfe deine Materialien.")).toHaveCount(0);
-    await expect(
-      page.getByRole("button", { name: "Kurs auswählen" }),
-    ).toBeDisabled();
-    await expect(
-      page.getByRole("button", { name: "Kurs auswählen" }),
-    ).toHaveCSS("opacity", "0.5");
+    const knowledge = page.getByRole("button", {
+      name: "Wissen verwalten, 1 Quelle ausgewählt",
+    });
+    await expect(knowledge).toBeDisabled();
+    await expect(knowledge).toHaveCSS("opacity", "0.5");
     for (const width of [1728, 768, 390]) {
       await page.setViewportSize({ width, height: 844 });
       await expect(textarea).toBeInViewport();
@@ -265,7 +259,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
       ).toBe(844);
       const group = await page.locator("[data-slot=input-group]").boundingBox();
       expect(844 - (group!.y + group!.height)).toBeCloseTo(
-        width < 640 ? 12 : 24,
+        width < 640 ? 12 : 32,
         0,
       );
       const box = await textarea.boundingBox();
@@ -289,7 +283,9 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     ).toBeVisible();
     await expect(popup.locator("iframe")).toHaveAttribute("src", /#page=2$/);
     await popup.close();
-    await page.getByRole("link", { name: "Neuer Chat", exact: true }).click();
+    // A new Chat starts from the sidebar's Chat link.
+    await page.setViewportSize({ width: 1728, height: 844 });
+    await page.getByRole("link", { name: "Chat", exact: true }).click();
     await expect(page.getByRole("heading", { name: /Justus/ })).toBeVisible();
     await expect(textarea).toHaveValue("");
     await expect(page.getByText("Microeconomics", { exact: true })).toHaveCount(
@@ -297,7 +293,9 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     );
     await page.goto(`${origins.app}/chat?id=${id}`);
     await expect(
-      page.getByText("Microeconomics", { exact: true }),
+      page.getByRole("button", {
+        name: "Wissen verwalten, 1 Quelle ausgewählt",
+      }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Quelle S1: Handbuch.pdf, Seite 2" }),
