@@ -82,7 +82,9 @@ export const Right: Story = {
         window.innerWidth >= 1024 ? 640 : window.innerWidth * 0.75,
       ),
     )
-    await userEvent.click(within(dialog).getByRole("button", { name: "Close" }))
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Schließen" }),
+    )
     await waitFor(() => expect(dialog).not.toBeInTheDocument())
   },
 }
@@ -209,7 +211,7 @@ export const Interactions: Story = {
     await userEvent.keyboard("{Enter}")
     const reopened = await body.findByRole("dialog", { name: "Course details" })
     await userEvent.click(
-      within(reopened).getByRole("button", { name: "Close" }),
+      within(reopened).getByRole("button", { name: "Schließen" }),
     )
     await waitFor(() => expect(reopened).not.toBeInTheDocument())
     await expect(trigger).toHaveFocus()
@@ -226,7 +228,7 @@ export const NoCloseButton: Story = {
       name: "Course details",
     })
     await expect(
-      within(dialog).queryByRole("button", { name: "Close" }),
+      within(dialog).queryByRole("button", { name: "Schließen" }),
     ).not.toBeInTheDocument()
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Cancel" }),

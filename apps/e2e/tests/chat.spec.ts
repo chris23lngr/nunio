@@ -50,9 +50,10 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     title: "Microeconomics",
     code: "MICD",
     status: "accepted",
+    color: "rose",
   };
   const messages: unknown[] = [];
-  await context.route(`${origins.api}/api/me/review`, (route) =>
+  await context.route(`${origins.api}/api/me/courses`, (route) =>
     route.fulfill({ headers: cors, json: { courses: [course] } }),
   );
   await context.route(`${origins.api}/api/me/chats`, (route) => {

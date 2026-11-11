@@ -6,15 +6,19 @@ import { useSidebar } from "@nunio/ui/components/sidebar/sidebar";
 import { PanelLeft } from "lucide-react";
 import { usePathname } from "next/navigation";
 
+/** Pages that render a PageHeader, which places its own `inline` button. */
+const ownHeader = ["/chat", "/plan"];
+
 /**
  * Opens the closed sidebar. The layout floats one over every page; screens with
- * their own header (the Chat) place an `inline` one there instead.
+ * their own header place an `inline` one there instead.
  */
 export function SidebarOpenButton({ inline = false }: { inline?: boolean }) {
   const { open, isMobile, openMobile, toggleSidebar } = useSidebar();
   const pathname = usePathname();
   if (isMobile ? openMobile : open) return null;
-  if (!inline && pathname.startsWith("/chat")) return null;
+  if (!inline && ownHeader.some((page) => pathname.startsWith(page)))
+    return null;
 
   return (
     <Button

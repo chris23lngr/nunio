@@ -1,11 +1,13 @@
 import { cn } from "@nunio/ui";
 import type * as React from "react";
+import { SidebarOpenButton } from "./sidebar-open-button";
 
 // Absolute, not sticky: the header floats over a scroll container the consumer
-// owns, so messages pass underneath and fade out. The consumer must make the
-// chat column `relative` and give the message list 64px (`pt-16`) top padding.
-export function ChatHeader({
+// owns, so content passes underneath and fades out. The consumer must make the
+// page column `relative` and give the scroll content 64px (`pt-16`) top padding.
+export function PageHeader({
   className,
+  children,
   ...props
 }: React.ComponentProps<"header">) {
   return (
@@ -15,6 +17,9 @@ export function ChatHeader({
         className,
       )}
       {...props}
-    />
+    >
+      <SidebarOpenButton inline />
+      {children}
+    </header>
   );
 }

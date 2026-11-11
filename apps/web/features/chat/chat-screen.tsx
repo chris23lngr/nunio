@@ -12,7 +12,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SidebarOpenButton } from "@/features/shared/components/sidebar-open-button";
+import { PageHeader } from "@/features/shared/components/page-header";
 import { useAppForm } from "@/lib/form";
 import { randomId } from "@/lib/random-id";
 import {
@@ -30,7 +30,6 @@ import {
 } from "./api/chat-queries";
 import { ChatComposer } from "./components/chat-composer";
 import { ChatEmptyState } from "./components/chat-empty-state";
-import { ChatHeader } from "./components/chat-header";
 import { ChatMessage } from "./components/chat-message";
 import { KnowledgeSelector } from "./components/knowledge-selector";
 import { ModelSelector } from "./components/model-selector";
@@ -260,10 +259,9 @@ export function ChatScreen({
       className="relative flex h-dvh min-h-0 flex-col overflow-hidden bg-white font-sans text-base-800"
       aria-label="Chat"
     >
-      <ChatHeader>
-        <SidebarOpenButton inline />
+      <PageHeader>
         <ModelSelector models={models} value={chatModel} />
-      </ChatHeader>
+      </PageHeader>
       <MessageScrollerProvider
         key={openChat.key}
         autoScroll
