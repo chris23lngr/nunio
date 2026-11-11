@@ -122,12 +122,15 @@ async function upload(
   return result.source;
 }
 
+/** The context each extraction call gave the model, in order. */
+const contexts: unknown[] = [];
 function scripted(...results: Extracted[]): Extractor {
   return {
     model: "test-extractor",
     windows: (pages) => pages.map((page) => [page]),
     estimateMicroUsd: () => 10,
-    async extract() {
+    async extract(_window, { context }) {
+      contexts.push(context);
       const value = results.shift();
       if (!value) throw new Error("no scripted result left");
       return { value, usage: { microUsd: 5 } };
@@ -428,4 +431,51 @@ it("never suggests a pair again once the student says they differ", async () => 
   expect(await courses.keepApart(await student(), similar, analysis)).toEqual({
     status: "gone",
   });
+});
+
+it("gives the model no Courses to pick from for a bound Source and ignores one it picks, but offers them when unbound", async () => {
+  const p = await student();
+  const analysis = await ownCourse(p, "Analysis I", "MA-101");
+  const statistik = await ownCourse(p, "Statistik II", null);
+  const bound = await upload(p, "Folien.pdf", [{ page: 1, text: slides }], {
+    id: analysis,
+  });
+  const unbound = await upload(p, "Skript.pdf", [{ page: 1, text: slides }]);
+  const picksStatistik: Extracted = {
+    ...fromSlides,
+    courses: [
+      {
+        existingCourseId: statistik,
+        code: null,
+        title: "Statistik II",
+        page: 1,
+        quote: "",
+      },
+    ],
+    obligations: [{ ...sheet3, course: statistik }],
+    facts: [],
+  };
+  contexts.length = 0;
+
+  await extract(p, bound.id, picksStatistik);
+  await extract(p, unbound.id, picksStatistik);
+
+  expect(contexts).toEqual([
+    { title: "Folien.pdf", courses: [] },
+    {
+      title: "Skript.pdf",
+      courses: expect.arrayContaining([
+        { id: analysis, title: "Analysis I", code: "MA-101" },
+        { id: statistik, title: "Statistik II", code: null },
+      ]),
+    },
+  ]);
+  const citedIn = async (id: string) =>
+    (await reviewed(p))
+      .find((course) => course.id === id)!
+      .obligations.flatMap((o) =>
+        o.values.flatMap((v) => v.citations.map((c) => c.sourceId)),
+      );
+  expect(await citedIn(analysis)).toEqual([bound.id]);
+  expect(await citedIn(statistik)).toEqual([unbound.id]);
 });
