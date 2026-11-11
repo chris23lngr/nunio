@@ -26,11 +26,11 @@ bun run dev:up:build
 
 The services run in the background. The first build takes a few minutes. When it settles:
 
-| What | Where |
-| --- | --- |
-| Web app | <http://app.nunio.test:3000> |
-| API | <http://api.nunio.test:3001> (`/health`) |
-| Temporal UI | <http://localhost:8233> |
+| What        | Where                                    |
+| ----------- | ---------------------------------------- |
+| Web app     | <http://app.nunio.test:3000>             |
+| API         | <http://api.nunio.test:3001> (`/health`) |
+| Temporal UI | <http://localhost:8233>                  |
 
 ### Create an account
 

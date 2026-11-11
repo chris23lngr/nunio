@@ -62,13 +62,30 @@ services:
     image: temporalio/temporal:1.10.0
     # The image runs as uid 1000, which cannot write to a fresh named volume.
     user: root
-    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/data/temporal.db"]
+    command:
+      [
+        "server",
+        "start-dev",
+        "--ip",
+        "0.0.0.0",
+        "--db-filename",
+        "/data/temporal.db",
+      ]
     ports:
       - "127.0.0.1:8233:8233" # Web UI
     volumes:
       - temporal-data:/data
     healthcheck:
-      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "localhost:7233"]
+      test:
+        [
+          "CMD",
+          "temporal",
+          "operator",
+          "cluster",
+          "health",
+          "--address",
+          "localhost:7233",
+        ]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -101,7 +118,13 @@ services:
         aliases:
           - api.nunio.test
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3001/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
       interval: 3s
       timeout: 3s
       retries: 30
