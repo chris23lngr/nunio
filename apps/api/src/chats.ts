@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import { principal } from "@nunio/delegation";
+import type { AskStep } from "@nunio/knowledge";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import type { AppBindings } from "./app.js";
 
@@ -98,27 +99,31 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
       const id = c.req.valid("param").id;
       const body = c.req.valid("json");
       const started = performance.now();
-      const timing: Record<string, number> = {};
-      const mark = (step: string) => {
+      const timing: Partial<
+        Record<AskStep | "detail" | "firstReasoning" | "firstText", number>
+      > = {};
+      const mark = (step: "detail" | "firstReasoning" | "firstText") => {
         timing[step] ??= Math.round(performance.now() - started);
       };
-      const chat = await c.get("chats").detail(p, id);
+      const [chat, reused] = await Promise.all([
+        c.get("chats").detail(p, id),
+        c.get("chats").hasMessage(p, body.id),
+      ]);
       mark("detail");
       if (!chat) return c.json({ error: "gone" }, 404);
-      if (chat.messages.some((message) => message.id === body.id))
-        return c.json({ error: "conflict" }, 409);
+      if (reused) return c.json({ error: "conflict" }, 409);
       const stream = createUIMessageStream({
         onError: () =>
           "Die Antwort wurde unterbrochen. Bitte versuche es erneut.",
         execute: async ({ writer }) => {
           const answerId = randomUUID();
           writer.write({ type: "start", messageId: answerId });
-          let reasoning = false;
-          let text = false;
+          let reasoningOpen = false;
+          let textStarted = false;
           const endReasoning = () => {
-            if (reasoning)
+            if (reasoningOpen)
               writer.write({ type: "reasoning-end", id: "reasoning" });
-            reasoning = false;
+            reasoningOpen = false;
           };
           let outcome = "interrupted";
           try {
@@ -132,9 +137,9 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
                 },
                 onReasoning: (delta, streaming) => {
                   mark("firstReasoning");
-                  if (delta && !reasoning) {
+                  if (delta && !reasoningOpen) {
                     writer.write({ type: "reasoning-start", id: "reasoning" });
-                    reasoning = true;
+                    reasoningOpen = true;
                   }
                   if (delta)
                     writer.write({
@@ -147,18 +152,20 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
                 onText: (delta) => {
                   mark("firstText");
                   endReasoning();
-                  if (!text) writer.write({ type: "text-start", id: "answer" });
-                  text = true;
+                  if (!textStarted)
+                    writer.write({ type: "text-start", id: "answer" });
+                  textStarted = true;
                   writer.write({ type: "text-delta", id: "answer", delta });
                 },
               });
             endReasoning();
-            if (text) writer.write({ type: "text-end", id: "answer" });
+            if (textStarted) writer.write({ type: "text-end", id: "answer" });
             if (result.status !== "ok") {
               writer.write({
                 type: "data-refused",
                 data: {
-                  error: result.status === "gone" ? "gone" : result.reason,
+                  error:
+                    result.status === "refused" ? result.reason : result.status,
                 },
                 transient: true,
               });

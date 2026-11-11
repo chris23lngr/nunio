@@ -1656,6 +1656,31 @@ async function chatSource(cookie: string, title: string, text: string) {
   return upload.source.id;
 }
 
+/** A signed-up student with one Chat that has no Courses or Sources. */
+async function emptyChat(name: string) {
+  const cookie = await signUp(name);
+  const headers = {
+    cookie,
+    origin: appOrigin,
+    "content-type": "application/json",
+  };
+  const created = await app.request(`${apiOrigin}/api/me/chats`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+  });
+  const { id } = (await created.json()) as { id: string };
+  return { cookie, headers, id };
+}
+
+/** The JSON chunks of an AI SDK UI message stream. */
+async function sseChunks(response: Response) {
+  return (await response.text())
+    .split("\n\n")
+    .filter((line) => line.startsWith("data: {"))
+    .map((line) => JSON.parse(line.slice(6)));
+}
+
 describe("Chat", () => {
   it("streams provisional text before committing the canonical turn", async () => {
     const cookie = await signUp("chat-stream");
@@ -1825,18 +1850,7 @@ describe("Chat", () => {
   }
 
   it("keeps the client's question ID and announces the answer's ID before any text", async () => {
-    const cookie = await signUp("chat-ids");
-    const headers = {
-      cookie,
-      origin: appOrigin,
-      "content-type": "application/json",
-    };
-    const created = await app.request(`${apiOrigin}/api/me/chats`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ courseIds: [], sourceIds: [] }),
-    });
-    const { id } = (await created.json()) as { id: string };
+    const { cookie, headers, id } = await emptyChat("chat-ids");
     reply = "Eine Antwort.";
     const questionId = randomUUID();
     const response = await app.request(
@@ -1847,10 +1861,7 @@ describe("Chat", () => {
         body: JSON.stringify({ id: questionId, text: "Meine Frage" }),
       },
     );
-    const chunks = (await response.text())
-      .split("\n\n")
-      .filter((line) => line.startsWith("data: {"))
-      .map((line) => JSON.parse(line.slice(6)));
+    const chunks = await sseChunks(response);
     const start = chunks.find((chunk) => chunk.type === "start");
     const committed = chunks.find((chunk) => chunk.type === "data-committed");
     expect(start.messageId).toBe(committed.data.id);
@@ -1867,18 +1878,7 @@ describe("Chat", () => {
   });
 
   it("streams reasoning as reasoning parts and starts the text with its first word", async () => {
-    const cookie = await signUp("chat-parts");
-    const headers = {
-      cookie,
-      origin: appOrigin,
-      "content-type": "application/json",
-    };
-    const created = await app.request(`${apiOrigin}/api/me/chats`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ courseIds: [], sourceIds: [] }),
-    });
-    const { id } = (await created.json()) as { id: string };
+    const { headers, id } = await emptyChat("chat-parts");
     reply = "Eine Antwort.";
     const response = await app.request(
       `${apiOrigin}/api/me/chats/${id}/messages/stream`,
@@ -1888,10 +1888,7 @@ describe("Chat", () => {
         body: JSON.stringify({ id: randomUUID(), text: "Meine Frage" }),
       },
     );
-    const chunks = (await response.text())
-      .split("\n\n")
-      .filter((line) => line.startsWith("data: {"))
-      .map((line) => JSON.parse(line.slice(6)));
+    const chunks = await sseChunks(response);
     expect(chunks.map((chunk) => chunk.type)).toEqual([
       "start",
       "reasoning-start",
@@ -1909,18 +1906,7 @@ describe("Chat", () => {
   });
 
   it("refuses a malformed or reused question ID before answering", async () => {
-    const cookie = await signUp("chat-reused-id");
-    const headers = {
-      cookie,
-      origin: appOrigin,
-      "content-type": "application/json",
-    };
-    const created = await app.request(`${apiOrigin}/api/me/chats`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ courseIds: [], sourceIds: [] }),
-    });
-    const { id } = (await created.json()) as { id: string };
+    const { headers, id } = await emptyChat("chat-reused-id");
     reply = "Eine Antwort.";
     const ask = (questionId: string) =>
       app.request(`${apiOrigin}/api/me/chats/${id}/messages/stream`, {
@@ -1934,7 +1920,62 @@ describe("Chat", () => {
     const asked = prompts.length;
     const reused = await ask(questionId);
     expect(reused.status).toBe(409);
+    const other = await app.request(`${apiOrigin}/api/me/chats`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+    });
+    const { id: otherId } = (await other.json()) as { id: string };
+    const elsewhere = await app.request(
+      `${apiOrigin}/api/me/chats/${otherId}/messages/stream`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: questionId, text: "Meine Frage" }),
+      },
+    );
+    expect(elsewhere.status).toBe(409);
     expect(prompts).toHaveLength(asked);
+  });
+
+  it("refuses the second of two concurrent questions with the same ID", async () => {
+    const { headers, id } = await emptyChat("chat-concurrent-id");
+    reply = "Eine Antwort.";
+    let release = () => {};
+    finishAnswer = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      const questionId = randomUUID();
+      const asked = prompts.length;
+      const ask = () =>
+        app.request(`${apiOrigin}/api/me/chats/${id}/messages/stream`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ id: questionId, text: "Meine Frage" }),
+        });
+      const responses = await Promise.all([ask(), ask()]);
+      expect(responses.map((response) => response.status)).toEqual([200, 200]);
+      await vi.waitFor(() => expect(prompts).toHaveLength(asked + 2));
+      release();
+      const outcomes = (
+        await Promise.all(responses.map((response) => sseChunks(response)))
+      ).map((chunks) =>
+        chunks.find(
+          (chunk) =>
+            chunk.type === "data-committed" || chunk.type === "data-refused",
+        ),
+      );
+      expect(outcomes.map((chunk) => chunk.type).sort()).toEqual([
+        "data-committed",
+        "data-refused",
+      ]);
+      expect(
+        outcomes.find((chunk) => chunk.type === "data-refused").data,
+      ).toEqual({ error: "conflict" });
+    } finally {
+      finishAnswer = undefined;
+    }
   });
 
   it("opens a ready PDF only for its owner and withdraws access after deletion", async () => {

@@ -18,6 +18,9 @@ export type ChatMessage = {
   createdAt: string;
 };
 
+/** A step of answering a question, timed by `ask`. */
+export type AskStep = "retrieval" | "generation" | "persistence";
+
 /** Chats: an explicit selection of Courses and Sources, and questions answered only from it. */
 export function createChats({
   db,
@@ -98,6 +101,12 @@ export function createChats({
         return { status: "ok", id: chat.id } as const;
       });
     },
+    /** Whether the student already has a message with this ID, in any of their Chats. */
+    async hasMessage(p: Principal, id: string) {
+      return !!(await withOwner(db, p, (tx) =>
+        tx.chatMessage.findUnique({ where: { id }, select: { id: true } }),
+      ));
+    },
     /** Answers from the Chat's selection only, recording the question and the answer. */
     async ask(
       p: Principal,
@@ -114,15 +123,12 @@ export function createChats({
         /** IDs for the recorded question and answer, when the caller already shows them. */
         ids?: { question: string; answer: string };
         /** Called with how long each step took, in milliseconds. */
-        onStep?: (
-          step: "retrieval" | "generation" | "persistence",
-          ms: number,
-        ) => void;
+        onStep?: (step: AskStep, ms: number) => void;
       } = {},
     ) {
       options.signal?.throwIfAborted();
       let started = performance.now();
-      const step = (name: "retrieval" | "generation" | "persistence") => {
+      const step = (name: AskStep) => {
         const now = performance.now();
         options.onStep?.(name, now - started);
         started = now;
@@ -220,8 +226,14 @@ export function createChats({
           },
         });
         return true;
+      }).catch((error: unknown) => {
+        // A question ID already saved, here or by a concurrent request, fails the primary key.
+        if ((error as { code?: unknown }).code === "P2002")
+          return "conflict" as const;
+        throw error;
       });
       step("persistence");
+      if (recorded === "conflict") return { status: "conflict" } as const;
       if (!recorded) return { status: "gone" } as const;
       const message: ChatMessage = {
         id,
