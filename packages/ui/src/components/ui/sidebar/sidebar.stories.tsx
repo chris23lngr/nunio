@@ -199,7 +199,7 @@ export const Default: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const sidebar = slot(canvasElement, "sidebar-inner")
-    await expect(sidebar.getBoundingClientRect().width).toBe(320)
+    await expect(sidebar.getBoundingClientRect().width).toBe(256)
     await expect(sidebar.getBoundingClientRect().height).toBe(
       window.innerHeight,
     )
@@ -209,7 +209,7 @@ export const Default: Story = {
     const row = canvas.getByRole("link", { name: "Heute" })
     const style = getComputedStyle(row)
     await expect(row.getBoundingClientRect().height).toBe(32)
-    await expect(row.getBoundingClientRect().width).toBe(304)
+    await expect(row.getBoundingClientRect().width).toBe(240)
     await expect(style.borderRadius).toBe("8px")
     await expect(style.fontSize).toBe("14px")
     await expect(style.lineHeight).toBe("18px")
@@ -221,7 +221,7 @@ export const Default: Story = {
     )
     for (const item of canvas.getAllByRole("link")) {
       await expect(item.getBoundingClientRect().height).toBe(32)
-      await expect(item.getBoundingClientRect().width).toBe(304)
+      await expect(item.getBoundingClientRect().width).toBe(240)
       await expect(item.getBoundingClientRect().left).toBe(8)
       await expect(getComputedStyle(item).fontSize).toBe("14px")
       await expect(getComputedStyle(item).lineHeight).toBe("18px")
@@ -243,7 +243,18 @@ export const Default: Story = {
     await expect(getComputedStyle(footer).rowGap).toBe("4px")
     const footerMenu = footer.querySelector('[data-slot="sidebar-menu"]')
     if (!footerMenu) throw new Error("Missing footer menu")
-    await expect(getComputedStyle(footerMenu).rowGap).toBe("6px")
+    await expect(getComputedStyle(footerMenu).rowGap).toBe("4px")
+    for (const menu of canvasElement.querySelectorAll(
+      '[data-slot="sidebar-menu"]',
+    )) {
+      const rows = Array.from(
+        menu.querySelectorAll('[data-slot="sidebar-menu-button"]'),
+        (button) => button.getBoundingClientRect(),
+      )
+      for (const [i, row] of rows.slice(1).entries()) {
+        await expect(row.top - (rows[i]?.bottom ?? 0)).toBe(4)
+      }
+    }
     const label = canvas.getByText("Projects")
     await expect(getComputedStyle(label).fontSize).toBe("12px")
     await expect(getComputedStyle(label).color).toBe(
@@ -313,7 +324,7 @@ export const Offcanvas: Story = {
     await expect(document.cookie).toContain("sidebar_state=false")
     await userEvent.keyboard("{Control>}b{/Control}")
     await expect(sidebar).toHaveAttribute("data-state", "expanded")
-    await waitFor(() => expect(gap.getBoundingClientRect().width).toBe(320))
+    await waitFor(() => expect(gap.getBoundingClientRect().width).toBe(256))
     await expect(document.cookie).toContain("sidebar_state=true")
     await userEvent.keyboard("{Meta>}b{/Meta}")
     await expect(sidebar).toHaveAttribute("data-state", "collapsed")
