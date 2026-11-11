@@ -35,6 +35,8 @@ type WeekGridProps = {
 
 const INSET_PX = 4;
 const LANE_GAP_PX = 2;
+/** One line of text-xs: shorter entries may overlap the next slot rather than clip. */
+const MIN_HEIGHT_PX = 16;
 
 export function WeekGrid({
   days,
@@ -118,7 +120,7 @@ export function WeekGrid({
                   className="absolute"
                   style={{
                     top: top + INSET_PX,
-                    height: height - 2 * INSET_PX,
+                    height: Math.max(height - 2 * INSET_PX, MIN_HEIGHT_PX),
                     left: `calc(${INSET_PX}px + ${entry.lane} * (${width} + ${LANE_GAP_PX}px))`,
                     width: `calc${width}`,
                   }}

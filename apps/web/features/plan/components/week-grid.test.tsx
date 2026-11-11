@@ -115,6 +115,28 @@ test("an entry is placed from its time with a 4px inset", () => {
   expect(card.style.height).toBe("56px");
 });
 
+test("a short entry is never less than one line tall", () => {
+  render(
+    <WeekGrid
+      days={[monday]}
+      fromHour={8}
+      toHour={18}
+      entries={[
+        {
+          id: "short",
+          start: new Date(2026, 10, 9, 9, 0),
+          end: new Date(2026, 10, 9, 9, 30),
+          render: () => <span>Kurz</span>,
+        },
+      ]}
+    />,
+  );
+
+  const card = screen.getByText("Kurz").parentElement as HTMLElement;
+  expect(card.style.top).toBe("36px");
+  expect(card.style.height).toBe("16px");
+});
+
 test("background nodes such as Protected Time render in their day", () => {
   render(
     <WeekGrid

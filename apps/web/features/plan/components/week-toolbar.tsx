@@ -29,7 +29,7 @@ export type DisplayOptions = {
 const displayItems = [
   { key: "weekends", label: "Wochenenden", Icon: CalendarDays },
   { key: "suggestions", label: "Vorschläge", Icon: Sparkles },
-  { key: "protectedTime", label: "Blockierzeiten", Icon: CircleOff },
+  { key: "protectedTime", label: "Geschützte Zeit", Icon: CircleOff },
   { key: "calendar", label: "Mein Kalender", Icon: Calendar },
 ] as const;
 

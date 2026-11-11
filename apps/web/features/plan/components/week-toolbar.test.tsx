@@ -69,7 +69,7 @@ test("the Anzeige menu shows each display option checked as it is set", async ()
   ).toEqual([
     ["Wochenenden", "true"],
     ["Vorschläge", "false"],
-    ["Blockierzeiten", "true"],
+    ["Geschützte Zeit", "true"],
     ["Mein Kalender", "false"],
   ]);
 });

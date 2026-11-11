@@ -62,7 +62,11 @@ function Detail({
   );
 }
 
-/** What the popover of a Study Block shows: when it is, what it works toward, and what can be done with it. */
+/**
+ * What the popover of a Study Block shows: when it is, what it works toward, and what can be done with it.
+ * PopoverContent draws the card; its sections run edge to edge, so render it in
+ * `<PopoverContent className="w-76 gap-0 p-0">`.
+ */
 export function EntryDetails({
   course,
   title,
@@ -95,7 +99,7 @@ export function EntryDetails({
   onDelete: () => void;
 }) {
   return (
-    <div className="w-76 overflow-hidden rounded-lg bg-white shadow-lg outline-1 outline-base-700/15">
+    <div className="flex flex-col overflow-hidden rounded-[inherit]">
       <div className="flex flex-col gap-1.5 px-3.5 pt-3.5 pb-3">
         <div className="flex items-center gap-2 text-sm">
           {course && <CourseDot color={course.color} />}
