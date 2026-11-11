@@ -12,6 +12,9 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:up": "docker compose -f docker-compose.dev.yml up -d",
+    "dev:up:build": "docker compose -f docker-compose.dev.yml up -d --build",
+    "dev:down": "docker compose -f docker-compose.dev.yml down",
     "lint": "biome check .",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
