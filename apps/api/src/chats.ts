@@ -97,7 +97,13 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
       const p = principal.fromSession(actor);
       const id = c.req.valid("param").id;
       const body = c.req.valid("json");
+      const started = performance.now();
+      const timing: Record<string, number> = {};
+      const mark = (step: string) => {
+        timing[step] ??= Math.round(performance.now() - started);
+      };
       const chat = await c.get("chats").detail(p, id);
+      mark("detail");
       if (!chat) return c.json({ error: "gone" }, 404);
       if (chat.messages.some((message) => message.id === body.id))
         return c.json({ error: "conflict" }, 409);
@@ -114,49 +120,68 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
               writer.write({ type: "reasoning-end", id: "reasoning" });
             reasoning = false;
           };
-          const result = await c
-            .get("chats")
-            .ask(p, id, body.text, c.get("answerer"), {
-              signal: c.req.raw.signal,
-              ids: { question: body.id, answer: answerId },
-              onReasoning: (delta, streaming) => {
-                if (delta && !reasoning) {
-                  writer.write({ type: "reasoning-start", id: "reasoning" });
-                  reasoning = true;
-                }
-                if (delta)
-                  writer.write({
-                    type: "reasoning-delta",
-                    id: "reasoning",
-                    delta,
-                  });
-                if (!streaming) endReasoning();
-              },
-              onText: (delta) => {
-                endReasoning();
-                if (!text) writer.write({ type: "text-start", id: "answer" });
-                text = true;
-                writer.write({ type: "text-delta", id: "answer", delta });
-              },
-            });
-          endReasoning();
-          if (text) writer.write({ type: "text-end", id: "answer" });
-          if (result.status !== "ok") {
+          let outcome = "interrupted";
+          try {
+            const result = await c
+              .get("chats")
+              .ask(p, id, body.text, c.get("answerer"), {
+                signal: c.req.raw.signal,
+                ids: { question: body.id, answer: answerId },
+                onStep: (step, ms) => {
+                  timing[step] = Math.round(ms);
+                },
+                onReasoning: (delta, streaming) => {
+                  mark("firstReasoning");
+                  if (delta && !reasoning) {
+                    writer.write({ type: "reasoning-start", id: "reasoning" });
+                    reasoning = true;
+                  }
+                  if (delta)
+                    writer.write({
+                      type: "reasoning-delta",
+                      id: "reasoning",
+                      delta,
+                    });
+                  if (!streaming) endReasoning();
+                },
+                onText: (delta) => {
+                  mark("firstText");
+                  endReasoning();
+                  if (!text) writer.write({ type: "text-start", id: "answer" });
+                  text = true;
+                  writer.write({ type: "text-delta", id: "answer", delta });
+                },
+              });
+            endReasoning();
+            if (text) writer.write({ type: "text-end", id: "answer" });
+            if (result.status !== "ok") {
+              writer.write({
+                type: "data-refused",
+                data: {
+                  error: result.status === "gone" ? "gone" : result.reason,
+                },
+                transient: true,
+              });
+              outcome = "refused";
+              return;
+            }
             writer.write({
-              type: "data-refused",
-              data: {
-                error: result.status === "gone" ? "gone" : result.reason,
-              },
+              type: "data-committed",
+              data: { ...result.message, question: result.question },
               transient: true,
             });
-            return;
+            writer.write({ type: "finish" });
+            outcome = "committed";
+          } finally {
+            console.log(
+              JSON.stringify({
+                msg: "chat answer timing",
+                outcome,
+                ...timing,
+                total: Math.round(performance.now() - started),
+              }),
+            );
           }
-          writer.write({
-            type: "data-committed",
-            data: { ...result.message, question: result.question },
-            transient: true,
-          });
-          writer.write({ type: "finish" });
         },
       });
       return createUIMessageStreamResponse({

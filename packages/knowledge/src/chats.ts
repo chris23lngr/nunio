@@ -113,14 +113,26 @@ export function createChats({
         onText?: (text: string) => void | Promise<void>;
         /** IDs for the recorded question and answer, when the caller already shows them. */
         ids?: { question: string; answer: string };
+        /** Called with how long each step took, in milliseconds. */
+        onStep?: (
+          step: "retrieval" | "generation" | "persistence",
+          ms: number,
+        ) => void;
       } = {},
     ) {
       options.signal?.throwIfAborted();
+      let started = performance.now();
+      const step = (name: "retrieval" | "generation" | "persistence") => {
+        const now = performance.now();
+        options.onStep?.(name, now - started);
+        started = now;
+      };
       const retrieval = await reader.retrieve(
         p,
         { chatId },
         { kind: "passages", text: question },
       );
+      step("retrieval");
       if (retrieval.status === "refused") {
         return retrieval.reason === "not_owner"
           ? ({ status: "gone" } as const)
@@ -147,6 +159,7 @@ export function createChats({
             }),
           ),
       );
+      step("generation");
       if (answered.status === "refused") return answered;
       options.signal?.throwIfAborted();
       const cited = answered.value.cited.flatMap((tag) =>
@@ -208,6 +221,7 @@ export function createChats({
         });
         return true;
       });
+      step("persistence");
       if (!recorded) return { status: "gone" } as const;
       const message: ChatMessage = {
         id,
