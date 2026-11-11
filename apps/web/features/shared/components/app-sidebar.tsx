@@ -12,6 +12,7 @@ import {
   useSidebar,
 } from "@nunio/ui/components/sidebar/sidebar";
 import {
+  BookOpen,
   CalendarDays,
   ClipboardCheck,
   FolderKanban,
@@ -33,6 +34,7 @@ const menuItems = [
   { title: "Chat", href: "/chat", icon: MessageSquare },
   { title: "Plan", href: "/plan", icon: CalendarDays },
   { title: "Study", href: "/study", icon: GraduationCap },
+  { title: "Kurse", href: "/courses", icon: BookOpen },
   { title: "Projects", href: "/projects", icon: FolderKanban },
   { title: "Responsibilities", href: "/responsibilities", icon: ListChecks },
 ];

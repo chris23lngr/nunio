@@ -20,6 +20,18 @@ _Avoid_: Bot, assistant, automation
 A unit of study the student is taking that ends in one assessment and grade (a German _Modul_), holding its long-lived academic context such as materials and rules. A Course may bundle a lecture, tutorial, and lab.
 _Avoid_: Module, class, subject, Lehrveranstaltung
 
+**Semester**:
+A named academic half-year, a Wintersemester from October to March or a Sommersemester from April to September, such as Wintersemester 2026/27. Every Course belongs to exactly one Semester, the one the student takes it in, which the student sets; it organizes Courses and changes nothing about how nunio works on them.
+_Avoid_: Term, session, academic period
+
+**Archived**:
+The state of a Course the student is no longer studying, whether passed, dropped, or given up. Everything in it stays and the student can unarchive it, but nunio no longer plans or acts for it. Not to be confused with Ended, which applies only to Responsibilities.
+_Avoid_: Completed, finished, inactive, hidden
+
+**Deleting a Course**:
+The student removing a Course for good, with everything that exists only within it. Its Sources stay, so a later reading may propose the Course again; Rejecting it, not Deleting it, is how the student keeps it away.
+_Avoid_: Removing, archiving, rejecting
+
 **Project**:
 An optional, outcome-oriented workspace, such as exam preparation or a thesis, related to zero or more Courses and optionally working toward one Obligation.
 _Avoid_: Workspace, goal, folder
@@ -65,7 +77,7 @@ Sources, or a Source and a Correction, giving different values for the same Fact
 _Avoid_: Conflict, mismatch
 
 **Reject**:
-The student's judgment that an extracted Fact or proposed Course is wrong or not theirs. A rejected item is folded away and stays rejected when later extraction finds it again, until the student restores it. Rejecting is not a Dismissal, which applies only to Interventions.
+The student's judgment that an extracted Fact, or a Course nunio proposed, is wrong or not theirs, even after accepting it. A Course the student created cannot be rejected, only deleted. A rejected item is folded away and stays rejected when later extraction finds it again, until the student restores it. Rejecting is not a Dismissal, which applies only to Interventions.
 _Avoid_: Dismiss, delete, hide
 
 ### Study work
@@ -243,7 +255,7 @@ An ongoing delegation the student owns, such as "keep this course organized", wi
 _Avoid_: Automation, task, job, agent
 
 **Paused**:
-The state of a Responsibility that takes no further Actions, including in a Run already under way, while keeping its Grants. A Responsibility is Paused by the student, by exhausting its Budget, or by losing a Connection it depends on; only the student resumes it, even after its Budget resets.
+The state of a Responsibility that takes no further Actions, including in a Run already under way, while keeping its Grants. A Responsibility is Paused by the student, by exhausting its Budget, by losing a Connection it depends on, or by its Course being Archived; only the student resumes it, even after its Budget resets or its Course is unarchived.
 _Avoid_: Suspended, stopped, disabled, on hold
 
 **Ended**:

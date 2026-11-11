@@ -86,6 +86,14 @@ model Course {
   matchCode  String?
   matchTitle String
   status     CourseStatus @default(proposed)
+  /// The Semester the student takes it in, such as "2026-ws" or "2027-ss".
+  semester   String
+  /// A palette name, not a CSS value.
+  color      String
+  /// Set for a Course the student created; its match keys follow its name.
+  enteredAt  DateTime?
+  /// Set while Archived: nunio neither plans nor acts for it.
+  archivedAt DateTime?
   /// Set when merged: a later Source naming this Course lands in the target.
   mergedIntoId String?
   mergedInto   Course?    @relation("merge", fields: [mergedIntoId, studentId], references: [id, studentId], onDelete: Cascade)

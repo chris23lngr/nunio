@@ -2,6 +2,7 @@
 
 export { type AiUse, type AiUseClass, aiUseClasses } from "./ai-use.js";
 export { type ChatMessage, type Chats, createChats } from "./chats.js";
+export { type Courses, createCourses } from "./courses.js";
 export { createDerivedText, type DerivedText, type Sealed } from "./derived.js";
 export {
   type Correction,
@@ -9,6 +10,7 @@ export {
   type Facts,
   type ItemRef,
 } from "./facts.js";
+export { type CourseColor, courseColors } from "./new-course.js";
 export { createProjects, type Projects } from "./projects.js";
 export { definitely } from "./provider.js";
 export {
@@ -28,6 +30,7 @@ export {
   ScopeMismatchError,
   type ScopeRef,
 } from "./reader.js";
+export { type Semester, semesterAt, semesterChoices } from "./semester.js";
 export {
   createSources,
   type Ingestion,
