@@ -226,8 +226,9 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     await textarea.press("Enter");
     await expect(
       page
-        .getByRole("status", { name: "" })
-        .filter({ hasText: /nunio antwortet|Antwort wird geschrieben/ }),
+        .getByRole("status")
+        .filter({ hasText: "Denkt nach …" })
+        .or(page.getByRole("button", { name: "Denkt nach …" })),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Nachricht senden" }),

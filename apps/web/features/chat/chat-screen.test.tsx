@@ -112,7 +112,9 @@ test("the first question and a waiting status show before the Chat exists", asyn
     expect(
       await screen.findByText("Meine erste Frage", { selector: "div" }),
     ).toBeTruthy();
-    expect(screen.getByText("nunio antwortet …")).toBeTruthy();
+    expect(
+      screen.getByText("Denkt nach …").closest('[role="status"]'),
+    ).not.toBeNull();
   } finally {
     create();
   }
@@ -534,7 +536,180 @@ test("a saved answer keeps the element it streamed into, and the composer stays 
   expect(screen.getByRole("article", { name: "Deine Nachricht" })).toBe(
     question,
   );
+  expect(streamed.getAttribute("aria-busy")).toBeNull();
   expect(textarea.value).toBe("Nächste Frage");
+});
+
+test("the waiting status stays until the first word when nunio does not reason", async () => {
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  let write = () => {};
+  const encoder = new TextEncoder();
+  api.route(
+    "POST",
+    "/api/me/chats/chat-1/messages/stream",
+    () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            const emit = (data: unknown) =>
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
+              );
+            emit({ type: "start", messageId: "answer-1" });
+            write = () => {
+              emit({ type: "text-start", id: "answer" });
+              emit({
+                type: "text-delta",
+                id: "answer",
+                delta: "Das erste Wort.",
+              });
+            };
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  );
+  mount("chat-1");
+  await screen.findByRole("heading", { name: "Neuer Chat" });
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Nachricht" }),
+    "Meine Frage",
+  );
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole("article", { name: "Laufende Antwort" }).textContent,
+    ).toContain("Denkt nach …"),
+  );
+  write();
+  await screen.findByText("Das erste Wort.");
+  await waitFor(() => expect(screen.queryByText("Denkt nach …")).toBeNull());
+  expect(screen.queryByRole("button", { name: /Gedankengang/ })).toBeNull();
+  expect(
+    screen
+      .getByRole("article", { name: "Laufende Antwort" })
+      .getAttribute("aria-busy"),
+  ).toBe("true");
+});
+
+test("one answer element carries the waiting line, open reasoning and text until the turn is saved", async () => {
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  const steps: (() => void)[] = [];
+  const encoder = new TextEncoder();
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    const { id } = (await request.json()) as { id: string };
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          const emit = (...chunks: unknown[]) => {
+            for (const chunk of chunks)
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`),
+              );
+          };
+          steps.push(
+            () => emit({ type: "start", messageId: "answer-1" }),
+            () =>
+              emit(
+                { type: "reasoning-start", id: "reasoning" },
+                {
+                  type: "reasoning-delta",
+                  id: "reasoning",
+                  delta: "Ich prüfe.",
+                },
+              ),
+            () =>
+              emit(
+                { type: "reasoning-end", id: "reasoning" },
+                { type: "text-start", id: "answer" },
+                { type: "text-delta", id: "answer", delta: "Die Antwort." },
+              ),
+            () => {
+              emit(
+                { type: "text-end", id: "answer" },
+                {
+                  type: "data-committed",
+                  data: {
+                    id: "answer-1",
+                    role: "assistant",
+                    text: "Die Antwort.",
+                    reasoning: "Ich prüfe.",
+                    createdAt: "2026-11-10T09:48:00Z",
+                    citations: [],
+                    question: {
+                      id,
+                      role: "student",
+                      text: "Meine Frage",
+                      createdAt: "2026-11-10T09:48:00Z",
+                      citations: [],
+                    },
+                  },
+                },
+                { type: "finish" },
+              );
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              controller.close();
+            },
+          );
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  mount("chat-1");
+  await screen.findByRole("heading", { name: "Neuer Chat" });
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Nachricht" }),
+    "Meine Frage",
+  );
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  const answer = await screen.findByRole("article", {
+    name: "Laufende Antwort",
+  });
+  try {
+    expect(answer.getAttribute("aria-busy")).toBe("true");
+    expect(
+      screen.getByText("Denkt nach …").closest('[role="status"]'),
+    ).not.toBeNull();
+    await waitFor(() => expect(steps).toHaveLength(4));
+    steps.shift()!();
+    steps.shift()!();
+    const reasoning = await screen.findByRole("button", {
+      name: "Denkt nach …",
+    });
+    expect(reasoning.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("article", { name: "Laufende Antwort" })).toBe(
+      answer,
+    );
+    steps.shift()!();
+    await screen.findByText("Die Antwort.");
+    expect(
+      screen
+        .getByRole("button", { name: "Gedankengang" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+    const writing = screen.getByText("Antwort wird geschrieben …");
+    expect(writing.getAttribute("role")).toBe("status");
+    expect(answer.contains(writing)).toBe(false);
+  } finally {
+    for (const step of steps.splice(0)) step();
+  }
+  await waitFor(() =>
+    expect(screen.getByRole("article", { name: "Antwort von nunio" })).toBe(
+      answer,
+    ),
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "Gedankengang" })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
 });
 
 test("an interrupted stream restores the draft and does not save partial text", async () => {

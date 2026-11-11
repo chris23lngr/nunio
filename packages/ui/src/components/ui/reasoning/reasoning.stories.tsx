@@ -49,6 +49,9 @@ export const Streaming: Story = {
       canvas.getByRole("button", { name: "Denkt nach …" }),
     ).toHaveAttribute("aria-expanded", "true")
     await expect(
+      getComputedStyle(canvas.getByText("Denkt nach …")).animationName,
+    ).toBe("tw-shimmer")
+    await expect(
       canvas.getByText(
         "Ich vergleiche die Begriffe mit deinen Kursmaterialien.",
       ),
@@ -89,6 +92,26 @@ export const WaitingForText: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole("status")).toHaveTextContent("Denkt nach …")
     await expect(canvas.queryByRole("button")).not.toBeInTheDocument()
+    const title = getComputedStyle(canvas.getByText("Denkt nach …"))
+    await expect(title.animationName).toBe("tw-shimmer")
+    await expect(title.backgroundClip).toBe("text")
+  },
+}
+
+export const StaysOpenWhileAnswering: Story = {
+  args: {
+    streaming: false,
+    answering: true,
+    children: "Ich habe die Definitionen verglichen.",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      canvas.getByRole("button", { name: "Gedankengang" }),
+    ).toHaveAttribute("aria-expanded", "true")
+    await expect(
+      getComputedStyle(canvas.getByText("Gedankengang")).animationName,
+    ).toBe("none")
   },
 }
 
@@ -107,5 +130,8 @@ export const Completed: Story = {
     await userEvent.keyboard("{Enter}")
     await expect(trigger).toHaveAttribute("aria-expanded", "true")
     await expect(canvas.getByText(/Zuerst vergleiche/)).toBeVisible()
+    const title = getComputedStyle(canvas.getByText("Gedankengang"))
+    await expect(title.animationName).toBe("none")
+    await expect(title.backgroundClip).not.toBe("text")
   },
 }
