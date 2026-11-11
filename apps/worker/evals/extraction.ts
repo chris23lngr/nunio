@@ -25,7 +25,7 @@ import { createFacts, createSources } from "@nunio/knowledge";
 import { createParserServer } from "@nunio/parser/server";
 import { parseSource } from "../src/source-activities.ts";
 import type { TopicLabel } from "./extraction/topics.js";
-import { scoreTopics } from "./extraction/topics.js";
+import { scoreTopics, topicKey } from "./extraction/topics.js";
 
 interface Label {
   course: string;
@@ -335,6 +335,7 @@ async function evaluate(
     kind: document.kind,
     scan: document.scan,
     ingestion: ingestion.status,
+    ingestionFailure: "failure" in ingestion ? ingestion.failure : null,
     extraction: extraction.status,
     dropped: extraction.status === "done" ? extraction.dropped : null,
     grounding: grounding(),
@@ -367,10 +368,15 @@ async function evaluate(
                 ?.title ??
               c.title,
             key:
-              calls
-                .flatMap((call) => call.value.facts)
-                .find((raw) => raw.type === "topic" && raw.value === f.value)
-                ?.key ?? f.value,
+              topicKey(
+                calls
+                  .flatMap((call) => call.value.facts)
+                  .filter((raw) => raw.type === "topic"),
+                f.value,
+                f.values
+                  .flatMap((v) => v.citations)
+                  .filter((citation) => citation.sourceId === upload.source.id),
+              ) ?? f.value,
             value: f.value,
           })),
       ),
@@ -380,6 +386,15 @@ async function evaluate(
         .filter((f) => f.type === "topic")
         .map((f) => ({
           course: c.code ?? c.title,
+          key: topicKey(
+            calls
+              .flatMap((call) => call.value.facts)
+              .filter((raw) => raw.type === "topic"),
+            f.value,
+            f.values
+              .flatMap((v) => v.citations)
+              .filter((citation) => citation.sourceId === upload.source.id),
+          ),
           value: f.value,
           citations: f.values
             .flatMap((v) => v.citations)
@@ -456,7 +471,7 @@ async function evaluate(
   return result;
 }
 
-const runs = Number(process.env.EVAL_RUNS ?? 3);
+const runs = Number(process.env.EVAL_RUNS ?? 1);
 const results: Awaited<ReturnType<typeof evaluate>>[] = [];
 const scenarios: {
   id: string;
@@ -467,7 +482,7 @@ const scenarios: {
 try {
   // EVAL_DOCUMENTS=id,id narrows a diagnostic run; the recorded report always covers the whole set.
   const only = process.env.EVAL_DOCUMENTS?.split(",");
-  // Model output varies between calls, so every document runs several times and the summary covers all runs.
+  // One pass by default; EVAL_RUNS can repeat documents within the capped eval allowance.
   for (let run = 1; run <= runs; run++) {
     for (const document of set.documents.filter(
       (d) => !only || only.includes(d.id),
@@ -479,6 +494,7 @@ try {
   )) {
     const studentId = randomUUID();
     let actualCourses = 0;
+    let allSourcesAssigned = true;
     for (const id of scenario.documents) {
       const result = await evaluate(
         set.documents.find((d) => d.id === id)!,
@@ -487,12 +503,14 @@ try {
       );
       results.push({ ...result, id: `${scenario.id}/${id}` });
       actualCourses = result.courses.extracted;
+      allSourcesAssigned &&=
+        result.extraction === "done" && result.topics.extracted > 0;
     }
     scenarios.push({
       id: scenario.id,
       expectedCourses: scenario.expectedCourses,
       actualCourses,
-      passed: actualCourses === scenario.expectedCourses,
+      passed: allSourcesAssigned && actualCourses === scenario.expectedCourses,
     });
   }
 } finally {
@@ -505,7 +523,7 @@ try {
 const sum = (pick: (r: (typeof results)[number]) => number) =>
   results.reduce((total, r) => total + pick(r), 0);
 const times = results
-  .flatMap((r) => (r.reviewableAfterMs === null ? [] : [r.reviewableAfterMs]))
+  .flatMap((r) => (r.reviewableAfterMs == null ? [] : [r.reviewableAfterMs]))
   .sort((a, b) => a - b);
 const median = times.length
   ? (times[Math.floor((times.length - 1) / 2)]! +
@@ -520,6 +538,9 @@ const report = {
     "Original labels founder spot-checked; slide Topics and assignments draft, not yet spot-checked by founder",
   includedFeatureHead: process.env.EVAL_FEATURE_HEAD ?? "unspecified",
   scenarios,
+  includedParallelChanges:
+    process.env.EVAL_INCLUDED_CHANGES ??
+    "Neither vision nor course-assignment changes were present on the feature branch",
   routing: provider.baseURL.includes("eu.openrouter") ? "eu" : "international",
   parser:
     "repository parser code in-process with host qpdf/Poppler, not the container image",

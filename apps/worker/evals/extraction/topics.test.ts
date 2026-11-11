@@ -28,3 +28,24 @@ it("matches Topic aliases once and only within their Course", () => {
     recall: 1,
   });
 });
+
+it("recovers distinct Topic keys from Provenance when values repeat", async () => {
+  const { topicKey } = await import("./topics.js");
+  const raw = [
+    {
+      key: "backpropagation",
+      value: "covered",
+      page: 1,
+      quote: "Backward pass",
+    },
+    {
+      key: "tokenization",
+      value: "covered",
+      page: 2,
+      quote: "Split text into tokens",
+    },
+  ];
+  expect(
+    topicKey(raw, "covered", [{ page: 2, quote: "Split text into tokens" }]),
+  ).toBe("tokenization");
+});

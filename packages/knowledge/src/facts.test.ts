@@ -1963,7 +1963,7 @@ it("offers only this student's eligible current-Semester Courses to automatic ex
 it("treats an unknown Course ID as a grounded proposal, keeping its Topics in this Source", async () => {
   const p = await student();
   const source = await readySource(p, "deck.pdf", [
-    { page: 1, text: analysis.quote + "\nKonvergenz" },
+    { page: 1, text: `${analysis.quote}\nKonvergenz` },
   ]);
   expect(
     await facts.extract(p, source, {
