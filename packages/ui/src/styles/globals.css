@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./tokens.css";
 @import "./theme.css";
+@import "./shimmer.css";
 @import "../components/ui/mdx/mdx.css";
 @import "katex/dist/katex.min.css";
 @import "@fontsource/ibm-plex-mono/400.css";
