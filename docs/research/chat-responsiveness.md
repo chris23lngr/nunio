@@ -13,7 +13,7 @@ Most of the sluggishness comes from the client, not the transport. Every 50 ms s
 The shadcn example feels instant partly because it is scripted: the transport replays canned turns with 16 ms between chunks ([chat-demo.tsx:155-159](https://github.com/shadcn-ui/ui/blob/main/apps/v4/examples/base/chat-demo.tsx)). It has no retrieval, embedding, allowance check, or model latency. Some of our wait cannot be removed and must be **communicated** instead: a shimmering, staged status.
 
 - **Loading state (Q1):** use shadcn's **`shimmer` CSS utility** on our existing `Trace` running line. That is exactly what the linked example does. Don't use AI Elements `Loader`, which no longer exists upstream. AI Elements `Shimmer` is a reasonable second choice, but it needs `motion` and theme variables we don't define. Show it while `send.isPending && !partial && !reasoning.text`, and also during `create.isPending` for a new chat.
-- **useChat (Q3):** **not now.** It would not fix the main causes (list re-rendering, Markdown cost, identity swap at commit). It would also add a second message store and needs server stream changes. Adopt its *status vocabulary* locally. Revisit when chat gains multi-turn context, tools, regenerate/edit, or resume.
+- **useChat (Q3):** **not now.** It would not fix the main causes (list re-rendering, Markdown cost, identity swap at commit). It would also add a second message store and needs server stream changes. Adopt its _status vocabulary_ locally. Revisit when chat gains multi-turn context, tools, regenerate/edit, or resume.
 
 ## Repository observations
 
@@ -67,11 +67,11 @@ The alternatives:
 
 **Status mapping.**
 
-| AI SDK `ChatStatus` | Meaning | Our equivalent |
-| --- | --- | --- |
-| `submitted` | request sent, before the stream writes the message | `create.isPending \|\| (send.isPending && !partial && !reasoning.text)` |
-| `streaming` | receiving response | `send.isPending && (partial \|\| reasoning.text)` |
-| `ready` / `error` | idle / request failed | `!busy` / `send.error` |
+| AI SDK `ChatStatus` | Meaning                                            | Our equivalent                                                          |
+| ------------------- | -------------------------------------------------- | ----------------------------------------------------------------------- |
+| `submitted`         | request sent, before the stream writes the message | `create.isPending \|\| (send.isPending && !partial && !reasoning.text)` |
+| `streaming`         | receiving response                                 | `send.isPending && (partial \|\| reasoning.text)`                       |
+| `ready` / `error`   | idle / request failed                              | `!busy` / `send.error`                                                  |
 
 Sources: [useChat reference](https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat); [installed chat.ts:134,989,1088](../../node_modules/.bun/ai@7.0.157+969a6d035afea0f4/node_modules/ai/src/ui/chat.ts).
 
