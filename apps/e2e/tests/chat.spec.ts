@@ -88,11 +88,17 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
         responseStream.flushHeaders();
         const emit = (data: unknown) =>
           responseStream.write(`data: ${JSON.stringify(data)}\n\n`);
-        emit({ type: "start" });
+        const sent = JSON.parse(Buffer.concat(body).toString()) as {
+          id: string;
+          text: string;
+        };
+        const answerId = randomUUID();
+        emit({ type: "start", messageId: answerId });
+        emit({ type: "reasoning-start", id: "reasoning" });
         emit({
-          type: "data-reasoning",
-          data: { delta: "Ich prüfe deine Materialien.", streaming: true },
-          transient: true,
+          type: "reasoning-delta",
+          id: "reasoning",
+          delta: "Ich prüfe deine Materialien.",
         });
         emit({ type: "text-start", id: "answer" });
         emit({
@@ -102,14 +108,14 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
             "## Eine laufende Antwort\n\nDieser Anfang kommt vor dem Abschluss.",
         });
         const question = {
-          id: randomUUID(),
+          id: sent.id,
           role: "student",
-          text: JSON.parse(Buffer.concat(body).toString()).text,
+          text: sent.text,
           createdAt: new Date().toISOString(),
           citations: [],
         };
         const response = {
-          id: randomUUID(),
+          id: answerId,
           role: "assistant",
           reasoning: "Ich prüfe deine Materialien.",
           text: `## Antwort aus Kursmaterial\n\n${"Ein Absatz zum aktiven Lernen.\n\n".repeat(25)}| Methode | Beschreibung | Minuten |\n| --- | --- | ---: |\n| Abrufen | Eine ausführliche Beschreibung der Lernmethode | 15 |\n\nQuelle [S1].`,
@@ -128,6 +134,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
         };
         answer = () => {
           messages.push(question, response);
+          emit({ type: "reasoning-end", id: "reasoning" });
           emit({ type: "text-end", id: "answer" });
           emit({
             type: "data-committed",

@@ -32,6 +32,8 @@ components can stay colocated until a feature change warrants moving them.
 Use React Query for interactive API reads and mutations. Do not mirror query
 results, loading status, or mutation status in React state. Local form values
 and interaction state remain local. Display components receive props and callbacks.
+The Chat screen is the one exception: `useChat` owns the open Chat's messages and
+syncs each refetch ([ADR-0016](../../docs/adr/0016-usechat-owns-the-open-chat.md)).
 
 The initial implementation fetches in the browser. Server prefetching/hydration
 is deferred until measurements justify it. Do not render independently cached

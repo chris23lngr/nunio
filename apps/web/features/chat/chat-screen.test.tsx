@@ -6,8 +6,10 @@ import { api } from "@/test/api";
 import { TestProviders } from "@/test/providers";
 import { ChatScreen } from "./chat-screen";
 
-const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
+const navigation = vi.hoisted(() => ({ params: new URLSearchParams() }));
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => navigation.params,
+}));
 const course = {
   id: "course-1",
   title: "Microeconomics",
@@ -15,7 +17,8 @@ const course = {
   status: "accepted",
 };
 beforeEach(() => {
-  replace.mockReset();
+  navigation.params = new URLSearchParams();
+  window.history.replaceState(null, "", "/chat");
   api.route("GET", "/api/me/review", () =>
     Response.json({ courses: [course] }),
   );
@@ -27,13 +30,10 @@ function committedResponse(data: unknown) {
   );
 }
 function mount(chatId: string | null = null) {
+  navigation.params = new URLSearchParams(chatId ? { id: chatId } : {});
   return render(
     <TestProviders>
-      <ChatScreen
-        apiOrigin={api.origin}
-        chatId={chatId}
-        userName="Justus Schuhmacher"
-      />
+      <ChatScreen apiOrigin={api.origin} userName="Justus Schuhmacher" />
     </TestProviders>,
   );
 }
@@ -50,7 +50,7 @@ test("a suggested prompt populates the composer without sending", async () => {
     (screen.getByRole("textbox", { name: "Nachricht" }) as HTMLTextAreaElement)
       .value,
   ).toBe("Wie sieht mein Lernplan für heute aus?");
-  expect(replace).not.toHaveBeenCalled();
+  expect(window.location.search).toBe("");
   expect(screen.getByRole("heading", { name: /Justus/ })).toBeTruthy();
 });
 
@@ -82,6 +82,47 @@ test("sending clears the composer before the response and restores a failed draf
   expect(textarea.value).toBe("Meine Frage");
 });
 
+test("the first question and a waiting status show before the Chat exists", async () => {
+  let create = () => {};
+  api.route(
+    "POST",
+    "/api/me/chats",
+    () =>
+      new Promise<Response>((resolve) => {
+        create = () =>
+          resolve(Response.json({ id: "chat-1" }, { status: 201 }));
+      }),
+  );
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  let body: unknown;
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    body = await request.json();
+    return Response.json({ error: "ai_disabled" }, { status: 403 });
+  });
+  mount();
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Nachricht" }),
+    "Meine erste Frage",
+  );
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  try {
+    expect(
+      await screen.findByText("Meine erste Frage", { selector: "div" }),
+    ).toBeTruthy();
+    expect(screen.getByText("nunio antwortet …")).toBeTruthy();
+  } finally {
+    create();
+  }
+  await screen.findByRole("alert");
+  expect(body).toEqual({
+    id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    text: "Meine erste Frage",
+  });
+});
+
 test("first send fixes the selected courses and displays the persisted turn", async () => {
   let selection: unknown;
   api.route("POST", "/api/me/chats", async (request) => {
@@ -110,7 +151,10 @@ test("first send fixes the selected courses and displays the persisted turn", as
     }),
   );
   api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
-    expect(await request.json()).toEqual({ text: "Erkläre die Grundlagen" });
+    expect(await request.json()).toEqual({
+      id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      text: "Erkläre die Grundlagen",
+    });
     return committedResponse({ ...answer, question });
   });
   mount();
@@ -141,9 +185,7 @@ test("first send fixes the selected courses and displays the persisted turn", as
     (screen.getByRole("textbox", { name: "Nachricht" }) as HTMLTextAreaElement)
       .value,
   ).toBe("");
-  await waitFor(() =>
-    expect(replace).toHaveBeenCalledWith("/chat?id=chat-1", { scroll: false }),
-  );
+  await waitFor(() => expect(window.location.search).toBe("?id=chat-1"));
 });
 
 test("reopening a Chat restores its locked selection, title, citations and removed answers", async () => {
@@ -314,10 +356,11 @@ test("deleting a Source clears cached Chat answers and reloads their withdrawn s
     return Response.json({ status: "deleted" });
   });
   vi.spyOn(window, "confirm").mockReturnValue(true);
+  navigation.params = new URLSearchParams({ id: "chat-1" });
   render(
     <TestProviders>
       <SourcesScreen apiOrigin={api.origin} />
-      <ChatScreen apiOrigin={api.origin} chatId="chat-1" userName="Justus" />
+      <ChatScreen apiOrigin={api.origin} userName="Justus" />
     </TestProviders>,
   );
   await screen.findByText("Privater Inhalt aus dem Handbuch.");
@@ -343,10 +386,14 @@ test("renders partial Markdown before accepting the committed answer", async () 
               controller.enqueue(
                 encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
               );
+            emit({ type: "start", messageId: "answer-1" });
+            emit({ type: "reasoning-start", id: "reasoning" });
             emit({
-              type: "data-reasoning",
-              data: { delta: "Ich prüfe deine Materialien.", streaming: true },
+              type: "reasoning-delta",
+              id: "reasoning",
+              delta: "Ich prüfe deine Materialien.",
             });
+            emit({ type: "text-start", id: "answer" });
             emit({
               type: "text-delta",
               id: "answer",
@@ -407,6 +454,89 @@ test("renders partial Markdown before accepting the committed answer", async () 
   ).toHaveLength(1);
 });
 
+test("a saved answer keeps the element it streamed into, and the composer stays editable meanwhile", async () => {
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  let finish = () => {};
+  const encoder = new TextEncoder();
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    const { id } = (await request.json()) as { id: string };
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          const emit = (data: unknown) =>
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
+            );
+          emit({ type: "start", messageId: "answer-1" });
+          emit({ type: "text-start", id: "answer" });
+          emit({ type: "text-delta", id: "answer", delta: "Eine Antwort." });
+          finish = () => {
+            emit({ type: "text-end", id: "answer" });
+            emit({
+              type: "data-committed",
+              data: {
+                id: "answer-1",
+                role: "assistant",
+                text: "Eine Antwort.",
+                createdAt: "2026-11-10T09:48:00Z",
+                citations: [],
+                question: {
+                  id,
+                  role: "student",
+                  text: "Meine Frage",
+                  createdAt: "2026-11-10T09:48:00Z",
+                  citations: [],
+                },
+              },
+            });
+            emit({ type: "finish" });
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          };
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  mount("chat-1");
+  await screen.findByRole("heading", { name: "Neuer Chat" });
+  const user = userEvent.setup();
+  const textarea = screen.getByRole("textbox", {
+    name: "Nachricht",
+  }) as HTMLTextAreaElement;
+  await user.type(textarea, "Meine Frage");
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  let streamed: HTMLElement;
+  let question: HTMLElement;
+  try {
+    await screen.findByText("Eine Antwort.");
+    streamed = screen.getByRole("article", { name: "Laufende Antwort" });
+    question = screen.getByRole("article", { name: "Deine Nachricht" });
+    await user.type(textarea, "Nächste Frage{Enter}");
+    expect(textarea.value).toBe("Nächste Frage");
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Nachricht senden",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  } finally {
+    finish();
+  }
+  await waitFor(() =>
+    expect(screen.getByRole("article", { name: "Antwort von nunio" })).toBe(
+      streamed,
+    ),
+  );
+  expect(screen.getByRole("article", { name: "Deine Nachricht" })).toBe(
+    question,
+  );
+  expect(textarea.value).toBe("Nächste Frage");
+});
+
 test("an interrupted stream restores the draft and does not save partial text", async () => {
   api.route("GET", "/api/me/chats/chat-1", () =>
     Response.json({ id: "chat-1", courses: [], messages: [] }),
@@ -416,7 +546,7 @@ test("an interrupted stream restores the draft and does not save partial text", 
     "/api/me/chats/chat-1/messages/stream",
     () =>
       new Response(
-        `data: ${JSON.stringify({ type: "text-delta", id: "answer", delta: "Nur ein Anfang" })}\n\ndata: [DONE]\n\n`,
+        `data: ${JSON.stringify({ type: "text-start", id: "answer" })}\n\ndata: ${JSON.stringify({ type: "text-delta", id: "answer", delta: "Nur ein Anfang" })}\n\ndata: [DONE]\n\n`,
         { headers: { "content-type": "text/event-stream" } },
       ),
   );
@@ -432,7 +562,7 @@ test("an interrupted stream restores the draft and does not save partial text", 
     "unterbrochen",
   );
   expect(textarea.value).toBe("Meine Frage");
-  expect(screen.queryByText("Nur ein Anfang")).toBeNull();
+  await waitFor(() => expect(screen.queryByText("Nur ein Anfang")).toBeNull());
 });
 
 test("Stop cancels a pending answer and restores the submitted draft", async () => {
@@ -449,7 +579,19 @@ test("Stop cancels a pending answer and restores the submitted draft", async () 
           start(controller) {
             controller.enqueue(
               new TextEncoder().encode(
-                `data: ${JSON.stringify({ type: "data-reasoning", data: { delta: "Ich denke nach.", streaming: true } })}\n\ndata: ${JSON.stringify({ type: "text-delta", id: "answer", delta: "Ein Anfang" })}\n\n`,
+                [
+                  { type: "start", messageId: "answer-1" },
+                  { type: "reasoning-start", id: "reasoning" },
+                  {
+                    type: "reasoning-delta",
+                    id: "reasoning",
+                    delta: "Ich denke nach.",
+                  },
+                  { type: "text-start", id: "answer" },
+                  { type: "text-delta", id: "answer", delta: "Ein Anfang" },
+                ]
+                  .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+                  .join(""),
               ),
             );
             close = () => controller.close();
@@ -474,8 +616,10 @@ test("Stop cancels a pending answer and restores the submitted draft", async () 
       "gestoppt",
     );
     expect(textarea.value).toBe("Meine Frage");
-    expect(screen.queryByText("Ein Anfang")).toBeNull();
-    expect(screen.queryByText("Ich denke nach.")).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByText("Ein Anfang")).toBeNull();
+      expect(screen.queryByText("Ich denke nach.")).toBeNull();
+    });
   } finally {
     close();
   }

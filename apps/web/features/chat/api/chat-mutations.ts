@@ -1,7 +1,9 @@
 import type { paths } from "@nunio/api-client";
 import { mutationOptions } from "@tanstack/react-query";
+import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
 import { ApiError, apiFetch, createApiClient } from "@/lib/api-client";
+import type { Message } from "./chat-queries";
 
 export function createChat(apiOrigin: string) {
   return mutationOptions({
@@ -10,7 +12,7 @@ export function createChat(apiOrigin: string) {
         body: { courseIds, sourceIds: [] },
       });
       if (!result.data)
-        throw new Error(
+        throw new ChatError(
           "Der Chat konnte nicht gestartet werden. Prüfe deine Kursauswahl und versuche es erneut.",
         );
       return result.data.id;
@@ -18,13 +20,52 @@ export function createChat(apiOrigin: string) {
   });
 }
 
-type Turn =
+export type Turn =
   paths["/api/me/chats/{id}/messages"]["post"]["responses"][200]["content"]["application/json"];
 
-class ChatStreamError extends Error {}
+/** A Chat message as useChat holds it; metadata arrives once the message is saved. */
+export type ChatUIMessage = UIMessage<
+  { createdAt: string; citations: Message["citations"]; withdrawn?: true },
+  { committed: Turn; refused: { error: string } }
+>;
 
-function answerError(reason?: string) {
-  return new ChatStreamError(
+export function toUIMessage(message: Message): ChatUIMessage {
+  return {
+    id: message.id,
+    role: message.role === "student" ? "user" : "assistant",
+    metadata: {
+      createdAt: message.createdAt,
+      citations: message.citations,
+      ...(message.text === null ? { withdrawn: true as const } : {}),
+    },
+    parts: [
+      ...(message.reasoning
+        ? [
+            {
+              type: "reasoning" as const,
+              text: message.reasoning,
+              state: "done" as const,
+            },
+          ]
+        : []),
+      ...(message.text !== null
+        ? [
+            {
+              type: "text" as const,
+              text: message.text,
+              state: "done" as const,
+            },
+          ]
+        : []),
+    ],
+  };
+}
+
+/** An error whose message is safe to show the student. */
+export class ChatError extends Error {}
+
+export function answerError(reason?: string) {
+  return new ChatError(
     reason === "allowance_exhausted"
       ? "Dein KI-Kontingent ist aufgebraucht. Bitte kontaktiere den Support."
       : reason === "ai_disabled"
@@ -35,100 +76,42 @@ function answerError(reason?: string) {
   );
 }
 
-export function sendChatMessage(apiOrigin: string) {
-  return mutationOptions({
-    mutationFn: async ({
-      id,
-      text,
-      signal,
-      onText,
-      onReasoning,
-    }: {
-      id: string;
-      text: string;
-      signal: AbortSignal;
-      onText: (text: string) => void;
-      onReasoning: (text: string, streaming: boolean) => void;
-    }) => {
-      let updateTimer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        const transport = new DefaultChatTransport({
-          api: `${apiOrigin}/api/me/chats/${encodeURIComponent(id)}/messages/stream`,
-          credentials: "include",
-          fetch: async (input, init) => {
-            const response = await apiFetch(input, init);
-            if (!response.ok) {
-              const body = (await response.json().catch(() => ({}))) as {
-                error?: string;
-              };
-              throw answerError(body.error);
-            }
-            return response;
-          },
-          prepareSendMessagesRequest: () => ({ body: { text } }),
-        });
-        const stream = await transport.sendMessages({
-          trigger: "submit-message",
-          chatId: id,
-          messageId: undefined,
-          messages: [],
-          abortSignal: signal,
-        });
-        const reader = stream.getReader();
-        let provisional = "";
-        let reasoning = "";
-        let reasoningStreaming = false;
-        let committed: Turn | undefined;
-        try {
-          for (;;) {
-            const next = await reader.read();
-            signal.throwIfAborted();
-            if (next.done) break;
-            const chunk = next.value;
-            if (chunk.type === "error") throw answerError();
-            if (chunk.type === "data-refused")
-              throw answerError((chunk.data as { error: string }).error);
-            if (
-              chunk.type === "text-delta" ||
-              chunk.type === "data-reasoning"
-            ) {
-              if (chunk.type === "text-delta") provisional += chunk.delta;
-              else {
-                const data = chunk.data as {
-                  delta: string;
-                  streaming: boolean;
-                };
-                reasoning += data.delta;
-                reasoningStreaming = data.streaming;
-              }
-              if (!updateTimer)
-                updateTimer = setTimeout(() => {
-                  updateTimer = undefined;
-                  if (!signal.aborted) {
-                    onText(provisional);
-                    onReasoning(reasoning, reasoningStreaming);
-                  }
-                }, 50);
-            }
-            if (chunk.type === "data-committed") committed = chunk.data as Turn;
-          }
-          if (!committed) throw answerError();
-          return committed;
-        } finally {
-          await reader.cancel().catch(() => {});
-          reader.releaseLock();
-        }
-      } catch (error) {
-        if (signal.aborted)
-          throw new ChatStreamError(
-            "Antwort gestoppt. Deine Nachricht bleibt erhalten.",
-          );
-        if (error instanceof ApiError || error instanceof ChatStreamError)
-          throw error;
-        throw answerError();
-      } finally {
-        clearTimeout(updateTimer);
+/** Sends only the newest question; `chatId` resolves the Chat, creating it on the first send. */
+export function chatTransport(
+  apiOrigin: string,
+  chatId: () => Promise<string>,
+) {
+  return new DefaultChatTransport<ChatUIMessage>({
+    credentials: "include",
+    fetch: async (input, init) => {
+      const response = await apiFetch(input, init);
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw answerError(body.error);
       }
+      return response;
+    },
+    prepareSendMessagesRequest: async ({ messages }) => {
+      const id = await chatId();
+      const question = messages.at(-1)!;
+      return {
+        api: `${apiOrigin}/api/me/chats/${encodeURIComponent(id)}/messages/stream`,
+        body: {
+          id: question.id,
+          text: question.parts
+            .map((part) => (part.type === "text" ? part.text : ""))
+            .join(""),
+        },
+      };
     },
   });
+}
+
+/** The message to show for a failed send. */
+export function failureMessage(error: unknown) {
+  return error instanceof ChatError || error instanceof ApiError
+    ? error.message
+    : answerError().message;
 }

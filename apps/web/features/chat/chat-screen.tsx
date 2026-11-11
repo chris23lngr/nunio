@@ -1,6 +1,6 @@
 "use client";
 
-import { Bubble, BubbleContent } from "@nunio/ui/components/bubble/bubble";
+import { useChat } from "@ai-sdk/react";
 import { Button, buttonVariants } from "@nunio/ui/components/button/button";
 import {
   DropdownMenu,
@@ -15,7 +15,6 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from "@nunio/ui/components/input-group/input-group";
-import { MdxContent } from "@nunio/ui/components/mdx/mdx";
 import { Message, MessageContent } from "@nunio/ui/components/message/message";
 import {
   MessageScroller,
@@ -25,7 +24,6 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@nunio/ui/components/message-scroller/message-scroller";
-import { Reasoning } from "@nunio/ui/components/reasoning/reasoning";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Blocks,
@@ -37,10 +35,17 @@ import {
   Upload,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppForm } from "@/lib/form";
-import { createChat, sendChatMessage } from "./api/chat-mutations";
+import type { ChatUIMessage, Turn } from "./api/chat-mutations";
+import {
+  answerError,
+  chatTransport,
+  createChat,
+  failureMessage,
+  toUIMessage,
+} from "./api/chat-mutations";
 import { chatCourseQueries, chatQueries } from "./api/chat-queries";
 import { ChatMessage } from "./components/chat-message";
 import { CoursePicker } from "./components/course-picker";
@@ -54,136 +59,168 @@ const prompts = [
 
 export function ChatScreen({
   apiOrigin,
-  chatId,
   userName,
 }: {
   apiOrigin: string;
-  chatId: string | null;
   userName: string;
 }) {
-  const router = useRouter();
+  const routeId = useSearchParams().get("id");
   const client = useQueryClient();
-  const [createdId, setCreatedId] = useState<string | null>(null);
-  const id = chatId ?? createdId;
+  // A session is one open Chat; creating a Chat keeps the session it started in.
+  const [session, setSession] = useState(() => ({
+    key: routeId ?? crypto.randomUUID(),
+    id: routeId,
+  }));
+  const route = useRef(routeId);
+  const id = session.id;
   const chat = useQuery(chatQueries(apiOrigin, id));
   const courses = useQuery({ ...chatCourseQueries(apiOrigin), enabled: !id });
   const create = useMutation(createChat(apiOrigin));
-  const send = useMutation(sendChatMessage(apiOrigin));
   const textarea = useRef<HTMLTextAreaElement>(null);
-  const route = useRef(chatId);
-  const activeRequest = useRef<AbortController | null>(null);
-  const [partial, setPartial] = useState("");
-  const [reasoning, setReasoning] = useState({ text: "", streaming: false });
-  useEffect(
-    () => () => {
-      activeRequest.current?.abort();
-      activeRequest.current = null;
-    },
-    [],
+  const [error, setError] = useState<string | null>(null);
+  // The turn being answered: its question, draft, and outcome once known.
+  const turn = useRef<{
+    key: string;
+    questionId: string;
+    draft: string;
+    committed?: Turn;
+    refused?: string;
+  } | null>(null);
+  const latest = useRef({ session, courseIds: [] as string[] });
+  latest.current.session = session;
+
+  const transport = useMemo(
+    () =>
+      chatTransport(apiOrigin, async () => {
+        const { key, id } = latest.current.session;
+        if (id) return id;
+        const courseIds = latest.current.courseIds;
+        const created = await create.mutateAsync(courseIds);
+        if (latest.current.session.key !== key)
+          throw new DOMException("The Chat was left", "AbortError");
+        client.setQueryData(chatQueries(apiOrigin, created).queryKey, {
+          id: created,
+          courses: (
+            client.getQueryData(chatCourseQueries(apiOrigin).queryKey) ?? []
+          ).filter((course) => courseIds.includes(course.id)),
+          messages: [],
+        });
+        route.current = created;
+        latest.current.session = { key, id: created };
+        setSession({ key, id: created });
+        window.history.replaceState(null, "", `/chat?id=${created}`);
+        return created;
+      }),
+    [apiOrigin, client, create.mutateAsync],
   );
+
+  const fail = (message: string) => {
+    const current = turn.current;
+    if (!current || current.key !== latest.current.session.key) return;
+    turn.current = null;
+    setMessages((messages) => {
+      const index = messages.findIndex((m) => m.id === current.questionId);
+      return index === -1 ? messages : messages.slice(0, index);
+    });
+    if (!form.getFieldValue("text")) form.setFieldValue("text", current.draft);
+    setError(message);
+    if (latest.current.session.id)
+      void client.invalidateQueries(
+        chatQueries(apiOrigin, latest.current.session.id),
+      );
+  };
+
+  const { messages, setMessages, sendMessage, status, stop } =
+    useChat<ChatUIMessage>({
+      id: session.key,
+      transport,
+      throttle: 50,
+      onData: (part) => {
+        if (!turn.current) return;
+        if (part.type === "data-committed") turn.current.committed = part.data;
+        if (part.type === "data-refused")
+          turn.current.refused = part.data.error;
+      },
+      onError: (cause) => fail(failureMessage(cause)),
+      onFinish: ({ isAbort, isError }) => {
+        const current = turn.current;
+        if (!current || isError) return;
+        if (isAbort)
+          return fail("Antwort gestoppt. Deine Nachricht bleibt erhalten.");
+        if (!current.committed)
+          return fail(answerError(current.refused).message);
+        const { question, ...answer } = current.committed;
+        turn.current = null;
+        setMessages((messages) => {
+          const index = messages.findIndex((m) => m.id === current.questionId);
+          return [
+            ...messages.slice(0, index === -1 ? messages.length : index),
+            toUIMessage(question),
+            toUIMessage(answer),
+          ];
+        });
+        if (latest.current.session.id)
+          void client.invalidateQueries(
+            chatQueries(apiOrigin, latest.current.session.id),
+          );
+      },
+    });
+
+  // Saved history comes from the query; a refetch, such as after a Source is deleted, replaces
+  // the saved messages and keeps any turn still being answered after them.
+  useEffect(() => {
+    if (!chat.data) return;
+    const saved = chat.data.messages.map(toUIMessage);
+    const ids = new Set(saved.map((message) => message.id));
+    setMessages((current) => [
+      ...saved,
+      ...current.filter((message) => !ids.has(message.id)),
+    ]);
+  }, [chat.data, setMessages]);
+
   const form = useAppForm({
     defaultValues: { text: "", courseIds: [] as string[] },
-    onSubmit: async ({ value }) => {
+    onSubmit: ({ value }) => {
       const text = value.text.trim();
-      if (!text || text.length > 4000) return;
-      const controller = new AbortController();
-      activeRequest.current = controller;
-      setPartial("");
-      setReasoning({ text: "", streaming: false });
-      const draft = value.text;
+      if (!text || text.length > 4000 || busy) return;
+      const questionId = crypto.randomUUID();
+      turn.current = { key: session.key, questionId, draft: value.text };
+      latest.current.courseIds = value.courseIds;
+      setError(null);
+      create.reset();
       form.setFieldValue("text", "");
-      let activeId = id;
-      try {
-        if (!activeId) {
-          activeId = await create.mutateAsync(value.courseIds);
-          if (activeRequest.current !== controller) return;
-          client.setQueryData(chatQueries(apiOrigin, activeId).queryKey, {
-            id: activeId,
-            courses: (courses.data ?? []).filter((course) =>
-              value.courseIds.includes(course.id),
-            ),
-            messages: [],
-          });
-          setCreatedId(activeId);
-          router.replace(`/chat?id=${activeId}`, { scroll: false });
-        }
-        const { question, ...answer } = await send.mutateAsync({
-          id: activeId,
-          text,
-          signal: controller.signal,
-          onReasoning: (text, streaming) => {
-            if (
-              !controller.signal.aborted &&
-              activeRequest.current === controller
-            )
-              setReasoning({ text, streaming });
-          },
-          onText: (text) => {
-            if (
-              !controller.signal.aborted &&
-              activeRequest.current === controller
-            )
-              setPartial(text);
-          },
-        });
-        await client.cancelQueries(chatQueries(apiOrigin, activeId));
-        client.setQueryData(
-          chatQueries(apiOrigin, activeId).queryKey,
-          (current) =>
-            current
-              ? {
-                  ...current,
-                  messages: [
-                    ...current.messages.filter(
-                      (message) =>
-                        message.id !== question.id && message.id !== answer.id,
-                    ),
-                    question,
-                    answer,
-                  ],
-                }
-              : current,
-        );
-      } catch {
-        if (activeRequest.current !== controller) return;
-        form.setFieldValue("text", draft);
-        if (activeId)
-          await client.invalidateQueries(chatQueries(apiOrigin, activeId));
-      } finally {
-        if (activeRequest.current === controller) {
-          activeRequest.current = null;
-          setPartial("");
-          setReasoning({ text: "", streaming: false });
-        }
-      }
+      void sendMessage({
+        id: questionId,
+        role: "user",
+        parts: [{ type: "text", text }],
+      });
     },
   });
 
   useEffect(() => {
-    if (route.current === chatId) return;
-    route.current = chatId;
-    if (chatId !== createdId) {
-      activeRequest.current?.abort();
-      activeRequest.current = null;
-      setPartial("");
-      setReasoning({ text: "", streaming: false });
-      setCreatedId(null);
-      form.reset();
-      create.reset();
-      send.reset();
-    }
-  }, [chatId, createdId, form, create.reset, send.reset]);
+    if (route.current === routeId) return;
+    route.current = routeId;
+    turn.current = null;
+    setSession({ key: routeId ?? crypto.randomUUID(), id: routeId });
+    setError(null);
+    form.reset();
+    create.reset();
+  }, [routeId, form, create.reset]);
 
-  const messages = chat.data?.messages ?? [];
-  const busy = create.isPending || send.isPending;
-  const first =
-    messages.find((message) => message.role === "student")?.text ??
-    send.variables?.text;
-  const words = first?.trim().split(/\s+/) ?? [];
+  const busy = status === "submitted" || status === "streaming";
+  const last = messages.at(-1);
+  const first = messages.find((message) => message.role === "user");
+  const words =
+    first?.parts
+      .map((part) => (part.type === "text" ? part.text : ""))
+      .join("")
+      .trim()
+      .split(/\s+/) ?? [];
   const title = words.length
     ? `${words.slice(0, 6).join(" ")}${words.length > 6 ? " …" : ""}`
     : "Neuer Chat";
-  const error = create.error ?? send.error ?? chat.error;
+  const shown = error ?? chat.error?.message;
+  const started = !!id || messages.length > 0;
 
   return (
     <main
@@ -202,7 +239,7 @@ export function ChatScreen({
           <span className="hidden sm:inline">Modell</span>
           <ChevronDown className="hidden sm:block" />
         </Button>
-        {id ? (
+        {started ? (
           <h1
             className="truncate text-center text-base font-medium"
             title={title}
@@ -221,13 +258,13 @@ export function ChatScreen({
         </Link>
       </header>
       <MessageScrollerProvider
-        key={id ?? "new"}
+        key={session.key}
         autoScroll
         defaultScrollPosition="end"
       >
         <MessageScroller className="min-h-0 flex-1">
           <MessageScrollerViewport aria-label="Nachrichten" className="px-4">
-            {!id ? (
+            {!started ? (
               <div className="flex min-h-full flex-col items-center pt-[min(20vh,200px)] pb-8">
                 <h1 className="max-w-lg text-center text-2xl leading-8 font-medium sm:text-3xl sm:leading-10">
                   Woran möchtest du heute arbeiten, {userName.split(" ")[0]}?
@@ -250,50 +287,26 @@ export function ChatScreen({
               </div>
             ) : (
               <MessageScrollerContent className="mx-auto w-full max-w-[832px] gap-10 pt-6 pb-8">
-                {chat.isPending && <p role="status">Chat laden …</p>}
+                {id && chat.isPending && <p role="status">Chat laden …</p>}
                 {messages.map((message) => (
                   <MessageScrollerItem
                     key={message.id}
                     messageId={message.id}
-                    scrollAnchor={message.role === "student"}
+                    scrollAnchor={message.role === "user"}
                   >
                     <ChatMessage message={message} />
                   </MessageScrollerItem>
                 ))}
-                {send.isPending && (
-                  <>
-                    <MessageScrollerItem
-                      messageId="pending-question"
-                      scrollAnchor
-                    >
-                      <Message align="end">
-                        <MessageContent>
-                          <Bubble align="end" variant="tinted">
-                            <BubbleContent>{send.variables.text}</BubbleContent>
-                          </Bubble>
-                        </MessageContent>
-                      </Message>
-                    </MessageScrollerItem>
-                    <MessageScrollerItem messageId="pending-answer">
-                      <Message aria-label="Laufende Antwort">
-                        <MessageContent>
-                          {reasoning.text && (
-                            <Reasoning streaming={reasoning.streaming}>
-                              {reasoning.text}
-                            </Reasoning>
-                          )}
-                          {partial && <MdxContent content={partial} />}
-                          <p role="status" className="text-sm text-base-500">
-                            {partial
-                              ? "Antwort wird geschrieben …"
-                              : reasoning.text
-                                ? ""
-                                : "nunio antwortet …"}
-                          </p>
-                        </MessageContent>
-                      </Message>
-                    </MessageScrollerItem>
-                  </>
+                {busy && last?.role === "user" && (
+                  <MessageScrollerItem messageId="waiting">
+                    <Message aria-label="Laufende Antwort">
+                      <MessageContent>
+                        <p role="status" className="text-sm text-base-500">
+                          nunio antwortet …
+                        </p>
+                      </MessageContent>
+                    </Message>
+                  </MessageScrollerItem>
                 )}
               </MessageScrollerContent>
             )}
@@ -309,9 +322,9 @@ export function ChatScreen({
           void form.handleSubmit();
         }}
       >
-        {error && (
+        {shown && (
           <p role="alert" className="mb-3 text-sm text-destructive-700">
-            {error.message}
+            {shown}
           </p>
         )}
         <form.Subscribe selector={(state) => state.values.courseIds}>
@@ -359,17 +372,15 @@ export function ChatScreen({
                   if (
                     event.key === "Enter" &&
                     !event.shiftKey &&
-                    !event.nativeEvent.isComposing &&
-                    !busy
+                    !event.nativeEvent.isComposing
                   ) {
                     event.preventDefault();
-                    void form.handleSubmit();
+                    if (!busy) void form.handleSubmit();
                   }
                 }}
                 placeholder="Frage nunio alles, erwähne Kurse und Dateien mit @"
                 className="min-h-12 max-h-64 px-4 py-3 text-base leading-6 font-normal"
                 maxLength={4000}
-                readOnly={busy}
               />
             )}
           </form.Field>
@@ -398,7 +409,7 @@ export function ChatScreen({
             {busy && (
               <InputGroupButton
                 aria-label="Antwort stoppen"
-                onClick={() => activeRequest.current?.abort()}
+                onClick={() => void stop()}
                 size="icon"
               >
                 <Square />
