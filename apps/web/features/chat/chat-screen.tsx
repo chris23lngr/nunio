@@ -38,17 +38,27 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppForm } from "@/lib/form";
-import type { ChatUIMessage, Turn } from "./api/chat-mutations";
 import {
   answerError,
   chatTransport,
   createChat,
   failureMessage,
-  toUIMessage,
 } from "./api/chat-mutations";
-import { chatCourseQueries, chatQueries } from "./api/chat-queries";
+import type { ChatUIMessage, Turn } from "./api/chat-queries";
+import {
+  chatCourseQueries,
+  chatQueries,
+  messageText,
+  toUIMessage,
+} from "./api/chat-queries";
 import { ChatMessage } from "./components/chat-message";
 import { CoursePicker } from "./components/course-picker";
+
+/** The messages before the question `questionId`, or all of them when it isn't there. */
+function beforeQuestion(messages: ChatUIMessage[], questionId: string) {
+  const index = messages.findIndex((message) => message.id === questionId);
+  return index === -1 ? messages : messages.slice(0, index);
+}
 
 const prompts = [
   "Was habe ich heute noch in BWL1 zu tun?",
@@ -66,13 +76,13 @@ export function ChatScreen({
 }) {
   const routeId = useSearchParams().get("id");
   const client = useQueryClient();
-  // A session is one open Chat; creating a Chat keeps the session it started in.
-  const [session, setSession] = useState(() => ({
+  // The open Chat; `key` stays the same when a new Chat is created on its first send.
+  const [openChat, setOpenChat] = useState(() => ({
     key: routeId ?? crypto.randomUUID(),
     id: routeId,
   }));
-  const route = useRef(routeId);
-  const id = session.id;
+  const shownRouteId = useRef(routeId);
+  const id = openChat.id;
   const chat = useQuery(chatQueries(apiOrigin, id));
   const courses = useQuery({ ...chatCourseQueries(apiOrigin), enabled: !id });
   const create = useMutation(createChat(apiOrigin));
@@ -86,53 +96,56 @@ export function ChatScreen({
     committed?: Turn;
     refused?: string;
   } | null>(null);
-  const latest = useRef({ session, courseIds: [] as string[] });
-  latest.current.session = session;
+  // A draft put back after a failed turn, undone if a refetch shows the turn was saved after all.
+  const restored = useRef<{
+    questionId: string;
+    composer: string;
+    before: string;
+  } | null>(null);
+  // Read by the transport, which outlives renders.
+  const sendContext = useRef({ openChat, courseIds: [] as string[] });
+  sendContext.current.openChat = openChat;
 
   const transport = useMemo(
     () =>
-      chatTransport(apiOrigin, async () => {
-        const { key, id } = latest.current.session;
+      chatTransport(apiOrigin, async (signal) => {
+        const { key, id } = sendContext.current.openChat;
         if (id) return id;
-        const courseIds = latest.current.courseIds;
-        const created = await create.mutateAsync(courseIds);
-        if (latest.current.session.key !== key)
+        const courseIds = sendContext.current.courseIds;
+        const created = await create.mutateAsync({ courseIds, signal });
+        if (signal?.aborted || sendContext.current.openChat.key !== key)
           throw new DOMException("The Chat was left", "AbortError");
-        client.setQueryData(chatQueries(apiOrigin, created).queryKey, {
-          id: created,
-          courses: (
-            client.getQueryData(chatCourseQueries(apiOrigin).queryKey) ?? []
-          ).filter((course) => courseIds.includes(course.id)),
-          messages: [],
-        });
-        route.current = created;
-        latest.current.session = { key, id: created };
-        setSession({ key, id: created });
+        shownRouteId.current = created;
+        sendContext.current.openChat = { key, id: created };
+        setOpenChat({ key, id: created });
         window.history.replaceState(null, "", `/chat?id=${created}`);
         return created;
       }),
-    [apiOrigin, client, create.mutateAsync],
+    [apiOrigin, create.mutateAsync],
   );
+
+  const refresh = () => {
+    const { id } = sendContext.current.openChat;
+    if (id) void client.invalidateQueries(chatQueries(apiOrigin, id));
+  };
 
   const fail = (message: string) => {
     const current = turn.current;
-    if (!current || current.key !== latest.current.session.key) return;
+    if (!current || current.key !== sendContext.current.openChat.key) return;
     turn.current = null;
-    setMessages((messages) => {
-      const index = messages.findIndex((m) => m.id === current.questionId);
-      return index === -1 ? messages : messages.slice(0, index);
-    });
-    if (!form.getFieldValue("text")) form.setFieldValue("text", current.draft);
+    setMessages((messages) => beforeQuestion(messages, current.questionId));
+    // Keep what was typed meanwhile, after the question that didn't get an answer.
+    const before = form.getFieldValue("text");
+    const composer = before ? `${current.draft}\n\n${before}` : current.draft;
+    form.setFieldValue("text", composer);
+    restored.current = { questionId: current.questionId, composer, before };
     setError(message);
-    if (latest.current.session.id)
-      void client.invalidateQueries(
-        chatQueries(apiOrigin, latest.current.session.id),
-      );
+    refresh();
   };
 
   const { messages, setMessages, sendMessage, status, stop } =
     useChat<ChatUIMessage>({
-      id: session.key,
+      id: openChat.key,
       transport,
       throttle: 50,
       onData: (part) => {
@@ -151,32 +164,14 @@ export function ChatScreen({
           return fail(answerError(current.refused).message);
         const { question, ...answer } = current.committed;
         turn.current = null;
-        setMessages((messages) => {
-          const index = messages.findIndex((m) => m.id === current.questionId);
-          return [
-            ...messages.slice(0, index === -1 ? messages.length : index),
-            toUIMessage(question),
-            toUIMessage(answer),
-          ];
-        });
-        if (latest.current.session.id)
-          void client.invalidateQueries(
-            chatQueries(apiOrigin, latest.current.session.id),
-          );
+        setMessages((messages) => [
+          ...beforeQuestion(messages, current.questionId),
+          toUIMessage(question),
+          toUIMessage(answer),
+        ]);
+        refresh();
       },
     });
-
-  // Saved history comes from the query; a refetch, such as after a Source is deleted, replaces
-  // the saved messages and keeps any turn still being answered after them.
-  useEffect(() => {
-    if (!chat.data) return;
-    const saved = chat.data.messages.map(toUIMessage);
-    const ids = new Set(saved.map((message) => message.id));
-    setMessages((current) => [
-      ...saved,
-      ...current.filter((message) => !ids.has(message.id)),
-    ]);
-  }, [chat.data, setMessages]);
 
   const form = useAppForm({
     defaultValues: { text: "", courseIds: [] as string[] },
@@ -184,8 +179,9 @@ export function ChatScreen({
       const text = value.text.trim();
       if (!text || text.length > 4000 || busy) return;
       const questionId = crypto.randomUUID();
-      turn.current = { key: session.key, questionId, draft: value.text };
-      latest.current.courseIds = value.courseIds;
+      turn.current = { key: openChat.key, questionId, draft: value.text };
+      restored.current = null;
+      sendContext.current.courseIds = value.courseIds;
       setError(null);
       create.reset();
       form.setFieldValue("text", "");
@@ -197,11 +193,33 @@ export function ChatScreen({
     },
   });
 
+  // Saved history comes from the query; a refetch, such as after a Source is deleted, replaces
+  // the saved messages and keeps any turn still being answered after them.
   useEffect(() => {
-    if (route.current === routeId) return;
-    route.current = routeId;
+    if (!chat.data) return;
+    const saved = chat.data.messages.map(toUIMessage);
+    const ids = new Set(saved.map((message) => message.id));
+    setMessages((current) => [
+      ...saved,
+      ...current.filter((message) => !ids.has(message.id)),
+    ]);
+    // Stop can arrive after the turn was saved; then it's in the history and not a draft.
+    const draft = restored.current;
+    if (draft && ids.has(draft.questionId)) {
+      restored.current = null;
+      if (form.getFieldValue("text") === draft.composer) {
+        form.setFieldValue("text", draft.before);
+        setError(null);
+      }
+    }
+  }, [chat.data, setMessages, form]);
+
+  useEffect(() => {
+    if (shownRouteId.current === routeId) return;
+    shownRouteId.current = routeId;
     turn.current = null;
-    setSession({ key: routeId ?? crypto.randomUUID(), id: routeId });
+    restored.current = null;
+    setOpenChat({ key: routeId ?? crypto.randomUUID(), id: routeId });
     setError(null);
     form.reset();
     create.reset();
@@ -210,16 +228,11 @@ export function ChatScreen({
   const busy = status === "submitted" || status === "streaming";
   const last = messages.at(-1);
   const first = messages.find((message) => message.role === "user");
-  const words =
-    first?.parts
-      .map((part) => (part.type === "text" ? part.text : ""))
-      .join("")
-      .trim()
-      .split(/\s+/) ?? [];
+  const words = first ? messageText(first).trim().split(/\s+/) : [];
   const title = words.length
     ? `${words.slice(0, 6).join(" ")}${words.length > 6 ? " …" : ""}`
     : "Neuer Chat";
-  const shown = error ?? chat.error?.message;
+  const alertMessage = error ?? chat.error?.message;
   const started = !!id || messages.length > 0;
 
   return (
@@ -258,7 +271,7 @@ export function ChatScreen({
         </Link>
       </header>
       <MessageScrollerProvider
-        key={session.key}
+        key={openChat.key}
         autoScroll
         defaultScrollPosition="end"
       >
@@ -322,9 +335,9 @@ export function ChatScreen({
           void form.handleSubmit();
         }}
       >
-        {shown && (
+        {alertMessage && (
           <p role="alert" className="mb-3 text-sm text-destructive-700">
-            {shown}
+            {alertMessage}
           </p>
         )}
         <form.Subscribe selector={(state) => state.values.courseIds}>

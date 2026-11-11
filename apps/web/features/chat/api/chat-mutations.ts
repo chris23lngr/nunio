@@ -1,15 +1,22 @@
-import type { paths } from "@nunio/api-client";
 import { mutationOptions } from "@tanstack/react-query";
-import type { UIMessage } from "ai";
+import type { ChatTransport } from "ai";
 import { DefaultChatTransport } from "ai";
 import { ApiError, apiFetch, createApiClient } from "@/lib/api-client";
-import type { Message } from "./chat-queries";
+import type { ChatUIMessage } from "./chat-queries";
+import { chatCourseQueries, chatQueries, messageText } from "./chat-queries";
 
 export function createChat(apiOrigin: string) {
   return mutationOptions({
-    mutationFn: async (courseIds: string[]) => {
+    mutationFn: async ({
+      courseIds,
+      signal,
+    }: {
+      courseIds: string[];
+      signal?: AbortSignal;
+    }) => {
       const result = await createApiClient(apiOrigin).POST("/api/me/chats", {
         body: { courseIds, sourceIds: [] },
+        signal,
       });
       if (!result.data)
         throw new ChatError(
@@ -17,48 +24,17 @@ export function createChat(apiOrigin: string) {
         );
       return result.data.id;
     },
-  });
-}
-
-export type Turn =
-  paths["/api/me/chats/{id}/messages"]["post"]["responses"][200]["content"]["application/json"];
-
-/** A Chat message as useChat holds it; metadata arrives once the message is saved. */
-export type ChatUIMessage = UIMessage<
-  { createdAt: string; citations: Message["citations"]; withdrawn?: true },
-  { committed: Turn; refused: { error: string } }
->;
-
-export function toUIMessage(message: Message): ChatUIMessage {
-  return {
-    id: message.id,
-    role: message.role === "student" ? "user" : "assistant",
-    metadata: {
-      createdAt: message.createdAt,
-      citations: message.citations,
-      ...(message.text === null ? { withdrawn: true as const } : {}),
+    // The new Chat is known to be empty, so opening it needs no request.
+    onSuccess: (id, { courseIds }, _, { client }) => {
+      client.setQueryData(chatQueries(apiOrigin, id).queryKey, {
+        id,
+        courses: (
+          client.getQueryData(chatCourseQueries(apiOrigin).queryKey) ?? []
+        ).filter((course) => courseIds.includes(course.id)),
+        messages: [],
+      });
     },
-    parts: [
-      ...(message.reasoning
-        ? [
-            {
-              type: "reasoning" as const,
-              text: message.reasoning,
-              state: "done" as const,
-            },
-          ]
-        : []),
-      ...(message.text !== null
-        ? [
-            {
-              type: "text" as const,
-              text: message.text,
-              state: "done" as const,
-            },
-          ]
-        : []),
-    ],
-  };
+  });
 }
 
 /** An error whose message is safe to show the student. */
@@ -76,37 +52,38 @@ export function answerError(reason?: string) {
   );
 }
 
-/** Sends only the newest question; `chatId` resolves the Chat, creating it on the first send. */
+/**
+ * Sends only the newest question. `chatId` resolves the Chat, creating it on the first send, and
+ * gets the send's abort signal so Stop also cancels the creation.
+ */
 export function chatTransport(
   apiOrigin: string,
-  chatId: () => Promise<string>,
-) {
-  return new DefaultChatTransport<ChatUIMessage>({
-    credentials: "include",
-    fetch: async (input, init) => {
-      const response = await apiFetch(input, init);
-      if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        throw answerError(body.error);
-      }
-      return response;
-    },
-    prepareSendMessagesRequest: async ({ messages }) => {
-      const id = await chatId();
-      const question = messages.at(-1)!;
-      return {
+  chatId: (signal: AbortSignal | undefined) => Promise<string>,
+): ChatTransport<ChatUIMessage> {
+  return {
+    sendMessages: async (options) => {
+      const id = await chatId(options.abortSignal);
+      return new DefaultChatTransport<ChatUIMessage>({
         api: `${apiOrigin}/api/me/chats/${encodeURIComponent(id)}/messages/stream`,
-        body: {
-          id: question.id,
-          text: question.parts
-            .map((part) => (part.type === "text" ? part.text : ""))
-            .join(""),
+        credentials: "include",
+        fetch: async (input, init) => {
+          const response = await apiFetch(input, init);
+          if (!response.ok) {
+            const body = (await response.json().catch(() => ({}))) as {
+              error?: string;
+            };
+            throw answerError(body.error);
+          }
+          return response;
         },
-      };
+        prepareSendMessagesRequest: ({ messages }) => {
+          const question = messages.at(-1)!;
+          return { body: { id: question.id, text: messageText(question) } };
+        },
+      }).sendMessages(options);
     },
-  });
+    reconnectToStream: async () => null,
+  };
 }
 
 /** The message to show for a failed send. */

@@ -624,3 +624,208 @@ test("Stop cancels a pending answer and restores the submitted draft", async () 
     close();
   }
 });
+
+/** A stream that sends `chunks` and stays open until `close` is called. */
+function heldStream(chunks: unknown[]) {
+  let close = () => {};
+  const response = new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            chunks
+              .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+              .join(""),
+          ),
+        );
+        close = () => controller.close();
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+  return { response, close: () => close() };
+}
+const started = [
+  { type: "start", messageId: "answer-1" },
+  { type: "text-start", id: "answer" },
+  { type: "text-delta", id: "answer", delta: "Ein Anfang" },
+];
+
+test("Stop keeps what was typed meanwhile, after the stopped question", async () => {
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  const stream = heldStream(started);
+  api.route(
+    "POST",
+    "/api/me/chats/chat-1/messages/stream",
+    () => stream.response,
+  );
+  mount("chat-1");
+  await screen.findByRole("heading", { name: "Neuer Chat" });
+  const user = userEvent.setup();
+  const textarea = screen.getByRole("textbox", {
+    name: "Nachricht",
+  }) as HTMLTextAreaElement;
+  try {
+    await user.type(textarea, "Meine Frage");
+    await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+    await screen.findByText("Ein Anfang");
+    await user.type(textarea, "Nachtrag");
+    await user.click(screen.getByRole("button", { name: "Antwort stoppen" }));
+    await screen.findByRole("alert");
+    expect(textarea.value).toBe("Meine Frage\n\nNachtrag");
+  } finally {
+    stream.close();
+  }
+});
+
+test("Stop while the Chat is being created doesn't open it", async () => {
+  let create = () => {};
+  api.route(
+    "POST",
+    "/api/me/chats",
+    () =>
+      new Promise<Response>((resolve) => {
+        create = () =>
+          resolve(Response.json({ id: "chat-1" }, { status: 201 }));
+      }),
+  );
+  mount();
+  const user = userEvent.setup();
+  const textarea = screen.getByRole("textbox", {
+    name: "Nachricht",
+  }) as HTMLTextAreaElement;
+  await user.type(textarea, "Meine Frage");
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  try {
+    await user.click(
+      await screen.findByRole("button", { name: "Antwort stoppen" }),
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "gestoppt",
+    );
+    expect(textarea.value).toBe("Meine Frage");
+  } finally {
+    create();
+  }
+  // No stream route is registered: a send after creation would fail the test.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(window.location.search).toBe("");
+  expect(screen.getByRole("heading", { name: /Justus/ })).toBeTruthy();
+});
+
+test("a turn saved before Stop took effect stays in the Chat, not in the composer", async () => {
+  let saved: unknown[] = [];
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: saved }),
+  );
+  const stream = heldStream(started);
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    const { id } = (await request.json()) as { id: string };
+    const createdAt = "2026-11-10T09:48:00Z";
+    saved = [
+      { id, role: "student", text: "Meine Frage", citations: [], createdAt },
+      {
+        id: "answer-1",
+        role: "assistant",
+        text: "Ein Anfang und mehr.",
+        citations: [],
+        createdAt,
+      },
+    ];
+    return stream.response;
+  });
+  mount("chat-1");
+  await screen.findByRole("heading", { name: "Neuer Chat" });
+  const user = userEvent.setup();
+  const textarea = screen.getByRole("textbox", {
+    name: "Nachricht",
+  }) as HTMLTextAreaElement;
+  try {
+    await user.type(textarea, "Meine Frage");
+    await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+    await screen.findByText("Ein Anfang");
+    await user.click(screen.getByRole("button", { name: "Antwort stoppen" }));
+    await screen.findByText("Ein Anfang und mehr.");
+    await waitFor(() => expect(textarea.value).toBe(""));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      screen.getAllByRole("article", { name: "Deine Nachricht" }),
+    ).toHaveLength(1);
+  } finally {
+    stream.close();
+  }
+});
+
+test("deleting a Source while an answer streams withdraws earlier answers and keeps the stream", async () => {
+  let deleted = false;
+  api.route("GET", "/api/me/sources", () =>
+    Response.json(
+      deleted
+        ? []
+        : [
+            {
+              id: "source-1",
+              title: "Handbuch.pdf",
+              status: "ready",
+              extraction: "done",
+              failure: null,
+            },
+          ],
+    ),
+  );
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({
+      id: "chat-1",
+      courses: [],
+      messages: [
+        {
+          id: "answer",
+          role: "assistant",
+          text: deleted ? null : "Privater Inhalt aus dem Handbuch.",
+          citations: [],
+          createdAt: "2026-11-10T09:48:00Z",
+        },
+      ],
+    }),
+  );
+  api.route("DELETE", "/api/me/sources/source-1", () => {
+    deleted = true;
+    return Response.json({ status: "deleted" });
+  });
+  const stream = heldStream(started);
+  api.route(
+    "POST",
+    "/api/me/chats/chat-1/messages/stream",
+    () => stream.response,
+  );
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  navigation.params = new URLSearchParams({ id: "chat-1" });
+  render(
+    <TestProviders>
+      <SourcesScreen apiOrigin={api.origin} />
+      <ChatScreen apiOrigin={api.origin} userName="Justus" />
+    </TestProviders>,
+  );
+  await screen.findByText("Privater Inhalt aus dem Handbuch.");
+  const user = userEvent.setup();
+  try {
+    await user.type(
+      screen.getByRole("textbox", { name: "Nachricht" }),
+      "Meine Frage",
+    );
+    await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+    await screen.findByText("Ein Anfang");
+    const streaming = screen.getByRole("article", { name: "Laufende Antwort" });
+    await user.click(await screen.findByRole("button", { name: "Delete" }));
+    await screen.findByText(/Diese Antwort wurde entfernt/);
+    expect(screen.queryByText("Privater Inhalt aus dem Handbuch.")).toBeNull();
+    expect(screen.getByRole("article", { name: "Laufende Antwort" })).toBe(
+      streaming,
+    );
+    expect(screen.getByText("Ein Anfang")).toBeTruthy();
+  } finally {
+    stream.close();
+  }
+});

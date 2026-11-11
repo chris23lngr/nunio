@@ -14,7 +14,8 @@ import { Reasoning } from "@nunio/ui/components/reasoning/reasoning";
 import { Copy, Pencil } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import { sourceReferences } from "@/features/shared/components/source-citations";
-import type { ChatUIMessage } from "../api/chat-mutations";
+import type { ChatUIMessage } from "../api/chat-queries";
+import { messageText } from "../api/chat-queries";
 
 function renderReference(reference: MdxReference) {
   return (
@@ -36,9 +37,7 @@ export const ChatMessage = memo(function ChatMessage({
   const student = message.role === "user";
   const saved = message.metadata;
   const withdrawn = !!saved?.withdrawn;
-  const text = message.parts
-    .map((part) => (part.type === "text" ? part.text : ""))
-    .join("");
+  const text = messageText(message);
   const reasoning = message.parts.find((part) => part.type === "reasoning");
   const citations = saved?.citations;
   const references = useMemo(
