@@ -47,7 +47,7 @@ describe("OpenRouter (spike f)", () => {
     const reference =
       `Run ${Date.now()}.\n` +
       "Facts are recorded per Source and cited in answers. ".repeat(600);
-    const ask = () =>
+    const ask = (upstream?: string) =>
       generateText({
         model: models.chat,
         instructions: {
@@ -58,10 +58,26 @@ describe("OpenRouter (spike f)", () => {
           },
         },
         prompt: "Reply with the single word: ok",
+        // Each upstream keeps its own cache, so the second call must reach the one the first call wrote to.
+        // This replaces the model's provider routing, so it repeats the zero-retention settings.
+        providerOptions: upstream
+          ? {
+              openrouter: {
+                provider: {
+                  zdr: true,
+                  data_collection: "deny",
+                  order: [upstream],
+                  allow_fallbacks: false,
+                },
+              },
+            }
+          : undefined,
       });
 
-    await ask();
-    const second = await ask();
+    const first = await ask();
+    const upstream = first.providerMetadata?.openrouter?.provider;
+    expect(upstream).toBeTypeOf("string");
+    const second = await ask(upstream as string);
     expect(second.usage.inputTokenDetails.cacheReadTokens).toBeGreaterThan(0);
   });
 
