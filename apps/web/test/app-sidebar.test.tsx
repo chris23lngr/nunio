@@ -131,3 +131,20 @@ test("the layout trigger and keyboard shortcut toggle the sidebar together", asy
   expect(sidebar.getAttribute("data-state")).toBe("expanded");
   expect(screen.getByRole("main").textContent).toBe("Page content");
 });
+
+test.each(["/chat", "/plan"])(
+  "on %s the page's own header opens the sidebar, so the layout adds no second button",
+  async (pathname) => {
+    route.pathname = pathname;
+    const user = userEvent.setup();
+    render(
+      <AppLayout>
+        <main>Page content</main>
+      </AppLayout>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Sidebar schließen" }));
+
+    expect(screen.queryByRole("button", { name: "Sidebar öffnen" })).toBeNull();
+  },
+);
