@@ -98,6 +98,23 @@ export const WaitingForText: Story = {
   },
 }
 
+export const StaysOpenWhileAnswering: Story = {
+  args: {
+    streaming: false,
+    answering: true,
+    children: "Ich habe die Definitionen verglichen.",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      canvas.getByRole("button", { name: "Gedankengang" }),
+    ).toHaveAttribute("aria-expanded", "true")
+    await expect(
+      getComputedStyle(canvas.getByText("Gedankengang")).animationName,
+    ).toBe("none")
+  },
+}
+
 export const Completed: Story = {
   args: {
     streaming: false,

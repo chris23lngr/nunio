@@ -17,11 +17,14 @@ import {
 function Reasoning({
   children,
   streaming = false,
+  answering = streaming,
   duration,
   ...props
 }: Omit<ComponentProps<typeof Trace>, "children"> & {
   children: string
   streaming?: boolean
+  /** Keeps the trace open after reasoning ends, while its answer is still being written. */
+  answering?: boolean
   duration?: number
 }) {
   const [open, setOpen] = useState<boolean>()
@@ -45,7 +48,7 @@ function Reasoning({
       {children.length === 0 ? (
         <div role="status">{line}</div>
       ) : (
-        <TraceCollapsible open={open ?? streaming} onOpenChange={setOpen}>
+        <TraceCollapsible open={open ?? answering} onOpenChange={setOpen}>
           <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
           <TraceCollapsibleContent className="whitespace-pre-wrap">
             {children}
