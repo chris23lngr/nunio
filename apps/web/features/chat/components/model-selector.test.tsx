@@ -81,3 +81,21 @@ test("clicking another model does not change the current one", async () => {
     "true",
   ]);
 });
+
+test("trigger, rows and card show the decorative Claude logo at 16px", async () => {
+  const user = userEvent.setup();
+  const { container } = render(
+    <ModelSelector models={models} value="sonnet" />,
+  );
+  const logo = (element: Element) => {
+    const img = element.querySelector("img");
+    expect(img?.getAttribute("src")).toMatch(/\/icons\/claude\.svg$/);
+    expect(img?.getAttribute("height")).toBe("16");
+    expect(img?.getAttribute("alt")).toBe("");
+  };
+  logo(container);
+  await user.click(screen.getByRole("button", { name: "Modell: Sonnet 5" }));
+  for (const row of await screen.findAllByRole("menuitem")) logo(row);
+  await user.hover(screen.getByRole("menuitem", { name: "Opus 5.5" }));
+  logo(await screen.findByRole("dialog"));
+});

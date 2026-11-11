@@ -16,8 +16,20 @@ import {
   PopoverHeader,
   PopoverTitle,
 } from "@nunio/ui/components/popover/popover";
-import { Check, ChevronDown, Sparkles } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
+import Image from "next/image";
 import { useState } from "react";
+
+// All models are Anthropic's. The viewBox is 256×257, so 16px tall is ~16px wide.
+const logo = (
+  <Image
+    src="/icons/claude.svg"
+    width={16}
+    height={16}
+    alt=""
+    className="shrink-0"
+  />
+);
 
 type Model = {
   id: string;
@@ -36,7 +48,6 @@ export function ModelSelector({
   const current = models.find(({ id }) => id === value);
   const [card, setCard] = useState<{ model: Model; row: HTMLElement }>();
   const [open, setOpen] = useState(false);
-  // Sparkles stands in for a provider logo until models carry one.
   return (
     <>
       <DropdownMenu onOpenChange={(menuOpen) => !menuOpen && setOpen(false)}>
@@ -44,7 +55,7 @@ export function ModelSelector({
           render={<Button variant="ghost" />}
           aria-label={`Modell: ${current?.name}`}
         >
-          <Sparkles className="size-5" />
+          {logo}
           {current?.name}
           <ChevronDown />
         </DropdownMenuTrigger>
@@ -61,7 +72,7 @@ export function ModelSelector({
                   setOpen(true);
                 }}
               >
-                <Sparkles />
+                {logo}
                 {model.name}
                 {model.id === value && (
                   <Check className="ml-auto text-base-600" />
@@ -84,7 +95,7 @@ export function ModelSelector({
         >
           <PopoverHeader>
             <PopoverTitle>
-              <Sparkles />
+              {logo}
               <span>
                 <span className="font-normal text-base-500">
                   {card?.model.provider} /
