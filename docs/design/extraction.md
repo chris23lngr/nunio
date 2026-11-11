@@ -72,6 +72,8 @@ The worker calls `facts.extract(...)` from its own Activity, the same way it cal
 - **Untrusted text.** Page text goes in the user message as a nonce-fenced data block, never in the system prompt.
 - **All or nothing.** If any window fails, including when the Allowance runs out part-way, extraction ends `failed` and stores no partial Facts.
 - **Grounding.** Every item must carry a page and a verbatim quote. The worker checks the quote against that page's text after normalizing whitespace and hyphenation. Items that fail are dropped and counted, never stored with low confidence. This is how "never invent Obligations" is enforced.
+- **Figures** (2026-11-11). Ingestion renders every page as a JPEG (1568 px long edge, quality 80), because slide decks carry most of their content in figures next to a short text layer. Haiku 5.5 (task `scan`, 8k output budget) reads each page image, up to four at once, each through `meter`. For a page with a text layer, that text goes along as a nonce-fenced data block and the model returns only text the layer lacks plus figure lines; for a page without one, it transcribes everything plus figure lines. Each figure, diagram, chart, formula or illustration is described by its content on one line starting exactly with `[Abbildung] `. The reservation is the image's tokens (width × height / 750) plus a quarter, the prompt and text layer, and the full scan output budget.
+- **Grounding in figure lines.** A quote found only in an `[Abbildung]` line is the model's reading, not the page's own words. Topics, course rules, exam logistics and AI-use Rules grounded this way are kept with the uncertainty "aus einer Abbildungsbeschreibung abgeleitet", joined to any other reason. Obligations and Courses grounded this way are dropped and counted.
 
 ## Data
 
@@ -131,6 +133,7 @@ The Source records its upload request time (`createdAt`) and its extraction comp
 All tests cross the `facts` interface, with the scripted `Extractor`. Scenarios:
 
 - An ungrounded item is dropped and counted.
+- A quote found only in a figure description keeps a Fact with an uncertainty and drops an Obligation or Course.
 - Course matching: code, then title; an unclear match never auto-merges.
 - Sources that agree form one item; a disagreeing Source flags it and returns a confirmed item to review.
 - Use this resolves a Disagreement until a Source brings a value not seen before.
@@ -161,3 +164,4 @@ Also:
 - A whole extraction fails if one window fails, so a large Source near the Allowance limit may need the founder to increase the Allowance before re-extracting.
 - `Europe/Berlin` is assumed when a Source gives no time zone, and the uncertainty says so.
 - The review screen shows quotes, not the rendered PDF page.
+- Every page is read by the scan model, so a 100-page deck costs up to 100 metered image calls. Sources ingested before figures were read are not re-read; the student uploads them again.

@@ -146,7 +146,8 @@ export async function parseSource(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
-      signal: AbortSignal.any([AbortSignal.timeout(75_000), signal]),
+      // Above the parser's own 240 s deadline plus its 15 s download.
+      signal: AbortSignal.any([AbortSignal.timeout(300_000), signal]),
     });
     if (response.status !== 503) break;
     await response.body?.cancel();
@@ -169,7 +170,8 @@ export async function parseSource(
   let bytes = 0;
   for await (const part of response.body) {
     bytes += part.length;
-    if (bytes > 18 * 1024 * 1024)
+    // The parser's 64 MiB output bound plus JSON framing.
+    if (bytes > 72 * 1024 * 1024)
       throw new Error("Parser response exceeds its bound");
     parts.push(part);
   }
