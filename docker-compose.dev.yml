@@ -1,0 +1,146 @@
+# Local development stack: Postgres, Temporal, the API, the web app and the Temporal worker.
+# Everything here is a throwaway dev value; nothing connects to staging or production.
+# Not included: the parser and object storage, so Source uploads and ingestion do not work.
+# Usage: docker compose -f docker-compose.dev.yml up --build (see CONTRIBUTING.md).
+name: nunio-dev
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile.dev
+  image: nunio-dev
+  init: true
+
+# The app and API are separate origins under one parent domain (ADR-0005). These names also
+# resolve to 127.0.0.1 on the host (/etc/hosts), so the browser and the web container agree.
+x-origins: &origins
+  APP_ORIGIN: http://app.nunio.test:3000
+  API_ORIGIN: http://api.nunio.test:3001
+
+x-backend: &backend
+  <<: *origins
+  DATABASE_URL: postgresql://nunio_app:nunio@db:5432/nunio
+  TEMPORAL_ADDRESS: temporal:7233
+  TEMPORAL_NAMESPACE: default
+  TEMPORAL_TASK_QUEUE: dev
+  CODEC_KEY: AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=
+  CODEC_KEY_VERSION: v1
+  SOURCE_KEY_VERSION: dev
+  SOURCE_MASTER_KEYS: '{"dev":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}'
+  UNSUBSCRIBE_SECRET: dev-unsubscribe-secret
+  VAPID_PUBLIC_KEY: dev-vapid-public-key
+  # Object storage is not part of this stack; the apps only need the settings to start.
+  HETZNER_S3_ENDPOINT: http://storage.invalid
+  HETZNER_S3_REGION: dev
+  HETZNER_S3_ACCESS_KEY_ID: dev
+  HETZNER_S3_SECRET_ACCESS_KEY: dev
+  HETZNER_QUARANTINE_BUCKET: dev-quarantine
+  HETZNER_SOURCES_BUCKET: dev-sources
+  # AI is off unless you bring a key: OPENROUTER_API_KEY=... AI_DISABLED=false in .env.
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-dev}
+  OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+  AI_DISABLED: ${AI_DISABLED:-true}
+  # Email is not sent: Scaleway rejects these, so verify accounts by hand (CONTRIBUTING.md).
+  SCW_PROJECT_ID: dev
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg18
+    environment:
+      POSTGRES_USER: nunio
+      POSTGRES_PASSWORD: nunio
+      POSTGRES_DB: nunio
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nunio -d nunio"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  temporal:
+    image: temporalio/temporal:1.10.0
+    # The image runs as uid 1000, which cannot write to a fresh named volume.
+    user: root
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/data/temporal.db"]
+    ports:
+      - "127.0.0.1:8233:8233" # Web UI
+    volumes:
+      - temporal-data:/data
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "localhost:7233"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    <<: *app
+    command: ["sh", "/usr/local/bin/dev-migrate.sh"]
+    environment:
+      DATABASE_URL: postgresql://nunio:nunio@db:5432/nunio
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    working_dir: /app/apps/api
+    command: ["node", "--import", "tsx", "src/dev.ts"]
+    environment:
+      <<: *backend
+      PORT: "3001"
+      BETTER_AUTH_URL: http://api.nunio.test:3001
+      BETTER_AUTH_SECRET: dev-only-secret-that-is-long-enough
+      COOKIE_DOMAIN: nunio.test
+      SCW_SECRET_KEY: dev
+      AUTH_EMAIL_FROM: accounts@nunio.test
+    ports:
+      - "127.0.0.1:3001:3001"
+    networks:
+      default:
+        aliases:
+          - api.nunio.test
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
+
+  web:
+    <<: *app
+    working_dir: /app/apps/web
+    command: ["node_modules/.bin/next", "start", "--port", "3000"]
+    environment:
+      <<: *origins
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  worker:
+    <<: *app
+    working_dir: /app
+    command: ["node", "apps/worker/dist/index.js"]
+    environment:
+      <<: *backend
+      NOTIFY_SCW_SECRET_KEY: dev
+      NOTIFY_EMAIL_FROM: notifications@nunio.test
+      VAPID_PRIVATE_KEY: dev-vapid-private-key
+      VAPID_SUBJECT: mailto:dev@nunio.test
+      # There is no parser here; only Source ingestion would call it.
+      PARSER_HOSTPORT: parser.invalid:10000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  temporal-data:
