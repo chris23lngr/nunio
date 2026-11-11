@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { Share, SquarePen, Trash } from "lucide-react"
-import { expect, userEvent, waitFor, within } from "storybook/test"
+import { expect, fn, userEvent, waitFor, within } from "storybook/test"
 import { Button } from "../button/button.js"
 import {
   DropdownMenu,
@@ -16,6 +16,7 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
+  DropdownMenuSwitchItem,
   DropdownMenuTrigger,
 } from "./dropdown-menu.js"
 
@@ -261,6 +262,156 @@ export const Checkboxes: Story = {
     const disabled = items.getByRole("menuitemcheckbox", { name: "Option 3" })
     disabled.click()
     await expect(disabled).toHaveAttribute("aria-checked", "false")
+  },
+}
+
+const onCourseChange = fn()
+
+export const SwitchItems: Story = {
+  render: () => (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<Button variant="outline" className="w-62" />}
+      >
+        Aktionen
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Kurse</DropdownMenuLabel>
+          <DropdownMenuSwitchItem
+            defaultChecked
+            onCheckedChange={onCourseChange}
+          >
+            Analysis I
+          </DropdownMenuSwitchItem>
+          <DropdownMenuSwitchItem defaultChecked>
+            Lineare Algebra
+          </DropdownMenuSwitchItem>
+          <DropdownMenuSwitchItem>Statistik</DropdownMenuSwitchItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem>Kurse verwalten</DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ),
+  play: async ({ canvasElement }) => {
+    onCourseChange.mockClear()
+    const { trigger, menu, items } = await openMenu(canvasElement)
+    const analysis = items.getByRole("menuitemcheckbox", { name: "Analysis I" })
+    const statistik = items.getByRole("menuitemcheckbox", { name: "Statistik" })
+    await expect(
+      items
+        .getAllByRole("menuitemcheckbox")
+        .map((item) => item.getAttribute("aria-checked")),
+    ).toEqual(["true", "true", "false"])
+
+    // Pointer toggles and keeps the menu open, like DropdownMenuCheckboxItem.
+    await userEvent.click(analysis)
+    await expect(analysis).toHaveAttribute("aria-checked", "false")
+    await expect(onCourseChange).toHaveBeenCalledTimes(1)
+    await expect(onCourseChange.mock.calls[0]?.[0]).toBe(false)
+    await expect(menu).toBeVisible()
+
+    // Keyboard: Arrow to the item, Enter and Space toggle it.
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}")
+    await waitFor(() => expect(statistik).toHaveFocus())
+    await userEvent.keyboard("{Enter}")
+    await expect(statistik).toHaveAttribute("aria-checked", "true")
+    await userEvent.keyboard(" ")
+    await expect(statistik).toHaveAttribute("aria-checked", "false")
+    await expect(menu).toBeVisible()
+
+    await userEvent.keyboard("{Escape}")
+    await waitFor(() =>
+      expect(within(document.body).queryByRole("menu")).toBeNull(),
+    )
+    await expect(trigger).toHaveFocus()
+  },
+}
+
+function getSwitch(item: HTMLElement) {
+  const track = item.querySelector<HTMLElement>(
+    "[data-slot=dropdown-menu-switch-item-indicator]",
+  )
+  const thumb = track?.firstElementChild
+  if (!track || !thumb) throw new Error("Missing switch indicator")
+  return { track, thumb }
+}
+
+async function expectSwitch(item: HTMLElement, on: boolean) {
+  const { track, thumb } = getSwitch(item)
+  const primary = tokenColor("--primary-500")
+  const white = tokenColor("--color-white")
+  // Colors and thumb position transition, so wait for the settled state.
+  await waitFor(() => {
+    const trackStyle = getComputedStyle(track)
+    expect(trackStyle.backgroundColor).toBe(on ? primary : white)
+    if (on) expect(trackStyle.outlineColor).toBe(primary)
+    else expect(trackStyle.outlineColor).not.toBe(primary)
+    expect(getComputedStyle(thumb).backgroundColor).toBe(
+      on ? white : tokenColor("--base-500"),
+    )
+    const t = track.getBoundingClientRect()
+    const th = thumb.getBoundingClientRect()
+    expect(th.top - t.top).toBeCloseTo(t.bottom - th.bottom)
+    if (on) expect(t.right - th.right).toBeCloseTo(2)
+    else expect(th.left - t.left).toBeCloseTo(2)
+  })
+}
+
+export const SwitchItemIndicator: Story = {
+  render: SwitchItems.render,
+  play: async ({ canvasElement }) => {
+    const { menu, items } = await openMenu(canvasElement)
+    const label = items.getByText("Kurse")
+    await expect(getComputedStyle(label).fontSize).toBe("12px")
+    await expect(getComputedStyle(label).lineHeight).toBe("18px")
+    await expect(getComputedStyle(label).color).toBe(tokenColor("--base-500"))
+    const statistik = items.getByRole("menuitemcheckbox", { name: "Statistik" })
+    const style = getComputedStyle(statistik)
+    await expect(statistik.getBoundingClientRect().height).toBe(28)
+    await expect([style.paddingLeft, style.paddingRight, style.gap]).toEqual([
+      "6px",
+      "6px",
+      "8px",
+    ])
+    await expect(style.borderRadius).toBe("6px")
+    await expect(style.fontSize).toBe("14px")
+    await expect(style.fontWeight).toBe("500")
+    await expect(style.color).toBe(tokenColor("--base-700"))
+
+    const { track, thumb } = getSwitch(statistik)
+    await expect(track).toHaveAttribute("aria-hidden", "true")
+    await expect(track.getBoundingClientRect().width).toBe(22)
+    await expect(track.getBoundingClientRect().height).toBe(13)
+    await expect(thumb.getBoundingClientRect().width).toBe(10)
+    await expect(thumb.getBoundingClientRect().height).toBe(10)
+    await expect(getComputedStyle(track).borderRadius).not.toBe("0px")
+    await expect(getComputedStyle(track).outlineWidth).toBe("1px")
+    await expect(getComputedStyle(track).boxShadow).toContain(
+      "rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+    )
+    // Trailing: the switch sits at the row's end, inside its 6px padding.
+    await expect(
+      statistik.getBoundingClientRect().right -
+        track.getBoundingClientRect().right,
+    ).toBe(6)
+    // The row is the only control: nothing focusable inside it.
+    await expect(
+      statistik.querySelector("button, input, [tabindex]"),
+    ).toBeNull()
+
+    await expectSwitch(
+      items.getByRole("menuitemcheckbox", { name: "Analysis I" }),
+      true,
+    )
+    await expectSwitch(statistik, false)
+    await userEvent.click(statistik)
+    await expect(statistik).toHaveAttribute("aria-checked", "true")
+    await expectSwitch(statistik, true)
+    await expect(menu).toBeVisible()
   },
 }
 

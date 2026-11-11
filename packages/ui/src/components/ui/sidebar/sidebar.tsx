@@ -25,7 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../tooltip/tooltip.js"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
-const SIDEBAR_WIDTH = "20rem"
+const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
@@ -170,7 +170,7 @@ function Sidebar({
       <div
         data-slot="sidebar"
         className={cn(
-          "bg-base-50 text-base-800 flex h-full w-(--sidebar-width) flex-col pt-4.5 pb-8",
+          "bg-base-50 text-base-800 flex h-full w-(--sidebar-width) flex-col pt-3.5 pb-8",
           className,
         )}
         {...props}
@@ -200,7 +200,7 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col pt-4.5 pb-8">
+          <div className="flex h-full w-full flex-col pt-3.5 pb-8">
             {children}
           </div>
         </SheetContent>
@@ -245,7 +245,7 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="bg-base-50 group-data-[variant=floating]:ring-base-200 flex size-full flex-col pt-4.5 pb-8 group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1"
+          className="bg-base-50 group-data-[variant=floating]:ring-base-200 flex size-full flex-col pt-3.5 pb-8 group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1"
         >
           {children}
         </div>
@@ -348,10 +348,7 @@ function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-footer"
       data-sidebar="footer"
-      className={cn(
-        "flex flex-col gap-1 px-2 [&_[data-slot=sidebar-menu]]:gap-1.5",
-        className,
-      )}
+      className={cn("flex flex-col gap-1 px-2", className)}
       {...props}
     />
   )

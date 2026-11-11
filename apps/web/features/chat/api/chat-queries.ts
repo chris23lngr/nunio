@@ -1,12 +1,15 @@
 import type { paths } from "@nunio/api-client";
 import { queryOptions } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
+import type { CourseColor } from "@/features/courses/api/course-queries";
 import { createApiClient } from "@/lib/api-client";
 
 export type Chat =
   paths["/api/me/chats/{id}"]["get"]["responses"][200]["content"]["application/json"];
 export type Message = Chat["messages"][number];
 export type Course = Chat["courses"][number];
+/** A Course the student can chat about, with its color. */
+export type CourseOption = Course & { color: CourseColor };
 
 export type Turn =
   paths["/api/me/chats/{id}/messages"]["post"]["responses"][200]["content"]["application/json"];
@@ -80,14 +83,21 @@ export function chatCourseQueries(apiOrigin: string) {
   return queryOptions({
     queryKey: [apiOrigin, "chat-courses"],
     queryFn: async ({ signal }) => {
-      const result = await createApiClient(apiOrigin).GET("/api/me/review", {
+      const result = await createApiClient(apiOrigin).GET("/api/me/courses", {
         signal,
       });
       if (!result.data)
         throw new Error("Deine Kurse konnten nicht geladen werden.");
       return result.data.courses
         .filter((course) => course.status === "accepted")
-        .map(({ id, title, code }) => ({ id, title, code }));
+        .map(
+          ({ id, title, code, color }): CourseOption => ({
+            id,
+            title,
+            code,
+            color,
+          }),
+        );
     },
   });
 }

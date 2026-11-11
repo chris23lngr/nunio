@@ -1,5 +1,6 @@
 "use client";
 
+import { Avatar, AvatarFallback } from "@nunio/ui/components/avatar/avatar";
 import { Button } from "@nunio/ui/components/button/button";
 import {
   DropdownMenu,
@@ -23,12 +24,9 @@ function Initials({ name, large = false }: { name: string; large?: boolean }) {
   const initials =
     `${words[0]?.[0] ?? ""}${words.length > 1 ? (words.at(-1)?.[0] ?? "") : ""}`.toLocaleUpperCase();
   return (
-    <span
-      aria-hidden="true"
-      className={`flex shrink-0 items-center justify-center rounded-md bg-primary-100 font-medium text-primary-600 ${large ? "size-8 text-sm" : "size-6 text-xs"}`}
-    >
-      {initials}
-    </span>
+    <Avatar aria-hidden="true" size={large ? "lg" : "default"}>
+      <AvatarFallback>{initials}</AvatarFallback>
+    </Avatar>
   );
 }
 

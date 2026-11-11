@@ -1,6 +1,7 @@
+import { SidebarProvider } from "@nunio/ui/components/sidebar/sidebar";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { SourcesScreen } from "@/features/sources/sources-screen";
 import { api } from "@/test/api";
 import { TestProviders } from "@/test/providers";
@@ -9,20 +10,31 @@ import { ChatScreen } from "./chat-screen";
 const navigation = vi.hoisted(() => ({ params: new URLSearchParams() }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => navigation.params,
+  usePathname: () => "/chat",
 }));
 const course = {
   id: "course-1",
   title: "Microeconomics",
   code: "MICD",
   status: "accepted",
+  color: "rose",
 };
 beforeEach(() => {
   navigation.params = new URLSearchParams();
   window.history.replaceState(null, "", "/chat");
-  api.route("GET", "/api/me/review", () =>
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+  api.route("GET", "/api/me/courses", () =>
     Response.json({ courses: [course] }),
   );
 });
+afterEach(() => vi.unstubAllGlobals());
 function committedResponse(data: unknown) {
   return new Response(
     `data: ${JSON.stringify({ type: "data-committed", data })}\n\ndata: [DONE]\n\n`,
@@ -33,14 +45,20 @@ function mount(chatId: string | null = null) {
   navigation.params = new URLSearchParams(chatId ? { id: chatId } : {});
   return render(
     <TestProviders>
-      <ChatScreen apiOrigin={api.origin} userName="Justus Schuhmacher" />
+      <SidebarProvider>
+        <ChatScreen apiOrigin={api.origin} userName="Justus Schuhmacher" />
+      </SidebarProvider>
     </TestProviders>,
   );
+}
+/** Waits until the reopened Chat has loaded, so it can be sent to. */
+async function chatLoaded() {
+  await screen.findByRole("textbox", { name: "Nachricht" });
+  await waitFor(() => expect(screen.queryByText("Chat laden …")).toBeNull());
 }
 test("a suggested prompt populates the composer without sending", async () => {
   mount();
   expect(screen.getByRole("button", { name: /Modell/ })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Neuer Chat" })).toBeTruthy();
   const user = userEvent.setup();
   const prompt = screen.getByRole("button", {
     name: "Wie sieht mein Lernplan für heute aus?",
@@ -66,7 +84,7 @@ test("sending clears the composer before the response and restores a failed draf
   api.route("POST", "/api/me/chats/chat-1/messages/stream", () => response);
   mount("chat-1");
   const user = userEvent.setup();
-  await screen.findByRole("heading", { name: "Neuer Chat" });
+  await chatLoaded();
   const textarea = screen.getByRole("textbox", {
     name: "Nachricht",
   }) as HTMLTextAreaElement;
@@ -161,7 +179,7 @@ test("first send fixes the selected courses and displays the persisted turn", as
   });
   mount();
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Kurs auswählen" }));
+  await user.click(screen.getByRole("button", { name: "Wissen verwalten" }));
   await user.click(
     await screen.findByRole("menuitemcheckbox", { name: /Microeconomics/ }),
   );
@@ -173,13 +191,11 @@ test("first send fixes the selected courses and displays the persisted turn", as
   await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
   await screen.findByRole("heading", { name: "Grundlagen" });
   expect(selection).toEqual({ courseIds: ["course-1"], sourceIds: [] });
-  expect(
-    screen.getByRole("heading", { name: "Erkläre die Grundlagen" }),
-  ).toBeTruthy();
+  expect(screen.getByText("Erkläre die Grundlagen")).toBeTruthy();
   expect(
     (
       screen.getByRole("button", {
-        name: "Kurs auswählen",
+        name: "Wissen verwalten, 1 Quelle ausgewählt",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -232,7 +248,7 @@ test("reopening a Chat restores its locked selection, title, citations and remov
     }),
   );
   mount("chat-1");
-  await screen.findByRole("heading", { name: "Wann ist die Klausur?" });
+  await screen.findByText("Wann ist die Klausur?");
   await userEvent.hover(
     await screen.findByRole("button", {
       name: "Quelle S1: Handbuch.pdf, Seite 2",
@@ -249,11 +265,10 @@ test("reopening a Chat restores its locked selection, title, citations and remov
   const link = await screen.findByRole("link", { name: "Quelle öffnen" });
   expect(link.getAttribute("href")).toBe("/sources/source-1?page=2");
 
-  expect(screen.getByText("Microeconomics")).toBeTruthy();
   expect(
     (
       screen.getByRole("button", {
-        name: "Kurs auswählen",
+        name: "Wissen verwalten, 1 Quelle ausgewählt",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -362,7 +377,9 @@ test("deleting a Source clears cached Chat answers and reloads their withdrawn s
   render(
     <TestProviders>
       <SourcesScreen apiOrigin={api.origin} />
-      <ChatScreen apiOrigin={api.origin} userName="Justus" />
+      <SidebarProvider>
+        <ChatScreen apiOrigin={api.origin} userName="Justus" />
+      </SidebarProvider>
     </TestProviders>,
   );
   await screen.findByText("Privater Inhalt aus dem Handbuch.");
@@ -429,7 +446,7 @@ test("renders partial Markdown before accepting the committed answer", async () 
       ),
   );
   mount("chat-1");
-  await screen.findByRole("heading", { name: "Neuer Chat" });
+  await chatLoaded();
   const user = userEvent.setup();
   await user.type(
     screen.getByRole("textbox", { name: "Nachricht" }),
@@ -503,7 +520,7 @@ test("a saved answer keeps the element it streamed into, and the composer stays 
     );
   });
   mount("chat-1");
-  await screen.findByRole("heading", { name: "Neuer Chat" });
+  await chatLoaded();
   const user = userEvent.setup();
   const textarea = screen.getByRole("textbox", {
     name: "Nachricht",
@@ -519,12 +536,11 @@ test("a saved answer keeps the element it streamed into, and the composer stays 
     await user.type(textarea, "Nächste Frage{Enter}");
     expect(textarea.value).toBe("Nächste Frage");
     expect(
-      (
-        screen.getByRole("button", {
-          name: "Nachricht senden",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
+      screen.queryByRole("button", { name: "Nachricht senden" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Antwort stoppen" }),
+    ).toBeTruthy();
   } finally {
     finish();
   }
@@ -572,7 +588,7 @@ test("the waiting status stays until the first word when nunio does not reason",
       ),
   );
   mount("chat-1");
-  await screen.findByRole("heading", { name: "Neuer Chat" });
+  await chatLoaded();
   const user = userEvent.setup();
   await user.type(
     screen.getByRole("textbox", { name: "Nachricht" }),
@@ -662,7 +678,7 @@ test("one answer element carries the waiting line, open reasoning and text until
     );
   });
   mount("chat-1");
-  await screen.findByRole("heading", { name: "Neuer Chat" });
+  await chatLoaded();
   const user = userEvent.setup();
   await user.type(
     screen.getByRole("textbox", { name: "Nachricht" }),
@@ -726,7 +742,7 @@ test("an interrupted stream restores the draft and does not save partial text", 
       ),
   );
   mount("chat-1");
-  await screen.findByRole("heading", { name: "Neuer Chat" });
+  await chatLoaded();
   const user = userEvent.setup();
   const textarea = screen.getByRole("textbox", {
     name: "Nachricht",
@@ -776,7 +792,7 @@ test("Stop cancels a pending answer and restores the submitted draft", async () 
       ),
   );
   mount("chat-1");
-  await screen.findByRole("heading", { name: "Neuer Chat" });
+  await chatLoaded();
   const user = userEvent.setup();
   const textarea = screen.getByRole("textbox", {
     name: "Nachricht",
@@ -837,7 +853,7 @@ test("Stop keeps what was typed meanwhile, after the stopped question", async ()
     () => stream.response,
   );
   mount("chat-1");
-  await screen.findByRole("heading", { name: "Neuer Chat" });
+  await chatLoaded();
   const user = userEvent.setup();
   const textarea = screen.getByRole("textbox", {
     name: "Nachricht",
@@ -912,7 +928,7 @@ test("a turn saved before Stop took effect stays in the Chat, not in the compose
     return stream.response;
   });
   mount("chat-1");
-  await screen.findByRole("heading", { name: "Neuer Chat" });
+  await chatLoaded();
   const user = userEvent.setup();
   const textarea = screen.getByRole("textbox", {
     name: "Nachricht",
@@ -980,7 +996,9 @@ test("deleting a Source while an answer streams withdraws earlier answers and ke
   render(
     <TestProviders>
       <SourcesScreen apiOrigin={api.origin} />
-      <ChatScreen apiOrigin={api.origin} userName="Justus" />
+      <SidebarProvider>
+        <ChatScreen apiOrigin={api.origin} userName="Justus" />
+      </SidebarProvider>
     </TestProviders>,
   );
   await screen.findByText("Privater Inhalt aus dem Handbuch.");
