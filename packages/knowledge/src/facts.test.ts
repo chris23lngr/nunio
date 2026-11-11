@@ -1863,3 +1863,208 @@ it("refuses to reject a Course the student created; only one nunio proposed can 
     expect.objectContaining({ id, status: "accepted" }),
   ]);
 });
+
+it("assigns lecture decks to a candidate Course by ID without grounding its name", async () => {
+  const p = await student();
+  const first = await readySource(p, "analysis-01.pdf", [
+    { page: 1, text: analysis.quote },
+  ]);
+  await facts.extract(p, first, {
+    extractor: scripted({ ...empty, courses: [analysis] }),
+    delegation,
+  });
+  const existing = (await facts.review(p)).courses[0]!;
+  const second = await readySource(p, "analysis-02.pdf", [
+    { page: 1, text: "gleichmäßige Konvergenz" },
+  ]);
+  const extractor = scripted({
+    ...empty,
+    courses: [
+      {
+        ...analysis,
+        existingCourseId: existing.id,
+        title: "Different lecture title",
+        page: 0,
+        quote: "",
+      },
+    ],
+    facts: [
+      {
+        course: existing.id,
+        type: "topic",
+        key: "gleichmäßige Konvergenz",
+        value: "gleichmäßige Konvergenz",
+        page: 1,
+        quote: "gleichmäßige Konvergenz",
+        uncertainty: null,
+      },
+    ],
+  });
+  const extract = extractor.extract;
+  extractor.extract = async (window, options) => {
+    expect(options.context).toEqual({
+      title: "analysis-02.pdf",
+      courses: [
+        { id: existing.id, title: analysis.title, code: analysis.code },
+      ],
+    });
+    return extract(window, options);
+  };
+  expect(
+    await facts.extract(p, second, { extractor, delegation }),
+  ).toMatchObject({ status: "done", dropped: 0 });
+  const review = await facts.review(p);
+  expect(review.courses).toHaveLength(1);
+  expect(review.courses[0]?.facts).toMatchObject([
+    { type: "topic", value: "gleichmäßige Konvergenz" },
+  ]);
+});
+
+it("never trusts a foreign candidate ID without grounding a new proposal", async () => {
+  const p = await student();
+  const other = await student();
+  const foreignSource = await readySource(other, "foreign.pdf", [
+    { page: 1, text: analysis.quote },
+  ]);
+  await facts.extract(other, foreignSource, {
+    extractor: scripted({ ...empty, courses: [analysis] }),
+    delegation,
+  });
+  const foreign = (await facts.review(other)).courses[0]!;
+  const source = await readySource(p, "lecture.pdf", [
+    { page: 1, text: "Konvergenz" },
+  ]);
+  const result = await facts.extract(p, source, {
+    extractor: scripted({
+      ...empty,
+      courses: [
+        { ...analysis, existingCourseId: foreign.id, quote: "", page: 0 },
+      ],
+      facts: [
+        {
+          course: foreign.id,
+          type: "topic",
+          key: "Konvergenz",
+          value: "Konvergenz",
+          page: 1,
+          quote: "Konvergenz",
+          uncertainty: null,
+        },
+      ],
+    }),
+    delegation,
+  });
+  expect(result).toMatchObject({ status: "done", dropped: 2 });
+  expect((await facts.review(p)).courses).toEqual([]);
+});
+
+it("offers only this student's eligible current-Semester Courses to automatic extraction", async () => {
+  const p = await student();
+  const other = await student();
+  const eligible = randomUUID();
+  await admin.course.createMany({
+    data: [
+      {
+        id: eligible,
+        studentId: p.studentId,
+        title: "Current",
+        matchTitle: "current",
+        semester: "2026-ws",
+        color: "blue",
+        status: "accepted",
+      },
+      {
+        id: randomUUID(),
+        studentId: p.studentId,
+        title: "Archived",
+        matchTitle: "archived",
+        semester: "2026-ws",
+        color: "blue",
+        archivedAt: now,
+      },
+      {
+        id: randomUUID(),
+        studentId: p.studentId,
+        title: "Rejected",
+        matchTitle: "rejected",
+        semester: "2026-ws",
+        color: "blue",
+        status: "rejected",
+      },
+      {
+        id: randomUUID(),
+        studentId: p.studentId,
+        title: "Earlier",
+        matchTitle: "earlier",
+        semester: "2026-ss",
+        color: "blue",
+      },
+      {
+        id: randomUUID(),
+        studentId: p.studentId,
+        title: "Merged",
+        matchTitle: "merged",
+        semester: "2026-ws",
+        color: "blue",
+        status: "merged",
+        mergedIntoId: eligible,
+      },
+      {
+        id: randomUUID(),
+        studentId: other.studentId,
+        title: "Foreign",
+        matchTitle: "foreign",
+        semester: "2026-ws",
+        color: "blue",
+      },
+    ],
+  });
+  const source = await readySource(p, "deck.pdf", [
+    { page: 1, text: "Lecture" },
+  ]);
+  const extractor = scripted(empty);
+  const extract = extractor.extract;
+  extractor.extract = async (window, options) => {
+    expect(options.context?.courses).toEqual([
+      { id: eligible, title: "Current", code: null },
+    ]);
+    return extract(window, options);
+  };
+  expect(
+    await facts.extract(p, source, { extractor, delegation }),
+  ).toMatchObject({ status: "done" });
+});
+
+it("treats an unknown Course ID as a grounded proposal, keeping its Topics in this Source", async () => {
+  const p = await student();
+  const source = await readySource(p, "deck.pdf", [
+    { page: 1, text: `${analysis.quote}\nKonvergenz` },
+  ]);
+  expect(
+    await facts.extract(p, source, {
+      extractor: scripted({
+        ...empty,
+        courses: [{ ...analysis, existingCourseId: "invented-id" }],
+        facts: [
+          {
+            course: "invented-id",
+            type: "topic",
+            key: "Konvergenz",
+            value: "Konvergenz",
+            page: 1,
+            quote: "Konvergenz",
+            uncertainty: null,
+          },
+        ],
+      }),
+      delegation,
+    }),
+  ).toMatchObject({ status: "done", dropped: 0 });
+  expect((await facts.review(p)).courses).toMatchObject([
+    {
+      title: "Analysis I",
+      status: "proposed",
+      facts: [{ value: "Konvergenz" }],
+    },
+  ]);
+});
