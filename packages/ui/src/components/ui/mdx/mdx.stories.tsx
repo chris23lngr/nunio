@@ -26,8 +26,8 @@ export const Typography: Story = {
     const canvas = within(canvasElement)
     const h2 = canvas.getByRole("heading", { name: "Die Grundlage" })
     const paragraph = canvas.getByText("Un système pour apprendre.")
-    await expect(getComputedStyle(paragraph).fontSize).toBe("16px")
-    await expect(getComputedStyle(paragraph).lineHeight).toBe("28px")
+    await expect(getComputedStyle(paragraph).fontSize).toBe("15px")
+    await expect(getComputedStyle(paragraph).lineHeight).toBe("26px")
     await expect(getComputedStyle(h2).fontSize).toBe("20px")
     await expect(getComputedStyle(h2).marginTop).toBe("32px")
     await expect(
