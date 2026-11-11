@@ -5633,6 +5633,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
                   "text": {
                     "type": "string",
                     "minLength": 1,
@@ -5640,6 +5644,7 @@
                   }
                 },
                 "required": [
+                  "id",
                   "text"
                 ],
                 "additionalProperties": false
@@ -5649,7 +5654,7 @@
         },
         "responses": {
           "200": {
-            "description": "AI SDK UI message SSE: provisional text and transient data-reasoning, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
+            "description": "AI SDK UI message SSE: a start chunk carrying the answer's ID, reasoning and provisional text parts, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -5678,6 +5683,24 @@
           },
           "404": {
             "description": "The Chat is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The question ID is already used.",
             "content": {
               "application/json": {
                 "schema": {

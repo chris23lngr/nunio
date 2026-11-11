@@ -111,6 +111,8 @@ export function createChats({
           streaming: boolean,
         ) => void | Promise<void>;
         onText?: (text: string) => void | Promise<void>;
+        /** IDs for the recorded question and answer, when the caller already shows them. */
+        ids?: { question: string; answer: string };
       } = {},
     ) {
       options.signal?.throwIfAborted();
@@ -157,8 +159,8 @@ export function createChats({
           ),
         ),
       ];
-      const id = randomUUID();
-      const questionId = randomUUID();
+      const id = options.ids?.answer ?? randomUUID();
+      const questionId = options.ids?.question ?? randomUUID();
       const createdAt = new Date();
       const recorded = await withOwner(db, p, async (tx, studentId) => {
         if (!(await tx.chat.findUnique({ where: { id: chatId } })))
