@@ -6,7 +6,7 @@ import { createModels, createScanReader } from "../dist/index.js";
 
 // Synthetic fixture rendered by Poppler: "Prüfung am 12. März um 9 Uhr in Raum H1."
 const image = await readFile(
-  new URL("./fixtures/german-scan.png", import.meta.url),
+  new URL("./fixtures/german-scan.jpg", import.meta.url),
 );
 const reader = createScanReader(
   createModels({
@@ -14,8 +14,9 @@ const reader = createScanReader(
     baseURL: process.env.OPENROUTER_BASE_URL!,
   }),
 );
-const estimate = reader.estimateMicroUsd(image);
+const estimate = reader.estimateMicroUsd(image, "");
 const result = await reader.read(image, {
+  text: "",
   signal: AbortSignal.timeout(120_000),
 });
 const checks = {
