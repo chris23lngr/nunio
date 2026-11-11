@@ -20,7 +20,7 @@ import {
 import { createPool, createPrismaClient } from "@nunio/db";
 import { startTestDatabase } from "@nunio/db/testing";
 import { createDelegation, principal } from "@nunio/delegation";
-import { createSourceKeys } from "@nunio/keys";
+import { createSourceKeys, decryptSourceText } from "@nunio/keys";
 import { createFacts, createSources } from "@nunio/knowledge";
 import { createParserServer } from "@nunio/parser/server";
 import { parseSource } from "../src/source-activities.ts";
@@ -242,9 +242,9 @@ async function evaluate(
       _sum: { usedMicroUsd: true, heldMicroUsd: true },
     });
     const remaining =
-      4_900_000 -
-      (spent._sum.usedMicroUsd ?? 0) -
-      (spent._sum.heldMicroUsd ?? 0);
+      3_900_000 -
+      Number(spent._sum.usedMicroUsd ?? 0) -
+      Number(spent._sum.heldMicroUsd ?? 0);
     if (remaining <= 0) throw new Error("Eval budget exhausted");
     await admin.allowance.create({
       data: { studentId, limitMicroUsd: Math.min(500_000, remaining) },
@@ -341,10 +341,33 @@ async function evaluate(
             f.type === "exam_logistics" && norm(f.value).includes(l.contains),
         ) ?? false,
   }));
+  const sourceRow = await admin.source.findUniqueOrThrow({
+    where: { id: upload.source.id },
+  });
+  const sourceKey = keys.unwrap(sourceRow.id, {
+    version: sourceRow.keyVersion!,
+    ciphertext: sourceRow.keyCiphertext!,
+  });
+  const figureFacts = (
+    await admin.factExtraction.findMany({
+      where: { sourceId: sourceRow.id },
+      include: { fact: true },
+    })
+  ).filter((row) => {
+    const wording = JSON.parse(
+      decryptSourceText(sourceKey, sourceRow.id, row.ciphertext),
+    ) as { uncertainty: string | null };
+    return wording.uncertainty?.includes(
+      "aus einer Abbildungsbeschreibung abgeleitet",
+    );
+  });
+  sourceKey.fill(0);
   const result = {
     id: document.id,
     assignment: {
-      boundCourseId: (await sources.get(p, upload.source.id))?.courseId ?? null,
+      boundCourseId:
+        (await sources.list(p)).find((source) => source.id === upload.source.id)
+          ?.courseId ?? null,
       proposals: courses.filter((c) => c.status === "proposed").length,
       itemCourseIds: courses.flatMap((c) =>
         [...c.obligations, ...c.facts]
@@ -359,34 +382,8 @@ async function evaluate(
       ),
     },
     figureOnly: {
-      facts: courses
-        .flatMap((c) => c.facts)
-        .filter((f) =>
-          f.values.some(
-            (v) =>
-              v.uncertainty?.includes(
-                "aus einer Abbildungsbeschreibung abgeleitet",
-              ) &&
-              v.citations.some(
-                (citation) => citation.sourceId === upload.source.id,
-              ),
-          ),
-        ).length,
-      topics: courses
-        .flatMap((c) => c.facts)
-        .filter(
-          (f) =>
-            f.type === "topic" &&
-            f.values.some(
-              (v) =>
-                v.uncertainty?.includes(
-                  "aus einer Abbildungsbeschreibung abgeleitet",
-                ) &&
-                v.citations.some(
-                  (citation) => citation.sourceId === upload.source.id,
-                ),
-            ),
-        ).length,
+      facts: figureFacts.length,
+      topics: figureFacts.filter((f) => f.fact.type === "topic").length,
     },
     run,
     language: document.language,
@@ -516,16 +513,7 @@ async function evaluate(
       label: o.label ? o.label.match[0] : null,
     })),
   };
-  console.log(
-    JSON.stringify({
-      id: result.id,
-      run,
-      extraction: result.extraction,
-      obligations: result.obligations,
-      deadlines: result.deadlines,
-      seconds: (result.reviewableAfterMs ?? 0) / 1000,
-    }),
-  );
+  console.log(JSON.stringify(result));
   return result;
 }
 
