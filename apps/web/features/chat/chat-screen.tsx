@@ -15,7 +15,6 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from "@nunio/ui/components/input-group/input-group";
-import { Message, MessageContent } from "@nunio/ui/components/message/message";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -58,6 +57,21 @@ import { CoursePicker } from "./components/course-picker";
 function beforeQuestion(messages: ChatUIMessage[], questionId: string) {
   const index = messages.findIndex((message) => message.id === questionId);
   return index === -1 ? messages : messages.slice(0, index);
+}
+
+const waitingAnswer: ChatUIMessage = {
+  id: "waiting",
+  role: "assistant",
+  parts: [],
+};
+
+/** An answer is keyed by its question, so it keeps one element from waiting to saved. */
+function itemKey(messages: ChatUIMessage[], index: number) {
+  const message = messages[index]!;
+  const before = messages[index - 1];
+  return message.role === "assistant" && before?.role === "user"
+    ? `answer-to-${before.id}`
+    : message.id;
 }
 
 const prompts = [
@@ -234,6 +248,11 @@ export function ChatScreen({
     : "Neuer Chat";
   const alertMessage = error ?? chat.error?.message;
   const started = !!id || messages.length > 0;
+  // Until the stream starts the answer, a waiting answer stands in under the same key.
+  const shown =
+    busy && last?.role === "user" ? [...messages, waitingAnswer] : messages;
+  const writing =
+    busy && last?.role === "assistant" && messageText(last) !== "";
 
   return (
     <main
@@ -301,32 +320,27 @@ export function ChatScreen({
             ) : (
               <MessageScrollerContent className="mx-auto w-full max-w-[832px] gap-10 pt-6 pb-8">
                 {id && chat.isPending && <p role="status">Chat laden …</p>}
-                {messages.map((message) => (
-                  <MessageScrollerItem
-                    key={message.id}
-                    messageId={message.id}
-                    scrollAnchor={message.role === "user"}
-                  >
-                    <ChatMessage message={message} />
-                  </MessageScrollerItem>
-                ))}
-                {busy && last?.role === "user" && (
-                  <MessageScrollerItem messageId="waiting">
-                    <Message aria-label="Laufende Antwort">
-                      <MessageContent>
-                        <p role="status" className="text-sm text-base-500">
-                          nunio antwortet …
-                        </p>
-                      </MessageContent>
-                    </Message>
-                  </MessageScrollerItem>
-                )}
+                {shown.map((message, index) => {
+                  const key = itemKey(shown, index);
+                  return (
+                    <MessageScrollerItem
+                      key={key}
+                      messageId={key}
+                      scrollAnchor={message.role === "user"}
+                    >
+                      <ChatMessage message={message} />
+                    </MessageScrollerItem>
+                  );
+                })}
               </MessageScrollerContent>
             )}
           </MessageScrollerViewport>
           <MessageScrollerButton aria-label="Zur neuesten Nachricht" />
         </MessageScroller>
       </MessageScrollerProvider>
+      <p role="status" className="sr-only">
+        {writing ? "Antwort wird geschrieben …" : ""}
+      </p>
       <form
         className="mx-auto w-full max-w-[688px] shrink-0 px-4 pt-4 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-[max(24px,env(safe-area-inset-bottom))]"
         aria-label="Nachricht verfassen"

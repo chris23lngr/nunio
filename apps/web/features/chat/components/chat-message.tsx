@@ -36,9 +36,13 @@ export const ChatMessage = memo(function ChatMessage({
   const [copied, setCopied] = useState("");
   const student = message.role === "user";
   const saved = message.metadata;
+  // Only messages sent in this visit enter: a question slides in, an answer fades in.
+  const [entering] = useState(!saved);
   const withdrawn = !!saved?.withdrawn;
   const text = messageText(message);
   const reasoning = message.parts.find((part) => part.type === "reasoning");
+  // An answer with nothing streamed yet shows the waiting line.
+  const waiting = !student && !saved && !text && !reasoning?.text;
   const citations = saved?.citations;
   const references = useMemo(
     () => sourceReferences(citations ?? []),
@@ -47,7 +51,15 @@ export const ChatMessage = memo(function ChatMessage({
   return (
     <MessageRoot
       role="article"
+      aria-busy={!student && !saved ? true : undefined}
       align={student ? "end" : "start"}
+      className={
+        entering
+          ? student
+            ? "transition-[opacity,translate] duration-200 ease-out starting:translate-y-2 starting:opacity-0 motion-reduce:starting:translate-y-0"
+            : "transition-opacity duration-200 ease-out starting:opacity-0"
+          : undefined
+      }
       aria-label={
         student
           ? "Deine Nachricht"
@@ -57,9 +69,12 @@ export const ChatMessage = memo(function ChatMessage({
       }
     >
       <MessageContent>
-        {!student && !withdrawn && reasoning?.text && (
-          <Reasoning streaming={reasoning.state === "streaming"}>
-            {reasoning.text}
+        {!student && !withdrawn && (reasoning?.text || waiting) && (
+          <Reasoning
+            streaming={waiting || reasoning?.state === "streaming"}
+            answering={!saved}
+          >
+            {reasoning?.text ?? ""}
           </Reasoning>
         )}
         {withdrawn ? (
@@ -79,15 +94,6 @@ export const ChatMessage = memo(function ChatMessage({
               renderReference={renderReference}
             />
           )
-        )}
-        {!student && !saved && (
-          <p role="status" className="text-sm text-base-500">
-            {text
-              ? "Antwort wird geschrieben …"
-              : reasoning?.text
-                ? ""
-                : "nunio antwortet …"}
-          </p>
         )}
         {saved && (
           <MessageFooter className="mt-2 flex items-center gap-2 text-xs leading-4 text-base-600 opacity-100 group-focus-within/message:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/message:opacity-100">
