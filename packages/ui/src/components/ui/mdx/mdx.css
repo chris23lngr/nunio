@@ -5,8 +5,8 @@
   min-width: 0;
   color: var(--base-600);
   font-family: var(--font-sans);
-  font-size: 16px;
-  line-height: 28px;
+  font-size: 0.9375rem;
+  line-height: 1.625rem;
   overflow-wrap: anywhere;
   & :where(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, figure, hr) {
     margin: 0;
