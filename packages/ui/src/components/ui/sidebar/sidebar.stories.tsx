@@ -203,6 +203,8 @@ export const Default: Story = {
     await expect(sidebar.getBoundingClientRect().height).toBe(
       window.innerHeight,
     )
+    // 14px puts a 36px header row's center at 32px, level with the 64px page headers'.
+    await expect(getComputedStyle(sidebar).paddingTop).toBe("14px")
     await expect(getComputedStyle(sidebar).backgroundColor).toBe(
       tokenColor(canvasElement, "--base-50"),
     )

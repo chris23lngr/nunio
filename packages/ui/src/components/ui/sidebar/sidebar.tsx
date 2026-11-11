@@ -170,7 +170,7 @@ function Sidebar({
       <div
         data-slot="sidebar"
         className={cn(
-          "bg-base-50 text-base-800 flex h-full w-(--sidebar-width) flex-col pt-4.5 pb-8",
+          "bg-base-50 text-base-800 flex h-full w-(--sidebar-width) flex-col pt-3.5 pb-8",
           className,
         )}
         {...props}
@@ -200,7 +200,7 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col pt-4.5 pb-8">
+          <div className="flex h-full w-full flex-col pt-3.5 pb-8">
             {children}
           </div>
         </SheetContent>
@@ -245,7 +245,7 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="bg-base-50 group-data-[variant=floating]:ring-base-200 flex size-full flex-col pt-4.5 pb-8 group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1"
+          className="bg-base-50 group-data-[variant=floating]:ring-base-200 flex size-full flex-col pt-3.5 pb-8 group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1"
         >
           {children}
         </div>
