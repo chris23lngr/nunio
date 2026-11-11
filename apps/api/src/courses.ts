@@ -212,6 +212,58 @@ export function registerCourseRoutes(routes: OpenAPIHono<AppBindings>) {
     );
   routes.openapi(
     createRoute({
+      method: "get",
+      path: "/api/me/courses/merge-suggestions",
+      description:
+        "Pairs of Courses in one Semester that look like one, by code or title; no model is asked.",
+      responses: {
+        200: json(
+          z.array(
+            z.object({
+              courseId: z.string().describe("The Course to merge."),
+              intoId: z
+                .string()
+                .describe(
+                  "The Course to merge it into: the accepted one, else the older.",
+                ),
+            }),
+          ),
+          "Merge suggestions the student has not declined.",
+        ),
+        401: errors[401],
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return c.json(await c.get("courses").similar(p), 200);
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/courses/{id}/keep-apart",
+      description:
+        "Nein, verschieden: never suggest merging these two Courses again.",
+      request: {
+        params: id,
+        ...body(z.object({ other: z.string().uuid() }).strict()),
+      },
+      responses: { 200: Done, ...outcomes },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(
+        c,
+        await c
+          .get("courses")
+          .keepApart(p, c.req.valid("param").id, c.req.valid("json").other),
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
       method: "delete",
       path: "/api/me/courses/{id}",
       description:

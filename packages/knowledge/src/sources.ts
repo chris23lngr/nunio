@@ -7,6 +7,8 @@ import { accessRefusal, DefiniteFailure, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import { encryptSourceText } from "@nunio/keys";
 import { pruneItems } from "./items.js";
+import type { CourseChoice } from "./new-course.js";
+import { chosenCourse } from "./new-course.js";
 
 export const maxSourceBytes = 20 * 1024 * 1024;
 // Chunks overlap by 200 code points; <=6000 UTF-8 bytes per embedding.
@@ -91,10 +93,12 @@ export function createSources({
   db,
   keys,
   storage,
+  clock = { now: () => new Date() },
 }: {
   db: PrismaClient;
   keys: SourceKeys;
   storage: SourceStorage;
+  clock?: { now(): Date };
 }) {
   const sourceLock = (tx: Transaction, id: string) =>
     tx.$queryRaw`SELECT "id" FROM "source" WHERE "id" = ${id} FOR UPDATE`;
@@ -132,7 +136,12 @@ export function createSources({
     },
     async upload(
       p: Principal,
-      input: { title: string; bytes: number; type: string },
+      input: {
+        title: string;
+        bytes: number;
+        type: string;
+        course?: CourseChoice;
+      },
     ) {
       if (
         input.type !== "application/pdf" ||
@@ -149,11 +158,19 @@ export function createSources({
       return withOwner(db, p, async (tx, studentId) => {
         const reason = await accessRefusal(tx, studentId);
         if (reason) return { status: "refused", reason } as const;
+        const course = await chosenCourse(
+          tx,
+          studentId,
+          input.course ?? null,
+          clock.now(),
+        );
+        if (course.status !== "ok") return course;
         const upload = await storage.upload(id, key, input.bytes);
         const source = await tx.source.create({
           data: {
             id,
             studentId,
+            courseId: course.courseId,
             title: input.title.trim(),
             bytes: input.bytes,
             keyVersion: wrapped.version,
@@ -163,7 +180,12 @@ export function createSources({
         });
         return {
           status: "ok",
-          source: { id: source.id, title: source.title, status: source.status },
+          source: {
+            id: source.id,
+            title: source.title,
+            status: source.status,
+            courseId: source.courseId,
+          },
           upload,
         } as const;
       });
@@ -178,6 +200,7 @@ export function createSources({
             status: true,
             failure: true,
             extraction: true,
+            courseId: true,
           },
           orderBy: { createdAt: "asc" },
         }),
