@@ -30,6 +30,7 @@ export function SuggestionsSheet({
   onReject,
   onAcceptAll,
   busy,
+  error,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -38,6 +39,8 @@ export function SuggestionsSheet({
   onReject?: (suggestion: Suggestion) => void;
   onAcceptAll?: () => void;
   busy?: boolean;
+  /** Why the last change failed, shown above the list. */
+  error?: string | null;
 }) {
   const count = suggestions.length;
   return (
@@ -52,6 +55,11 @@ export function SuggestionsSheet({
           </SheetDescription>
         </SheetHeader>
         <SheetBody>
+          {error && (
+            <p role="alert" className="mb-6 text-sm text-destructive-700">
+              {error}
+            </p>
+          )}
           {count > 0 && (
             <ul className="flex flex-col gap-6">
               {suggestions.map((suggestion) => (

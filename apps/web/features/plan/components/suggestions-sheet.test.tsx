@@ -148,3 +148,15 @@ test("with no suggestions the sheet says everything is planned", () => {
   expect(screen.queryByRole("listitem")).toBeNull();
   expect(screen.queryByRole("button", { name: "Alle übernehmen" })).toBeNull();
 });
+
+test("a failed change is explained inside the sheet", () => {
+  renderSheet({
+    suggestions: [create],
+    error: "Dein Plan hat sich inzwischen geändert.",
+  });
+
+  const sheet = screen.getByRole("dialog", { name: "Änderungsvorschläge" });
+  expect(within(sheet).getByRole("alert").textContent).toBe(
+    "Dein Plan hat sich inzwischen geändert.",
+  );
+});

@@ -95,7 +95,8 @@ export function EntryDetails({
   } | null;
   locked: boolean;
   onLockChange: (locked: boolean) => void;
-  onMove: () => void;
+  /** Shown only when given; moving needs a time picker that isn't designed yet. */
+  onMove?: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -174,10 +175,12 @@ export function EntryDetails({
           {locked ? <LockOpen /> : <Lock />}
           {locked ? "Entsperren" : "Sperren"}
         </Button>
-        <Button variant="outline" size="sm" onClick={onMove}>
-          <Move />
-          Verschieben
-        </Button>
+        {onMove && (
+          <Button variant="outline" size="sm" onClick={onMove}>
+            <Move />
+            Verschieben
+          </Button>
+        )}
         <Button variant="destructive" size="sm" onClick={onDelete}>
           <Trash2 />
           Löschen

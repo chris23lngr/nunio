@@ -149,3 +149,10 @@ test("Verschieben and Löschen hand the Study Block to the page", async () => {
   await user.click(screen.getByRole("button", { name: "Löschen" }));
   expect(onDelete).toHaveBeenCalledTimes(1);
 });
+
+test("without a way to move it, the Study Block offers no Verschieben", () => {
+  render(<EntryDetails {...props} onMove={undefined} />);
+
+  expect(screen.queryByRole("button", { name: "Verschieben" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Löschen" })).toBeTruthy();
+});
