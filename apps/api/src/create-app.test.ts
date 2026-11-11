@@ -1338,6 +1338,143 @@ it("starts extracting a Source again on request, refusing while it runs and once
   expect((await extract()).status).toBe(404);
 });
 
+it("binds every file of an upload to one Course, new or chosen, refusing a Course that is gone or a title that is empty", async () => {
+  const cookie = await signUp("source-course");
+  const headers = {
+    cookie,
+    origin: appOrigin,
+    "content-type": "application/json",
+  };
+  const post = (title: string, course: unknown) =>
+    app.request(`${apiOrigin}/api/me/sources`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        title,
+        bytes: 1234,
+        type: "application/pdf",
+        course,
+      }),
+    });
+
+  const first = await post("Folien 1.pdf", {
+    title: "Analysis I",
+    code: "MA-101",
+  });
+  expect(first.status).toBe(201);
+  const { source } = (await first.json()) as {
+    source: { id: string; courseId: string };
+  };
+  const second = await post("Folien 2.pdf", { id: source.courseId });
+  expect(second.status).toBe(201);
+  expect(await second.json()).toMatchObject({
+    source: { courseId: source.courseId },
+  });
+  expect((await post("Folien 3.pdf", null)).status).toBe(201);
+  expect((await post("Folien 4.pdf", { id: randomUUID() })).status).toBe(404);
+  expect((await post("Folien 5.pdf", { title: "", code: null })).status).toBe(
+    400,
+  );
+
+  const listed = await app.request(`${apiOrigin}/api/me/sources`, {
+    headers: { cookie },
+  });
+  expect(
+    ((await listed.json()) as { courseId: string | null }[]).map(
+      (s) => s.courseId,
+    ),
+  ).toEqual([source.courseId, source.courseId, null]);
+  const courses = await app.request(`${apiOrigin}/api/me/courses`, {
+    headers: { cookie },
+  });
+  expect(await courses.json()).toMatchObject({
+    courses: [{ title: "Analysis I", status: "accepted", entered: true }],
+  });
+});
+
+it("changes a Source's Course and reads it again, refusing while it is read and once it is gone", async () => {
+  const { cookie, headers } = await reviewFixture("source-change-course");
+  const [source] = (await (
+    await app.request(`${apiOrigin}/api/me/sources`, { headers: { cookie } })
+  ).json()) as { id: string }[];
+  const change = (course: unknown, origin = appOrigin) =>
+    app.request(`${apiOrigin}/api/me/sources/${source!.id}/course`, {
+      method: "POST",
+      headers: { ...headers, origin },
+      body: JSON.stringify({ course }),
+    });
+
+  expect((await change(null, evilOrigin)).status).toBe(403);
+  const queued = await change({ title: "Analysis 1", code: null });
+  expect([queued.status, await queued.json()]).toEqual([
+    202,
+    { status: "queued" },
+  ]);
+  expect(started).toContainEqual([
+    "extractSource",
+    expect.any(String),
+    source!.id,
+  ]);
+  expect(
+    (
+      (await (
+        await app.request(`${apiOrigin}/api/me/sources`, {
+          headers: { cookie },
+        })
+      ).json()) as { courseId: string | null }[]
+    )[0]!.courseId,
+  ).toEqual(expect.any(String));
+  await admin.source.update({
+    where: { id: source!.id },
+    data: { extraction: "running" },
+  });
+  expect((await change(null)).status).toBe(409);
+  await app.request(`${apiOrigin}/api/me/sources/${source!.id}`, {
+    method: "DELETE",
+    headers,
+  });
+  expect((await change(null)).status).toBe(404);
+});
+
+it("suggests merging alike Courses until the student says they differ", async () => {
+  const { cookie, headers } = await reviewFixture("review-similar");
+  const own = (await (
+    await app.request(`${apiOrigin}/api/me/courses`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        title: "Analysis 1",
+        code: null,
+        semester: "2026-ws",
+      }),
+    })
+  ).json()) as { id: string };
+  const suggestions = async () =>
+    (
+      await app.request(`${apiOrigin}/api/me/courses/merge-suggestions`, {
+        headers: { cookie },
+      })
+    ).json();
+  const proposed = (
+    (await (
+      await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })
+    ).json()) as ReviewBody
+  ).courses.find((course) => course.id !== own.id);
+
+  expect(await suggestions()).toEqual([
+    { courseId: proposed!.id, intoId: own.id },
+  ]);
+  const keepApart = (origin: string) =>
+    app.request(`${apiOrigin}/api/me/courses/${proposed!.id}/keep-apart`, {
+      method: "POST",
+      headers: { ...headers, origin },
+      body: JSON.stringify({ other: own.id }),
+    });
+  expect((await keepApart(evilOrigin)).status).toBe(403);
+  expect((await keepApart(appOrigin)).status).toBe(200);
+  expect(await suggestions()).toEqual([]);
+});
+
 it("merges one Course into another, reporting conflicting Corrections and Courses that are gone", async () => {
   const { cookie, headers } = await reviewFixture("review-merge");
   const p = principal.fromSession({ studentId: await studentId(cookie) });
