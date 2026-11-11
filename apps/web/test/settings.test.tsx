@@ -216,7 +216,7 @@ test("deletion requires password confirmation and allows correcting a wrong pass
     expect(router.replace).toHaveBeenCalledWith("/sign-in?deletion=requested"),
   );
   expect(passwords).toEqual(["wrong-password", "correct-password"]);
-  expect(router.refresh).toHaveBeenCalled();
+  expect(router.refresh).not.toHaveBeenCalled();
 });
 
 test.each([

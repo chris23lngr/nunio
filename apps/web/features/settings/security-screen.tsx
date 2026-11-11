@@ -33,7 +33,6 @@ export function SecurityScreen({ apiOrigin }: { apiOrigin: string }) {
     onSuccess: () => {
       queryClient.clear();
       router.replace("/sign-in?deletion=requested");
-      router.refresh();
     },
   });
   return (
