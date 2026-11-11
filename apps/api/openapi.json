@@ -165,6 +165,13 @@
               "done",
               "failed"
             ]
+          },
+          "courseId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Course the student bound it to; everything read from it goes there. Null: nunio recognizes its Courses."
           }
         },
         "required": [
@@ -172,8 +179,52 @@
           "title",
           "status",
           "failure",
-          "extraction"
+          "extraction",
+          "courseId"
         ]
+      },
+      "CourseChoice": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "code": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 50
+              }
+            },
+            "required": [
+              "title",
+              "code"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Applies to this file; for several files with a new Course, send it with the first and its returned courseId with the rest."
       },
       "Course": {
         "type": "object",
@@ -4087,6 +4138,9 @@
                     "enum": [
                       "application/pdf"
                     ]
+                  },
+                  "course": {
+                    "$ref": "#/components/schemas/CourseChoice"
                   }
                 },
                 "required": [
@@ -4140,6 +4194,24 @@
               }
             }
           },
+          "400": {
+            "description": "The new Course has no title.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
           "401": {
             "description": "Sign in required.",
             "content": {
@@ -4177,7 +4249,25 @@
             }
           },
           "404": {
-            "description": "Source is gone.",
+            "description": "Source or Course is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The chosen Course is Archived.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4289,6 +4379,161 @@
           },
           "409": {
             "description": "Extraction is running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/sources/{id}/course": {
+      "post": {
+        "description": "Kurs ändern: bind a ready Source to another Course, a new one, or none, and read it again.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "course": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/CourseChoice"
+                      },
+                      {
+                        "description": "An accepted, unarchived Course; a new one, created accepted in the current Semester; or null, \"automatisch erkennen\"."
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "course"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Extraction queued and metered again; its extractions are replaced once it is done.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The new Course has no title.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Pilot access is not active or deletion is pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source or Course is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Extraction is running, or the chosen Course is Archived (error course_archived).",
             "content": {
               "application/json": {
                 "schema": {
@@ -9774,6 +10019,189 @@
             "in": "path"
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/courses/merge-suggestions": {
+      "get": {
+        "description": "Pairs of Courses in one Semester that look like one, by code or title; no model is asked.",
+        "responses": {
+          "200": {
+            "description": "Merge suggestions the student has not declined.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "courseId": {
+                        "type": "string",
+                        "description": "The Course to merge."
+                      },
+                      "intoId": {
+                        "type": "string",
+                        "description": "The Course to merge it into: the accepted one, else the older."
+                      }
+                    },
+                    "required": [
+                      "courseId",
+                      "intoId"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/courses/{id}/keep-apart": {
+      "post": {
+        "description": "Nein, verschieden: never suggest merging these two Courses again.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "other": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "other"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Recorded.",

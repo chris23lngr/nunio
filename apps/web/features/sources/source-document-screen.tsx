@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { sourceDocumentQueries } from "./api/source-queries";
+import { SourceCourse } from "./components/source-course";
 
 export function SourceDocumentScreen({
   apiOrigin,
@@ -50,6 +51,7 @@ export function SourceDocumentScreen({
                 </a>
               )}
             </header>
+            <SourceCourse apiOrigin={apiOrigin} sourceId={sourceId} />
             {url && (
               <iframe
                 title={query.data.title}

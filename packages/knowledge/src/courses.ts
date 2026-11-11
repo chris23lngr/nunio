@@ -11,6 +11,7 @@ import type { CourseColor } from "./new-course.js";
 import { courseColors, matchKeys, newCourse } from "./new-course.js";
 import type { Semester } from "./semester.js";
 import { semesterAt, semesterChoices } from "./semester.js";
+import { similarCourses } from "./similar-courses.js";
 
 export type Courses = ReturnType<typeof createCourses>;
 
@@ -347,6 +348,65 @@ export function createCourses({
       return withOwner(db, p, async (tx) => {
         const { count } = await tx.course.deleteMany({ where: { id } });
         return { status: count ? "ok" : "gone" } as const;
+      });
+    },
+
+    /**
+     * Pairs of the student's Courses that look like one, for Review to suggest merging: same Semester, neither rejected
+     * nor merged, and not kept apart by the student. Each names the Course to merge and the one to merge it into: the
+     * accepted one over a proposal, else the older.
+     */
+    async similar(p: Principal) {
+      return withOwner(db, p, async (tx) => {
+        const rows = await tx.course.findMany({
+          where: { status: { in: ["proposed", "accepted"] } },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          select: {
+            id: true,
+            title: true,
+            code: true,
+            semester: true,
+            status: true,
+          },
+        });
+        const apart = new Set(
+          (await tx.distinctCoursePair.findMany()).map(
+            (pair) => `${pair.courseId} ${pair.otherId}`,
+          ),
+        );
+        return rows.flatMap((into, i) =>
+          rows
+            .slice(i + 1)
+            .filter(
+              (course) =>
+                course.semester === into.semester &&
+                !apart.has([into.id, course.id].sort().join(" ")) &&
+                similarCourses(into, course),
+            )
+            .map((course) =>
+              course.status === "accepted" && into.status === "proposed"
+                ? { courseId: into.id, intoId: course.id }
+                : { courseId: course.id, intoId: into.id },
+            ),
+        );
+      });
+    },
+
+    /** "Nein, verschieden": the student says two Courses differ, so Review never suggests merging them again. */
+    async keepApart(p: Principal, id: string, otherId: string) {
+      const [courseId, other] = [id, otherId].sort() as [string, string];
+      return withOwner(db, p, async (tx, studentId) => {
+        const found = await tx.course.count({
+          where: { id: { in: [courseId, other] } },
+        });
+        if (courseId === other || found !== 2)
+          return { status: "gone" } as const;
+        await tx.distinctCoursePair.upsert({
+          where: { courseId_otherId: { courseId, otherId: other } },
+          create: { studentId, courseId, otherId: other },
+          update: {},
+        });
+        return { status: "ok" } as const;
       });
     },
 

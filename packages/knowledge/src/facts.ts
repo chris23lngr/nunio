@@ -21,7 +21,8 @@ import { decryptSourceText, encryptSourceText } from "@nunio/keys";
 import type { AiUse, AiUseClass } from "./ai-use.js";
 import { isAiUseClass, resolveAiUse } from "./ai-use.js";
 import { pruneItems } from "./items.js";
-import { newCourse } from "./new-course.js";
+import type { CourseChoice } from "./new-course.js";
+import { chosenCourse, newCourse } from "./new-course.js";
 import { normalize } from "./normalize.js";
 import { semesterAt } from "./semester.js";
 import { joinChunks } from "./sources.js";
@@ -232,14 +233,17 @@ export function createFacts({
           archivedAt: null,
           mergedIntoId: null,
         };
+        // A Source bound to a Course puts everything there, so the model needs no Courses to choose from.
         const context = {
           title: source.title,
-          courses: await withOwner(db, p, (tx) =>
-            tx.course.findMany({
-              where: candidateWhere,
-              select: { id: true, title: true, code: true },
-            }),
-          ),
+          courses: source.courseId
+            ? []
+            : await withOwner(db, p, (tx) =>
+                tx.course.findMany({
+                  where: candidateWhere,
+                  select: { id: true, title: true, code: true },
+                }),
+              ),
         };
         const candidateIds = new Set(
           context.courses.map((course) => course.id),
@@ -367,6 +371,15 @@ export function createFacts({
             ),
           };
           await tx.sourceCourse.deleteMany({ where: { sourceId } });
+          // Binding: a Source the student assigned to a Course puts everything it holds there, whatever Courses the
+          // model named; only an unbound Source has its Courses recognized below.
+          const bound = await boundCourse(tx, sourceId);
+          if (bound)
+            await tx.sourceCourse.create({
+              data: { sourceId, courseId: bound, studentId },
+            });
+          const courseOf = (name: string) =>
+            bound ?? courses.get(normalize(name));
           const courses = new Map<string, string>();
           // A Source repeating a value (overlapping windows, a summary table) yields one extraction, cited on its first page.
           const firstSeen = new Map<string, { id: string; page: number }>();
@@ -383,7 +396,7 @@ export function createFacts({
             }
             return Boolean(seen);
           };
-          for (const course of kept.courses) {
+          for (const course of bound ? [] : kept.courses) {
             const picked =
               course.existingCourseId &&
               candidateIds.has(course.existingCourseId)
@@ -459,7 +472,7 @@ export function createFacts({
               if (name) courses.set(normalize(name), id);
           }
           for (const item of kept.obligations) {
-            const courseId = courses.get(normalize(item.course));
+            const courseId = courseOf(item.course);
             if (!courseId) {
               dropped++;
               continue;
@@ -553,7 +566,7 @@ export function createFacts({
             });
           }
           for (const item of kept.facts) {
-            const courseId = courses.get(normalize(item.course));
+            const courseId = courseOf(item.course);
             if (!courseId) {
               dropped++;
               continue;
@@ -739,6 +752,32 @@ export function createFacts({
             data: { extraction: "pending", extractionRequestedAt: clock.now() },
           });
         }
+        return { status: "ok" } as const;
+      });
+    },
+    /**
+     * "Kurs ändern": binds a ready Source to another Course, a new one, or none, and queues it to be read again, which
+     * replaces its extractions only once that reading is done. Refused while it is being read.
+     */
+    async changeCourse(p: Principal, sourceId: string, choice: CourseChoice) {
+      return withOwner(db, p, async (tx, studentId) => {
+        await tx.$queryRaw`SELECT "id" FROM "source" WHERE "id" = ${sourceId} FOR UPDATE`;
+        const source = await tx.source.findFirst({
+          where: { id: sourceId, deletedAt: null, status: "ready" },
+        });
+        if (!source) return { status: "gone" } as const;
+        if (source.extraction === "running")
+          return { status: "running" } as const;
+        const course = await chosenCourse(tx, studentId, choice, clock.now());
+        if (course.status !== "ok") return course;
+        await tx.source.update({
+          where: { id: sourceId },
+          data: {
+            courseId: course.courseId,
+            extraction: "pending",
+            extractionRequestedAt: clock.now(),
+          },
+        });
         return { status: "ok" } as const;
       });
     },
@@ -982,6 +1021,11 @@ export function createFacts({
           });
         }
         await tx.sourceCourse.deleteMany({ where: { courseId: fromId } });
+        // A Source bound to the merged Course is bound to the target, so reading it again lands there too.
+        await tx.source.updateMany({
+          where: { courseId: fromId },
+          data: { courseId: intoId },
+        });
         for (const { item, target } of obligationPairs) {
           await tx.obligationExtraction.updateMany({
             where: { obligationId: item.id },
@@ -1508,6 +1552,21 @@ function figureLines(text: string, figures: boolean) {
     .split("\n")
     .filter((line) => line.trimStart().startsWith(figureMarker) === figures);
 }
+
+/** The Course a Source is bound to, standing for the Course it was merged into; null when it is read automatically. */
+async function boundCourse(tx: Transaction, sourceId: string) {
+  const { courseId } = await tx.source.findUniqueOrThrow({
+    where: { id: sourceId },
+    select: { courseId: true },
+  });
+  if (!courseId) return null;
+  const course = await tx.course.findUnique({
+    where: { id: courseId },
+    select: { mergedIntoId: true },
+  });
+  return course?.mergedIntoId ?? courseId;
+}
+
 /** Undoes line-break hyphenation and soft hyphens, so a quote matches the page text it was read from. */
 function groundingForm(text: string) {
   return normalize(

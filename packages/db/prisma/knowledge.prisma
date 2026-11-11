@@ -17,6 +17,10 @@ model Source {
   extractedAt   DateTime?
   /// When the student last asked to extract again; a re-extraction is timed from here, not from the upload.
   extractionRequestedAt DateTime?
+  /// The Course the student bound it to at upload or by "Kurs ändern"; null means nunio recognizes its Courses.
+  /// Binding: extraction puts everything it finds under this Course. The foreign key (SET NULL on delete) is in SQL only,
+  /// since Prisma cannot null one column of a composite key.
+  courseId      String?
 
   chunks      SourceChunk[]
   courses     SourceCourse[]
@@ -27,6 +31,7 @@ model Source {
 
   @@unique([id, studentId])
   @@index([studentId, deletedAt])
+  @@index([courseId])
   @@map("source")
 }
 
@@ -108,10 +113,27 @@ model Course {
   priorities  Priority[]
   preference  CoursePreference?
   projects    ProjectCourse[]
+  distinctFrom DistinctCoursePair[] @relation("distinct")
+  distinctTo   DistinctCoursePair[] @relation("distinctOther")
 
   @@unique([id, studentId])
   @@index([studentId])
   @@map("course")
+}
+
+/// Two Courses the student said are different ("Nein, verschieden"), so Review never suggests merging them again.
+/// Stored once per pair, with courseId < otherId.
+model DistinctCoursePair {
+  studentId String
+  courseId  String
+  otherId   String
+  course    Course   @relation("distinct", fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+  other     Course   @relation("distinctOther", fields: [otherId, studentId], references: [id, studentId], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([courseId, otherId])
+  @@index([studentId])
+  @@map("distinct_course_pair")
 }
 
 enum CourseStatus {
