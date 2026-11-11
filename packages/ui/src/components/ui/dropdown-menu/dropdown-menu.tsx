@@ -190,6 +190,34 @@ function DropdownMenuCheckboxItem({
   )
 }
 
+function DropdownMenuSwitchItem({
+  className,
+  children,
+  inset,
+  ...props
+}: MenuPrimitive.CheckboxItem.Props & {
+  inset?: boolean
+}) {
+  return (
+    <MenuPrimitive.CheckboxItem
+      data-slot="dropdown-menu-switch-item"
+      data-inset={inset}
+      className={cn(itemClass, "group/dropdown-menu-switch-item", className)}
+      {...props}
+    >
+      {children}
+      {/* Mirrors the `sm` Switch in ../switch/switch.tsx (source of truth); presentational because the item is the control. */}
+      <span
+        aria-hidden="true"
+        data-slot="dropdown-menu-switch-item-indicator"
+        className="outline-base-700/15 group-data-checked/dropdown-menu-switch-item:bg-primary-500 group-data-checked/dropdown-menu-switch-item:outline-primary-500 pointer-events-none ml-auto inline-flex h-[13px] w-[22px] shrink-0 items-center rounded-full bg-white px-0.5 shadow-[0_1px_2px_#0000000D] outline-1 outline-offset-0 transition-colors"
+      >
+        <span className="bg-base-500 block size-2.5 rounded-full transition-transform group-data-checked/dropdown-menu-switch-item:translate-x-2 group-data-checked/dropdown-menu-switch-item:bg-white" />
+      </span>
+    </MenuPrimitive.CheckboxItem>
+  )
+}
+
 function DropdownMenuRadioGroup({
   className,
   ...props
@@ -280,5 +308,6 @@ export {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
+  DropdownMenuSwitchItem,
   DropdownMenuTrigger,
 }
