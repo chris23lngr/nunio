@@ -14,6 +14,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SidebarOpenButton } from "@/features/shared/components/sidebar-open-button";
 import { useAppForm } from "@/lib/form";
+import { randomId } from "@/lib/random-id";
 import {
   answerError,
   chatTransport,
@@ -97,7 +98,7 @@ export function ChatScreen({
   const client = useQueryClient();
   // The open Chat; `key` stays the same when a new Chat is created on its first send.
   const [openChat, setOpenChat] = useState(() => ({
-    key: routeId ?? crypto.randomUUID(),
+    key: routeId ?? randomId(),
     id: routeId,
   }));
   const shownRouteId = useRef(routeId);
@@ -197,7 +198,7 @@ export function ChatScreen({
     onSubmit: ({ value }) => {
       const text = value.text.trim();
       if (!text || text.length > 4000 || busy) return;
-      const questionId = crypto.randomUUID();
+      const questionId = randomId();
       turn.current = { key: openChat.key, questionId, draft: value.text };
       restored.current = null;
       sendContext.current.courseIds = value.courseIds;
@@ -238,7 +239,7 @@ export function ChatScreen({
     shownRouteId.current = routeId;
     turn.current = null;
     restored.current = null;
-    setOpenChat({ key: routeId ?? crypto.randomUUID(), id: routeId });
+    setOpenChat({ key: routeId ?? randomId(), id: routeId });
     setError(null);
     form.reset();
     create.reset();
