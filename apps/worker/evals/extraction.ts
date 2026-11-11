@@ -24,6 +24,7 @@ import { createSourceKeys } from "@nunio/keys";
 import { createFacts, createSources } from "@nunio/knowledge";
 import { createParserServer } from "@nunio/parser/server";
 import { parseSource } from "../src/source-activities.ts";
+import { scoreBoundCourse } from "./extraction/assignment.js";
 import type { TopicLabel } from "./extraction/topics.js";
 import { scoreTopics, topicKey } from "./extraction/topics.js";
 
@@ -225,6 +226,7 @@ async function evaluate(
   document: Document,
   run: number,
   studentId = randomUUID(),
+  course?: { id: string } | { title: string; code: string | null },
 ) {
   const exists = await admin.user.findUnique({ where: { id: studentId } });
   if (!exists) {
@@ -236,8 +238,16 @@ async function evaluate(
       data: { id: studentId, email: `${studentId}@eval.invalid`, name: "Eval" },
     });
     await admin.pilotEntitlement.create({ data: { studentId } });
+    const spent = await admin.allowance.aggregate({
+      _sum: { usedMicroUsd: true, heldMicroUsd: true },
+    });
+    const remaining =
+      4_900_000 -
+      (spent._sum.usedMicroUsd ?? 0) -
+      (spent._sum.heldMicroUsd ?? 0);
+    if (remaining <= 0) throw new Error("Eval budget exhausted");
     await admin.allowance.create({
-      data: { studentId, limitMicroUsd: 500_000 },
+      data: { studentId, limitMicroUsd: Math.min(500_000, remaining) },
     });
   }
   const p = principal.fromSession({ studentId });
@@ -247,9 +257,12 @@ async function evaluate(
     title: `${document.id}.pdf`,
     bytes: bytes.length,
     type: "application/pdf",
+    course,
   });
   if (upload.status !== "ok")
-    throw new Error(`${document.id}: upload ${upload.reason}`);
+    throw new Error(
+      `${document.id}: upload ${"reason" in upload ? upload.reason : upload.status}`,
+    );
   objects.set(upload.source.id, bytes);
   await sources.complete(p, upload.source.id);
   const ingestion = await sources.ingest(p, upload.source.id, {
@@ -330,6 +343,51 @@ async function evaluate(
   }));
   const result = {
     id: document.id,
+    assignment: {
+      boundCourseId: (await sources.get(p, upload.source.id))?.courseId ?? null,
+      proposals: courses.filter((c) => c.status === "proposed").length,
+      itemCourseIds: courses.flatMap((c) =>
+        [...c.obligations, ...c.facts]
+          .filter((item) =>
+            item.values.some((v) =>
+              v.citations.some(
+                (citation) => citation.sourceId === upload.source.id,
+              ),
+            ),
+          )
+          .map(() => c.id),
+      ),
+    },
+    figureOnly: {
+      facts: courses
+        .flatMap((c) => c.facts)
+        .filter((f) =>
+          f.values.some(
+            (v) =>
+              v.uncertainty?.includes(
+                "aus einer Abbildungsbeschreibung abgeleitet",
+              ) &&
+              v.citations.some(
+                (citation) => citation.sourceId === upload.source.id,
+              ),
+          ),
+        ).length,
+      topics: courses
+        .flatMap((c) => c.facts)
+        .filter(
+          (f) =>
+            f.type === "topic" &&
+            f.values.some(
+              (v) =>
+                v.uncertainty?.includes(
+                  "aus einer Abbildungsbeschreibung abgeleitet",
+                ) &&
+                v.citations.some(
+                  (citation) => citation.sourceId === upload.source.id,
+                ),
+            ),
+        ).length,
+    },
     run,
     language: document.language,
     kind: document.kind,
@@ -495,12 +553,32 @@ try {
     const studentId = randomUUID();
     let actualCourses = 0;
     let allSourcesAssigned = true;
+    let boundCourseId: string | undefined;
+    const boundSources: {
+      extraction: string;
+      boundCourseId: string | null;
+      itemCourseIds: string[];
+    }[] = [];
+    let proposals = 0;
     for (const id of scenario.documents) {
       const result = await evaluate(
         set.documents.find((d) => d.id === id)!,
         1,
         studentId,
+        scenario.mode === "bound"
+          ? boundCourseId
+            ? { id: boundCourseId }
+            : set.documents.find((d) => d.id === id)!.courses[0]
+          : undefined,
       );
+      if (scenario.mode === "bound") {
+        boundCourseId ??= result.assignment.boundCourseId ?? undefined;
+        boundSources.push({
+          extraction: result.extraction,
+          ...result.assignment,
+        });
+        proposals = result.assignment.proposals;
+      }
       results.push({ ...result, id: `${scenario.id}/${id}` });
       actualCourses = result.courses.extracted;
       allSourcesAssigned &&=
@@ -510,7 +588,12 @@ try {
       id: scenario.id,
       expectedCourses: scenario.expectedCourses,
       actualCourses,
-      passed: allSourcesAssigned && actualCourses === scenario.expectedCourses,
+      passed:
+        scenario.mode === "bound"
+          ? !!boundCourseId &&
+            actualCourses === scenario.expectedCourses &&
+            scoreBoundCourse(boundCourseId, boundSources, proposals)
+          : allSourcesAssigned && actualCourses === scenario.expectedCourses,
     });
   }
 } finally {
