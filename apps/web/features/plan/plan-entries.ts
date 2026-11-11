@@ -72,6 +72,19 @@ function findWork(plan: Plan, id: string) {
   return { title: task.title, obligation, estimate: task.estimate };
 }
 
+/** What a Fixed Event's popover shows: nunio knows no more than what, when and where from. */
+export function fixedEventDetails(plan: Plan, eventId: string) {
+  const event = plan.fixedEvents.find((e) => e.id === eventId);
+  if (!event) return null;
+  return {
+    title: event.title,
+    start: new Date(event.start),
+    end: new Date(event.end),
+    calendar:
+      plan.calendars.find((c) => c.id === event.calendarId)?.name ?? null,
+  };
+}
+
 /** What a Study Block's popover shows, or null when the block is gone. */
 export function blockDetails(
   plan: Plan,

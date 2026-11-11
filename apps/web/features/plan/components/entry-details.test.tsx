@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { expect, test, vi } from "vitest";
-import { EntryDetails } from "./entry-details";
+import { EntryDetails, FixedEventDetails } from "./entry-details";
 
 const props: ComponentProps<typeof EntryDetails> = {
   course: { title: "Statistics II", color: "blue" },
@@ -155,4 +155,29 @@ test("without a way to move it, the Study Block offers no Verschieben", () => {
 
   expect(screen.queryByRole("button", { name: "Verschieben" })).toBeNull();
   expect(screen.getByRole("button", { name: "Löschen" })).toBeTruthy();
+});
+
+test("a Fixed Event says what, when and where it comes from, and that nunio knows no more", () => {
+  const event = {
+    title: "Vorlesung Analysis II",
+    start: new Date(2026, 10, 9, 10, 0),
+    end: new Date(2026, 10, 9, 12, 0),
+  };
+  const { rerender } = render(
+    <FixedEventDetails {...event} calendar="Uni-Stundenplan" />,
+  );
+
+  expect(screen.getByText("Vorlesung Analysis II")).toBeTruthy();
+  expect(screen.getByText("Fixtermin aus „Uni-Stundenplan“")).toBeTruthy();
+  expect(screen.getByText("Montag, 09.11.")).toBeTruthy();
+  expect(screen.getByText("10:00 – 12:00 Uhr · 2 h")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Mehr weiß nunio über diesen Termin nicht. nunio plant um ihn herum.",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button")).toBeNull();
+
+  rerender(<FixedEventDetails {...event} calendar={null} />);
+  expect(screen.getByText("Fixtermin, von dir eingetragen")).toBeTruthy();
 });

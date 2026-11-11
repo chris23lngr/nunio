@@ -62,6 +62,53 @@ function Detail({
   );
 }
 
+/** The day, and the time with how long it lasts. */
+function When({ start, end }: { start: Date; end: Date }) {
+  return (
+    <Detail icon={Clock} title={day(start)}>
+      <p className="text-xs text-base-500">
+        {`${format(start, "HH:mm")} – ${format(end, "HH:mm")} Uhr · ${hours(differenceInMinutes(end, start))}`}
+      </p>
+    </Detail>
+  );
+}
+
+/**
+ * What the popover of a Fixed Event shows. nunio didn't create it, so all it knows is
+ * what, when, and which calendar it came from (`null`: entered by hand).
+ * Render it in `<PopoverContent className="w-76 gap-0 p-0">`, like EntryDetails.
+ */
+export function FixedEventDetails({
+  title,
+  start,
+  end,
+  calendar,
+}: {
+  title: string;
+  start: Date;
+  end: Date;
+  calendar: string | null;
+}) {
+  return (
+    <div className="flex flex-col overflow-hidden rounded-[inherit]">
+      <div className="flex flex-col gap-1.5 px-3.5 pt-3.5 pb-3">
+        <p className="break-words text-sm font-medium text-base-800">{title}</p>
+        <p className="text-xs text-base-500">
+          {calendar
+            ? `Fixtermin aus „${calendar}“`
+            : "Fixtermin, von dir eingetragen"}
+        </p>
+      </div>
+      <div className="flex flex-col gap-4 border-t border-base-200 px-3.5 py-3">
+        <When start={start} end={end} />
+      </div>
+      <p className="border-t border-base-200 bg-base-50 px-3.5 py-2.5 text-xs text-base-500">
+        Mehr weiß nunio über diesen Termin nicht. nunio plant um ihn herum.
+      </p>
+    </div>
+  );
+}
+
 /**
  * What the popover of a Study Block shows: when it is, what it works toward, and what can be done with it.
  * PopoverContent draws the card; its sections run edge to edge, so render it in
@@ -102,9 +149,13 @@ export function EntryDetails({
   return (
     <div className="flex flex-col overflow-hidden rounded-[inherit]">
       <div className="flex flex-col gap-1.5 px-3.5 pt-3.5 pb-3">
-        <div className="flex items-center gap-2 text-sm">
-          {course && <CourseDot color={course.color} />}
-          <p className="min-w-0 truncate">
+        <div className="flex items-start gap-2 text-sm">
+          {course && (
+            <span className="flex h-5 shrink-0 items-center">
+              <CourseDot color={course.color} />
+            </span>
+          )}
+          <p className="min-w-0 break-words">
             {course && (
               <>
                 <span className="text-base-500">{course.title}</span>
@@ -121,11 +172,7 @@ export function EntryDetails({
         </p>
       </div>
       <div className="flex flex-col gap-4 border-t border-base-200 px-3.5 py-3">
-        <Detail icon={Clock} title={day(start)}>
-          <p className="text-xs text-base-500">
-            {`${format(start, "HH:mm")} – ${format(end, "HH:mm")} Uhr · ${hours(differenceInMinutes(end, start))}`}
-          </p>
-        </Detail>
+        <When start={start} end={end} />
         {obligation && (
           <Detail icon={Flag} title={obligation.title}>
             <p className="text-xs text-base-500">

@@ -1,5 +1,5 @@
 import { cn } from "@nunio/ui";
-import { format, isSameDay } from "date-fns";
+import { format, isSameDay, max, min, setHours, startOfDay } from "date-fns";
 import { de } from "date-fns/locale";
 import type { ReactNode } from "react";
 import {
@@ -83,7 +83,7 @@ export function WeekGrid({
             key={day.toISOString()}
             role="group"
             aria-label={format(day, "EEEE, d. MMMM", { locale: de })}
-            className="relative min-w-0 flex-1"
+            className="relative min-w-0 flex-1 overflow-hidden"
           >
             {hours.map((hour, i) => (
               <div
@@ -96,6 +96,15 @@ export function WeekGrid({
             ))}
             {background
               .filter((item) => isSameDay(item.start, day))
+              .flatMap((item) => {
+                // Cut to the shown hours, so an all-day range stays inside the grid.
+                const start = max([
+                  item.start,
+                  setHours(startOfDay(day), fromHour),
+                ]);
+                const end = min([item.end, setHours(startOfDay(day), toHour)]);
+                return start < end ? [{ ...item, start, end }] : [];
+              })
               .map((item) => (
                 <div
                   key={item.id}

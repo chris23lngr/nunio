@@ -20,7 +20,7 @@ import type { PlanMove } from "./api/plan-queries";
 import { planQuery } from "./api/plan-queries";
 import { CalendarEntry } from "./components/calendar-entry";
 import { DayHeader } from "./components/day-header";
-import { EntryDetails } from "./components/entry-details";
+import { EntryDetails, FixedEventDetails } from "./components/entry-details";
 import { PlanLegend } from "./components/plan-legend";
 import { ProtectedTimeBlock } from "./components/protected-time-block";
 import { SuggestionsButton } from "./components/suggestions-button";
@@ -31,6 +31,7 @@ import { WeekToolbar } from "./components/week-toolbar";
 import type { CourseColors } from "./plan-entries";
 import {
   blockDetails,
+  fixedEventDetails,
   planEntries,
   plannedMinutes,
   planSuggestions,
@@ -92,6 +93,8 @@ export function PlanScreen({
   const cards = useRef(new Map<string, HTMLElement>());
   const details =
     plan.data && selected ? blockDetails(plan.data, selected, colors) : null;
+  const event =
+    plan.data && selected ? fixedEventDetails(plan.data, selected) : null;
   const block = useMutation({
     mutationFn: async (
       action: { id: string; locked: boolean } | { id: string; delete: true },
@@ -131,8 +134,9 @@ export function PlanScreen({
           </BreadcrumbList>
         </Breadcrumb>
       </PageHeader>
-      <div className="flex flex-col items-center px-8 pt-22 pb-6">
-        <div className="flex w-full max-w-5xl items-center justify-between">
+      {/* Title, toolbar and legend keep a 32px margin; the grid runs edge to edge up to 80rem. */}
+      <div className="flex flex-col items-center pt-22 pb-6">
+        <div className="flex w-full max-w-[calc(64rem+4rem)] items-center justify-between px-8">
           <h1 className="text-2xl font-medium text-base-800">Dein Plan</h1>
           <SuggestionsButton
             count={suggestions.length}
@@ -140,7 +144,7 @@ export function PlanScreen({
           />
         </div>
         <div className="h-8" />
-        <div className="w-full max-w-5xl">
+        <div className="w-full max-w-[calc(64rem+4rem)] px-8">
           <WeekToolbar
             week={week}
             today={today}
@@ -151,10 +155,10 @@ export function PlanScreen({
         </div>
         <div className="h-6" />
         {plan.isPending && (
-          <p className="text-sm text-base-500">Dein Plan wird geladen …</p>
+          <p className="px-8 text-sm text-base-500">Dein Plan wird geladen …</p>
         )}
         {plan.isError && (
-          <p role="alert" className="text-sm text-base-700">
+          <p role="alert" className="px-8 text-sm text-base-700">
             {plan.error.message}
           </p>
         )}
@@ -216,9 +220,9 @@ export function PlanScreen({
                         locked={entry.locked}
                         selected={entry.id === selected}
                         onSelect={
-                          entry.kind === "study"
-                            ? () => setSelected(entry.id)
-                            : undefined
+                          entry.kind === "proposal"
+                            ? undefined
+                            : () => setSelected(entry.id)
                         }
                         {...form}
                       />
@@ -229,13 +233,13 @@ export function PlanScreen({
           </div>
         )}
         {plan.data && (
-          <div className="mt-6 w-full max-w-5xl">
+          <div className="mt-6 w-full max-w-[calc(64rem+4rem)] px-8">
             <PlanLegend />
           </div>
         )}
       </div>
       <Popover
-        open={details !== null}
+        open={details !== null || event !== null}
         onOpenChange={(open) => {
           if (!open) setSelected(null);
         }}
@@ -257,6 +261,7 @@ export function PlanScreen({
               }}
             />
           )}
+          {event && <FixedEventDetails {...event} />}
         </PopoverContent>
       </Popover>
       <SuggestionsSheet

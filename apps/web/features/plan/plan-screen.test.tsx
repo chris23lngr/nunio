@@ -385,3 +385,33 @@ test("a suggestion the Plan has outgrown is explained, not silently dropped", as
     "Dein Plan hat sich inzwischen geändert. Hier sind die neuen Vorschläge.",
   );
 });
+
+test("a Fixed Event opens what nunio knows about it", async () => {
+  mount(
+    plan({
+      calendars: [{ id: "cal-1", name: "Uni-Stundenplan", events: 1 }],
+      fixedEvents: [
+        {
+          id: "f-1",
+          title: "Vorlesung Analysis II",
+          start: at(9, 10),
+          end: at(9, 12),
+          calendarId: "cal-1",
+        },
+      ],
+    }),
+  );
+  const user = userEvent.setup();
+
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Vorlesung Analysis II, 10:00–12:00",
+    }),
+  );
+
+  const details = await screen.findByRole("dialog");
+  expect(
+    within(details).getByText("Fixtermin aus „Uni-Stundenplan“"),
+  ).toBeTruthy();
+  expect(within(details).queryByRole("button", { name: "Löschen" })).toBeNull();
+});

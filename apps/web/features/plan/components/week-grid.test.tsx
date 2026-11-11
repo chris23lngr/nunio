@@ -179,3 +179,26 @@ test("the optional header sits above each day", () => {
   expect(screen.getByText("Kopf 9")).toBeTruthy();
   expect(screen.getByText("Kopf 10")).toBeTruthy();
 });
+
+test("Protected Time longer than the shown hours is cut to them", () => {
+  render(
+    <WeekGrid
+      days={[monday]}
+      fromHour={8}
+      toHour={18}
+      entries={[]}
+      background={[
+        {
+          id: "all-day",
+          start: day(9, 0),
+          end: day(10, 0),
+          node: <span>Geschützte Zeit</span>,
+        },
+      ]}
+    />,
+  );
+
+  const area = screen.getByText("Geschützte Zeit").parentElement as HTMLElement;
+  expect(area.style.top).toBe("0px");
+  expect(area.style.height).toBe("320px");
+});

@@ -1,7 +1,9 @@
 import { cn } from "@nunio/ui";
 import { format } from "date-fns";
 import { Lock, Sparkles, User } from "lucide-react";
+import type { CSSProperties } from "react";
 import type { CourseColor } from "@/features/courses/api/course-queries";
+import { colors } from "@/features/courses/course-format";
 import { courseTint } from "../course-tint";
 
 /** A Fixed Event, Study Block, or proposed Study Block in the week grid; fills its box. */
@@ -33,17 +35,21 @@ export function CalendarEntry({
   onSelect?: () => void;
 }) {
   const from = format(start, "HH:mm");
-  const tint = course ? courseTint[course.color] : null;
+  const tinted = course !== null && kind !== "proposal";
   const fill =
     kind === "proposal"
       ? "border border-dashed border-primary-400 bg-primary-50 text-primary-900"
-      : tint
-        ? tint[kind]
+      : tinted
+        ? courseTint[kind]
         : kind === "fixed"
           ? "bg-base-200 text-base-800"
           : "bg-base-100 text-base-800";
   const ring =
-    kind === "proposal" ? "ring-primary-300" : (tint?.ring ?? "ring-base-300");
+    kind === "proposal"
+      ? "ring-primary-300"
+      : tinted
+        ? courseTint.ring
+        : "ring-base-300";
   // The label replaces the button's content for assistive tech, so it carries
   // the time (hidden when compact or narrow) and every marker.
   const name = [
@@ -61,11 +67,19 @@ export function CalendarEntry({
       type="button"
       aria-label={name}
       onClick={onSelect}
+      style={
+        tinted
+          ? ({ "--tint": colors[course.color].swatch } as CSSProperties)
+          : undefined
+      }
       className={cn(
-        "flex h-full w-full flex-col gap-0.5 overflow-hidden rounded-sm p-1.5 text-left text-xs",
+        // The selected ring doubles as the focus ring, in place of the browser outline.
+        "flex h-full w-full flex-col gap-0.5 overflow-hidden rounded-sm p-1.5 text-left text-xs outline-none focus-visible:ring-2",
+        onSelect && "cursor-pointer",
         compact && "justify-center py-0",
         fill,
-        selected && cn("ring-2", ring),
+        ring,
+        selected && "ring-2",
       )}
     >
       <span className="flex items-center gap-1">

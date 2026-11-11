@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import type { Plan } from "./api/plan-queries";
 import {
   blockDetails,
+  fixedEventDetails,
   planEntries,
   plannedMinutes,
   planSuggestions,
@@ -347,4 +348,35 @@ test("a Study Block's details name its Obligation and how much of the Estimate i
     },
   });
   expect(blockDetails(p, "missing", colors)).toBeNull();
+});
+
+test("a Fixed Event's details say what, when, and which calendar it came from", () => {
+  const p = plan({
+    calendars: [{ id: "cal-1", name: "Uni-Stundenplan", events: 12 }],
+    fixedEvents: [
+      {
+        id: "f-1",
+        title: "Vorlesung Analysis II",
+        start: at(9, 10),
+        end: at(9, 12),
+        calendarId: "cal-1",
+      },
+      {
+        id: "f-2",
+        title: "Zahnarzt",
+        start: at(10, 8),
+        end: at(10, 9),
+        calendarId: null,
+      },
+    ],
+  });
+
+  expect(fixedEventDetails(p, "f-1")).toEqual({
+    title: "Vorlesung Analysis II",
+    start: new Date(2026, 10, 9, 10),
+    end: new Date(2026, 10, 9, 12),
+    calendar: "Uni-Stundenplan",
+  });
+  expect(fixedEventDetails(p, "f-2")).toMatchObject({ calendar: null });
+  expect(fixedEventDetails(p, "missing")).toBeNull();
 });

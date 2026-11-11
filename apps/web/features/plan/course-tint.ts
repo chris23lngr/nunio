@@ -1,48 +1,15 @@
-import type { CourseColor } from "@/features/courses/api/course-queries";
-
-/** Each course color's Tailwind classes, written out so Tailwind finds them. */
-export const courseTint: Record<
-  CourseColor,
-  { fixed: string; study: string; ring: string }
-> = {
-  rose: {
-    fixed: "bg-rose-200 text-rose-950",
-    study: "bg-rose-50 text-rose-950",
-    ring: "ring-rose-300/60",
-  },
-  orange: {
-    fixed: "bg-orange-200 text-orange-950",
-    study: "bg-orange-50 text-orange-950",
-    ring: "ring-orange-300/60",
-  },
-  amber: {
-    fixed: "bg-amber-200 text-amber-950",
-    study: "bg-amber-50 text-amber-950",
-    ring: "ring-amber-300/60",
-  },
-  emerald: {
-    fixed: "bg-emerald-200 text-emerald-950",
-    study: "bg-emerald-50 text-emerald-950",
-    ring: "ring-emerald-300/60",
-  },
-  teal: {
-    fixed: "bg-teal-200 text-teal-950",
-    study: "bg-teal-50 text-teal-950",
-    ring: "ring-teal-300/60",
-  },
-  blue: {
-    fixed: "bg-blue-200 text-blue-950",
-    study: "bg-blue-50 text-blue-950",
-    ring: "ring-blue-300/60",
-  },
-  violet: {
-    fixed: "bg-violet-200 text-violet-950",
-    study: "bg-violet-50 text-violet-950",
-    ring: "ring-violet-300/60",
-  },
-  fuchsia: {
-    fixed: "bg-fuchsia-200 text-fuchsia-950",
-    study: "bg-fuchsia-50 text-fuchsia-950",
-    ring: "ring-fuchsia-300/60",
-  },
+/**
+ * Classes that tint an entry in its Course's color, read from `--tint`: set it to the
+ * Course's swatch (`colors[color].swatch`). The theme drops Tailwind's palette, so the
+ * shades are mixed from the swatch, the same source as the course dots.
+ */
+export const courseTint = {
+  /** A Fixed Event of the Course: a strong fill. */
+  fixed:
+    "bg-[color-mix(in_oklab,var(--tint)_35%,white)] text-[color-mix(in_oklab,var(--tint),black_72%)]",
+  /** A Study Block for the Course: a faint fill. */
+  study:
+    "bg-[color-mix(in_oklab,var(--tint)_10%,white)] text-[color-mix(in_oklab,var(--tint),black_72%)]",
+  /** The ring around a selected entry. */
+  ring: "ring-[color-mix(in_oklab,color-mix(in_oklab,var(--tint)_55%,white)_60%,transparent)]",
 };
