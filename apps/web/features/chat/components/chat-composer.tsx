@@ -59,7 +59,7 @@ export function ChatComposer({
     <form
       aria-label="Nachricht verfassen"
       className={cn(
-        "w-full shrink-0 bg-linear-to-b from-transparent to-white px-4 pt-16 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-[max(32px,env(safe-area-inset-bottom))]",
+        "w-full shrink-0 bg-linear-to-b from-transparent to-white to-[64px] px-4 pt-16 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6 sm:pb-[max(32px,env(safe-area-inset-bottom))]",
         className,
       )}
       onSubmit={(event) => {
