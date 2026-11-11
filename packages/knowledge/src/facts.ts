@@ -224,14 +224,35 @@ export function createFacts({
             text: decryptSourceText(key, sourceId, chunk.ciphertext),
           })),
         );
+        const candidateWhere = {
+          semester: semesterAt(clock.now()),
+          status: {
+            in: ["accepted", "proposed"] as ("accepted" | "proposed")[],
+          },
+          archivedAt: null,
+          mergedIntoId: null,
+        };
+        const context = {
+          title: source.title,
+          courses: await withOwner(db, p, (tx) =>
+            tx.course.findMany({
+              where: candidateWhere,
+              select: { id: true, title: true, code: true },
+            }),
+          ),
+        };
+        const candidateIds = new Set(
+          context.courses.map((course) => course.id),
+        );
         const results: Extracted[] = [];
         for (const window of deps.extractor.windows(pages)) {
           const result = await deps.delegation.meter(
             p,
-            { microUsd: deps.extractor.estimateMicroUsd(window) },
+            { microUsd: deps.extractor.estimateMicroUsd(window, context) },
             async (signal) => {
               try {
                 return await deps.extractor.extract(window, {
+                  context,
                   signal: deps.signal
                     ? AbortSignal.any([signal, deps.signal])
                     : signal,
@@ -269,7 +290,12 @@ export function createFacts({
           facts: results.flatMap((r) => r.facts),
         };
         const kept = {
-          courses: all.courses.filter(grounded),
+          courses: all.courses.filter(
+            (course) =>
+              (course.existingCourseId &&
+                candidateIds.has(course.existingCourseId)) ||
+              grounded(course),
+          ),
           obligations: all.obligations.filter(grounded),
           facts: all.facts.filter(grounded),
         };
@@ -327,6 +353,28 @@ export function createFacts({
             return Boolean(seen);
           };
           for (const course of kept.courses) {
+            const picked =
+              course.existingCourseId &&
+              candidateIds.has(course.existingCourseId)
+                ? await tx.course.findFirst({
+                    where: { ...candidateWhere, id: course.existingCourseId },
+                    select: { id: true },
+                  })
+                : null;
+            if (picked) {
+              await tx.sourceCourse.upsert({
+                where: { sourceId_courseId: { sourceId, courseId: picked.id } },
+                create: { sourceId, courseId: picked.id, studentId },
+                update: {},
+              });
+              courses.set(normalize(picked.id), picked.id);
+              continue;
+            }
+            // An unknown or no-longer-eligible ID is only a proposal, requiring page grounding.
+            if (!grounded(course)) {
+              dropped++;
+              continue;
+            }
             const matchCode = course.code ? normalize(course.code) : null,
               matchTitle = normalize(course.title);
             // By code first, then by title when no code contradicts it; anything ambiguous becomes a new proposal.
@@ -372,7 +420,11 @@ export function createFacts({
               create: { sourceId, courseId: id, studentId },
               update: {},
             });
-            for (const name of [course.code, course.title])
+            for (const name of [
+              course.existingCourseId,
+              course.code,
+              course.title,
+            ])
               if (name) courses.set(normalize(name), id);
           }
           for (const item of kept.obligations) {

@@ -56,7 +56,7 @@ export interface Extractor {
   estimateMicroUsd(window: Window): number;
   extract(
     window: Window,
-    opts: { signal: AbortSignal },
+    opts: { signal: AbortSignal; context?: ExtractionContext },
   ): Promise<{ items: ExtractedItem[]; usage: Usage }>;
 }
 ```
@@ -69,9 +69,9 @@ The worker calls `facts.extract(...)` from its own Activity, the same way it cal
 - **Re-extraction** is started only by the student, never automatically, and is metered again: "Read again" on a ready Source whose extraction is done or failed calls `POST /api/me/sources/{id}/extract`, which starts the `extractSource` workflow (ID `extractSource/{sourceId}`, the same single-attempt Activity). It is refused while extraction runs (409) and for a Source that is not ready or is deleted (404). Asking again while it is still pending only re-dispatches the workflow, so a failed workflow start never strands the Source.
 - **Model.** Haiku 5.5 via `meter`, with `Output.object` structured output (`response_format: json_schema`, no forced tool). The schema contains no personal data.
 - **Windows.** Page text is split into overlapping page windows of about 30k tokens, each metered separately. Results are merged within the Source before anything is stored.
-- **Untrusted text.** Page text goes in the user message as a nonce-fenced data block, never in the system prompt.
+- **Untrusted text.** Source title and current-Semester candidate Course IDs, titles and codes go in a separate nonce-fenced context block. Both blocks are untrusted user data; none enters the system prompt or schema. Page text goes in the user message as a nonce-fenced data block, never in the system prompt.
 - **All or nothing.** If any window fails, including when the Allowance runs out part-way, extraction ends `failed` and stores no partial Facts.
-- **Grounding.** Every item must carry a page and a verbatim quote. The worker checks the quote against that page's text after normalizing whitespace and hyphenation. Items that fail are dropped and counted, never stored with low confidence. This is how "never invent Obligations" is enforced.
+- **Grounding.** Except a validated existing Course selection (ADR-0017), every item must carry a page and a verbatim quote. The worker checks the quote against that page's text after normalizing whitespace and hyphenation. Items that fail are dropped and counted, never stored with low confidence. This is how "never invent Obligations" is enforced.
 
 ## Data
 
@@ -90,8 +90,9 @@ The worker calls `facts.extract(...)` from its own Activity, the same way it cal
 ## Identity and merging
 
 - **Courses** are `proposed | accepted | rejected`. Extraction proposes them; the student accepts or rejects. Items under a rejected Course are hidden. A Source links to any number of Courses (one syllabus can cover a lecture and tutorial, a Modulhandbuch many modules).
-- **Course matching** uses the normalized module code first, then the normalized title. An unclear match becomes a new proposed Course, never an automatic merge. The student can merge Courses by hand.
-- **Fact matching** requires the same Course, the same type, and the same key. The model suggests the key and the worker normalizes it: kind plus title or number for Obligations ("Übungsblatt 3", "Klausur"), the field for logistics (`exam.room`), the normalized name for Topics. The model never decides that two items are the same.
+- **Automatic Course assignment** ([ADR-0017](../adr/0017-the-model-may-assign-a-source-to-an-existing-course.md)): when no Course is bound, the model sees the Source file name and the student's accepted or proposed, unarchived, unmerged Courses in the current Semester. It may pick one by ID without quoting its name. The server checks that ID against the supplied list and rechecks eligibility at commit time. Items reference the picked ID within this Source's course list. An unknown ID has no authority and is treated as a new proposal needing grounding. Bound Courses bypass this path. The model never merges two existing Courses.
+- **Course matching for grounded proposals** uses the normalized module code first, then the normalized title. An unclear match becomes a new proposed Course, never an automatic merge. The student can merge Courses by hand.
+- **Fact matching** requires the same Course, the same type, and the same key. The model suggests the key and the worker normalizes it: kind plus title or number for Obligations ("Übungsblatt 3", "Klausur"), the field for logistics (`exam.room`), the normalized name for Topics. The model does not decide Fact identity; ADR-0017 permits recognizing an existing Course for a Source.
   - Same key, different value: a disagreement.
   - No match: a new item. A missed match costs at most a duplicate the student rejects, which is safer than a wrong merge that hides a change.
 
@@ -146,8 +147,13 @@ Also:
 - A worker workflow test: extraction runs after ingestion, and an extraction failure leaves the Source `ready`.
 - The real adapter is tested against a recorded response, including the injection case. CI makes no live model calls.
 
+## Prompt for teaching material
+
+One extended Haiku 5.5 prompt handles syllabi, handbooks, slides and lecture notes without a classification call. For teaching material it asks for roughly 5–20 distinct concrete Topics per deck, such as “gleichmäßige Konvergenz”, excluding outline headings like “Einleitung”. Lines beginning exactly with `[Abbildung] ` are figure descriptions written by another model. Topics and other Facts may cite them; Obligations, deadlines and Course names must not rely on them.
+
 ## Eval
 
+- **Course recognition extension:** three licensed German/English slide decks (one fixed excerpt), fetched by URL with SHA-256 verification and attribution in `set.json`. Topic aliases and expected assignments are draft, not yet spot-checked by founder. Topic precision/recall uses deterministic one-to-one exact alias matching within the expected Course, with duplicates counted against precision. Two NLP decks run sequentially for one student and must yield one Course. Results live in `docs/operations/course-recognition-extraction-eval.json`. These new metrics have no merge threshold; the founder sets thresholds after the first run.
 - **Set:** 10–15 public German and English syllabi and module handbooks, plus synthetic scans and one syllabus with injection instructions. Hand-labelled expected Obligations and deadlines live in the repo as JSON. PDFs are committed only when their licence allows it, otherwise fetched by URL. No real student material.
 - **Harness:** runs each document through the real pipeline (local parser container, real OpenRouter). It records precision and recall for Obligations and deadlines, the grounding drop rate, cost and time per document, and the median time from upload to extraction done, in `docs/operations/`.
 - **Models:** Haiku 5.5 first. Sonnet 5.5 is compared only if Haiku misses the founder's thresholds, which are set after the first run.

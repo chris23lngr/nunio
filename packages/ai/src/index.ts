@@ -12,6 +12,7 @@ export {
 export {
   createExtractor,
   type Extracted,
+  type ExtractionContext,
   type Extractor,
   isDate,
   isTime,
