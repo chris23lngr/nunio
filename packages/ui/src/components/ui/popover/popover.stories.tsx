@@ -195,6 +195,9 @@ function ModelMenu() {
           side="right"
           align="start"
           sideOffset={8}
+          // Centers the title on the row's text: the title's center sits 24px
+          // into the card (14px padding + 20px/2), the row's 14px (4px + 20px/2).
+          alignOffset={-10}
           initialFocus={false}
           finalFocus={false}
         >
@@ -212,6 +215,13 @@ function ModelMenu() {
       </Popover>
     </>
   )
+}
+
+function titleCenter(card: HTMLElement) {
+  const title = card.querySelector("[data-slot=popover-title]")
+  if (!title) throw new Error("Popover title not found")
+  const { top, height } = title.getBoundingClientRect()
+  return top + height / 2
 }
 
 export const FromMenuItem: Story = {
@@ -241,9 +251,10 @@ export const FromMenuItem: Story = {
     await expect(card).toHaveAccessibleDescription(models[0]?.description)
     await waitFor(() => {
       const row = opus.getBoundingClientRect()
-      const box = card.getBoundingClientRect()
-      expect(box.left).toBeGreaterThanOrEqual(row.right)
-      expect(box.top).toBeCloseTo(row.top, 0)
+      expect(card.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+        row.right,
+      )
+      expect(titleCenter(card)).toBeCloseTo(row.top + row.height / 2, 0)
     })
     await expect(opus).toHaveFocus()
 
@@ -255,12 +266,13 @@ export const FromMenuItem: Story = {
       ),
     )
     await expect(body.getAllByRole("dialog")).toHaveLength(1)
-    await waitFor(() =>
-      expect(body.getByRole("dialog").getBoundingClientRect().top).toBeCloseTo(
-        sonnet.getBoundingClientRect().top,
+    await waitFor(() => {
+      const row = sonnet.getBoundingClientRect()
+      expect(titleCenter(body.getByRole("dialog"))).toBeCloseTo(
+        row.top + row.height / 2,
         0,
-      ),
-    )
+      )
+    })
 
     await userEvent.keyboard("{Escape}")
     await waitFor(() => expect(body.queryByRole("menu")).toBeNull())
