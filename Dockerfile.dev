@@ -1,0 +1,21 @@
+# Local development image for docker-compose.dev.yml: the api, web and worker apps, built once.
+# Shape from apps/worker/Dockerfile. Build from the repo root.
+FROM node:24-bookworm-slim AS tools
+# postgresql-client: the migrate step creates the API's login role with psql.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates postgresql-client \
+  && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=oven/bun:1.3.14-debian /usr/local/bin/bun /usr/local/bin/bun
+RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
+
+FROM tools AS pruner
+COPY . .
+RUN bunx turbo@2.11.10 prune @nunio/api @nunio/web @nunio/worker --docker
+
+FROM tools
+COPY --from=pruner /app/out/json/ .
+RUN bun install --frozen-lockfile
+COPY --from=pruner /app/out/full/ .
+RUN bunx turbo run build --filter=@nunio/api --filter=@nunio/web --filter=@nunio/worker
+# Baked in, not bind-mounted: Docker Desktop cannot read repos under protected macOS folders.
+COPY --from=pruner /app/scripts/dev-migrate.sh /usr/local/bin/dev-migrate.sh
