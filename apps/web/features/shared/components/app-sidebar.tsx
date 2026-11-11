@@ -22,7 +22,6 @@ import {
   ListChecks,
   MessageSquare,
   Settings,
-  UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -31,7 +30,6 @@ import { UserMenu } from "@/features/auth/user-menu";
 const menuItems = [
   { title: "Home", href: "/", icon: House },
   { title: "Inbox", href: "/inbox", icon: Inbox },
-  { title: "Account", href: "/account", icon: UserRound },
   { title: "Review", href: "/review", icon: ClipboardCheck },
   { title: "Chat", href: "/chat", icon: MessageSquare },
   { title: "Plan", href: "/plan", icon: CalendarDays },

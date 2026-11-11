@@ -13,7 +13,6 @@ export default async function HomePage() {
   return (
     <main>
       <p>Signed in as {session.user.email}</p>
-      <Link href="/account">Account</Link>
       <Link href="/review">Review</Link>
       <Link href="/chat">Chat</Link>
       <Link href="/plan">Plan</Link>

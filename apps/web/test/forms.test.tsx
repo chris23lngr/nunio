@@ -7,10 +7,8 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
-import { DeletionForm } from "@/app/(app)/account/deletion-form";
 import { ResetPasswordForm } from "@/app/reset-password/reset-password-form";
 import { api } from "./api";
-import { TestProviders } from "./providers";
 
 const { router, client } = vi.hoisted(() => ({
   router: { replace: vi.fn(), refresh: vi.fn() },
@@ -67,40 +65,4 @@ test("password reset validates length, blocks duplicate submissions, and can ret
     token: "reset-token",
     newPassword: "new-password",
   });
-});
-
-test("account deletion keeps incorrect-password feedback and submits the corrected password", async () => {
-  const passwords: string[] = [];
-  api.route("POST", "/api/me/deletion-request", async (request) => {
-    const { password } = (await request.json()) as { password: string };
-    passwords.push(password);
-    return password === "correct-password"
-      ? Response.json({}, { status: 202 })
-      : Response.json({}, { status: 403 });
-  });
-  render(
-    <TestProviders>
-      <DeletionForm apiOrigin={api.origin} />
-    </TestProviders>,
-  );
-  const user = userEvent.setup();
-  const input = screen.getByLabelText("Password");
-  await user.type(input, "wrong-password");
-  await user.click(
-    screen.getByRole("button", { name: "Request account deletion" }),
-  );
-  expect(await screen.findByRole("alert")).toHaveProperty(
-    "textContent",
-    "That password is incorrect.",
-  );
-  await user.clear(input);
-  await user.type(input, "correct-password");
-  await user.click(
-    screen.getByRole("button", { name: "Request account deletion" }),
-  );
-  await waitFor(() =>
-    expect(router.replace).toHaveBeenCalledWith("/sign-in?deletion=requested"),
-  );
-  expect(passwords).toEqual(["wrong-password", "correct-password"]);
-  expect(router.refresh).toHaveBeenCalled();
 });

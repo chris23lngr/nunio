@@ -103,7 +103,7 @@ test("security settings reject an invalid session cookie", async ({
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
 });
 
-test("a signed-in student can open security settings without changing the account page", async ({
+test("a signed-in student can manage their account in security settings", async ({
   page,
 }) => {
   await signIn(page, "settings");
@@ -112,11 +112,12 @@ test("a signed-in student can open security settings without changing the accoun
     page.getByRole("heading", { name: "Einstellungen", level: 1 }),
   ).toBeVisible();
   await expect(page.getByText("Dieses Gerät")).toBeVisible();
-  await page.goto(`${origins.app}/account`);
-  await expect(page).toHaveURL(`${origins.app}/account`);
   await expect(
-    page.getByRole("heading", { name: "Account", exact: true }),
+    page.getByRole("button", { name: "Konto löschen", exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Account", exact: true }),
+  ).toHaveCount(0);
 });
 
 test("settings open from the sidebar footer and stack below navigation on mobile", async ({
@@ -266,22 +267,23 @@ test("a student signs out another session and requests deletion from account set
   const phonePage = await phone.newPage();
   await signInAs(phonePage, email);
 
-  await page
-    .getByRole("navigation", { name: "App navigation" })
-    .getByRole("link", { name: "Account" })
-    .click();
+  await page.getByRole("link", { name: "Einstellungen", exact: true }).click();
   const sessions = page.getByRole("main").getByRole("listitem");
   await expect(sessions).toHaveCount(2);
   await sessions
-    .filter({ hasNotText: "This device" })
-    .getByRole("button", { name: "Sign out" })
+    .filter({ hasNotText: "Dieses Gerät" })
+    .getByRole("button", { name: "Abmelden", exact: true })
     .click();
   await expect(sessions).toHaveCount(1);
   await phonePage.goto(`${origins.app}/`);
   await expect(phonePage).toHaveURL(`${origins.app}/sign-in`);
 
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Request account deletion" }).click();
+  await page
+    .getByRole("button", { name: "Konto löschen", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Konto löschen?" });
+  await dialog.getByLabel("Passwort").fill(password);
+  await dialog.getByRole("button", { name: "Löschung anfordern" }).click();
   await expect(page).toHaveURL(`${origins.app}/sign-in?deletion=requested`);
   await expect(
     page.getByText("Deine Anfrage zur Kontolöschung ist eingegangen."),
@@ -300,11 +302,8 @@ test("a student signs out everywhere from account settings", async ({
   const phonePage = await phone.newPage();
   await signInAs(phonePage, email);
 
-  await page
-    .getByRole("navigation", { name: "App navigation" })
-    .getByRole("link", { name: "Account" })
-    .click();
-  await page.getByRole("button", { name: "Sign out everywhere" }).click();
+  await page.getByRole("link", { name: "Einstellungen", exact: true }).click();
+  await page.getByRole("button", { name: "Überall abmelden" }).click();
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
 
   await page.goto(`${origins.app}/`);
@@ -462,12 +461,13 @@ test("account deletion cannot restore cached Sources through browser Back", asyn
   );
   await signIn(page, "cache-delete");
   await expect(page.getByText(/Deleted student's syllabus/)).toBeVisible();
+  await page.getByRole("link", { name: "Einstellungen", exact: true }).click();
   await page
-    .getByRole("navigation", { name: "App navigation" })
-    .getByRole("link", { name: "Account" })
+    .getByRole("button", { name: "Konto löschen", exact: true })
     .click();
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Request account deletion" }).click();
+  const dialog = page.getByRole("dialog", { name: "Konto löschen?" });
+  await dialog.getByLabel("Passwort").fill(password);
+  await dialog.getByRole("button", { name: "Löschung anfordern" }).click();
   await expect(page).toHaveURL(`${origins.app}/sign-in?deletion=requested`);
   await page.goBack();
   await expect(page.getByText(/Deleted student's syllabus/)).toHaveCount(0);
@@ -494,11 +494,8 @@ test("signing out everywhere cannot restore cached Sources through browser Back"
   );
   await signIn(page, "cache-revoke");
   await expect(page.getByText(/Signed-out student's syllabus/)).toBeVisible();
-  await page
-    .getByRole("navigation", { name: "App navigation" })
-    .getByRole("link", { name: "Account" })
-    .click();
-  await page.getByRole("button", { name: "Sign out everywhere" }).click();
+  await page.getByRole("link", { name: "Einstellungen", exact: true }).click();
+  await page.getByRole("button", { name: "Überall abmelden" }).click();
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
   await page.goBack();
   await expect(page.getByText(/Signed-out student's syllabus/)).toHaveCount(0);
