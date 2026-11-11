@@ -34,7 +34,7 @@ function TraceLine({
       data-slot="trace-line"
       data-status={status}
       className={cn(
-        "text-base-500 in-[a:hover,button:hover]:text-base-800 data-[status=error]:text-destructive-700 data-[status=error]:in-[a:hover,button:hover]:text-destructive-700 flex w-fit max-w-full min-w-0 items-center gap-2 text-sm transition-colors in-[a,button]:cursor-pointer data-[status=pending]:opacity-60 data-[status=running]:*:data-[slot=trace-title]:motion-safe:animate-pulse",
+        "text-base-500 in-[a:hover,button:hover]:text-base-800 data-[status=error]:text-destructive-700 data-[status=error]:in-[a:hover,button:hover]:text-destructive-700 data-[status=running]:*:data-[slot=trace-title]:shimmer flex w-fit max-w-full min-w-0 items-center gap-2 text-sm transition-colors in-[a,button]:cursor-pointer data-[status=pending]:opacity-60",
         className,
       )}
       {...props}
@@ -60,10 +60,7 @@ function TraceTitle({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
       data-slot="trace-title"
-      className={cn(
-        "motion-reduce:motion-safe:animate-pulse-none min-w-0 truncate",
-        className,
-      )}
+      className={cn("min-w-0 truncate", className)}
       {...props}
     />
   )
