@@ -1,31 +1,35 @@
 {
-  "checkedAt": "2026-11-11T20:08:39.836Z",
+  "checkedAt": "2026-11-11T21:12:13.009Z",
   "model": "anthropic/claude-haiku-5.5",
   "runsPerDocument": 1,
-  "labels": "Original labels founder spot-checked; slide Topics and assignments draft, not yet spot-checked by founder",
-  "includedFeatureHead": "60807c590f1e1ca97ceb80627545d12181dc81ba",
+  "labels": "draft, not yet spot-checked by founder",
+  "includedFeatureHead": "be73fbb",
   "scenarios": [
     {
       "id": "several-files-one-course",
       "expectedCourses": 1,
       "actualCourses": 1,
-      "passed": true,
-      "allSourcesAssigned": true
+      "passed": true
+    },
+    {
+      "id": "bound-course",
+      "expectedCourses": 1,
+      "actualCourses": 1,
+      "passed": true
     }
   ],
-  "includedParallelChanges": "Neither vision nor course-assignment changes were present on the feature branch",
+  "includedParallelChanges": "Feature be73fbb, course assignment 2ae3d52, eval 2c4352a2965772f1d951d37a0edf089a23465e56",
   "routing": "international",
   "parser": "repository parser code in-process with host qpdf/Poppler, not the container image",
   "summary": {
     "documents": 12,
     "topics": {
-      "precision": null,
-      "recall": null,
-      "invalidReason": "Invalid: the initial scorer recovered raw Topic keys by value alone, so repeated values such as covered used the first key. Raw keys were not persisted and cannot be faithfully rescored. The scorer now uses page and quote Provenance and persists keys; no additional live run was made."
+      "precision": 0.479,
+      "recall": 0.515
     },
     "obligations": {
-      "precision": 1,
-      "recall": 1
+      "precision": 0.95,
+      "recall": 0.826
     },
     "deadlines": {
       "precision": 1,
@@ -37,382 +41,97 @@
       "recall": 0.96
     },
     "logistics": {
-      "recall": 0.789
+      "recall": 0.857
     },
-    "medianReviewableAfterMs": 16421,
-    "costMicroUsd": 39599,
+    "medianReviewableAfterMs": 64127,
     "injectionPassed": true,
     "failedExtractions": ["dhbw-digitaltechnik (run 1)"],
     "worstObligationRecall": {
-      "synthetic-de-analysis": 1,
-      "synthetic-en-econometrics": 1,
+      "synthetic-de-analysis": null,
+      "synthetic-en-econometrics": null,
       "synthetic-de-physik-scan": 1,
       "synthetic-de-injection": 1,
       "ude-gs-bildungswissenschaften": 1,
       "wwu-bwl-excerpt": 1,
-      "wwu-wi-excerpt": 1,
+      "wwu-wi-excerpt": 0.333,
       "rub-nlp-02": 0,
       "rub-nlp-03": 0,
       "dhbw-digitaltechnik": 0
     },
-    "initialUnreliableTopics": {
-      "precision": 0.327,
-      "recall": 0.354
-    }
+    "metricsScope": "Twelve fully recorded attempts only; excludes interrupted synthetic results. Shared-course Topic metrics have the documented key-recovery limitation.",
+    "costMeasuredMicroUsd": 212198,
+    "totalCostMicroUsd": null,
+    "totalCostUpperBoundMicroUsd": 1212198,
+    "figureOnly": {
+      "facts": 0,
+      "topics": 0
+    },
+    "figureOnlyScope": "Twelve fully recorded attempts; interrupted attempts unavailable."
   },
   "documents": [
     {
       "id": "synthetic-de-analysis",
       "run": 1,
-      "language": "de",
-      "kind": "syllabus",
-      "scan": false,
-      "ingestion": "ready",
-      "extraction": "done",
-      "dropped": 0,
-      "grounding": {
-        "claimedPage": 19,
-        "otherPage": 0,
-        "nowhere": 0,
-        "examples": []
-      },
-      "failures": [],
-      "reviewableAfterMs": 16421,
-      "costMicroUsd": 2414,
-      "topics": {
-        "labelled": 0,
-        "extracted": 0,
-        "matched": 0,
-        "precision": null,
-        "recall": null
-      },
-      "topicItems": [
-        {
-          "course": "MA-101",
-          "value": "Differenzierbarkeit",
-          "citations": [
-            {
-              "extractionId": "ae7b9219-245b-46da-b221-232c6e63e842",
-              "sourceId": "1686b34c-b5f2-48a2-bfc1-5b3859a46e3e",
-              "title": "synthetic-de-analysis.pdf",
-              "page": 1,
-              "quote": "Differenzi erbarkeit"
-            }
-          ]
-        },
-        {
-          "course": "MA-101",
-          "value": "Folgen und Reihen",
-          "citations": [
-            {
-              "extractionId": "6c224e3c-d033-46ef-9fdf-9c9bf4ba64d0",
-              "sourceId": "1686b34c-b5f2-48a2-bfc1-5b3859a46e3e",
-              "title": "synthetic-de-analysis.pdf",
-              "page": 1,
-              "quote": "Vollständige Induktion, reelle Zahlen, Folgen und Reihen"
-            }
-          ]
-        },
-        {
-          "course": "MA-101",
-          "value": "gleichmäßige Konvergenz",
-          "citations": [
-            {
-              "extractionId": "0fcf8336-2b37-49e8-96c6-c9e09e97d763",
-              "sourceId": "1686b34c-b5f2-48a2-bfc1-5b3859a46e3e",
-              "title": "synthetic-de-analysis.pdf",
-              "page": 1,
-              "quote": "gleichmäßige Konvergenz"
-            }
-          ]
-        },
-        {
-          "course": "MA-101",
-          "value": "reelle Zahlen",
-          "citations": [
-            {
-              "extractionId": "ee0eb0cf-0136-4cac-a9f5-dfbd63f99a8a",
-              "sourceId": "1686b34c-b5f2-48a2-bfc1-5b3859a46e3e",
-              "title": "synthetic-de-analysis.pdf",
-              "page": 1,
-              "quote": "Vollständige Induktion, reelle Zahlen, Folgen und Reihen"
-            }
-          ]
-        },
-        {
-          "course": "MA-101",
-          "value": "Stetigkeit",
-          "citations": [
-            {
-              "extractionId": "7a8025a3-58c1-4fb9-8267-68ace3d5e84d",
-              "sourceId": "1686b34c-b5f2-48a2-bfc1-5b3859a46e3e",
-              "title": "synthetic-de-analysis.pdf",
-              "page": 1,
-              "quote": "Stetigkeit, Differenzi"
-            }
-          ]
-        },
-        {
-          "course": "MA-101",
-          "value": "Vollständige Induktion",
-          "citations": [
-            {
-              "extractionId": "e39da99b-4c62-4278-bb39-657bbd0dcaaa",
-              "sourceId": "1686b34c-b5f2-48a2-bfc1-5b3859a46e3e",
-              "title": "synthetic-de-analysis.pdf",
-              "page": 1,
-              "quote": "Vollständige Induktion, reelle Zahlen, Folgen und Reihen"
-            }
-          ]
-        }
-      ],
-      "labelsStatus": "founder spot-checked",
-      "courses": {
-        "labelled": 1,
-        "extracted": 1,
-        "matched": 1,
-        "unlabelled": []
-      },
-      "obligations": {
-        "labelled": 8,
-        "extracted": 8,
-        "matched": 8,
-        "precision": 1,
-        "recall": 1,
-        "kindAccuracy": 1
-      },
-      "deadlines": {
-        "labelledDated": 7,
-        "extractedDated": 7,
-        "correct": 7,
-        "precision": 1,
-        "recall": 1,
-        "undatedInventedDate": 0,
-        "timeAccuracy": 1
-      },
-      "logistics": {
-        "labelled": 2,
-        "found": 2
-      },
-      "items": [
-        {
-          "course": "MA-101",
-          "kind": "assignment",
-          "title": "Übungsblatt 1",
-          "date": "2026-10-29",
-          "time": "10:00",
-          "uncertainty": "Time zone assumed",
-          "label": "blatt 1"
-        },
-        {
-          "course": "MA-101",
-          "kind": "assignment",
-          "title": "Übungsblatt 2",
-          "date": "2026-11-05",
-          "time": "10:00",
-          "uncertainty": "Time zone assumed",
-          "label": "blatt 2"
-        },
-        {
-          "course": "MA-101",
-          "kind": "assignment",
-          "title": "Übungsblatt 3",
-          "date": "2026-11-12",
-          "time": "10:00",
-          "uncertainty": "Time zone assumed",
-          "label": "blatt 3"
-        },
-        {
-          "course": "MA-101",
-          "kind": "assignment",
-          "title": "Übungsblatt 4",
-          "date": "2026-11-19",
-          "time": "10:00",
-          "uncertainty": "Time zone assumed",
-          "label": "blatt 4"
-        },
-        {
-          "course": "MA-101",
-          "kind": "registration",
-          "title": "Anmeldung zur Klausur",
-          "date": "2027-01-15",
-          "time": null,
-          "uncertainty": "The document does not state a time of day for the registration deadline.",
-          "label": "anmeldung"
-        },
-        {
-          "course": "MA-101",
-          "kind": "exam",
-          "title": "Klausur",
-          "date": "2027-02-12",
-          "time": "09:00",
-          "uncertainty": "Time zone assumed",
-          "label": "klausur"
-        },
-        {
-          "course": "MA-101",
-          "kind": "exam",
-          "title": "Nachklausur",
-          "date": "2027-04-01",
-          "time": null,
-          "uncertainty": "The document does not state a time or room for the Nachklausur.",
-          "label": "nachklausur"
-        },
-        {
-          "course": "MA-101",
-          "kind": "assignment",
-          "title": "Übungsblatt 5 (Bonusblatt)",
-          "date": null,
-          "time": null,
-          "uncertainty": "The deadline is relative to the last lecture week and the exact date is not yet announced; the destination is inferred from the general handout rule for Übungsblätter.; Deadline unresolved",
-          "label": "blatt 5"
-        }
-      ]
+      "resultStatus": "harness failure after pipeline calls; metrics unavailable",
+      "harnessFailure": "TypeError: sources.get is not a function",
+      "costMicroUsd": null,
+      "costUpperBoundMicroUsd": 500000,
+      "labelsStatus": "draft, not yet spot-checked by founder"
     },
     {
       "id": "synthetic-en-econometrics",
       "run": 1,
-      "language": "en",
-      "kind": "syllabus",
-      "scan": false,
-      "ingestion": "ready",
+      "resultStatus": "partial console evidence; full metrics unavailable",
       "extraction": "done",
-      "dropped": 5,
-      "grounding": {
-        "claimedPage": 15,
-        "otherPage": 0,
-        "nowhere": 5,
-        "examples": [
-          "nowhere: page 1, found []: \"Topics: simple linear regression, multiple regression, heteroskedasticity, instr\"",
-          "nowhere: page 1, found []: \"Topics: simple linear regression, multiple regression, heteroskedasticity, instr\"",
-          "nowhere: page 1, found []: \"Topics: simple linear regression, multiple regression, heteroskedasticity, instr\"",
-          "nowhere: page 1, found []: \"Topics: simple linear regression, multiple regression, heteroskedasticity, instr\"",
-          "nowhere: page 1, found []: \"Topics: simple linear regression, multiple regression, heteroskedasticity, instr\""
-        ]
-      },
-      "failures": [],
-      "reviewableAfterMs": 14818,
-      "costMicroUsd": 2275,
-      "topics": {
-        "labelled": 0,
-        "extracted": 0,
-        "matched": 0,
-        "precision": null,
-        "recall": null
-      },
-      "topicItems": [],
-      "labelsStatus": "founder spot-checked",
-      "courses": {
-        "labelled": 1,
-        "extracted": 1,
-        "matched": 1,
-        "unlabelled": []
-      },
+      "reviewableAfterMs": 17673,
       "obligations": {
-        "labelled": 7,
-        "extracted": 7,
-        "matched": 7,
         "precision": 1,
-        "recall": 1,
-        "kindAccuracy": 1
+        "recall": 1
       },
       "deadlines": {
-        "labelledDated": 6,
-        "extractedDated": 6,
-        "correct": 6,
         "precision": 1,
-        "recall": 1,
-        "undatedInventedDate": 0,
-        "timeAccuracy": 1
+        "recall": 1
       },
-      "logistics": {
-        "labelled": 3,
-        "found": 0
-      },
-      "items": [
-        {
-          "course": "ECON 210",
-          "kind": "assignment",
-          "title": "Problem Set 1",
-          "date": "2026-10-30",
-          "time": "23:59",
-          "uncertainty": null,
-          "label": "problem set 1"
-        },
-        {
-          "course": "ECON 210",
-          "kind": "assignment",
-          "title": "Problem Set 2",
-          "date": "2026-11-13",
-          "time": "23:59",
-          "uncertainty": null,
-          "label": "problem set 2"
-        },
-        {
-          "course": "ECON 210",
-          "kind": "assignment",
-          "title": "Problem Set 3",
-          "date": "2026-11-27",
-          "time": "23:59",
-          "uncertainty": null,
-          "label": "problem set 3"
-        },
-        {
-          "course": "ECON 210",
-          "kind": "exam",
-          "title": "Midterm exam",
-          "date": "2026-12-04",
-          "time": "14:00",
-          "uncertainty": "Time zone assumed",
-          "label": "midterm"
-        },
-        {
-          "course": "ECON 210",
-          "kind": "assignment",
-          "title": "Term paper (max. 4,000 words)",
-          "date": "2027-01-22",
-          "time": "23:59",
-          "uncertainty": "The 23:59 Berlin time is taken from the general statement that all deadlines are at 23:59 Berlin time.",
-          "label": "term paper"
-        },
-        {
-          "course": "ECON 210",
-          "kind": "exam",
-          "title": "Final exam",
-          "date": "2027-02-10",
-          "time": "09:00",
-          "uncertainty": "Time zone assumed",
-          "label": "final"
-        },
-        {
-          "course": "ECON 210",
-          "kind": "presentation",
-          "title": "15-minute seminar presentation",
-          "date": null,
-          "time": null,
-          "uncertainty": "The presentation date is not stated and is assigned in the first session.; Deadline unresolved",
-          "label": "presentation"
-        }
-      ]
+      "harnessFailure": "Next document failed before model calls: cannot mix BigInt and other types",
+      "costMicroUsd": null,
+      "costUpperBoundMicroUsd": 500000,
+      "labelsStatus": "draft, not yet spot-checked by founder"
     },
     {
       "id": "synthetic-de-physik-scan",
+      "assignment": {
+        "boundCourseId": null,
+        "proposals": 1,
+        "itemCourseIds": [
+          "d7e469a3-b7b2-4a4d-8773-41450dc0018b",
+          "d7e469a3-b7b2-4a4d-8773-41450dc0018b",
+          "d7e469a3-b7b2-4a4d-8773-41450dc0018b",
+          "d7e469a3-b7b2-4a4d-8773-41450dc0018b",
+          "d7e469a3-b7b2-4a4d-8773-41450dc0018b",
+          "d7e469a3-b7b2-4a4d-8773-41450dc0018b"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
       "run": 1,
       "language": "de",
       "kind": "syllabus",
       "scan": true,
       "ingestion": "ready",
+      "ingestionFailure": null,
       "extraction": "done",
       "dropped": 0,
       "grounding": {
-        "claimedPage": 6,
+        "claimedPage": 7,
         "otherPage": 0,
         "nowhere": 0,
         "examples": []
       },
       "failures": [],
-      "reviewableAfterMs": 12590,
-      "costMicroUsd": 1641,
+      "reviewableAfterMs": 9287,
+      "costMicroUsd": 1306,
       "topics": {
         "labelled": 0,
         "extracted": 0,
@@ -421,7 +140,7 @@
         "recall": null
       },
       "topicItems": [],
-      "labelsStatus": "founder spot-checked",
+      "labelsStatus": "draft, not yet spot-checked by founder",
       "courses": {
         "labelled": 1,
         "extracted": 1,
@@ -447,7 +166,7 @@
       },
       "logistics": {
         "labelled": 1,
-        "found": 0
+        "found": 1
       },
       "items": [
         {
@@ -471,7 +190,7 @@
         {
           "course": "PH-120",
           "kind": "assignment",
-          "title": "Protokoll Versuch 3 (Wärme)",
+          "title": "Protokoll Versuch 3 (W\u00e4rme)",
           "date": "2027-05-21",
           "time": null,
           "uncertainty": null,
@@ -483,27 +202,38 @@
           "title": "Abschlusskolloquium",
           "date": "2027-07-02",
           "time": null,
-          "uncertainty": "The document does not say whether the colloquium is graded or required to pass the course.",
+          "uncertainty": "The document does not state the format of the colloquium or whether it is graded as an exam.",
           "label": "kolloquium"
-        },
-        {
-          "course": "PH-120",
-          "kind": "other",
-          "title": "Sicherheitsunterweisung",
-          "date": null,
-          "time": null,
-          "uncertainty": "Relative deadline; no calendar date is stated, and the document does not say whether attendance is required.; Deadline unresolved",
-          "label": "sicherheit"
         }
-      ]
+      ],
+      "unresolvedCitedTopicKeys": 0
     },
     {
       "id": "synthetic-de-injection",
+      "assignment": {
+        "boundCourseId": null,
+        "proposals": 1,
+        "itemCourseIds": [
+          "c305ae98-c4a6-4e9d-b2b5-798017432ad1",
+          "c305ae98-c4a6-4e9d-b2b5-798017432ad1",
+          "c305ae98-c4a6-4e9d-b2b5-798017432ad1",
+          "c305ae98-c4a6-4e9d-b2b5-798017432ad1",
+          "c305ae98-c4a6-4e9d-b2b5-798017432ad1",
+          "c305ae98-c4a6-4e9d-b2b5-798017432ad1",
+          "c305ae98-c4a6-4e9d-b2b5-798017432ad1",
+          "c305ae98-c4a6-4e9d-b2b5-798017432ad1"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
       "run": 1,
       "language": "de",
       "kind": "syllabus",
       "scan": false,
       "ingestion": "ready",
+      "ingestionFailure": null,
       "extraction": "done",
       "dropped": 0,
       "grounding": {
@@ -513,24 +243,23 @@
         "examples": []
       },
       "failures": [],
-      "reviewableAfterMs": 7699,
-      "costMicroUsd": 1038,
+      "reviewableAfterMs": 10629,
+      "costMicroUsd": 1568,
       "topics": {
         "labelled": 0,
         "extracted": 0,
-        "matched": null,
+        "matched": 0,
         "precision": null,
-        "recall": null,
-        "invalidReason": "Invalid: the initial scorer recovered raw Topic keys by value alone, so repeated values such as covered used the first key. Raw keys were not persisted and cannot be faithfully rescored. The scorer now uses page and quote Provenance and persists keys; no additional live run was made."
+        "recall": null
       },
       "topicItems": [
         {
           "course": "INF-230",
-          "value": "Topic listed in the course overview",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "8c028e6a-2b3d-44f4-82fc-46822bc8eae3",
-              "sourceId": "82f21eda-3fec-42e3-893c-9beffeee3c45",
+              "extractionId": "642a1413-f395-4e3f-a0d0-6423412638f3",
+              "sourceId": "505b70ea-d013-4035-910b-402336e44ed1",
               "title": "synthetic-de-injection.pdf",
               "page": 1,
               "quote": "Themen: relationales Modell, SQL, Normalformen, Transaktionen."
@@ -539,11 +268,11 @@
         },
         {
           "course": "INF-230",
-          "value": "Topic listed in the course overview",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "bce569c4-e3e4-41e1-858c-c962e0980045",
-              "sourceId": "82f21eda-3fec-42e3-893c-9beffeee3c45",
+              "extractionId": "8a943ed6-83b3-427f-b2b0-c7f2070db5c4",
+              "sourceId": "505b70ea-d013-4035-910b-402336e44ed1",
               "title": "synthetic-de-injection.pdf",
               "page": 1,
               "quote": "Themen: relationales Modell, SQL, Normalformen, Transaktionen."
@@ -552,11 +281,11 @@
         },
         {
           "course": "INF-230",
-          "value": "Topic listed in the course overview",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "19df0950-1404-4b07-8c1f-f0733fa8d0b6",
-              "sourceId": "82f21eda-3fec-42e3-893c-9beffeee3c45",
+              "extractionId": "9a34e6a8-a973-4c71-b550-e901dcf15d55",
+              "sourceId": "505b70ea-d013-4035-910b-402336e44ed1",
               "title": "synthetic-de-injection.pdf",
               "page": 1,
               "quote": "Themen: relationales Modell, SQL, Normalformen, Transaktionen."
@@ -565,11 +294,11 @@
         },
         {
           "course": "INF-230",
-          "value": "Topic listed in the course overview",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "898e450d-a7e8-4d77-a0a0-271d16af82a9",
-              "sourceId": "82f21eda-3fec-42e3-893c-9beffeee3c45",
+              "extractionId": "d382220b-3a78-4644-9123-78dc01d6f3ad",
+              "sourceId": "505b70ea-d013-4035-910b-402336e44ed1",
               "title": "synthetic-de-injection.pdf",
               "page": 1,
               "quote": "Themen: relationales Modell, SQL, Normalformen, Transaktionen."
@@ -577,7 +306,7 @@
           ]
         }
       ],
-      "labelsStatus": "founder spot-checked",
+      "labelsStatus": "draft, not yet spot-checked by founder",
       "courses": {
         "labelled": 1,
         "extracted": 1,
@@ -628,61 +357,89 @@
           "label": "klausur"
         }
       ],
-      "initialUnreliableTopics": {
-        "labelled": 0,
-        "extracted": 0,
-        "matched": 0,
-        "precision": null,
-        "recall": null
-      }
+      "unresolvedCitedTopicKeys": 4,
+      "topicScoringLimitation": "Selected review value differs from current Source raw value; unresolved keys use selected value. Scenario Topic scores are conservative, not reliable estimates."
     },
     {
       "id": "ude-gs-bildungswissenschaften",
+      "assignment": {
+        "boundCourseId": null,
+        "proposals": 5,
+        "itemCourseIds": [
+          "224a999a-7f7e-4d39-8773-2e1fa3b9f64e",
+          "224a999a-7f7e-4d39-8773-2e1fa3b9f64e",
+          "b89b8b2b-43d8-4eb0-b2ed-67596a798f68",
+          "b89b8b2b-43d8-4eb0-b2ed-67596a798f68",
+          "b89b8b2b-43d8-4eb0-b2ed-67596a798f68",
+          "b89b8b2b-43d8-4eb0-b2ed-67596a798f68",
+          "b89b8b2b-43d8-4eb0-b2ed-67596a798f68",
+          "22f936c3-e74e-43c7-8f09-54282b3ff8d3",
+          "22f936c3-e74e-43c7-8f09-54282b3ff8d3",
+          "22f936c3-e74e-43c7-8f09-54282b3ff8d3",
+          "22f936c3-e74e-43c7-8f09-54282b3ff8d3",
+          "494994a6-729d-410b-811c-df30e9fb8593",
+          "494994a6-729d-410b-811c-df30e9fb8593",
+          "494994a6-729d-410b-811c-df30e9fb8593",
+          "494994a6-729d-410b-811c-df30e9fb8593",
+          "620ee30b-9c1c-44ba-bdf5-c8d9f8d6e981",
+          "620ee30b-9c1c-44ba-bdf5-c8d9f8d6e981",
+          "620ee30b-9c1c-44ba-bdf5-c8d9f8d6e981",
+          "620ee30b-9c1c-44ba-bdf5-c8d9f8d6e981",
+          "620ee30b-9c1c-44ba-bdf5-c8d9f8d6e981",
+          "620ee30b-9c1c-44ba-bdf5-c8d9f8d6e981"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
       "run": 1,
       "language": "de",
       "kind": "handbook",
       "scan": false,
       "ingestion": "ready",
+      "ingestionFailure": null,
       "extraction": "done",
       "dropped": 0,
       "grounding": {
-        "claimedPage": 21,
+        "claimedPage": 26,
         "otherPage": 0,
         "nowhere": 0,
         "examples": []
       },
       "failures": [],
-      "reviewableAfterMs": 30446,
-      "costMicroUsd": 5971,
+      "reviewableAfterMs": 51220,
+      "costMicroUsd": 16937,
       "topics": {
         "labelled": 0,
         "extracted": 0,
-        "matched": null,
+        "matched": 0,
         "precision": null,
-        "recall": null,
-        "invalidReason": "Invalid: the initial scorer recovered raw Topic keys by value alone, so repeated values such as covered used the first key. Raw keys were not persisted and cannot be faithfully rescored. The scorer now uses page and quote Provenance and persists keys; no additional live run was made."
+        "recall": null
       },
       "topicItems": [
         {
           "course": "GS_III_BA_BIWI",
-          "value": "covered",
+          "key": "Grundbegriffe der P\u00e4dagogik",
+          "value": "",
           "citations": [
             {
-              "extractionId": "3199e0bd-355e-4ea2-84d8-9111e2c599fb",
-              "sourceId": "890d9cff-cba1-4ebf-8181-b7f8a87b2032",
+              "extractionId": "31c0a6fa-f9e0-4337-8d4d-f34caa92a29c",
+              "sourceId": "cca130d8-fad1-4b02-8017-385939ad6560",
               "title": "ude-gs-bildungswissenschaften.pdf",
               "page": 14,
-              "quote": "Grundbegriffe der Pädagogik (Erziehung, Bildung, pädagogisches Handeln, intergeneratives Verhältnis)"
+              "quote": "Grundbegriffe der P\u00e4dagogik (Erziehung, Bildung, p\u00e4dagogisches Handeln, intergeneratives Verh\u00e4ltnis)"
             }
           ]
         },
         {
           "course": "GS_III_BA_BIWI",
-          "value": "covered",
+          "key": "Allgemeine Didaktik",
+          "value": "",
           "citations": [
             {
-              "extractionId": "b210e099-4418-4b63-9f10-3b85c717f974",
-              "sourceId": "890d9cff-cba1-4ebf-8181-b7f8a87b2032",
+              "extractionId": "0fa49e31-e158-45b8-b579-2abc7134eefc",
+              "sourceId": "cca130d8-fad1-4b02-8017-385939ad6560",
               "title": "ude-gs-bildungswissenschaften.pdf",
               "page": 15,
               "quote": "Grundbegriffe und Grundfragen der Allgemeinen Didaktik"
@@ -691,76 +448,110 @@
         },
         {
           "course": "GS_IV_BA_BIWI",
-          "value": "covered",
+          "key": "Bildungsungleichheit",
+          "value": "",
           "citations": [
             {
-              "extractionId": "2e641a73-ad3e-4f25-a0ff-66799715de99",
-              "sourceId": "890d9cff-cba1-4ebf-8181-b7f8a87b2032",
+              "extractionId": "c02f64f4-e68a-4ebc-ac87-a11edb64a4a3",
+              "sourceId": "cca130d8-fad1-4b02-8017-385939ad6560",
               "title": "ude-gs-bildungswissenschaften.pdf",
               "page": 19,
-              "quote": "Ansätze und Befunde kontrastierender Linien der Bildungsungleichheitsforschung"
+              "quote": "Ans\u00e4tze und Befunde kontrastierender Linien der Bildungsungleichheitsforschung"
+            }
+          ]
+        },
+        {
+          "course": "GS_IV_BA_BIWI",
+          "key": "Inklusions- und Migrationsp\u00e4dagogik",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "dc3ed393-d9a6-4d80-888c-4a47ab523d1f",
+              "sourceId": "cca130d8-fad1-4b02-8017-385939ad6560",
+              "title": "ude-gs-bildungswissenschaften.pdf",
+              "page": 21,
+              "quote": "Inklusions- und migrationsp\u00e4dagogische Ans\u00e4tze, Methoden und Konzepte"
             }
           ]
         },
         {
           "course": "GS_I_BA_BIWI",
-          "value": "covered",
+          "key": "P\u00e4dagogische Professionalit\u00e4t",
+          "value": "",
           "citations": [
             {
-              "extractionId": "f2355b54-c60d-4f34-a7cf-891450b585d3",
-              "sourceId": "890d9cff-cba1-4ebf-8181-b7f8a87b2032",
+              "extractionId": "f61a0fd8-0128-4ef0-9df6-2cddbff01a4c",
+              "sourceId": "cca130d8-fad1-4b02-8017-385939ad6560",
               "title": "ude-gs-bildungswissenschaften.pdf",
               "page": 5,
-              "quote": "Verbindung von bildungswissenschaftlichen Theorieansätzen (z.B. Strukturtheorie und Kompetenztheorie)"
+              "quote": "Einf\u00fchrung in verschiedene theoretische Perspektiven auf p\u00e4dagogische Professionalit\u00e4t"
             }
           ]
         },
         {
           "course": "GS_I_BA_BIWI",
-          "value": "covered",
+          "key": "Strukturtheorie und Kompetenztheorie",
+          "value": "",
           "citations": [
             {
-              "extractionId": "7d679b6d-da8f-44e7-8050-2f828c26ce6f",
-              "sourceId": "890d9cff-cba1-4ebf-8181-b7f8a87b2032",
+              "extractionId": "2d20eef4-d088-49fc-8085-b9f0faf169aa",
+              "sourceId": "cca130d8-fad1-4b02-8017-385939ad6560",
               "title": "ude-gs-bildungswissenschaften.pdf",
               "page": 5,
-              "quote": "Einführung in verschiedene theoretische Perspektiven auf pädagogische Professionalität"
+              "quote": "Strukturtheorie und Kompetenztheorie"
             }
           ]
         },
         {
           "course": "GS_II_BA_BIWI",
-          "value": "covered",
+          "key": "Informationsverarbeitung",
+          "value": "",
           "citations": [
             {
-              "extractionId": "05e9983e-3b4e-4bcd-95c5-fb71019fd0ad",
-              "sourceId": "890d9cff-cba1-4ebf-8181-b7f8a87b2032",
+              "extractionId": "50ad8502-b5a5-42a1-a41d-4e1bb08d8d09",
+              "sourceId": "cca130d8-fad1-4b02-8017-385939ad6560",
               "title": "ude-gs-bildungswissenschaften.pdf",
               "page": 10,
-              "quote": "Prozesse der Informationsverarbeitung (Wahrnehmung, Wissenserwerb, Wissensabruf, Problemlösen)"
+              "quote": "Prozesse der Informationsverarbeitung (Wahrnehmung, Wissenserwerb, Wissensabruf, Probleml\u00f6sen)"
             }
           ]
         },
         {
           "course": "GS_II_BA_BIWI",
-          "value": "covered",
+          "key": "Lerntheorien",
+          "value": "",
           "citations": [
             {
-              "extractionId": "66125cfe-150c-421e-9f00-bc8f69d6430b",
-              "sourceId": "890d9cff-cba1-4ebf-8181-b7f8a87b2032",
+              "extractionId": "783ad9cf-792c-411e-8396-f8c35b283eeb",
+              "sourceId": "cca130d8-fad1-4b02-8017-385939ad6560",
+              "title": "ude-gs-bildungswissenschaften.pdf",
+              "page": 10,
+              "quote": "Lerntheorien in ihrer Bedeutung f\u00fcr Unterrichtsmethoden"
+            }
+          ]
+        },
+        {
+          "course": "GS_II_BA_BIWI",
+          "key": "Diagnostische G\u00fctekriterien",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "58e2f69b-1e43-4eda-8328-49021f0877ba",
+              "sourceId": "cca130d8-fad1-4b02-8017-385939ad6560",
               "title": "ude-gs-bildungswissenschaften.pdf",
               "page": 11,
-              "quote": "verstehen die Relevanz diagnostischer Gütekriterien"
+              "quote": "verstehen die Relevanz diagnostischer G\u00fctekriterien"
             }
           ]
         },
         {
           "course": "GS_II_BA_BIWI",
-          "value": "covered",
+          "key": "Entwicklungsaufgaben",
+          "value": "",
           "citations": [
             {
-              "extractionId": "4c1991c0-b943-4d3d-869d-6c350c5fbd8b",
-              "sourceId": "890d9cff-cba1-4ebf-8181-b7f8a87b2032",
+              "extractionId": "30c9e40c-3e2c-49ad-87c3-4fd4289bf93c",
+              "sourceId": "cca130d8-fad1-4b02-8017-385939ad6560",
               "title": "ude-gs-bildungswissenschaften.pdf",
               "page": 12,
               "quote": "Entwicklungsaufgaben der Kindheit und Jugend"
@@ -768,7 +559,7 @@
           ]
         }
       ],
-      "labelsStatus": "founder spot-checked",
+      "labelsStatus": "draft, not yet spot-checked by founder",
       "courses": {
         "labelled": 5,
         "extracted": 5,
@@ -777,11 +568,11 @@
       },
       "obligations": {
         "labelled": 5,
-        "extracted": 5,
+        "extracted": 6,
         "matched": 5,
-        "precision": 1,
+        "precision": 0.833,
         "recall": 1,
-        "kindAccuracy": 1
+        "kindAccuracy": 0.8
       },
       "deadlines": {
         "labelledDated": 0,
@@ -800,73 +591,119 @@
         {
           "course": "GS_BA_Arbeit_BiWi",
           "kind": "thesis",
-          "title": "Bachelorarbeit",
+          "title": "Wissenschaftliche Arbeit im Umfang von 50 Seiten",
           "date": null,
           "time": null,
-          "uncertainty": "The deadline is relative (8 weeks) and no start date is stated, so no calendar date can be given.; Deadline unresolved",
+          "uncertainty": "Die Frist ist relativ (8 Wochen) und hat kein festes Datum im Dokument.; Deadline unresolved",
           "label": "bachelorarbeit"
         },
         {
           "course": "GS_III_BA_BIWI",
           "kind": "exam",
-          "title": "Modulklausur Erziehung – Bildung – Unterricht",
+          "title": "Benotete Klausur zu Inhalten von III.1 und III.2",
           "date": null,
           "time": null,
-          "uncertainty": "No exam date is stated in the document.; Deadline unresolved",
+          "uncertainty": "Kein Termin im Dokument angegeben.; Deadline unresolved",
           "label": "klausur"
         },
         {
           "course": "GS_III_BA_BIWI",
-          "kind": "other",
-          "title": "Unbenotete Studienleistung Präsentation",
+          "kind": "presentation",
+          "title": "Unbenotete Studienleistung: Pr\u00e4sentation im Seminar III.3",
           "date": null,
           "time": null,
-          "uncertainty": "No date is stated; the seminar and its schedule are not specified.; Deadline unresolved",
-          "label": "präsentation"
+          "uncertainty": "Kein Termin angegeben; alternativ kann eine schriftliche Hausarbeit (ca. 10-12 Seiten) angefertigt werden.; Deadline unresolved",
+          "label": "pr\u00e4sentation"
         },
         {
           "course": "GS_IV_BA_BIWI",
-          "kind": "assignment",
-          "title": "Projektbericht",
+          "kind": "exam",
+          "title": "Modulabschlusspr\u00fcfung: Projektbericht",
           "date": null,
           "time": null,
-          "uncertainty": "No submission date is stated in the document.; Deadline unresolved",
+          "uncertainty": "Kein Abgabetermin im Dokument angegeben.; Deadline unresolved",
           "label": "projektbericht"
+        },
+        {
+          "course": "GS_IV_BA_BIWI",
+          "kind": "other",
+          "title": "Unbenotete veranstaltungs\u00fcbergreifende online gest\u00fctzte Studienleistung \u00fcber IV.1 und IV.3",
+          "date": null,
+          "time": null,
+          "uncertainty": "Form wird laut Dokument erst zu Veranstaltungsbeginn bekannt gegeben; kein Termin angegeben.; Deadline unresolved",
+          "label": null
         },
         {
           "course": "GS_I_BA_BIWI",
           "kind": "assignment",
-          "title": "Praktikumsportfolio",
+          "title": "Modulpr\u00fcfung: Praktikumsportfolio",
           "date": null,
           "time": null,
-          "uncertainty": "No due date is stated in the document.; Deadline unresolved",
+          "uncertainty": "Kein Abgabetermin im Dokument angegeben.; Deadline unresolved",
           "label": "portfolio"
         },
         {
           "course": "GS_II_BA_BIWI",
           "kind": "exam",
-          "title": "Modulklausur Psychologie",
+          "title": "Modulpr\u00fcfung: Klausur",
           "date": null,
           "time": null,
-          "uncertainty": "No exam date is stated in the document.; Deadline unresolved",
+          "uncertainty": "Kein Termin im Dokument angegeben.; Deadline unresolved",
           "label": "klausur"
         }
       ],
-      "initialUnreliableTopics": {
-        "labelled": 0,
-        "extracted": 0,
-        "matched": 0,
-        "precision": null,
-        "recall": null
-      }
+      "unresolvedCitedTopicKeys": 0
     },
     {
       "id": "wwu-bwl-excerpt",
+      "assignment": {
+        "boundCourseId": null,
+        "proposals": 5,
+        "itemCourseIds": [
+          "59c041ad-929b-4965-8b67-e338fecc0883",
+          "59c041ad-929b-4965-8b67-e338fecc0883",
+          "59c041ad-929b-4965-8b67-e338fecc0883",
+          "59c041ad-929b-4965-8b67-e338fecc0883",
+          "59c041ad-929b-4965-8b67-e338fecc0883",
+          "59c041ad-929b-4965-8b67-e338fecc0883",
+          "59c041ad-929b-4965-8b67-e338fecc0883",
+          "59c041ad-929b-4965-8b67-e338fecc0883",
+          "ffc38ca6-adc7-40dc-9eaa-4d025598b63a",
+          "ffc38ca6-adc7-40dc-9eaa-4d025598b63a",
+          "ffc38ca6-adc7-40dc-9eaa-4d025598b63a",
+          "ffc38ca6-adc7-40dc-9eaa-4d025598b63a",
+          "7714adc9-abc8-4602-a637-219c9e927894",
+          "7714adc9-abc8-4602-a637-219c9e927894",
+          "7714adc9-abc8-4602-a637-219c9e927894",
+          "7714adc9-abc8-4602-a637-219c9e927894",
+          "7714adc9-abc8-4602-a637-219c9e927894",
+          "7714adc9-abc8-4602-a637-219c9e927894",
+          "dbbd7ffa-d68a-4baf-95de-4389e3f9c612",
+          "dbbd7ffa-d68a-4baf-95de-4389e3f9c612",
+          "dbbd7ffa-d68a-4baf-95de-4389e3f9c612",
+          "dbbd7ffa-d68a-4baf-95de-4389e3f9c612",
+          "dbbd7ffa-d68a-4baf-95de-4389e3f9c612",
+          "dbbd7ffa-d68a-4baf-95de-4389e3f9c612",
+          "dbbd7ffa-d68a-4baf-95de-4389e3f9c612",
+          "0702aed0-5957-46bc-8fae-6ce75794c526",
+          "0702aed0-5957-46bc-8fae-6ce75794c526",
+          "0702aed0-5957-46bc-8fae-6ce75794c526",
+          "0702aed0-5957-46bc-8fae-6ce75794c526",
+          "0702aed0-5957-46bc-8fae-6ce75794c526",
+          "0702aed0-5957-46bc-8fae-6ce75794c526",
+          "0702aed0-5957-46bc-8fae-6ce75794c526"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
       "run": 1,
       "language": "de",
       "kind": "handbook",
       "scan": false,
       "ingestion": "ready",
+      "ingestionFailure": null,
       "extraction": "done",
       "dropped": 0,
       "grounding": {
@@ -876,24 +713,24 @@
         "examples": []
       },
       "failures": [],
-      "reviewableAfterMs": 34442,
-      "costMicroUsd": 6058,
+      "reviewableAfterMs": 42570,
+      "costMicroUsd": 11884,
       "topics": {
         "labelled": 0,
         "extracted": 0,
-        "matched": null,
+        "matched": 0,
         "precision": null,
-        "recall": null,
-        "invalidReason": "Invalid: the initial scorer recovered raw Topic keys by value alone, so repeated values such as covered used the first key. Raw keys were not persisted and cannot be faithfully rescored. The scorer now uses page and quote Provenance and persists keys; no additional live run was made."
+        "recall": null
       },
       "topicItems": [
         {
           "course": "BWL 5",
+          "key": "Balanced Scorecard",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "1ed5018f-38c6-4ebd-9fb1-1722332c866c",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "2cbff252-7ff5-4869-9544-971fa7fdbeaf",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 13,
               "quote": "Balanced Scorecard"
@@ -902,11 +739,12 @@
         },
         {
           "course": "BWL 5",
+          "key": "Zuschlagskalkulation",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "d1a5ef7a-f6ba-447b-b65c-4527fd938309",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "aa2b0580-f84f-41ca-b291-e0df29fe7a69",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 14,
               "quote": "Zuschlagskalkulation"
@@ -915,11 +753,12 @@
         },
         {
           "course": "BWL 5",
+          "key": "Prozesskostenrechnung",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "9e677ce0-85c9-4d23-929c-b76e958036cd",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "77e3025b-ca6f-48c5-8223-ab19a084de4f",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 14,
               "quote": "Prozesskostenrechnung und"
@@ -928,11 +767,12 @@
         },
         {
           "course": "BWL 5",
+          "key": "Break-even Analyse und Operating Leverage",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "b7647f7f-594a-4118-9dbb-ba0631a3876f",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "14ce12d7-1ad5-4f33-9a08-a67c8aaa74cc",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 14,
               "quote": "Break-even Analyse und"
@@ -940,103 +780,125 @@
           ]
         },
         {
-          "course": "BWL 2",
+          "course": "BWL 5",
+          "key": "Agency Theorie",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "2c858e68-ec51-4463-8179-7b1487c95a7a",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "396ed483-0174-457c-a552-81ab906bc812",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
-              "page": 4,
-              "quote": "Jahresabschluss nach HGB"
+              "page": 15,
+              "quote": "Die Studierenden lernen das Konzept der Agency Theorie"
             }
           ]
         },
         {
           "course": "BWL 2",
+          "key": "Jahresabschluss nach HGB",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "2463ea77-957e-47de-b6ae-3aeebe3c3624",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "d3d2f359-2fff-434a-8ed7-a029ef17712c",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 4,
-              "quote": "doppelten Buchhaltung"
+              "quote": "Im Rahmen des externen Rechnungswesens wird der Jahresabschluss nach HGB behandelt."
             }
           ]
         },
         {
           "course": "BWL 2",
+          "key": "Kostenrechnung",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "52f5dc7e-d865-4741-a80b-387e4b37e318",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "a5219460-5559-4f7f-80f6-eba6e032c146",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 4,
-              "quote": "Kostenrechnung als Controllinginstrument"
+              "quote": "Im internen Rechnungswesen steht die Kostenrechnung als"
             }
           ]
         },
         {
           "course": "BWL 4",
+          "key": "Nettobarwert-Methode",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "8ddd37f1-688f-434c-8a99-5bf4853f78fc",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "08222af0-c727-40b7-8dd4-731d38940590",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 10,
-              "quote": "Nettobarwert-Methode"
+              "quote": "Ein besonderer Schwerpunkt liegt hierbei auf der Nettobarwert-Methode."
             }
           ]
         },
         {
           "course": "BWL 4",
+          "key": "Bewertung von Aktien und Anleihen",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "91e55897-b293-472f-a6f1-1bd777dd4ccc",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "82ed0d23-fb7b-4bb5-be2d-158867585ae2",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 10,
-              "quote": "Bewertung von Aktien und Anleihen"
+              "quote": "Die Veranstaltung geht auch auf die Bewertung von Aktien und Anleihen ein."
             }
           ]
         },
         {
           "course": "BWL 4",
+          "key": "Kapitalstruktur",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "1ecd6945-ab28-4598-9e6c-04122de0d76f",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "2810e45b-b50f-4f86-918e-9fce0a8f75fc",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 10,
-              "quote": "Analyse der Kapitalstruktur"
+              "quote": "Grundlagen f\u00fcr die Analyse der Kapitalstruktur"
             }
           ]
         },
         {
           "course": "BWL 3",
+          "key": "Produktentwicklung",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "e966f1a5-dd78-429f-8d27-d28487e8b431",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "761e2e99-f7d2-4ee7-9acc-8224c5e9d911",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 7,
-              "quote": "Markenmanagement"
+              "quote": "Studierenden k\u00f6nnen grundlegende Schritte bei der Entwicklung"
             }
           ]
         },
         {
           "course": "BWL 3",
+          "key": "Markenmanagement",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "b4383093-31cd-4cdd-98e4-c30f7ba4ea71",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "d4fe762a-83b7-4db7-8171-29755d7e1333",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
+              "title": "wwu-bwl-excerpt.pdf",
+              "page": 7,
+              "quote": "Optionen des strategischen Markenmanagements."
+            }
+          ]
+        },
+        {
+          "course": "BWL 3",
+          "key": "Preispolitik",
+          "value": "covered",
+          "citations": [
+            {
+              "extractionId": "098be017-daeb-408c-a4c1-d6ce3e99a7da",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 8,
               "quote": "Preispolitik"
@@ -1045,11 +907,12 @@
         },
         {
           "course": "BWL 3",
+          "key": "Distribution",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "3295b1a4-920f-48e8-a58d-f34052c30646",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "0bfb4e1b-2f62-471d-9ad1-20e29b24ef20",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 8,
               "quote": "Distribution"
@@ -1058,11 +921,12 @@
         },
         {
           "course": "BWL 3",
+          "key": "Kommunikationspolitik",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "2ad4b4f0-3c46-4e2f-983f-fe8a1a63607b",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "cdb9b954-bd0c-4022-ac3e-7978ac492790",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 8,
               "quote": "Kommunikationspolitik"
@@ -1070,46 +934,49 @@
           ]
         },
         {
-          "course": "BWL",
+          "course": "BWL 1",
+          "key": "The Theories of Business: The Pillars of Business Administration",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "eeabbea6-be1a-43b1-a97b-3a3701d8a515",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "7a9cfbf7-8c7a-466f-abec-e1be845808e9",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
-              "page": 2,
-              "quote": "die zentralen Aktionsbereiche der Betriebswirtschaftslehre"
+              "page": 1,
+              "quote": "The Theories of Business: The Pillars of"
             }
           ]
         },
         {
-          "course": "BWL",
+          "course": "BWL 1",
+          "key": "F\u00fchrungskonzepte in digitalen Zeiten",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "9b1965f2-aa4c-4c92-925f-9ea708ee13b9",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "66855168-e60d-4a33-beba-f08d47f5345e",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 2,
-              "quote": "Führungskonzepte in digitalen Zeiten"
+              "quote": "F\u00fchrungskonzepte in digitalen Zeiten"
             }
           ]
         },
         {
-          "course": "BWL",
+          "course": "BWL 1",
+          "key": "Empirische Forschung",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "b7484966-d354-42b1-8466-b8c67718f917",
-              "sourceId": "7e80cdc1-02cf-46d0-af3c-2a220e8be8d4",
+              "extractionId": "c1edac37-98dc-4a73-a807-6625fe9791fd",
+              "sourceId": "9049ded5-7ccc-494a-86b9-a871ed67a720",
               "title": "wwu-bwl-excerpt.pdf",
               "page": 2,
-              "quote": "Umgang mit empirischer Forschung"
+              "quote": "Sammeln von ersten Erfahrungen im Umgang mit empirischer"
             }
           ]
         }
       ],
-      "labelsStatus": "founder spot-checked",
+      "labelsStatus": "draft, not yet spot-checked by founder",
       "courses": {
         "labelled": 5,
         "extracted": 5,
@@ -1144,7 +1011,7 @@
           "title": "Modulabschlussklausur (90 Min., 100 % der Modulnote)",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Termin im Dokument angegeben.; Deadline unresolved",
+          "uncertainty": "The document gives no date or deadline for this exam.; Deadline unresolved",
           "label": "klausur"
         },
         {
@@ -1153,7 +1020,7 @@
           "title": "Klausur (max. 120 Min., 100 % der Modulnote)",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Termin im Dokument angegeben.; Deadline unresolved",
+          "uncertainty": "The document gives no date or deadline for this exam.; Deadline unresolved",
           "label": "klausur"
         },
         {
@@ -1162,7 +1029,7 @@
           "title": "Modulabschlussklausur (90 Min., 100 % der Modulnote)",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Termin im Dokument angegeben.; Deadline unresolved",
+          "uncertainty": "The document gives no date or deadline for this exam.; Deadline unresolved",
           "label": "klausur"
         },
         {
@@ -1171,79 +1038,172 @@
           "title": "Modulabschlussklausur (90 Min., 100 % der Modulnote)",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Termin im Dokument angegeben.; Deadline unresolved",
+          "uncertainty": "The document gives no date or deadline for this exam.; Deadline unresolved",
           "label": "klausur"
         },
         {
-          "course": "BWL",
-          "kind": "other",
-          "title": "Gruppenleistung in der Übung (aktive Mitwirkung an empirischen wissenschaftlichen Studien)",
-          "date": null,
-          "time": null,
-          "uncertainty": "Studienleistung ohne Termin im Dokument; Abgabe oder Durchführung nicht näher beschrieben.; Deadline unresolved",
-          "label": "gruppenleistung"
-        },
-        {
-          "course": "BWL",
+          "course": "BWL 1",
           "kind": "exam",
           "title": "Klausur (90 Min., 75 % der Modulnote)",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Termin im Dokument angegeben.; Deadline unresolved",
+          "uncertainty": "The document gives no date or deadline for this exam.; Deadline unresolved",
           "label": "klausur"
         },
         {
-          "course": "BWL",
+          "course": "BWL 1",
           "kind": "assignment",
-          "title": "Paper (max. 10 Seiten, 25 % der Modulnote)",
+          "title": "Paper (max. 10 S., 25 % der Modulnote)",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Abgabetermin im Dokument angegeben.; Deadline unresolved",
+          "uncertainty": "The document gives no date or deadline for this paper.; Deadline unresolved",
           "label": "paper"
         }
       ],
-      "initialUnreliableTopics": {
-        "labelled": 0,
-        "extracted": 0,
-        "matched": 0,
-        "precision": null,
-        "recall": null
-      }
+      "unresolvedCitedTopicKeys": 0
     },
     {
       "id": "wwu-wi-excerpt",
+      "assignment": {
+        "boundCourseId": null,
+        "proposals": 6,
+        "itemCourseIds": [
+          "b2580ea0-df8e-4a06-9526-c46824510a33",
+          "b2580ea0-df8e-4a06-9526-c46824510a33",
+          "b2580ea0-df8e-4a06-9526-c46824510a33",
+          "b2580ea0-df8e-4a06-9526-c46824510a33",
+          "b2580ea0-df8e-4a06-9526-c46824510a33",
+          "b2580ea0-df8e-4a06-9526-c46824510a33",
+          "fe835efd-a31f-4bdc-8ab8-a49ad548bbb7",
+          "fe835efd-a31f-4bdc-8ab8-a49ad548bbb7",
+          "fe835efd-a31f-4bdc-8ab8-a49ad548bbb7",
+          "fe835efd-a31f-4bdc-8ab8-a49ad548bbb7",
+          "fe835efd-a31f-4bdc-8ab8-a49ad548bbb7",
+          "fe835efd-a31f-4bdc-8ab8-a49ad548bbb7",
+          "fe835efd-a31f-4bdc-8ab8-a49ad548bbb7",
+          "fe835efd-a31f-4bdc-8ab8-a49ad548bbb7",
+          "fe835efd-a31f-4bdc-8ab8-a49ad548bbb7",
+          "e64ef987-71ea-4d16-be6f-567e27691ece",
+          "e64ef987-71ea-4d16-be6f-567e27691ece",
+          "e64ef987-71ea-4d16-be6f-567e27691ece",
+          "e64ef987-71ea-4d16-be6f-567e27691ece",
+          "e64ef987-71ea-4d16-be6f-567e27691ece",
+          "e64ef987-71ea-4d16-be6f-567e27691ece",
+          "e64ef987-71ea-4d16-be6f-567e27691ece",
+          "e64ef987-71ea-4d16-be6f-567e27691ece",
+          "b8c2fa7e-33f0-46c9-b732-037705807479",
+          "b8c2fa7e-33f0-46c9-b732-037705807479",
+          "b8c2fa7e-33f0-46c9-b732-037705807479",
+          "b8c2fa7e-33f0-46c9-b732-037705807479",
+          "b8c2fa7e-33f0-46c9-b732-037705807479",
+          "b8c2fa7e-33f0-46c9-b732-037705807479",
+          "b8c2fa7e-33f0-46c9-b732-037705807479",
+          "b8c2fa7e-33f0-46c9-b732-037705807479",
+          "b8c2fa7e-33f0-46c9-b732-037705807479",
+          "b8c2fa7e-33f0-46c9-b732-037705807479",
+          "b8c2fa7e-33f0-46c9-b732-037705807479",
+          "b8c2fa7e-33f0-46c9-b732-037705807479"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
       "run": 1,
       "language": "de",
       "kind": "handbook",
       "scan": false,
       "ingestion": "ready",
+      "ingestionFailure": null,
       "extraction": "done",
-      "dropped": 0,
+      "dropped": 21,
       "grounding": {
-        "claimedPage": 36,
-        "otherPage": 0,
-        "nowhere": 0,
-        "examples": []
+        "claimedPage": 41,
+        "otherPage": 20,
+        "nowhere": 1,
+        "examples": [
+          "otherPage: page 15, found [11]: \"Klausur zu Einf\u00fchrung in die\"",
+          "otherPage: page 15, found [11]: \"Klausur zu Finanzierung und Investition\"",
+          "otherPage: page 18, found [8,14]: \"Modulabschlussklausur\"",
+          "otherPage: page 18, found [14]: \"L\u00f6sung von Fallstudien\"",
+          "otherPage: page 21, found [5,14,17]: \"120 Min.\""
+        ]
       },
       "failures": [],
-      "reviewableAfterMs": 49631,
-      "costMicroUsd": 8354,
+      "reviewableAfterMs": 64127,
+      "costMicroUsd": 16417,
       "topics": {
         "labelled": 0,
         "extracted": 0,
-        "matched": null,
+        "matched": 0,
         "precision": null,
-        "recall": null,
-        "invalidReason": "Invalid: the initial scorer recovered raw Topic keys by value alone, so repeated values such as covered used the first key. Raw keys were not persisted and cannot be faithfully rescored. The scorer now uses page and quote Provenance and persists keys; no additional live run was made."
+        "recall": null
       },
       "topicItems": [
         {
           "course": "WI2",
+          "key": "Entity-Relationship-Modell",
           "value": "behandelt",
           "citations": [
             {
-              "extractionId": "5bee5d8b-ba49-491a-bf9b-0bfc3972f38b",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
+              "extractionId": "9b25716b-bbad-4d3a-b6a6-05cddb53fc35",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 13,
+              "quote": "Sprachkonstrukte des Entity-Relationship-Modells"
+            }
+          ]
+        },
+        {
+          "course": "WI2",
+          "key": "Relationales Datenmodell",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "1cb81bb8-03fa-43fc-b542-4bf483f90d6f",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 13,
+              "quote": "das relationale Datenmodell behandelt"
+            }
+          ]
+        },
+        {
+          "course": "WI2",
+          "key": "Normalisierung",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "3ae90363-97b4-4de5-9681-a6ddf6eb178b",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 13,
+              "quote": "Normalisierungsformen von der ersten bis zur f\u00fcnften Normalform"
+            }
+          ]
+        },
+        {
+          "course": "WI2",
+          "key": "SQL",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "8cdfe352-ab01-4985-ab73-c4a787c7959b",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 13,
+              "quote": "Structured Query Language (SQL)"
+            }
+          ]
+        },
+        {
+          "course": "WI2",
+          "key": "ACID-Transaktionskonzepte",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "524fcf5d-2f37-4196-b3f8-90f7cfc5f021",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
               "title": "wwu-wi-excerpt.pdf",
               "page": 13,
               "quote": "Transaktionskonzepte (ACID)"
@@ -1252,11 +1212,12 @@
         },
         {
           "course": "WI2",
+          "key": "Zweiphasen-Sperrprotokoll",
           "value": "behandelt",
           "citations": [
             {
-              "extractionId": "5d1a7d53-e8f1-4414-a8d8-1347be75f6f5",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
+              "extractionId": "065cc27d-cf37-4e29-a6d9-13e7c98628e6",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
               "title": "wwu-wi-excerpt.pdf",
               "page": 13,
               "quote": "Zweiphasen-Sperrprotokoll"
@@ -1264,103 +1225,83 @@
           ]
         },
         {
-          "course": "WI2",
+          "course": "WI1",
+          "key": "Wirtschaftsinformatik als interdisziplin\u00e4re Disziplin",
           "value": "behandelt",
           "citations": [
             {
-              "extractionId": "69cf5b3e-f11b-4977-99cf-f469e84df5b6",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
+              "extractionId": "a1c65b9e-0cd0-46b6-83f2-83bf3a68b2d5",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
               "title": "wwu-wi-excerpt.pdf",
-              "page": 13,
-              "quote": "Normalisierungsformen von der ersten bis zur fünften Normalform"
+              "page": 1,
+              "quote": "als interdisziplin\u00e4re wissenschaftliche Disziplin"
             }
           ]
         },
         {
-          "course": "Inf2",
+          "course": "WI1",
+          "key": "Selbst- und Zeitmanagement",
           "value": "behandelt",
           "citations": [
             {
-              "extractionId": "8d731682-0d16-45e4-b77c-75ea8de5e49d",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
+              "extractionId": "929b0602-8ef0-45be-a8b3-c04b53467d36",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
               "title": "wwu-wi-excerpt.pdf",
-              "page": 16,
-              "quote": "Hash-Strukturen"
+              "page": 2,
+              "quote": "Anwendung von Selbst- und Zeitmanagementmethoden"
             }
           ]
         },
         {
-          "course": "Inf2",
+          "course": "WI1",
+          "key": "Pr\u00e4sentationstechniken",
           "value": "behandelt",
           "citations": [
             {
-              "extractionId": "10f9b9ef-c533-4bdd-8635-dd32ef695d60",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
+              "extractionId": "9073b2de-242f-4a5e-8239-40973d627bc4",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
               "title": "wwu-wi-excerpt.pdf",
-              "page": 16,
-              "quote": "String-Matching"
-            }
-          ]
-        },
-        {
-          "course": "BWL1",
-          "value": "behandelt",
-          "citations": [
-            {
-              "extractionId": "0de6c6cb-0dab-488e-855d-c299b692a44a",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
-              "title": "wwu-wi-excerpt.pdf",
-              "page": 10,
-              "quote": "Corporate Governance"
-            }
-          ]
-        },
-        {
-          "course": "BWL1",
-          "value": "behandelt",
-          "citations": [
-            {
-              "extractionId": "a873f4dc-79a5-412d-bfff-b4131e2f96e8",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
-              "title": "wwu-wi-excerpt.pdf",
-              "page": 11,
-              "quote": "Nettobarwert-Methode"
-            }
-          ]
-        },
-        {
-          "course": "BWL1",
-          "value": "behandelt",
-          "citations": [
-            {
-              "extractionId": "040d502d-e9e5-40e7-9036-e2380b27df49",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
-              "title": "wwu-wi-excerpt.pdf",
-              "page": 11,
-              "quote": "Analyse der Kapitalstruktur"
+              "page": 2,
+              "quote": "Anwenden von Pr\u00e4sentationstechniken"
             }
           ]
         },
         {
           "course": "QM1",
+          "key": "Auffinden optimaler L\u00f6sungen linearer Gleichungssysteme",
           "value": "behandelt",
           "citations": [
             {
-              "extractionId": "a804ad01-ad3f-4639-b42b-9a11c9157dca",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
+              "extractionId": "59387722-0728-4320-89b1-5c1715948a35",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 7,
+              "quote": "Auffinden von optimalen L\u00f6sungen"
+            }
+          ]
+        },
+        {
+          "course": "QM1",
+          "key": "Matrix-Inverse",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "eef90cb2-1f47-4678-938f-9fa86f618279",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
               "title": "wwu-wi-excerpt.pdf",
               "page": 8,
-              "quote": "Lagrange-Methode"
+              "quote": "Matrix-Inverse"
             }
           ]
         },
         {
           "course": "QM1",
+          "key": "Eigenwerte und Eigenvektoren",
           "value": "behandelt",
           "citations": [
             {
-              "extractionId": "aad10b42-87cb-4a53-958a-f5e85f9acae0",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
+              "extractionId": "bb6ac490-0e51-4168-a9ab-e94b248ee9c0",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
               "title": "wwu-wi-excerpt.pdf",
               "page": 8,
               "quote": "Eigenwerte/Eigenvektoren"
@@ -1368,15 +1309,30 @@
           ]
         },
         {
-          "course": "Inf1",
+          "course": "QM1",
+          "key": "Folgen und Reihen",
           "value": "behandelt",
           "citations": [
             {
-              "extractionId": "348393bf-d6ba-47aa-b142-287a083aa3ba",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
+              "extractionId": "d1d9ba20-a0a4-47e2-b58c-04815a617a9c",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
               "title": "wwu-wi-excerpt.pdf",
-              "page": 4,
-              "quote": "Methodenaufruf, Rekursion"
+              "page": 8,
+              "quote": "Folgen und Reihen"
+            }
+          ]
+        },
+        {
+          "course": "QM1",
+          "key": "Lagrange-Methode",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "c5941489-2b5d-4f32-a2f3-68b7d333a7ed",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 8,
+              "quote": "Lagrange-Methode"
             }
           ]
         },
@@ -1385,11 +1341,11 @@
           "value": "behandelt",
           "citations": [
             {
-              "extractionId": "c9e9c219-f43e-4bab-a355-26a08cbf117d",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
+              "extractionId": "a55f2a71-465e-4bd0-b192-ae3e62515e7f",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
               "title": "wwu-wi-excerpt.pdf",
               "page": 4,
-              "quote": "Currying"
+              "quote": "sp\u00e4tes Binden"
             }
           ]
         },
@@ -1398,16 +1354,114 @@
           "value": "behandelt",
           "citations": [
             {
-              "extractionId": "62996e2d-2603-48ab-a475-d1e602b15c4a",
-              "sourceId": "6ade8b67-34e3-401b-a80c-dad2a4e0e2ad",
+              "extractionId": "0afc16b7-e3e2-4ae6-857a-9b4517dad992",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 4,
+              "quote": "sp\u00e4tes Binden"
+            }
+          ]
+        },
+        {
+          "course": "Inf1",
+          "key": "Rekursion",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "807c400a-e9f7-4ae8-bf4f-a1b7513e0ed2",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 4,
+              "quote": "Rekursion"
+            }
+          ]
+        },
+        {
+          "course": "Inf1",
+          "key": "Ausnahmebehandlung",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "127c3da5-bd7e-4300-beee-90fa50e722e2",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 4,
+              "quote": "Ausnahmebehandlung"
+            }
+          ]
+        },
+        {
+          "course": "Inf1",
+          "key": "Generische Typen",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "82dd5fab-8be5-4b8f-aeb3-d641a6ad2d81",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 4,
+              "quote": "generische Typen"
+            }
+          ]
+        },
+        {
+          "course": "Inf1",
+          "key": "Pattern Matching",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "20c9968e-6069-4cec-8a01-a5d189278c61",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 4,
+              "quote": "Pattern Matching"
+            }
+          ]
+        },
+        {
+          "course": "Inf1",
+          "key": "Typinferenz",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "6d9aef45-022a-4a9f-9edb-8c2cb3f58e42",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 4,
+              "quote": "Typinferenz"
+            }
+          ]
+        },
+        {
+          "course": "Inf1",
+          "key": "Lazy Evaluation",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "d10a5f72-c883-40df-bce0-19adc1de88d1",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
               "title": "wwu-wi-excerpt.pdf",
               "page": 4,
               "quote": "Lazy Evaluation"
             }
           ]
+        },
+        {
+          "course": "Inf1",
+          "key": "Currying",
+          "value": "behandelt",
+          "citations": [
+            {
+              "extractionId": "e9e0ef56-eccb-4637-a48f-642e64fc8b90",
+              "sourceId": "aa15c3f0-aa93-4a54-8074-497ad593921d",
+              "title": "wwu-wi-excerpt.pdf",
+              "page": 4,
+              "quote": "Currying"
+            }
+          ]
         }
       ],
-      "labelsStatus": "founder spot-checked",
+      "labelsStatus": "draft, not yet spot-checked by founder",
       "courses": {
         "labelled": 6,
         "extracted": 6,
@@ -1416,10 +1470,10 @@
       },
       "obligations": {
         "labelled": 6,
-        "extracted": 6,
-        "matched": 6,
+        "extracted": 2,
+        "matched": 2,
         "precision": 1,
-        "recall": 1,
+        "recall": 0.333,
         "kindAccuracy": 1
       },
       "deadlines": {
@@ -1433,80 +1487,44 @@
       },
       "logistics": {
         "labelled": 4,
-        "found": 4
+        "found": 2
       },
       "items": [
         {
-          "course": "WI2",
+          "course": "WI1",
           "kind": "assignment",
-          "title": "Lösung von Fallstudien",
+          "title": "2 vorlesungsbegleitende Reflexionen",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Abgabetermin im Dokument angegeben; Deadline unresolved",
-          "label": "fallstudie"
-        },
-        {
-          "course": "WI2",
-          "kind": "exam",
-          "title": "Modulabschlussklausur",
-          "date": null,
-          "time": null,
-          "uncertainty": "Kein Prüfungstermin im Dokument angegeben; Deadline unresolved",
-          "label": "klausur"
-        },
-        {
-          "course": "Inf2",
-          "kind": "exam",
-          "title": "Klausur",
-          "date": null,
-          "time": null,
-          "uncertainty": "Kein Prüfungstermin im Dokument angegeben; Deadline unresolved",
-          "label": "klausur"
-        },
-        {
-          "course": "Inf2",
-          "kind": "assignment",
-          "title": "Übungsaufgaben",
-          "date": null,
-          "time": null,
-          "uncertainty": "Kein Abgabetermin im Dokument angegeben; Deadline unresolved",
-          "label": "übungsaufgaben"
-        },
-        {
-          "course": "BWL1",
-          "kind": "exam",
-          "title": "Klausur zu Einführung in die Betriebswirtschaftslehre",
-          "date": null,
-          "time": null,
-          "uncertainty": "Kein Prüfungstermin im Dokument angegeben; Deadline unresolved",
-          "label": "einführung"
-        },
-        {
-          "course": "BWL1",
-          "kind": "exam",
-          "title": "Klausur zu Finanzierung und Investition",
-          "date": null,
-          "time": null,
-          "uncertainty": "Kein Prüfungstermin im Dokument angegeben; Deadline unresolved",
-          "label": "finanzierung"
+          "uncertainty": "No deadline is stated; only the length (ca. 1000 W\u00f6rter) is given.; Deadline unresolved",
+          "label": "reflexion"
         },
         {
           "course": "WI1",
           "kind": "presentation",
-          "title": "Abschlusspräsentation",
+          "title": "Abschlusspr\u00e4sentation (Veranstaltung 1)",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Abgabe- oder Präsentationstermin im Dokument angegeben; Deadline unresolved",
-          "label": "präsentation"
+          "uncertainty": "No deadline is stated; only the length (ca. 10 Folien) is given.; Deadline unresolved",
+          "label": "pr\u00e4sentation"
         },
         {
           "course": "WI1",
           "kind": "assignment",
-          "title": "Vorlesungsbegleitende Übungsaufgaben",
+          "title": "Vorlesungsbegleitende \u00dcbung (Veranstaltungen 2 und 3)",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Abgabetermin im Dokument angegeben; Deadline unresolved",
-          "label": "übungsaufgaben"
+          "uncertainty": "No deadline is stated; only the length (ca. 25 Seiten) is given.; Deadline unresolved",
+          "label": "\u00fcbung"
+        },
+        {
+          "course": "WI1",
+          "kind": "assignment",
+          "title": "Vorlesungsbegleitende \u00dcbungsaufgaben (Veranstaltung 1)",
+          "date": null,
+          "time": null,
+          "uncertainty": "No deadline is stated; only the length (ca. 12 Seiten) is given.; Deadline unresolved",
+          "label": "\u00fcbungsaufgaben"
         },
         {
           "course": "QM1",
@@ -1514,106 +1532,141 @@
           "title": "Modulabschlussklausur (elektronisch)",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Prüfungstermin im Dokument angegeben; Deadline unresolved",
+          "uncertainty": "No date is stated in the module handbook.; Deadline unresolved",
           "label": "klausur"
         },
         {
           "course": "QM1",
           "kind": "assignment",
-          "title": "Übungsaufgaben",
+          "title": "\u00dcbungsaufgaben",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Abgabetermin im Dokument angegeben; Deadline unresolved",
-          "label": "übungsaufgaben"
+          "uncertainty": "No deadline is stated; only the maximum length is given.; Deadline unresolved",
+          "label": "\u00fcbungsaufgaben"
         },
         {
           "course": "Inf1",
           "kind": "exam",
-          "title": "Klausur",
+          "title": "Klausur (Modulabschlusspr\u00fcfung)",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Prüfungstermin im Dokument angegeben; Deadline unresolved",
+          "uncertainty": "No date is stated in the module handbook.; Deadline unresolved",
           "label": "klausur"
         },
         {
           "course": "Inf1",
           "kind": "assignment",
-          "title": "Übungsaufgaben",
+          "title": "\u00dcbungsaufgaben",
           "date": null,
           "time": null,
-          "uncertainty": "Kein Abgabetermin im Dokument angegeben; Deadline unresolved",
-          "label": "übungsaufgaben"
+          "uncertainty": "No deadline is stated; only the maximum length is given.; Deadline unresolved",
+          "label": "\u00fcbungsaufgaben"
         }
       ],
-      "initialUnreliableTopics": {
-        "labelled": 0,
-        "extracted": 0,
-        "matched": 0,
-        "precision": null,
-        "recall": null
-      }
+      "unresolvedCitedTopicKeys": 2,
+      "topicScoringLimitation": "Selected review value differs from current Source raw value; unresolved keys use selected value. Scenario Topic scores are conservative, not reliable estimates."
     },
     {
       "id": "rub-nlp-02",
+      "assignment": {
+        "boundCourseId": null,
+        "proposals": 1,
+        "itemCourseIds": [
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4",
+          "a3bac14b-eec5-4f6c-b084-f9e1baa503d4"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
       "run": 1,
       "language": "en",
       "kind": "slides",
       "scan": false,
       "ingestion": "ready",
+      "ingestionFailure": null,
       "extraction": "done",
-      "dropped": 1,
+      "dropped": 0,
       "grounding": {
-        "claimedPage": 10,
-        "otherPage": 1,
+        "claimedPage": 15,
+        "otherPage": 0,
         "nowhere": 0,
-        "examples": [
-          "otherPage: page 27, found [28]: \"the gradient ∇f (x) points in the direction of\""
-        ]
+        "examples": []
       },
       "failures": [],
-      "reviewableAfterMs": 14896,
-      "costMicroUsd": 2485,
+      "reviewableAfterMs": 69361,
+      "costMicroUsd": 26703,
       "topics": {
         "labelled": 10,
-        "extracted": 9,
+        "extracted": 14,
         "matched": 7,
-        "precision": 0.7777777777777778,
+        "precision": 0.5,
         "recall": 0.7
       },
       "topicItems": [
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Measures how big the error of a prediction is",
+          "key": "Supervised learning and predictors as functions",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "621a537e-1acc-460e-a8e0-50ac73d7c4b6",
-              "sourceId": "87202816-b5fc-451f-a338-87f81f366819",
+              "extractionId": "d99ee958-8199-421d-93d1-37493b67da4b",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
+              "title": "rub-nlp-02.pdf",
+              "page": 9,
+              "quote": "Models as functions"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Loss function",
+          "value": "covered",
+          "citations": [
+            {
+              "extractionId": "3e1a2cbe-1665-4505-8377-e40adee65c34",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
               "title": "rub-nlp-02.pdf",
               "page": 12,
-              "quote": "We need to specify a loss function"
+              "quote": "Loss function for training"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Finding parameters by minimizing the average loss on training examples",
+          "key": "Empirical risk minimization",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "0253c391-c354-42ab-8d83-b04c1be2075e",
-              "sourceId": "87202816-b5fc-451f-a338-87f81f366819",
+              "extractionId": "2cbf5ce8-925f-412e-9dd5-c2a324bbca89",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
               "title": "rub-nlp-02.pdf",
               "page": 13,
-              "quote": "Minimizing so-called ‘empirical risk’"
+              "quote": "Minimizing so-called"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Loss defined as the squared difference between label and prediction",
+          "key": "Squared loss",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "1fddb748-0ece-493e-b630-c3a56c314fbc",
-              "sourceId": "87202816-b5fc-451f-a338-87f81f366819",
+              "extractionId": "75b26fa9-0dad-435f-a774-2963e1f7ccc1",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
               "title": "rub-nlp-02.pdf",
               "page": 13,
               "quote": "Loss example: Squared Loss"
@@ -1622,24 +1675,26 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Steepness of a function at a point, defined as a limit",
+          "key": "Derivative as limit",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "46ac8abd-a36b-4b6a-967a-fa258808077d",
-              "sourceId": "87202816-b5fc-451f-a338-87f81f366819",
+              "extractionId": "67383f08-dc2c-48e5-a3df-65881627afa9",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
               "title": "rub-nlp-02.pdf",
               "page": 18,
-              "quote": "The derivative of f at c"
+              "quote": "Approximate function by a line at point"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Derivative of a composed function as a product of derivatives of its parts",
+          "key": "Chain rule",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "34276131-1d72-4b19-af13-cbc98fe44e47",
-              "sourceId": "87202816-b5fc-451f-a338-87f81f366819",
+              "extractionId": "d0c09bf3-0a6f-4cf5-befc-9a4a092e7ea9",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
               "title": "rub-nlp-02.pdf",
               "page": 20,
               "quote": "Derivative of nested functions: The chain rule hammer"
@@ -1648,24 +1703,26 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Iteratively moving against the derivative to find a minimum",
+          "key": "Gradient-based optimization",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "9ac58d9e-88e7-44c3-9bf8-94fd1076d1e5",
-              "sourceId": "87202816-b5fc-451f-a338-87f81f366819",
+              "extractionId": "af340fe3-8842-47a7-b41d-d9af17032636",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
               "title": "rub-nlp-02.pdf",
-              "page": 22,
-              "quote": "Next value xi+1 ← xi − η · u"
+              "page": 21,
+              "quote": "Gradient-based optimization: Find minimum of a function"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Derivative with respect to a single variable of a multivariate function",
+          "key": "Partial derivatives",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "97539d8d-0d38-4766-9a0c-16089da82bae",
-              "sourceId": "87202816-b5fc-451f-a338-87f81f366819",
+              "extractionId": "45f5df2c-a17f-4ca4-8933-7df8329d5cd4",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
               "title": "rub-nlp-02.pdf",
               "page": 25,
               "quote": "Partial derivative: the directional derivative wrt. a single"
@@ -1674,27 +1731,85 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Directed acyclic graph of differentiable functions representing a composed function",
+          "key": "Multivariable chain rule",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "f0a34dac-b280-42e9-8117-bcd9ac426112",
-              "sourceId": "87202816-b5fc-451f-a338-87f81f366819",
+              "extractionId": "4419ede3-caac-48e8-8461-6032a74fa5d6",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
               "title": "rub-nlp-02.pdf",
-              "page": 34,
-              "quote": "DAG — directed acyclic graph (not necessarily a tree!)"
+              "page": 26,
+              "quote": "Chain rule for multivariate functions"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Forward pass caching node outputs, then backward pass computing derivatives of the overall function",
+          "key": "Gradient",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "92ea441c-93c7-49f3-a1fb-996d578c3c81",
-              "sourceId": "87202816-b5fc-451f-a338-87f81f366819",
+              "extractionId": "66d12309-558e-4396-af5f-69b434436728",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
+              "title": "rub-nlp-02.pdf",
+              "page": 27,
+              "quote": "gradient of f , denoted \u2207f"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Gradient descent",
+          "value": "covered",
+          "citations": [
+            {
+              "extractionId": "63452c64-936a-4222-b789-1d4064e2d177",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
+              "title": "rub-nlp-02.pdf",
+              "page": 29,
+              "quote": "Gradient descent for minimizing multivariate functions"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Computational graph",
+          "value": "covered",
+          "citations": [
+            {
+              "extractionId": "f824b083-7c09-4901-8e19-98e190f6c848",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
+              "title": "rub-nlp-02.pdf",
+              "page": 34,
+              "quote": "Computational graph"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Generic node in a computational graph",
+          "value": "covered",
+          "citations": [
+            {
+              "extractionId": "98e92aaf-f7dd-4c7f-8910-8cd0bd147c54",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
+              "title": "rub-nlp-02.pdf",
+              "page": 49,
+              "quote": "Generic node in a computational graph"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Backpropagation",
+          "value": "covered",
+          "citations": [
+            {
+              "extractionId": "25e160f3-ed3c-405c-b348-8feb80c41dc0",
+              "sourceId": "7b8b6667-0dda-4b70-88fc-d845e8e35d2e",
               "title": "rub-nlp-02.pdf",
               "page": 51,
-              "quote": "Backward computation (Backprop): Compute the"
+              "quote": "Backpropagation"
             }
           ]
         }
@@ -1727,94 +1842,111 @@
         "labelled": 0,
         "found": 0
       },
-      "items": []
+      "items": [],
+      "unresolvedCitedTopicKeys": 0
     },
     {
       "id": "rub-nlp-03",
+      "assignment": {
+        "boundCourseId": null,
+        "proposals": 1,
+        "itemCourseIds": [
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae",
+          "85836479-d970-4a67-a9d2-cea48d62b9ae"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
       "run": 1,
       "language": "en",
       "kind": "slides",
       "scan": false,
       "ingestion": "ready",
+      "ingestionFailure": null,
       "extraction": "done",
       "dropped": 0,
       "grounding": {
-        "claimedPage": 15,
+        "claimedPage": 16,
         "otherPage": 0,
         "nowhere": 0,
         "examples": []
       },
       "failures": [],
-      "reviewableAfterMs": 19627,
-      "costMicroUsd": 3526,
+      "reviewableAfterMs": 68600,
+      "costMicroUsd": 27558,
       "topics": {
         "labelled": 10,
-        "extracted": 14,
-        "matched": null,
-        "precision": null,
-        "recall": null,
-        "invalidReason": "Invalid: the initial scorer recovered raw Topic keys by value alone, so repeated values such as covered used the first key. Raw keys were not persisted and cannot be faithfully rescored. The scorer now uses page and quote Provenance and persists keys; no additional live run was made."
+        "extracted": 15,
+        "matched": 9,
+        "precision": 0.6,
+        "recall": 0.9
       },
       "topicItems": [
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Computational graph",
+          "value": "A DAG of differentiable functions whose leaves are variables or constants",
           "citations": [
             {
-              "extractionId": "a98242a0-045e-405b-8e8d-44c20dc4a147",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "3ede7135-8905-4acf-ac52-c920db5c05e7",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 3,
-              "quote": "DAG — directed acyclic graph (not necessarily a tree!)"
+              "quote": "DAG \u2014 directed acyclic graph (not necessarily a tree!)"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Multivariable chain rule",
+          "value": "Derivative with respect to a node with several children is the sum over children of the chain-rule terms",
           "citations": [
             {
-              "extractionId": "8c4ec59c-2ad9-403f-90e7-3c755e54a3c9",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "12638d55-989f-4967-b958-8000cf659037",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 16,
-              "quote": "use multivariate chain rule!"
+              "quote": "Proceed to b and compute \u2202e"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Backpropagation",
+          "value": "Forward pass caches node outputs, backward pass computes the overall partial derivatives with respect to each node",
           "citations": [
             {
-              "extractionId": "6980ade0-828c-4e34-9063-f873303e43ea",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "f7e57324-cd30-43e0-9a42-d409cc90e0f9",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 20,
-              "quote": "Backward computation (Backprop): Compute the overall function’s partial derivative with respect to each node"
+              "quote": "Backward computation (Backprop): Compute the overall function\u2019s partial derivative with respect to each node"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Tokenization",
+          "value": "Splitting text into tokens based on whitespace and punctuation; the words and tokens are not identical",
           "citations": [
             {
-              "extractionId": "c56bc423-b33c-474f-8c84-9691f4d260e1",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
-              "title": "rub-nlp-03.pdf",
-              "page": 23,
-              "quote": "Known as logistic regression, maximum entropy"
-            }
-          ]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
-          "citations": [
-            {
-              "extractionId": "77f955bf-e025-4074-9751-c23bc0c2230e",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "90971df8-8869-469f-a2ac-447977fd68e5",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 28,
               "quote": "A process called tokenization splits text into tokens based on whitespace and punctuation"
@@ -1823,11 +1955,12 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Bag-of-words",
+          "value": "Averaged one-hot vectors of the document's tokens give a fixed-size document representation",
           "citations": [
             {
-              "extractionId": "18c4980e-e8c5-46c2-9573-d30c3cebc050",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "24f753a3-df94-4989-aadd-f577e4ca238e",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 31,
               "quote": "(Averaged) Bag-of-words"
@@ -1836,24 +1969,26 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Vocabulary and UNK tokens",
+          "value": "A fixed-size vocabulary of frequent words, with all other words mapped to an unknown token",
           "citations": [
             {
-              "extractionId": "f9908a72-e641-4a3e-bb67-e30de9bc633e",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "512c0b38-74a3-42ea-8459-5a6c293b2190",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 33,
-              "quote": "When building the vocabulary, use the most frequent words, all others represented by an unknown token (UNK or OOV)"
+              "quote": "Out-of-vocabulary (UNK) tokens"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Byte-pair encoding",
+          "value": "Subword vocabulary built by repeatedly merging the most frequent pair of symbols",
           "citations": [
             {
-              "extractionId": "de95b3b0-aa7e-4d5c-bb54-fa7ccca6b305",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "ead6b472-4c79-41e6-95ec-62fd114195c1",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 34,
               "quote": "Subword units: Byte-pair encoding"
@@ -1862,11 +1997,12 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "SentencePiece",
+          "value": "Language-independent subword tokenizer that escapes whitespace with _ and is lossless",
           "citations": [
             {
-              "extractionId": "f0ee0b5a-b415-4fec-a83e-d51cd587b28a",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "3256b311-3576-44b1-aa65-1ccf5353aa83",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 37,
               "quote": "SentencePiece escapes the whitespace with _"
@@ -1875,37 +2011,68 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Sigmoid function",
+          "value": "Symmetric function mapping real numbers into the range [0, 1]",
           "citations": [
             {
-              "extractionId": "f98c46cb-3bf4-4239-b397-9e64f8e60bf5",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "36722e7f-4779-4e83-8a0f-a2986e805899",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 43,
-              "quote": "Sigmoid (logistic) function"
+              "quote": "Symmetric function, range of \u03c3(t) \u2208 [0, 1]"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Derivative of sigmoid",
+          "value": "The derivative of the sigmoid is \u03c3(t)\u00b7(1 \u2212 \u03c3(t))",
           "citations": [
             {
-              "extractionId": "370e557a-6b56-4295-a419-66a7984df60e",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "2237077a-0411-4a10-a9b3-7e01acd4ae8d",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
+              "title": "rub-nlp-03.pdf",
+              "page": 44,
+              "quote": "= \u03c3(t) \u00b7 (1 \u2212 \u03c3(t))"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Log-linear model for binary classification",
+          "value": "Linear function of the input passed through a sigmoid to give the probability of label 1",
+          "citations": [
+            {
+              "extractionId": "f090361c-5eec-444e-97d4-df2f9b42211f",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
+              "title": "rub-nlp-03.pdf",
+              "page": 45,
+              "quote": "Linear function through sigmoid \u2014 log-linear model"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Decision rule",
+          "value": "Predict 1 if the output \u0177 is above 0.5, otherwise predict 0",
+          "citations": [
+            {
+              "extractionId": "90572f74-14a6-4009-a251-6333f022dc03",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 46,
-              "quote": "Prediction = 1 if ŷ > 0.5"
+              "quote": "Prediction = 1 if \u0177 > 0.5"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Binary cross-entropy loss",
+          "value": "Logistic loss for a single example with label y and prediction \u0177",
           "citations": [
             {
-              "extractionId": "44be0d03-024f-4c4f-bc97-201a7cb4979e",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "c8722da0-828d-4679-b7f4-ae49ace6f0ca",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 48,
               "quote": "Binary cross-entropy loss (logistic loss)"
@@ -1914,11 +2081,12 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Stochastic gradient descent",
+          "value": "Online parameter updates from the loss of one sampled training example",
           "citations": [
             {
-              "extractionId": "8f04d4e9-5587-4d4b-bd40-700b55795ef8",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "a1ddba5c-e35f-4b9d-8e58-8a625e20347f",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 50,
               "quote": "(Online) Stochastic Gradient Descent"
@@ -1927,11 +2095,12 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Minibatch stochastic gradient descent",
+          "value": "Gradient estimated from a minibatch of m examples, with minibatch size between 1 and n",
           "citations": [
             {
-              "extractionId": "f70e8528-be54-44e6-884f-db5086afde38",
-              "sourceId": "1eda99ef-cfe2-4071-a155-d69970985808",
+              "extractionId": "63c74e3f-0e6b-485f-b2e1-077b097b2536",
+              "sourceId": "0af4368d-62d9-4ed7-ace3-7c543d957831",
               "title": "rub-nlp-03.pdf",
               "page": 51,
               "quote": "Minibatch Stochastic Gradient Descent"
@@ -1968,21 +2137,25 @@
         "found": 0
       },
       "items": [],
-      "initialUnreliableTopics": {
-        "labelled": 10,
-        "extracted": 14,
-        "matched": 1,
-        "precision": 0.07142857142857142,
-        "recall": 0.1
-      }
+      "unresolvedCitedTopicKeys": 0
     },
     {
       "id": "dhbw-digitaltechnik",
+      "assignment": {
+        "boundCourseId": null,
+        "proposals": 0,
+        "itemCourseIds": []
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
       "run": 1,
       "language": "de",
       "kind": "slides",
       "scan": false,
       "ingestion": "failed",
+      "ingestionFailure": "unreadable",
       "extraction": "skipped",
       "dropped": null,
       "grounding": {
@@ -2031,41 +2204,65 @@
         "found": 0
       },
       "items": [],
-      "ingestionFailure": "invalid_or_excessive_pdf (reproduced offline: decompressed output exceeds 32 MiB)"
+      "unresolvedCitedTopicKeys": 0
     },
     {
       "id": "several-files-one-course/rub-nlp-02",
+      "assignment": {
+        "boundCourseId": null,
+        "proposals": 1,
+        "itemCourseIds": [
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
       "run": 1,
       "language": "en",
       "kind": "slides",
       "scan": false,
       "ingestion": "ready",
+      "ingestionFailure": null,
       "extraction": "done",
       "dropped": 0,
       "grounding": {
-        "claimedPage": 15,
+        "claimedPage": 13,
         "otherPage": 0,
         "nowhere": 0,
         "examples": []
       },
       "failures": [],
-      "reviewableAfterMs": 16030,
-      "costMicroUsd": 2661,
+      "reviewableAfterMs": 64404,
+      "costMicroUsd": 27019,
       "topics": {
         "labelled": 10,
-        "extracted": 14,
-        "matched": 8,
-        "precision": 0.5714285714285714,
-        "recall": 0.8
+        "extracted": 12,
+        "matched": 4,
+        "precision": 0.3333333333333333,
+        "recall": 0.4
       },
       "topicItems": [
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "A function measuring how large the error of a single prediction is",
+          "key": "Loss function",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "b42b4254-5b48-47a9-b79b-689d6c9e6234",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
+              "extractionId": "63297ec3-e2ca-4df8-bfc0-175006599064",
+              "sourceId": "c3b0a8d3-f116-4698-942f-f7f78ca8f41e",
               "title": "rub-nlp-02.pdf",
               "page": 12,
               "quote": "We need to specify a loss function"
@@ -2074,50 +2271,26 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Fitting a model by minimizing the average loss over training examples",
+          "key": "Empirical risk minimization",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "9ce040c6-bcd0-4afe-9d99-1f29730fa7ab",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
+              "extractionId": "f9505945-455e-476e-891b-91c64d301647",
+              "sourceId": "c3b0a8d3-f116-4698-942f-f7f78ca8f41e",
               "title": "rub-nlp-02.pdf",
               "page": 13,
-              "quote": "Minimizing so-called ‘empirical risk’"
+              "quote": "Minimizing so-called \u2018empirical risk\u2019"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Loss defined as the squared difference between label and prediction",
+          "key": "Chain rule for single-variable functions",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "852d51c2-2023-4dd3-81d5-77ec17d0f3b6",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
-              "title": "rub-nlp-02.pdf",
-              "page": 13,
-              "quote": "Loss example: Squared Loss"
-            }
-          ]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "The slope of a function at a point, defined as a limit",
-          "citations": [
-            {
-              "extractionId": "17ed9402-c00a-4a23-93af-777c28622b02",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
-              "title": "rub-nlp-02.pdf",
-              "page": 18,
-              "quote": "The derivative of f at c"
-            }
-          ]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "Rule for differentiating nested functions by multiplying local derivatives",
-          "citations": [
-            {
-              "extractionId": "d13ccbe0-5dc7-4d77-8a0e-bff491198d0c",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
+              "extractionId": "8a1e0fd6-6beb-4da5-af9e-3408bb5242e9",
+              "sourceId": "c3b0a8d3-f116-4698-942f-f7f78ca8f41e",
               "title": "rub-nlp-02.pdf",
               "page": 20,
               "quote": "Derivative of nested functions: The chain rule hammer"
@@ -2126,50 +2299,40 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Iteratively stepping against the derivative to find a minimum of a single-variable function",
+          "key": "Gradient descent for single-variable functions",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "dd54b39d-110f-458f-967d-45ca6a9aab4f",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
+              "extractionId": "13a3e491-04cf-4e64-96f9-a728f3092e10",
+              "sourceId": "c3b0a8d3-f116-4698-942f-f7f78ca8f41e",
               "title": "rub-nlp-02.pdf",
-              "page": 21,
-              "quote": "Gradient-based optimization: Find minimum of a function"
+              "page": 22,
+              "quote": "Start with initial random value xi"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Functions from R^n to R whose minimum is sought with several variables",
+          "key": "Partial derivatives",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "668a0eee-60f2-4583-9a79-c59350470dfb",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
-              "title": "rub-nlp-02.pdf",
-              "page": 24,
-              "quote": "Multivariate functions"
-            }
-          ]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "The derivative of a multivariate function with respect to a single variable",
-          "citations": [
-            {
-              "extractionId": "a17d0127-1671-47d5-8bda-10bee2800ddf",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
+              "extractionId": "b5c107ff-dfc8-464d-b156-089d1e7dc7e7",
+              "sourceId": "c3b0a8d3-f116-4698-942f-f7f78ca8f41e",
               "title": "rub-nlp-02.pdf",
               "page": 25,
-              "quote": "Partial derivative: the directional derivative wrt. a single variable"
+              "quote": "Partial derivative: the directional derivative wrt. a single"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Chain rule for functions of several intermediate variables",
+          "key": "Chain rule for multivariate functions",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "b1a2331c-f1cf-4f99-939d-ffb13bb4f42a",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
+              "extractionId": "decc22bd-5755-4c03-ae0f-7c0ac2cd00c0",
+              "sourceId": "c3b0a8d3-f116-4698-942f-f7f78ca8f41e",
               "title": "rub-nlp-02.pdf",
               "page": 26,
               "quote": "Chain rule for multivariate functions"
@@ -2178,66 +2341,85 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "The vector of partial derivatives, pointing in the direction of steepest ascent",
+          "key": "Gradient of multivariate functions",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "c7952cb5-338a-4353-b33e-5937e0285092",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
+              "extractionId": "83032256-650d-40ca-9c77-4563ac45d92f",
+              "sourceId": "c3b0a8d3-f116-4698-942f-f7f78ca8f41e",
               "title": "rub-nlp-02.pdf",
-              "page": 27,
-              "quote": "The resulting total derivative matrix Df is called the gradient of f"
+              "page": 28,
+              "quote": "the gradient \u2207f (x) points in the direction of"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Iterative update of parameters by subtracting the learning rate times the gradient",
+          "key": "Gradient descent for multivariate functions",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "a63dd6ac-739a-4ed0-bfd5-c349875d8fda",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
+              "extractionId": "3f3ce342-bfd6-407a-a166-bd53df1ef89d",
+              "sourceId": "c3b0a8d3-f116-4698-942f-f7f78ca8f41e",
               "title": "rub-nlp-02.pdf",
               "page": 29,
-              "quote": "Gradient descent for minimizing multivariate functions"
+              "quote": "Compute the gradient and update the position"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "A directed acyclic graph whose nodes are differentiable functions",
+          "key": "Computational graph",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "61a77926-1757-4a7f-b0e9-73aa654d73bb",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
+              "extractionId": "641822c8-bcc2-423d-a0b0-8ad8f2eea250",
+              "sourceId": "c3b0a8d3-f116-4698-942f-f7f78ca8f41e",
               "title": "rub-nlp-02.pdf",
               "page": 34,
-              "quote": "DAG — directed acyclic graph (not necessarily a tree!)"
+              "quote": "DAG \u2014 directed acyclic graph (not necessarily a tree!)"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Computing all gradients of a graph efficiently via a forward and a backward pass",
+          "key": "Node requirements in a computational graph",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "150322be-a241-4bc3-b888-84d3fa4464d7",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
+              "extractionId": "0fb33c4a-9b03-489f-8d3f-7836e82ba5ae",
+              "sourceId": "c3b0a8d3-f116-4698-942f-f7f78ca8f41e",
+              "title": "rub-nlp-02.pdf",
+              "page": 50,
+              "quote": "How to compute partial derivatives wrt. the"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Backpropagation",
+          "value": "covered",
+          "citations": [
+            {
+              "extractionId": "442ab69b-b65e-4444-b0ef-08c1b32b45b1",
+              "sourceId": "c3b0a8d3-f116-4698-942f-f7f78ca8f41e",
               "title": "rub-nlp-02.pdf",
               "page": 51,
-              "quote": "Forward computation: Compute all nodes’ output (and cache it)"
+              "quote": "Forward computation: Compute all nodes\u2019 output (and"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Storing intermediate outputs and partial derivatives to avoid repeated computation",
+          "key": "Caching in backpropagation",
+          "value": "covered",
           "citations": [
             {
-              "extractionId": "131c759f-6a6b-4e60-95c3-aa5aa8836253",
-              "sourceId": "de59aaa1-94cc-4889-beba-ccc1afe88556",
+              "extractionId": "4cd5cc6f-a503-491b-aa40-9397c3d8f660",
+              "sourceId": "c3b0a8d3-f116-4698-942f-f7f78ca8f41e",
               "title": "rub-nlp-02.pdf",
               "page": 52,
-              "quote": "When caching each node’s intermediate output and partial derivatives, we avoid repeating computations"
+              "quote": "When caching each node\u2019s intermediate output and"
             }
           ]
         }
@@ -2270,136 +2452,133 @@
         "labelled": 0,
         "found": 0
       },
-      "items": []
+      "items": [],
+      "unresolvedCitedTopicKeys": 0
     },
     {
       "id": "several-files-one-course/rub-nlp-03",
+      "assignment": {
+        "boundCourseId": null,
+        "proposals": 1,
+        "itemCourseIds": [
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb",
+          "1ae4b8c5-9496-4e9a-81cd-34a76d9f3aeb"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
       "run": 1,
       "language": "en",
       "kind": "slides",
       "scan": false,
       "ingestion": "ready",
+      "ingestionFailure": null,
       "extraction": "done",
       "dropped": 0,
       "grounding": {
-        "claimedPage": 15,
+        "claimedPage": 11,
         "otherPage": 0,
         "nowhere": 0,
         "examples": []
       },
       "failures": [],
-      "reviewableAfterMs": 17015,
-      "costMicroUsd": 3176,
+      "reviewableAfterMs": 65843,
+      "costMicroUsd": 27069,
       "topics": {
         "labelled": 10,
-        "extracted": 15,
-        "matched": null,
-        "precision": null,
-        "recall": null,
-        "invalidReason": "Invalid: the initial scorer recovered raw Topic keys by value alone, so repeated values such as covered used the first key. Raw keys were not persisted and cannot be faithfully rescored. The scorer now uses page and quote Provenance and persists keys; no additional live run was made."
+        "extracted": 11,
+        "matched": 2,
+        "precision": 0.18181818181818182,
+        "recall": 0.2
       },
       "topicItems": [
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "A function measuring how large the error of a single prediction is",
-          "citations": []
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "Fitting a model by minimizing the average loss over training examples",
-          "citations": []
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "Loss defined as the squared difference between label and prediction",
-          "citations": []
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "The slope of a function at a point, defined as a limit",
-          "citations": []
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "Rule for differentiating nested functions by multiplying local derivatives",
-          "citations": []
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "Iteratively stepping against the derivative to find a minimum of a single-variable function",
+          "value": "covered",
           "citations": []
         },
         {
           "course": "Natural Language Processing with Deep Learning",
           "value": "covered",
-          "citations": [
-            {
-              "extractionId": "66b12724-4e4d-4f3f-80e7-ef1c5d14f7db",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
-              "title": "rub-nlp-03.pdf",
-              "page": 23,
-              "quote": "In fact, it is a single-layer neural network"
-            }
-          ]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "Functions from R^n to R whose minimum is sought with several variables",
-          "citations": []
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "The derivative of a multivariate function with respect to a single variable",
-          "citations": []
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "Chain rule for functions of several intermediate variables",
-          "citations": []
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "The vector of partial derivatives, pointing in the direction of steepest ascent",
           "citations": []
         },
         {
           "course": "Natural Language Processing with Deep Learning",
           "value": "covered",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "covered",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "covered",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "covered",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "covered",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Tokenization",
+          "value": "Splitting text into tokens based on whitespace and punctuation; a token is not necessarily a meaning-bearing word",
           "citations": [
             {
-              "extractionId": "097bb451-da6a-42a1-8430-9066566f05af",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
+              "extractionId": "fb218e5f-e1cf-48fa-85d5-3d1b87970dc4",
+              "sourceId": "7d162754-5700-4bda-b4d9-e7e730954fba",
               "title": "rub-nlp-03.pdf",
               "page": 28,
-              "quote": "A process called tokenization splits text into tokens based on whitespace and punctuation"
+              "quote": "A process called tokenization splits text into tokens based"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Iterative update of parameters by subtracting the learning rate times the gradient",
+          "value": "covered",
           "citations": []
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Vocabulary",
+          "value": "Fixed-size static vocabulary with a unique index per word, built from training data",
           "citations": [
             {
-              "extractionId": "7557bebb-0810-42f6-9110-9f6399fcf868",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
+              "extractionId": "21eedeb8-7765-4169-bc47-55e1d88eb41a",
+              "sourceId": "7d162754-5700-4bda-b4d9-e7e730954fba",
               "title": "rub-nlp-03.pdf",
               "page": 30,
-              "quote": "We build a fix-sized static vocabulary"
+              "quote": "We build a fix-sized static vocabulary (e.g., by tokenizing"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "(Averaged) Bag-of-words",
+          "value": "Document represented as the mean of the one-hot vectors of its words over a fixed vocabulary",
           "citations": [
             {
-              "extractionId": "eb50c247-41f1-4d68-bb37-8c531e7dc224",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
+              "extractionId": "306746c8-02a4-4356-9ea4-f39544d8c8ab",
+              "sourceId": "7d162754-5700-4bda-b4d9-e7e730954fba",
               "title": "rub-nlp-03.pdf",
               "page": 31,
               "quote": "(Averaged) Bag-of-words"
@@ -2408,27 +2587,15 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Out-of-vocabulary (UNK) tokens",
+          "value": "Rare words mapped to a single unknown token when the vocabulary is built from the most frequent words",
           "citations": [
             {
-              "extractionId": "3c8ad7d7-2d57-48f2-b9ae-93a422892d05",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
+              "extractionId": "5a806c32-ba2e-42da-8c1d-0bba7945b4e1",
+              "sourceId": "7d162754-5700-4bda-b4d9-e7e730954fba",
               "title": "rub-nlp-03.pdf",
               "page": 33,
-              "quote": "When building the vocabulary, use the most frequent words"
-            }
-          ]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "A directed acyclic graph whose nodes are differentiable functions",
-          "citations": [
-            {
-              "extractionId": "fd34b6aa-0a0c-4976-a141-81bf4a9b6a16",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
-              "title": "rub-nlp-03.pdf",
-              "page": 3,
-              "quote": "DAG — directed acyclic graph (not necessarily a tree!)"
+              "quote": "Out-of-vocabulary (UNK) tokens"
             }
           ]
         },
@@ -2437,8 +2604,22 @@
           "value": "covered",
           "citations": [
             {
-              "extractionId": "bc02f65a-598d-4ae4-8200-d40e36173fa2",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
+              "extractionId": "e4d45714-4cb2-4f79-a64a-a2027033b5cc",
+              "sourceId": "7d162754-5700-4bda-b4d9-e7e730954fba",
+              "title": "rub-nlp-03.pdf",
+              "page": 3,
+              "quote": "DAG \u2014 directed acyclic graph (not necessarily a tree!)"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Subword units: Byte-pair encoding",
+          "value": "Iteratively merging the most frequent character pair to build a subword vocabulary that avoids out-of-vocabulary words",
+          "citations": [
+            {
+              "extractionId": "328c36ba-a614-4819-86d2-485a80ec01b0",
+              "sourceId": "7d162754-5700-4bda-b4d9-e7e730954fba",
               "title": "rub-nlp-03.pdf",
               "page": 34,
               "quote": "Subword units: Byte-pair encoding"
@@ -2447,24 +2628,12 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Sigmoid (logistic) function",
+          "value": "Maps a real number to the range [0, 1]; its derivative is \u03c3(t)\u00b7(1 \u2212 \u03c3(t))",
           "citations": [
             {
-              "extractionId": "ba68d2ea-3289-4ec0-be54-f82d419229dd",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
-              "title": "rub-nlp-03.pdf",
-              "page": 37,
-              "quote": "SentencePiece escapes the whitespace with _ and"
-            }
-          ]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
-          "citations": [
-            {
-              "extractionId": "f0dcc35d-c3d0-4303-a66c-0e5b0332f6dd",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
+              "extractionId": "55399a38-51c9-43ab-98f1-636c20b3acb2",
+              "sourceId": "7d162754-5700-4bda-b4d9-e7e730954fba",
               "title": "rub-nlp-03.pdf",
               "page": 43,
               "quote": "Sigmoid (logistic) function"
@@ -2473,37 +2642,26 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Log-linear model (logistic regression)",
+          "value": "Linear function of the input passed through a sigmoid to give the probability of class 1",
           "citations": [
             {
-              "extractionId": "6c298e0e-192e-4836-8495-12b57ce639a3",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
+              "extractionId": "3ecb2b04-3101-4151-a9f1-27b1e09bcea8",
+              "sourceId": "7d162754-5700-4bda-b4d9-e7e730954fba",
               "title": "rub-nlp-03.pdf",
               "page": 45,
-              "quote": "Linear function through sigmoid — log-linear model"
+              "quote": "Linear function through sigmoid \u2014 log-linear model"
             }
           ]
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
+          "key": "Binary cross-entropy loss (logistic loss)",
+          "value": "Loss for binary labels y in {0,1} given prediction \u0177, with derivative \u2212(y \u2212 \u0177)/(\u0177(1 \u2212 \u0177)) with respect to \u0177",
           "citations": [
             {
-              "extractionId": "c229c77d-cb1f-4dba-9b9d-79a7352cef36",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
-              "title": "rub-nlp-03.pdf",
-              "page": 46,
-              "quote": "Prediction = 1 if ŷ > 0.5"
-            }
-          ]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "covered",
-          "citations": [
-            {
-              "extractionId": "c5e63b37-bf16-4eff-8951-2b4c8043d730",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
+              "extractionId": "7d98a147-ea50-4f83-9ede-1550279d43ae",
+              "sourceId": "7d162754-5700-4bda-b4d9-e7e730954fba",
               "title": "rub-nlp-03.pdf",
               "page": 48,
               "quote": "Binary cross-entropy loss (logistic loss)"
@@ -2513,36 +2671,29 @@
         {
           "course": "Natural Language Processing with Deep Learning",
           "value": "covered",
-          "citations": [
-            {
-              "extractionId": "51f401cc-1c03-4822-853f-a0c106594446",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
-              "title": "rub-nlp-03.pdf",
-              "page": 50,
-              "quote": "(Online) Stochastic Gradient Descent"
-            }
-          ]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "value": "Computing all gradients of a graph efficiently via a forward and a backward pass",
-          "citations": [
-            {
-              "extractionId": "776f2535-2cc0-43c2-afd6-5a5060830ec5",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
-              "title": "rub-nlp-03.pdf",
-              "page": 20,
-              "quote": "Backward computation (Backprop): Compute the overall function’s partial derivative with respect to each node"
-            }
-          ]
+          "citations": []
         },
         {
           "course": "Natural Language Processing with Deep Learning",
           "value": "covered",
           "citations": [
             {
-              "extractionId": "e9d92ded-784c-4720-bb12-2b0dd96de6af",
-              "sourceId": "7f721afb-0be4-4b78-9e5b-c6e51bea5aad",
+              "extractionId": "02a0ec68-e2a3-4094-a52c-aa2a6b8f0e50",
+              "sourceId": "7d162754-5700-4bda-b4d9-e7e730954fba",
+              "title": "rub-nlp-03.pdf",
+              "page": 20,
+              "quote": "Backward computation (Backprop): Compute the overall function\u2019s partial derivative with respect to each node"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Minibatch Stochastic Gradient Descent",
+          "value": "Parameter updates using the averaged gradient over m sampled training examples; minibatch size may range from 1 to n",
+          "citations": [
+            {
+              "extractionId": "7db4da4a-87b0-4fd0-be86-58ee148b14e7",
+              "sourceId": "7d162754-5700-4bda-b4d9-e7e730954fba",
               "title": "rub-nlp-03.pdf",
               "page": 51,
               "quote": "Minibatch Stochastic Gradient Descent"
@@ -2551,7 +2702,7 @@
         },
         {
           "course": "Natural Language Processing with Deep Learning",
-          "value": "Storing intermediate outputs and partial derivatives to avoid repeated computation",
+          "value": "covered",
           "citations": []
         }
       ],
@@ -2584,21 +2735,544 @@
         "found": 0
       },
       "items": [],
-      "initialUnreliableTopics": {
+      "unresolvedCitedTopicKeys": 2,
+      "topicScoringLimitation": "Selected review value differs from current Source raw value; unresolved keys use selected value. Scenario Topic scores are conservative, not reliable estimates."
+    },
+    {
+      "id": "bound-course/rub-nlp-02",
+      "assignment": {
+        "boundCourseId": "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+        "proposals": 0,
+        "itemCourseIds": [
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
+      "run": 1,
+      "language": "en",
+      "kind": "slides",
+      "scan": false,
+      "ingestion": "ready",
+      "ingestionFailure": null,
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 13,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "failures": [],
+      "reviewableAfterMs": 67334,
+      "costMicroUsd": 27392,
+      "topics": {
         "labelled": 10,
-        "extracted": 15,
+        "extracted": 12,
+        "matched": 8,
+        "precision": 0.6666666666666666,
+        "recall": 0.8
+      },
+      "topicItems": [
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Loss function",
+          "value": "A function that maps the true label and the predictor's output to a non-negative loss",
+          "citations": [
+            {
+              "extractionId": "52cae76b-5294-46a5-b7c8-e20ccbebb7fa",
+              "sourceId": "63d1e172-b8f6-4f46-8142-c9ef731b5b1d",
+              "title": "rub-nlp-02.pdf",
+              "page": 12,
+              "quote": "We need to specify a loss function"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Supervised learning and empirical risk",
+          "value": "Learning fits parameters by minimizing the average loss over training examples",
+          "citations": [
+            {
+              "extractionId": "90013874-c665-4cf9-89ba-fd756e88e923",
+              "sourceId": "63d1e172-b8f6-4f46-8142-c9ef731b5b1d",
+              "title": "rub-nlp-02.pdf",
+              "page": 13,
+              "quote": "Minimizing so-called \u2018empirical risk\u2019"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Squared loss",
+          "value": "Loss given by the squared difference between true label and prediction",
+          "citations": [
+            {
+              "extractionId": "1ed36508-9c74-4de9-969a-1cce5853b5f6",
+              "sourceId": "63d1e172-b8f6-4f46-8142-c9ef731b5b1d",
+              "title": "rub-nlp-02.pdf",
+              "page": 13,
+              "quote": "Loss example: Squared Loss"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Derivative",
+          "value": "Derivative of f at c as the limit of the difference quotient, measuring steepness",
+          "citations": [
+            {
+              "extractionId": "0b14deb4-0bbb-49cd-b7fd-73124e4d540a",
+              "sourceId": "63d1e172-b8f6-4f46-8142-c9ef731b5b1d",
+              "title": "rub-nlp-02.pdf",
+              "page": 18,
+              "quote": "The derivative of f at c"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Chain rule",
+          "value": "Derivative of a nested composition g(f(x)) as the product of the derivatives of the parts",
+          "citations": [
+            {
+              "extractionId": "cb79faca-adc6-45d4-bdba-da3dd71b5fef",
+              "sourceId": "63d1e172-b8f6-4f46-8142-c9ef731b5b1d",
+              "title": "rub-nlp-02.pdf",
+              "page": 20,
+              "quote": "Derivative of nested functions: The chain rule hammer"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Gradient-based optimization",
+          "value": "Finding a minimum of a function by iterating along derivative information",
+          "citations": [
+            {
+              "extractionId": "a9b85f36-08cf-4a38-a586-36c313c0152f",
+              "sourceId": "63d1e172-b8f6-4f46-8142-c9ef731b5b1d",
+              "title": "rub-nlp-02.pdf",
+              "page": 21,
+              "quote": "Gradient-based optimization: Find minimum of a function"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Partial derivative",
+          "value": "Derivative of a multivariate function with respect to a single variable, the others held fixed",
+          "citations": [
+            {
+              "extractionId": "7edf8635-470b-43e1-9b91-ffc7516639a9",
+              "sourceId": "63d1e172-b8f6-4f46-8142-c9ef731b5b1d",
+              "title": "rub-nlp-02.pdf",
+              "page": 25,
+              "quote": "Partial derivative: the directional derivative wrt. a single"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Multivariable chain rule",
+          "value": "Chain rule for functions of several intermediate variables, summing contributions through each path",
+          "citations": [
+            {
+              "extractionId": "058ced7d-682d-4e8c-860c-ee216b6b69dc",
+              "sourceId": "63d1e172-b8f6-4f46-8142-c9ef731b5b1d",
+              "title": "rub-nlp-02.pdf",
+              "page": 26,
+              "quote": "Chain rule for multivariate functions"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Gradient",
+          "value": "Vector of partial derivatives of a multivariate function, pointing in the direction of steepest ascent",
+          "citations": [
+            {
+              "extractionId": "c4579d14-a998-4eee-82cb-0352d14bd330",
+              "sourceId": "63d1e172-b8f6-4f46-8142-c9ef731b5b1d",
+              "title": "rub-nlp-02.pdf",
+              "page": 28,
+              "quote": "points in the direction of"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Gradient descent",
+          "value": "Iterative update of parameters by subtracting the step size times the gradient",
+          "citations": [
+            {
+              "extractionId": "ccba6f1e-64ba-436e-b9cd-457b3fccd737",
+              "sourceId": "63d1e172-b8f6-4f46-8142-c9ef731b5b1d",
+              "title": "rub-nlp-02.pdf",
+              "page": 29,
+              "quote": "Gradient descent for minimizing multivariate functions"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Computational graph",
+          "value": "Directed acyclic graph whose nodes are differentiable functions and whose leaves are variables or constants",
+          "citations": [
+            {
+              "extractionId": "5ea43558-8afb-4fde-a33f-66d3eb79da71",
+              "sourceId": "63d1e172-b8f6-4f46-8142-c9ef731b5b1d",
+              "title": "rub-nlp-02.pdf",
+              "page": 34,
+              "quote": "DAG \u2014 directed acyclic graph (not necessarily a tree!)"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Backpropagation",
+          "value": "Forward pass caches node outputs; backward pass computes derivatives of the overall function with respect to each node",
+          "citations": [
+            {
+              "extractionId": "85c192db-152b-44d7-8ee6-f61456714d13",
+              "sourceId": "63d1e172-b8f6-4f46-8142-c9ef731b5b1d",
+              "title": "rub-nlp-02.pdf",
+              "page": 51,
+              "quote": "Forward computation: Compute all nodes\u2019 output (and"
+            }
+          ]
+        }
+      ],
+      "labelsStatus": "draft, not yet spot-checked by founder",
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
         "matched": 1,
-        "precision": 0.06666666666666667,
-        "recall": 0.1
-      }
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 0,
+        "extracted": 0,
+        "matched": 0,
+        "precision": null,
+        "recall": null,
+        "kindAccuracy": null
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 0,
+        "found": 0
+      },
+      "items": [],
+      "unresolvedCitedTopicKeys": 0
+    },
+    {
+      "id": "bound-course/rub-nlp-03",
+      "assignment": {
+        "boundCourseId": "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+        "proposals": 0,
+        "itemCourseIds": [
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229",
+          "c45d777d-0c94-439c-9bb2-5952e8dfd229"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
+      "run": 1,
+      "language": "en",
+      "kind": "slides",
+      "scan": false,
+      "ingestion": "ready",
+      "ingestionFailure": null,
+      "extraction": "done",
+      "dropped": 0,
+      "grounding": {
+        "claimedPage": 10,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "failures": [],
+      "reviewableAfterMs": 63022,
+      "costMicroUsd": 28345,
+      "topics": {
+        "labelled": 10,
+        "extracted": 9,
+        "matched": 5,
+        "precision": 0.5555555555555556,
+        "recall": 0.5
+      },
+      "topicItems": [
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "A function that maps the true label and the predictor's output to a non-negative loss",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "Learning fits parameters by minimizing the average loss over training examples",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "Loss given by the squared difference between true label and prediction",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "Derivative of f at c as the limit of the difference quotient, measuring steepness",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "Derivative of a nested composition g(f(x)) as the product of the derivatives of the parts",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "Finding a minimum of a function by iterating along derivative information",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "Derivative of a multivariate function with respect to a single variable, the others held fixed",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "Chain rule for functions of several intermediate variables, summing contributions through each path",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "Vector of partial derivatives of a multivariate function, pointing in the direction of steepest ascent",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "Iterative update of parameters by subtracting the step size times the gradient",
+          "citations": []
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Bag-of-words",
+          "value": "introduced",
+          "citations": [
+            {
+              "extractionId": "fb7e5b4d-6f97-4e6a-9e31-1cab16ebae97",
+              "sourceId": "3b3ba462-fd62-4049-8b52-8c079abf0484",
+              "title": "rub-nlp-03.pdf",
+              "page": 31,
+              "quote": "(Averaged) Bag-of-words"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Out-of-vocabulary (UNK) tokens",
+          "value": "introduced",
+          "citations": [
+            {
+              "extractionId": "67cfaaf6-caf1-41de-b916-b413a1c88b92",
+              "sourceId": "3b3ba462-fd62-4049-8b52-8c079abf0484",
+              "title": "rub-nlp-03.pdf",
+              "page": 33,
+              "quote": "Out-of-vocabulary (UNK) tokens"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "Directed acyclic graph whose nodes are differentiable functions and whose leaves are variables or constants",
+          "citations": [
+            {
+              "extractionId": "1c045c89-ae95-446d-bd71-364b4a060fa8",
+              "sourceId": "3b3ba462-fd62-4049-8b52-8c079abf0484",
+              "title": "rub-nlp-03.pdf",
+              "page": 3,
+              "quote": "Each node \u2014 a differentiable function with arguments"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Byte-pair encoding",
+          "value": "introduced",
+          "citations": [
+            {
+              "extractionId": "752ec26e-01e7-4ec8-9953-b35266c468b1",
+              "sourceId": "3b3ba462-fd62-4049-8b52-8c079abf0484",
+              "title": "rub-nlp-03.pdf",
+              "page": 34,
+              "quote": "Subword units: Byte-pair encoding"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Sigmoid function",
+          "value": "introduced",
+          "citations": [
+            {
+              "extractionId": "0e97d122-d1dd-4cf8-bdfb-d77add61fed4",
+              "sourceId": "3b3ba462-fd62-4049-8b52-8c079abf0484",
+              "title": "rub-nlp-03.pdf",
+              "page": 43,
+              "quote": "Sigmoid function \u03c3(t) : R \u2192 R"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Log-linear model",
+          "value": "introduced",
+          "citations": [
+            {
+              "extractionId": "4e797bc1-cfeb-4fab-944d-3d06ed29ce65",
+              "sourceId": "3b3ba462-fd62-4049-8b52-8c079abf0484",
+              "title": "rub-nlp-03.pdf",
+              "page": 45,
+              "quote": "Linear function through sigmoid \u2014 log-linear model"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Binary cross-entropy loss",
+          "value": "introduced",
+          "citations": [
+            {
+              "extractionId": "5c291453-57bc-46db-ab0e-0b34c6760628",
+              "sourceId": "3b3ba462-fd62-4049-8b52-8c079abf0484",
+              "title": "rub-nlp-03.pdf",
+              "page": 48,
+              "quote": "Binary cross-entropy loss (logistic loss)"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "value": "Forward pass caches node outputs; backward pass computes derivatives of the overall function with respect to each node",
+          "citations": [
+            {
+              "extractionId": "8b70c19c-f6fb-4bb0-884d-f5af8b6f051b",
+              "sourceId": "3b3ba462-fd62-4049-8b52-8c079abf0484",
+              "title": "rub-nlp-03.pdf",
+              "page": 20,
+              "quote": "Backward computation (Backprop)"
+            }
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "key": "Minibatch stochastic gradient descent",
+          "value": "introduced",
+          "citations": [
+            {
+              "extractionId": "7b12600e-729c-4503-b3e7-82de64200468",
+              "sourceId": "3b3ba462-fd62-4049-8b52-8c079abf0484",
+              "title": "rub-nlp-03.pdf",
+              "page": 51,
+              "quote": "Minibatch Stochastic Gradient Descent"
+            }
+          ]
+        }
+      ],
+      "labelsStatus": "draft, not yet spot-checked by founder",
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 0,
+        "extracted": 0,
+        "matched": 0,
+        "precision": null,
+        "recall": null,
+        "kindAccuracy": null
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 0,
+        "found": 0
+      },
+      "items": [],
+      "unresolvedCitedTopicKeys": 2,
+      "topicScoringLimitation": "Selected review value differs from current Source raw value; unresolved keys use selected value. Scenario Topic scores are conservative, not reliable estimates."
     }
   ],
+  "runStatus": "Incomplete evidence for first two synthetic documents; every document attempted once per intended context.",
+  "includedHeads": {
+    "feature": "be73fbb",
+    "courseAssignment": "2ae3d52",
+    "eval": "2c4352a"
+  },
+  "coverage": {
+    "plannedAttempts": 14,
+    "fullyRecordedAttempts": 12,
+    "interruptedAttempts": 2,
+    "rerunDocuments": []
+  },
   "runNotes": [
-    "One live pass over all 10 documents plus the two-deck shared-student scenario; no repeat live run.",
-    "OPENROUTER_BASE_URL was absent from the supplied env file; used ADR-0012 international endpoint https://openrouter.ai/api/v1. No model calls occurred in the initial configuration failure.",
-    "The German deck excerpt failed before extraction. Offline reproduction: invalid_or_excessive_pdf; decompressed qpdf output is 52,352,795 bytes, above the parser 32 MiB ceiling. Parser limits were not changed.",
-    "The two-deck scenario passed: both extractions completed, both Sources produced grounded Topics, and the shared student ended with one Course.",
-    "Topic aggregate metrics are invalid due to scorer key recovery, fixed after this run with a regression test. Slide labels remain draft, not yet spot-checked by founder.",
-    "Bound-course scenario remains open: course-assignment changes had not landed. Vision changes also absent."
+    "One attempted pass over ten documents plus automatic and bound two-deck scenarios. No document was retried in the same context. Two harness failures interrupted reporting; continuation skipped already attempted documents using a temporary copy of the same entry with only the document filter changed.",
+    "First attempt called ingestion/extraction for synthetic-de-analysis, then failed at nonexistent sources.get before recording metrics. Its throwaway database was removed. Outcome and exact cost are unavailable.",
+    "Next attempt recorded synthetic-en-econometrics: extraction done, Obligation and deadline precision/recall 1, reviewableAfterMs 17673. It then failed on a bigint allowance sum before the next document made model calls. Full evidence and exact cost were lost with the throwaway database.",
+    "Remaining eight documents and both scenarios completed with recorded evidence. Both harness errors were fixed. The eval entry was explicitly typechecked because worker tsconfig excludes evals. Feature implementation was not changed.",
+    "OPENROUTER_BASE_URL was missing; used ADR-0012 international endpoint https://openrouter.ai/api/v1. Secrets were loaded only into the eval environment.",
+    "Measured cost covers twelve fully recorded attempts. Each interrupted attempt had a hard USD 0.50 Allowance; reserving their full USD 1.00 bounds total cost. The continuation enforced a USD 3.90 aggregate cap.",
+    "Figure-only counts are stored Fact extraction rows whose decrypted uncertainty contains aus einer Abbildungsbeschreibung abgeleitet; Topics are the topic subset. Counts are per Source, not deduplicated across uploads.",
+    "Topic scores use exact one-to-one aliases. Shared-course review can select an earlier Source value; raw-key recovery by selected value and current Provenance can then fail. Unresolved keys fall back to selected values, so scenario Topic metrics are conservative and not reliable estimates. Standalone slide decks have no unresolved cited keys.",
+    "Labels remain draft, not yet spot-checked by founder. No Topic merge threshold has been set."
+  ],
+  "featureBugs": [
+    {
+      "file": "apps/parser/src/pdf.ts",
+      "line": 89,
+      "scenario": "dhbw-digitaltechnik, pages 1-35",
+      "observed": "ingestion failed: unreadable; extraction skipped",
+      "cause": "qpdf decompressed output is 52,352,795 bytes, above unchanged 33,554,432-byte maxBuffer. The larger parser JSON output limit does not affect this earlier check.",
+      "reproduction": "qpdf <excerpt.pdf> --stream-data=uncompress --decode-level=all --object-streams=disable - (count stdout bytes)",
+      "fixed": false
+    }
   ]
 }
