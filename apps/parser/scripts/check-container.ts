@@ -28,6 +28,7 @@ for (const [bytes, expected] of [
   [pdfFixture(), 200],
   [pdfFixture({ text: "" }), 200],
   [pdfFixture({ pages: 101 }), 413],
+  [pdfFixture({ inflated: 60 * 1024 * 1024 }), 200],
   [pdfFixture({ bomb: true }), 422],
   [Buffer.from("%PDF-1.7\ngarbage"), 422],
 ] as const) {
@@ -57,5 +58,5 @@ for (const [bytes, expected] of [
   assert.equal(Number(result.stdout.trim()), expected);
 }
 console.log(
-  "Container: secret rejection, real PDF, rendered scan, page limit, decompression bomb and malformed PDF passed under 512 MiB with no network.",
+  "Container: secret rejection, real PDF, rendered scan, page limit, a 60 MiB decompressed PDF, decompression bomb and malformed PDF passed under 512 MiB with no network.",
 );
