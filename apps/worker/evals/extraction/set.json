@@ -659,6 +659,13 @@
       "documents": ["rub-nlp-02", "rub-nlp-03"],
       "expectedCourses": 1,
       "labelsStatus": "draft, not yet spot-checked by founder"
+    },
+    {
+      "id": "bound-course",
+      "mode": "bound",
+      "documents": ["rub-nlp-02", "rub-nlp-03"],
+      "expectedCourses": 1,
+      "labelsStatus": "draft, not yet spot-checked by founder"
     }
   ]
 }
