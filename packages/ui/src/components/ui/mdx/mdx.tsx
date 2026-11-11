@@ -3,7 +3,8 @@
 import { cn } from "cn"
 import type { Root } from "mdast"
 import type { ComponentProps, ReactElement, ReactNode } from "react"
-import { useId, useState } from "react"
+import { memo, useId, useMemo, useState } from "react"
+import type { Components } from "react-markdown"
 import Markdown from "react-markdown"
 import rehypeKatex from "rehype-katex"
 import remarkGfm from "remark-gfm"
@@ -13,6 +14,8 @@ import type { MdxReference } from "./references.js"
 import { referencePlugin } from "./references.js"
 
 export type { MdxReference } from "./references.js"
+
+const noReferences: readonly MdxReference[] = []
 
 function callouts() {
   return (tree: Root) => {
@@ -102,10 +105,52 @@ function MdxImage({ alt, ...props }: ComponentProps<"img">) {
   )
 }
 
-export function MdxContent({
+// Stable across renders, so streaming updates don't remount these elements.
+const staticComponents: Components = {
+  pre: CodeBlock,
+  p: ({ node, children }) => {
+    const image = node?.children[0]
+    return node?.children.length === 1 &&
+      image?.type === "element" &&
+      image.tagName === "img" ? (
+      <figure>
+        {children}
+        {image.properties.title && (
+          <figcaption>{String(image.properties.title)}</figcaption>
+        )}
+      </figure>
+    ) : (
+      <p>{children}</p>
+    )
+  },
+  li: ({ node: _node, children, className, ...props }) => (
+    <li {...props} className={className}>
+      {className?.includes("task-list-item") ? (
+        // biome-ignore lint/a11y/noLabelWithoutControl: GFM children include the native disabled checkbox.
+        <label>{children}</label>
+      ) : (
+        children
+      )}
+    </li>
+  ),
+  table: ({ children }) => (
+    <section
+      className="mdx-table"
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users must be able to scroll a wide table.
+      tabIndex={0}
+      aria-label="Tabelle horizontal scrollen"
+    >
+      <table>{children}</table>
+    </section>
+  ),
+  img: ({ node: _node, ...props }) => <MdxImage {...props} />,
+}
+const rehypePlugins = [rehypeKatex]
+
+export const MdxContent = memo(function MdxContent({
   content,
   className,
-  references = [],
+  references = noReferences,
   renderReference,
 }: {
   content: string
@@ -114,6 +159,39 @@ export function MdxContent({
   renderReference?: (reference: MdxReference) => ReactNode
 }) {
   const id = useId()
+  const remarkPlugins = useMemo(
+    () => [
+      remarkGfm,
+      remarkMath,
+      callouts,
+      referencePlugin(references, !!renderReference),
+    ],
+    [references, renderReference],
+  )
+  const components = useMemo<Components>(
+    () => ({
+      ...staticComponents,
+      a: ({ node: _node, href, children, ...props }) => {
+        const reference = href?.startsWith("#citation-")
+          ? references.find(({ tag }) => href === `#citation-${tag}`)
+          : undefined
+        if (reference && renderReference)
+          return <>{renderReference(reference)}</>
+        return (
+          <a
+            {...props}
+            href={href}
+            {...(href?.startsWith("#")
+              ? {}
+              : { target: "_blank", rel: "noreferrer" })}
+          >
+            {children}
+          </a>
+        )
+      },
+    }),
+    [references, renderReference],
+  )
   return (
     <div className={cn("nunio-mdx", className)}>
       <Markdown
@@ -122,73 +200,12 @@ export function MdxContent({
           clobberPrefix: `mdx-${id}-`,
           footnoteLabel: "Quellen und Fußnoten",
         }}
-        remarkPlugins={[
-          remarkGfm,
-          remarkMath,
-          callouts,
-          referencePlugin(references, !!renderReference),
-        ]}
-        rehypePlugins={[rehypeKatex]}
-        components={{
-          pre: CodeBlock,
-          p: ({ node, children }) => {
-            const image = node?.children[0]
-            return node?.children.length === 1 &&
-              image?.type === "element" &&
-              image.tagName === "img" ? (
-              <figure>
-                {children}
-                {image.properties.title && (
-                  <figcaption>{String(image.properties.title)}</figcaption>
-                )}
-              </figure>
-            ) : (
-              <p>{children}</p>
-            )
-          },
-          a: ({ node: _node, href, children, ...props }) => {
-            const reference = href?.startsWith("#citation-")
-              ? references.find(({ tag }) => href === `#citation-${tag}`)
-              : undefined
-            if (reference && renderReference)
-              return <>{renderReference(reference)}</>
-            return (
-              <a
-                {...props}
-                href={href}
-                {...(href?.startsWith("#")
-                  ? {}
-                  : { target: "_blank", rel: "noreferrer" })}
-              >
-                {children}
-              </a>
-            )
-          },
-          li: ({ node: _node, children, className, ...props }) => (
-            <li {...props} className={className}>
-              {className?.includes("task-list-item") ? (
-                // biome-ignore lint/a11y/noLabelWithoutControl: GFM children include the native disabled checkbox.
-                <label>{children}</label>
-              ) : (
-                children
-              )}
-            </li>
-          ),
-          table: ({ children }) => (
-            <section
-              className="mdx-table"
-              // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users must be able to scroll a wide table.
-              tabIndex={0}
-              aria-label="Tabelle horizontal scrollen"
-            >
-              <table>{children}</table>
-            </section>
-          ),
-          img: ({ node: _node, ...props }) => <MdxImage {...props} />,
-        }}
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
+        components={components}
       >
         {content}
       </Markdown>
     </div>
   )
-}
+})
