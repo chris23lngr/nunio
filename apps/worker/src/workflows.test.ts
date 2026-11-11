@@ -271,6 +271,37 @@ describe("Source Runs", () => {
       await new Promise<void>((resolve) => parser.close(() => resolve()));
     }
   });
+  it("accepts a parser response as large as a rendered 100-page deck", async () => {
+    // 100 pages of ~400 KB JPEG each, base64-encoded: about 53 MB.
+    const pages = Array.from({ length: 100 }, (_, i) => ({
+      page: i + 1,
+      text: "",
+      imageBase64: "A".repeat(530_000),
+    }));
+    const parser = createServer((_, res) => {
+      res
+        .writeHead(200, { "content-type": "application/json" })
+        .end(JSON.stringify({ pages }));
+    });
+    await new Promise<void>((resolve) =>
+      parser.listen(0, "127.0.0.1", resolve),
+    );
+    try {
+      const parsed = await parseSource(
+        `127.0.0.1:${(parser.address() as AddressInfo).port}`,
+        {
+          url: "https://storage.invalid/s",
+          keyBase64: "k",
+          etag: "e",
+          expectedBytes: 9,
+        },
+        new AbortController().signal,
+      );
+      expect(parsed.pages).toHaveLength(100);
+    } finally {
+      await new Promise<void>((resolve) => parser.close(() => resolve()));
+    }
+  });
   it("turns a parser refusal the student can act on into its reason", async () => {
     let reply = { status: 413, error: "page_limit" };
     const parser = createServer((_, res) => {

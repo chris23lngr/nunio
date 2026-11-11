@@ -422,6 +422,10 @@ it("records why a Source failed when the student can act on it, and nothing for 
 });
 async function ingestPages(
   pages: { page: number; text: string; imageBase64?: string }[],
+  read: Ingestion["scans"]["read"] = async () => ({
+    text: "Klausur am 3. Juli",
+    usage: { microUsd: 1 },
+  }),
 ) {
   const p = await student();
   if (p.kind !== "student") throw new Error("student");
@@ -437,7 +441,7 @@ async function ingestPages(
   await sources.complete(p, uploaded.source.id);
   const delegation = createDelegation({ db: runtime, aiEnabled: () => true });
   const metered: number[] = [];
-  const read: Buffer[] = [];
+  const images: Buffer[] = [];
   const embedded: string[] = [];
   const result = await sources.ingest(
     p,
@@ -453,9 +457,9 @@ async function ingestPages(
       },
       scans: {
         estimateMicroUsd: () => 7,
-        read: async (image) => {
-          read.push(image);
-          return { text: "Klausur am 3. Juli", usage: { microUsd: 1 } };
+        read: (image, options) => {
+          images.push(image);
+          return read(image, options);
         },
       },
       embedder: {
@@ -473,7 +477,7 @@ async function ingestPages(
       },
     }),
   );
-  return { result, metered, read, embedded };
+  return { result, metered, read: images, embedded };
 }
 it("meters a scanned page's transcription and indexes its text", async () => {
   const png = Buffer.from("scanned page image");
@@ -496,6 +500,51 @@ it("keeps a page's extracted text when it is also transcribed", async () => {
   expect(result).toEqual({ status: "ready" });
   expect(embedded.join("\n")).toContain("Raum H1");
   expect(embedded.join("\n")).toContain("Klausur am 3. Juli");
+});
+it("reads up to four pages at once, each with its text layer, and keeps page order", async () => {
+  let inFlight = 0,
+    peak = 0;
+  const layers: string[] = [];
+  const pages = Array.from({ length: 10 }, (_, i) => ({
+    page: i + 1,
+    text: `Folie ${i + 1}`,
+    imageBase64: Buffer.from(`image ${i + 1}`).toString("base64"),
+  }));
+  const { result, metered, embedded } = await ingestPages(
+    pages,
+    async (image, { text }) => {
+      layers.push(text);
+      peak = Math.max(peak, ++inFlight);
+      const page = Number(image.toString().split(" ")[1]);
+      // Later pages answer first, so completion order differs from page order.
+      await new Promise((resolve) => setTimeout(resolve, 50 - page * 4));
+      inFlight--;
+      return { text: `[Abbildung] Diagramm ${page}`, usage: { microUsd: 1 } };
+    },
+  );
+  expect(result).toEqual({ status: "ready" });
+  expect(peak).toBe(4);
+  expect(metered.filter((estimate) => estimate === 7)).toHaveLength(10);
+  expect(layers.sort()).toEqual(pages.map((page) => page.text).sort());
+  expect(embedded).toEqual(
+    pages.map(
+      (page) => `Folie ${page.page}\n[Abbildung] Diagramm ${page.page}`,
+    ),
+  );
+});
+it("stops reading further pages after one fails", async () => {
+  let reads = 0;
+  const pages = Array.from({ length: 10 }, (_, i) => ({
+    page: i + 1,
+    text: "",
+    imageBase64: Buffer.from(`image ${i + 1}`).toString("base64"),
+  }));
+  const { result } = await ingestPages(pages, async () => {
+    reads++;
+    throw new Error("provider unavailable");
+  });
+  expect(result).toEqual({ status: "failed" });
+  expect(reads).toBe(4);
 });
 
 it("fails a Source whose key the worker cannot unwrap instead of leaving it processing", async () => {
