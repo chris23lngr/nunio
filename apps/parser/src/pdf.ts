@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +17,12 @@ export class ParseError extends Error {
 export const maxPdfBytes = 20 * 1024 * 1024;
 /** 100 rendered pages at up to ~400 KB of JPEG each, base64-encoded, plus their text. */
 const maxOutputBytes = 64 * 1024 * 1024;
+/**
+ * qpdf's fully decoded output for a 20 MiB PDF. `--decode-level=all` expands JPEG images to raw pixels: the
+ * eval's dhbw-digitaltechnik slides (pages 1-35, 2.2 MB) decode to 52,352,795 bytes, about 24:1, so a 20 MiB
+ * deck like it reaches about 480 MiB. Flate bombs expand up to about 1000:1 and stay refused.
+ */
+const maxDecompressedBytes = 512 * 1024 * 1024;
 
 // qpdf's decompressed stream output is capped before Poppler reads the document.
 // https://qpdf.readthedocs.io/en/stable/cli.html#option-stream-data
@@ -33,41 +39,59 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
   const path = join(dir, "source.pdf");
   // A 100-page deck renders one page per Poppler call, so the budget covers every page, not just scans.
   const deadline = Date.now() + 240_000;
-  const run = (tool: string, args: string[], maxBuffer = 2 * 1024 * 1024) =>
+  const linux = process.platform === "linux";
+  const command = (tool: string, args: string[]) =>
+    [
+      linux ? "prlimit" : tool,
+      linux
+        ? [
+            "--as=402653184",
+            "--cpu=30",
+            "--fsize=33554432",
+            "--nofile=64",
+            "--",
+            tool,
+            ...args,
+          ]
+        : args,
+    ] as const;
+  const options = () => ({
+    env: { PATH: process.env.PATH, LANG: "C.UTF-8" },
+    timeout: Math.max(1, Math.min(30_000, deadline - Date.now())),
+  });
+  const refusal = (code: unknown) =>
+    new ParseError(
+      code === "ENOENT" ? 502 : 422,
+      code === "ENOENT" ? "parser_unavailable" : "invalid_or_excessive_pdf",
+    );
+  const run = (tool: string, args: string[]) =>
     new Promise<Buffer>((resolve, reject) => {
-      const linux = process.platform === "linux";
       execFile(
-        linux ? "prlimit" : tool,
-        linux
-          ? [
-              "--as=402653184",
-              "--cpu=30",
-              "--fsize=33554432",
-              "--nofile=64",
-              "--",
-              tool,
-              ...args,
-            ]
-          : args,
-        {
-          env: { PATH: process.env.PATH, LANG: "C.UTF-8" },
-          timeout: Math.max(1, Math.min(30_000, deadline - Date.now())),
-          maxBuffer,
-          encoding: "buffer",
-        },
+        ...command(tool, args),
+        { ...options(), maxBuffer: 2 * 1024 * 1024, encoding: "buffer" },
         (error, stdout) => {
-          if (error) {
-            const code = "code" in error ? error.code : undefined;
-            reject(
-              new ParseError(
-                code === "ENOENT" ? 502 : 422,
-                code === "ENOENT"
-                  ? "parser_unavailable"
-                  : "invalid_or_excessive_pdf",
-              ),
-            );
-          } else resolve(stdout);
+          if (error) reject(refusal("code" in error ? error.code : undefined));
+          else resolve(stdout);
         },
+      );
+    });
+  /** Counts a tool's output and kills it past `limit`, without holding the output in memory. */
+  const measure = (tool: string, args: string[], limit: number) =>
+    new Promise<void>((resolve, reject) => {
+      const child = spawn(...command(tool, args), {
+        ...options(),
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      let bytes = 0;
+      child.stdout.on("data", (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > limit) child.kill("SIGKILL");
+      });
+      child.on("error", (error) =>
+        reject(refusal("code" in error ? error.code : undefined)),
+      );
+      child.on("close", (code) =>
+        code === 0 && bytes <= limit ? resolve() : reject(refusal(code)),
       );
     });
   try {
@@ -77,7 +101,7 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
     );
     if (!Number.isSafeInteger(pages) || pages < 1 || pages > 100)
       throw new ParseError(413, "page_limit");
-    await run(
+    await measure(
       "qpdf",
       [
         path,
@@ -86,7 +110,7 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
         "--object-streams=disable",
         "-",
       ],
-      32 * 1024 * 1024,
+      maxDecompressedBytes,
     );
     const texts = (await run("pdftotext", ["-layout", path, "-"]))
       .toString("utf8")

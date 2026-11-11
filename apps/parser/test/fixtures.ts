@@ -4,8 +4,17 @@ export function pdfFixture({
   pages = 1,
   text = "The examination takes place on March 12 in room H1. Bring your student card and a pen.",
   bomb = false,
+  inflated,
   image = false,
+}: {
+  pages?: number;
+  text?: string;
+  bomb?: boolean;
+  inflated?: number;
+  image?: boolean;
 } = {}): Buffer {
+  // A bomb decompresses beyond the parser's 512 MiB bound.
+  const inflatedBytes = inflated ?? (bomb ? 544 * 1024 * 1024 : 0);
   const objects: Buffer[] = [];
   const add = (text: string | Buffer) => {
     objects.push(Buffer.isBuffer(text) ? text : Buffer.from(text));
@@ -17,15 +26,16 @@ export function pdfFixture({
   add(
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
   );
-  const content = bomb
-    ? deflateSync(Buffer.alloc(35 * 1024 * 1024, 32))
+  // A Flate stream of `inflated` spaces: a few KiB in the file, many MiB once decompressed.
+  const content = inflatedBytes
+    ? deflateSync(Buffer.alloc(inflatedBytes, 32), { level: 9 })
     : Buffer.from(
         `BT /F1 12 Tf 20 100 Td (${text}) Tj ET${image ? " q 50 0 0 50 500 120 cm /Im1 Do Q" : ""}`,
       );
   add(
     Buffer.concat([
       Buffer.from(
-        `<< /Length ${content.length}${bomb ? " /Filter /FlateDecode" : ""} >>\nstream\n`,
+        `<< /Length ${content.length}${inflatedBytes ? " /Filter /FlateDecode" : ""} >>\nstream\n`,
       ),
       content,
       Buffer.from("\nendstream"),

@@ -201,7 +201,7 @@ Until the Pro team exists, staging runs as two Hobby projects in the personal sc
 
 ## PDF Sources (Phase 5)
 
-The pilot accepts PDF only, including scans: at most 20 MiB and 100 pages per Source. The parser also caps decompressed streams at 32 MiB, extracted text at 2 MiB, each rendered JPEG page at 2 MiB/1568 pixels per side, and its response at 64 MiB, within a 240 s parse deadline and 30 s per command. The worker accepts a parser response of up to 72 MiB and waits up to 300 s for it. The worker bounds the parser response, chunk input and embedding batches. These are pilot implementation limits, not configurable student settings.
+The pilot accepts PDF only, including scans: at most 20 MiB and 100 pages per Source. The parser also caps fully decoded qpdf output at 512 MiB, counted as it streams rather than held in memory (an image-heavy 20 MiB slide deck decodes to about 480 MiB), extracted text at 2 MiB, each rendered JPEG page at 2 MiB/1568 pixels per side, and its response at 64 MiB, within a 240 s parse deadline and 30 s per command. The worker accepts a parser response of up to 72 MiB and waits up to 300 s for it. The worker bounds the parser response, chunk input and embedding batches. These are pilot implementation limits, not configurable student settings.
 
 ### Configuration before deployment
 
