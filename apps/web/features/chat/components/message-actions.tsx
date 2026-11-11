@@ -22,7 +22,7 @@ export function MessageActions({
 }) {
   const [copied, setCopied] = useState("");
   return (
-    <MessageFooter className="mt-2 flex items-center gap-2 text-xs leading-4 text-base-600 opacity-100 group-focus-within/message:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/message:opacity-100">
+    <MessageFooter className="mt-2 flex items-center gap-2 px-0 text-xs leading-4 text-base-600 opacity-100 group-focus-within/message:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/message:opacity-100">
       <time dateTime={createdAt}>
         {new Intl.DateTimeFormat("de-DE", {
           hour: "numeric",

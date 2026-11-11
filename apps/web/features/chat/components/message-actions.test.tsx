@@ -63,3 +63,13 @@ test("a withdrawn answer has nothing to copy but keeps its time", () => {
   expect(screen.queryByRole("button", { name: /kopieren/ })).toBeNull();
   expect(screen.getByText("9:48 Uhr")).toBeTruthy();
 });
+
+test("the footer lines up with the message text, without side padding", () => {
+  const { container } = render(
+    <MessageActions createdAt={createdAt} text="Hallo" own={false} />,
+  );
+
+  const footer = container.firstElementChild as HTMLElement;
+  expect(footer.className).toContain("px-0");
+  expect(footer.className).not.toContain("px-3");
+});
