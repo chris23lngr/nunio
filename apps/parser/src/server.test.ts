@@ -122,6 +122,19 @@ it("renders a 100-page deck within its limits", async () => {
   expect(parsed.body.pages).toHaveLength(100);
   expect(parsed.body.pages.every((page) => page.imageBase64)).toBe(true);
 }, 120_000);
+it("parses an image-heavy PDF that decompresses beyond 32 MiB", async () => {
+  const { pdfFixture } = await import("../test/fixtures.js");
+  // The openly licensed dhbw-digitaltechnik deck decompresses to 52,352,795 bytes.
+  const parsed = await parseUpload(pdfFixture({ inflated: 60 * 1024 * 1024 }));
+  expect(parsed.status).toBe(200);
+  expect(parsed.body.pages).toHaveLength(1);
+}, 60_000);
+it("refuses a PDF that decompresses beyond the parser's bound", async () => {
+  const { pdfFixture } = await import("../test/fixtures.js");
+  expect(
+    (await parseUpload(pdfFixture({ inflated: 513 * 1024 * 1024 }))).status,
+  ).toBe(422);
+}, 60_000);
 it("refuses byte mismatches, malformed PDFs, excessive pages and compressed bombs", async () => {
   const { pdfFixture } = await import("../test/fixtures.js");
   expect((await parseUpload(pdfFixture(), 10)).status).toBe(413);
