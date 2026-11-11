@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import { principal } from "@nunio/delegation";
+import type { AskStep } from "@nunio/knowledge";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import type { AppBindings } from "./app.js";
 
@@ -70,7 +72,10 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
           content: {
             "application/json": {
               schema: z
-                .object({ text: z.string().trim().min(1).max(4000) })
+                .object({
+                  id: z.string().uuid(),
+                  text: z.string().trim().min(1).max(4000),
+                })
                 .strict(),
             },
           },
@@ -79,10 +84,11 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
       responses: {
         200: {
           description:
-            "AI SDK UI message SSE: provisional text and transient data-reasoning, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
+            "AI SDK UI message SSE: a start chunk carrying the answer's ID, reasoning and provisional text parts, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
           content: { "text/event-stream": { schema: z.string() } },
         },
         ...errors,
+        409: json(ErrorBody, "The question ID is already used."),
       },
     }),
     async (c) => {
@@ -91,46 +97,98 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
       if (!actor) return c.json({ error: "unauthorized" }, 401);
       const p = principal.fromSession(actor);
       const id = c.req.valid("param").id;
-      if (!(await c.get("chats").detail(p, id)))
-        return c.json({ error: "gone" }, 404);
+      const body = c.req.valid("json");
+      const started = performance.now();
+      const timing: Partial<
+        Record<AskStep | "detail" | "firstReasoning" | "firstText", number>
+      > = {};
+      const mark = (step: "detail" | "firstReasoning" | "firstText") => {
+        timing[step] ??= Math.round(performance.now() - started);
+      };
+      const [chat, reused] = await Promise.all([
+        c.get("chats").detail(p, id),
+        c.get("chats").hasMessage(p, body.id),
+      ]);
+      mark("detail");
+      if (!chat) return c.json({ error: "gone" }, 404);
+      if (reused) return c.json({ error: "conflict" }, 409);
       const stream = createUIMessageStream({
         onError: () =>
           "Die Antwort wurde unterbrochen. Bitte versuche es erneut.",
         execute: async ({ writer }) => {
-          writer.write({ type: "start" });
-          writer.write({ type: "text-start", id: "answer" });
-          const result = await c
-            .get("chats")
-            .ask(p, id, c.req.valid("json").text, c.get("answerer"), {
-              signal: c.req.raw.signal,
-              onReasoning: (delta, streaming) => {
-                writer.write({
-                  type: "data-reasoning",
-                  data: { delta, streaming },
-                  transient: true,
-                });
-              },
-              onText: (delta) => {
-                writer.write({ type: "text-delta", id: "answer", delta });
-              },
-            });
-          writer.write({ type: "text-end", id: "answer" });
-          if (result.status !== "ok") {
+          const answerId = randomUUID();
+          writer.write({ type: "start", messageId: answerId });
+          let reasoningOpen = false;
+          let textStarted = false;
+          const endReasoning = () => {
+            if (reasoningOpen)
+              writer.write({ type: "reasoning-end", id: "reasoning" });
+            reasoningOpen = false;
+          };
+          let outcome = "interrupted";
+          try {
+            const result = await c
+              .get("chats")
+              .ask(p, id, body.text, c.get("answerer"), {
+                signal: c.req.raw.signal,
+                ids: { question: body.id, answer: answerId },
+                onStep: (step, ms) => {
+                  timing[step] = Math.round(ms);
+                },
+                onReasoning: (delta, streaming) => {
+                  mark("firstReasoning");
+                  if (delta && !reasoningOpen) {
+                    writer.write({ type: "reasoning-start", id: "reasoning" });
+                    reasoningOpen = true;
+                  }
+                  if (delta)
+                    writer.write({
+                      type: "reasoning-delta",
+                      id: "reasoning",
+                      delta,
+                    });
+                  if (!streaming) endReasoning();
+                },
+                onText: (delta) => {
+                  mark("firstText");
+                  endReasoning();
+                  if (!textStarted)
+                    writer.write({ type: "text-start", id: "answer" });
+                  textStarted = true;
+                  writer.write({ type: "text-delta", id: "answer", delta });
+                },
+              });
+            endReasoning();
+            if (textStarted) writer.write({ type: "text-end", id: "answer" });
+            if (result.status !== "ok") {
+              writer.write({
+                type: "data-refused",
+                data: {
+                  error:
+                    result.status === "refused" ? result.reason : result.status,
+                },
+                transient: true,
+              });
+              outcome = "refused";
+              return;
+            }
             writer.write({
-              type: "data-refused",
-              data: {
-                error: result.status === "gone" ? "gone" : result.reason,
-              },
+              type: "data-committed",
+              data: { ...result.message, question: result.question },
               transient: true,
             });
-            return;
+            writer.write({ type: "finish" });
+            outcome = "committed";
+          } finally {
+            console.log(
+              JSON.stringify({
+                msg: "chat answer timing",
+                outcome,
+                ...timing,
+                total: Math.round(performance.now() - started),
+              }),
+            );
           }
-          writer.write({
-            type: "data-committed",
-            data: { ...result.message, question: result.question },
-            transient: true,
-          });
-          writer.write({ type: "finish" });
         },
       });
       return createUIMessageStreamResponse({
