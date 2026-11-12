@@ -1,14 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
-import type {
-  Principal,
-  Responsibilities,
-  Transaction,
-} from "@nunio/delegation";
+import type { Principal, Responsibilities } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { Facts } from "./facts.js";
 import type { CourseColor } from "./new-course.js";
-import { courseColors, matchKeys, newCourse } from "./new-course.js";
+import { clashing, courseColors, matchKeys, newCourse } from "./new-course.js";
 import type { Semester } from "./semester.js";
 import { semesterAt, semesterChoices } from "./semester.js";
 import { similarCourses } from "./similar-courses.js";
@@ -150,35 +146,6 @@ function overviewOrder(
     return da ? -1 : 1;
   }
   return a.title.localeCompare(b.title, "de");
-}
-
-/** Another Course with this code or title, which would make matching a later Source to either one ambiguous. */
-async function clashing(
-  tx: Transaction,
-  names: { matchTitle: string; matchCode: string | null },
-  except?: string,
-) {
-  const other = await tx.course.findFirst({
-    where: {
-      status: { not: "merged" },
-      ...(except ? { id: { not: except } } : {}),
-      OR: [
-        { matchTitle: names.matchTitle },
-        ...(names.matchCode ? [{ matchCode: names.matchCode }] : []),
-      ],
-    },
-  });
-  return other
-    ? ({
-        status: "clash",
-        course: {
-          id: other.id,
-          title: other.title,
-          status: other.status as "proposed" | "accepted" | "rejected",
-          archived: other.archivedAt !== null,
-        },
-      } as const)
-    : null;
 }
 
 /** The student's Courses: their Semester, color, and lifecycle beyond review. */
