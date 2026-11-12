@@ -19,6 +19,41 @@ const course = {
   status: "accepted",
   color: "rose",
 };
+const dataHandling = {
+  provider: "OpenRouter",
+  upstream: ["Amazon Bedrock", "Google"],
+  routing: "international",
+  zeroRetention: true,
+};
+const sonnet = {
+  key: "sonnet-5.5",
+  name: "Sonnet 5.5",
+  provider: "Anthropic",
+  description: "Ausgewogen für Erklärungen.",
+  dataHandling,
+  cost: { relativeToDefault: 1, tier: "medium" },
+};
+const opus = {
+  key: "opus-5.5",
+  name: "Opus 5.5",
+  provider: "Anthropic",
+  description: "Am gründlichsten.",
+  dataHandling,
+  cost: { relativeToDefault: 2, tier: "high" },
+};
+const haiku = {
+  key: "haiku-5.5",
+  name: "Haiku 5.5",
+  provider: "Anthropic",
+  description: "Schnell und sparsam.",
+  dataHandling,
+  cost: { relativeToDefault: 0.05, tier: "low" },
+};
+const catalog = {
+  models: [haiku, sonnet, opus],
+  default: "sonnet-5.5",
+  selected: "sonnet-5.5",
+};
 beforeEach(() => {
   navigation.params = new URLSearchParams();
   window.history.replaceState(null, "", "/chat");
@@ -33,6 +68,7 @@ beforeEach(() => {
   api.route("GET", "/api/me/courses", () =>
     Response.json({ courses: [course] }),
   );
+  api.route("GET", "/api/me/models", () => Response.json(catalog));
 });
 afterEach(() => vi.unstubAllGlobals());
 function committedResponse(data: unknown) {
@@ -58,7 +94,9 @@ async function chatLoaded() {
 }
 test("a suggested prompt populates the composer without sending", async () => {
   mount();
-  expect(screen.getByRole("button", { name: /Modell/ })).toBeTruthy();
+  expect(
+    await screen.findByRole("button", { name: "Modell: Sonnet 5.5" }),
+  ).toBeTruthy();
   const user = userEvent.setup();
   const prompt = screen.getByRole("button", {
     name: "Wie sieht mein Lernplan für heute aus?",
@@ -140,6 +178,7 @@ test("the first question and a waiting status show before the Chat exists", asyn
   expect(body).toEqual({
     id: expect.stringMatching(/^[0-9a-f-]{36}$/),
     text: "Meine erste Frage",
+    model: "sonnet-5.5",
   });
 });
 
@@ -174,6 +213,7 @@ test("first send fixes the selected courses and displays the persisted turn", as
     expect(await request.json()).toEqual({
       id: expect.stringMatching(/^[0-9a-f-]{36}$/),
       text: "Erkläre die Grundlagen",
+      model: "sonnet-5.5",
     });
     return committedResponse({ ...answer, question });
   });
@@ -334,6 +374,134 @@ test("an answer failure preserves the draft and retries the existing Chat withou
   await screen.findByText("Hier ist die Antwort.");
   expect(creates).toBe(1);
   expect(asks).toBe(2);
+});
+
+test("the remembered model is preselected and the chosen one is sent with the question", async () => {
+  api.route("GET", "/api/me/models", () =>
+    Response.json({ ...catalog, selected: "haiku-5.5" }),
+  );
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  let body: unknown;
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    body = await request.json();
+    return Response.json({ error: "ai_disabled" }, { status: 403 });
+  });
+  mount("chat-1");
+  const user = userEvent.setup();
+  await chatLoaded();
+  await user.click(
+    await screen.findByRole("button", { name: "Modell: Haiku 5.5" }),
+  );
+  await user.click(await screen.findByRole("menuitem", { name: "Opus 5.5" }));
+  await screen.findByRole("button", { name: "Modell: Opus 5.5" });
+  await user.type(
+    screen.getByRole("textbox", { name: "Nachricht" }),
+    "Meine Frage",
+  );
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  await screen.findByRole("alert");
+  expect(body).toEqual({
+    id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    text: "Meine Frage",
+    model: "opus-5.5",
+  });
+});
+
+test("a model that is no longer offered restores the draft and switches to the offered one", async () => {
+  let catalogs = 0;
+  api.route("GET", "/api/me/models", () => {
+    catalogs++;
+    return Response.json(
+      catalogs === 1
+        ? catalog
+        : { ...catalog, models: [haiku, sonnet], selected: "sonnet-5.5" },
+    );
+  });
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  api.route(
+    "POST",
+    "/api/me/chats/chat-1/messages/stream",
+    () =>
+      new Response(
+        `data: ${JSON.stringify({ type: "data-refused", data: { error: "model_unavailable" } })}\n\ndata: [DONE]\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  );
+  mount("chat-1");
+  const user = userEvent.setup();
+  await chatLoaded();
+  await user.click(
+    await screen.findByRole("button", { name: "Modell: Sonnet 5.5" }),
+  );
+  await user.click(await screen.findByRole("menuitem", { name: "Opus 5.5" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Nachricht" }),
+    "Meine Frage",
+  );
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  await waitFor(() =>
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Dieses Modell ist nicht mehr verfügbar. Wir haben auf Sonnet 5.5 gewechselt.",
+    ),
+  );
+  expect(
+    (screen.getByRole("textbox", { name: "Nachricht" }) as HTMLTextAreaElement)
+      .value,
+  ).toBe("Meine Frage");
+  expect(
+    screen.getByRole("button", { name: "Modell: Sonnet 5.5" }),
+  ).toBeTruthy();
+  expect(catalogs).toBe(2);
+  await user.click(screen.getByRole("button", { name: "Modell: Sonnet 5.5" }));
+  const rows = await screen.findAllByRole("menuitem");
+  expect(rows.map((row) => row.textContent)).toEqual([
+    "Haiku 5.5",
+    "Sonnet 5.5",
+  ]);
+});
+
+test("a saved answer names the model that wrote it", async () => {
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({
+      id: "chat-1",
+      courses: [],
+      messages: [
+        {
+          id: "q",
+          role: "student",
+          text: "Frage",
+          createdAt: "2026-11-10T09:48:00Z",
+          citations: [],
+        },
+        {
+          id: "old",
+          role: "assistant",
+          text: "Alte Antwort",
+          createdAt: "2026-11-10T09:48:00Z",
+          citations: [],
+          model: null,
+        },
+        {
+          id: "new",
+          role: "assistant",
+          text: "Neue Antwort",
+          createdAt: "2026-11-10T09:48:00Z",
+          citations: [],
+          model: { key: "opus-5.5", name: "Opus 5.5" },
+        },
+      ],
+    }),
+  );
+  mount("chat-1");
+  const answers = async (text: string) =>
+    (await screen.findByText(text)).closest("[role=article]") as HTMLElement;
+  expect((await answers("Neue Antwort")).textContent).toContain("Opus 5.5");
+  const old = await answers("Alte Antwort");
+  expect(old.textContent).not.toMatch(/5\.5/);
 });
 
 test("deleting a Source clears cached Chat answers and reloads their withdrawn state", async () => {

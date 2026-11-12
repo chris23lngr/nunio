@@ -16,7 +16,13 @@ export type Turn =
 
 /** A Chat message as useChat holds it; metadata arrives once the message is saved. */
 export type ChatUIMessage = UIMessage<
-  { createdAt: string; citations: Message["citations"]; withdrawn?: true },
+  {
+    createdAt: string;
+    citations: Message["citations"];
+    withdrawn?: true;
+    /** The name of the model that wrote a saved answer. */
+    model?: string;
+  },
   { committed: Turn; refused: { error: string } }
 >;
 
@@ -28,6 +34,7 @@ export function toUIMessage(message: Message): ChatUIMessage {
       createdAt: message.createdAt,
       citations: message.citations,
       ...(message.text === null ? { withdrawn: true as const } : {}),
+      ...(message.model ? { model: message.model.name } : {}),
     },
     parts: [
       ...(message.reasoning

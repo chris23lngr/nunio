@@ -17,6 +17,7 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import type {
+  CatalogModel,
   Delegation,
   Executor,
   Responsibilities,
@@ -24,6 +25,7 @@ import type {
 } from "@nunio/delegation";
 import {
   createDelegation,
+  createModelCatalog,
   createResponsibilities,
   principal,
 } from "@nunio/delegation";
@@ -44,6 +46,7 @@ import { createUnderstanding } from "@nunio/understanding";
 import { hashPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ArtifactWorkflows } from "./artifact-workflows.js";
+import { createChatModels } from "./chat-models.js";
 import { createApp } from "./create-app.js";
 import type { RunWorkflows } from "./run-workflows.js";
 
@@ -142,7 +145,10 @@ const prompts: AnswerInput[] = [];
 let reply = "";
 let reasoningText: string | undefined;
 let finishAnswer: Promise<void> | undefined;
+/** The Models Chat answers were asked of, in order. */
+const answeredWith: CatalogModel[] = [];
 const answerer: Answerer = {
+  modelKey: "sonnet-5.5-reasoning-high",
   estimateMicroUsd: () => 1,
   async answer(input, { signal, onText, onReasoning }) {
     prompts.push(input);
@@ -294,7 +300,16 @@ beforeAll(async () => {
     sources,
     facts,
     chats,
-    answerer,
+    chatModels: createChatModels({
+      catalog: createModelCatalog({
+        db: prisma,
+        clock: { now: () => new Date() },
+      }),
+      answererFor: (model) => {
+        answeredWith.push(model);
+        return { ...answerer, modelKey: model.key };
+      },
+    }),
     plan,
     estimator,
     projects: createProjects({ db: prisma }),
@@ -1875,6 +1890,145 @@ async function sseChunks(response: Response) {
     .map((line) => JSON.parse(line.slice(6)));
 }
 
+describe("Chat models", () => {
+  async function newChat(name: string) {
+    const cookie = await signUp(name);
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const created = await app.request(`${apiOrigin}/api/me/chats`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+    });
+    const { id } = (await created.json()) as { id: string };
+    const ask = async (body: Record<string, unknown>) => {
+      const response = await app.request(
+        `${apiOrigin}/api/me/chats/${id}/messages/stream`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            id: randomUUID(),
+            text: "Meine Frage",
+            ...body,
+          }),
+        },
+      );
+      return { status: response.status, text: await response.text() };
+    };
+    const models = async () =>
+      (
+        await app.request(`${apiOrigin}/api/me/models`, { headers: { cookie } })
+      ).json();
+    const history = async () =>
+      (await (
+        await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+          headers: { cookie },
+        })
+      ).json()) as { role: string; model: unknown }[];
+    return { ask, models, history };
+  }
+
+  it("lists the offered Models with their cost next to the default and how each handles student data", async () => {
+    const { models } = await newChat("models-list");
+    const dataHandling = {
+      provider: "OpenRouter",
+      upstream: ["Amazon Bedrock", "Google"],
+      routing: "international",
+      zeroRetention: true,
+    };
+    // Seeded prices per million tokens, input + output: Haiku $0.66, Sonnet $13.20, Opus $26.40.
+    expect(await models()).toEqual({
+      models: [
+        {
+          key: "haiku-5.5-reasoning-high",
+          name: "Haiku 5.5",
+          provider: "Anthropic",
+          description: "Schnell und sparsam für kurze, klare Aufgaben.",
+          dataHandling,
+          cost: { relativeToDefault: 0.05, tier: "low" },
+        },
+        {
+          key: "sonnet-5.5-reasoning-high",
+          name: "Sonnet 5.5",
+          provider: "Anthropic",
+          description: "Ausgewogen für Erklärungen und alltägliches Lernen.",
+          dataHandling,
+          cost: { relativeToDefault: 1, tier: "medium" },
+        },
+        {
+          key: "opus-5.5-reasoning-high",
+          name: "Opus 5.5",
+          provider: "Anthropic",
+          description: "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
+          dataHandling,
+          cost: { relativeToDefault: 2, tier: "high" },
+        },
+      ],
+      default: "sonnet-5.5-reasoning-high",
+      selected: "sonnet-5.5-reasoning-high",
+    });
+  });
+
+  it("answers with the chosen Model, records it with the answer and remembers the choice", async () => {
+    reply = "Antwort.";
+    const { ask, models, history } = await newChat("models-choose");
+    const { status, text } = await ask({ model: "opus-5.5-reasoning-high" });
+    expect(status).toBe(200);
+    expect(answeredWith.at(-1)).toMatchObject({
+      key: "opus-5.5-reasoning-high",
+      providerModelId: "anthropic/claude-opus-5.5",
+      reasoningEffort: "high",
+    });
+    expect(text).toContain(
+      '"model":{"key":"opus-5.5-reasoning-high","name":"Opus 5.5"}',
+    );
+    expect((await history()).map((message) => message.model)).toEqual([
+      null,
+      { key: "opus-5.5-reasoning-high", name: "Opus 5.5" },
+    ]);
+    expect(await models()).toMatchObject({
+      selected: "opus-5.5-reasoning-high",
+    });
+    // Without a choice in the request, the remembered one answers.
+    await ask({});
+    expect(answeredWith.at(-1)?.key).toBe("opus-5.5-reasoning-high");
+  });
+
+  it("answers with the Chat default when the student never chose", async () => {
+    reply = "Antwort.";
+    const { ask } = await newChat("models-default");
+    expect((await ask({})).status).toBe(200);
+    expect(answeredWith.at(-1)?.key).toBe("sonnet-5.5-reasoning-high");
+  });
+
+  it("refuses a Model that is not offered, without answering or recording the question", async () => {
+    const { ask, history } = await newChat("models-unavailable");
+    await admin.catalogModel.create({
+      data: {
+        key: "haiku-5.5-reasoning-low",
+        providerModelId: "anthropic/claude-haiku-5.5",
+        reasoningEffort: "low",
+        maxOutputTokens: 8000,
+        name: "Haiku (aus)",
+        provider: "Anthropic",
+        description: "Nicht angeboten.",
+      },
+    });
+    const asked = answeredWith.length;
+    for (const model of ["haiku-5.5-reasoning-low", "no-such-model"]) {
+      const { status, text } = await ask({ model });
+      expect(status).toBe(422);
+      expect(JSON.parse(text)).toEqual({ error: "model_unavailable" });
+    }
+    expect(answeredWith.length).toBe(asked);
+    expect(await history()).toEqual([]);
+  });
+});
+
 describe("Chat", () => {
   it("streams provisional text before committing the canonical turn", async () => {
     const cookie = await signUp("chat-stream");
@@ -2294,6 +2448,7 @@ describe("Chat", () => {
         role: "assistant",
         text: "Am 10. Februar [S1].",
         reasoning: "Die Quelle nennt den Prüfungstermin.",
+        model: { key: "sonnet-5.5-reasoning-high", name: "Sonnet 5.5" },
         citations: [
           {
             tag: "S1",
@@ -2356,6 +2511,7 @@ describe("Chat", () => {
         role: "student",
         text: "Wann ist die Klausur?",
         citations: [],
+        model: null,
       },
       {
         id: expect.any(String),
@@ -2363,6 +2519,7 @@ describe("Chat", () => {
         role: "assistant",
         text: "Am 10. Februar [S1].",
         reasoning: "Die Quelle nennt den Prüfungstermin.",
+        model: { key: "sonnet-5.5-reasoning-high", name: "Sonnet 5.5" },
         citations: [
           {
             tag: "S1",
@@ -2403,6 +2560,7 @@ describe("Chat", () => {
         role: "student",
         text: "Wann ist die Klausur?",
         citations: [],
+        model: null,
       },
       {
         id: expect.any(String),
@@ -2410,6 +2568,7 @@ describe("Chat", () => {
         role: "assistant",
         text: null,
         citations: [{ tag: "S1", provenance: "gone" }],
+        model: { key: "sonnet-5.5-reasoning-high", name: "Sonnet 5.5" },
       },
     ]);
     const stranger = await app.request(

@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { createGrader } from "./grading.js";
 import { createModels } from "./models.js";
+import { testCatalog } from "./test-catalog.js";
 
 function recorded(
   bodies: Record<string, unknown>[],
@@ -39,6 +40,7 @@ const graderReplying = (
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
+      catalog: testCatalog,
       fetch: recorded(bodies, content, finishReason),
     }),
   );

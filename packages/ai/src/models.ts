@@ -1,32 +1,31 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModel, LanguageModelUsage, ProviderMetadata } from "ai";
 import { APICallError } from "ai";
+import type { PriceTier } from "./prices.js";
+import { isCoveredModel, tierAt } from "./prices.js";
 
 /**
- * Claude models OpenRouter serves from zero-retention endpoints (spike f); Covered Models stay excluded.
- * Prices are OpenRouter's, in micro-USD per million tokens, as of 2026-10-31; update them when OpenRouter does.
+ * Models come from the Model Catalog, which the database owns: each row is one Model, an exact, immutable
+ * call configuration (provider model, reasoning effort, output budget) under a neutral key such as
+ * `sonnet-5.5-reasoning-high`, with the prices and upstreams last synced from OpenRouter's zero-retention
+ * endpoints (`fetchZeroRetentionPrices`). This package stays database-free: callers pass the rows in.
+ * Covered Models stay excluded (ADR-0011, ADR-0012).
  */
-const allowlist = {
-  "anthropic/claude-haiku-5.5": {
-    input: 100_000,
-    output: 500_000,
-    upstream: ["Amazon Bedrock", "Google"],
-  },
-  "anthropic/claude-sonnet-5.5": {
-    input: 2_000_000,
-    output: 10_000_000,
-    upstream: ["Amazon Bedrock", "Google"],
-  },
-  "anthropic/claude-opus-5.5": {
-    input: 4_000_000,
-    output: 20_000_000,
-    upstream: ["Amazon Bedrock", "Google"],
-  },
-} as const;
 
-export type ModelId = keyof typeof allowlist;
+export type ReasoningEffort = "low" | "medium" | "high";
 
-const maxOutputTokens = 8_000;
+/** One Model Catalog row. */
+export interface ModelConfig {
+  key: string;
+  /** The OpenRouter model ID, such as `anthropic/claude-sonnet-5.5`. */
+  providerModelId: string;
+  reasoningEffort: ReasoningEffort;
+  maxOutputTokens: number;
+  /** Ascending by `minPromptTokens`; the first tier starts at 0. */
+  prices: readonly PriceTier[];
+  upstream: readonly string[];
+}
+
 /** Haiku 5.5 spends most of an 8k budget on reasoning over a long window, truncating the structured answer. */
 /** A page's transcription and figure lines stay well below 8k tokens, so a scan reserves far less than extraction. */
 const taskOutputTokens: Partial<Record<Task, number>> = {
@@ -37,19 +36,19 @@ const taskOutputTokens: Partial<Record<Task, number>> = {
 const framingTokens = 200;
 const encoder = new TextEncoder();
 
-/** ADR-0011 starting defaults, each to be confirmed by evaluations before the pilot. */
-const defaults = {
-  extraction: "anthropic/claude-haiku-5.5",
-  scan: "anthropic/claude-haiku-5.5",
-  classification: "anthropic/claude-haiku-5.5",
-  estimation: "anthropic/claude-haiku-5.5",
-  agent: "anthropic/claude-sonnet-5.5",
-  explanation: "anthropic/claude-sonnet-5.5",
-  feedback: "anthropic/claude-sonnet-5.5",
-  planning: "anthropic/claude-opus-5.5",
-} as const satisfies Record<string, ModelId>;
+/** ADR-0011 starting defaults, as Model Catalog keys, each to be confirmed by evaluations before the pilot. */
+export const taskModels = {
+  extraction: "haiku-5.5-reasoning-high",
+  scan: "haiku-5.5-reasoning-high",
+  classification: "haiku-5.5-reasoning-high",
+  estimation: "haiku-5.5-reasoning-high",
+  agent: "sonnet-5.5-reasoning-high",
+  explanation: "sonnet-5.5-reasoning-high",
+  feedback: "sonnet-5.5-reasoning-high",
+  planning: "opus-5.5-reasoning-high",
+} as const satisfies Record<string, string>;
 
-export type Task = keyof typeof defaults;
+export type Task = keyof typeof taskModels;
 
 /** Where a model processes student data (ADR-0012); shown wherever a model is chosen or audited. */
 export interface DataHandlingLabel {
@@ -62,7 +61,8 @@ export interface DataHandlingLabel {
 }
 
 export interface RegisteredModel {
-  id: ModelId;
+  /** The Model Catalog key. */
+  key: string;
   label: DataHandlingLabel;
   model: LanguageModel;
   /**
@@ -73,12 +73,14 @@ export interface RegisteredModel {
   /**
    * An upper bound for `meter`, rounded up to whole micro-USD. Pass every text the request sends: system
    * prompt, messages, and any output schema. A token covers at least one UTF-8 byte, so each text's byte
-   * length plus a framing allowance bounds its tokens; the full output budget is added on top. Text only.
+   * length plus a framing allowance bounds its tokens; the full output budget is added on top, all at the
+   * price tier that input bound reaches. Text only.
    */
   estimateMicroUsd(texts: readonly string[]): number;
   /**
    * What a finished call cost, for `meter` to settle: OpenRouter's reported cost, or its token counts at
-   * the registry's prices when no cost was reported. Rounded up to whole micro-USD.
+   * the catalog's prices, at the tier its input tokens reach, when no cost was reported. Rounded up to
+   * whole micro-USD.
    */
   actualMicroUsd(result: {
     usage: LanguageModelUsage;
@@ -87,8 +89,9 @@ export interface RegisteredModel {
 }
 
 export interface Models {
-  /** Throws for any ID outside the allowlist. */
-  byId(id: string): RegisteredModel;
+  /** The Model a catalog row describes, as chosen per request (Chat). */
+  fromConfig(config: ModelConfig): RegisteredModel;
+  /** The catalog's Model for a task's default key. Throws when the catalog lacks it. */
   forTask(task: Task): RegisteredModel;
 }
 
@@ -96,29 +99,41 @@ export function createModels({
   apiKey,
   baseURL,
   fetch,
+  catalog,
 }: {
   apiKey: string;
   baseURL: string;
   /** Lets a test see the exact request bodies sent to OpenRouter. */
   fetch?: typeof globalThis.fetch;
+  /** The Model Catalog's rows, for the task defaults. */
+  catalog: readonly ModelConfig[];
 }): Models {
+  catalog.forEach(refuseCoveredModel);
   const openrouter = createOpenRouter({ apiKey, baseURL, fetch });
-  const isAllowed = (id: string): id is ModelId => Object.hasOwn(allowlist, id);
-  function modelFor(id: string, outputTokens: number): RegisteredModel {
-    if (!isAllowed(id))
-      throw new Error(
-        `Model ${JSON.stringify(id)} is not in the model allowlist`,
+  function modelFor(
+    config: ModelConfig,
+    outputTokens: number,
+  ): RegisteredModel {
+    refuseCoveredModel(config);
+    const cost = (inputTokens: number, outputTokens: number) => {
+      const tier = tierAt(config.prices, inputTokens);
+      return Math.ceil(
+        (inputTokens * tier.inputMicroUsdPerMTok +
+          outputTokens * tier.outputMicroUsdPerMTok) /
+          1_000_000,
       );
+    };
     return {
-      id,
+      key: config.key,
       label: {
         provider: "OpenRouter",
-        upstream: [...allowlist[id].upstream],
+        upstream: [...config.upstream],
         routing: "international",
         zeroRetention: true,
       },
-      model: openrouter.chat(id, {
+      model: openrouter.chat(config.providerModelId, {
         provider: { zdr: true, data_collection: "deny" },
+        reasoning: { effort: config.reasoningEffort },
         usage: { include: true },
       }),
       callSettings: { maxOutputTokens: outputTokens, maxRetries: 0 },
@@ -127,33 +142,38 @@ export function createModels({
           (sum, text) => sum + encoder.encode(text).byteLength + framingTokens,
           0,
         );
-        return Math.ceil(
-          (inputTokens * allowlist[id].input +
-            outputTokens * allowlist[id].output) /
-            1_000_000,
-        );
+        return cost(inputTokens, outputTokens);
       },
       actualMicroUsd({ usage, providerMetadata }) {
-        const cost = (
+        const reported = (
           providerMetadata?.openrouter?.usage as { cost?: unknown } | undefined
         )?.cost;
         // toPrecision drops float noise such as 0.000123 * 1e6 = 123.00000000000001 before rounding up.
-        if (typeof cost === "number")
-          return Math.ceil(Number((cost * 1_000_000).toPrecision(12)));
-        return Math.ceil(
-          ((usage.inputTokens ?? 0) * allowlist[id].input +
-            (usage.outputTokens ?? 0) * allowlist[id].output) /
-            1_000_000,
-        );
+        if (typeof reported === "number")
+          return Math.ceil(Number((reported * 1_000_000).toPrecision(12)));
+        return cost(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
       },
     };
   }
-  const models: Models = {
-    forTask: (task) =>
-      modelFor(defaults[task], taskOutputTokens[task] ?? maxOutputTokens),
-    byId: (id) => modelFor(id, maxOutputTokens),
+  return {
+    fromConfig: (config) => modelFor(config, config.maxOutputTokens),
+    forTask(task) {
+      const config = catalog.find((c) => c.key === taskModels[task]);
+      if (!config)
+        throw new Error(
+          `The Model Catalog has no model ${JSON.stringify(taskModels[task])} for the ${task} task`,
+        );
+      return modelFor(config, taskOutputTokens[task] ?? config.maxOutputTokens);
+    },
   };
-  return models;
+}
+
+/** Covered Models require 30-day retention (ADR-0011, ADR-0012), whatever the catalog says. */
+function refuseCoveredModel(config: ModelConfig): void {
+  if (isCoveredModel(config.providerModelId))
+    throw new Error(
+      `Model ${JSON.stringify(config.key)} is a Covered Model (${config.providerModelId}), which stays excluded`,
+    );
 }
 
 /**

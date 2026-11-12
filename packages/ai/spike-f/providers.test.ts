@@ -2,6 +2,7 @@ import { embedMany, generateText, Output } from "ai";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createModels } from "../src/models.ts";
+import { fetchZeroRetentionPrices } from "../src/prices.ts";
 import { spikeModels } from "./openrouter.ts";
 
 describe("OpenRouter (spike f)", () => {
@@ -97,11 +98,23 @@ describe("OpenRouter (spike f)", () => {
 // Phase 4: the registry's cost accounting and estimate bound, against the live API.
 describe("the model registry against OpenRouter", () => {
   it("reports a real call's cost, within the registry's estimate", async () => {
+    const baseURL = process.env.OPENROUTER_BASE_URL!;
+    const synced = (await fetchZeroRetentionPrices({ baseURL })).get(
+      "anthropic/claude-haiku-5.5",
+    )!;
     const models = createModels({
       apiKey: process.env.OPENROUTER_API_KEY!,
-      baseURL: process.env.OPENROUTER_BASE_URL!,
+      baseURL,
+      catalog: [],
     });
-    const haiku = models.byId("anthropic/claude-haiku-5.5");
+    const haiku = models.fromConfig({
+      key: "haiku-5.5-reasoning-high",
+      providerModelId: synced.providerModelId,
+      reasoningEffort: "high",
+      maxOutputTokens: 8_000,
+      prices: synced.prices,
+      upstream: synced.upstream,
+    });
     const prompt =
       "Fasse in einem Satz zusammen: Die Prüfungsleistung ist eine Hausarbeit (15 Seiten), " +
       "Abgabe bis zum Ende der Vorlesungszeit. Übungsblätter sind Zulassungsvoraussetzung.";

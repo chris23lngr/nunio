@@ -91,12 +91,12 @@ Every model call goes through `meter` in `packages/delegation`, which works in t
 2. It runs the call.
 3. It settles the actual cost. A provider's 4xx rejection (other than 408) releases the reservation. Timeouts, network errors and 5xx responses mark it `held`, because the call may have been charged; held usage still counts against the Allowance until the founder settles it.
 
-Costs come from `packages/ai`'s registry:
+Costs come from the Model Catalog (ADR-0018):
 
-- **Estimates** are a guaranteed upper bound for text input. Each text the request sends counts as its UTF-8 byte length plus 200 tokens of framing; a token never covers less than one byte. The full 8,000-token output budget is added, at OpenRouter's prices recorded in the registry.
+- **Estimates** are a guaranteed upper bound for text input. Each text the request sends counts as its UTF-8 byte length plus 200 tokens of framing; a token never covers less than one byte. The Model's full output budget is added. Both are priced at the highest price across the Model's zero-retention endpoints, including any long-context surcharge, as last synced from OpenRouter.
 - **Actual costs** are OpenRouter's reported cost per call (usage accounting is on for every request). If no cost is reported, the token counts are priced instead.
 
-Only the allowlisted Haiku, Sonnet and Opus 5.5 IDs resolve. Every request is restricted to zero-retention endpoints and SDK retries are off. The `main` pipeline's spike f job checks the cost field and the estimate bound against the live API.
+Only Models in the catalog resolve, and Covered Models are refused in code. Every request is restricted to zero-retention endpoints and SDK retries are off. The `main` pipeline's spike f job checks the cost field and the estimate bound against the live API.
 
 Raise a student's Allowance from the repo root after building:
 
@@ -125,6 +125,37 @@ The command charges the actual cost, frees the rest of the estimate, and records
 - `SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd")` on `responsibility`, for calls made in a Responsibility's Run.
 
 Set `AI_DISABLED=true` on `nunio-api` and the Render worker and redeploy both to stop all new model calls; Allowance reads keep working. Verified with Testcontainers under the runtime role. On 2026-11-02 the founder confirmed all manual Phase 4 staging checks passed (Allowance read, founder grant/audit, and kill switch).
+
+## Model Catalog
+
+The Model Catalog (`catalog_model`, ADR-0018) holds every Model, which ones Chat offers, and the Chat default. Students pick from `GET /api/me/models`. Chat offers a Model only when four things hold: it is enabled, OpenRouter lists a zero-retention endpoint for it, its prices synced within the last 7 days, and it is not a Covered Model. Each change applies to the next request, with no deploy.
+
+The worker's `sync-model-prices` Temporal Schedule runs once a day and once when it is first created. It records OpenRouter's highest zero-retention prices and upstream providers, and marks Models that have no zero-retention endpoint. A failed sync shows as a failing Schedule in Temporal Cloud and a `model price sync failed` log line on Render. `list` shows each Model's `syncedAt`, so check it after a failure.
+
+Manage the catalog from the repo root after building. Every change is recorded in `model_catalog_change` along with `OPERATOR_ID`:
+
+```sh
+node --env-file=.env.operator packages/delegation/dist/model-catalog-cli.js list
+node --env-file=.env.operator packages/delegation/dist/model-catalog-cli.js add opus-5.5-reasoning-medium anthropic/claude-opus-5.5 medium 8000 "Opus 5.5" "Gründlich, denkt kürzer nach."
+node --env-file=.env.operator packages/delegation/dist/model-catalog-cli.js sync
+node --env-file=.env.operator packages/delegation/dist/model-catalog-cli.js enable opus-5.5-reasoning-medium
+node --env-file=.env.operator packages/delegation/dist/model-catalog-cli.js set-default sonnet-5.5-reasoning-high
+node --env-file=.env.operator packages/delegation/dist/model-catalog-cli.js disable opus-5.5-reasoning-medium
+node --env-file=.env.operator packages/delegation/dist/model-catalog-cli.js retire opus-5.5-reasoning-medium
+```
+
+- **A new Model** is added switched off and without prices. Run `sync`, or wait for the daily sync, before enabling it.
+- **Models never change.** For a different reasoning effort or output budget, add a new key and retire the old one.
+- **Two enabled Models of the same base model** (for example two Sonnet efforts) are both offered. Keeping that sensible is up to the founder.
+- **Refusals:** the command refuses to disable or retire the Chat default, to make a disabled Model the default, to retire a Model a task still uses (`taskModels` in `packages/ai`), and to add a Covered Model.
+
+The operator connection needs these privileges:
+
+- `SELECT, INSERT` on `catalog_model`;
+- `UPDATE ("chatEnabled", "chatDefault", "position", "retiredAt", "prices", "upstream", "zeroRetentionAvailable", "syncedAt")` on `catalog_model`;
+- `SELECT, INSERT` on `model_catalog_change`.
+
+The runtime role reads the catalog and may write only the synced columns. It cannot change the founder's switches or read the audit trail.
 
 ## Sessions and deletion requests (Phase 3)
 

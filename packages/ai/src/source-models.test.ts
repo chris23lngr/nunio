@@ -7,6 +7,7 @@ import {
   isFigureLine,
   SourceModelRejected,
 } from "./source-models.js";
+import { testCatalog } from "./test-catalog.js";
 
 it("embeds through a zero-retention request and reports its actual cost", async () => {
   const bodies: Record<string, unknown>[] = [];
@@ -55,6 +56,7 @@ function scanReader(reply = "Prüfung am 12. März", finishReason = "stop") {
     createModels({
       apiKey: "test",
       baseURL: "https://openrouter.test/api/v1",
+      catalog: testCatalog,
       fetch: async (_url, init) => {
         bodies.push(JSON.parse(String(init?.body)));
         return Response.json({

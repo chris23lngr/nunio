@@ -1,0 +1,404 @@
+{
+  "_fixture": "Trimmed from GET https://openrouter.ai/api/v1/endpoints/zdr on 2026-11-12: the Claude 5.5 entries plus one synthetic Covered Model entry.",
+  "data": [
+    {
+      "name": "Amazon Bedrock | anthropic/claude-haiku-5.5-20261007",
+      "model_id": "anthropic/claude-haiku-5.5",
+      "model_name": "Anthropic: Claude Haiku 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.0000005",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000001",
+        "input_cache_write": "0.000000125",
+        "input_cache_write_1h": "0.0000002",
+        "discount": 0,
+        "overrides": [
+          {
+            "min_prompt_tokens": 100000,
+            "prompt": "0.0000005",
+            "completion": "0.0000025",
+            "input_cache_read": "0.00000005",
+            "input_cache_write": "0.000000625",
+            "input_cache_write_1h": "0.000001"
+          }
+        ]
+      },
+      "provider_name": "Amazon Bedrock",
+      "tag": "amazon-bedrock",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Amazon Bedrock | anthropic/claude-haiku-5.5-20261007",
+      "model_id": "anthropic/claude-haiku-5.5",
+      "model_name": "Anthropic: Claude Haiku 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.00000011",
+        "completion": "0.00000055",
+        "web_search": "0.01",
+        "input_cache_read": "0.000000011",
+        "input_cache_write": "0.0000001375",
+        "input_cache_write_1h": "0.00000022",
+        "discount": 0,
+        "overrides": [
+          {
+            "min_prompt_tokens": 100000,
+            "prompt": "0.00000055",
+            "completion": "0.00000275",
+            "input_cache_read": "0.000000055",
+            "input_cache_write": "0.0000006875",
+            "input_cache_write_1h": "0.0000011"
+          }
+        ]
+      },
+      "provider_name": "Amazon Bedrock",
+      "tag": "amazon-bedrock/eu-west-1",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Amazon Bedrock | anthropic/claude-haiku-5.5-20261007",
+      "model_id": "anthropic/claude-haiku-5.5",
+      "model_name": "Anthropic: Claude Haiku 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.00000011",
+        "completion": "0.00000055",
+        "web_search": "0.01",
+        "input_cache_read": "0.000000011",
+        "input_cache_write": "0.0000001375",
+        "input_cache_write_1h": "0.00000022",
+        "discount": 0,
+        "overrides": [
+          {
+            "min_prompt_tokens": 100000,
+            "prompt": "0.00000055",
+            "completion": "0.00000275",
+            "input_cache_read": "0.000000055",
+            "input_cache_write": "0.0000006875",
+            "input_cache_write_1h": "0.0000011"
+          }
+        ]
+      },
+      "provider_name": "Amazon Bedrock",
+      "tag": "amazon-bedrock/us-east-1",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Google | anthropic/claude-haiku-5.5-20261007",
+      "model_id": "anthropic/claude-haiku-5.5",
+      "model_name": "Anthropic: Claude Haiku 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.00000011",
+        "completion": "0.00000055",
+        "web_search": "0.01",
+        "input_cache_read": "0.000000011",
+        "input_cache_write": "0.0000001375",
+        "input_cache_write_1h": "0.00000022",
+        "discount": 0,
+        "overrides": [
+          {
+            "min_prompt_tokens": 100000,
+            "prompt": "0.00000055",
+            "completion": "0.00000275",
+            "input_cache_read": "0.000000055",
+            "input_cache_write": "0.0000006875",
+            "input_cache_write_1h": "0.0000011"
+          }
+        ]
+      },
+      "provider_name": "Google",
+      "tag": "google-vertex/europe",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Google | anthropic/claude-haiku-5.5-20261007",
+      "model_id": "anthropic/claude-haiku-5.5",
+      "model_name": "Anthropic: Claude Haiku 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.0000005",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000001",
+        "input_cache_write": "0.000000125",
+        "input_cache_write_1h": "0.0000002",
+        "discount": 0,
+        "overrides": [
+          {
+            "min_prompt_tokens": 100000,
+            "prompt": "0.0000005",
+            "completion": "0.0000025",
+            "input_cache_read": "0.00000005",
+            "input_cache_write": "0.000000625",
+            "input_cache_write_1h": "0.000001"
+          }
+        ]
+      },
+      "provider_name": "Google",
+      "tag": "google-vertex/global",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Google | anthropic/claude-haiku-5.5-20261007",
+      "model_id": "anthropic/claude-haiku-5.5",
+      "model_name": "Anthropic: Claude Haiku 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.00000011",
+        "completion": "0.00000055",
+        "web_search": "0.01",
+        "input_cache_read": "0.000000011",
+        "input_cache_write": "0.0000001375",
+        "input_cache_write_1h": "0.00000022",
+        "discount": 0,
+        "overrides": [
+          {
+            "min_prompt_tokens": 100000,
+            "prompt": "0.00000055",
+            "completion": "0.00000275",
+            "input_cache_read": "0.000000055",
+            "input_cache_write": "0.0000006875",
+            "input_cache_write_1h": "0.0000011"
+          }
+        ]
+      },
+      "provider_name": "Google",
+      "tag": "google-vertex/us",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Amazon Bedrock | anthropic/claude-opus-5.5-20260921",
+      "model_id": "anthropic/claude-opus-5.5",
+      "model_name": "Anthropic: Claude Opus 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.000004",
+        "completion": "0.00002",
+        "web_search": "0.01",
+        "input_cache_read": "0.0000002",
+        "input_cache_write": "0.000005",
+        "input_cache_write_1h": "0.000008",
+        "discount": 0
+      },
+      "provider_name": "Amazon Bedrock",
+      "tag": "amazon-bedrock",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Amazon Bedrock | anthropic/claude-opus-5.5-20260921",
+      "model_id": "anthropic/claude-opus-5.5",
+      "model_name": "Anthropic: Claude Opus 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.0000044",
+        "completion": "0.000022",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000022",
+        "input_cache_write": "0.0000055",
+        "input_cache_write_1h": "0.0000088",
+        "discount": 0
+      },
+      "provider_name": "Amazon Bedrock",
+      "tag": "amazon-bedrock/eu-west-1",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Amazon Bedrock | anthropic/claude-opus-5.5-20260921",
+      "model_id": "anthropic/claude-opus-5.5",
+      "model_name": "Anthropic: Claude Opus 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.0000044",
+        "completion": "0.000022",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000022",
+        "input_cache_write": "0.0000055",
+        "input_cache_write_1h": "0.0000088",
+        "discount": 0
+      },
+      "provider_name": "Amazon Bedrock",
+      "tag": "amazon-bedrock/us-east-1",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Google | anthropic/claude-opus-5.5-20260921",
+      "model_id": "anthropic/claude-opus-5.5",
+      "model_name": "Anthropic: Claude Opus 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.0000044",
+        "completion": "0.000022",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000022",
+        "input_cache_write": "0.0000055",
+        "input_cache_write_1h": "0.0000088",
+        "discount": 0
+      },
+      "provider_name": "Google",
+      "tag": "google-vertex/europe",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Google | anthropic/claude-opus-5.5-20260921",
+      "model_id": "anthropic/claude-opus-5.5",
+      "model_name": "Anthropic: Claude Opus 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.000004",
+        "completion": "0.00002",
+        "web_search": "0.01",
+        "input_cache_read": "0.0000002",
+        "input_cache_write": "0.000005",
+        "input_cache_write_1h": "0.000008",
+        "discount": 0
+      },
+      "provider_name": "Google",
+      "tag": "google-vertex/global",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Google | anthropic/claude-opus-5.5-20260921",
+      "model_id": "anthropic/claude-opus-5.5",
+      "model_name": "Anthropic: Claude Opus 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.0000044",
+        "completion": "0.000022",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000022",
+        "input_cache_write": "0.0000055",
+        "input_cache_write_1h": "0.0000088",
+        "discount": 0
+      },
+      "provider_name": "Google",
+      "tag": "google-vertex/us",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Amazon Bedrock | anthropic/claude-sonnet-5.5-20260928",
+      "model_id": "anthropic/claude-sonnet-5.5",
+      "model_name": "Anthropic: Claude Sonnet 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "web_search": "0.01",
+        "input_cache_read": "0.0000001",
+        "input_cache_write": "0.0000025",
+        "input_cache_write_1h": "0.000004",
+        "discount": 0
+      },
+      "provider_name": "Amazon Bedrock",
+      "tag": "amazon-bedrock",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Amazon Bedrock | anthropic/claude-sonnet-5.5-20260928",
+      "model_id": "anthropic/claude-sonnet-5.5",
+      "model_name": "Anthropic: Claude Sonnet 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.0000022",
+        "completion": "0.000011",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000011",
+        "input_cache_write": "0.00000275",
+        "input_cache_write_1h": "0.0000044",
+        "discount": 0
+      },
+      "provider_name": "Amazon Bedrock",
+      "tag": "amazon-bedrock/eu-west-1",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Amazon Bedrock | anthropic/claude-sonnet-5.5-20260928",
+      "model_id": "anthropic/claude-sonnet-5.5",
+      "model_name": "Anthropic: Claude Sonnet 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.0000022",
+        "completion": "0.000011",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000011",
+        "input_cache_write": "0.00000275",
+        "input_cache_write_1h": "0.0000044",
+        "discount": 0
+      },
+      "provider_name": "Amazon Bedrock",
+      "tag": "amazon-bedrock/us-east-1",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Google | anthropic/claude-sonnet-5.5-20260928",
+      "model_id": "anthropic/claude-sonnet-5.5",
+      "model_name": "Anthropic: Claude Sonnet 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.0000022",
+        "completion": "0.000011",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000011",
+        "input_cache_write": "0.00000275",
+        "input_cache_write_1h": "0.0000044",
+        "discount": 0
+      },
+      "provider_name": "Google",
+      "tag": "google-vertex/europe",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Google | anthropic/claude-sonnet-5.5-20260928",
+      "model_id": "anthropic/claude-sonnet-5.5",
+      "model_name": "Anthropic: Claude Sonnet 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "web_search": "0.01",
+        "input_cache_read": "0.0000001",
+        "input_cache_write": "0.0000025",
+        "input_cache_write_1h": "0.000004",
+        "discount": 0
+      },
+      "provider_name": "Google",
+      "tag": "google-vertex/global",
+      "max_completion_tokens": 128000
+    },
+    {
+      "name": "Google | anthropic/claude-sonnet-5.5-20260928",
+      "model_id": "anthropic/claude-sonnet-5.5",
+      "model_name": "Anthropic: Claude Sonnet 5.5",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.0000022",
+        "completion": "0.000011",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000011",
+        "input_cache_write": "0.00000275",
+        "input_cache_write_1h": "0.0000044",
+        "discount": 0
+      },
+      "provider_name": "Google",
+      "tag": "google-vertex/us",
+      "max_completion_tokens": 128000
+    },
+    {
+      "_synthetic": "Not in the live response: a Covered Model entry, which the sync must drop.",
+      "name": "Amazon Bedrock | anthropic/claude-fable-5-1",
+      "model_id": "anthropic/claude-fable-5-1",
+      "model_name": "Anthropic: Claude Fable 5.1",
+      "context_length": 1000000,
+      "pricing": {
+        "prompt": "0.000015",
+        "completion": "0.000075",
+        "discount": 0
+      },
+      "provider_name": "Amazon Bedrock",
+      "tag": "amazon-bedrock",
+      "max_completion_tokens": 128000
+    }
+  ]
+}

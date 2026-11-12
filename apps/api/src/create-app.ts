@@ -1,4 +1,4 @@
-import type { Answerer, Estimator } from "@nunio/ai";
+import type { Estimator } from "@nunio/ai";
 import {
   createAnswerer,
   createEmbedder,
@@ -12,7 +12,11 @@ import { createArtifacts } from "@nunio/artifacts";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { Delegation, Responsibilities } from "@nunio/delegation";
-import { createDelegation, createResponsibilities } from "@nunio/delegation";
+import {
+  createDelegation,
+  createModelCatalog,
+  createResponsibilities,
+} from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 import { createAuth } from "@nunio/identity";
 import { sourceKeysFromEnv } from "@nunio/keys";
@@ -45,6 +49,8 @@ import type { AppBindings } from "./app.js";
 import { routes } from "./app.js";
 import type { ArtifactWorkflows } from "./artifact-workflows.js";
 import { artifactWorkflowsFromEnv } from "./artifact-workflows.js";
+import type { ChatModels } from "./chat-models.js";
+import { createChatModels } from "./chat-models.js";
 import type { RunWorkflows } from "./run-workflows.js";
 import { runWorkflowsFromEnv } from "./run-workflows.js";
 import type { SourceWorkflows } from "./source-workflows.js";
@@ -60,7 +66,7 @@ export interface AppDeps {
   facts: Facts;
   sourceWorkflows: SourceWorkflows;
   chats: Chats;
-  answerer: Answerer;
+  chatModels: ChatModels;
   plan: Plan;
   estimator: Estimator;
   projects: Projects;
@@ -87,7 +93,7 @@ export function createApp({
   facts,
   sourceWorkflows,
   chats,
-  answerer,
+  chatModels,
   plan,
   estimator,
   projects,
@@ -121,7 +127,7 @@ export function createApp({
     c.set("facts", facts);
     c.set("sourceWorkflows", sourceWorkflows);
     c.set("chats", chats);
-    c.set("answerer", answerer);
+    c.set("chatModels", chatModels);
     c.set("plan", plan);
     c.set("estimator", estimator);
     c.set("projects", projects);
@@ -154,7 +160,8 @@ export function createApp({
 }
 
 /** Builds the app from its deployment environment; throws on the first missing variable. */
-export function appFromEnv(env: NodeJS.ProcessEnv) {
+/** Reads the Model Catalog once at start, so a task whose Model is missing stops the API from starting. */
+export async function appFromEnv(env: NodeJS.ProcessEnv) {
   const required = (name: string) => {
     const value = env[name];
     if (!value) throw new Error(`${name} is not set`);
@@ -199,7 +206,11 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     apiKey: required("OPENROUTER_API_KEY"),
     baseURL: required("OPENROUTER_BASE_URL"),
   };
-  const models = createModels(provider);
+  const catalog = createModelCatalog({ db: prisma, clock });
+  const models = createModels({
+    ...provider,
+    catalog: await catalog.taskModels(),
+  });
   const reader = createKnowledgeReader({
     db: prisma,
     keys,
@@ -237,7 +248,10 @@ export function appFromEnv(env: NodeJS.ProcessEnv) {
     facts,
     sourceWorkflows: sourceWorkflowsFromEnv(env),
     chats: createChats({ db: prisma, keys, reader, delegation }),
-    answerer: createAnswerer(models),
+    chatModels: createChatModels({
+      catalog,
+      answererFor: (model) => createAnswerer(models.fromConfig(model)),
+    }),
     plan,
     estimator: createEstimator(models),
     projects: createProjects({ db: prisma }),

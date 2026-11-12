@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { createEstimator } from "./estimation.js";
 import { createModels } from "./models.js";
+import { testCatalog } from "./test-catalog.js";
 
 function recorded(
   bodies: Record<string, unknown>[],
@@ -37,6 +38,7 @@ it("proposes an Estimate per Obligation through structured output, keeping title
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
+      catalog: testCatalog,
       fetch: recorded(
         bodies,
         JSON.stringify({
@@ -98,6 +100,7 @@ it("refuses a truncated answer rather than proposing part of it", async () => {
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
+      catalog: testCatalog,
       fetch: recorded([], '{"estimates": [', "length"),
     }),
   );
