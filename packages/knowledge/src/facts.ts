@@ -397,21 +397,43 @@ export function createFacts({
             return Boolean(seen);
           };
           for (const course of bound ? [] : kept.courses) {
-            const picked =
+            const candidate =
               course.existingCourseId &&
               candidateIds.has(course.existingCourseId)
-                ? await tx.course.findFirst({
-                    where: { ...candidateWhere, id: course.existingCourseId },
-                    select: { id: true },
+                ? await tx.course.findUnique({
+                    where: { id: course.existingCourseId },
+                    select: {
+                      id: true,
+                      mergedIntoId: true,
+                      title: true,
+                      code: true,
+                    },
                   })
                 : null;
-            if (picked) {
+            const picked = candidate
+              ? await tx.course.findFirst({
+                  where: {
+                    ...candidateWhere,
+                    id: candidate.mergedIntoId ?? candidate.id,
+                  },
+                  select: { id: true, title: true, code: true },
+                })
+              : null;
+            if (candidate && picked) {
               await tx.sourceCourse.upsert({
                 where: { sourceId_courseId: { sourceId, courseId: picked.id } },
                 create: { sourceId, courseId: picked.id, studentId },
                 update: {},
               });
-              courses.set(normalize(picked.id), picked.id);
+              for (const name of [
+                candidate.id,
+                candidate.title,
+                candidate.code,
+                picked.id,
+                picked.title,
+                picked.code,
+              ])
+                if (name) courses.set(normalize(name), picked.id);
               continue;
             }
             // An unknown or no-longer-eligible ID is only a proposal, requiring page grounding.
