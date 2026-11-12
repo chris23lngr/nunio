@@ -281,6 +281,31 @@ describe("Approval", () => {
     expect(dispatched).toHaveLength(1);
   });
 
+  it("acts on a Chat Action from its record alone, as the API does after an Approval given anywhere", async () => {
+    const s = await student();
+    const { executor, dispatched } = fakeExecutor();
+    const g = gate(executor);
+    const asking = (await g.perform(s.p, {
+      key: "chat-1:message-2:0",
+      intent: move(s),
+    })) as Extract<ActionOutcome, { status: "awaiting_approval" }>;
+
+    const record = await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+
+    expect(record).toMatchObject({
+      key: "chat-1:message-2:0",
+      intent: move(s),
+    });
+    expect(
+      await g.perform(s.p, { key: record.key, intent: record.intent }),
+    ).toMatchObject({ status: "done", actionId: asking.actionId });
+    expect(dispatched).toHaveLength(1);
+  });
+
   it("dispatches once however often the student clicks approve", async () => {
     const s = await student();
     const { executor, dispatched } = fakeExecutor();

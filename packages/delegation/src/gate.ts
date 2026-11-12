@@ -81,6 +81,8 @@ export type Resolve = {
 
 export interface ActionRecord {
   id: string;
+  /** The key it was asked under, so a Chat Action can be performed again once approved. */
+  key: string;
   runId: string | null;
   /** The Responsibility whose Run asked; null for a Chat. */
   responsibilityId: string | null;
@@ -88,6 +90,8 @@ export interface ActionRecord {
   workflowId: string | null;
   kind: Kind;
   args: unknown;
+  /** `kind` and `args` as `perform` takes them. */
+  intent: ActionIntent;
   status:
     | "awaiting_approval"
     | "dispatching"
@@ -201,11 +205,13 @@ function outcomeOf(a: Row): ActionOutcome {
 function recordOf(a: Row): ActionRecord {
   return {
     id: a.id,
+    key: a.key,
     runId: a.runId,
     responsibilityId: a.run?.responsibilityId ?? null,
     workflowId: a.run?.workflowId ?? null,
     kind: a.kind as Kind,
     args: a.args,
+    intent: revive(a.kind, a.args),
     status: a.status,
     refusal: a.refusal as Refusal | null,
     authority: a.grantId
