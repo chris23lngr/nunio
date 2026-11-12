@@ -137,6 +137,8 @@ const schedules: Schedules = {
 };
 /** The Chat model's input for each step, in order (`JSON.stringify` it to search it). */
 const prompts: unknown[] = [];
+/** Whether each step let the Chat model call a tool, in order. */
+const toolChoices: unknown[] = [];
 /** What the Chat model streams in its next steps; with none queued, one step of `reasoningText` and `reply`. */
 const steps: unknown[][] = [];
 let reply = "";
@@ -164,8 +166,15 @@ const thinks = (text: string) => [
 ];
 /** Stands in for the provider, so Chat answers run the real Answerer and tool loop. */
 const chatModel = new MockLanguageModelV4({
-  doStream: async ({ prompt }: { prompt: unknown }) => {
+  doStream: async ({
+    prompt,
+    toolChoice,
+  }: {
+    prompt: unknown;
+    toolChoice?: unknown;
+  }) => {
     prompts.push(prompt);
+    toolChoices.push(toolChoice);
     const parts = steps.shift() ?? [
       ...(reasoningText ? thinks(reasoningText) : []),
       ...says(reply),
@@ -2912,6 +2921,47 @@ describe("Chat", () => {
         })
       ).json(),
     ).toEqual([]);
+  });
+
+  it("lets the model search at most five times, then has it answer without tools", async () => {
+    const cookie = await signUp("chat-step-limit");
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const handbook = await chatSource(
+      cookie,
+      "Modulhandbuch.pdf",
+      "Die Klausur ist am 10. Februar.",
+    );
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [handbook] }),
+      })
+    ).json()) as { id: string };
+    for (let n = 1; n <= 5; n++) steps.push(searches(`Klausur ${n}`));
+    reply = "Am 10. Februar [S1].";
+    toolChoices.length = 0;
+
+    const chunks = await sseChunks(
+      await app.request(`${apiOrigin}/api/me/chats/${id}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          id: randomUUID(),
+          text: "Wann ist die Klausur?",
+        }),
+      }),
+    );
+
+    expect(toolChoices).toEqual([
+      ...Array.from({ length: 5 }, () => ({ type: "auto" })),
+      { type: "none" },
+    ]);
+    expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
   });
 
   it("refuses a turn when the Allowance no longer covers a later step, recording nothing but keeping the steps taken charged", async () => {
