@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
-import type { AskStep } from "@nunio/chat";
+import type { AskStep, ChatMessage } from "@nunio/chat";
+import type { Principal } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
+import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
+import { ActionShown, describeAction } from "./approvals.js";
 
 const Provenance = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("correction") }),
@@ -52,6 +55,36 @@ const Part = z
       toolCallId: z.string(),
       input: z.object({ course: z.string() }),
       output: z.object({ course: z.string(), facts: z.number().int() }),
+    }),
+    z.object({
+      type: z.literal("tool-proposeStudyBlock"),
+      toolCallId: z.string(),
+      input: z.object({ work: z.string(), start: z.string(), end: z.string() }),
+      approvalId: z.string(),
+      notes: z
+        .array(z.enum(["outside_study_window", "daily_limit", "work_limit"]))
+        .describe("Preferences the block would break, shown before approving."),
+      action: z
+        .object({
+          id: z.string(),
+          fingerprint: z.string().nullable(),
+          expiresAt: z.date().nullable(),
+          status: z.enum([
+            "awaiting_approval",
+            "expired",
+            "dispatching",
+            "done",
+            "failed",
+            "refused",
+            "unconfirmed",
+          ]),
+          decision: z.enum(["approved", "denied"]).nullable(),
+          shown: ActionShown,
+        })
+        .nullable()
+        .describe(
+          "The Action the student is asked to approve; null if it could not be asked.",
+        ),
     }),
   ])
   .openapi("ChatMessagePart");
@@ -143,6 +176,54 @@ const errors = {
   404: json(ErrorBody, "The Chat is gone."),
 };
 const chatParams = z.object({ id: z.string().uuid() });
+
+/**
+ * Each proposal as the Action the gate asked it as: the exact Action, its fingerprint, and where it stands now. The key
+ * linking them stays on the server.
+ */
+async function withActions(
+  c: Context<AppBindings>,
+  p: Principal,
+  messages: ChatMessage[],
+) {
+  const keys = messages.flatMap((message) =>
+    message.parts.flatMap((part) =>
+      part.type === "tool-proposeStudyBlock" ? [part.key] : [],
+    ),
+  );
+  const records = keys.length
+    ? await c.get("delegation").history(p, { keys })
+    : [];
+  const plan = records.length ? await c.get("plan").view(p) : null;
+  const now = new Date();
+  return messages.map((message) => ({
+    ...message,
+    parts: message.parts.map((part) => {
+      if (part.type !== "tool-proposeStudyBlock") return part;
+      const { key, ...shown } = part;
+      const record = records.find((r) => r.key === key);
+      return {
+        ...shown,
+        action:
+          record && plan
+            ? {
+                id: record.id,
+                fingerprint: record.approval?.fingerprint ?? null,
+                expiresAt: record.approval?.expiresAt ?? null,
+                status:
+                  record.status === "awaiting_approval" &&
+                  record.approval &&
+                  record.approval.expiresAt <= now
+                    ? ("expired" as const)
+                    : record.status,
+                decision: record.approval?.decision ?? null,
+                shown: describeAction(plan, record.kind, record.args),
+              }
+            : null,
+      };
+    }),
+  }));
+}
 
 export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
@@ -261,7 +342,10 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
             }
             writer.write({
               type: "data-committed",
-              data: { ...result.message, question: result.question },
+              data: {
+                ...(await withActions(c, p, [result.message]))[0]!,
+                question: result.question,
+              },
               transient: true,
             });
             writer.write({ type: "finish" });
@@ -316,7 +400,12 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
       const chat = await c
         .get("chats")
         .detail(principal.fromSession(actor), c.req.valid("param").id);
-      return chat ? c.json(chat, 200) : c.json({ error: "gone" }, 404);
+      if (!chat) return c.json({ error: "gone" }, 404);
+      const p = principal.fromSession(actor);
+      return c.json(
+        { ...chat, messages: await withActions(c, p, chat.messages) },
+        200,
+      );
     },
   );
   routes.openapi(
@@ -367,7 +456,10 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
         .get("chats")
         .messages(principal.fromSession(actor), c.req.valid("param").id);
       if (!messages) return c.json({ error: "gone" }, 404);
-      return c.json(messages, 200);
+      return c.json(
+        await withActions(c, principal.fromSession(actor), messages),
+        200,
+      );
     },
   );
 }

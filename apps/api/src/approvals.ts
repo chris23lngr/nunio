@@ -63,9 +63,11 @@ export const ActionShown = z
 
 /** The Actions awaiting the student's Approval, each as the exact Action the card shows. */
 async function approvalsOf(c: Context<AppBindings>, p: Principal) {
-  const asking = await c
-    .get("delegation")
-    .history(p, { status: "awaiting_approval" });
+  const now = new Date();
+  // An expired Approval no longer counts; a Chat's has no Run to close it, so it is left out here (ADR-0019).
+  const asking = (
+    await c.get("delegation").history(p, { status: "awaiting_approval" })
+  ).filter((a) => a.approval && a.approval.expiresAt > now);
   if (!asking.length) return [];
   const plan = await c.get("plan").view(p);
   const presets = new Map<string, string>();

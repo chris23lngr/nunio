@@ -109,13 +109,17 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
         c.get("delegation").history(p, { status: "awaiting_approval" }),
         c.get("responsibilities").list(p),
       ]);
+      const now = new Date();
       const agentWork = [
-        ...asking.map((a) => ({
-          kind: "approval" as const,
-          actionId: a.id,
-          title: describeAction(plan, a.kind, a.args).work.title,
-          expiresAt: a.approval!.expiresAt,
-        })),
+        // An expired Approval no longer asks anything of the student.
+        ...asking
+          .filter((a) => a.approval && a.approval.expiresAt > now)
+          .map((a) => ({
+            kind: "approval" as const,
+            actionId: a.id,
+            title: describeAction(plan, a.kind, a.args).work.title,
+            expiresAt: a.approval!.expiresAt,
+          })),
         ...delegated.map((r) => {
           const { course, exam } = scopeNames(review, r.scope);
           return {

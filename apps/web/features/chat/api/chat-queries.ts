@@ -12,7 +12,10 @@ type ToolPart = Extract<Message["parts"][number], { toolCallId: string }>;
 type ChatTools = {
   [Part in ToolPart as Part["type"] extends `tool-${infer Name}`
     ? Name
-    : never]: { input: Part["input"]; output: Part["output"] };
+    : never]: {
+    input: Part["input"];
+    output: Part extends { output: infer Output } ? Output : never;
+  };
 };
 export type Course = Chat["courses"][number];
 /** A Course the student can chat about, with its color. */
@@ -45,6 +48,15 @@ export function toUIMessage(message: Message): ChatUIMessage {
       ...(message.model ? { model: message.model.name } : {}),
     },
     parts: message.parts.map((part): ChatUIMessage["parts"][number] => {
+      // A proposal still asks the student, under the approval the stream announced.
+      if ("approvalId" in part)
+        return {
+          type: part.type,
+          toolCallId: part.toolCallId,
+          state: "approval-requested",
+          input: part.input,
+          approval: { id: part.approvalId },
+        } as ChatUIMessage["parts"][number];
       if ("toolCallId" in part)
         return {
           ...part,

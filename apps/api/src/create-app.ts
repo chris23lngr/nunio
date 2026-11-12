@@ -18,6 +18,7 @@ import {
   createDelegation,
   createModelCatalog,
   createResponsibilities,
+  principal,
 } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 import { createAuth } from "@nunio/identity";
@@ -34,7 +35,7 @@ import {
 import type { Outreach } from "@nunio/outreach";
 import { createOutreach, InvalidUnsubscribeError } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
-import { createPlan } from "@nunio/planning";
+import { createPlan, createPlanExecutor } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
 import { createUnderstanding } from "@nunio/understanding";
 import { attachDatabasePool } from "@vercel/functions";
@@ -188,6 +189,12 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
   const delegation = createDelegation({
     db: prisma,
     aiEnabled: () => env.AI_DISABLED !== "true",
+    // A Chat's Action has no Run, so the API performs it once the student approves (ADR-0019).
+    executors: { plan: createPlanExecutor({ db: prisma }) },
+    deadlineOf: async (studentId, obligationId) =>
+      (await plan.view(principal.fromSession({ studentId }))).obligations.find(
+        (o) => o.id === obligationId,
+      )?.due ?? null,
   });
   const keys = sourceKeysFromEnv(env);
   const sources = createSources({

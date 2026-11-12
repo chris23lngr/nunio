@@ -35,7 +35,7 @@ import {
   createSources,
 } from "@nunio/knowledge";
 import { createOutreach } from "@nunio/outreach";
-import { createPlan, deadline } from "@nunio/planning";
+import { createPlan, createPlanExecutor, deadline } from "@nunio/planning";
 import { createUnderstanding } from "@nunio/understanding";
 import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
 import { hashPassword } from "better-auth/crypto";
@@ -306,7 +306,15 @@ beforeAll(async () => {
       },
     },
   });
-  delegation = createDelegation({ db: prisma, aiEnabled: () => true });
+  delegation = createDelegation({
+    db: prisma,
+    aiEnabled: () => true,
+    executors: { plan: createPlanExecutor({ db: prisma }) },
+    deadlineOf: async (studentId, obligationId) =>
+      (await plan.view(principal.fromSession({ studentId }))).obligations.find(
+        (o) => o.id === obligationId,
+      )?.due ?? null,
+  });
   const keys = createSourceKeys({
     activeVersion: "test",
     masters: { test: randomBytes(32) },
@@ -3196,6 +3204,118 @@ describe("Chat", () => {
         })
       ).json(),
     ).toEqual([]);
+  });
+
+  it("asks the student to approve a proposed Study Block once the answer is saved, in the Chat and among the Approvals", async () => {
+    const { headers, chatId } = await planningChat("chat-propose");
+    const day = berlinDay(8);
+    steps.push(calls("agenda", { from: berlinDay(7), to: berlinDay(13) }), [
+      ...says("Ich schlage dir einen Lernblock vor."),
+      ...calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+    ]);
+    prompts.length = 0;
+
+    const chunks = await sseChunks(
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: randomUUID(), text: "Plane Blatt 4 ein." }),
+      }),
+    );
+
+    expect(prompts).toHaveLength(2);
+    expect(chunks.map((chunk) => chunk.type)).toContain(
+      "tool-approval-request",
+    );
+    const committed = chunks.find((chunk) => chunk.type === "data-committed");
+    const card = committed.data.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    expect(card).toMatchObject({
+      approvalId: expect.any(String),
+      notes: [],
+      action: {
+        id: expect.any(String),
+        fingerprint: expect.any(String),
+        status: "awaiting_approval",
+        shown: {
+          kind: "studyBlock.create",
+          work: { title: "Übungsblatt 4", course: "Analysis I" },
+          from: null,
+          to: {
+            start: deadline(day, "10:00", "Europe/Berlin").toISOString(),
+            end: deadline(day, "12:00", "Europe/Berlin").toISOString(),
+          },
+        },
+      },
+    });
+    expect(
+      await (
+        await app.request(`${apiOrigin}/api/me/approvals`, {
+          headers: { cookie: headers.cookie },
+        })
+      ).json(),
+    ).toMatchObject([
+      {
+        actionId: card.action.id,
+        fingerprint: card.action.fingerprint,
+        responsibility: null,
+      },
+    ]);
+    const reopened = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { parts: unknown[] }[];
+    expect(reopened[1]!.parts).toContainEqual(card);
+  });
+
+  it("leaves an expired Chat proposal out of the Approvals, and shows it as expired in the Chat", async () => {
+    const { headers, chatId } = await planningChat("chat-propose-expired");
+    const day = berlinDay(8);
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+    );
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const card = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    await admin.approval.updateMany({
+      where: { action: { id: card.action.id } },
+      data: { expiresAt: new Date(Date.now() - 60_000) },
+    });
+
+    expect(
+      await (
+        await app.request(`${apiOrigin}/api/me/approvals`, {
+          headers: { cookie: headers.cookie },
+        })
+      ).json(),
+    ).toEqual([]);
+    const home = (await (
+      await app.request(`${apiOrigin}/api/me/home`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { agentWork: { kind: string }[] };
+    expect(home.agentWork.map((item) => item.kind)).not.toContain("approval");
+    const reopened = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { parts: { type: string; action?: { status: string } }[] }[];
+    expect(
+      reopened[1]!.parts.find((part) => part.type === "tool-proposeStudyBlock")
+        ?.action?.status,
+    ).toBe("expired");
   });
 
   it("offers no search in a Chat with nothing selected, but still the Plan", async () => {

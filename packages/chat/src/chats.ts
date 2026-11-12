@@ -296,9 +296,20 @@ export function createChats({
       }
       step("generation");
       options.signal?.throwIfAborted();
+      const id = options.ids?.answer ?? randomUUID();
+      // Each proposal is asked as the answer's n-th Action (`chatId:messageId:n`) once the answer is saved.
+      const asked = [...proposals].map(([toolCallId, proposal], n) => ({
+        toolCallId,
+        key: `${chatId}:${id}:${n}`,
+        proposal,
+      }));
       const parts = await partsFrom(
         chunks,
         new Set(turn.citations.map((citation) => citation.tag)),
+        (toolCallId) => {
+          const found = asked.find((a) => a.toolCallId === toolCallId);
+          return found && { key: found.key, notes: found.proposal.notes };
+        },
       );
       const text = parts
         .flatMap((part) => (part.type === "text" ? [part.text] : []))
@@ -315,7 +326,6 @@ export function createChats({
       const derivedFrom = [
         ...new Set([...turn.sources, ...history.derivedFrom]),
       ];
-      const id = options.ids?.answer ?? randomUUID();
       const questionId = options.ids?.question ?? randomUUID();
       const createdAt = new Date();
       const recorded = await withOwner(db, p, async (tx, studentId) => {
@@ -365,6 +375,23 @@ export function createChats({
       step("persistence");
       if (recorded === "conflict") return { status: "conflict" } as const;
       if (!recorded) return { status: "gone" } as const;
+      // After the answer, so a failed turn leaves no card behind (ADR-0019 amendment). The gate may still refuse,
+      // say for a block Locked meanwhile; the card then shows no Action.
+      for (const { key, proposal } of asked)
+        await delegation
+          .perform(p, {
+            key,
+            intent: { kind: proposal.kind, ...proposal.args },
+          })
+          .catch((error: unknown) =>
+            console.error(
+              JSON.stringify({
+                msg: "chat proposal not asked",
+                key,
+                error: String(error),
+              }),
+            ),
+          );
       const message: ChatMessage = {
         id,
         role: "assistant",
