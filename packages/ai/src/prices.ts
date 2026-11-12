@@ -12,6 +12,8 @@ export interface SyncedModel {
   prices: PriceTier[];
   /** The providers serving its zero-retention endpoints, unique and sorted. */
   upstream: string[];
+  /** Whether any of those endpoints takes tools and a tool choice, which Chat needs (ADR-0018 amendment). */
+  tools: boolean;
 }
 
 /** Covered Models require 30-day retention, so they stay excluded (ADR-0011, ADR-0012). */
@@ -35,18 +37,28 @@ export function priceZeroRetentionEndpoints(
     throw new Error("Expected OpenRouter's zero-retention endpoints as {data}");
   const endpointsByModel = new Map<
     string,
-    { provider: string; tiers: PriceTier[] }[]
+    { provider: string; tiers: PriceTier[]; tools: boolean }[]
   >();
   for (const endpoint of data as unknown[]) {
-    const { model_id: model, provider_name: provider } = (endpoint ??
-      {}) as Record<string, unknown>;
+    const {
+      model_id: model,
+      provider_name: provider,
+      supported_parameters: supported,
+    } = (endpoint ?? {}) as Record<string, unknown>;
     if (typeof model !== "string" || typeof provider !== "string")
       throw new Error(
         `Malformed zero-retention endpoint ${JSON.stringify(endpoint)}`,
       );
     if (isCoveredModel(model) || (only && !only.has(model))) continue;
     const endpoints = endpointsByModel.get(model) ?? [];
-    endpoints.push({ provider, tiers: endpointTiers(endpoint, model) });
+    endpoints.push({
+      provider,
+      tiers: endpointTiers(endpoint, model),
+      tools:
+        Array.isArray(supported) &&
+        supported.includes("tools") &&
+        supported.includes("tool_choice"),
+    });
     endpointsByModel.set(model, endpoints);
   }
   return new Map(
@@ -70,7 +82,8 @@ export function priceZeroRetentionEndpoints(
         };
       });
       const upstream = [...new Set(endpoints.map((e) => e.provider))].sort();
-      return [providerModelId, { providerModelId, prices, upstream }];
+      const tools = endpoints.some((e) => e.tools);
+      return [providerModelId, { providerModelId, prices, upstream, tools }];
     }),
   );
 }

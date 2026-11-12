@@ -21,7 +21,36 @@ describe("pricing OpenRouter's zero-retention endpoints", () => {
         },
       ],
       upstream: ["Amazon Bedrock", "Google"],
+      tools: true,
     });
+  });
+
+  it("knows whether any of a model's zero-retention endpoints takes tools and a tool choice", () => {
+    const endpoint = (
+      model: string,
+      provider: string,
+      supported: string[],
+    ) => ({
+      model_id: model,
+      provider_name: provider,
+      pricing: { prompt: "0.000001", completion: "0.000005" },
+      supported_parameters: supported,
+    });
+
+    const synced = priceZeroRetentionEndpoints({
+      data: [
+        endpoint("test/some-endpoints", "A", ["temperature"]),
+        endpoint("test/some-endpoints", "B", ["tools", "tool_choice"]),
+        endpoint("test/no-tool-choice", "A", ["tools"]),
+        endpoint("test/no-tools", "A", []),
+      ],
+    });
+
+    expect([...synced].map(([id, model]) => [id, model.tools])).toEqual([
+      ["test/some-endpoints", true],
+      ["test/no-tool-choice", false],
+      ["test/no-tools", false],
+    ]);
   });
 
   it("adds a long-context tier, priced at the most expensive endpoint's surcharge", () => {

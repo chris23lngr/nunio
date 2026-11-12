@@ -32,7 +32,7 @@ beforeAll(async () => {
     `CREATE ROLE ${user} LOGIN PASSWORD '${password}' NOSUPERUSER NOBYPASSRLS`,
     `GRANT USAGE ON SCHEMA public TO ${user}`,
     `GRANT SELECT, INSERT ON "catalog_model" TO ${user}`,
-    `GRANT UPDATE ("chatEnabled", "chatDefault", "position", "retiredAt", "prices", "upstream", "zeroRetentionAvailable", "syncedAt") ON "catalog_model" TO ${user}`,
+    `GRANT UPDATE ("chatEnabled", "chatDefault", "position", "retiredAt", "prices", "upstream", "zeroRetentionAvailable", "toolsAvailable", "syncedAt") ON "catalog_model" TO ${user}`,
     `GRANT SELECT, INSERT ON "model_catalog_change" TO ${user}`,
   ])
     await admin.$executeRawUnsafe(statement);

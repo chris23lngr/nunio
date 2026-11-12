@@ -128,9 +128,9 @@ Set `AI_DISABLED=true` on `nunio-api` and the Render worker and redeploy both to
 
 ## Model Catalog
 
-The Model Catalog (`catalog_model`, ADR-0018) holds every Model, which ones Chat offers, and the Chat default. Students pick from `GET /api/me/models`. Chat offers a Model only when four things hold: it is enabled, OpenRouter lists a zero-retention endpoint for it, its prices synced within the last 7 days, and it is not a Covered Model. Each change applies to the next request, with no deploy.
+The Model Catalog (`catalog_model`, ADR-0018) holds every Model, which ones Chat offers, and the Chat default. Students pick from `GET /api/me/models`. Chat offers a Model only when five things hold: it is enabled, OpenRouter lists a zero-retention endpoint for it, one of those endpoints takes tools, its prices synced within the last 7 days, and it is not a Covered Model. Each change applies to the next request, with no deploy.
 
-The worker's `sync-model-prices` Temporal Schedule runs once a day and once when it is first created. It records OpenRouter's highest zero-retention prices and upstream providers, and marks Models that have no zero-retention endpoint. A failed sync shows as a failing Schedule in Temporal Cloud and a `model price sync failed` log line on Render. `list` shows each Model's `syncedAt`, so check it after a failure.
+The worker's `sync-model-prices` Temporal Schedule runs once a day and once when it is first created. It records OpenRouter's highest zero-retention prices and upstream providers, marks Models that have no zero-retention endpoint, and records whether one of those endpoints takes tools. Until a Model's first sync after that column was added, Chat keeps offering it. A failed sync shows as a failing Schedule in Temporal Cloud and a `model price sync failed` log line on Render. `list` shows each Model's `syncedAt`, so check it after a failure.
 
 Manage the catalog from the repo root after building. Every change is recorded in `model_catalog_change` along with `OPERATOR_ID`:
 
@@ -152,8 +152,10 @@ node --env-file=.env.operator packages/delegation/dist/model-catalog-cli.js reti
 The operator connection needs these privileges:
 
 - `SELECT, INSERT` on `catalog_model`;
-- `UPDATE ("chatEnabled", "chatDefault", "position", "retiredAt", "prices", "upstream", "zeroRetentionAvailable", "syncedAt")` on `catalog_model`;
+- `UPDATE ("chatEnabled", "chatDefault", "position", "retiredAt", "prices", "upstream", "zeroRetentionAvailable", "toolsAvailable", "syncedAt")` on `catalog_model`;
 - `SELECT, INSERT` on `model_catalog_change`.
+
+An operator login created before `toolsAvailable` existed (migration `20261120100000_catalog_model_tools`) needs `GRANT UPDATE ("toolsAvailable") ON "catalog_model"` once, or `sync` fails with a permission error.
 
 The runtime role reads the catalog and may write only the synced columns. It cannot change the founder's switches or read the audit trail.
 
