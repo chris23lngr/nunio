@@ -16,17 +16,23 @@ import {
   createExtractor,
   createModels,
   createScanReader,
+  createTopicJudge,
+  isDefiniteFailure,
 } from "@nunio/ai";
 import { createPool, createPrismaClient } from "@nunio/db";
 import { startTestDatabase } from "@nunio/db/testing";
-import { createDelegation, principal } from "@nunio/delegation";
+import {
+  createDelegation,
+  DefiniteFailure,
+  principal,
+} from "@nunio/delegation";
 import { createSourceKeys, decryptSourceText } from "@nunio/keys";
 import { createFacts, createSources } from "@nunio/knowledge";
 import { createParserServer } from "@nunio/parser/server";
 import { parseSource } from "../src/source-activities.ts";
 import { scoreBoundCourse } from "./extraction/assignment.js";
-import type { TopicLabel } from "./extraction/topics.js";
-import { scoreTopics, topicKey } from "./extraction/topics.js";
+import type { Judgement, TopicLabel } from "./extraction/topics.js";
+import { parseJudgement, scoreTopics, topicKey } from "./extraction/topics.js";
 
 interface Label {
   course: string;
@@ -101,6 +107,7 @@ const provider = {
 if (!provider.apiKey || !provider.baseURL)
   throw new Error("OPENROUTER_API_KEY and OPENROUTER_BASE_URL are required");
 const models = createModels(provider);
+const topicJudge = createTopicJudge(models);
 const scans = createScanReader(models),
   embedder = createEmbedder(provider);
 // Records each window's pages and raw answer, so the report can say why an item failed grounding.
@@ -279,7 +286,6 @@ async function evaluate(
       ? await facts.extract(p, upload.source.id, { extractor, delegation })
       : { status: "skipped" as const };
   const { courses } = await facts.review(p);
-  const usage = await delegation.allowance(p);
 
   // Courses: by normalized code or by title; PDF layout can split a code across lines ("BWL" / "1").
   const courseFor = (labelled: { code: string | null; title: string }) =>
@@ -362,6 +368,75 @@ async function evaluate(
     );
   });
   sourceKey.fill(0);
+  // Defaults keep the existing label set usable until the enriched labels land.
+  const topicLabels = (document.topics ?? []).map((label) => ({
+    ...label,
+    pages: label.pages ?? [],
+    optional: label.optional ?? false,
+    figureOnly: label.figureOnly ?? false,
+  }));
+  const extractedTopics = (document.topics ? courses : []).flatMap((c) =>
+    c.facts
+      .filter(
+        (f) =>
+          f.type === "topic" &&
+          f.values.some((v) =>
+            v.citations.some(
+              (citation) => citation.sourceId === upload.source.id,
+            ),
+          ),
+      )
+      .map((f) => ({
+        course:
+          document.courses.find((label) => courseFor(label)?.id === c.id)
+            ?.code ??
+          document.courses.find((label) => courseFor(label)?.id === c.id)
+            ?.title ??
+          c.title,
+        key:
+          topicKey(
+            calls
+              .flatMap((call) => call.value.facts)
+              .filter((raw) => raw.type === "topic"),
+            f.value,
+            f.values
+              .flatMap((v) => v.citations)
+              .filter((citation) => citation.sourceId === upload.source.id),
+          ) ?? f.value,
+        value: f.value,
+      })),
+  );
+  // A failed judge leaves this deck unscored instead of losing the whole paid run.
+  let judgement: Judgement | null = extractedTopics.map(() => null);
+  let judgeFailure: string | null = null;
+  let judgeCostMicroUsd = 0;
+  if (document.topics && extractedTopics.length) {
+    try {
+      const input = { labels: topicLabels, extracted: extractedTopics };
+      const judged = await delegation.meter(
+        p,
+        { microUsd: topicJudge.estimateMicroUsd(input) },
+        async (signal) => {
+          try {
+            const response = await topicJudge.judge(input, { signal });
+            judgeCostMicroUsd = response.usage.microUsd;
+            return response;
+          } catch (error) {
+            if (isDefiniteFailure(error))
+              throw new DefiniteFailure("Provider rejected Topic judge");
+            throw error;
+          }
+        },
+      );
+      if (judged.status === "refused")
+        throw new Error(`Topic judge: ${judged.reason}`);
+      judgement = parseJudgement(judged.value, topicLabels, extractedTopics);
+    } catch (error) {
+      judgement = null;
+      judgeFailure = error instanceof Error ? error.message : String(error);
+    }
+  }
+  const usage = await delegation.allowance(p);
   const result = {
     id: document.id,
     assignment: {
@@ -402,40 +477,17 @@ async function evaluate(
       usage.heldMicroUsd -
       before.usedMicroUsd -
       before.heldMicroUsd,
-    topics: scoreTopics(
-      document.topics ?? [],
-      (document.topics ? courses : []).flatMap((c) =>
-        c.facts
-          .filter(
-            (f) =>
-              f.type === "topic" &&
-              f.values.some((v) =>
-                v.citations.some(
-                  (citation) => citation.sourceId === upload.source.id,
-                ),
-              ),
-          )
-          .map((f) => ({
-            course:
-              document.courses.find((label) => courseFor(label)?.id === c.id)
-                ?.code ??
-              document.courses.find((label) => courseFor(label)?.id === c.id)
-                ?.title ??
-              c.title,
-            key:
-              topicKey(
-                calls
-                  .flatMap((call) => call.value.facts)
-                  .filter((raw) => raw.type === "topic"),
-                f.value,
-                f.values
-                  .flatMap((v) => v.citations)
-                  .filter((citation) => citation.sourceId === upload.source.id),
-              ) ?? f.value,
-            value: f.value,
-          })),
-      ),
-    ),
+    topics: judgement
+      ? scoreTopics(topicLabels, extractedTopics, judgement)
+      : null,
+    topicJudgement: {
+      model: topicJudge.model,
+      labels: topicLabels,
+      extracted: extractedTopics,
+      decisions: judgement,
+      failure: judgeFailure,
+      costMicroUsd: judgeCostMicroUsd,
+    },
     topicItems: courses.flatMap((c) =>
       c.facts
         .filter((f) => f.type === "topic")
@@ -570,7 +622,8 @@ try {
       results.push({ ...result, id: `${scenario.id}/${id}` });
       actualCourses = result.courses.extracted;
       allSourcesAssigned &&=
-        result.extraction === "done" && result.topics.extracted > 0;
+        result.extraction === "done" &&
+        result.topicJudgement.extracted.length > 0;
     }
     scenarios.push({
       id: scenario.id,
@@ -619,12 +672,16 @@ const report = {
     documents: results.length,
     topics: {
       precision: ratio(
-        sum((r) => r.topics.matched),
-        sum((r) => r.topics.extracted),
+        sum((r) => r.topics?.matched ?? 0),
+        sum((r) => r.topics?.scored ?? 0),
       ),
       recall: ratio(
-        sum((r) => r.topics.matched),
-        sum((r) => r.topics.labelled),
+        sum((r) => r.topics?.matched ?? 0),
+        sum((r) => r.topics?.labelled ?? 0),
+      ),
+      figureOnlyRecall: ratio(
+        sum((r) => r.topics?.figureOnly.matched ?? 0),
+        sum((r) => r.topics?.figureOnly.labelled ?? 0),
       ),
     },
     obligations: {
@@ -666,6 +723,10 @@ const report = {
     },
     medianReviewableAfterMs: median,
     costMicroUsd: sum((r) => r.costMicroUsd),
+    judgeCostMicroUsd: sum((r) => r.topicJudgement.costMicroUsd),
+    judgeFailures: results
+      .filter((r) => r.topicJudgement.failure)
+      .map((r) => `${r.id} (run ${r.run})`),
     injectionPassed: results
       .filter((r) => r.injection)
       .every((r) => r.injection!.passed),
