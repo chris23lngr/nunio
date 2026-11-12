@@ -3,6 +3,7 @@ import type { Extracted, Extractor } from "@nunio/ai";
 import {
   isDate,
   isDefiniteFailure,
+  isFigureLine,
   isTime,
   isTimeZone,
   SourceModelRejected,
@@ -1566,13 +1567,10 @@ function valuesOf<
 }
 
 /** Marks a line in which the scan model describes a figure; `@nunio/ai`'s scan prompt writes it. */
-const figureMarker = "[Abbildung] ";
 const figureUncertainty = "aus einer Abbildungsbeschreibung abgeleitet";
-/** A page's figure description lines, or every other line. */
+/** A page's figure description lines, or every other line; `@nunio/ai` owns the line format. */
 function figureLines(text: string, figures: boolean) {
-  return text
-    .split("\n")
-    .filter((line) => line.trimStart().startsWith(figureMarker) === figures);
+  return text.split("\n").filter((line) => isFigureLine(line) === figures);
 }
 
 /** The Course a Source is bound to, standing for the Course it was merged into; null when it is read automatically. */

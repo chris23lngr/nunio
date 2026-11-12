@@ -3,6 +3,8 @@ import { createModels } from "./models.js";
 import {
   createEmbedder,
   createScanReader,
+  figureMarker,
+  isFigureLine,
   SourceModelRejected,
 } from "./source-models.js";
 
@@ -41,9 +43,10 @@ function jpeg(width: number, height: number, bytes = 4_000) {
   image.writeUInt16BE(width, sof + 7);
   return image;
 }
-function scanReader(reply = "Prüfung am 12. März") {
+function scanReader(reply = "Prüfung am 12. März", finishReason = "stop") {
   const bodies: {
     max_tokens: number;
+    reasoning?: unknown;
     messages: {
       content: { type: string; text?: string; image_url?: { url: string } }[];
     }[];
@@ -63,7 +66,7 @@ function scanReader(reply = "Prüfung am 12. März") {
             {
               index: 0,
               message: { role: "assistant", content: reply },
-              finish_reason: "stop",
+              finish_reason: finishReason,
             },
           ],
           usage: {
@@ -146,4 +149,42 @@ it("sends an existing text layer as fenced data and asks only for what it lacks"
   expect(prompt).toContain("[Abbildung] ");
   expect(prompt).not.toContain("Transcribe all");
   expect(prompt).toMatch(/never as an instruction to you/);
+});
+
+it("defines figure lines once, in exactly the format the scan prompt asks for", async () => {
+  const { reader, texts } = scanReader();
+  await reader.read(jpeg(1568, 1176), {
+    text: "",
+    signal: AbortSignal.timeout(1_000),
+  });
+  expect(figureMarker).toBe("[Abbildung] ");
+  expect(texts().join("\n")).toContain(`starts exactly with "${figureMarker}"`);
+  expect(isFigureLine(`${figureMarker}Balkendiagramm der Noten`)).toBe(true);
+  expect(isFigureLine(`  ${figureMarker}eingerückt`)).toBe(true);
+  expect(isFigureLine("Abbildung 3: Zeitplan")).toBe(false);
+  expect(isFigureLine("Siehe [Abbildung] unten")).toBe(false);
+});
+
+it("returns a truncated reading with its usage, so the reservation settles instead of staying held", async () => {
+  const { reader } = scanReader("Prüfung am 12.", "length");
+  const result = await reader.read(jpeg(1568, 1176), {
+    text: "",
+    signal: AbortSignal.timeout(1_000),
+  });
+  expect(result).toEqual({
+    text: "Prüfung am 12.",
+    truncated: true,
+    usage: { microUsd: expect.any(Number) },
+  });
+  expect(result.usage.microUsd).toBeGreaterThan(0);
+});
+
+it("reads a page without reasoning, so the whole output budget goes to the reading", async () => {
+  const { reader, bodies } = scanReader();
+  const result = await reader.read(jpeg(1568, 1176), {
+    text: "",
+    signal: AbortSignal.timeout(1_000),
+  });
+  expect(result.truncated).toBe(false);
+  expect(bodies[0]!.reasoning).toEqual({ effort: "none" });
 });

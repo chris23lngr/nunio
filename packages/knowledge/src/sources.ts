@@ -1,6 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { Embedder, ScanReader } from "@nunio/ai";
-import { isDefiniteFailure, SourceModelRejected } from "@nunio/ai";
+import {
+  isDefiniteFailure,
+  isTransientFailure,
+  SourceModelRejected,
+} from "@nunio/ai";
 import type { PrismaClient, SourceFailure } from "@nunio/db";
 import type { Delegation, Principal, Transaction } from "@nunio/delegation";
 import { accessRefusal, DefiniteFailure, withOwner } from "@nunio/delegation";
@@ -19,6 +24,10 @@ const embeddingBatch = 16,
   maxTextBytes = 2 * 1024 * 1024;
 /** Page images read at once, each through its own metered call. */
 const scanConcurrency = 4;
+/** Pauses before a page's second and third reading after a transient failure. */
+const scanRetryDelaysMs = [1_000, 3_000];
+/** Ingestion may not go on: the Source is gone or `meter` refused; another attempt would not help. */
+class IngestionStopped extends Error {}
 /** Rebuilds each page's text from its chunks in ordinal order, inverting the overlapping split below. */
 export function joinChunks(chunks: readonly { page: number; text: string }[]) {
   const pages = new Map<number, string[]>();
@@ -319,7 +328,9 @@ export function createSources({
         ) => Promise<{ value: T; usage: { microUsd: number } }>,
       ) => {
         if (!(await stillIngesting()))
-          throw new Error("Source is no longer available for ingestion");
+          throw new IngestionStopped(
+            "Source is no longer available for ingestion",
+          );
         const result = await deps.delegation.meter(
           p,
           { microUsd: estimate },
@@ -333,7 +344,9 @@ export function createSources({
                 error instanceof SourceModelRejected ||
                 isDefiniteFailure(error)
               )
-                throw new DefiniteFailure("Provider rejected ingestion");
+                throw new DefiniteFailure("Provider rejected ingestion", {
+                  cause: error,
+                });
               throw error;
             }
           },
@@ -341,7 +354,7 @@ export function createSources({
         if (result.status === "refused") {
           throw result.reason === "allowance_exhausted"
             ? new IngestionError(result.reason)
-            : new Error(result.reason);
+            : new IngestionStopped(result.reason);
         }
         return result.value;
       };
@@ -363,20 +376,47 @@ export function createSources({
               if (!page.imageBase64) continue;
               const image = Buffer.from(page.imageBase64, "base64");
               try {
-                // Reading supplements, never replaces, whatever text the parser extracted.
-                const reading = await meteredModelCall(
-                  deps.scans.estimateMicroUsd(image, page.text),
-                  async (signal) => {
-                    const result = await deps.scans.read(image, {
-                      text: page.text,
-                      signal,
+                const estimate = deps.scans.estimateMicroUsd(image, page.text);
+                // One failed page would otherwise fail the Source and have the student pay again for every page.
+                // Each attempt is its own metered call; only failures that may pass on another try are retried.
+                for (let attempt = 0; ; attempt++) {
+                  try {
+                    const reading = await meteredModelCall(
+                      estimate,
+                      async (signal) => {
+                        const result = await deps.scans.read(image, {
+                          text: page.text,
+                          signal,
+                        });
+                        return { value: result, usage: result.usage };
+                      },
+                    );
+                    // Its usage is settled; a truncated reading is retried like a transient failure.
+                    if (reading.truncated)
+                      throw new Error("Page reading truncated");
+                    // Reading supplements, never replaces, whatever text the parser extracted.
+                    texts[index] = [page.text.trim(), reading.text.trim()]
+                      .filter(Boolean)
+                      .join("\n");
+                    break;
+                  } catch (error) {
+                    const cause =
+                      error instanceof DefiniteFailure ? error.cause : error;
+                    if (
+                      attempt >= scanRetryDelaysMs.length ||
+                      failure ||
+                      deps.signal?.aborted ||
+                      error instanceof IngestionError ||
+                      error instanceof IngestionStopped ||
+                      cause instanceof SourceModelRejected ||
+                      !isTransientFailure(cause)
+                    )
+                      throw error;
+                    await sleep(scanRetryDelaysMs[attempt], undefined, {
+                      signal: deps.signal,
                     });
-                    return { value: result.text, usage: result.usage };
-                  },
-                );
-                texts[index] = [page.text.trim(), reading.trim()]
-                  .filter(Boolean)
-                  .join("\n");
+                  }
+                }
               } catch (error) {
                 failure ??= { error };
               }
