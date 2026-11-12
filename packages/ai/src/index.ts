@@ -24,6 +24,7 @@ export {
   createModels,
   type DataHandlingLabel,
   isDefiniteFailure,
+  isTransientFailure,
   type ModelId,
   type Models,
   type RegisteredModel,
@@ -43,6 +44,8 @@ export {
   createEmbedder,
   createScanReader,
   type Embedder,
+  figureMarker,
+  isFigureLine,
   type ScanReader,
   SourceModelRejected,
 } from "./source-models.js";

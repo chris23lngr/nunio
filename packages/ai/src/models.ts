@@ -169,3 +169,17 @@ export function isDefiniteFailure(error: unknown): boolean {
     error.statusCode !== 408
   );
 }
+
+/**
+ * Whether a failed call is worth another, separately metered attempt: a rate limit (429), a timeout (408),
+ * a provider error (5xx), or no answer at all (a lost connection or an aborted wait). Other 4xx are final.
+ */
+export function isTransientFailure(error: unknown): boolean {
+  if (APICallError.isInstance(error) && error.statusCode !== undefined)
+    return (
+      error.statusCode === 429 ||
+      error.statusCode === 408 ||
+      error.statusCode >= 500
+    );
+  return true;
+}
