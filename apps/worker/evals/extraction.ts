@@ -263,6 +263,10 @@ const code = (text: string | null) =>
 const ratio = (a: number, b: number) =>
   b ? Math.round((a / b) * 1000) / 1000 : null;
 
+// EVAL_BUDGET_USD caps the whole run's spend; each evaluation's student gets at most USD 0.50 of it.
+const budgetMicroUsd = Math.round(
+  Number(process.env.EVAL_BUDGET_USD ?? 3.9) * 1_000_000,
+);
 async function evaluate(
   document: Document,
   run: number,
@@ -271,10 +275,6 @@ async function evaluate(
 ) {
   const exists = await admin.user.findUnique({ where: { id: studentId } });
   if (!exists) {
-    if ((await admin.user.count()) >= 18)
-      throw new Error(
-        "Eval budget: at most 18 students with USD 0.50 allowances",
-      );
     await admin.user.create({
       data: { id: studentId, email: `${studentId}@eval.invalid`, name: "Eval" },
     });
@@ -283,7 +283,7 @@ async function evaluate(
       _sum: { usedMicroUsd: true, heldMicroUsd: true },
     });
     const remaining =
-      3_900_000 -
+      budgetMicroUsd -
       Number(spent._sum.usedMicroUsd ?? 0) -
       Number(spent._sum.heldMicroUsd ?? 0);
     if (remaining <= 0) throw new Error("Eval budget exhausted");
@@ -759,12 +759,14 @@ const report = {
   },
   documents: results,
 };
-if (!process.env.EVAL_DOCUMENTS) {
+// EVAL_REPORT writes a narrowed run's report too, e.g. for a calibration sample.
+if (!process.env.EVAL_DOCUMENTS || process.env.EVAL_REPORT) {
   await writeFile(
-    new URL(
-      "../../../docs/operations/course-recognition-extraction-eval.json",
-      import.meta.url,
-    ),
+    process.env.EVAL_REPORT ??
+      new URL(
+        "../../../docs/operations/course-recognition-extraction-eval.json",
+        import.meta.url,
+      ),
     `${JSON.stringify(report, null, 2)}\n`,
   );
 } else
