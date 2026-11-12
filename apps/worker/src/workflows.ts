@@ -180,3 +180,16 @@ const { tickOutreach } = proxyActivities<{ tickOutreach(): Promise<void> }>({
 export async function outreachTick() {
   await tickOutreach();
 }
+
+// Prices stay usable for 7 days, so a failed day is retried by the next tick rather than here.
+const { syncModelPrices: syncPrices } = proxyActivities<{
+  syncModelPrices(): Promise<void>;
+}>({
+  startToCloseTimeout: "2 minutes",
+  retry: { maximumAttempts: 3 },
+});
+
+/** Started by the model price Schedule: records OpenRouter's zero-retention prices in the Model Catalog. */
+export async function syncModelPrices() {
+  await syncPrices();
+}

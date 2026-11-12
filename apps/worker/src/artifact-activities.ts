@@ -1,5 +1,6 @@
 // Artifact Activities: the one step of an Artifact's Run, made from material pinned when the student asked.
 
+import type { ModelConfig } from "@nunio/ai";
 import { createEmbedder, createMaker, createModels } from "@nunio/ai";
 import { createArtifacts } from "@nunio/artifacts";
 import { createPool, createPrismaClient } from "@nunio/db";
@@ -16,7 +17,11 @@ const settings = [
   "OPENROUTER_BASE_URL",
 ];
 
-export function createArtifactActivities(env: NodeJS.ProcessEnv) {
+/** `catalog` is the Model Catalog's task Models, read once at start. */
+export function createArtifactActivities(
+  env: NodeJS.ProcessEnv,
+  catalog: readonly ModelConfig[],
+) {
   const missing = settings.filter((name) => !env[name]);
   if (missing.length)
     throw new Error(`Missing settings: ${missing.join(", ")}`);
@@ -44,7 +49,7 @@ export function createArtifactActivities(env: NodeJS.ProcessEnv) {
     facts: createFacts({ db, keys, clock }),
     responsibilities: createResponsibilities({ db, clock }),
     delegation,
-    maker: createMaker(createModels(provider)),
+    maker: createMaker(createModels({ ...provider, catalog })),
     clock,
   });
   return {
