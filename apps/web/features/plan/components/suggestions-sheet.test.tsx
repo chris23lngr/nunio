@@ -39,6 +39,9 @@ test("the sheet says how many changes nunio suggests", () => {
 
   const sheet = screen.getByRole("dialog", { name: "Änderungsvorschläge" });
   expect(sheet.textContent).toContain("nunio schlägt 3 Änderungen vor");
+  expect(
+    within(sheet).queryByRole("heading", { name: "Keine Vorschläge" }),
+  ).toBeNull();
 });
 
 test("a single suggestion is described in the singular", () => {
@@ -138,15 +141,29 @@ test("all suggestions can be accepted at once only when that is offered", async 
   expect(onAcceptAll).toHaveBeenCalledTimes(1);
 });
 
-test("with no suggestions the sheet says everything is planned", () => {
-  renderSheet({ suggestions: [], onAcceptAll: vi.fn() });
+test("with no suggestions the sheet explains where future changes will appear", () => {
+  renderSheet({ suggestions: [] });
 
   expect(
-    screen.getByText("Alles eingeplant. nunio hat gerade keine Vorschläge."),
+    screen.getByRole("heading", { name: "Keine Vorschläge" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Wenn Änderungsvorschläge in deinem Lernplan gefunden wurden, werden diese hier angezeigt.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText("nunio hat gerade keine Änderungsvorschläge."),
   ).toBeTruthy();
   expect(screen.queryByText(/schlägt 0/)).toBeNull();
   expect(screen.queryByRole("listitem")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Alle übernehmen" })).toBeNull();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Alle übernehmen",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });
 
 test("a failed change is explained inside the sheet", () => {
