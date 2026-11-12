@@ -1966,6 +1966,29 @@ async function sseChunks(response: Response) {
     .map((line) => JSON.parse(line.slice(6)));
 }
 
+/** Asks in a Chat as the web does, through the stream: the saved turn, or the refusal with its status. */
+async function askInChat(
+  headers: Record<string, string>,
+  chatId: string,
+  text: string,
+) {
+  const response = await app.request(
+    `${apiOrigin}/api/me/chats/${chatId}/messages/stream`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ id: randomUUID(), text }),
+    },
+  );
+  if (!response.ok)
+    return { status: response.status, body: await response.json() };
+  const chunks = await sseChunks(response);
+  const outcome = chunks.find(
+    (chunk) => chunk.type === "data-committed" || chunk.type === "data-refused",
+  );
+  return { status: response.status, body: outcome?.data };
+}
+
 describe("Chat models", () => {
   async function newChat(name: string) {
     const cookie = await signUp(name);
@@ -2523,13 +2546,11 @@ describe("Chat", () => {
       })
     ).json()) as { id: string };
     reply = "Eine Antwort.";
-    const turn = (await (
-      await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ text: "Meine erste Frage" }),
-      })
-    ).json()) as { id: string; question: { id: string }; createdAt: string };
+    const turn = (await askInChat(headers, id, "Meine erste Frage")).body as {
+      id: string;
+      question: { id: string };
+      createdAt: string;
+    };
     expect(turn.question.id).toBeTruthy();
     expect(turn.createdAt).toMatch(/^\d{4}-/);
     const detail = await app.request(`${apiOrigin}/api/me/chats/${id}`, {
@@ -2582,16 +2603,9 @@ describe("Chat", () => {
     });
     expect(created.status).toBe(201);
     const { id } = (await created.json()) as { id: string };
-    const asked = await app.request(
-      `${apiOrigin}/api/me/chats/${id}/messages`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ text: "Wann ist die Klausur?" }),
-      },
-    );
+    const asked = await askInChat(headers, id, "Wann ist die Klausur?");
 
-    expect([asked.status, await asked.json()]).toEqual([
+    expect([asked.status, asked.body]).toEqual([
       200,
       {
         id: expect.any(String),
@@ -2656,11 +2670,7 @@ describe("Chat", () => {
     reply = "Am 10. Februar [S1].";
     reasoningText = "Die Quelle nennt den Prüfungstermin.";
     steps.push(searches("Klausur"));
-    await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ text: "Wann ist die Klausur?" }),
-    });
+    await askInChat(headers, id, "Wann ist die Klausur?");
     reasoningText = undefined;
     const history = () =>
       app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
@@ -2773,12 +2783,7 @@ describe("Chat", () => {
         body: JSON.stringify({ courseIds: [], sourceIds: [handbook] }),
       })
     ).json()) as { id: string };
-    const ask = (text: string) =>
-      app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ text }),
-      });
+    const ask = (text: string) => askInChat(headers, id, text);
     reasoningText = undefined;
     reply = "Am 10. Februar [S1].";
     steps.push(searches("Klausur"));
@@ -2890,19 +2895,6 @@ describe("Chat", () => {
     });
     prompts.length = 0;
 
-    const refused = await app.request(
-      `${apiOrigin}/api/me/chats/${id}/messages`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ text: "Wann ist die Klausur?" }),
-      },
-    );
-
-    expect([refused.status, await refused.json()]).toEqual([
-      403,
-      { error: "allowance_exhausted" },
-    ]);
     const streaming = await app.request(
       `${apiOrigin}/api/me/chats/${id}/messages/stream`,
       {

@@ -15,8 +15,8 @@ export type Course = Chat["courses"][number];
 /** A Course the student can chat about, with its color. */
 export type CourseOption = Course & { color: CourseColor };
 
-export type Turn =
-  paths["/api/me/chats/{id}/messages"]["post"]["responses"][200]["content"]["application/json"];
+/** A saved answer and its question, as the stream's `data-committed` carries them. */
+export type Turn = Message & { question: Message };
 
 /** A Chat message as useChat holds it; metadata arrives once the message is saved. */
 export type ChatUIMessage = UIMessage<
