@@ -53,6 +53,7 @@ interface Document {
     | { url: string; sha256?: string; pages?: [number, number] };
   topics?: TopicLabel[];
   labelsStatus?: string;
+  heldOut?: boolean;
   courses: { code: string | null; title: string }[];
   obligations: Label[];
   logistics: { course: string; key: string; contains: string }[];
@@ -554,10 +555,12 @@ const scenarios: {
 try {
   // EVAL_DOCUMENTS=id,id narrows a diagnostic run; the recorded report always covers the whole set.
   const only = process.env.EVAL_DOCUMENTS?.split(",");
+  // Held-out decks (docs/design/topic-quality.md) run only for the final measurement.
+  const heldOut = process.env.EVAL_HELD_OUT === "1";
   // One pass by default; EVAL_RUNS can repeat documents within the capped eval allowance.
   for (let run = 1; run <= runs; run++) {
     for (const document of set.documents.filter(
-      (d) => !only || only.includes(d.id),
+      (d) => (!only || only.includes(d.id)) && (heldOut || !d.heldOut),
     ))
       results.push(await evaluate(document, run));
   }
