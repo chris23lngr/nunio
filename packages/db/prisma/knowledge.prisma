@@ -187,6 +187,14 @@ enum Unsupported {
   @@map("unsupported")
 }
 
+/// Where an extraction's quote was found: the page's own text, or only a figure description the scan model wrote.
+enum Grounding {
+  text
+  figure
+
+  @@map("grounding")
+}
+
 /// One item per Course and key; review state and the Correction live here, never on an extraction.
 /// A Correction is the student's own value in plain columns, present when correctedAt is set.
 model Obligation {
@@ -285,6 +293,7 @@ model FactExtraction {
   fact        Fact      @relation(fields: [factId, studentId], references: [id, studentId], onDelete: Cascade)
   source      Source    @relation(fields: [sourceId, studentId], references: [id, studentId], onDelete: Cascade)
   page        Int
+  grounding   Grounding @default(text)
   ciphertext  Bytes
   overruledAt DateTime?
   createdAt   DateTime  @default(now())
