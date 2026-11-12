@@ -465,7 +465,7 @@
       "licence": "CC-BY-SA-4.0",
       "attribution": "Ivan Habernal, Ruhr University Bochum, Natural Language Processing with Deep Learning, 2026",
       "licenceUrl": "https://github.com/trusthlt/nlp-with-deep-learning-lectures/blob/67639ff063ff0fa3274686c0bf147e6278755608/README.md",
-      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "labelsStatus": "Topic labels written blind by founder",
       "courses": [
         {
           "code": null,
@@ -473,7 +473,353 @@
         }
       ],
       "obligations": [],
-      "logistics": []
+      "logistics": [],
+      "topics": [
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Vector", "Vectors", "Vektor", "Vektoren"],
+          "pages": [4],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Matrix", "Matrices", "Matrizen"],
+          "pages": [5],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Dot product", "Skalarprodukt"],
+          "pages": [6],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Matrix multiplication",
+            "Matrix-matrix multiplication",
+            "Matrixmultiplikation"
+          ],
+          "pages": [6],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Supervised learning",
+            "Supervised machine learning",
+            "Supervised ML",
+            "Überwachtes Lernen"
+          ],
+          "pages": [8, 13],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Labeled examples",
+            "Labeled example",
+            "input-label tuples"
+          ],
+          "pages": [8],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Features",
+            "Feature",
+            "Attributes",
+            "Covariates",
+            "Merkmale"
+          ],
+          "pages": [8],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Label", "Labels", "Class label"],
+          "pages": [8],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Predictor", "Predictors", "Prädiktor"],
+          "pages": [9, 10],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Classification", "Klassifikation"],
+          "pages": [9, 10],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Prediction",
+            "Inference",
+            "Prediction or inference",
+            "Inferenz"
+          ],
+          "pages": [11],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Training",
+            "Parameter estimation",
+            "Training or parameter estimation",
+            "Parameterschätzung"
+          ],
+          "pages": [11, 13],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Hyperparameter tuning",
+            "Model selection",
+            "Hyperparameter tuning or model selection",
+            "Modellauswahl"
+          ],
+          "pages": [11],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Loss function",
+            "Loss",
+            "Loss functions",
+            "Verlustfunktion"
+          ],
+          "pages": [12, 13],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Squared loss", "Squared error", "Quadratischer Verlust"],
+          "pages": [13],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Empirical risk minimization",
+            "Empirical risk",
+            "ERM",
+            "Empirisches Risiko"
+          ],
+          "pages": [13],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Closed-form solution",
+            "Closed form",
+            "Geschlossene Lösung"
+          ],
+          "pages": [15],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Function composition",
+            "Composite function",
+            "Composition of functions",
+            "Nested functions",
+            "Verkettung"
+          ],
+          "pages": [16, 33],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Linear function",
+            "Linear functions",
+            "Lineare Funktion"
+          ],
+          "pages": [17],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Derivative", "Derivatives", "Ableitung"],
+          "pages": [18, 19],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Derivative notation",
+            "Euler's notation",
+            "Lagrange's notation",
+            "Leibniz's notation"
+          ],
+          "pages": [16, 19, 20],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Chain rule", "Kettenregel"],
+          "pages": [20, 55, 56],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Gradient descent",
+            "Gradient-based optimization",
+            "Gradientenabstieg",
+            "Gradientenverfahren"
+          ],
+          "pages": [21, 22, 29, 30, 31],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Learning rate", "Step size", "Lernrate", "Schrittweite"],
+          "pages": [22, 29],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Multivariate function",
+            "Multivariate functions",
+            "Multivariate Funktion"
+          ],
+          "pages": [24],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Partial derivative",
+            "Partial derivatives",
+            "Partielle Ableitung"
+          ],
+          "pages": [25],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Multivariate chain rule",
+            "Multivariable chain rule",
+            "Chain rule for multivariate functions"
+          ],
+          "pages": [26, 47, 48],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Gradient", "Gradients"],
+          "pages": [27, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Computational graph",
+            "Computation graph",
+            "Berechnungsgraph"
+          ],
+          "pages": [34, 35, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Directed acyclic graph",
+            "DAG",
+            "Gerichteter azyklischer Graph"
+          ],
+          "pages": [34],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Backpropagation", "Backprop", "Backward propagation"],
+          "pages": [
+            36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52
+          ],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Forward pass", "Forward step", "Forward computation"],
+          "pages": [39, 51, 52],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Backward pass", "Backward computation"],
+          "pages": [51, 52],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Caching of intermediate results",
+            "Caching",
+            "Cache",
+            "Zwischenergebnisse speichern"
+          ],
+          "pages": [51, 52],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Topological ordering",
+            "Topology of the graph",
+            "Topologische Sortierung"
+          ],
+          "pages": [51],
+          "optional": true,
+          "figureOnly": false
+        }
+      ]
     },
     {
       "id": "rub-nlp-03",
@@ -487,7 +833,7 @@
       "licence": "CC-BY-SA-4.0",
       "attribution": "Ivan Habernal, Ruhr University Bochum, Natural Language Processing with Deep Learning, 2026",
       "licenceUrl": "https://github.com/trusthlt/nlp-with-deep-learning-lectures/blob/67639ff063ff0fa3274686c0bf147e6278755608/README.md",
-      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "labelsStatus": "Topic labels written blind by founder",
       "courses": [
         {
           "code": null,
@@ -495,7 +841,312 @@
         }
       ],
       "obligations": [],
-      "logistics": []
+      "logistics": [],
+      "topics": [
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Computational graph",
+            "Computation graph",
+            "Berechnungsgraph",
+            "Rechengraph"
+          ],
+          "pages": [3, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 45, 49],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Directed acyclic graph",
+            "DAG",
+            "Gerichteter azyklischer Graph"
+          ],
+          "pages": [3],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Backpropagation", "Backprop", "Backward propagation"],
+          "pages": [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Forward pass", "Forward step", "Forward computation"],
+          "pages": [8, 20, 21],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Backward pass", "Backward computation"],
+          "pages": [20, 21],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Chain rule", "Kettenregel"],
+          "pages": [11, 12, 14],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Multivariate chain rule", "Multivariable chain rule"],
+          "pages": [16, 17],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Caching of intermediate results",
+            "Caching",
+            "Cache",
+            "Zwischenergebnisse speichern"
+          ],
+          "pages": [20, 21],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Binary classification",
+            "Binary text classification",
+            "Binary sentiment classification",
+            "Binäre Klassifikation"
+          ],
+          "pages": [23, 25, 42, 46],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Log-linear model",
+            "Logistic regression",
+            "Maximum entropy classifier",
+            "Logistische Regression",
+            "Log-lineares Modell"
+          ],
+          "pages": [23, 45, 46, 49],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Linear function",
+            "High-dimensional linear functions",
+            "Lineare Funktion"
+          ],
+          "pages": [24, 25, 41],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Model parameters", "Weights and bias"],
+          "pages": [24, 25],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Binary label encoding",
+            "Mapping labels to 0 and 1",
+            "Label encoding"
+          ],
+          "pages": [25],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Fixed-size vector representation of text",
+            "Numerical representation of natural language text",
+            "Text vectorization"
+          ],
+          "pages": [27, 38],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Tokenization", "Tokenizer", "Tokenisierung"],
+          "pages": [28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Token", "Tokens"],
+          "pages": [28, 29],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Vocabulary", "Vocabularies", "Vokabular"],
+          "pages": [30],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["One-hot vector", "One-hot vectors", "One-hot encoding"],
+          "pages": [31, 32],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Bag-of-words",
+            "Bag of words",
+            "BoW",
+            "Averaged bag-of-words"
+          ],
+          "pages": [31, 32, 38],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Out-of-vocabulary tokens",
+            "OOV",
+            "UNK",
+            "Unknown token",
+            "Out-of-vocabulary"
+          ],
+          "pages": [33],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Byte-pair encoding", "BPE", "Byte pair encoding"],
+          "pages": [34, 35, 36],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["SentencePiece", "Sentence Piece"],
+          "pages": [37],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Sigmoid function",
+            "Sigmoid",
+            "Logistic function",
+            "Sigmoidfunktion"
+          ],
+          "pages": [42, 43, 44],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Decision rule",
+            "Decision rule of log-linear model",
+            "Entscheidungsregel"
+          ],
+          "pages": [46],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Binary cross-entropy loss",
+            "Logistic loss",
+            "Binary cross-entropy",
+            "BCE"
+          ],
+          "pages": [48, 49],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Gradient descent", "Gradientenabstieg"],
+          "pages": [49, 50],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Stochastic gradient descent",
+            "SGD",
+            "Online stochastic gradient descent",
+            "Stochastischer Gradientenabstieg"
+          ],
+          "pages": [50],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Minibatch stochastic gradient descent",
+            "Minibatch SGD",
+            "mbSGD",
+            "Mini-batch SGD"
+          ],
+          "pages": [51, 52],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Stopping criterion",
+            "Stopping criteria",
+            "Abbruchkriterium"
+          ],
+          "pages": [50, 51],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Row vector", "Row vectors", "Zeilenvektor"],
+          "pages": [58],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "Matrix-vector multiplication",
+            "Matrix-Vektor-Multiplikation"
+          ],
+          "pages": [59],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["Dot product", "Skalarprodukt"],
+          "pages": [60],
+          "optional": true,
+          "figureOnly": false
+        }
+      ]
     },
     {
       "id": "dhbw-digitaltechnik",
@@ -510,10 +1161,211 @@
       "licence": "CC-BY-SA-4.0",
       "attribution": "Rüdiger Heintz, DHBW Mannheim, Vorlesung Digitaltechnik Teil 1, Version 2.15, 2026; unmodified pages 1–35",
       "licenceUrl": "https://virtual-course.de/Vorlesungen/",
-      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "labelsStatus": "Topic labels written blind by founder",
       "courses": [{ "code": null, "title": "Digitaltechnik" }],
       "obligations": [],
-      "logistics": []
+      "logistics": [],
+      "topics": [
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Analog vs. Digital",
+            "Analogtechnik vs. Digitaltechnik",
+            "Analog und Digital"
+          ],
+          "pages": [12, 13, 14, 17, 18, 19, 20, 21, 22, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Information", "Informationen"],
+          "pages": [8, 16],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Symbolmenge",
+            "Symbolvorrat",
+            "Alphabet",
+            "Symbolmengen"
+          ],
+          "pages": [13, 14],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Codierung", "Kodierung", "Encoding"],
+          "pages": [9, 16, 24, 25, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Integrationsgrad", "Integrationsdichte"],
+          "pages": [22, 31],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Binärtechnik", "Binärdarstellung", "binäre Darstellung"],
+          "pages": [21, 23, 24, 25, 28],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Bit", "Bits", "Binärzeichen"],
+          "pages": [24],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "ASCII-Kodierung",
+            "ASCII",
+            "ASCII-Code",
+            "ASCII Kodierung"
+          ],
+          "pages": [24],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Stellenwertsystem",
+            "Stellenwertsysteme",
+            "Positionssystem"
+          ],
+          "pages": [13, 14, 25],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Binärzahl", "Binärzahlen", "Dualzahl", "Dualzahlen"],
+          "pages": [25, 26],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Quantisierung", "Quantization"],
+          "pages": [26, 27, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Informationsverlust", "Information loss"],
+          "pages": [26],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "A/D-Wandler",
+            "AD-Wandler",
+            "Analog-Digital-Wandler",
+            "ADC",
+            "A/D-Wandlung"
+          ],
+          "pages": [26, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Abtastung", "Sampling", "zeitliche Abtastung"],
+          "pages": [27, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "D/A-Wandler",
+            "DA-Wandler",
+            "Digital-Analog-Wandler",
+            "DAC",
+            "D/A-Wandlung"
+          ],
+          "pages": [27, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Perfekte Rekonstruktion", "Perfect reconstruction"],
+          "pages": [27],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Ebenen des Hardwareentwurfs",
+            "Entwurfsebenen",
+            "Abstraktionsebenen"
+          ],
+          "pages": [34],
+          "optional": false,
+          "figureOnly": true
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Wahrheitstabelle", "Wahrheitstabellen", "Truth Table"],
+          "pages": [35],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Operatordarstellung",
+            "Algebraischer Ausdruck",
+            "algebraische Ausdrücke"
+          ],
+          "pages": [35],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Kontaktplan", "KOP"],
+          "pages": [35],
+          "optional": true,
+          "figureOnly": true
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Venn-Diagramm", "Venn-Diagramme", "Venn Diagramm"],
+          "pages": [35],
+          "optional": true,
+          "figureOnly": true
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Potenzialdiagramm", "Potenzialdiagramme"],
+          "pages": [35],
+          "optional": true,
+          "figureOnly": true
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Logikschaltung", "Logikschaltungen"],
+          "pages": [35],
+          "optional": true,
+          "figureOnly": true
+        }
+      ]
     },
     {
       "id": "dhbw-digitaltechnik-flipflops",
@@ -528,10 +1380,268 @@
       "licence": "CC-BY-SA-4.0",
       "attribution": "Rüdiger Heintz, DHBW Mannheim, Vorlesung Digitaltechnik, Version 2.15, 2026; unmodified pages 252–280",
       "licenceUrl": "https://virtual-course.de/Vorlesungen/",
-      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "labelsStatus": "Topic labels written blind by founder",
       "courses": [{ "code": null, "title": "Digitaltechnik" }],
       "obligations": [],
-      "logistics": []
+      "logistics": [],
+      "topics": [
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Schaltnetz",
+            "Schaltnetze",
+            "kombinatorisches System",
+            "kombinatorische Systeme"
+          ],
+          "pages": [2],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Schaltwerk",
+            "Schaltwerke",
+            "sequentielles System",
+            "sequentielle Systeme"
+          ],
+          "pages": [2, 13, 24],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Rückführung", "Rückführungen", "Rückkopplung"],
+          "pages": [2, 3],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Laufzeit",
+            "Laufzeiten",
+            "Gatterlaufzeit",
+            "Gatterlaufzeiten"
+          ],
+          "pages": [3, 6, 13, 14],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Flip-Flop",
+            "Flip-Flops",
+            "Flipflop",
+            "FF",
+            "Flip-Flop-Schaltungen"
+          ],
+          "pages": [3, 19],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "RS-Flip-Flop",
+            "RS-FF",
+            "SR-Flip-Flop",
+            "RS-Latch",
+            "SR-Latch"
+          ],
+          "pages": [4, 5, 6, 7, 8, 10],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Folgezustand", "Q+", "Folgezustände"],
+          "pages": [6, 7, 24],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Priorisierung",
+            "priorisiertes RS-Flip-Flop",
+            "Vorrangschaltung"
+          ],
+          "pages": [9, 10, 18],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Inputenable",
+            "IE",
+            "Input Enable",
+            "IE-Eingang",
+            "Aktivierungseingang",
+            "Aktivierungseingänge"
+          ],
+          "pages": [10, 11, 12],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Pegelsteuerung",
+            "pegelgesteuert",
+            "zustandsgesteuert",
+            "taktzustandsgesteuert",
+            "pegelgetriggert"
+          ],
+          "pages": [11, 12, 19],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["D-Flip-Flop", "D-FF", "D-Latch", "D-Flipflop"],
+          "pages": [12, 13, 14, 15, 19, 24, 25],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Flankensteuerung",
+            "flankengesteuert",
+            "Flankentriggerung",
+            "edge-triggered"
+          ],
+          "pages": [13, 14, 15, 19],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Hazard", "Hazards"],
+          "pages": [14],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["JK-Flip-Flop", "JK-FF", "JK-Flipflop"],
+          "pages": [16, 17, 18, 21, 22],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "T-Flip-Flop",
+            "T-FF",
+            "Toggle-Flip-Flop",
+            "Toggeln",
+            "Toggle"
+          ],
+          "pages": [16, 17, 22],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Frequenzhalbierung", "Frequenzhalbierer"],
+          "pages": [17],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Asynchrone Eingänge", "asynchroner Eingang"],
+          "pages": [18, 19, 21],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Taktungsarten", "Taktungsart"],
+          "pages": [19],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Schaltsymbol", "Schaltsymbole", "Abhängigkeitsnotation"],
+          "pages": [11, 12, 15, 18],
+          "optional": false,
+          "figureOnly": true
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "Impulszeitdiagramm",
+            "Impulsdiagramm",
+            "Zeitdiagramm",
+            "Timing-Diagramm"
+          ],
+          "pages": [20, 21, 22],
+          "optional": false,
+          "figureOnly": true
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Automat", "Automaten", "Zustandsautomat"],
+          "pages": [24, 25, 26, 27, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Zähler", "Counter", "Binärzähler"],
+          "pages": [2, 24, 25, 26, 27],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Übergangsschaltnetz", "Übergangsschaltnetze"],
+          "pages": [25, 26, 27, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Register"],
+          "pages": [25, 26, 27, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Ausgangsschaltnetz", "Ausgangsschaltnetze"],
+          "pages": [28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Doppelte Muster", "doppelte Zustände"],
+          "pages": [28, 29],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Schaltnetz als Speicher", "ROM als Übergangsschaltnetz"],
+          "pages": [27],
+          "optional": true,
+          "figureOnly": true
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["Leitungsbündel", "Leitungsbündeln"],
+          "pages": [27],
+          "optional": true,
+          "figureOnly": false
+        }
+      ]
     },
     {
       "id": "dhbw-signale-systeme-signale",
@@ -546,11 +1656,367 @@
       "licence": "CC-BY-SA-4.0",
       "attribution": "Rüdiger Heintz, DHBW Mannheim, Vorlesung Signale und Systeme, Version 1.7.7, 2026; unmodified pages 28–64",
       "licenceUrl": "https://virtual-course.de/Vorlesungen/",
-      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "labelsStatus": "Topic labels written blind by founder",
       "courses": [{ "code": null, "title": "Signale und Systeme" }],
       "obligations": [],
       "logistics": [],
-      "heldOut": true
+      "heldOut": true,
+      "topics": [
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Elementarsignal",
+            "Elementarsignale",
+            "Elementary signals"
+          ],
+          "pages": [2, 21],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Testsignal", "Testsignale", "Test signal"],
+          "pages": [2],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Distributionstheorie",
+            "Distributionen",
+            "Distribution theory"
+          ],
+          "pages": [2],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Konstante", "Konstantes Signal", "Konstante Funktion"],
+          "pages": [3],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Einheitssprung",
+            "Sprungfunktion",
+            "Schritt-Funktion",
+            "Schrittfunktion",
+            "Heaviside-Funktion",
+            "Unit step",
+            "Step function"
+          ],
+          "pages": [4, 5, 15],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Exponentialfunktion",
+            "Exponentialsignal",
+            "Exponential function"
+          ],
+          "pages": [6, 7],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Zeitkonstante", "Time constant"],
+          "pages": [6, 7, 8],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Systemidentifikation", "System identification"],
+          "pages": [8, 21],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Rechteckfunktion",
+            "Rechteck",
+            "Rechteckimpuls",
+            "Rechtecksignal",
+            "Rect-Funktion",
+            "Rectangular function"
+          ],
+          "pages": [9, 22, 23, 24],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Ausblendeigenschaft",
+            "Siebeigenschaft",
+            "Sifting property"
+          ],
+          "pages": [9, 20, 25],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Rampenfunktion",
+            "Rampe",
+            "Rampensignal",
+            "Ramp function"
+          ],
+          "pages": [10, 11, 29],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Harmonische Schwingung",
+            "Harmonische Schwingungen",
+            "Sinusschwingung",
+            "Kosinusschwingung",
+            "Harmonic oscillation"
+          ],
+          "pages": [12],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Nullphasenwinkel", "Nullphase", "Initial phase"],
+          "pages": [12],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Gedämpfte harmonische Schwingung",
+            "Gedämpfte harmonische Schwingungen",
+            "Gedämpfte Sinusschwingung",
+            "Exponentiell gedämpfte Sinusschwingung",
+            "Damped oscillation"
+          ],
+          "pages": [13, 14],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Ableitung nichtstetiger Funktionen",
+            "Ableitung unstetiger Funktionen"
+          ],
+          "pages": [15, 16, 17],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Delta-Distribution",
+            "Dirac-Impuls",
+            "Dirac-Funktion",
+            "Dirac-Stoß",
+            "Stoßfunktion",
+            "Einheitsimpulsfunktion",
+            "Nadelimpuls",
+            "Impulsfunktion",
+            "Dirac delta"
+          ],
+          "pages": [16, 17, 18, 19, 20, 25],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Funktionenfolge", "Funktionenfolgen"],
+          "pages": [16, 19],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Ideale Abtastung",
+            "Ideale Abtastungen",
+            "Ideal sampling"
+          ],
+          "pages": [20],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Systemantwort",
+            "Antwort eines Systems",
+            "System response"
+          ],
+          "pages": [21, 22, 23, 24, 25, 26],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Linearität",
+            "Linearity",
+            "Superposition",
+            "Überlagerung"
+          ],
+          "pages": [21, 23],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Zeitinvarianz", "Time invariance"],
+          "pages": [21, 23],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "LTI-System",
+            "LTI-Systeme",
+            "LTI System",
+            "Lineares zeitinvariantes System"
+          ],
+          "pages": [6, 13, 21],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Faltung",
+            "Faltungsintegral",
+            "Faltungsoperator",
+            "Convolution"
+          ],
+          "pages": [26, 27, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Impulsantwort", "Impulse response"],
+          "pages": [26, 27, 28, 29, 36],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Sprungantwort", "Step response"],
+          "pages": [8, 29],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Kausalität",
+            "Kausales System",
+            "Kausales Signal",
+            "Causality"
+          ],
+          "pages": [27, 36],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Einschwingen",
+            "Einschwingvorgang",
+            "Einschwingen eines Systems"
+          ],
+          "pages": [28],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Energiesignal", "Energiesignale", "Energy signal"],
+          "pages": [30, 31],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Signalenergie",
+            "Energie eines Signals",
+            "Signal energy"
+          ],
+          "pages": [30],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Leistungssignal", "Leistungssignale", "Power signal"],
+          "pages": [32],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Signalleistung",
+            "Leistung eines Signals",
+            "Signal power"
+          ],
+          "pages": [30, 32],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Gerades Signal",
+            "Gerade Funktion",
+            "Even function",
+            "Achsensymmetrie"
+          ],
+          "pages": [33],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Ungerades Signal",
+            "Ungerade Funktion",
+            "Odd function",
+            "Punktsymmetrie"
+          ],
+          "pages": [33],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Zerlegung in gerade und ungerade Signalanteile",
+            "Gerader Signalanteil",
+            "Ungerader Signalanteil",
+            "Gerade-ungerade-Zerlegung"
+          ],
+          "pages": [34, 35],
+          "optional": false,
+          "figureOnly": false
+        }
+      ]
     },
     {
       "id": "dhbw-signale-systeme-frequenzanalyse",
@@ -565,11 +2031,348 @@
       "licence": "CC-BY-SA-4.0",
       "attribution": "Rüdiger Heintz, DHBW Mannheim, Vorlesung Signale und Systeme, Version 1.7.7, 2026; unmodified pages 65–97",
       "licenceUrl": "https://virtual-course.de/Vorlesungen/",
-      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "labelsStatus": "Topic labels written blind by founder",
       "courses": [{ "code": null, "title": "Signale und Systeme" }],
       "obligations": [],
       "logistics": [],
-      "heldOut": true
+      "heldOut": true,
+      "topics": [
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Spektrum",
+            "Spektren",
+            "Frequenzspektrum",
+            "Spektrale Darstellung",
+            "Spektrale Zerlegung",
+            "Spectrum"
+          ],
+          "pages": [2, 8, 19, 20, 23],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Eulerformel", "Euler-Formel", "Euler's formula"],
+          "pages": [3, 4],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Komplexe Exponentialfunktion",
+            "Komplexe Exponentialfunktionen",
+            "Complex exponential"
+          ],
+          "pages": [3, 5],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Betrag und Phase", "Magnitude and phase"],
+          "pages": [5, 19, 22],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Phasenverschiebung",
+            "Phasenverschiebungen",
+            "Phase shift"
+          ],
+          "pages": [3, 6, 7],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Konjugiert komplexes Paar",
+            "Konjugiert komplexe Koeffizienten",
+            "Konjugiert komplexe Zahlen"
+          ],
+          "pages": [4, 7, 10, 11, 12, 23],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Drehzeiger", "Zeiger", "Gegenläufige Zeiger", "Phasor"],
+          "pages": [6, 12, 23],
+          "optional": true,
+          "figureOnly": true
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Fourier-Reihe",
+            "Komplexe Fourier-Reihe",
+            "Fourier series"
+          ],
+          "pages": [8, 9, 10, 13, 22, 24, 30, 33],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Zeitbereich", "Time domain"],
+          "pages": [9, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Frequenzraum", "Frequenzbereich", "Frequency domain"],
+          "pages": [9],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Amplituden-Phasen-Form",
+            "Amplituden-Phasenform",
+            "Amplitude-phase form"
+          ],
+          "pages": [11, 12],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Komplexwertige Signale",
+            "Komplexwertiges Signal",
+            "Complex-valued signals"
+          ],
+          "pages": [11],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Fourier-Koeffizienten",
+            "Koeffizienten der Fourier-Reihe",
+            "Fourier coefficients"
+          ],
+          "pages": [10, 13, 16, 17, 18, 19, 22, 23],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Orthogonalität",
+            "Orthogonale Funktionen",
+            "Orthogonality"
+          ],
+          "pages": [13, 14, 15],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "L2-Skalarprodukt",
+            "L²-Skalarprodukt",
+            "L2 inner product"
+          ],
+          "pages": [14, 16, 17],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Konvergenz der Fourier-Reihe",
+            "Convergence of Fourier series"
+          ],
+          "pages": [8, 22],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Linienspektrum",
+            "Linienspektren",
+            "Spektrallinien",
+            "Line spectrum"
+          ],
+          "pages": [23, 24],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Negative Frequenzen", "Negative Frequency"],
+          "pages": [23],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Nichtperiodisches Signal",
+            "Nichtperiodische Signale",
+            "Aperiodisches Signal"
+          ],
+          "pages": [24, 30, 33],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Fourier-Transformation",
+            "Fourier-Transformierte",
+            "Fourier transform",
+            "Hintransformation",
+            "Fourier-Hintransformation"
+          ],
+          "pages": [24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Grenzübergang zur Fourier-Transformation",
+            "Grenzwertübergang zur Fourier-Transformation"
+          ],
+          "pages": [24, 25, 26],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Spektralfunktion",
+            "Kontinuierliche Spektralfunktion",
+            "Kontinuierliches Spektrum"
+          ],
+          "pages": [25, 26],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Rücktransformation",
+            "Inverse Fourier-Transformation",
+            "Inverse Fourier transform"
+          ],
+          "pages": [27, 29],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Integraltransformation",
+            "Integraltransformationen",
+            "Integraloperator",
+            "Integral transform"
+          ],
+          "pages": [28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Transformationskern", "Integralkern"],
+          "pages": [28],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Laplace-Transformation", "Laplace transform"],
+          "pages": [28],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Transformationspaar",
+            "Korrespondenz",
+            "Fourier-Korrespondenz",
+            "Fourier-Paar"
+          ],
+          "pages": [29, 31, 32],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Gleichanteil",
+            "Gleichwert",
+            "Mittelwert",
+            "DC component"
+          ],
+          "pages": [30, 32, 33],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": ["Grundschwingung", "Fundamental"],
+          "pages": [30, 33],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Oberschwingungen",
+            "Oberschwingung",
+            "Oberwellen",
+            "Harmonics"
+          ],
+          "pages": [30, 33],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Linearität der Fourier-Transformation",
+            "Linearity of the Fourier transform"
+          ],
+          "pages": [30, 33],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Dirac-Impuls",
+            "Delta-Distribution",
+            "Dirac-Funktion",
+            "Dirac delta"
+          ],
+          "pages": [31, 32],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Signale und Systeme",
+          "aliases": [
+            "Ausblendeigenschaft",
+            "Siebeigenschaft",
+            "Sifting property"
+          ],
+          "pages": [31, 32],
+          "optional": true,
+          "figureOnly": false
+        }
+      ]
     },
     {
       "id": "dhbw-bildverarbeitung-bildaufnahme",
@@ -584,10 +2387,260 @@
       "licence": "CC-BY-SA-4.0",
       "attribution": "Rüdiger Heintz, DHBW Mannheim, Vorlesung Bildverarbeitung Teil 1, Version 2.8.1, 2026; unmodified pages 46–72",
       "licenceUrl": "https://virtual-course.de/Vorlesungen/",
-      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "labelsStatus": "Topic labels written blind by founder",
       "courses": [{ "code": null, "title": "Bildverarbeitung" }],
       "obligations": [],
-      "logistics": []
+      "logistics": [],
+      "topics": [
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Beleuchtungsstärke", "Illuminance"],
+          "pages": [2],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": [
+            "Punktlichtquelle",
+            "Punktlichtquellen",
+            "Point light source"
+          ],
+          "pages": [2, 7],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Reflexion", "Reflexionsgesetz", "Reflection"],
+          "pages": [2],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": [
+            "Örtliche Auflösung",
+            "Räumliche Auflösung",
+            "Spatial resolution"
+          ],
+          "pages": [3],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Lochblende", "Lochkamera", "Pinhole", "Pinhole camera"],
+          "pages": [4, 5, 11],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Gegenstandsebene", "Objektebene", "Object plane"],
+          "pages": [5, 8],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Bildebene", "Image plane"],
+          "pages": [5, 8, 9],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Proportionale Abbildung", "Proportionale Abbildungen"],
+          "pages": [5, 10, 11],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": [
+            "Sammellinse",
+            "Sammellinsen",
+            "Bikonvexe Linse",
+            "Converging lens"
+          ],
+          "pages": [6, 7, 8, 9, 10, 11, 12],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Brennpunkt", "Focal point"],
+          "pages": [6, 7],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Brennweite", "Focal length"],
+          "pages": [6, 7, 10, 11, 12, 20, 21],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Scharfe Abbildung", "Scharfabbildung"],
+          "pages": [8],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Parallelstrahl", "Parallel ray"],
+          "pages": [9, 10],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Ursprungsstrahl", "Mittelpunktstrahl", "Central ray"],
+          "pages": [9, 10],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Linsengesetz", "Linsengleichung", "Thin lens equation"],
+          "pages": [10, 11],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": [
+            "Fokussierung",
+            "Scharfstellen",
+            "Fokus einstellen",
+            "Focusing"
+          ],
+          "pages": [11, 13, 17, 18],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Zoom", "Zoomen", "Zooming"],
+          "pages": [11, 12, 20, 21, 22],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": [
+            "Linsensystem",
+            "Linsensysteme",
+            "Objektiv",
+            "Objektive",
+            "Lens system"
+          ],
+          "pages": [12],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": [
+            "Chromatische Aberration",
+            "Farbfehler",
+            "Chromatic aberration"
+          ],
+          "pages": [12],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Elastische Linse", "Elastische Linsen", "Elastic lens"],
+          "pages": [12, 13],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Autofokus", "Automatische Fokussierung", "Autofocus"],
+          "pages": [14],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Schärfentiefe", "Tiefenschärfe", "Depth of field"],
+          "pages": [15, 16, 17, 18, 19],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Blende", "Blenden", "Aperture"],
+          "pages": [16, 17, 18, 19],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Belichtungszeit", "Exposure time"],
+          "pages": [19],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": [
+            "Öffnungswinkel",
+            "Bildwinkel",
+            "Field of view",
+            "Angle of view"
+          ],
+          "pages": [21, 22],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Objektabstand", "Abstand zum Objekt", "Object distance"],
+          "pages": [23, 24, 25],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Dolly Zoom", "Dolly-Zoom-Effekt", "Dolly zoom effect"],
+          "pages": [24],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Weitwinkelobjektiv", "Weitwinkel", "Wide-angle lens"],
+          "pages": [25],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": ["Teleobjektiv", "Telephoto lens"],
+          "pages": [25],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Bildverarbeitung",
+          "aliases": [
+            "Telezentrische Abbildung",
+            "Telezentrie",
+            "Telezentrisches Objektiv",
+            "Telecentric imaging"
+          ],
+          "pages": [26, 27],
+          "optional": false,
+          "figureOnly": true
+        }
+      ]
     },
     {
       "id": "dhbw-messtechnik-messbruecken",
@@ -602,10 +2655,276 @@
       "licence": "CC-BY-SA-4.0",
       "attribution": "Rüdiger Heintz, DHBW Mannheim, Elektronik und Messtechnik, Teil Messtechnik, Version 1.70, 2026; unmodified pages 14–39",
       "licenceUrl": "https://virtual-course.de/Vorlesungen/",
-      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "labelsStatus": "Topic labels written blind by founder",
       "courses": [{ "code": null, "title": "Elektronik und Messtechnik" }],
       "obligations": [],
-      "logistics": []
+      "logistics": [],
+      "topics": [
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": [
+            "Wechselspannungsmessbrücke",
+            "Wechselspannungs-Messbrücke",
+            "Wechselspannungsmessbrücken"
+          ],
+          "pages": [1, 2, 3, 4, 7, 10, 26],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": [
+            "Impedanz",
+            "Wechselstromwiderstand",
+            "komplexe Impedanz",
+            "Impedanzen",
+            "Scheinwiderstand",
+            "Betrag der Impedanz"
+          ],
+          "pages": [2, 3, 23, 24, 25],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": [
+            "Abgleichverfahren",
+            "Abgleichmethode",
+            "Abgleich",
+            "Brückenabgleich"
+          ],
+          "pages": [2, 3, 4, 5, 6, 7],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": [
+            "Dekade",
+            "Dekaden",
+            "Widerstandsdekade",
+            "kapazitive Dekade",
+            "induktive Dekade"
+          ],
+          "pages": [2, 7],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Brückenspannung", "Differenzspannung"],
+          "pages": [2, 4, 8, 13, 14, 15],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Spannungsteiler", "Voltage divider"],
+          "pages": [4, 10],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Abgleichbedingung", "Abgleichsbedingung"],
+          "pages": [4, 5, 6, 13],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": [
+            "Reale Spule",
+            "Spulenmodell",
+            "Ersatzschaltbild der Spule"
+          ],
+          "pages": [5, 6],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": [
+            "Maxwell-Wien-Brücke",
+            "Maxwell-Wien",
+            "Induktivitätsmessbrücke nach Maxwell-Wien",
+            "Maxwell-Brücke"
+          ],
+          "pages": [5, 6],
+          "optional": false,
+          "figureOnly": true
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["LCR-Meter", "LCR Meter", "LCR-Messgerät"],
+          "pages": [7, 23],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": [
+            "Ausschlagmethode",
+            "Ausschlagverfahren",
+            "Ausschlagsmethode"
+          ],
+          "pages": [7, 8],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Dehnungsmessstreifen", "DMS", "Strain Gauge"],
+          "pages": [9],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["k-Faktor", "Gauge-Faktor", "k-Faktoren"],
+          "pages": [9],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": [
+            "Relativer Sensorausschlag",
+            "relative Sensoränderung",
+            "relative Widerstandsänderung"
+          ],
+          "pages": [9, 13, 14, 15],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Offsetkompensation", "Offset-Kompensation"],
+          "pages": [10],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Elektronische Verstärkung", "Signalverstärkung"],
+          "pages": [9, 11, 15],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Halbbrücke", "Halbbrücken", "Half Bridge"],
+          "pages": [11, 12, 19],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Vollbrücke", "Vollbrücken", "Full Bridge"],
+          "pages": [12, 19],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Viertelbrücke", "Viertelbrücken", "Quarter Bridge"],
+          "pages": [13, 20, 22],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Impedanzverhältnis", "Impedanzverhältnisse"],
+          "pages": [13, 14],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": [
+            "Lineare Approximation",
+            "Linearisierung",
+            "lineare Näherung"
+          ],
+          "pages": [15, 16, 17, 19],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": [
+            "Übertragungsfunktion der Messbrücke",
+            "Übertragungsfunktion der Brücke"
+          ],
+          "pages": [16, 17, 19],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Effektivwert", "RMS", "Effektivwerte"],
+          "pages": [17],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": [
+            "Auswertung der Brückenspannung",
+            "Demodulation",
+            "Amplitudendemodulation"
+          ],
+          "pages": [18],
+          "optional": false,
+          "figureOnly": true
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": [
+            "Kapazitiver Sensor",
+            "kapazitive Sensoren",
+            "kapazitiver Zweipol"
+          ],
+          "pages": [9, 20, 21, 22],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Phasenwinkel", "Phase"],
+          "pages": [3, 23, 24, 25],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Blindwiderstand", "Reaktanz", "Blindwiderstände"],
+          "pages": [3, 25, 26],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Wirkwiderstand", "Resistanz", "Wirkwiderstände"],
+          "pages": [25, 26],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["RC-Glied", "RC-Modell", "RC-Glieder"],
+          "pages": [24, 25],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Elektronik und Messtechnik",
+          "aliases": ["Frequenzabhängigkeit der Bauteile", "reale Bauteile"],
+          "pages": [3, 23, 24, 25, 26],
+          "optional": false,
+          "figureOnly": false
+        }
+      ]
     },
     {
       "id": "dhbw-stuttgart-mct1-datenpfad",
@@ -619,10 +2938,373 @@
       "licence": "CC-BY-4.0",
       "attribution": "Daniel Klünder, DHBW Stuttgart, Mikrocomputertechnik 1, Einheit 5: Der Single-Cycle-Datenpfad (Handout), 2026; unmodified",
       "licenceUrl": "https://github.com/dantschi/mct1/blob/ee0d2e1c8692f724766897848a247d392d1ad4c5/README.md#oer-und-lizenz",
-      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "labelsStatus": "Topic labels written blind by founder",
       "courses": [{ "code": null, "title": "Mikrocomputertechnik 1" }],
       "obligations": [],
-      "logistics": []
+      "logistics": [],
+      "topics": [
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": [
+            "Single-Cycle-Datenpfad",
+            "Single-Cycle",
+            "Single-Cycle-Lehrmodell",
+            "Single-Cycle-Datapath",
+            "Eintakt-Datenpfad"
+          ],
+          "pages": [1, 2, 3, 20, 23, 27],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": [
+            "Mikroarchitektur",
+            "Microarchitecture",
+            "Mikroarchitekturen"
+          ],
+          "pages": [1, 24],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": [
+            "Befehlssatzarchitektur",
+            "ISA",
+            "Instruction Set Architecture"
+          ],
+          "pages": [1],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Fünf Tätigkeiten", "Befehlsphasen"],
+          "pages": [3, 4, 23, 27],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Steuersignale", "Steuersignal", "Steuerbits"],
+          "pages": [4, 5, 20, 21],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Steuerwerk", "Steuerdecoder", "Control Unit"],
+          "pages": [1, 4, 5],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": [
+            "Zustandsübernahme an der Taktflanke",
+            "Zustandsübernahme"
+          ],
+          "pages": [2, 3, 5, 9, 27],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": [
+            "Program Counter",
+            "PC",
+            "Befehlszähler",
+            "Programmzähler"
+          ],
+          "pages": [5, 6, 16, 17, 18, 19],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Instruction Fetch", "Fetch", "Instruktion holen"],
+          "pages": [4, 5, 6],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": [
+            "Befehlsspeicher",
+            "Instruktionsspeicher",
+            "Instruction Memory"
+          ],
+          "pages": [4, 5, 6, 20],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Datenspeicher", "Data Memory"],
+          "pages": [6, 12, 13, 14, 15, 20],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": [
+            "Registerbank",
+            "Registerfile",
+            "Register File",
+            "Registersatz"
+          ],
+          "pages": [1, 5, 6, 7, 20],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": [
+            "Befehlsfelder",
+            "Instruktionsfelder",
+            "Instruktionsfeld",
+            "Befehlsfeld"
+          ],
+          "pages": [2, 4, 5, 6, 7, 10],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": [
+            "Registerarithmetik",
+            "R-Type",
+            "R-Format",
+            "R-Type-Befehl"
+          ],
+          "pages": [6, 7, 8, 9, 25],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": [
+            "ALU",
+            "Arithmetisch-logische Einheit",
+            "Arithmetic Logic Unit"
+          ],
+          "pages": [1, 8, 12, 20],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Multiplexer", "MUX", "Multiplexers"],
+          "pages": [1, 2, 12, 18, 20],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["RegWrite", "RegWrite-Signal"],
+          "pages": [4, 5, 7, 8, 9, 20, 27],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["ALUSrc", "ALUSrc-Signal"],
+          "pages": [4, 5, 8, 12, 20],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["MemtoReg", "Memory to Register"],
+          "pages": [8, 12, 13, 20],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["MemRead", "MemRead-Signal"],
+          "pages": [12, 13, 14, 20, 21],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["MemWrite", "MemWrite-Signal"],
+          "pages": [12, 13, 14, 20, 21],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["PCSrc", "PCSrc-Signal"],
+          "pages": [18, 19, 20],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Zero-Signal", "Zero-Flag"],
+          "pages": [16, 18, 19],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Zweierkomplement", "Zweierkomplementwort"],
+          "pages": [10, 18],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Load-Befehl", "lw", "Load Word"],
+          "pages": [9, 10, 11, 12, 13, 14, 15, 26],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Store-Befehl", "sw", "Store Word"],
+          "pages": [9, 10, 11, 12, 13, 14, 15, 26],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["I-Format", "I-Type", "I-Typ"],
+          "pages": [10, 11],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["S-Format", "S-Type", "S-Typ"],
+          "pages": [10, 11],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": [
+            "Effektive Adresse",
+            "Basis plus Offset",
+            "Adressberechnung"
+          ],
+          "pages": [2, 10, 12, 15],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Immediate Generator", "ImmGen", "Immediate-Generator"],
+          "pages": [11, 12, 17],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": [
+            "Vorzeichenerweiterung",
+            "Sign Extension",
+            "vorzeichenerweitert"
+          ],
+          "pages": [11, 17],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Little Endian", "Little-Endian"],
+          "pages": [3, 15],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Byteadressierter Speicher", "Byteadressierung"],
+          "pages": [3, 15],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Branch", "bedingter Sprung", "Branch-Befehl"],
+          "pages": [1, 2, 16, 17, 18, 19, 26],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Sprungziel", "Branch-Ziel", "Branch target"],
+          "pages": [16, 17, 18],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["B-Immediate", "B-Format", "B-Type"],
+          "pages": [17],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Taken und Fall-Through", "Taken/Fall-Through"],
+          "pages": [17, 18, 19],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Don't Care", "Don’t Care"],
+          "pages": [15, 20, 21],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Kritischer Pfad", "Critical Path"],
+          "pages": [22, 23],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Clock-to-Q", "Clock-to-Q-Zeit"],
+          "pages": [22],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Setup-Zeit", "Setup", "Setup-Time"],
+          "pages": [5, 22],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Hold-Zeit", "Hold-Time", "Hold"],
+          "pages": [5, 22],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Taktperiode", "Taktdauer"],
+          "pages": [3, 4, 22, 23],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Mikrocomputertechnik 1",
+          "aliases": ["Pipeline", "Pipelining", "Pipeline-Stufen"],
+          "pages": [23],
+          "optional": true,
+          "figureOnly": false
+        }
+      ]
     },
     {
       "id": "uo-ec607-intro",
@@ -637,10 +3319,161 @@
       "licence": "MIT",
       "attribution": "Grant R. McDermott, University of Oregon, EC 607 Data Science for Economists, Lecture 1: Introduction; unmodified pages 17–40",
       "licenceUrl": "https://github.com/uo-ec607/lectures/blob/632b5e526ec3d869be75d09d9a84ab61f00df168/README.md#license",
-      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "labelsStatus": "Topic labels written blind by founder",
       "courses": [{ "code": "EC 607", "title": "Data Science for Economists" }],
       "obligations": [],
-      "logistics": []
+      "logistics": [],
+      "topics": [
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Object", "Objects"],
+          "pages": [4, 5, 11],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": [
+            "Object-oriented programming",
+            "OOP",
+            "Object-orientated programming",
+            "Objektorientierte Programmierung"
+          ],
+          "pages": [4, 5],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Function", "Functions", "Funktion"],
+          "pages": [4, 5],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Package", "Packages", "Paket"],
+          "pages": [4, 5, 10, 11],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Base R", "Base R functions"],
+          "pages": [5],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Workspace", "Workspaces"],
+          "pages": [5],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Data frame", "Data frames", "Dataframe"],
+          "pages": [5],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["ggplot2", "ggplot", "ggplot()"],
+          "pages": [8, 10, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": [
+            "Installing and loading packages",
+            "install.packages()",
+            "library()",
+            "pacman",
+            "p_load()"
+          ],
+          "pages": [10, 11],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": [
+            "PACKAGE::package_function() syntax",
+            "Namespace syntax",
+            "Double colon syntax"
+          ],
+          "pages": [11],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Grammar of graphics", "The Grammar of Graphics"],
+          "pages": [13],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": [
+            "Aesthetic mappings",
+            "Aesthetic mapping",
+            "Aesthetics",
+            "aes()",
+            "Aesthetic"
+          ],
+          "pages": [13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Geoms", "Geom", "Geometric objects"],
+          "pages": [13, 20, 21, 22, 23, 24],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": [
+            "Layers",
+            "Layer",
+            "Plot layers",
+            "Building plots in layers"
+          ],
+          "pages": [13, 20, 21],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": [
+            "Global vs. geom-level aesthetic mappings",
+            "Global aesthetic mappings",
+            "Aesthetic mappings in the geom layer"
+          ],
+          "pages": [17, 21, 22, 23, 24],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["geom_smooth", "Smoother", "Smoothing"],
+          "pages": [8, 20, 21, 22],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Density plot", "geom_density", "Density"],
+          "pages": [23, 24],
+          "optional": false,
+          "figureOnly": false
+        }
+      ]
     },
     {
       "id": "uo-ec607-git",
@@ -655,10 +3488,192 @@
       "licence": "MIT",
       "attribution": "Grant R. McDermott, University of Oregon, EC 607 Data Science for Economists, Lecture 2: Version control with Git(Hub); unmodified pages 1–40",
       "licenceUrl": "https://github.com/uo-ec607/lectures/blob/632b5e526ec3d869be75d09d9a84ab61f00df168/README.md#license",
-      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "labelsStatus": "Topic labels written blind by founder",
       "courses": [{ "code": "EC 607", "title": "Data Science for Economists" }],
       "obligations": [],
-      "logistics": []
+      "logistics": [],
+      "topics": [
+        {
+          "course": "Data Science for Economists",
+          "aliases": [
+            "Version control",
+            "VC",
+            "Versionskontrolle",
+            "Version control system"
+          ],
+          "pages": [7, 8],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": [
+            "Distributed version control system",
+            "Distributed VC",
+            "DVCS",
+            "Verteiltes Versionskontrollsystem"
+          ],
+          "pages": [8, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Git"],
+          "pages": [8, 9],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["GitHub", "GH"],
+          "pages": [8, 9],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Repository", "Repo", "Repositories", "Repos"],
+          "pages": [13, 14, 15, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["RStudio Project", "RStudio Projects", ".Rproj"],
+          "pages": [13, 14, 15, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": [
+            "Git integration in RStudio",
+            "Git tab",
+            "Git panel",
+            "RStudio Git GUI"
+          ],
+          "pages": [11, 12, 16, 17, 21, 22, 23, 24, 30],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Clone", "Cloning", "git clone"],
+          "pages": [13, 14, 15, 32],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["SSH", "Secure Shell"],
+          "pages": [13, 14, 15, 27],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["HTTPS"],
+          "pages": [13, 14, 15, 27],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Stage", "Staging", "Add", "git add"],
+          "pages": [18, 19, 20, 21, 22, 25, 26, 27, 33],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Commit", "Committing", "git commit"],
+          "pages": [18, 19, 20, 21, 22, 25, 26, 27, 34],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Pull", "Pulling", "git pull"],
+          "pages": [18, 19, 20, 23, 24, 25, 26, 27, 34],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Push", "Pushing", "git push"],
+          "pages": [18, 19, 20, 23, 24, 25, 26, 27, 34],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Upstream", "Upstream repo", "Upstream remote"],
+          "pages": [18, 19, 20, 25, 26, 27, 28],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": [
+            "Relative and absolute paths",
+            "Relative path",
+            "Absolute path"
+          ],
+          "pages": [28],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Shell", "Git shell", "Command line", "Terminal"],
+          "pages": [30, 31],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["git log", "Commit history"],
+          "pages": [32],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["git status"],
+          "pages": [32, 38],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Wildcard characters", "Wildcard", "Wildcards"],
+          "pages": [33],
+          "optional": true,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Collaborator", "Collaborators"],
+          "pages": [36, 37],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Merge conflict", "Merge conflicts", "Merge-Konflikt"],
+          "pages": [37, 38, 39, 40],
+          "optional": false,
+          "figureOnly": false
+        },
+        {
+          "course": "Data Science for Economists",
+          "aliases": ["Conflict markers", "Merge conflict markers"],
+          "pages": [39, 40],
+          "optional": false,
+          "figureOnly": true
+        }
+      ]
     }
   ],
   "scenarios": [
