@@ -145,6 +145,13 @@ it("refuses byte mismatches, malformed PDFs, excessive pages and compressed bomb
   expect((await parseUpload(pdfFixture({ bomb: true }))).status).toBe(422);
 });
 
+it("parses a PDF that qpdf reads with warnings only, such as a repeated dictionary key", async () => {
+  const { pdfFixture } = await import("../test/fixtures.js");
+  const parsed = await parseUpload(pdfFixture({ duplicateKey: true }));
+  expect(parsed.status).toBe(200);
+  expect(parsed.body.pages[0]!.text).toContain("examination");
+});
+
 it("preserves German characters in born-digital pages", async () => {
   const { pdfFixture } = await import("../test/fixtures.js");
   const parsed = await parseUpload(

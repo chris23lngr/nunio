@@ -101,9 +101,11 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
     );
     if (!Number.isSafeInteger(pages) || pages < 1 || pages > 100)
       throw new ParseError(413, "page_limit");
+    // Warnings alone (exit 3), such as a repeated dictionary key in LaTeX output, leave the PDF readable.
     await measure(
       "qpdf",
       [
+        "--warning-exit-0",
         path,
         "--stream-data=uncompress",
         "--decode-level=all",

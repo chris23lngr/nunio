@@ -6,12 +6,15 @@ export function pdfFixture({
   bomb = false,
   inflated,
   image = false,
+  duplicateKey = false,
 }: {
   pages?: number;
   text?: string;
   bomb?: boolean;
   inflated?: number;
   image?: boolean;
+  /** Repeats a page's /Group key, as LaTeX output often does; qpdf reads it but exits 3 with a warning. */
+  duplicateKey?: boolean;
 } = {}): Buffer {
   // A bomb decompresses beyond the parser's 512 MiB bound.
   const inflatedBytes = inflated ?? (bomb ? 544 * 1024 * 1024 : 0);
@@ -43,7 +46,7 @@ export function pdfFixture({
   );
   for (let i = 0; i < pages; i++)
     add(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 200] /Resources << /Font << /F1 3 0 R >>${image ? ` /XObject << /Im1 ${5 + pages} 0 R >>` : ""} >> /Contents 4 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 200] /Resources << /Font << /F1 3 0 R >>${image ? ` /XObject << /Im1 ${5 + pages} 0 R >>` : ""} >> /Contents 4 0 R${duplicateKey ? " /Group << /S /Transparency >> /Group << /S /Transparency >>" : ""} >>`,
     );
   if (image)
     add(
