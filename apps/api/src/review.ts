@@ -3,6 +3,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import {
   CourseStatus,
   FactType,
+  Grounding,
   ObligationKind,
   ReviewState,
   Unsupported,
@@ -28,6 +29,11 @@ const Citation = z.object({
   title: z.string(),
   page: z.number().int(),
   quote: z.string(),
+  grounding: z
+    .enum(Grounding)
+    .describe(
+      "figure when the quote is only in a figure description the scan model wrote, not the page's own words.",
+    ),
 });
 const Due = z.object({
   date: z.string().nullable(),
@@ -78,6 +84,11 @@ const Fact = z
   .object({
     ...item,
     type: z.enum(FactType),
+    key: z
+      .string()
+      .describe(
+        "nunio's normalized identity for the Fact within its Course and type, such as a Topic's name.",
+      ),
     value: z.string(),
     values: z.array(z.object({ value: z.string(), ...cited })),
   })

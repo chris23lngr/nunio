@@ -10,6 +10,7 @@ import {
 } from "@nunio/ai";
 import type {
   FactType,
+  Grounding,
   ObligationKind,
   PrismaClient,
   ReviewState,
@@ -65,6 +66,8 @@ type Citation = {
   title: string;
   page: number;
   quote: string;
+  /** "figure" when the quote was found only in a figure description, the scan model's reading of the page. */
+  grounding: Grounding;
 };
 type Provenance =
   | { kind: "correction" }
@@ -102,6 +105,8 @@ interface ReviewObligation extends ReviewItem<{ due: DueValue }> {
 }
 interface ReviewFact extends ReviewItem<{ value: string }> {
   type: FactType;
+  /** The normalized identity key Sources are matched by, such as a Topic's name; it never changes. */
+  key: string;
   value: string;
 }
 
@@ -322,11 +327,12 @@ export function createFacts({
           // Facts read only from a figure stay, flagged; Obligations and Courses need the page's own words.
           facts: all.facts.flatMap((item) =>
             grounded(item)
-              ? [item]
+              ? [{ ...item, grounding: "text" as Grounding }]
               : inFigure(item)
                 ? [
                     {
                       ...item,
+                      grounding: "figure" as Grounding,
                       uncertainty: [item.uncertainty, figureUncertainty]
                         .filter(Boolean)
                         .join("; "),
@@ -629,7 +635,11 @@ export function createFacts({
               await repeated(owned.id, key, item.page, (id) =>
                 tx.factExtraction.update({
                   where: { id },
-                  data: { page: item.page, ciphertext: seal(wording) },
+                  data: {
+                    page: item.page,
+                    grounding: item.grounding,
+                    ciphertext: seal(wording),
+                  },
                 }),
               )
             )
@@ -652,6 +662,7 @@ export function createFacts({
                 factId: owned.id,
                 sourceId,
                 page: item.page,
+                grounding: item.grounding,
                 ciphertext: seal(wording),
                 overruledAt: overruled(existing, key, extractedAt),
               },
@@ -1367,6 +1378,7 @@ export function createFacts({
                     const shared = {
                       id: row.id,
                       type: row.type,
+                      key: row.matchKey,
                       state: row.state,
                       unsupported: row.unsupported,
                       disagreement:
@@ -1525,6 +1537,8 @@ function valuesOf<
       id: string;
       sourceId: string;
       page: number;
+      /** Absent for Obligations, which are only ever grounded in the page's text. */
+      grounding?: Grounding;
       overruledAt: Date | null;
       source: { title: string };
     };
@@ -1552,6 +1566,7 @@ function valuesOf<
       title: extraction.source.title,
       page: extraction.page,
       quote: wording.quote,
+      grounding: extraction.grounding ?? "text",
     };
     const key = keyOf(entry),
       value = values.get(key);

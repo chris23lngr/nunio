@@ -213,6 +213,7 @@ it("stores grounded Obligations under a proposed Course and shows them for revie
                     title: "Analysis.pdf",
                     page: 1,
                     quote: "Abgabe Blatt 3: 20.11., 12 Uhr",
+                    grounding: "text",
                   },
                 ],
               },
@@ -631,6 +632,7 @@ it("stores Topics, course rules and exam logistics with their passage", async ()
     {
       id: expect.any(String),
       type: "topic",
+      key: "gleichmäßige konvergenz",
       value: "Gleichmäßige Konvergenz",
       uncertainty: null,
       state: "unreviewed",
@@ -654,6 +656,7 @@ it("stores Topics, course rules and exam logistics with their passage", async ()
               title: "Analysis.pdf",
               page: 1,
               quote: "gleichmäßige Konvergenz",
+              grounding: "text",
             },
           ],
         },
@@ -2312,4 +2315,151 @@ it("grounds a figure line the scan reader wrote as a figure description (marker 
   expect(course?.facts.map((fact) => fact.uncertainty)).toEqual([
     "aus einer Abbildungsbeschreibung abgeleitet",
   ]);
+});
+
+it("shows each Topic's normalized key, across Sources and after a Correction", async () => {
+  const p = await student();
+  const topic = (key: string) => ({
+    course: "MA-101",
+    type: "topic" as const,
+    key,
+    value: key,
+    page: 1,
+    quote: key,
+    uncertainty: null,
+  });
+  for (const [title, key] of [
+    ["Folien 1.pdf", "Fourier-Reihen"],
+    ["Folien 2.pdf", "FOURIER-Reihen "],
+  ] as const) {
+    const sourceId = await readySource(p, title, [
+      { page: 1, text: `MA-101 Analysis I\n${key}` },
+    ]);
+    await facts.extract(p, sourceId, {
+      delegation,
+      extractor: scripted({
+        ...empty,
+        courses: [analysis],
+        facts: [topic(key)],
+      }),
+    });
+  }
+  const [fact] = (await facts.review(p)).courses[0]!.facts;
+  expect(fact).toMatchObject({ type: "topic", key: "fourier-reihen" });
+  expect(fact!.values.flatMap((v) => v.citations)).toHaveLength(2);
+
+  await facts.correct(p, { kind: "fact", id: fact!.id }, { value: "Fourier" });
+
+  expect((await facts.review(p)).courses[0]!.facts).toEqual([
+    expect.objectContaining({ value: "Fourier", key: "fourier-reihen" }),
+  ]);
+});
+
+it("marks each citation grounded in the page's text or only in a figure description, per Source", async () => {
+  const p = await student();
+  const algebra = {
+    code: "MA-102",
+    title: "Lineare Algebra",
+    page: 1,
+    quote: "MA-102 Lineare Algebra",
+  };
+  const topic = (course: string, key: string) => ({
+    course,
+    type: "topic" as const,
+    key,
+    value: key,
+    page: 1,
+    quote: key,
+    uncertainty: null,
+  });
+  for (const [title, text] of [
+    [
+      "Folien.pdf",
+      "MA-101 Analysis I\nMA-102 Lineare Algebra\n[Abbildung] Skizze: Fourier-Reihen, Eigenwerte.",
+    ],
+    ["Skript.pdf", "MA-101 Analysis I\nKapitel 4: Fourier-Reihen."],
+  ] as const) {
+    const sourceId = await readySource(p, title, [{ page: 1, text }]);
+    await facts.extract(p, sourceId, {
+      delegation,
+      extractor: scripted({
+        ...empty,
+        courses: title === "Folien.pdf" ? [analysis, algebra] : [analysis],
+        facts:
+          title === "Folien.pdf"
+            ? [topic("MA-101", "Fourier-Reihen"), topic("MA-102", "Eigenwerte")]
+            : [topic("MA-101", "Fourier-Reihen")],
+      }),
+    });
+  }
+  const grounding = async () =>
+    (await facts.review(p)).courses.map((course) => [
+      course.code,
+      course.facts.map((fact) => [
+        fact.key,
+        fact.values.flatMap((value) =>
+          value.citations.map((c) => [c.title, c.grounding]),
+        ),
+      ]),
+    ]);
+  const expected = [
+    [
+      "MA-101",
+      [
+        [
+          "fourier-reihen",
+          [
+            ["Folien.pdf", "figure"],
+            ["Skript.pdf", "text"],
+          ],
+        ],
+      ],
+    ],
+    ["MA-102", [["eigenwerte", [["Folien.pdf", "figure"]]]]],
+  ];
+  expect(await grounding()).toEqual(expected);
+
+  const [analysisCourse, algebraCourse] = (await facts.review(p)).courses;
+  await facts.correct(
+    p,
+    { kind: "fact", id: analysisCourse!.facts[0]!.id },
+    { value: "Fourier-Analysis" },
+  );
+  await facts.decideCourse(p, algebraCourse!.id, "reject");
+  expect(await grounding()).toEqual([expected[0], ["MA-102", []]]);
+
+  await facts.decideCourse(p, algebraCourse!.id, "restore");
+  expect(await grounding()).toEqual(expected);
+});
+
+it("grounds a quote in the page's text when a figure description repeats it", async () => {
+  const p = await student();
+  const sourceId = await readySource(p, "Folien.pdf", [
+    {
+      page: 1,
+      text: "MA-101 Analysis I\nKapitel 4: Fourier-Reihen.\n[Abbildung] Skizze: Fourier-Reihen.",
+    },
+  ]);
+  await facts.extract(p, sourceId, {
+    delegation,
+    extractor: scripted({
+      ...empty,
+      courses: [analysis],
+      facts: [
+        {
+          course: "MA-101",
+          type: "topic",
+          key: "Fourier-Reihen",
+          value: "Fourier-Reihen",
+          page: 1,
+          quote: "Fourier-Reihen",
+          uncertainty: null,
+        },
+      ],
+    }),
+  });
+  const [fact] = (await facts.review(p)).courses[0]!.facts;
+  expect(
+    fact!.values.flatMap((v) => v.citations.map((c) => c.grounding)),
+  ).toEqual(["text"]);
 });
