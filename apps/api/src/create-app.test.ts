@@ -2578,6 +2578,64 @@ describe("Chat", () => {
     expect(stranger.status).toBe(404);
   });
 
+  it("answers a follow-up with the earlier questions and answers, and withdraws it with a Source an earlier answer drew on", async () => {
+    const cookie = await signUp("chat-follow-up");
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const handbook = await chatSource(
+      cookie,
+      "Modulhandbuch.pdf",
+      "Die Klausur ist am 10. Februar.",
+    );
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [handbook] }),
+      })
+    ).json()) as { id: string };
+    const ask = (text: string) =>
+      app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ text }),
+      });
+    reasoningText = undefined;
+    reply = "Am 10. Februar [S1].";
+    await ask("Wann ist die Klausur?");
+    reply = "Dazu steht nichts im Material.";
+    prompts.length = 0;
+
+    expect((await ask("Und um wie viel Uhr?")).status).toBe(200);
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]!.tags).toEqual([]);
+    expect(prompts[0]!.history).toEqual([
+      { question: "Wann ist die Klausur?", answer: "Am 10. Februar." },
+    ]);
+    await app.request(`${apiOrigin}/api/me/sources/${handbook}`, {
+      method: "DELETE",
+      headers,
+    });
+    const messages = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+        headers: { cookie },
+      })
+    ).json()) as { text: string | null }[];
+    expect(messages.map((message) => message.text)).toEqual([
+      "Wann ist die Klausur?",
+      null,
+      "Und um wie viel Uhr?",
+      null,
+    ]);
+    prompts.length = 0;
+    await ask("Und wo?");
+    expect(prompts[0]!.history).toEqual([]);
+  });
+
   it("refuses a selection with another student's or a deleted Source or Course", async () => {
     const cookie = await signUp("chat-select");
     const headers = {

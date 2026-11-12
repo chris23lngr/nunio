@@ -621,7 +621,7 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 **Documentation references.** ADR-0001, 0010, 0011, 0016, 0018, 0019, 0020; [delegation-gate.md](design/delegation-gate.md) "Chat origin"; [knowledge-retrieval.md](design/knowledge-retrieval.md) "Chat tools decisions"; [study-execution.md](design/study-execution.md); the AI SDK docs shipped in `packages/ai/node_modules/ai/docs`.
 
 **Verification checklist.**
-- [ ] A follow-up question carries the history. The captured prompt holds the earlier questions and answers, without withdrawn answers or old tags.
+- [x] A follow-up question carries the history. The captured prompt holds the earlier questions and answers, without withdrawn answers or old tags (`packages/chat/src/history.test.ts`; `apps/api/src/create-app.test.ts`, "answers a follow-up with the earlier questions and answers…").
 - [ ] Every step is metered on its own, and a turn refused at any step records nothing.
 - [ ] The last step has no tools, and no request forces a tool.
 - [ ] Neither the stream nor the stored message contains a full tool result.
@@ -630,6 +630,11 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 - [ ] A Model without a tool-capable zero-retention endpoint is not offered.
 - [ ] Retrieval eval with model-driven search, including the share of questions about the material answered without a search. The founder sets thresholds after the first measurement.
 - [ ] Injection eval: Sources with embedded instructions start no Artifact Run, and any proposal they cause appears only as a card.
+
+**Progress (2026-11-12).** Stage 1 is implemented.
+- `createChats` and the ask flow live in `packages/chat`, unchanged apart from the history.
+- Each answer is given the last 10 questions and answers, oldest first, without withdrawn turns or Citation tags. It is withdrawn with the Sources of those earlier answers too.
+- Retrieval still searches with the question's text alone until stage 2, so a follow-up such as "and at what time?" finds no material and can only refer to the history.
 
 **Anti-pattern guards.**
 - `toolChoice` is only `auto` or `none`.

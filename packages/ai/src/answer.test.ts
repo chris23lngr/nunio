@@ -91,6 +91,51 @@ it("answers from a data message apart from the question, keeping only citation t
   ]);
 });
 
+it("sends the Chat's earlier questions and answers before the course material, and counts them in the estimate", async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const answerer = answererFrom(
+    createModels({
+      apiKey: "test",
+      baseURL: "https://provider.invalid",
+      catalog: testCatalog,
+      fetch: recorded(bodies, "Dazu steht nichts im Material."),
+    }),
+  );
+  const data =
+    "<<<BEGIN course_material 0123456789abcdef>>>\nNothing relevant was found.\n<<<END course_material 0123456789abcdef>>>";
+  const input = {
+    question: "Und um wie viel Uhr?",
+    data,
+    tags: [],
+    history: [{ question: "Wann ist die Klausur?", answer: "Am 10. Februar." }],
+  };
+
+  await answerer.answer(input, { signal: AbortSignal.timeout(1000) });
+
+  const body = bodies[0] as {
+    messages: { role: string; content: unknown }[];
+  };
+  const text = (m: { content: unknown }) =>
+    typeof m.content === "string"
+      ? m.content
+      : (m.content as { text?: string }[])
+          .map((part) => part.text ?? "")
+          .join("");
+  expect(
+    body.messages
+      .filter((m) => m.role !== "system")
+      .map((m) => [m.role, text(m)]),
+  ).toEqual([
+    ["user", "Wann ist die Klausur?"],
+    ["assistant", "Am 10. Februar."],
+    ["user", expect.stringContaining(data)],
+    ["user", "Und um wie viel Uhr?"],
+  ]);
+  expect(answerer.estimateMicroUsd(input)).toBeGreaterThan(
+    answerer.estimateMicroUsd({ ...input, history: [] }),
+  );
+});
+
 it("refuses a truncated answer rather than showing part of it", async () => {
   const answerer = answererFrom(
     createModels({
