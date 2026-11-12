@@ -1,6 +1,7 @@
 import type { UIMessageChunk } from "ai";
 import { readUIMessageStream } from "ai";
 import type { AgendaOutput } from "./agenda.js";
+import type { CourseFactsOutput } from "./course-facts.js";
 import type { SearchOutput } from "./search.js";
 
 /** One part of an answer, as the student saw it and as it is stored. */
@@ -18,6 +19,12 @@ export type ChatPart =
       toolCallId: string;
       input: { from: string; to: string };
       output: AgendaOutput;
+    }
+  | {
+      type: "tool-courseFacts";
+      toolCallId: string;
+      input: { course: string };
+      output: CourseFactsOutput;
     };
 
 /** Removes Citation tags that no search returned, so they never show as Citations. */

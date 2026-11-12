@@ -47,6 +47,12 @@ const Part = z
         fixedEvents: z.number().int(),
       }),
     }),
+    z.object({
+      type: z.literal("tool-courseFacts"),
+      toolCallId: z.string(),
+      input: z.object({ course: z.string() }),
+      output: z.object({ course: z.string(), facts: z.number().int() }),
+    }),
   ])
   .openapi("ChatMessagePart");
 const Message = z

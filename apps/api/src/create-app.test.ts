@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import type { Embedder, Estimator, Grader, Maker } from "@nunio/ai";
+import type { Embedder, Estimator, Extracted, Grader, Maker } from "@nunio/ai";
 import { createAnswerer, createModels } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
@@ -1248,7 +1248,7 @@ it("uploads and deletes an owned PDF through authenticated, origin-protected rou
 });
 
 /** A student with one extracted Source: Analysis I and its Blatt 3. */
-async function reviewFixture(name: string) {
+async function reviewFixture(name: string, extracted: Extracted["facts"] = []) {
   const cookie = await signUp(name);
   const p = principal.fromSession({ studentId: await studentId(cookie) });
   const upload = await sources.upload(p, {
@@ -1312,7 +1312,7 @@ async function reviewFixture(name: string) {
               uncertainty: null,
             },
           ],
-          facts: [],
+          facts: extracted,
         },
       }),
     },
@@ -3039,6 +3039,61 @@ describe("Chat", () => {
     ]);
   });
 
+  it("reads a Course's Facts by its handle, with their Citations, showing the student only the Course and a count", async () => {
+    const { cookie, headers } = await reviewFixture("chat-course-facts", [
+      {
+        course: "MA-101",
+        type: "exam_logistics",
+        key: "exam.room",
+        value: "Hörsaal H1",
+        page: 1,
+        quote: "MA-101 Analysis I",
+        uncertainty: null,
+      },
+    ]);
+    const { id: sourceId } = await admin.source.findFirstOrThrow({
+      where: { studentId: await studentId(cookie) },
+    });
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+      })
+    ).json()) as { id: string };
+    steps.push(
+      calls("courseFacts", { course: "K1" }),
+      says("Die Klausur ist im Hörsaal H1 [S1][S2]."),
+    );
+    prompts.length = 0;
+
+    const chunks = await sseChunks(
+      await app.request(`${apiOrigin}/api/me/chats/${id}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: randomUUID(), text: "Wo ist die Klausur?" }),
+      }),
+    );
+
+    expect(chunks).toContainEqual(
+      expect.objectContaining({
+        type: "tool-output-available",
+        output: { course: "Analysis I", facts: 2 },
+      }),
+    );
+    expect(JSON.stringify(prompts[1])).toContain("Hörsaal H1");
+    const committed = chunks.find((chunk) => chunk.type === "data-committed");
+    expect(committed.data.citations).toContainEqual({
+      tag: expect.any(String),
+      provenance: {
+        kind: "source",
+        sourceId,
+        title: "Analysis.pdf",
+        location: { page: 1 },
+      },
+    });
+  });
+
   it("offers no search in a Chat with nothing selected, but still the Plan", async () => {
     const { headers, id } = await emptyChat("chat-no-search");
     reply = "Für diesen Chat ist kein Material ausgewählt.";
@@ -3055,7 +3110,7 @@ describe("Chat", () => {
       }),
     );
 
-    expect(offeredTools).toEqual([["agenda"]]);
+    expect(offeredTools).toEqual([["agenda", "courseFacts"]]);
     expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
   });
 

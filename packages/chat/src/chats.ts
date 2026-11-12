@@ -10,6 +10,7 @@ import type { Plan } from "@nunio/planning";
 import type { ModelMessage, UIMessageChunk } from "ai";
 import { agendaTool } from "./agenda.js";
 import { chatContext } from "./context.js";
+import { courseFactsTool } from "./course-facts.js";
 import { historyFrom, historyTurns } from "./history.js";
 import type { ChatPart } from "./parts.js";
 import { partsFrom } from "./parts.js";
@@ -212,7 +213,12 @@ export function createChats({
           plan,
           p,
           timeZone,
-          handles: context.handles,
+          courses: context.courses,
+        }),
+        courseFacts: courseFactsTool(turn, {
+          reader,
+          p,
+          courses: context.courses,
         }),
       };
       const messages: ModelMessage[] = [

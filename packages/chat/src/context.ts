@@ -25,8 +25,8 @@ export function chatContext(
   timeZone: string,
   courses: readonly ContextCourse[],
 ) {
-  const handles = new Map(
-    courses.map((course, i) => [`K${i + 1}`, course.id] as const),
+  const byHandle = new Map(
+    courses.map((course, i) => [`K${i + 1}`, course] as const),
   );
   const day = new Intl.DateTimeFormat("en-US", {
     weekday: "long",
@@ -48,5 +48,5 @@ export function chatContext(
         ].join("\n")
       : "The student has no Courses yet.",
   ].join("\n");
-  return { text, handles };
+  return { text, courses: byHandle };
 }

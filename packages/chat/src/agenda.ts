@@ -4,6 +4,7 @@ import type { Plan } from "@nunio/planning";
 import { deadline } from "@nunio/planning";
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
+import type { ContextCourse } from "./context.js";
 import type { Turn } from "./turn.js";
 import { fenced } from "./turn.js";
 
@@ -35,17 +36,19 @@ export function agendaTool(
     plan,
     p,
     timeZone,
-    handles,
+    courses,
   }: {
     reader: KnowledgeReader;
     plan: Pick<Plan, "view">;
     p: Principal;
     timeZone: string;
-    /** Course IDs by the handle the context message gave them. */
-    handles: ReadonlyMap<string, string>;
+    /** The student's Courses by handle, as the context message lists them. */
+    courses: ReadonlyMap<string, ContextCourse>;
   },
 ): Tool<{ from: string; to: string }, AgendaOutput> {
-  const handleOf = new Map([...handles].map(([handle, id]) => [id, handle]));
+  const handleOf = new Map(
+    [...courses].map(([handle, course]) => [course.id, handle]),
+  );
   const local = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
