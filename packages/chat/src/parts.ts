@@ -27,15 +27,24 @@ export type ChatPart =
       input: { course: string };
       output: CourseFactsOutput;
     }
-  | {
-      /** A proposed Study Block, asked of the student as an Action under `key` once the answer is saved. */
-      type: "tool-proposeStudyBlock";
-      toolCallId: string;
-      input: { work: string; start: string; end: string };
-      approvalId: string;
-      key: string;
-      notes: BlockNote[];
-    };
+  | ProposalPart<"tool-proposeStudyBlock", { work: string }>
+  | ProposalPart<"tool-proposeStudyBlockMove", { block: string }>;
+
+/** A proposed Study Block, asked of the student as an Action under `key` once the answer is saved. */
+export type ProposalPart<Type extends string, Input> = {
+  type: Type;
+  toolCallId: string;
+  input: Input & { start: string; end: string };
+  approvalId: string;
+  key: string;
+  notes: BlockNote[];
+};
+
+export const isProposal = (
+  part: ChatPart,
+): part is Extract<ChatPart, { approvalId: string }> =>
+  part.type === "tool-proposeStudyBlock" ||
+  part.type === "tool-proposeStudyBlockMove";
 
 /** Removes Citation tags that no search returned, so they never show as Citations. */
 export const withoutUnknownTags = (text: string, tags: ReadonlySet<string>) =>

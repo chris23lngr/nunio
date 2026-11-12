@@ -1453,6 +1453,121 @@
               "notes",
               "action"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-proposeStudyBlockMove"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "block": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string"
+                  },
+                  "end": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "block",
+                  "start",
+                  "end"
+                ]
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "outside_study_window",
+                    "daily_limit",
+                    "work_limit"
+                  ]
+                },
+                "description": "Preferences the block would break, shown before approving."
+              },
+              "action": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "expiresAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "awaiting_approval",
+                      "expired",
+                      "dispatching",
+                      "done",
+                      "failed",
+                      "refused",
+                      "unconfirmed"
+                    ]
+                  },
+                  "decision": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "approved",
+                      "denied",
+                      null
+                    ]
+                  },
+                  "shown": {
+                    "$ref": "#/components/schemas/ActionShown"
+                  }
+                },
+                "required": [
+                  "id",
+                  "fingerprint",
+                  "expiresAt",
+                  "status",
+                  "decision",
+                  "shown"
+                ],
+                "description": "The Action the student is asked to approve; null if it could not be asked."
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "approvalId",
+              "notes",
+              "action"
+            ]
           }
         ]
       },

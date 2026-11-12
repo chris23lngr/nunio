@@ -13,9 +13,14 @@ import { chatContext } from "./context.js";
 import { courseFactsTool } from "./course-facts.js";
 import { historyFrom, historyTurns } from "./history.js";
 import type { ChatPart } from "./parts.js";
-import { partsFrom } from "./parts.js";
+import { isProposal, partsFrom } from "./parts.js";
 import type { Proposal } from "./proposals.js";
-import { approveStudyBlock, proposeStudyBlockTool } from "./proposals.js";
+import {
+  approveProposal,
+  intentOf,
+  proposeStudyBlockMoveTool,
+  proposeStudyBlockTool,
+} from "./proposals.js";
 import { searchTool } from "./search.js";
 import { createTurn } from "./turn.js";
 
@@ -153,16 +158,14 @@ export function createChats({
         courses: context.courses,
       }),
       proposeStudyBlock: proposeStudyBlockTool(),
+      proposeStudyBlockMove: proposeStudyBlockMoveTool(),
     };
     /** Proposals that passed the Plan's rules, by tool call, waiting for the student once the answer is saved. */
     const proposals = new Map<string, Proposal>();
+    const approve = approveProposal(turn, { plan, p, timeZone, proposals });
     const toolApproval = {
-      proposeStudyBlock: approveStudyBlock(turn, {
-        plan,
-        p,
-        timeZone,
-        proposals,
-      }),
+      proposeStudyBlock: approve.create,
+      proposeStudyBlockMove: approve.move,
     };
     return { history, context, turn, tools, proposals, toolApproval };
   }
@@ -194,10 +197,7 @@ export function createChats({
     async proposal(p: Principal, chatId: string, approvalId: string) {
       for (const answer of await answers(p, chatId))
         for (const part of answer.parts)
-          if (
-            part.type === "tool-proposeStudyBlock" &&
-            part.approvalId === approvalId
-          )
+          if (isProposal(part) && part.approvalId === approvalId)
             return { answerId: answer.id, ...part };
       return null;
     },
@@ -239,7 +239,7 @@ export function createChats({
             {
               type: "tool-call",
               toolCallId: proposal.toolCallId,
-              toolName: "proposeStudyBlock",
+              toolName: proposal.type.slice("tool-".length),
               input: proposal.input,
             },
           ],
@@ -250,7 +250,7 @@ export function createChats({
             {
               type: "tool-result",
               toolCallId: proposal.toolCallId,
-              toolName: "proposeStudyBlock",
+              toolName: proposal.type.slice("tool-".length),
               output: { type: "text", value: outcome },
             },
           ],
@@ -543,7 +543,7 @@ export function createChats({
         await delegation
           .perform(p, {
             key,
-            intent: { kind: proposal.kind, ...proposal.args },
+            intent: intentOf(proposal),
           })
           .catch((error: unknown) =>
             console.error(

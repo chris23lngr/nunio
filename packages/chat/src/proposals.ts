@@ -1,4 +1,4 @@
-import type { Principal } from "@nunio/delegation";
+import type { ActionIntent, Principal } from "@nunio/delegation";
 import type { BlockNote, BlockRefusal, Plan } from "@nunio/planning";
 import { deadline } from "@nunio/planning";
 import type { Tool } from "ai";
@@ -25,9 +25,27 @@ const instant = (local: string, timeZone: string) =>
 
 /** A proposal the student is asked to approve once the answer is saved. */
 export type Proposal = {
-  kind: "studyBlock.create";
-  args: { workId: string; start: Date; end: Date };
   notes: BlockNote[];
+} & (
+  | {
+      kind: "studyBlock.create";
+      args: { workId: string; start: Date; end: Date };
+    }
+  | {
+      kind: "studyBlock.move";
+      args: { studyBlockId: string; start: Date; end: Date };
+    }
+);
+
+/** The Action a proposal is asked as. */
+export const intentOf = (proposal: Proposal): ActionIntent =>
+  proposal.kind === "studyBlock.create"
+    ? { kind: proposal.kind, ...proposal.args }
+    : { kind: proposal.kind, ...proposal.args };
+
+const times = {
+  start: localTime,
+  end: localTime,
 };
 
 /**
@@ -45,19 +63,33 @@ export function proposeStudyBlockTool(): Tool<{
       "Proposes a new Study Block for an Obligation or Task the Plan showed, for the student to approve. Name the work by its handle, such as O1 or T1, and give start and end as YYYY-MM-DDTHH:MM in the student's time zone.",
     inputSchema: jsonSchema<{ work: string; start: string; end: string }>({
       type: "object",
-      properties: {
-        work: { type: "string", pattern: "^[OT]\\d+$" },
-        start: localTime,
-        end: localTime,
-      },
+      properties: { work: { type: "string", pattern: "^[OT]\\d+$" }, ...times },
       required: ["work", "start", "end"],
       additionalProperties: false,
     }),
   });
 }
 
-/** Checks a proposed Study Block against the Plan, holding a valid one in `proposals` under its tool call. */
-export function approveStudyBlock(
+/** Proposes moving a Study Block the Plan showed; like a new one, it never runs and waits for the student. */
+export function proposeStudyBlockMoveTool(): Tool<{
+  block: string;
+  start: string;
+  end: string;
+}> {
+  return tool({
+    description:
+      "Proposes moving a Study Block the Plan showed, for the student to approve. Name it by its handle, such as B1, and give its new start and end as YYYY-MM-DDTHH:MM in the student's time zone.",
+    inputSchema: jsonSchema<{ block: string; start: string; end: string }>({
+      type: "object",
+      properties: { block: { type: "string", pattern: "^B\\d+$" }, ...times },
+      required: ["block", "start", "end"],
+      additionalProperties: false,
+    }),
+  });
+}
+
+/** Checks a proposal against the Plan, holding a valid one in `proposals` under its tool call. */
+export function approveProposal(
   turn: Turn,
   {
     plan,
@@ -71,37 +103,69 @@ export function approveStudyBlock(
     proposals: Map<string, Proposal>;
   },
 ) {
-  return async (
-    input: { work: string; start: string; end: string },
-    { toolCallId }: { toolCallId: string },
+  const denied = (reason: string) => ({ type: "denied" as const, reason });
+  const check = async (
+    toolCallId: string,
+    proposal: Proposal,
+    checked: Awaited<ReturnType<Plan["check"]>>,
   ) => {
-    const work = turn.lookup(input.work);
-    if (!work || work.kind === "block")
-      return {
-        type: "denied" as const,
-        reason: `Not proposed: no Obligation or Task has the handle ${input.work}. Read the Plan with agenda first.`,
-      };
-    const args = {
-      workId: work.id,
-      start: instant(input.start, timeZone),
-      end: instant(input.end, timeZone),
-    };
-    const checked = await plan.check(p, {
-      kind: "create",
-      work: { kind: work.kind, id: work.id },
-      start: args.start,
-      end: args.end,
-    });
     if (checked.status === "refused")
-      return {
-        type: "denied" as const,
-        reason: `Not proposed: ${checked.reasons.map((reason) => why[reason]).join("; ")}. Choose another time.`,
-      };
-    proposals.set(toolCallId, {
-      kind: "studyBlock.create",
-      args,
-      notes: checked.notes,
-    });
+      return denied(
+        `Not proposed: ${checked.reasons.map((reason) => why[reason]).join("; ")}. Choose another time.`,
+      );
+    proposals.set(toolCallId, { ...proposal, notes: checked.notes });
     return { type: "user-approval" as const };
+  };
+  return {
+    create: async (
+      input: { work: string; start: string; end: string },
+      { toolCallId }: { toolCallId: string },
+    ) => {
+      const work = turn.lookup(input.work);
+      if (!work || work.kind === "block")
+        return denied(
+          `Not proposed: no Obligation or Task has the handle ${input.work}. Read the Plan with agenda first.`,
+        );
+      const args = {
+        workId: work.id,
+        start: instant(input.start, timeZone),
+        end: instant(input.end, timeZone),
+      };
+      return check(
+        toolCallId,
+        { kind: "studyBlock.create", args, notes: [] },
+        await plan.check(p, {
+          kind: "create",
+          work: { kind: work.kind, id: work.id },
+          start: args.start,
+          end: args.end,
+        }),
+      );
+    },
+    move: async (
+      input: { block: string; start: string; end: string },
+      { toolCallId }: { toolCallId: string },
+    ) => {
+      const block = turn.lookup(input.block);
+      if (block?.kind !== "block")
+        return denied(
+          `Not proposed: no Study Block has the handle ${input.block}. Read the Plan with agenda first.`,
+        );
+      const args = {
+        studyBlockId: block.id,
+        start: instant(input.start, timeZone),
+        end: instant(input.end, timeZone),
+      };
+      return check(
+        toolCallId,
+        { kind: "studyBlock.move", args, notes: [] },
+        await plan.check(p, {
+          kind: "move",
+          blockId: block.id,
+          start: args.start,
+          end: args.end,
+        }),
+      );
+    },
   };
 }

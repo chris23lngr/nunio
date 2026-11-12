@@ -29,6 +29,41 @@ const Citation = z.object({
     .union([Provenance, z.literal("gone")])
     .describe('Resolved when shown; "gone" once its Source is deleted.'),
 });
+/** A proposed Study Block, with the Action the student is asked to approve. */
+const proposalPart = <Type extends string>(
+  type: Type,
+  names: Record<string, z.ZodString>,
+) =>
+  z.object({
+    type: z.literal(type),
+    toolCallId: z.string(),
+    input: z.object({ ...names, start: z.string(), end: z.string() }),
+    approvalId: z.string(),
+    notes: z
+      .array(z.enum(["outside_study_window", "daily_limit", "work_limit"]))
+      .describe("Preferences the block would break, shown before approving."),
+    action: z
+      .object({
+        id: z.string(),
+        fingerprint: z.string().nullable(),
+        expiresAt: z.date().nullable(),
+        status: z.enum([
+          "awaiting_approval",
+          "expired",
+          "dispatching",
+          "done",
+          "failed",
+          "refused",
+          "unconfirmed",
+        ]),
+        decision: z.enum(["approved", "denied"]).nullable(),
+        shown: ActionShown,
+      })
+      .nullable()
+      .describe(
+        "The Action the student is asked to approve; null if it could not be asked.",
+      ),
+  });
 const Part = z
   .discriminatedUnion("type", [
     z.object({ type: z.literal("reasoning"), text: z.string() }),
@@ -60,36 +95,8 @@ const Part = z
       input: z.object({ course: z.string() }),
       output: z.object({ course: z.string(), facts: z.number().int() }),
     }),
-    z.object({
-      type: z.literal("tool-proposeStudyBlock"),
-      toolCallId: z.string(),
-      input: z.object({ work: z.string(), start: z.string(), end: z.string() }),
-      approvalId: z.string(),
-      notes: z
-        .array(z.enum(["outside_study_window", "daily_limit", "work_limit"]))
-        .describe("Preferences the block would break, shown before approving."),
-      action: z
-        .object({
-          id: z.string(),
-          fingerprint: z.string().nullable(),
-          expiresAt: z.date().nullable(),
-          status: z.enum([
-            "awaiting_approval",
-            "expired",
-            "dispatching",
-            "done",
-            "failed",
-            "refused",
-            "unconfirmed",
-          ]),
-          decision: z.enum(["approved", "denied"]).nullable(),
-          shown: ActionShown,
-        })
-        .nullable()
-        .describe(
-          "The Action the student is asked to approve; null if it could not be asked.",
-        ),
-    }),
+    proposalPart("tool-proposeStudyBlock", { work: z.string() }),
+    proposalPart("tool-proposeStudyBlockMove", { block: z.string() }),
   ])
   .openapi("ChatMessagePart");
 const Message = z
@@ -191,9 +198,7 @@ async function withActions(
   messages: ChatMessage[],
 ) {
   const keys = messages.flatMap((message) =>
-    message.parts.flatMap((part) =>
-      part.type === "tool-proposeStudyBlock" ? [part.key] : [],
-    ),
+    message.parts.flatMap((part) => ("approvalId" in part ? [part.key] : [])),
   );
   const records = keys.length
     ? await c.get("delegation").history(p, { keys })
@@ -203,7 +208,7 @@ async function withActions(
   return messages.map((message) => ({
     ...message,
     parts: message.parts.map((part) => {
-      if (part.type !== "tool-proposeStudyBlock") return part;
+      if (!("approvalId" in part)) return part;
       const { key, ...shown } = part;
       const record = records.find((r) => r.key === key);
       return {
@@ -232,7 +237,7 @@ async function withActions(
 /** What the model is told of an approved proposal, by what the gate made of it. */
 function outcomeOf(record: ActionRecord) {
   if (record.status === "done")
-    return "The student approved the proposed Study Block, and it is now in their Plan.";
+    return "The student approved the proposal, and the Study Block is now in their Plan as proposed.";
   if (record.status === "refused")
     return `The student approved it, but nunio could not perform it (${record.refusal ?? "refused"}). Tell the student, and offer another time if one fits.`;
   return "The student approved it, but nunio could not confirm that it took effect. Ask the student to check their Plan.";

@@ -3440,6 +3440,67 @@ describe("Chat", () => {
     ).toMatchObject({ status: "done", decision: "approved" });
   });
 
+  it("proposes moving a Study Block the Plan showed, and moves it once approved", async () => {
+    const { headers, chatId, obligationId } =
+      await planningChat("chat-propose-move");
+    const [day, next] = [berlinDay(8), berlinDay(9)];
+    const at = (date: string, time: string) =>
+      deadline(date, time, "Europe/Berlin");
+    await app.request(`${apiOrigin}/api/me/study-blocks`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        work: { kind: "obligation", id: obligationId },
+        start: at(day, "10:00"),
+        end: at(day, "12:00"),
+      }),
+    });
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeStudyBlockMove", {
+        block: "B1",
+        start: `${next}T14:00`,
+        end: `${next}T16:00`,
+      }),
+    );
+
+    const asked = await askInChat(
+      headers,
+      chatId,
+      "Schieb den Block auf morgen Nachmittag.",
+    );
+    const card = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlockMove",
+    );
+    expect(card.action.shown).toEqual({
+      kind: "studyBlock.move",
+      work: { title: "Übungsblatt 4", course: "Analysis I" },
+      from: {
+        start: at(day, "10:00").toISOString(),
+        end: at(day, "12:00").toISOString(),
+      },
+      to: {
+        start: at(next, "14:00").toISOString(),
+        end: at(next, "16:00").toISOString(),
+      },
+    });
+    await app.request(`${apiOrigin}/api/me/approvals/${card.action.id}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        decision: "approve",
+        fingerprint: card.action.fingerprint,
+      }),
+    });
+
+    expect(
+      await admin.studyBlock.findMany({
+        where: { obligationId },
+        select: { start: true, end: true },
+      }),
+    ).toEqual([{ start: at(next, "14:00"), end: at(next, "16:00") }]);
+  });
+
   it("offers no search in a Chat with nothing selected, but still the Plan", async () => {
     const { headers, id } = await emptyChat("chat-no-search");
     reply = "Für diesen Chat ist kein Material ausgewählt.";
@@ -3457,7 +3518,7 @@ describe("Chat", () => {
     );
 
     expect(offeredTools).toEqual([
-      ["agenda", "courseFacts", "proposeStudyBlock"],
+      ["agenda", "courseFacts", "proposeStudyBlock", "proposeStudyBlockMove"],
     ]);
     expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
   });
