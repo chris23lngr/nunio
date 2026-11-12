@@ -97,7 +97,16 @@ async function bytesOf(document: Document) {
   if (!document.source.pages) return downloaded;
   const [from, to] = document.source.pages,
     excerpt = join(cache, `${document.id}.pdf`);
-  await exec("qpdf", [whole, "--pages", whole, `${from}-${to}`, "--", excerpt]);
+  // Exit 3 means qpdf succeeded with warnings, e.g. duplicate annotations common in lecture PDFs.
+  await exec("qpdf", [
+    "--warning-exit-0",
+    whole,
+    "--pages",
+    whole,
+    `${from}-${to}`,
+    "--",
+    excerpt,
+  ]);
   return readFile(excerpt);
 }
 

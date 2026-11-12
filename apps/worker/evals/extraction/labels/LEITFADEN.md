@@ -1,6 +1,6 @@
 # Leitfaden: Topics labeln
 
-> **Entwurf, wartet auf Freigabe durch den Gründer.** Hintergrund: [docs/design/topic-quality.md](../../../../../docs/design/topic-quality.md).
+> **Vom Gründer freigegeben am 2026-11-12.** Hintergrund: [docs/design/topic-quality.md](../../../../../docs/design/topic-quality.md).
 
 Pro Deck eine Datei `<deck-id>.md`. Blind labeln: vorher keine Ausgabe von Modellen oder Agenten ansehen. Eine Zeile pro Konzept.
 
