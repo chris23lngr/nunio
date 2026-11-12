@@ -16,6 +16,7 @@ model User {
   sources          Source[]
   courses          Course[]
   chats            Chat[]
+  chatPreference   ChatPreference?
   queryEmbeddings  QueryEmbedding[]
   tasks            Task[]
   studyBlocks      StudyBlock[]

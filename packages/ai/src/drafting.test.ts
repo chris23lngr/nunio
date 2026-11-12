@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { createModels } from "./models.js";
 import { createMaker } from "./practice.js";
+import { testCatalog } from "./test-catalog.js";
 
 function recorded(
   bodies: Record<string, unknown>[],
@@ -39,6 +40,7 @@ const makerReplying = (
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
+      catalog: testCatalog,
       fetch: recorded(bodies, content, finishReason),
     }),
   );

@@ -496,6 +496,22 @@ function scriptedReader(
     createModels({
       apiKey: "test",
       baseURL: "https://openrouter.test/api/v1",
+      catalog: [
+        {
+          key: "haiku-5.5-reasoning-high",
+          providerModelId: "anthropic/claude-haiku-5.5",
+          reasoningEffort: "high",
+          maxOutputTokens: 8_000,
+          prices: [
+            {
+              minPromptTokens: 0,
+              inputMicroUsdPerMTok: 100_000,
+              outputMicroUsdPerMTok: 500_000,
+            },
+          ],
+          upstream: ["Amazon Bedrock", "Google"],
+        },
+      ],
       fetch: async () => {
         requests++;
         const reply = replies.shift();

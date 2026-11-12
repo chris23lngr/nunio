@@ -1,5 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import type { Answerer, Estimator } from "@nunio/ai";
+import type { Estimator } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { pilotStatus } from "@nunio/billing";
 import type { PrismaClient } from "@nunio/db";
@@ -18,6 +18,7 @@ import type { Plan } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
 import { registerApprovalRoutes } from "./approvals.js";
 import type { ArtifactWorkflows } from "./artifact-workflows.js";
+import type { ChatModels } from "./chat-models.js";
 import { registerChatRoutes } from "./chats.js";
 import { registerCourseRoutes } from "./courses.js";
 import { registerHomeRoutes } from "./home.js";
@@ -44,7 +45,7 @@ export interface AppBindings {
     facts: Facts;
     sourceWorkflows: SourceWorkflows;
     chats: Chats;
-    answerer: Answerer;
+    chatModels: ChatModels;
     plan: Plan;
     estimator: Estimator;
     projects: Projects;

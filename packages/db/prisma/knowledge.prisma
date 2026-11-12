@@ -368,6 +368,9 @@ model ChatMessage {
   derivedFrom String[] @default([])
   /// [{ tag, cite }] for the citation tags in the text.
   citations   Json     @default("[]")
+  /// The Model Catalog key that wrote an assistant answer; null for questions and older answers.
+  modelKey    String?
+  model       CatalogModel? @relation(fields: [modelKey], references: [key], onDelete: Restrict)
   createdAt DateTime @default(now())
 
   @@index([chatId, createdAt])

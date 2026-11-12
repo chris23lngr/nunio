@@ -17,6 +17,7 @@ import { useAppForm } from "@/lib/form";
 import { randomId } from "@/lib/random-id";
 import {
   answerError,
+  ChatError,
   chatTransport,
   createChat,
   failureMessage,
@@ -28,6 +29,7 @@ import {
   messageText,
   toUIMessage,
 } from "./api/chat-queries";
+import { modelQueries } from "./api/model-queries";
 import { ChatComposer } from "./components/chat-composer";
 import { ChatEmptyState } from "./components/chat-empty-state";
 import { ChatMessage } from "./components/chat-message";
@@ -55,30 +57,6 @@ function itemKey(messages: ChatUIMessage[], index: number) {
     : message.id;
 }
 
-// The models of packages/ai; Chat answers use its "explanation" default. Display only until
-// students can choose one.
-const models = [
-  {
-    id: "anthropic/claude-haiku-5.5",
-    name: "Haiku 5.5",
-    provider: "Anthropic",
-    description: "Schnell und sparsam für kurze, klare Aufgaben.",
-  },
-  {
-    id: "anthropic/claude-sonnet-5.5",
-    name: "Sonnet 5.5",
-    provider: "Anthropic",
-    description: "Ausgewogen für Erklärungen und alltägliches Lernen.",
-  },
-  {
-    id: "anthropic/claude-opus-5.5",
-    name: "Opus 5.5",
-    provider: "Anthropic",
-    description: "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
-  },
-];
-const chatModel = "anthropic/claude-sonnet-5.5";
-
 const prompts = [
   "Was habe ich heute noch in BWL1 zu tun?",
   "Erstelle mir Flashcards für FOF1",
@@ -105,6 +83,13 @@ export function ChatScreen({
   const chat = useQuery(chatQueries(apiOrigin, id));
   const courses = useQuery({ ...chatCourseQueries(apiOrigin), enabled: !id });
   const create = useMutation(createChat(apiOrigin));
+  const models = useQuery(modelQueries(apiOrigin));
+  // The student's pick in this visit; the server remembers it once a question is sent.
+  const [picked, setPicked] = useState<string | null>(null);
+  const model =
+    picked && models.data?.models.some(({ key }) => key === picked)
+      ? picked
+      : models.data?.selected;
   const textarea = useRef<HTMLTextAreaElement>(null);
   const [error, setError] = useState<string | null>(null);
   // The turn being answered: its question, draft, and outcome once known.
@@ -148,7 +133,20 @@ export function ChatScreen({
     if (id) void client.invalidateQueries(chatQueries(apiOrigin, id));
   };
 
-  const fail = (message: string) => {
+  // An unavailable model: reload the offered ones and switch to the remembered or default one.
+  const switchModel = async (message: string) => {
+    setPicked(null);
+    const { data } = await models.refetch();
+    const next = data?.models.find(({ key }) => key === data.selected);
+    if (next)
+      setError((current) =>
+        current === message
+          ? `${message} Wir haben auf ${next.name} gewechselt.`
+          : current,
+      );
+  };
+
+  const fail = (message: string, reason?: string) => {
     const current = turn.current;
     if (!current || current.key !== sendContext.current.openChat.key) return;
     turn.current = null;
@@ -160,6 +158,7 @@ export function ChatScreen({
     restored.current = { questionId: current.questionId, composer, before };
     setError(message);
     refresh();
+    if (reason === "model_unavailable") void switchModel(message);
   };
 
   const { messages, setMessages, sendMessage, status, stop } =
@@ -173,14 +172,18 @@ export function ChatScreen({
         if (part.type === "data-refused")
           turn.current.refused = part.data.error;
       },
-      onError: (cause) => fail(failureMessage(cause)),
+      onError: (cause) =>
+        fail(
+          failureMessage(cause),
+          cause instanceof ChatError ? cause.reason : undefined,
+        ),
       onFinish: ({ isAbort, isError }) => {
         const current = turn.current;
         if (!current || isError) return;
         if (isAbort)
           return fail("Antwort gestoppt. Deine Nachricht bleibt erhalten.");
         if (!current.committed)
-          return fail(answerError(current.refused).message);
+          return fail(answerError(current.refused).message, current.refused);
         const { question, ...answer } = current.committed;
         turn.current = null;
         setMessages((messages) => [
@@ -204,11 +207,10 @@ export function ChatScreen({
       setError(null);
       create.reset();
       form.setFieldValue("text", "");
-      void sendMessage({
-        id: questionId,
-        role: "user",
-        parts: [{ type: "text", text }],
-      });
+      void sendMessage(
+        { id: questionId, role: "user", parts: [{ type: "text", text }] },
+        { body: { model } },
+      );
     },
   });
 
@@ -260,7 +262,15 @@ export function ChatScreen({
       aria-label="Chat"
     >
       <PageHeader>
-        <ModelSelector models={models} value={chatModel} />
+        {/* Hidden until the models load; a question sent meanwhile has no `model`, so the API uses the remembered one. */}
+        {models.data && model && (
+          <ModelSelector
+            models={models.data.models}
+            value={model}
+            defaultModel={models.data.default}
+            onValueChange={setPicked}
+          />
+        )}
       </PageHeader>
       <MessageScrollerProvider
         key={openChat.key}

@@ -2,16 +2,34 @@
 // node --env-file=packages/ai/.env.staging packages/ai/evals/source-scan.ts
 
 import { readFile, writeFile } from "node:fs/promises";
-import { createModels, createScanReader } from "../dist/index.js";
+import {
+  createModels,
+  createScanReader,
+  fetchZeroRetentionPrices,
+} from "../dist/index.js";
 
 // Synthetic fixture rendered by Poppler: "Prüfung am 12. März um 9 Uhr in Raum H1."
 const image = await readFile(
   new URL("./fixtures/german-scan.jpg", import.meta.url),
 );
+const baseURL = process.env.OPENROUTER_BASE_URL!;
+const haiku = (await fetchZeroRetentionPrices({ baseURL })).get(
+  "anthropic/claude-haiku-5.5",
+)!;
 const reader = createScanReader(
   createModels({
     apiKey: process.env.OPENROUTER_API_KEY!,
-    baseURL: process.env.OPENROUTER_BASE_URL!,
+    baseURL,
+    catalog: [
+      {
+        key: "haiku-5.5-reasoning-high",
+        providerModelId: haiku.providerModelId,
+        reasoningEffort: "high",
+        maxOutputTokens: 8_000,
+        prices: haiku.prices,
+        upstream: haiku.upstream,
+      },
+    ],
   }),
 );
 const estimate = reader.estimateMicroUsd(image, "");

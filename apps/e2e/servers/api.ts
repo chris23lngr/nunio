@@ -4,7 +4,7 @@ import { appFromEnv } from "@nunio/api/create-app";
 import { tlsOptions } from "./tls.js";
 
 serve({
-  fetch: appFromEnv(process.env).fetch,
+  fetch: (await appFromEnv(process.env)).fetch,
   port: Number(process.env.PORT),
   createServer,
   serverOptions: tlsOptions(),

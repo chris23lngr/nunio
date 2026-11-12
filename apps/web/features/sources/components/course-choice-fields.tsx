@@ -1,6 +1,14 @@
 import type { paths } from "@nunio/api-client";
 import { Field, FieldLabel } from "@nunio/ui/components/field/field";
 import { Input } from "@nunio/ui/components/input/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@nunio/ui/components/select/select";
 import { useId } from "react";
 import type { CourseSummary } from "@/features/courses/api/course-queries";
 
@@ -55,21 +63,40 @@ export function CourseChoiceFields({
     <>
       <Field>
         <FieldLabel htmlFor={`${id}-course`}>Kurs</FieldLabel>
-        <select
-          id={`${id}-course`}
-          className="h-7.5 rounded-md bg-white px-2 text-sm text-base-800 shadow-sm outline outline-base-700/15"
+        <Select
+          items={[
+            { value: "", label: "Automatisch erkennen" },
+            ...choosable.map((course) => ({
+              value: course.id,
+              label: courseName(course),
+            })),
+            { value: newCourse, label: "Neuer Kurs …" },
+          ]}
           value={selected}
           disabled={disabled}
-          onChange={(event) => onSelect(event.target.value)}
+          onValueChange={(value) => {
+            if (value !== null) onSelect(value);
+          }}
         >
-          <option value="">Automatisch erkennen</option>
-          {choosable.map((course) => (
-            <option key={course.id} value={course.id}>
-              {courseName(course)}
-            </option>
-          ))}
-          <option value={newCourse}>Neuer Kurs …</option>
-        </select>
+          <SelectTrigger id={`${id}-course`} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent
+            align="start"
+            sideOffset={8}
+            alignItemWithTrigger={false}
+          >
+            <SelectGroup>
+              <SelectItem value="">Automatisch erkennen</SelectItem>
+              {choosable.map((course) => (
+                <SelectItem key={course.id} value={course.id}>
+                  {courseName(course)}
+                </SelectItem>
+              ))}
+              <SelectItem value={newCourse}>Neuer Kurs …</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </Field>
       {selected === newCourse && (
         <>

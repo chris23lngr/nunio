@@ -1,5 +1,5 @@
 import { generateText, streamText } from "ai";
-import type { Models } from "./models.js";
+import type { RegisteredModel } from "./models.js";
 
 export interface AnswerInput {
   question: string;
@@ -10,6 +10,8 @@ export interface AnswerInput {
 }
 
 export interface Answerer {
+  /** The Model Catalog key it answers with, recorded with every answer. */
+  readonly modelKey: string;
   estimateMicroUsd(input: AnswerInput): number;
   answer(
     input: AnswerInput,
@@ -32,11 +34,12 @@ const instructions = [
   "Answer in the language of the student's question.",
 ].join("\n");
 
-export function createAnswerer(models: Models): Answerer {
-  const model = models.forTask("explanation");
+/** Answers with `model`: the Model the student chose for Chat, resolved per request. */
+export function createAnswerer(model: RegisteredModel): Answerer {
   const dataMessage = (data: string) =>
     `Course material for the next question:\n${data}`;
   return {
+    modelKey: model.key,
     estimateMicroUsd: (input) =>
       model.estimateMicroUsd([
         instructions,

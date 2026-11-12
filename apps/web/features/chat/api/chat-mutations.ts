@@ -37,8 +37,15 @@ export function createChat(apiOrigin: string) {
   });
 }
 
-/** An error whose message is safe to show the student. */
-export class ChatError extends Error {}
+/** An error whose message is safe to show the student, with the API's refusal reason if any. */
+export class ChatError extends Error {
+  constructor(
+    message: string,
+    public readonly reason?: string,
+  ) {
+    super(message);
+  }
+}
 
 export function answerError(reason?: string) {
   return new ChatError(
@@ -48,12 +55,15 @@ export function answerError(reason?: string) {
         ? "Antworten sind gerade pausiert. Versuche es später erneut."
         : reason === "gone"
           ? "Dieser Chat oder eine verwendete Quelle ist nicht mehr verfügbar."
-          : "Die Antwort wurde unterbrochen. Deine Nachricht bleibt erhalten.",
+          : reason === "model_unavailable"
+            ? "Dieses Modell ist nicht mehr verfügbar."
+            : "Die Antwort wurde unterbrochen. Deine Nachricht bleibt erhalten.",
+    reason,
   );
 }
 
 /**
- * Sends only the newest question. `chatId` resolves the Chat, creating it on the first send, and
+ * Sends only the newest question, with the model passed as `body.model` to `sendMessage`. `chatId` resolves the Chat, creating it on the first send, and
  * gets the send's abort signal so Stop also cancels the creation.
  */
 export function chatTransport(
@@ -76,9 +86,15 @@ export function chatTransport(
           }
           return response;
         },
-        prepareSendMessagesRequest: ({ messages }) => {
+        prepareSendMessagesRequest: ({ messages, body }) => {
           const question = messages.at(-1)!;
-          return { body: { id: question.id, text: messageText(question) } };
+          return {
+            body: {
+              id: question.id,
+              text: messageText(question),
+              model: body?.model,
+            },
+          };
         },
       }).sendMessages(options);
     },

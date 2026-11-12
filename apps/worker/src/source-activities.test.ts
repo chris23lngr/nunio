@@ -1,3 +1,4 @@
+import type { ModelConfig } from "@nunio/ai";
 import { describe, expect, it } from "vitest";
 import { createSourceActivities } from "./source-activities.js";
 
@@ -18,6 +19,24 @@ const env = {
   PARSER_HOSTPORT: "parser:10000",
 };
 
+/** The Model Catalog's Haiku, which reads scans and extracts facts. */
+const catalog: ModelConfig[] = [
+  {
+    key: "haiku-5.5-reasoning-high",
+    providerModelId: "anthropic/claude-haiku-5.5",
+    reasoningEffort: "high",
+    maxOutputTokens: 8_000,
+    prices: [
+      {
+        minPromptTokens: 0,
+        inputMicroUsdPerMTok: 110_000,
+        outputMicroUsdPerMTok: 550_000,
+      },
+    ],
+    upstream: ["Amazon Bedrock", "Google"],
+  },
+];
+
 describe("Source activities", () => {
   it("refuse to start without their settings, naming every missing one", async () => {
     const partial = {
@@ -25,13 +44,19 @@ describe("Source activities", () => {
       HETZNER_S3_ACCESS_KEY_ID: undefined,
       OPENROUTER_API_KEY: "",
     };
-    expect(() => createSourceActivities(partial)).toThrow(
+    expect(() => createSourceActivities(partial, catalog)).toThrow(
       "Missing settings: HETZNER_S3_ACCESS_KEY_ID, OPENROUTER_API_KEY",
     );
   });
 
   it("start with a complete configuration", async () => {
-    const { close } = createSourceActivities(env);
+    const { close } = createSourceActivities(env, catalog);
     await close();
   });
+});
+
+it("refuse to start when the Model Catalog lacks a task's Model", () => {
+  expect(() => createSourceActivities(env, [])).toThrow(
+    /haiku-5.5-reasoning-high/,
+  );
 });

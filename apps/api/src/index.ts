@@ -3,4 +3,4 @@
 import { Hono } from "hono";
 import { appFromEnv } from "./create-app.js";
 
-export default new Hono().route("/", appFromEnv(process.env));
+export default new Hono().route("/", await appFromEnv(process.env));

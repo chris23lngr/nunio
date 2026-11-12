@@ -2,8 +2,16 @@
 
 import type { paths } from "@nunio/api-client";
 import { createApiClient } from "@nunio/api-client";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@nunio/ui/components/select/select";
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 type Course =
   paths["/api/me/review"]["get"]["responses"][200]["content"]["application/json"]["courses"][number];
@@ -74,6 +82,9 @@ const label = ({ kind, item }: Item) =>
     : `${factTypes[item.type]}: ${item.value}`;
 
 export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
+  const id = useId();
+  const [entryCourse, setEntryCourse] = useState<string | null>(null);
+  const [entryKind, setEntryKind] = useState<string | null>("assignment");
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [suggestions, setSuggestions] = useState<MergeSuggestion[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -301,7 +312,6 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
       });
       if (result.data) {
         form.reset();
-        setNewCourse(false);
       } else
         setError(
           {
@@ -327,23 +337,50 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
       <details>
         <summary>Add an Obligation</summary>
         <form
+          onReset={() => {
+            setEntryCourse(null);
+            setEntryKind("assignment");
+            setNewCourse(false);
+          }}
           onSubmit={(event) => {
             void enter(event);
           }}
         >
-          <label>
+          <label htmlFor={`${id}-course`}>
             Course{" "}
-            <select
+            <Select
               name="course"
-              onChange={(event) => setNewCourse(event.target.value === "new")}
+              value={entryCourse ?? accepted[0]?.id ?? "new"}
+              items={[
+                ...accepted.map((course) => ({
+                  value: course.id,
+                  label: courseName(course),
+                })),
+                { value: "new", label: "A new Course…" },
+              ]}
+              onValueChange={(value) => {
+                setEntryCourse(value);
+                setNewCourse(value === "new");
+              }}
             >
-              {accepted.map((course) => (
-                <option key={course.id} value={course.id}>
-                  {courseName(course)}
-                </option>
-              ))}
-              <option value="new">A new Course…</option>
-            </select>
+              <SelectTrigger id={`${id}-course`} aria-label="Course">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent
+                align="start"
+                sideOffset={8}
+                alignItemWithTrigger={false}
+              >
+                <SelectGroup>
+                  {accepted.map((course) => (
+                    <SelectItem key={course.id} value={course.id}>
+                      {courseName(course)}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="new">A new Course…</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </label>{" "}
           {(newCourse || accepted.length === 0) && (
             <>
@@ -355,15 +392,34 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
               </label>{" "}
             </>
           )}
-          <label>
+          <label htmlFor={`${id}-kind`}>
             Kind{" "}
-            <select name="kind" defaultValue="assignment">
-              {Object.entries(kinds).map(([value, name]) => (
-                <option key={value} value={value}>
-                  {name}
-                </option>
-              ))}
-            </select>
+            <Select
+              name="kind"
+              value={entryKind}
+              onValueChange={setEntryKind}
+              items={Object.entries(kinds).map(([value, label]) => ({
+                value,
+                label,
+              }))}
+            >
+              <SelectTrigger id={`${id}-kind`} aria-label="Kind">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent
+                align="start"
+                sideOffset={8}
+                alignItemWithTrigger={false}
+              >
+                <SelectGroup>
+                  {Object.entries(kinds).map(([value, name]) => (
+                    <SelectItem key={value} value={value}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </label>{" "}
           <label>
             Title <input name="title" required />
@@ -691,20 +747,44 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
                   void merge(event, course);
                 }}
               >
-                <label>
+                <label htmlFor={`${id}-into-${course.id}`}>
                   Same Course as{" "}
-                  <select name="into" defaultValue="" required>
-                    <option value="" disabled>
-                      Choose a Course
-                    </option>
-                    {open
+                  <Select
+                    name="into"
+                    defaultValue={null}
+                    required
+                    items={open
                       .filter((other) => other.id !== course.id)
-                      .map((other) => (
-                        <option key={other.id} value={other.id}>
-                          {courseName(other)}
-                        </option>
-                      ))}
-                  </select>
+                      .map((other) => ({
+                        value: other.id,
+                        label: courseName(other),
+                      }))}
+                  >
+                    <SelectTrigger
+                      id={`${id}-into-${course.id}`}
+                      aria-label="Same Course as"
+                    >
+                      <SelectValue placeholder="Choose a Course" />
+                    </SelectTrigger>
+                    <SelectContent
+                      align="start"
+                      sideOffset={8}
+                      alignItemWithTrigger={false}
+                    >
+                      <SelectGroup>
+                        <SelectItem value="" disabled>
+                          Choose a Course
+                        </SelectItem>
+                        {open
+                          .filter((other) => other.id !== course.id)
+                          .map((other) => (
+                            <SelectItem key={other.id} value={other.id}>
+                              {courseName(other)}
+                            </SelectItem>
+                          ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                 </label>{" "}
                 <button type="submit" disabled={busy}>
                   Merge into it

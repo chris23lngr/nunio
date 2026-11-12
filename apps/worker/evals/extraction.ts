@@ -17,6 +17,7 @@ import {
   createModels,
   createScanReader,
   createTopicJudge,
+  fetchZeroRetentionPrices,
   isDefiniteFailure,
 } from "@nunio/ai";
 import { createPool, createPrismaClient } from "@nunio/db";
@@ -116,8 +117,31 @@ const provider = {
 };
 if (!provider.apiKey || !provider.baseURL)
   throw new Error("OPENROUTER_API_KEY and OPENROUTER_BASE_URL are required");
-const models = createModels(provider);
-const topicJudge = createTopicJudge(models);
+// The Model Catalog's Haiku, priced live from OpenRouter's zero-retention endpoints; Sonnet judges Topics.
+const prices = await fetchZeroRetentionPrices({ baseURL: provider.baseURL });
+const haiku = prices.get("anthropic/claude-haiku-5.5")!;
+const sonnet = prices.get("anthropic/claude-sonnet-5.5")!;
+const catalog = [
+  {
+    key: "haiku-5.5-reasoning-high",
+    providerModelId: haiku.providerModelId,
+    reasoningEffort: "high" as const,
+    maxOutputTokens: 8_000,
+    prices: haiku.prices,
+    upstream: haiku.upstream,
+  },
+];
+const models = createModels({ ...provider, catalog });
+const topicJudge = createTopicJudge(
+  models.fromConfig({
+    key: "sonnet-5.5-topic-judge",
+    providerModelId: sonnet.providerModelId,
+    reasoningEffort: "low",
+    maxOutputTokens: 8_000,
+    prices: sonnet.prices,
+    upstream: sonnet.upstream,
+  }),
+);
 const scans = createScanReader(models),
   embedder = createEmbedder(provider);
 // Records each window's pages and raw answer, so the report can say why an item failed grounding.
