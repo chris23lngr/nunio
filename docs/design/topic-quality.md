@@ -78,6 +78,24 @@ The founder delegated rating to an independent model rater (Claude Fable 5.2, me
 5. A minimum quote length, and drop counts per reason. No per-item content is logged.
 6. Typed figure Provenance, only if the diagnosis shows that the figure path costs recall.
 
+After step 1 the founder moved step 4 forward: no Topic was grounded only in a figure description, and the instructions' cap
+limits recall.
+
+## Phase B results
+
+Bound runs (`EVAL_BOUND=1`), 8 dev decks, 3 runs each, strict judge, scored over the decks themselves.
+
+| Step                                                                                        | Topic precision | Topic recall | Figure-only recall | Cost     |
+| ------------------------------------------------------------------------------------------- | --------------- | ------------ | ------------------ | -------- |
+| Baseline                                                                                    | 73.2 %          | 28.1 %       | 14.3 % (3 of 21)   | USD 0.85 |
+| 1. Bound Source sees its Course (#90), report `docs/operations/topic-quality-phase-b1.json` | 70.5 %          | 44.8 %       | 52.4 % (11 of 21)  | USD 0.79 |
+- `dhbw-digitaltechnik-flipflops` and `dhbw-bildverarbeitung-bildaufnahme` now yield Topics: recall 0 → 47 % and 0 → 48 %.
+- The other decks move within noise, except `dhbw-messtechnik-messbruecken` (20 → 39 %) and `uo-ec607-intro` (36 → 51 %).
+- The model returns 13.8 Topics per run on average; the founder labelled 20.6 required concepts per deck.
+- No Topic is grounded only in a figure description. Many unmatched Topics combine two concepts, such as
+  "Brennweite und Zoom" or "Schaltwerk vs. Schaltnetz", which the strict judge does not count.
+- No two Topics of one run matched the same label.
+
 ## Out of scope
 
 Course assignment when there is no confident match (ADR-0017 stays unchanged), model choice, retrieval, adversarial tests, refactoring Course resolution, page images for the extractor, re-ingesting old Sources, and the language of UI copy.
