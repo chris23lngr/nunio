@@ -71,11 +71,12 @@ The founder delegated rating to an independent model rater (Claude Fable 5.2, me
 
 ## Phase B order
 
-1. Offline diagnosis of the figure descriptions.
-2. Scan prompt: no `[Abbildung]` line when a page has no figure.
-3. Per-window Topic instructions, and deterministic dedup within one extraction. Topic identity and key stay unchanged.
-4. A minimum quote length, and drop counts per reason. No per-item content is logged.
-5. Typed figure Provenance, only if the diagnosis shows that the figure path costs recall.
+1. A bound Source shows the model its own Course, so a deck that never names its Course still yields items (finding above).
+2. Offline diagnosis of the figure descriptions.
+3. Scan prompt: no `[Abbildung]` line when a page has no figure.
+4. Per-window Topic instructions, and deterministic dedup within one extraction. Topic identity and key stay unchanged.
+5. A minimum quote length, and drop counts per reason. No per-item content is logged.
+6. Typed figure Provenance, only if the diagnosis shows that the figure path costs recall.
 
 ## Out of scope
 

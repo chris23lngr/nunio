@@ -239,17 +239,16 @@ export function createFacts({
           archivedAt: null,
           mergedIntoId: null,
         };
-        // A Source bound to a Course puts everything there, so the model needs no Courses to choose from.
+        // A Source bound to a Course puts everything there whatever the model names. It still sees that Course,
+        // so a deck that never names its Course (a mid-series lecture) has one to attach its items to.
         const context = {
           title: source.title,
-          courses: source.courseId
-            ? []
-            : await withOwner(db, p, (tx) =>
-                tx.course.findMany({
-                  where: candidateWhere,
-                  select: { id: true, title: true, code: true },
-                }),
-              ),
+          courses: await withOwner(db, p, (tx) =>
+            tx.course.findMany({
+              where: source.courseId ? { id: source.courseId } : candidateWhere,
+              select: { id: true, title: true, code: true },
+            }),
+          ),
         };
         const candidateIds = new Set(
           context.courses.map((course) => course.id),
