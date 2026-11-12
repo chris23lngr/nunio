@@ -140,7 +140,20 @@ function jpegSize(image: Buffer) {
   }
   return null;
 }
-export function createScanReader(models: Models) {
+/** Reads a rendered page image: missing text plus figure lines. A true external port, like `Embedder`. */
+export interface ScanReader {
+  estimateMicroUsd(image: Buffer, text: string): number;
+  read(
+    image: Buffer,
+    options: { text: string; signal: AbortSignal },
+  ): Promise<{
+    text: string;
+    /** The output budget ran out; the usage is still billed and reported. Absent means complete. */
+    truncated?: boolean;
+    usage: { microUsd: number };
+  }>;
+}
+export function createScanReader(models: Models): ScanReader {
   const model = models.forTask("scan");
   return {
     estimateMicroUsd(image: Buffer, text: string) {
@@ -193,4 +206,3 @@ export function createScanReader(models: Models) {
     },
   };
 }
-export type ScanReader = ReturnType<typeof createScanReader>;
