@@ -622,12 +622,12 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 
 **Verification checklist.**
 - [x] A follow-up question carries the history. The captured prompt holds the earlier questions and answers, without withdrawn answers or old tags (`packages/chat/src/history.test.ts`; `apps/api/src/create-app.test.ts`, "answers a follow-up with the earlier questions and answers…").
-- [ ] Every step is metered on its own, and a turn refused at any step records nothing.
-- [ ] The last step has no tools, and no request forces a tool.
-- [ ] Neither the stream nor the stored message contains a full tool result.
+- [x] Every step is metered on its own, and a turn refused at any step records nothing (`apps/api/src/create-app.test.ts`, "refuses a turn when the Allowance no longer covers a later step…").
+- [x] The last step has no tools, and no request forces a tool (`create-app.test.ts`, "lets the model search at most five times…"; `packages/ai/src/answer.test.ts`, "offers the tools without forcing one…").
+- [x] Neither the stream nor the stored message contains a full tool result (`create-app.test.ts`, "gives the model the passages a search found…").
 - [ ] Deleting a Source withdraws every answer whose tool results held its passages or extracted wording.
 - [ ] A Chat proposal is performed only after the student approves the fingerprint shown. A changed proposal needs a new Approval, and repeated clicks perform once.
-- [ ] A Model without a tool-capable zero-retention endpoint is not offered.
+- [x] A Model without a tool-capable zero-retention endpoint is not offered (`packages/delegation/src/model-catalog.test.ts`; `packages/ai/src/prices.test.ts`).
 - [ ] Retrieval eval with model-driven search, including the share of questions about the material answered without a search. The founder sets thresholds after the first measurement.
 - [ ] Injection eval: Sources with embedded instructions start no Artifact Run, and any proposal they cause appears only as a card.
 
@@ -635,6 +635,14 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 - `createChats` and the ask flow live in `packages/chat`, unchanged apart from the history.
 - Each answer is given the last 10 questions and answers, oldest first, without withdrawn turns or Citation tags. It is withdrawn with the Sources of those earlier answers too.
 - Retrieval still searches with the question's text alone until stage 2, so a follow-up such as "and at what time?" finds no material and can only refer to the history.
+
+**Progress (2026-11-12).** Stage 2 is implemented, apart from the retrieval eval.
+- The spike passed all three checks against `ai@7.0.157`: one `toUIMessageStream` per step renders as one message in `useChat`, a server-built approval response continues a turn as a new assistant message, and `require_parameters` reaches OpenRouter. It also found that an approved tool part shows twice on the client, once as answered and once with its output; stage 4 handles that.
+- `packages/ai` offers one answer step (`Answerer.step`). `packages/chat` runs the loop, at most 6 metered steps with the last one sent `toolChoice: "none"`, and `searchMaterial`, whose tags run on across a turn through `render({ tagFor })`. A Chat with nothing selected is offered no search.
+- Answers store their parts (`chat_message.partsContent`), and the API returns them for every message. Older answers get parts from their reasoning and text.
+- Searches show as one compact line each (`Durchsucht: „…“`, with what they found), live and after reopening. They are not collapsed after the answer, unlike the reasoning.
+- `catalog_model.toolsAvailable` defaults to true, so Models stay offered until the first sync after the migration records the real value. An operator login made before it needs the new column grant (environments runbook).
+- `POST /api/me/chats/{id}/messages` is removed.
 
 **Anti-pattern guards.**
 - `toolChoice` is only `auto` or `none`.
