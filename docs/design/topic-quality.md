@@ -36,6 +36,24 @@ An LLM judge maps each extracted Topic to one labelled concept or to none. The j
 
 Three runs per deck. At most USD 20 for the whole feature and USD 3 per live run.
 
+## Baseline (2026-11-12)
+
+The extraction code is unchanged from `main`. 8 dev decks, 3 runs each. MCT1 is excluded: the parser refuses it (PR #84). The judge is **not calibrated yet**; the checklist is `apps/worker/evals/extraction/calibration/baseline-bound.md`.
+
+| Run                                                                                                 | Topic precision | Topic recall | Figure-only recall | Cost     |
+| --------------------------------------------------------------------------------------------------- | --------------- | ------------ | ------------------ | -------- |
+| Bound to the labelled Course (`EVAL_BOUND=1`), report `docs/operations/topic-quality-baseline.json` | 86.8 %          | 34.1 %       | 14.3 % (3 of 21)   | USD 0.66 |
+| Course recognised by the model, as in the product's first upload (report not committed)             | 71.8 %          | 26.4 %       | 14.3 %             | USD 0.64 |
+
+The bound run is the Topic baseline. The unbound run mostly measures Course recognition:
+- Three excerpts don't name their Course, and with no existing Course extraction returned nothing.
+- EC 607 was named "R for data science", so none of its Topics could match.
+
+Findings:
+- **Bound Sources without a Course name yield nothing.** `dhbw-digitaltechnik-flipflops` and `dhbw-bildverarbeitung-bildaufnahme` got 0 Topics in all 6 runs. The raw model answer was `{"courses":[],"obligations":[],"facts":[]}` for a 29-page, 48k-character window. A bound Source gets no candidate Courses in its context (`facts.ts`, "A Source bound to a Course puts everything there"). The instructions require every item to reference a picked or quoted Course, so with no Course name on the pages the model returns nothing.
+- **The recall is capped by the instructions.** The founder labelled 13–30 required concepts per deck; the instructions ask for "roughly 5–20" and the model returns 7–14 per deck.
+- Precision is high wherever Topics come back (68–97 % per deck).
+
 ## Phase B order
 
 1. Offline diagnosis of the figure descriptions.
