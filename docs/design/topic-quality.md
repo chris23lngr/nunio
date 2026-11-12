@@ -89,12 +89,40 @@ Bound runs (`EVAL_BOUND=1`), 8 dev decks, 3 runs each, strict judge, scored over
 | ------------------------------------------------------------------------------------------- | --------------- | ------------ | ------------------ | -------- |
 | Baseline                                                                                    | 73.2 %          | 28.1 %       | 14.3 % (3 of 21)   | USD 0.85 |
 | 1. Bound Source sees its Course (#90), report `docs/operations/topic-quality-phase-b1.json` | 70.5 %          | 44.8 %       | 52.4 % (11 of 21)  | USD 0.79 |
+| 4. Topic instructions (#92), report `docs/operations/topic-quality-phase-b4.json`           | 88.2 %          | 62.0 %       | 28.6 % (6 of 21)   | USD 0.79 |
+
+Step 1:
+
 - `dhbw-digitaltechnik-flipflops` and `dhbw-bildverarbeitung-bildaufnahme` now yield Topics: recall 0 → 47 % and 0 → 48 %.
 - The other decks move within noise, except `dhbw-messtechnik-messbruecken` (20 → 39 %) and `uo-ec607-intro` (36 → 51 %).
 - The model returns 13.8 Topics per run on average; the founder labelled 20.6 required concepts per deck.
 - No Topic is grounded only in a figure description. Many unmatched Topics combine two concepts, such as
   "Brennweite und Zoom" or "Schaltwerk vs. Schaltnetz", which the strict judge does not count.
 - No two Topics of one run matched the same label.
+
+Step 4:
+
+- The instructions ask for every concept the pages teach, with no fixed count, one concept per Topic. Deterministic
+  dedup was dropped: in step 1 no two Topics of one run matched the same label, and again none did in step 4.
+- Recall and precision rise on every deck. Runs return 9–28 Topics, and none ended early.
+- 40 required concepts were missed in all 3 runs. 35 of them are basic terms the deck introduces, such as
+  "Label", "Token", "Binärzahl" or "git status"; 5 are figure-only.
+
+### Figure diagnosis (step 2)
+
+One bound run (8 dev decks, USD 0.25) kept the pages the extractor saw (`EVAL_PAGES`, never committed); 15 pages
+with figure lines were checked against the rendered page.
+
+- Figure lines are 25 % of the text the extractor reads, on 194 of 297 pages. Yet Topics cite them rarely: 7 of 369
+  citations in step 4.
+- Of the 7 figure-only concepts, the scan names 5 in a figure line. Two of those 5 match in every run, but both are
+  also in a slide heading. The other 3 never match: even where the scan describes a concept, extraction can leave it out.
+  The scan misses 2: "Auswertung der Brückenspannung" and "Conflict markers".
+- Of the 15 checked pages, 9 have correct figure descriptions. 2 pages have no figure but still get a line (a
+  navigation slide, and "Keine Abbildungen … auf dieser Folie"), and 4 restate formulas the text layer already holds.
+  Across all figure lines, 3 % plainly say there is no figure or describe a logo.
+- Figure-only concepts are 7 of 165 required labels, so the figure path can add at most about 4 points of recall.
+  The missed basic terms weigh far more.
 
 ## Out of scope
 
