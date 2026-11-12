@@ -319,6 +319,18 @@ async function evaluate(
     ingestion.status === "ready"
       ? await facts.extract(p, upload.source.id, { extractor, delegation })
       : { status: "skipped" as const };
+  // EVAL_PAGES=<dir> keeps the pages each window showed the extractor, figure lines included, for offline
+  // diagnosis. Page text never goes into the report.
+  if (process.env.EVAL_PAGES) {
+    await mkdir(process.env.EVAL_PAGES, { recursive: true });
+    await writeFile(
+      join(
+        process.env.EVAL_PAGES,
+        `${document.id}-${run}-${upload.source.id}.json`,
+      ),
+      JSON.stringify(calls.map((call) => call.window)),
+    );
+  }
   const { courses } = await facts.review(p);
 
   // Courses: by normalized code or by title; PDF layout can split a code across lines ("BWL" / "1").
