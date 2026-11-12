@@ -21,39 +21,13 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wie lange dauert die Klausur in Grundlagen des Rechnungswesens?",
-      "expected": [
-        5
-      ],
+      "expected": [5],
       "searches": [
         "Klausur Dauer Grundlagen des Rechnungswesens",
         "Prüfung Bearbeitungszeit Minuten"
       ],
-      "foundPages": [
-        [
-          2,
-          16,
-          5,
-          11,
-          8,
-          3,
-          15,
-          13
-        ],
-        [
-          4,
-          5,
-          4,
-          16,
-          3,
-          4,
-          14,
-          14
-        ]
-      ],
-      "citedPages": [
-        5,
-        11
-      ],
+      "foundPages": [[2, 16, 5, 11, 8, 3, 15, 13], [4, 5, 4, 16, 3, 4, 14, 14]],
+      "citedPages": [5, 11],
       "answer": "Die Klausur in „Grundlagen des Rechnungswesens“ (BWL 2) dauert **maximal 120 Minuten**. Sie ist die einzige Prüfungsleistung des Moduls und zählt zu 100 % für die Modulnote. Das Modul wird mit einer Modulabschlussprüfung abgeschlossen. Studienleistungen gibt es nicht [S3].\n\nDer Textabschnitt mit der 120-Minuten-Angabe schließt direkt an die Beschreibung der Schlüsselqualifikationen des Rechnungswesen-Moduls an (Zeit- und Selbstmanagement) [S10]. Deshalb ordne ich ihn diesem Modul zu. Der Modulname steht in diesem Ausschnitt nicht direkt neben der Angabe.\n\nAndere Module im Dokument haben 90 Minuten, zum Beispiel die Finanzwirtschaft [S4]. Diese Angaben gelten nicht für das Rechnungswesen.",
       "costMicroUsd": 56778,
       "foundExpected": true,
@@ -62,9 +36,7 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wie viele Seiten darf das Paper im Einführungsmodul Willkommen zur BWL höchstens haben?",
-      "expected": [
-        2
-      ],
+      "expected": [2],
       "searches": [
         "Paper Seiten maximal Umfang Einführungsmodul Willkommen zur BWL",
         "Seitenzahl Paper höchstens Seiten",
@@ -72,52 +44,12 @@
         "Hausarbeit schriftliche Ausarbeitung Seiten Umfang"
       ],
       "foundPages": [
-        [
-          15,
-          9,
-          14,
-          4,
-          3,
-          16,
-          16,
-          13
-        ],
-        [
-          11,
-          1,
-          4,
-          16,
-          9,
-          6,
-          10,
-          7
-        ],
-        [
-          1,
-          3,
-          11,
-          9,
-          16,
-          6,
-          4,
-          11
-        ],
-        [
-          15,
-          2,
-          4,
-          9,
-          16,
-          3,
-          14,
-          16
-        ]
+        [15, 9, 14, 4, 3, 16, 16, 13],
+        [11, 1, 4, 16, 9, 6, 10, 7],
+        [1, 3, 11, 9, 16, 6, 4, 11],
+        [15, 2, 4, 9, 16, 3, 14, 16]
       ],
-      "citedPages": [
-        2,
-        1,
-        3
-      ],
+      "citedPages": [2, 1, 3],
       "answer": "Das Paper darf höchstens **10 Seiten** haben. In der Modulbeschreibung steht dazu: „Paper – max. 10 S.“ [S18]. Es gehört zur Lehrveranstaltung Nr. 4 und zählt mit 25 % zur Modulnote. Die Klausur (90 Min.) zählt mit 75 % [S18].\n\nDer ausgewählte Auszug zeigt diese Prüfungstabelle nur als Ausschnitt von Seite 2. Dass sie zum Modul „Willkommen zur Betriebswirtschaftslehre!“ gehört, schließe ich aus der Lage im Dokument. Die Modulbeschreibung dieses Moduls steht auf den Seiten 1 bis 3 [S10][S16].",
       "costMicroUsd": 146962,
       "foundExpected": true,
@@ -126,39 +58,13 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wie stark zählt die Klausur im Modul Willkommen zur Betriebswirtschaftslehre zur Modulnote?",
-      "expected": [
-        2
-      ],
+      "expected": [2],
       "searches": [
         "Klausur Gewichtung Modulnote Willkommen zur Betriebswirtschaftslehre",
         "Prüfungsleistung Modulnote Prozent"
       ],
-      "foundPages": [
-        [
-          1,
-          3,
-          16,
-          9,
-          11,
-          4,
-          6,
-          5
-        ],
-        [
-          5,
-          3,
-          16,
-          2,
-          5,
-          11,
-          9,
-          8
-        ]
-      ],
-      "citedPages": [
-        2,
-        3
-      ],
+      "foundPages": [[1, 3, 16, 9, 11, 4, 6, 5], [5, 3, 16, 2, 5, 11, 9, 8]],
+      "citedPages": [2, 3],
       "answer": "Im Modul „Willkommen zur Betriebswirtschaftslehre! Grundlegende Theorien & ihre praktische Anwendung“ zählt die Klausur zu **75 %** zur Modulnote. Die anderen 25 % kommen von einem Paper mit höchstens 10 Seiten. [S10]\n\n- Die Klausur dauert 90 Minuten und ist an die Lehrveranstaltung Nr. 1 gebunden. [S10]\n- Zusätzlich gibt es eine Studienleistung. Das ist eine Gruppenleistung in der Übung, nämlich die aktive Mitwirkung an empirischen wissenschaftlichen Studien. [S10]\n- Die Studienleistung fließt nicht in die Note ein, muss aber bestanden werden. Die Leistungspunkte gibt es nur, wenn alle Prüfungs- und Studienleistungen bestanden sind. [S10]\n\nVerwechsle das nicht mit der Gewichtung des Moduls für die Gesamtnote. Sie beträgt 6,67 %. [S2]\n\nDie Auszüge nennen bei der Modulteilprüfung nur die Titel und Inhalte der Prüfungen. Dass es genau dieses Modul ist, schließe ich aus den Angaben zu LP, Studienleistung und Gruppenleistung in den Auszügen [S2] [S10].",
       "costMicroUsd": 32970,
       "foundExpected": true,
@@ -167,39 +73,13 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Muss ich bei den Übungen im Modul Willkommen zur BWL anwesend sein?",
-      "expected": [
-        3
-      ],
+      "expected": [3],
       "searches": [
         "Anwesenheitspflicht Übung Willkommen zur BWL",
         "Übungen Teilnahme Anwesenheit"
       ],
-      "foundPages": [
-        [
-          11,
-          16,
-          1,
-          3,
-          4,
-          4,
-          16,
-          9
-        ],
-        [
-          5,
-          16,
-          3,
-          16,
-          4,
-          9,
-          11,
-          13
-        ]
-      ],
-      "citedPages": [
-        1,
-        3
-      ],
+      "foundPages": [[11, 16, 1, 3, 4, 4, 16, 9], [5, 16, 3, 16, 4, 9, 11, 13]],
+      "citedPages": [1, 3],
       "answer": "Ja, bei den Übungen musst du mitwirken. Im Modul „Willkommen zur Betriebswirtschaftslehre“ (Bachelor BWL PO 2022) [S3] steht dazu:\n\n- Die Anwesenheit bei den Vorlesungen (Nr. 1 und Nr. 2 unter Teilnahme) ist freiwillig. Sie wird aber dringend empfohlen, damit du besser lernst [S4].\n- Die Mitwirkung bei den Übungen (Nr. 3 und Nr. 4 bei Teilnahme) ist verpflichtend [S4].\n\nDer Text sagt „Mitwirkung“ und nicht ausdrücklich „Anwesenheit“. Wie viele Fehltermine erlaubt sind und was als Mitwirkung zählt, steht in den Passagen nicht, die ich gefunden habe. Frag dazu bei den Dozierenden oder in der Veranstaltungsankündigung nach.\n\nDie Auszüge zeigen die Angaben zur Anwesenheit nur auf Seite 3 der Datei. Dass sie zum Modul „Willkommen zur BWL“ gehören, schließe ich daraus, dass die Modulstruktur mit 12 LP und 4 Lehrveranstaltungen dazu passt. Auf Seite 1 steht der Modultitel und davor ein Modulkopf, die LP-Zuordnung steht auf Seite 3.",
       "costMicroUsd": 79552,
       "foundExpected": true,
@@ -208,9 +88,7 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wer ist für das Modul Grundlagen des Rechnungswesens verantwortlich?",
-      "expected": [
-        6
-      ],
+      "expected": [6],
       "searches": [
         "Grundlagen des Rechnungswesens Modulverantwortliche/r",
         "Modul Grundlagen des Rechnungswesens verantwortlich Dozent",
@@ -218,51 +96,12 @@
         "Foundations of Accounting Englische Übersetzung der Modulkomponenten Modulbeauftragte"
       ],
       "foundPages": [
-        [
-          4,
-          4,
-          16,
-          5,
-          12,
-          3,
-          15,
-          1
-        ],
-        [
-          4,
-          5,
-          16,
-          4,
-          12,
-          4,
-          3,
-          9
-        ],
-        [
-          12,
-          5,
-          4,
-          6,
-          16,
-          9,
-          4,
-          16
-        ],
-        [
-          12,
-          6,
-          4,
-          9,
-          3,
-          5,
-          1,
-          16
-        ]
+        [4, 4, 16, 5, 12, 3, 15, 1],
+        [4, 5, 16, 4, 12, 4, 3, 9],
+        [12, 5, 4, 6, 16, 9, 4, 16],
+        [12, 6, 4, 9, 3, 5, 1, 16]
       ],
-      "citedPages": [
-        6,
-        4
-      ],
+      "citedPages": [6, 4],
       "answer": "Modulbeauftragter für „Grundlagen des Rechnungswesens“ (BWL 2) ist Professor Dr. Peter Kajüter vom FB 04 – Wirtschaftswissenschaften [S11].\n\nDas Modul selbst steht auf den Seiten 4–5 des Dokuments [S2]. Der Verantwortliche steht am Ende des Modulblatts auf Seite 6. Die Zuordnung ergibt sich aus den englischen Titeln der Modulkomponenten dort, „Accounting“ und „Tutorial on Accounting“ [S11]. Sie entsprechen der Vorlesung „Rechnungswesen“ und der Übung zum Rechnungswesen [S2]. Der Name „Grundlagen des Rechnungswesens“ steht auf dieser Seite nicht noch einmal.",
       "costMicroUsd": 198783,
       "foundExpected": true,
@@ -271,38 +110,13 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "In welcher Sprache findet Marketing Management statt?",
-      "expected": [
-        7
-      ],
+      "expected": [7],
       "searches": [
         "Marketing Management Sprache Unterrichtssprache",
         "Marketing Management language of instruction"
       ],
-      "foundPages": [
-        [
-          7,
-          7,
-          8,
-          9,
-          8,
-          7,
-          1,
-          13
-        ],
-        [
-          7,
-          7,
-          8,
-          9,
-          1,
-          1,
-          13,
-          8
-        ]
-      ],
-      "citedPages": [
-        7
-      ],
+      "foundPages": [[7, 7, 8, 9, 8, 7, 1, 13], [7, 7, 8, 9, 1, 1, 13, 8]],
+      "citedPages": [7],
       "answer": "Marketing Management (Modul BWL 3) wird auf **Englisch** unterrichtet. Im Modulhandbuch steht dazu: „Unterrichtssprache: englisch“ [S1].\n\nDas Modul besteht aus der Vorlesung „Marketing Management“ und der Übung „Tutorial on Marketing Management“ [S1]. Es ist ein Pflichtmodul im Bachelor Betriebswirtschaftslehre und findet jedes Sommersemester statt [S1].",
       "costMicroUsd": 63121,
       "foundExpected": true,
@@ -311,39 +125,14 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Was lerne ich in Marketing Management über die Preisfindung?",
-      "expected": [
-        8
-      ],
+      "expected": [8],
       "searches": [
         "Preisfindung",
         "Preispolitik Preisstrategie Preisbestimmung",
         "pricing"
       ],
-      "foundPages": [
-        [
-          8,
-          14,
-          14,
-          13,
-          15,
-          7
-        ],
-        [
-          8,
-          13,
-          3,
-          10,
-          14
-        ],
-        [
-          8
-        ]
-      ],
-      "citedPages": [
-        8,
-        7,
-        14
-      ],
+      "foundPages": [[8, 14, 14, 13, 15, 7], [8, 13, 3, 10, 14], [8]],
+      "citedPages": [8, 7, 14],
       "answer": "Im Modulauszug steht zur Preisfindung nur das Lernziel zum Thema „Preispolitik“. Danach sollst du Folgendes können:\n\n- **Einflussfaktoren beschreiben:** Du sollst Faktoren nennen können, die die Preisfindung beeinflussen. [S1]\n- **Optimalen Preis bestimmen:** Du sollst den optimalen Preis für bestimmte Marktsituationen ermitteln können. [S1]\n\nDie Preispolitik steht dort in der Reihe der Marketing-Themen. Zu diesen gehören auch Distribution und Kommunikationspolitik. [S1] Davor kommen Themen wie strategische Entscheidungsprobleme, Markenmanagement und Produktentwicklung. [S6] Der Auszug nennt das Modul nicht ausdrücklich „Marketing Management“. Ich nehme an, dass diese Seiten dazugehören.\n\nWelche Preisstrategien, Methoden oder Modelle (zum Beispiel kosten-, nachfrage- oder wettbewerbsorientierte Preisfindung) im Detail behandelt werden, steht im Auszug nicht. Dafür bräuchtest du Vorlesungsfolien oder Skripte.\n\nIn einem anderen Modul, das nach Kosten- und Erlösrechnung sowie Budgetierung klingt, lernst du außerdem, auf Basis dieser Informationen Produktpreise und Mengen festzulegen. [S2] Ob das zu deinem Marketing-Modul gehört, geht aus dem Auszug nicht hervor.",
       "costMicroUsd": 112580,
       "foundExpected": true,
@@ -352,34 +141,13 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Welche Methode zur Bewertung von Investitionen steht im Vordergrund?",
-      "expected": [
-        10
-      ],
+      "expected": [10],
       "searches": [
         "Methode zur Bewertung von Investitionen",
         "Investitionsrechnung Kapitalwertmethode"
       ],
-      "foundPages": [
-        [
-          10,
-          10,
-          10,
-          11,
-          15,
-          2,
-          14,
-          14
-        ],
-        [
-          10,
-          10,
-          11,
-          10
-        ]
-      ],
-      "citedPages": [
-        10
-      ],
+      "foundPages": [[10, 10, 10, 11, 15, 2, 14, 14], [10, 10, 11, 10]],
+      "citedPages": [10],
       "answer": "Im Modul „Investition und Finanzierung“ (BWL 4) steht die **Nettobarwert-Methode** im Vordergrund. Die Modulbeschreibung nennt sie als „besonderen Schwerpunkt“ unter den wichtigsten Bewertungsmethoden zur Investitionsentscheidung [S1].\n\nDiese Methoden sollen Sie erlernen und anwenden. Das Modul legt zuvor die mikroökonomischen Grundlagen für rationale Investitionsentscheidungen [S3]. Als Kompetenzziel wird genannt, dass Sie Investitionsvorhaben im Hinblick auf ihre Vorteilhaftigkeit beurteilen können [S1].\n\nWelche anderen Bewertungsmethoden gemeint sind, geht aus dem Auszug nicht hervor. Er enthält auch keine inhaltliche Erklärung der Nettobarwert-Methode.",
       "costMicroUsd": 155102,
       "foundExpected": true,
@@ -388,40 +156,16 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Gibt es im Controlling eine Anwesenheitspflicht?",
-      "expected": [
-        16
-      ],
+      "expected": [16],
       "searches": [
         "Anwesenheitspflicht Controlling",
         "Anwesenheit Teilnahme Vorlesung Übung verpflichtend"
       ],
       "foundPages": [
-        [
-          3,
-          5,
-          16,
-          16,
-          1,
-          4,
-          9,
-          11
-        ],
-        [
-          13,
-          13,
-          16,
-          16,
-          3,
-          14,
-          5,
-          15
-        ]
+        [3, 5, 16, 16, 1, 4, 9, 11],
+        [13, 13, 16, 16, 3, 14, 5, 15]
       ],
-      "citedPages": [
-        16,
-        13,
-        3
-      ],
+      "citedPages": [16, 13, 3],
       "answer": "Nein, im Modul Controlling (BWL 5) gibt es keine Anwesenheitspflicht. Im Modulhandbuch steht: „Es besteht keine Anwesenheitspflicht. Die Anwesenheit wird jedoch empfohlen, um den Lernerfolg zu verbessern.“ [S3]\n\nWeitere Punkte aus dem Modulhandbuch:\n- Das Modul besteht aus der Vorlesung Controlling und der Übung Controlling. Beide sind Pflichtveranstaltungen, mit je 30 Stunden Präsenz (2 SWS) [S9][S10]. „Pflicht“ bezieht sich hier auf den Status der Veranstaltungen im Studiengang. Eine Anwesenheitspflicht ergibt sich daraus nicht.\n- Studienleistungen gibt es keine. Die Note kommt allein aus der Modulabschlussklausur (90 Minuten, 100 %) [S4].\n- Empfohlen werden Kenntnisse aus dem Modul „Grundlagen des Rechnungswesens“ [S4].\n\nZum Vergleich: In einem anderen Modul des Auszugs (Einführung in die BWL) ist die Mitwirkung bei den Übungen verpflichtend [S1]. Das gilt nicht für Controlling.",
       "costMicroUsd": 110137,
       "foundExpected": true,
@@ -430,49 +174,18 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wer leitet das Controlling-Modul?",
-      "expected": [
-        16
-      ],
+      "expected": [16],
       "searches": [
         "Leitung Controlling-Modul",
         "Modulverantwortlicher Controlling Dozent",
         "Modulbeauftragte/r Controlling Einrichtung FB 04 Management Accounting and Control"
       ],
       "foundPages": [
-        [
-          13,
-          13,
-          14,
-          5,
-          15,
-          5,
-          12
-        ],
-        [
-          13,
-          13,
-          12,
-          3,
-          4,
-          9,
-          14,
-          5
-        ],
-        [
-          13,
-          12,
-          13,
-          6,
-          4,
-          5,
-          10,
-          16
-        ]
+        [13, 13, 14, 5, 15, 5, 12],
+        [13, 13, 12, 3, 4, 9, 14, 5],
+        [13, 12, 13, 6, 4, 5, 10, 16]
       ],
-      "citedPages": [
-        16,
-        13
-      ],
+      "citedPages": [16, 13],
       "answer": "Laut Modulbeschreibung ist **Prof. Dr. Martin Artz** der Modulbeauftragte. Er gehört zum FB 04 – Wirtschaftswissenschaften [S13].\n\nDer Eintrag steht auf der Seite nach dem Modul „Controlling“ (BWL 5, englisch „Management Accounting and Control“) [S1]. Die Übersetzungen der Modulkomponenten lauten dort „Management Accounting“ und „Tutorial on Management Accounting“ [S13]. Dass der Eintrag zum Controlling-Modul gehört, schließe ich daraus. Der Modultitel steht nämlich auf Seite 13 und der Name auf Seite 16. Ob er auch die Vorlesung selbst hält, geht aus dem Material nicht hervor.",
       "costMicroUsd": 175486,
       "foundExpected": true,
@@ -481,33 +194,13 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wird im Rechnungswesen der Jahresabschluss nach HGB behandelt?",
-      "expected": [
-        4
-      ],
+      "expected": [4],
       "searches": [
         "Jahresabschluss nach HGB",
         "Handelsgesetzbuch Rechnungswesen Bilanz Gewinn- und Verlustrechnung"
       ],
-      "foundPages": [
-        [
-          5,
-          4,
-          4,
-          14,
-          14,
-          14,
-          15,
-          3
-        ],
-        [
-          4,
-          4
-        ]
-      ],
-      "citedPages": [
-        4,
-        5
-      ],
+      "foundPages": [[5, 4, 4, 14, 14, 14, 15, 3], [4, 4]],
+      "citedPages": [4, 5],
       "answer": "Ja. Im Modul „Grundlagen des Rechnungswesens“ wird der Jahresabschluss nach HGB im Rahmen des externen Rechnungswesens behandelt [S2][S3].\n\n- **Grundlagen:** Damit man den Jahresabschluss versteht, werden die Grundzüge der Finanzbuchführung vermittelt. Dazu gehört, wie Geschäftsvorfälle mit der doppelten Buchhaltung erfasst werden. Sie werden im Rechenwerk von Bilanz, Gewinn- und Verlustrechnung und Kapitalflussrechnung abgebildet [S2].\n- **Regeln:** Außerdem werden Ansatz- und Bewertungsregeln im Jahresabschluss besprochen [S2].\n- **Analyse:** Hinzu kommt ein Einblick in die Analyse von Jahresabschlüssen mit Kennzahlen, zum Beispiel aus Sicht von Kreditgebern [S2].\n- **Kompetenzziel:** Nach dem Modul sollen die Studierenden Geschäftsvorfälle in Bilanz und GuV abbilden und einen Jahresabschluss aufstellen können. Sie sollen auch die Vermögens-, Finanz- und Ertragslage eines Unternehmens beurteilen können [S1].\n\nDas interne Rechnungswesen ist ein eigener Teil des Moduls. Dort steht die Kostenrechnung im Mittelpunkt [S2].",
       "costMicroUsd": 85525,
       "foundExpected": true,
@@ -516,39 +209,13 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Welche Studienleistung muss ich in der Übung Applied Empirical Research erbringen?",
-      "expected": [
-        2
-      ],
+      "expected": [2],
       "searches": [
         "Studienleistung Übung Applied Empirical Research",
         "Leistungsnachweis Prüfungsleistung Applied Empirical Research"
       ],
-      "foundPages": [
-        [
-          2,
-          3,
-          4,
-          2,
-          1,
-          15,
-          13,
-          11
-        ],
-        [
-          2,
-          5,
-          11,
-          2,
-          8,
-          16,
-          3,
-          15
-        ]
-      ],
-      "citedPages": [
-        2,
-        3
-      ],
+      "foundPages": [[2, 3, 4, 2, 1, 15, 13, 11], [2, 5, 11, 2, 8, 16, 3, 15]],
+      "citedPages": [2, 3],
       "answer": "Laut Modulbeschreibung ist die Studienleistung in der Übung Applied Empirical Research (LV Nr. 4) eine **Gruppenleistung in der Übung**. Sie besteht aus der aktiven Mitwirkung an empirischen wissenschaftlichen Studien und dauert maximal 240 Minuten [S1].\n\nWeitere Punkte dazu:\n- Die Mitwirkung in den Übungen (Nr. 3 und Nr. 4) ist verpflichtend [S2].\n- Die Studienleistung zählt 2,0 LP [S2].\n- Die Leistungspunkte für das Modul gibt es erst, wenn das Modul insgesamt erfolgreich abgeschlossen ist. Dafür müssen alle Prüfungs- und Studienleistungen bestanden sein [S11].\n- Die Studienleistung ist von den Prüfungsleistungen getrennt. Zu den Prüfungsleistungen gehören eine Klausur (90 Min., 75 %) und ein Paper (max. 10 Seiten, 25 %). Das Paper ist an die Übung Applied Empirical Research gebunden [S1].\n\nDie Modulbeschreibung sagt nichts dazu, wie die Gruppenleistung konkret ablaufen soll oder wie sie bewertet wird. Das müsstest du bei den Lehrenden oder in den Veranstaltungsunterlagen nachsehen.",
       "costMicroUsd": 83357,
       "foundExpected": true,
@@ -557,27 +224,10 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Welche Programmiersprache wird im Modul Programmierung verwendet?",
-      "expected": [
-        4
-      ],
-      "searches": [
-        "Programmiersprache im Modul Programmierung"
-      ],
-      "foundPages": [
-        [
-          4,
-          4,
-          5,
-          13,
-          4,
-          6,
-          15,
-          16
-        ]
-      ],
-      "citedPages": [
-        4
-      ],
+      "expected": [4],
+      "searches": ["Programmiersprache im Modul Programmierung"],
+      "foundPages": [[4, 4, 5, 13, 4, 6, 15, 16]],
+      "citedPages": [4],
       "answer": "Im Modul „Programmierung“ (Inf1) wird hauptsächlich **Java** verwendet. Die objektorientierten Grundbegriffe werden am Beispiel dieser Sprache erklärt. Dazu gehören Klasse, Objekt, Methode, Attribut und Vererbung [S1].\n\nZusätzlich kommt eine deklarative Sprache wie **Haskell** vor, um Alternativen zur objektorientierten und imperativen Programmierung zu zeigen. Behandelt werden dabei zum Beispiel algebraische Datentypen, Pattern Matching und Lazy Evaluation [S1][S5]. Für die Semantik wird außerdem eine „Kernsprache“ als Beispiel genutzt, etwa für die operationale Semantik [S5].",
       "costMicroUsd": 13963,
       "foundExpected": true,
@@ -586,39 +236,16 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Wie lange dauert die Klausur in Programmierung?",
-      "expected": [
-        5
-      ],
+      "expected": [5],
       "searches": [
         "Klausur Dauer Programmierung",
         "Prüfung Minuten Bearbeitungszeit"
       ],
       "foundPages": [
-        [
-          4,
-          10,
-          10,
-          16,
-          17,
-          4,
-          7,
-          16
-        ],
-        [
-          17,
-          5,
-          14,
-          2,
-          12,
-          8,
-          14,
-          11
-        ]
+        [4, 10, 10, 16, 17, 4, 7, 16],
+        [17, 5, 14, 2, 12, 8, 14, 11]
       ],
-      "citedPages": [
-        5,
-        4
-      ],
+      "citedPages": [5, 4],
       "answer": "Die Klausur in Programmierung dauert **120 Minuten**. Sie ist die einzige Prüfungsleistung des Moduls und macht 100 % der Modulnote aus [S9].\n\nDer Textausschnitt auf Seite 5 nennt den Modulnamen nicht ausdrücklich. Er schließt aber direkt an die Modulbeschreibung „Programmierung\" (Inf1) auf Seite 4 an [S1]. Deshalb gehe ich davon aus, dass er zu diesem Modul gehört.\n\nZusätzlich gibt es eine Studienleistung in Form von Übungsaufgaben mit maximal 60 Seiten [S9]. Die Leistungspunkte bekommst du erst, wenn du alle Prüfungs- und Studienleistungen bestanden hast [S9].",
       "costMicroUsd": 54390,
       "foundExpected": true,
@@ -627,39 +254,13 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Wer ist Modulbeauftragter für Programmierung?",
-      "expected": [
-        6
-      ],
+      "expected": [6],
       "searches": [
         "Modulbeauftragter Programmierung",
         "Modulverantwortlicher Modul Programmierung"
       ],
-      "foundPages": [
-        [
-          4,
-          15,
-          5,
-          4,
-          6,
-          17,
-          2,
-          12
-        ],
-        [
-          4,
-          15,
-          6,
-          18,
-          14,
-          12,
-          4,
-          9
-        ]
-      ],
-      "citedPages": [
-        6,
-        4
-      ],
+      "foundPages": [[4, 15, 5, 4, 6, 17, 2, 12], [4, 15, 6, 18, 14, 12, 4, 9]],
+      "citedPages": [6, 4],
       "answer": "Modulbeauftragter für das Modul „Programmierung“ (Modulnummer Inf1, Bachelor Wirtschaftsinformatik) ist Prof. Dr. Herbert Kuchen. Er gehört zum FB 04 – Wirtschaftswissenschaften [S5].\n\nDie Seite mit seinem Namen enthält die englischen Übersetzungen „Programming“ und „Exercises on Programming“. Diese passen zu den Lehrveranstaltungen des Moduls Programmierung [S1][S5].",
       "costMicroUsd": 26867,
       "foundExpected": true,
@@ -668,38 +269,13 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Wird die Mathematik-Klausur elektronisch geschrieben?",
-      "expected": [
-        8
-      ],
+      "expected": [8],
       "searches": [
         "Mathematik Klausur elektronisch",
         "Prüfungsform Klausur Computer Papier"
       ],
-      "foundPages": [
-        [
-          8,
-          14,
-          17,
-          2,
-          5,
-          5,
-          3,
-          11
-        ],
-        [
-          7,
-          8,
-          8,
-          2,
-          17,
-          14,
-          10,
-          11
-        ]
-      ],
-      "citedPages": [
-        8
-      ],
+      "foundPages": [[8, 14, 17, 2, 5, 5, 3, 11], [7, 8, 8, 2, 17, 14, 10, 11]],
+      "citedPages": [8],
       "answer": "Ja. Im Modul „Mathematik für WI“ (QM1) ist die Prüfungsleistung als „Modulabschlussklausur (elektronisch)“ angegeben. Sie dauert 90 Minuten und macht 100 % der Modulnote aus [S1].\n\nZusätzlich gibt es als Studienleistung Übungsaufgaben mit insgesamt maximal 45 Seiten [S1].\n\nDer Auszug sagt nichts darüber, wie die elektronische Klausur genau abläuft, also etwa mit welcher Software oder an welchen Geräten. Das müsstest du bei den Prüfenden oder dem Prüfungsamt erfragen.",
       "costMicroUsd": 70497,
       "foundExpected": true,
@@ -708,39 +284,16 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Wie werden die beiden Klausuren im BWL-Modul gewichtet?",
-      "expected": [
-        11
-      ],
+      "expected": [11],
       "searches": [
         "Gewichtung der Klausuren BWL-Modul Note",
         "Modulnote setzt sich zusammen aus zwei Klausuren"
       ],
       "foundPages": [
-        [
-          14,
-          12,
-          5,
-          18,
-          11,
-          16,
-          6,
-          17
-        ],
-        [
-          6,
-          18,
-          12,
-          9,
-          15,
-          11,
-          8,
-          2
-        ]
+        [14, 12, 5, 18, 11, 16, 6, 17],
+        [6, 18, 12, 9, 15, 11, 8, 2]
       ],
-      "citedPages": [
-        11,
-        12
-      ],
+      "citedPages": [11, 12],
       "answer": "Im BWL-Modul zählen die beiden Klausuren für die Modulnote unterschiedlich stark [S5]:\n\n| Klausur | Dauer | Gewichtung |\n|---|---|---|\n| Klausur zu Einführung in die Betriebswirtschaftslehre | 60 Min. | 33,3 % |\n| Klausur zu Finanzierung und Investition | 90 Min. | 66,7 % |\n\nDie Finanzierungsklausur zählt also doppelt so viel wie die BWL-Einführungsklausur. Das passt zur LP-Verteilung. Die Prüfungsleistungen sind dort mit 2,00 LP und 4,00 LP angesetzt [S2].\n\nStudienleistungen gibt es in diesem Modul nicht [S5]. Die Leistungspunkte erhältst du erst, wenn das Modul insgesamt bestanden ist, also alle Prüfungsleistungen bestanden sind [S5].\n\nDer Auszug mit den Gewichtungen (S. 11) nennt den Modultitel nicht. Ich habe ihn dem BWL-Modul zugeordnet, weil der Inhalt zu den Lehrveranstaltungen „Introduction to Business Administration“ und „Fundamentals of Investments“ auf der Folgeseite passt [S2].",
       "costMicroUsd": 111431,
       "foundExpected": true,
@@ -749,33 +302,10 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Welche Datenbanksprache lerne ich im Datenmanagement?",
-      "expected": [
-        13,
-        14
-      ],
-      "searches": [
-        "Datenbanksprache",
-        "SQL Datenmanagement Abfragesprache"
-      ],
-      "foundPages": [
-        [
-          13,
-          14,
-          14,
-          16,
-          13,
-          17,
-          4
-        ],
-        [
-          13,
-          14
-        ]
-      ],
-      "citedPages": [
-        13,
-        14
-      ],
+      "expected": [13, 14],
+      "searches": ["Datenbanksprache", "SQL Datenmanagement Abfragesprache"],
+      "foundPages": [[13, 14, 14, 16, 13, 17, 4], [13, 14]],
+      "citedPages": [13, 14],
       "answer": "Im Modul Datenmanagement lernst du **SQL (Structured Query Language)**. Auf der Implementierungsebene steht ihre Anwendung im Vordergrund. Das Modul behandelt diese Teilbereiche von SQL [S1]:\n\n- Data Description Language (DDL)\n- Data Manipulation Language (DML)\n- Data Control Language (DCL)\n- Query Language\n\nNoSQL-Aspekte werden nur angerissen [S1].\n\nDu nutzt SQL, um betriebliche Informationsbedarfe mit relationalen Datenbanken zu erfüllen [S2]. In den Übungen und Fallstudien arbeitest du mit dem Datenbankmanagementsystem MySQL oder einem anderen relationalen Datenbanksystem [S2].",
       "costMicroUsd": 60471,
       "foundExpected": true,
@@ -784,27 +314,10 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Welches Datenbanksystem wird in den Übungen zum Datenmanagement genutzt?",
-      "expected": [
-        14
-      ],
-      "searches": [
-        "Datenbanksystem Übungen Datenmanagement"
-      ],
-      "foundPages": [
-        [
-          13,
-          16,
-          14,
-          14,
-          13,
-          17,
-          13,
-          15
-        ]
-      ],
-      "citedPages": [
-        14
-      ],
+      "expected": [14],
+      "searches": ["Datenbanksystem Übungen Datenmanagement"],
+      "foundPages": [[13, 16, 14, 14, 13, 17, 13, 15]],
+      "citedPages": [14],
       "answer": "In den Übungen zum Datenmanagement wird **MySQL** genutzt. Im Modulhandbuch steht, die Lehrformen seien „Vorlesung, Übungen und Fallstudien unter Nutzung des Datenbankmanagementsystems MySQL **oder eines anderen relationalen Datenbanksystems**“ [S4]. MySQL ist also das genannte System, aber nicht zwingend. Es kann auch ein anderes relationales Datenbanksystem verwendet werden.\n\nIn den Übungen geht es um die Implementierung des DV-Konzepts in eine relationale Datenbank. Dazu kommt die Nutzung von SQL für betriebliche Informationsbedarfe [S4].",
       "costMicroUsd": 75412,
       "foundExpected": true,
@@ -813,32 +326,13 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Muss ich bei der Exkursion in Einführung in die Wirtschaftsinformatik dabei sein?",
-      "expected": [
-        3
-      ],
+      "expected": [3],
       "searches": [
         "Exkursion Anwesenheit Teilnahme Einführung in die Wirtschaftsinformatik",
         "Exkursion Pflicht"
       ],
-      "foundPages": [
-        [
-          3,
-          18
-        ],
-        [
-          1,
-          3,
-          1,
-          2,
-          10,
-          1,
-          4,
-          13
-        ]
-      ],
-      "citedPages": [
-        3
-      ],
+      "foundPages": [[3, 18], [1, 3, 1, 2, 10, 1, 4, 13]],
+      "citedPages": [3],
       "answer": "Ja. Im Modulhandbuch steht, dass die Anwesenheit während der Exkursion erforderlich ist. Als Begründung nennt es, dass die vorgesehenen Lernziele nur durch die Teilnahme erreicht werden können. Diese Lernziele sind der Unternehmensbesuch und das Kennenlernen des Arbeitsbereichs eines Wirtschaftsinformatikers [S1].\n\nDie Textstelle steht am Ende des Moduls WI1, direkt vor den Angaben zu den englischen Modulkomponenten („Introduction to Information Systems“, „Scientific Work“, „Ethics in Information Systems“) [S1].\n\nDer Auszug sagt nichts dazu, was passiert, wenn du nicht teilnehmen kannst, und auch nichts zu Ersatzleistungen oder zum Termin. Das müsstest du bei den Modulverantwortlichen (Dr. Katrin Bergener, Dr. Armin Stein) klären [S1].",
       "costMicroUsd": 71764,
       "foundExpected": true,
@@ -847,38 +341,13 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Wie viele Folien hat die Abschlusspräsentation in Einführung in die Wirtschaftsinformatik?",
-      "expected": [
-        2
-      ],
+      "expected": [2],
       "searches": [
         "Abschlusspräsentation Anzahl Folien",
         "Abschlusspräsentation Einführung in die Wirtschaftsinformatik"
       ],
-      "foundPages": [
-        [
-          2,
-          5,
-          14,
-          2,
-          18,
-          12,
-          6,
-          17
-        ],
-        [
-          1,
-          1,
-          2,
-          10,
-          1,
-          4,
-          16,
-          3
-        ]
-      ],
-      "citedPages": [
-        2
-      ],
+      "foundPages": [[2, 5, 14, 2, 18, 12, 6, 17], [1, 1, 2, 10, 1, 4, 16, 3]],
+      "citedPages": [2],
       "answer": "Die Abschlusspräsentation im Modul „Einführung in die Wirtschaftsinformatik“ (WI1) umfasst etwa 10 Folien. Sie gehört zur Veranstaltung 1 und ist dort als Studienleistung aufgeführt [S1].\n\nDie Angabe „ca. 10 Folien“ steht in der Tabelle der Studienleistungen im Modulauszug. Eine genaue Folienzahl nennt das Material nicht.",
       "costMicroUsd": 76456,
       "foundExpected": true,
@@ -887,40 +356,16 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Welche Vorkenntnisse setzt Datenstrukturen und Algorithmen voraus?",
-      "expected": [
-        16
-      ],
+      "expected": [16],
       "searches": [
         "Vorkenntnisse Voraussetzungen Datenstrukturen und Algorithmen",
         "prerequisites required background knowledge"
       ],
       "foundPages": [
-        [
-          17,
-          16,
-          16,
-          16,
-          11,
-          2,
-          8,
-          14
-        ],
-        [
-          2,
-          3,
-          4,
-          1,
-          11,
-          8,
-          14,
-          17
-        ]
+        [17, 16, 16, 16, 11, 2, 8, 14],
+        [2, 3, 4, 1, 11, 8, 14, 17]
       ],
-      "citedPages": [
-        16,
-        4,
-        3
-      ],
+      "citedPages": [16, 4, 3],
       "answer": "Das Modul „Datenstrukturen und Algorithmen“ (Inf2, Bachelor Wirtschaftsinformatik) setzt **grundlegende mathematische und Programmierkenntnisse** voraus. Diese Kenntnisse werden in den Modulen **„Programmierung“** und **„Wirtschaftsmathematik“** vermittelt [S3].\n\n- Das Modul „Programmierung“ erfordert selbst keine Vorkenntnisse. Es behandelt unter anderem Kontrollstrukturen, grundlegende Datenstrukturen und objektorientierte Konzepte am Beispiel von Java [S10].\n- Umgekehrt ist „Datenstrukturen und Algorithmen“ eine Voraussetzung für die Module „IT-Systeme“, „Sicherheit von verteilten Systemen“, „Projektseminar“ und „Bachelorarbeit“ [S3].\n- Das Modul liegt im 2. Fachsemester und findet jedes Sommersemester statt [S4].\n\nOb es darüber hinaus formale Teilnahmevoraussetzungen gibt, steht in den Textstellen, die meine Suche gefunden hat, nicht. Die Angabe „Modulbezogene Teilnahmevoraussetzungen“ habe ich nur für ein anderes Modul gefunden, nämlich „keine“ [S9]. Für dieses Modul habe ich sie nicht gesehen.",
       "costMicroUsd": 103062,
       "foundExpected": true,
@@ -929,40 +374,16 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Wer betreut das Modul Datenstrukturen und Algorithmen?",
-      "expected": [
-        18
-      ],
+      "expected": [18],
       "searches": [
         "Modul Datenstrukturen und Algorithmen Modulverantwortliche Betreuung",
         "Dozent Lehrende Kontakt Datenstrukturen und Algorithmen"
       ],
       "foundPages": [
-        [
-          17,
-          16,
-          16,
-          14,
-          16,
-          13,
-          18,
-          14
-        ],
-        [
-          16,
-          15,
-          16,
-          18,
-          17,
-          13,
-          14,
-          14
-        ]
+        [17, 16, 16, 14, 16, 13, 18, 14],
+        [16, 15, 16, 18, 17, 13, 14, 14]
       ],
-      "citedPages": [
-        18,
-        16,
-        15
-      ],
+      "citedPages": [18, 16, 15],
       "answer": "Das Modul „Datenstrukturen und Algorithmen“ (Modulnummer Inf2, Bachelor Wirtschaftsinformatik) hat als Modulbeauftragten **Prof. Dr. Fabian Gieseke** vom FB 04 – Wirtschaftswissenschaften [S7]. Die Angabe steht im Modulblatt zusammen mit den englischen Titeln „Data Structures and Algorithms“ und „Exercises on Data Structures and Algorithms“ [S7]. Der Modultitel selbst steht auf der Seite davor [S3].\n\nDas Modul „Datenmanagement“ steht nur wenige Seiten davor im selben Dokument. Dort ist Prof. Dr. Dr. h.c. Dr. h.c. Jörg Becker als Modulbeauftragter genannt [S9]. Das ist also ein anderes Modul.\n\nWer die Vorlesung und die Übung tatsächlich hält, steht in den Textstellen nicht. Sie nennen nur den Modulbeauftragten.",
       "costMicroUsd": 64111,
       "foundExpected": true,
@@ -977,61 +398,18 @@
         "Programmiersprache im Modul Programmierung",
         "Programmieren Python Java R Informatik Wirtschaftsinformatik"
       ],
-      "foundPages": [
-        [
-          4,
-          12,
-          1,
-          13,
-          10,
-          7,
-          13,
-          5
-        ],
-        [
-          14,
-          6,
-          14
-        ]
-      ],
-      "citedPages": [
-        1,
-        4,
-        7,
-        10,
-        13
-      ],
+      "foundPages": [[4, 12, 1, 13, 10, 7, 13, 5], [14, 6, 14]],
+      "citedPages": [1, 4, 7, 10, 13],
       "answer": "Das kann ich aus deinem Material nicht beantworten. Ich habe zweimal gesucht, auch nach gängigen Sprachen wie Python, Java und R. Dabei kam kein Modul „Programmierung“ und keine Programmiersprache vor.\n\nDas Material ist ein Auszug aus dem Modulhandbuch des Bachelors Betriebswirtschaftslehre. Darin finde ich nur diese Module:\n- BWL 1, „Willkommen zur Betriebswirtschaftslehre“ [S3]\n- BWL 2, „Foundations of Accounting“ [S1]\n- BWL 3, „Marketing Management“ [S6]\n- BWL 4, „Investition und Finanzierung“ [S5]\n- BWL 5, „Controlling“ [S4]\n\nVielleicht steht das Modul Programmierung in einem anderen Dokument, zum Beispiel im Modulhandbuch eines anderen Studiengangs. Es kann auch unter einem anderen Titel laufen. Wenn du das passende Dokument für diesen Chat auswählst oder mir den genauen Modultitel nennst, suche ich noch einmal.",
       "costMicroUsd": 77780
     },
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wie hoch ist der Semesterbeitrag?",
-      "searches": [
-        "Semesterbeitrag",
-        "Semesterbeitrag Höhe Euro Gebühren"
-      ],
+      "searches": ["Semesterbeitrag", "Semesterbeitrag Höhe Euro Gebühren"],
       "foundPages": [
-        [
-          10,
-          4,
-          3,
-          9,
-          11,
-          16,
-          16,
-          1
-        ],
-        [
-          3,
-          16,
-          4,
-          5,
-          10,
-          5,
-          16,
-          11
-        ]
+        [10, 4, 3, 9, 11, 16, 16, 1],
+        [3, 16, 4, 5, 10, 5, 16, 11]
       ],
       "citedPages": [],
       "answer": "Dazu finde ich im ausgewählten Material nichts. Es besteht aus Modulbeschreibungen des Bachelors Betriebswirtschaftslehre. Sie behandeln zum Beispiel Leistungspunkte, Workload, Prüfungsleistungen und Anwesenheit. Einen Semesterbeitrag oder andere Gebühren erwähnen sie nicht, und ich habe auch keinen Betrag gefunden.\n\nDen aktuellen Semesterbeitrag nennt normalerweise die Webseite deiner Universität, etwa beim Studierendensekretariat oder bei der Rückmeldung. Wenn du mir ein Dokument dazu gibst, schaue ich gern dort nach.",
@@ -1040,20 +418,8 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wann beginnt die Rückmeldefrist für das Sommersemester?",
-      "searches": [
-        "Rückmeldefrist Sommersemester"
-      ],
-      "foundPages": [
-        [
-          4,
-          7,
-          13,
-          10,
-          16,
-          1,
-          5
-        ]
-      ],
+      "searches": ["Rückmeldefrist Sommersemester"],
+      "foundPages": [[4, 7, 13, 10, 16, 1, 5]],
       "citedPages": [],
       "answer": "Dazu steht in dem ausgewählten Material nichts. Meine Suche hat nur Modulbeschreibungen des Bachelorstudiengangs Betriebswirtschaftslehre geliefert, zum Beispiel Rechnungswesen, Marketing Management und Controlling. Darin geht es um Turnus, Workload und Prüfungsformen. Eine Rückmeldefrist oder einen Termin dafür finde ich nicht.\n\nDas Datum finden Sie vermutlich auf der Website des Studierendensekretariats Ihrer Universität oder in der Rückmeldeordnung. Wenn Sie ein anderes Dokument hochladen, zum Beispiel eine Fristenübersicht oder den Semesterzeitplan, suche ich gern noch einmal.",
       "costMicroUsd": 36120
@@ -1061,17 +427,8 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wie beantrage ich BAföG?",
-      "searches": [
-        "BAföG beantragen Antrag"
-      ],
-      "foundPages": [
-        [
-          10,
-          4,
-          1,
-          13
-        ]
-      ],
+      "searches": ["BAföG beantragen Antrag"],
+      "foundPages": [[10, 4, 1, 13]],
       "citedPages": [],
       "answer": "Dazu habe ich in deinem Kursmaterial nichts gefunden. Die Suche hat nur Modulbeschreibungen des Bachelorstudiengangs Betriebswirtschaftslehre zurückgegeben, zum Beispiel zu Investition und Finanzierung, Rechnungswesen und Controlling. Zum BAföG oder zur Antragstellung steht dort nichts.\n\nFür eine verlässliche Antwort wende dich am besten an das BAföG-Amt oder das Studierendenwerk deiner Universität. Dort bekommst du auch die aktuellen Formulare und Fristen. Wenn du ein anderes Dokument zum Thema hast, wähle es für diesen Chat aus. Dann suche ich darin noch einmal.",
       "costMicroUsd": 15851
@@ -1079,12 +436,8 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wie koche ich Spaghetti Carbonara?",
-      "searches": [
-        "Spaghetti Carbonara Rezept"
-      ],
-      "foundPages": [
-        []
-      ],
+      "searches": ["Spaghetti Carbonara Rezept"],
+      "foundPages": [[]],
       "citedPages": [],
       "answer": "Dazu habe ich im ausgewählten Kursmaterial nichts gefunden. Eine Anleitung für Spaghetti Carbonara steht dort nicht, und ich beantworte die Frage nur aus dem Material.\n\nWenn du ein Rezept brauchst, hilft dir ein Kochbuch oder eine Rezeptseite weiter. Du kannst auch anderes Kursmaterial auswählen, falls es dort steht. Ich suche dann gern noch einmal.",
       "costMicroUsd": 46523
@@ -1092,12 +445,8 @@
     {
       "document": "wwu-bwl-excerpt",
       "question": "Wer hat die Fußball-Weltmeisterschaft 2014 gewonnen?",
-      "searches": [
-        "Fußball-Weltmeisterschaft 2014 Sieger"
-      ],
-      "foundPages": [
-        []
-      ],
+      "searches": ["Fußball-Weltmeisterschaft 2014 Sieger"],
+      "foundPages": [[]],
       "citedPages": [],
       "answer": "Ich habe in deinem ausgewählten Kursmaterial nichts zur Fußball-Weltmeisterschaft 2014 gefunden. Darum kann ich dir die Frage anhand des Materials nicht beantworten. Wenn du möchtest, kann ich mit anderen Suchbegriffen noch einmal suchen. Oder du wählst anderes Material aus, falls das Thema dort vorkommt.",
       "costMicroUsd": 44660
@@ -1111,44 +460,11 @@
         "Marketing Management Modul"
       ],
       "foundPages": [
-        [
-          17,
-          5,
-          14,
-          2,
-          12,
-          11,
-          8,
-          14
-        ],
-        [
-          14,
-          13,
-          10,
-          13,
-          10,
-          12,
-          7,
-          15
-        ],
-        [
-          12,
-          13,
-          15,
-          14,
-          13,
-          18,
-          6,
-          5
-        ]
+        [17, 5, 14, 2, 12, 11, 8, 14],
+        [14, 13, 10, 13, 10, 12, 7, 15],
+        [12, 13, 15, 14, 13, 18, 6, 5]
       ],
-      "citedPages": [
-        14,
-        11,
-        8,
-        17,
-        5
-      ],
+      "citedPages": [14, 11, 8, 17, 5],
       "answer": "Zu Marketing Management habe ich in deinem Material nichts gefunden. Es enthält nur Auszüge aus dem Modulhandbuch Bachelor Wirtschaftsinformatik (wwu-wi-excerpt.pdf), und darin kommt kein Modul „Marketing Management“ vor. Deshalb kann ich dir die Klausurdauer dafür nicht nennen.\n\nDie Dauer anderer Module steht dort, falls du eines davon meinst:\n- **Datenmanagement:** Modulabschlussklausur, 120 Min. [S8]\n- **Einführung in die BWL, Investition und Finanzierung:** Klausur zu Einführung in die BWL 60 Min., Klausur zu Finanzierung und Investition 90 Min. [S6]\n- **Mathematik für WI:** elektronische Modulabschlussklausur, 90 Min. [S7]\n- Zwei weitere Module haben eine Klausur von 120 Min. [S1][S2]. In den Auszügen sind die Modultitel dazu nicht zu sehen.\n\nVielleicht liegt das Modul Marketing Management in einem anderen Dokument. Du kannst es zu diesem Chat hinzufügen, dann suche ich dort nach der Dauer. Sonst hilft dir ein Blick in die Prüfungsordnung oder ins Modulhandbuch des passenden Studiengangs.",
       "costMicroUsd": 75686
     },
@@ -1160,11 +476,7 @@
         "Bibliothek sonntags Öffnungszeiten",
         "library opening hours Sunday"
       ],
-      "foundPages": [
-        [],
-        [],
-        []
-      ],
+      "foundPages": [[], [], []],
       "citedPages": [],
       "answer": "In deinem ausgewählten Kursmaterial habe ich dazu nichts gefunden. Ich habe mit mehreren Formulierungen auf Deutsch und Englisch gesucht, etwa nach Öffnungszeiten, Sonntag und Bibliothek. Welche Bibliothek sonntags geöffnet hat, kann ich deshalb nicht sagen.\n\nDie aktuellen Öffnungszeiten stehen am besten auf der Website der Universitätsbibliothek oder der jeweiligen Bibliothek. Wenn du ein Dokument hast, in dem sie stehen könnten, etwa ein Merkblatt oder die Erstsemesterinfos, kannst du es zum Material hinzufügen. Dann suche ich dort noch einmal.",
       "costMicroUsd": 41752
@@ -1172,12 +484,8 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Wo finde ich die Mensa am Schlossplatz?",
-      "searches": [
-        "Mensa Schlossplatz"
-      ],
-      "foundPages": [
-        []
-      ],
+      "searches": ["Mensa Schlossplatz"],
+      "foundPages": [[]],
       "citedPages": [],
       "answer": "Dazu habe ich in deinem ausgewählten Kursmaterial nichts gefunden. Wo die Mensa am Schlossplatz ist, kann ich dir deshalb nicht sagen. Am besten schaust du auf der Website des Studierendenwerks oder deiner Universität nach, oder auf einer Campus-Karte. Wenn du ein Dokument mit Campus-Infos hast, wie ein Erstsemester-Handbuch, kannst du es auswählen. Dann suche ich dort noch einmal.",
       "costMicroUsd": 9957
@@ -1190,43 +498,18 @@
         "Bewerbung Auslandsstudium Fristen Unterlagen"
       ],
       "foundPages": [
-        [
-          4,
-          10,
-          1,
-          13,
-          15,
-          7,
-          16,
-          18
-        ],
-        [
-          4,
-          5,
-          8,
-          16,
-          18,
-          1,
-          14,
-          13
-        ]
+        [4, 10, 1, 13, 15, 7, 16, 18],
+        [4, 5, 8, 16, 18, 1, 14, 13]
       ],
-      "citedPages": [
-        15,
-        18
-      ],
+      "citedPages": [15, 18],
       "answer": "Dazu finde ich in deinem Kursmaterial nichts. Die Suchergebnisse stammen aus Modulbeschreibungen des Bachelors Wirtschaftsinformatik, zum Beispiel Programmierung, Datenmanagement und Mathematik. Zur Anmeldung, zu Fristen, Unterlagen oder Ansprechpersonen für ein Auslandssemester steht dort nichts.\n\nIn den Modulbeschreibungen gibt es zwar den Punkt „Mobilität/Anerkennung“. Die gefundenen Stellen nennen dort aber nur die „Verwendbarkeit in anderen Studiengängen“ (jeweils „keine“) [S5][S8]. Ein Verfahren für das Auslandssemester wird nicht beschrieben.\n\nFür die Anmeldung wendest du dich am besten an das International Office deiner Hochschule oder an die Auslandsbeauftragten deines Fachbereichs. Wenn du weitere Unterlagen hast, etwa die Prüfungsordnung oder ein Merkblatt zum Auslandsstudium, wähle sie für diesen Chat aus. Dann suche ich dort noch einmal nach.",
       "costMicroUsd": 95550
     },
     {
       "document": "wwu-wi-excerpt",
       "question": "Was ist die Hauptstadt von Australien?",
-      "searches": [
-        "Hauptstadt von Australien"
-      ],
-      "foundPages": [
-        []
-      ],
+      "searches": ["Hauptstadt von Australien"],
+      "foundPages": [[]],
       "citedPages": [],
       "answer": "Dazu finde ich in deinem ausgewählten Kursmaterial nichts. Die Frage zur Hauptstadt von Australien wird dort nicht beantwortet, und ich antworte nur aus dem Material.\n\nWenn du möchtest, kann ich mit anderen Suchbegriffen noch einmal suchen. Oder du wählst anderes Material aus, in dem das Thema vorkommt.",
       "costMicroUsd": 34780
@@ -1234,22 +517,8 @@
     {
       "document": "wwu-wi-excerpt",
       "question": "Wie viele Urlaubstage habe ich im Praktikum?",
-      "searches": [
-        "Urlaubstage Praktikum",
-        "Urlaub Praktikant Anspruch"
-      ],
-      "foundPages": [
-        [
-          8,
-          5,
-          13,
-          17,
-          15,
-          2,
-          3
-        ],
-        []
-      ],
+      "searches": ["Urlaubstage Praktikum", "Urlaub Praktikant Anspruch"],
+      "foundPages": [[8, 5, 13, 17, 15, 2, 3], []],
       "citedPages": [],
       "answer": "Dazu habe ich im ausgewählten Material nichts gefunden. Meine Suchen nach „Urlaubstage Praktikum“ und „Urlaub Praktikant Anspruch“ haben nur Auszüge aus dem Modulhandbuch geliefert, zum Beispiel zu Prüfungsleistungen, Leistungspunkten und Anwesenheit. Zu Urlaub oder Urlaubsanspruch im Praktikum steht dort nichts.\n\nDie Zahl Ihrer Urlaubstage steht wahrscheinlich in Ihrem Praktikumsvertrag. Sonst wäre die Praktikumsordnung Ihres Studiengangs oder die Personalabteilung des Unternehmens die richtige Stelle. Wenn Sie ein anderes Dokument haben, in dem das stehen könnte, wählen Sie es bitte für diesen Chat aus. Dann suche ich dort noch einmal.",
       "costMicroUsd": 68884
