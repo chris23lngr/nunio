@@ -353,6 +353,9 @@ model ChatMessage {
   /// Reasoning uses its own key with the same Source dependencies as the answer.
   reasoningContent Bytes?
   reasoningKey Bytes?
+  /// The answer's ordered parts as the student saw them, with the same Source dependencies; null for questions and older answers.
+  partsContent Bytes?
+  partsKey Bytes?
   /// The message key, wrapped under each `derivedFrom` Source's key in order; null when derived from none.
   contentKey  Bytes?
   /// The Sources whose passages the answer was given, in wrapping order.

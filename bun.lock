@@ -215,6 +215,7 @@
         "@nunio/delegation": "workspace:*",
         "@nunio/keys": "workspace:*",
         "@nunio/knowledge": "workspace:*",
+        "ai": "7.0.157",
       },
       "devDependencies": {
         "@biomejs/biome": "2.6.3",

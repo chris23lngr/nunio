@@ -1019,6 +1019,13 @@
             "type": "string",
             "description": "Model reasoning, absent for older messages or once a dependent Source is deleted."
           },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatMessagePart"
+            },
+            "description": "The message's reasoning, searches and text in the order shown; empty once withdrawn."
+          },
           "citations": {
             "type": "array",
             "items": {
@@ -1132,8 +1139,98 @@
           "role",
           "createdAt",
           "text",
+          "parts",
           "citations",
           "model"
+        ]
+      },
+      "ChatMessagePart": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "reasoning"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-searchMaterial"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "query"
+                ]
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "found": {
+                    "type": "integer"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "found",
+                  "sources"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "output"
+            ]
+          }
         ]
       },
       "Plan": {
@@ -6141,7 +6238,7 @@
         },
         "responses": {
           "200": {
-            "description": "AI SDK UI message SSE: a start chunk carrying the answer's ID, reasoning and provisional text parts, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
+            "description": "AI SDK UI message SSE: a start chunk carrying the answer's ID, then each model step's reasoning, tool and provisional text chunks, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
             "content": {
               "text/event-stream": {
                 "schema": {

@@ -6,3 +6,5 @@ export {
   type Chats,
   createChats,
 } from "./chats.js";
+export type { ChatPart } from "./parts.js";
+export type { SearchOutput } from "./search.js";

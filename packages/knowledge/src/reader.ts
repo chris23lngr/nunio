@@ -138,7 +138,8 @@ export type Retrieval =
       items: Item[];
       /** The limit cut off further relevant passages. */
       truncated: boolean;
-      render(): PromptData;
+      /** Tags are `S1` … in item order, unless `tagFor` names them, so a caller can number several renders as one. */
+      render(options?: { tagFor?: (cite: CitationRef) => string }): PromptData;
     }
   | {
       status: "refused";
@@ -161,13 +162,16 @@ function ok(items: Item[], revision: string, truncated = false): Retrieval {
     revision,
     items,
     truncated,
-    render() {
+    render({ tagFor } = {}) {
       if (!items.length)
         return {
           data: "Nothing relevant was found in the selected material.",
           citations: [],
         };
-      const tagged = items.map((item, i) => ({ item, tag: `S${i + 1}` }));
+      const tagged = items.map((item, i) => ({
+        item,
+        tag: tagFor?.(item.cite) ?? `S${i + 1}`,
+      }));
       // Each channel gets its own fenced section, so operational items never appear among course material.
       const sections = channels.flatMap((channel) => {
         const entries = tagged.filter(({ item }) => item.channel === channel);

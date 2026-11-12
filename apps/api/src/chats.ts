@@ -22,6 +22,21 @@ const Citation = z.object({
     .union([Provenance, z.literal("gone")])
     .describe('Resolved when shown; "gone" once its Source is deleted.'),
 });
+const Part = z
+  .discriminatedUnion("type", [
+    z.object({ type: z.literal("reasoning"), text: z.string() }),
+    z.object({ type: z.literal("text"), text: z.string() }),
+    z.object({
+      type: z.literal("tool-searchMaterial"),
+      toolCallId: z.string(),
+      input: z.object({ query: z.string() }),
+      output: z.object({
+        found: z.number().int(),
+        sources: z.array(z.string()),
+      }),
+    }),
+  ])
+  .openapi("ChatMessagePart");
 const Message = z
   .object({
     id: z.string(),
@@ -38,6 +53,11 @@ const Message = z
       .optional()
       .describe(
         "Model reasoning, absent for older messages or once a dependent Source is deleted.",
+      ),
+    parts: z
+      .array(Part)
+      .describe(
+        "The message's reasoning, searches and text in the order shown; empty once withdrawn.",
       ),
     citations: z.array(Citation),
     model: z
@@ -153,7 +173,7 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
       responses: {
         200: {
           description:
-            "AI SDK UI message SSE: a start chunk carrying the answer's ID, reasoning and provisional text parts, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
+            "AI SDK UI message SSE: a start chunk carrying the answer's ID, then each model step's reasoning, tool and provisional text chunks, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
           content: { "text/event-stream": { schema: z.string() } },
         },
         ...errors,
@@ -193,13 +213,6 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
         execute: async ({ writer }) => {
           const answerId = randomUUID();
           writer.write({ type: "start", messageId: answerId });
-          let reasoningOpen = false;
-          let textStarted = false;
-          const endReasoning = () => {
-            if (reasoningOpen)
-              writer.write({ type: "reasoning-end", id: "reasoning" });
-            reasoningOpen = false;
-          };
           let outcome = "interrupted";
           try {
             const result = await c
@@ -210,31 +223,12 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
                 onStep: (step, ms) => {
                   timing[step] = Math.round(ms);
                 },
-                onReasoning: (delta, streaming) => {
-                  mark("firstReasoning");
-                  if (delta && !reasoningOpen) {
-                    writer.write({ type: "reasoning-start", id: "reasoning" });
-                    reasoningOpen = true;
-                  }
-                  if (delta)
-                    writer.write({
-                      type: "reasoning-delta",
-                      id: "reasoning",
-                      delta,
-                    });
-                  if (!streaming) endReasoning();
-                },
-                onText: (delta) => {
-                  mark("firstText");
-                  endReasoning();
-                  if (!textStarted)
-                    writer.write({ type: "text-start", id: "answer" });
-                  textStarted = true;
-                  writer.write({ type: "text-delta", id: "answer", delta });
+                write: (chunk) => {
+                  if (chunk.type === "reasoning-delta") mark("firstReasoning");
+                  if (chunk.type === "text-delta") mark("firstText");
+                  writer.write(chunk);
                 },
               });
-            endReasoning();
-            if (textStarted) writer.write({ type: "text-end", id: "answer" });
             if (result.status !== "ok") {
               writer.write({
                 type: "data-refused",

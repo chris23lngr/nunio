@@ -1,3 +1,5 @@
+import type { UIMessageChunk } from "ai";
+import { jsonSchema, tool } from "ai";
 import { expect, it } from "vitest";
 import { createAnswerer } from "./answer.js";
 import type { Models } from "./models.js";
@@ -8,159 +10,104 @@ import { testCatalog } from "./test-catalog.js";
 const answererFrom = (models: Models) =>
   createAnswerer(models.forTask("explanation"));
 
-function recorded(
-  bodies: Record<string, unknown>[],
-  content: string,
-  finishReason = "stop",
-  reasoning?: string,
+const encoder = new TextEncoder();
+const event = (data: unknown) =>
+  encoder.encode(`data: ${JSON.stringify(data)}\n\n`);
+const content = (text: string) => ({
+  id: "gen-1",
+  choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
+});
+const finished = (reason: string, cost?: number) => ({
+  id: "gen-1",
+  choices: [{ index: 0, delta: {}, finish_reason: reason }],
+  usage: {
+    prompt_tokens: 1000,
+    completion_tokens: 200,
+    total_tokens: 1200,
+    ...(cost === undefined ? {} : { cost }),
+  },
+});
+
+/** A provider that streams `events` as OpenRouter's SSE, recording each request body. */
+function streaming(
+  events: unknown[],
+  bodies: Record<string, unknown>[] = [],
 ): typeof fetch {
   return async (_url, init) => {
     bodies.push(JSON.parse(String(init?.body)));
-    return Response.json({
-      id: "gen-1",
-      model: "anthropic/claude-sonnet-5.5",
-      object: "chat.completion",
-      created: 0,
-      choices: [
-        {
-          index: 0,
-          finish_reason: finishReason,
-          message: { role: "assistant", content, reasoning },
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          for (const data of events) controller.enqueue(event(data));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
         },
-      ],
-      usage: {
-        prompt_tokens: 1000,
-        completion_tokens: 200,
-        total_tokens: 1200,
-        cost: 0.004,
-      },
-    });
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
   };
 }
 
-it("answers from a data message apart from the question, keeping only citation tags it was given", async () => {
+const search = tool({
+  description: "Searches the material",
+  inputSchema: jsonSchema<{ query: string }>({
+    type: "object",
+    properties: { query: { type: "string" } },
+    required: ["query"],
+  }),
+  execute: async () => ({ found: 0 }),
+});
+
+it("sends the instructions apart from the conversation, which it sends as given", async () => {
   const bodies: Record<string, unknown>[] = [];
   const answerer = answererFrom(
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
       catalog: testCatalog,
-      fetch: recorded(
-        bodies,
-        "Die Klausur ist am 10. Februar [S1], laut Aushang [S7].",
-      ),
+      fetch: streaming([content("Am 10. Februar."), finished("stop")], bodies),
     }),
   );
-  const data =
-    "<<<BEGIN course_material 0123456789abcdef>>>\n[S1] Modulhandbuch, page 2\nKlausur am 10.02.\n<<<END course_material 0123456789abcdef>>>";
 
-  const result = await answerer.answer(
-    { question: "Wann ist die Klausur?", data, tags: ["S1"] },
-    { signal: AbortSignal.timeout(1000) },
+  await answerer.step(
+    {
+      messages: [
+        { role: "user", content: "Wann ist die Klausur?" },
+        { role: "assistant", content: "Am 10. Februar." },
+        { role: "user", content: "Und um wie viel Uhr?" },
+      ],
+      tools: {},
+      last: false,
+    },
+    { signal: AbortSignal.timeout(1000), write: () => {} },
   );
 
-  expect(result).toEqual({
-    value: {
-      text: "Die Klausur ist am 10. Februar [S1], laut Aushang.",
-      cited: ["S1"],
-    },
-    usage: { microUsd: 4000 },
-  });
   const body = bodies[0] as {
     model: string;
     messages: { role: string; content: unknown }[];
-    tools?: unknown;
   };
+  const text = (m: { content: unknown }) =>
+    typeof m.content === "string"
+      ? m.content
+      : (m.content as { text?: string }[])
+          .map((part) => part.text ?? "")
+          .join("");
   expect(body.model).toBe("anthropic/claude-sonnet-5.5");
-  expect(body.tools).toBeUndefined();
-  const text = (m: { content: unknown }) =>
-    typeof m.content === "string"
-      ? m.content
-      : (m.content as { text?: string }[])
-          .map((part) => part.text ?? "")
-          .join("");
-  const system = body.messages
-    .filter((m) => m.role === "system")
-    .map(text)
-    .join("");
-  const user = body.messages.filter((m) => m.role === "user").map(text);
-  expect(system).not.toContain("Klausur am 10.02.");
-  expect(user).toEqual([
-    expect.stringContaining(data),
-    "Wann ist die Klausur?",
-  ]);
-});
-
-it("sends the Chat's earlier questions and answers before the course material, and counts them in the estimate", async () => {
-  const bodies: Record<string, unknown>[] = [];
-  const answerer = answererFrom(
-    createModels({
-      apiKey: "test",
-      baseURL: "https://provider.invalid",
-      catalog: testCatalog,
-      fetch: recorded(bodies, "Dazu steht nichts im Material."),
-    }),
-  );
-  const data =
-    "<<<BEGIN course_material 0123456789abcdef>>>\nNothing relevant was found.\n<<<END course_material 0123456789abcdef>>>";
-  const input = {
-    question: "Und um wie viel Uhr?",
-    data,
-    tags: [],
-    history: [{ question: "Wann ist die Klausur?", answer: "Am 10. Februar." }],
-  };
-
-  await answerer.answer(input, { signal: AbortSignal.timeout(1000) });
-
-  const body = bodies[0] as {
-    messages: { role: string; content: unknown }[];
-  };
-  const text = (m: { content: unknown }) =>
-    typeof m.content === "string"
-      ? m.content
-      : (m.content as { text?: string }[])
-          .map((part) => part.text ?? "")
-          .join("");
-  expect(
-    body.messages
-      .filter((m) => m.role !== "system")
-      .map((m) => [m.role, text(m)]),
-  ).toEqual([
+  expect(body.messages[0]!.role).toBe("system");
+  expect(text(body.messages[0]!)).not.toContain("Klausur");
+  expect(body.messages.slice(1).map((m) => [m.role, text(m)])).toEqual([
     ["user", "Wann ist die Klausur?"],
     ["assistant", "Am 10. Februar."],
-    ["user", expect.stringContaining(data)],
     ["user", "Und um wie viel Uhr?"],
   ]);
-  expect(answerer.estimateMicroUsd(input)).toBeGreaterThan(
-    answerer.estimateMicroUsd({ ...input, history: [] }),
-  );
 });
 
-it("refuses a truncated answer rather than showing part of it", async () => {
-  const answerer = answererFrom(
-    createModels({
-      apiKey: "test",
-      baseURL: "https://provider.invalid",
-      catalog: testCatalog,
-      fetch: recorded([], "Die Klausur ist am", "length"),
-    }),
-  );
-  await expect(
-    answerer.answer(
-      { question: "Wann?", data: "", tags: [] },
-      { signal: AbortSignal.timeout(1000) },
-    ),
-  ).rejects.toThrow();
-});
-
-it("streams text before completion and returns sanitized citations and terminal cost", async () => {
+it("streams a step's chunks before it completes, then settles at the reported cost", async () => {
   let finish = () => {};
   const ending = new Promise<void>((resolve) => {
     finish = resolve;
   });
-  const encoder = new TextEncoder();
-  const deltas: string[] = [];
-  const reasoning: [string, boolean][] = [];
+  const chunks: UIMessageChunk[] = [];
   const answerer = answererFrom(
     createModels({
       apiKey: "test",
@@ -170,41 +117,21 @@ it("streams text before completion and returns sanitized citations and terminal 
         new Response(
           new ReadableStream({
             async start(controller) {
-              const emit = (data: unknown) =>
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
-                );
-              emit({
-                id: "gen-1",
-                choices: [
-                  {
-                    index: 0,
-                    delta: { reasoning: "Ich prüfe die Quelle." },
-                    finish_reason: null,
-                  },
-                ],
-              });
-              emit({
-                id: "gen-1",
-                choices: [
-                  {
-                    index: 0,
-                    delta: { content: "Eine Antwort [S1] [S7]." },
-                    finish_reason: null,
-                  },
-                ],
-              });
+              controller.enqueue(
+                event({
+                  id: "gen-1",
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { reasoning: "Ich prüfe die Quelle." },
+                      finish_reason: null,
+                    },
+                  ],
+                }),
+              );
+              controller.enqueue(event(content("Eine Antwort [S1].")));
               await ending;
-              emit({
-                id: "gen-1",
-                choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-                usage: {
-                  prompt_tokens: 1000,
-                  completion_tokens: 200,
-                  total_tokens: 1200,
-                  cost: 0.004,
-                },
-              });
+              controller.enqueue(event(finished("stop", 0.004)));
               controller.enqueue(encoder.encode("data: [DONE]\n\n"));
               controller.close();
             },
@@ -213,113 +140,98 @@ it("streams text before completion and returns sanitized citations and terminal 
         ),
     }),
   );
-  const pending = answerer.answer(
-    { question: "Wann?", data: "", tags: ["S1"] },
+  const pending = answerer.step(
     {
-      signal: AbortSignal.timeout(2000),
-      onReasoning: (text: string, streaming: boolean) => {
-        reasoning.push([text, streaming]);
-      },
-      onText: (text: string) => {
-        deltas.push(text);
-      },
+      messages: [{ role: "user", content: "Wann?" }],
+      tools: {},
+      last: false,
     },
+    { signal: AbortSignal.timeout(2000), write: (chunk) => chunks.push(chunk) },
   );
   try {
-    await expect.poll(() => deltas.length, { timeout: 1000 }).toBe(1);
-    expect(reasoning).toEqual([
-      ["Ich prüfe die Quelle.", true],
-      ["", false],
-    ]);
-    expect(deltas.join("")).toBe("Eine Antwort [S1] [S7].");
+    await expect
+      .poll(() => chunks.some((chunk) => chunk.type === "text-delta"), {
+        timeout: 1000,
+      })
+      .toBe(true);
+    expect(chunks).toContainEqual(
+      expect.objectContaining({
+        type: "reasoning-delta",
+        delta: "Ich prüfe die Quelle.",
+      }),
+    );
   } finally {
     finish();
   }
-  expect(await pending).toEqual({
-    value: {
-      text: "Eine Antwort [S1].",
-      cited: ["S1"],
-      reasoning: "Ich prüfe die Quelle.",
-    },
-    usage: { microUsd: 4000 },
-  });
+  const result = await pending;
+  expect(result.value.finishReason).toBe("stop");
+  expect(result.usage).toEqual({ microUsd: 4000 });
 });
 
-for (const outcome of ["length", "missing-usage", "error", "eof"] as const) {
-  it(`does not complete a stream with ${outcome}`, async () => {
-    const data = [
-      {
-        id: "gen-1",
-        choices: [
-          { index: 0, delta: { content: "Ein Anfang" }, finish_reason: null },
-        ],
-      },
-    ];
-    const terminal =
-      outcome === "error"
-        ? { error: { message: "Unavailable", code: 500 } }
-        : {
-            id: "gen-1",
-            choices: [
-              {
-                index: 0,
-                delta: {},
-                finish_reason: outcome === "length" ? "length" : "stop",
-              },
-            ],
-            ...(outcome === "missing-usage"
-              ? {}
-              : {
-                  usage: {
-                    prompt_tokens: 1,
-                    completion_tokens: 1,
-                    total_tokens: 2,
-                  },
-                }),
-          };
-    const body =
-      [...data, ...(outcome === "eof" ? [] : [terminal])]
-        .map((value) => `data: ${JSON.stringify(value)}\n\n`)
-        .join("") + "data: [DONE]\n\n";
-    const answerer = answererFrom(
-      createModels({
-        apiKey: "test",
-        baseURL: "https://provider.invalid",
-        catalog: testCatalog,
-        fetch: async () =>
-          new Response(body, {
-            headers: { "content-type": "text/event-stream" },
-          }),
-      }),
-    );
-    await expect(
-      answerer.answer(
-        { question: "Wann?", data: "", tags: [] },
-        { signal: AbortSignal.timeout(2000), onText: () => {} },
-      ),
-    ).rejects.toThrow();
-  });
-}
-
-it("returns reasoning with a completed JSON answer", async () => {
+it("counts the conversation and the tools in its estimate", () => {
   const answerer = answererFrom(
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
       catalog: testCatalog,
-      fetch: recorded([], "Die Antwort [S1].", "stop", "Ich prüfe die Quelle."),
     }),
   );
-  const result = await answerer.answer(
-    { question: "Wann?", data: "", tags: ["S1"] },
-    { signal: AbortSignal.timeout(1000) },
+  const question = {
+    messages: [{ role: "user" as const, content: "Und um wie viel Uhr?" }],
+    tools: {},
+    last: false,
+  };
+  const followUp = {
+    ...question,
+    messages: [
+      { role: "user" as const, content: "Wann ist die Klausur?" },
+      { role: "assistant" as const, content: "Am 10. Februar." },
+      ...question.messages,
+    ],
+  };
+
+  expect(answerer.estimateMicroUsd(followUp)).toBeGreaterThan(
+    answerer.estimateMicroUsd(question),
   );
-  expect(result.value).toEqual({
-    text: "Die Antwort [S1].",
-    cited: ["S1"],
-    reasoning: "Ich prüfe die Quelle.",
-  });
+  expect(
+    answerer.estimateMicroUsd({ ...question, tools: { search } }),
+  ).toBeGreaterThan(answerer.estimateMicroUsd(question));
 });
+
+for (const outcome of ["length", "missing-usage", "error", "eof"] as const) {
+  it(`does not complete a step with ${outcome}`, async () => {
+    const terminal =
+      outcome === "error"
+        ? { error: { message: "Unavailable", code: 500 } }
+        : outcome === "missing-usage"
+          ? {
+              id: "gen-1",
+              choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+            }
+          : finished(outcome === "length" ? "length" : "stop");
+    const answerer = answererFrom(
+      createModels({
+        apiKey: "test",
+        baseURL: "https://provider.invalid",
+        catalog: testCatalog,
+        fetch: streaming([
+          content("Ein Anfang"),
+          ...(outcome === "eof" ? [] : [terminal]),
+        ]),
+      }),
+    );
+    await expect(
+      answerer.step(
+        {
+          messages: [{ role: "user", content: "Wann?" }],
+          tools: {},
+          last: false,
+        },
+        { signal: AbortSignal.timeout(2000), write: () => {} },
+      ),
+    ).rejects.toThrow();
+  });
+}
 
 it("names the Model it answers with, for the answer's record", () => {
   const answerer = answererFrom(
