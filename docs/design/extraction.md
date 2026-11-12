@@ -163,7 +163,7 @@ Also:
 
 ## Prompt for teaching material
 
-One extended Haiku 5.5 prompt handles syllabi, handbooks, slides and lecture notes without a classification call. For teaching material it asks for every distinct concept the pages teach, such as “gleichmäßige Konvergenz”, with no fixed count, excluding outline headings like “Einleitung”. Each Topic names one concept; joined concepts, rules, workflows and lists are not Topics. Lines beginning exactly with `[Abbildung] ` are figure descriptions written by another model. Topics and other Facts may cite them; Obligations, deadlines and Course names must not rely on them.
+One extended Haiku 5.5 prompt handles syllabi, handbooks, slides and lecture notes without a classification call. For teaching material it asks for every distinct concept the pages teach, such as “gleichmäßige Konvergenz”, with no fixed count, including basic terms and concepts only a figure shows, excluding outline headings like “Einleitung”. Each Topic names one concept; joined concepts, rules, workflows and lists are not Topics. Lines beginning exactly with `[Abbildung] ` are figure descriptions written by another model. Topics and other Facts may cite them; Obligations, deadlines and Course names must not rely on them.
 
 ## Eval
 
