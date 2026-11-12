@@ -3094,6 +3094,40 @@ describe("Chat", () => {
     });
   });
 
+  it("withdraws an answer built on the Plan once the Source of an Obligation it read is deleted", async () => {
+    const { cookie, headers } = await reviewFixture("chat-agenda-withdrawn");
+    const { id: sourceId } = await admin.source.findFirstOrThrow({
+      where: { studentId: await studentId(cookie) },
+    });
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+      })
+    ).json()) as { id: string };
+    steps.push(
+      calls("agenda", { from: "2026-11-16", to: "2026-11-22" }),
+      says("Nächste Woche ist Übungsblatt 3 fällig."),
+    );
+    expect((await askInChat(headers, id, "Was steht an?")).status).toBe(200);
+
+    await app.request(`${apiOrigin}/api/me/sources/${sourceId}`, {
+      method: "DELETE",
+      headers,
+    });
+
+    const messages = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+        headers: { cookie },
+      })
+    ).json()) as { role: string; text: string | null }[];
+    expect(messages.map((message) => message.text)).toEqual([
+      "Was steht an?",
+      null,
+    ]);
+  });
+
   it("offers no search in a Chat with nothing selected, but still the Plan", async () => {
     const { headers, id } = await emptyChat("chat-no-search");
     reply = "Für diesen Chat ist kein Material ausgewählt.";
