@@ -328,3 +328,137 @@ test("uploading into an existing Course binds the file to it, and reports a Cour
     "Dieser Kurs ist nicht mehr verfügbar. Wähle einen anderen.",
   );
 });
+
+test("a multi-file upload that fails part-way selects the Course it created and retries only the files not yet done", async () => {
+  const posted: { title: string; course: unknown }[] = [];
+  let created = false;
+  let failSecond = true;
+  api.route("GET", "/api/me/courses", () =>
+    Response.json(
+      courseList(created ? [{ ...analysis, id: "course-new" }] : []),
+    ),
+  );
+  api.route("GET", "/api/me/sources", () => Response.json([]));
+  api.route("POST", "/api/me/sources", async (request) => {
+    const body = (await request.json()) as { title: string; course: unknown };
+    posted.push(body);
+    created = true;
+    return Response.json({
+      source: {
+        ...source,
+        id: body.title.replace(" ", "-"),
+        courseId: "course-new",
+      },
+      upload: {
+        url: `${api.origin}/upload/${encodeURIComponent(body.title)}`,
+        headers: {},
+      },
+    });
+  });
+  api.route("PUT", "/upload/Folien%201.pdf", () => new Response(null));
+  api.route("PUT", "/upload/Folien%202.pdf", () => {
+    if (!failSecond) return new Response(null);
+    failSecond = false;
+    return new Response(null, { status: 500 });
+  });
+  for (const id of ["Folien-1.pdf", "Folien-2.pdf"])
+    api.route("POST", `/api/me/sources/${id}/complete`, () =>
+      Response.json({ status: "queued" }),
+    );
+  render(<Journey />);
+  await screen.findByText(/No Sources yet/);
+  const user = userEvent.setup();
+  await user.upload(screen.getByLabelText("PDF"), [
+    new File(["%PDF"], "Folien 1.pdf", { type: "application/pdf" }),
+    new File(["%PDF"], "Folien 2.pdf", { type: "application/pdf" }),
+  ]);
+  await user.selectOptions(screen.getByLabelText("Kurs"), "Neuer Kurs …");
+  await user.type(screen.getByLabelText("Titel"), "Analysis I");
+  const form = screen.getByLabelText("PDF").closest("form")!;
+
+  fireEvent.submit(form);
+  await screen.findByText(/The upload did not finish/);
+  await waitFor(() =>
+    expect((screen.getByLabelText("Kurs") as HTMLSelectElement).value).toBe(
+      "course-new",
+    ),
+  );
+  expect(screen.queryByLabelText("Titel")).toBeNull();
+  fireEvent.submit(form);
+
+  await waitFor(() => expect(posted).toHaveLength(3));
+  expect(posted.map(({ title, course }) => [title, course])).toEqual([
+    ["Folien 1.pdf", { title: "Analysis I", code: null }],
+    ["Folien 2.pdf", { id: "course-new" }],
+    ["Folien 2.pdf", { id: "course-new" }],
+  ]);
+});
+
+test("a finished upload returns the Course choice to automatic recognition, hiding the new-Course fields", async () => {
+  api.route("GET", "/api/me/sources", () => Response.json([]));
+  let sent: unknown;
+  api.route("POST", "/api/me/sources", async (request) => {
+    sent = ((await request.json()) as { course: unknown }).course;
+    return Response.json({
+      source: { ...source, courseId: "course-new" },
+      upload: { url: `${api.origin}/upload`, headers: {} },
+    });
+  });
+  api.route("PUT", "/upload", () => new Response(null));
+  let completed = false;
+  api.route("POST", "/api/me/sources/source-1/complete", () => {
+    completed = true;
+    return Response.json({ status: "queued" });
+  });
+  render(<Journey />);
+  await screen.findByText(/No Sources yet/);
+  const user = userEvent.setup();
+  await user.upload(
+    screen.getByLabelText("PDF"),
+    new File(["%PDF"], "Folien.pdf", { type: "application/pdf" }),
+  );
+  await user.selectOptions(screen.getByLabelText("Kurs"), "Neuer Kurs …");
+  await user.type(screen.getByLabelText("Titel"), "Analysis I");
+
+  fireEvent.submit(screen.getByLabelText("PDF").closest("form")!);
+
+  await waitFor(() => expect(completed).toBe(true));
+  expect(sent).toEqual({ title: "Analysis I", code: null });
+  await waitFor(() =>
+    expect((screen.getByLabelText("Kurs") as HTMLSelectElement).value).toBe(""),
+  );
+  expect(screen.queryByLabelText("Titel")).toBeNull();
+});
+
+test("a new Course named like an existing one is refused with that Course's name", async () => {
+  api.route("GET", "/api/me/sources", () => Response.json([]));
+  api.route("POST", "/api/me/sources", () =>
+    Response.json(
+      {
+        error: "clash",
+        course: {
+          id: "course-1",
+          title: "Analysis I",
+          status: "accepted",
+          archived: false,
+        },
+      },
+      { status: 409 },
+    ),
+  );
+  render(<Journey />);
+  await screen.findByText(/No Sources yet/);
+  const user = userEvent.setup();
+  await user.upload(
+    screen.getByLabelText("PDF"),
+    new File(["%PDF"], "Folien.pdf", { type: "application/pdf" }),
+  );
+  await user.selectOptions(screen.getByLabelText("Kurs"), "Neuer Kurs …");
+  await user.type(screen.getByLabelText("Titel"), "analysis i");
+
+  fireEvent.submit(screen.getByLabelText("PDF").closest("form")!);
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Es gibt schon einen Kurs mit diesem Titel oder Kürzel: Analysis I. Wähle ihn aus, statt einen neuen anzulegen.",
+  );
+});

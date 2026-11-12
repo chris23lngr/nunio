@@ -164,3 +164,72 @@ test("Kurs ändern is unavailable while the Source is read, and reports a readin
     "Diese Quelle wird gerade gelesen. Ändere den Kurs, sobald das fertig ist.",
   );
 });
+
+test("Kurs ändern keeps a changed Course when reading could not start, and starts it from the Source page", async () => {
+  routes();
+  let changed = false;
+  let extracted = false;
+  api.route("GET", "/api/me/sources", () =>
+    Response.json([
+      changed ? { ...source, courseId: null, extraction: "pending" } : source,
+    ]),
+  );
+  api.route("POST", "/api/me/sources/source-1/course", () => {
+    changed = true;
+    return Response.json({ error: "not_started" }, { status: 503 });
+  });
+  api.route("POST", "/api/me/sources/source-1/extract", () => {
+    extracted = true;
+    return Response.json({ status: "queued" }, { status: 202 });
+  });
+  render(
+    <TestProviders>
+      <SourceDocumentScreen apiOrigin={api.origin} sourceId="source-1" />
+    </TestProviders>,
+  );
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Kurs ändern" }));
+  await user.selectOptions(
+    screen.getByLabelText("Kurs"),
+    "Automatisch erkennen",
+  );
+  await user.click(screen.getByRole("button", { name: "Neu lesen" }));
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Der Kurs ist geändert, aber das Lesen konnte nicht starten. Starte es hier erneut.",
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Lesen starten" }),
+  );
+  await waitFor(() => expect(extracted).toBe(true));
+});
+
+test("Kurs ändern shows an Archived bound Course as the current choice, and waits for the Course list", async () => {
+  routes([source]);
+  let respond!: () => void;
+  api.route("GET", "/api/me/courses", async () => {
+    await new Promise<void>((resolve) => {
+      respond = resolve;
+    });
+    return Response.json({
+      current: "2026-ws",
+      choices: ["2026-ws"],
+      courses: [{ ...analysis, archived: true }],
+    });
+  });
+  render(
+    <TestProviders>
+      <SourceDocumentScreen apiOrigin={api.origin} sourceId="source-1" />
+    </TestProviders>,
+  );
+  await screen.findByRole("heading", { name: "Notizen.pdf" });
+  expect(screen.queryByRole("button", { name: "Kurs ändern" })).toBeNull();
+  await waitFor(() => expect(respond).toBeTypeOf("function"));
+  respond();
+
+  await screen.findByText("Kurs: MA-101 Analysis I (archiviert)");
+  await userEvent.click(screen.getByRole("button", { name: "Kurs ändern" }));
+  expect((screen.getByLabelText("Kurs") as HTMLSelectElement).value).toBe(
+    "course-1",
+  );
+});
