@@ -139,6 +139,8 @@ const schedules: Schedules = {
 const prompts: unknown[] = [];
 /** Whether each step let the Chat model call a tool, in order. */
 const toolChoices: unknown[] = [];
+/** The tools each step offered the Chat model, by name, in order. */
+const offeredTools: string[][] = [];
 /** What the Chat model streams in its next steps; with none queued, one step of `reasoningText` and `reply`. */
 const steps: unknown[][] = [];
 let reply = "";
@@ -169,12 +171,15 @@ const chatModel = new MockLanguageModelV4({
   doStream: async ({
     prompt,
     toolChoice,
+    tools,
   }: {
     prompt: unknown;
     toolChoice?: unknown;
+    tools?: { name: string }[];
   }) => {
     prompts.push(prompt);
     toolChoices.push(toolChoice);
+    offeredTools.push((tools ?? []).map((tool) => tool.name));
     const parts = steps.shift() ?? [
       ...(reasoningText ? thinks(reasoningText) : []),
       ...says(reply),
@@ -2921,6 +2926,26 @@ describe("Chat", () => {
         })
       ).json(),
     ).toEqual([]);
+  });
+
+  it("offers no search in a Chat with nothing selected", async () => {
+    const { headers, id } = await emptyChat("chat-no-search");
+    reply = "Für diesen Chat ist kein Material ausgewählt.";
+    offeredTools.length = 0;
+
+    const chunks = await sseChunks(
+      await app.request(`${apiOrigin}/api/me/chats/${id}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          id: randomUUID(),
+          text: "Wann ist die Klausur?",
+        }),
+      }),
+    );
+
+    expect(offeredTools).toEqual([[]]);
+    expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
   });
 
   it("gives the model the passages a search found, but the student only how many and where", async () => {

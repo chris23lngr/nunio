@@ -55,24 +55,37 @@ export function createChats({
       provenance: provenance.get(cite) ?? ("gone" as const),
     }));
   }
-  /** The Chat's recent messages, decrypted, as the history the next answer is given; null when the Chat is gone. */
+  /**
+   * The Chat's recent messages, decrypted, as the history the next answer is given, and whether it selected
+   * anything to search; null when the Chat is gone.
+   */
   async function earlier(p: Principal, chatId: string) {
     const recent = await withOwner(db, p, async (tx) => {
-      if (!(await tx.chat.findUnique({ where: { id: chatId } }))) return null;
+      const chat = await tx.chat.findUnique({
+        where: { id: chatId },
+        select: { _count: { select: { courses: true, sources: true } } },
+      });
+      if (!chat) return null;
       const rows = await tx.chatMessage.findMany({
         where: { chatId },
         orderBy: [{ createdAt: "desc" }, { role: "desc" }],
         take: historyTurns * 2,
       });
-      return Promise.all(
+      const messages = await Promise.all(
         rows.reverse().map(async (row) => ({
           role: row.role as ChatMessage["role"],
           text: await derived.open(tx, row.id, row),
           derivedFrom: row.derivedFrom,
         })),
       );
+      return {
+        messages,
+        selected: chat._count.courses + chat._count.sources > 0,
+      };
     });
-    return recent && historyFrom(recent);
+    return (
+      recent && { ...historyFrom(recent.messages), selected: recent.selected }
+    );
   }
   return {
     async detail(p: Principal, id: string) {
@@ -180,7 +193,12 @@ export function createChats({
       };
       for (let n = 1; ; n++) {
         options.signal?.throwIfAborted();
-        const input = { messages, tools: search.tools, last: n === maxSteps };
+        const input = {
+          messages,
+          // A Chat with nothing selected has nothing to search.
+          tools: history.selected ? search.tools : {},
+          last: n === maxSteps,
+        };
         const stepped = await delegation.meter(
           p,
           { microUsd: answerer.estimateMicroUsd(input) },
