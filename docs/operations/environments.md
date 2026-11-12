@@ -229,7 +229,7 @@ All scan transcription and embedding requests go through `meter`. The initial em
 
 ### Failures and recovery
 
-Ingestion uses one 15-minute Activity with heartbeats and **one attempt**. A whole-Activity retry could repeat a model call already charged. Known errors mark the Source `failed`, including a Source key the worker cannot unwrap (its `SOURCE_MASTER_KEYS` differ from the API's); a worker crash can leave it `processing`. Until Phase 9 reconciliation, the founder investigates Temporal history/provider activity and reserved or held usage before any manual retry. Do not blindly reset a Source to `queued` or repeat paid work. The student sees processing stopped; no partial chunks are published. Automatic recovery and a founder retry command are not implemented in Phase 5.
+Ingestion uses one 30-minute Activity with heartbeats and **one attempt**; 30 minutes leaves room for a 100-page deck whose page readings all need both per-page retries. A whole-Activity retry could repeat a model call already charged. Known errors mark the Source `failed`, including a Source key the worker cannot unwrap (its `SOURCE_MASTER_KEYS` differ from the API's); a worker crash can leave it `processing`. Until Phase 9 reconciliation, the founder investigates Temporal history/provider activity and reserved or held usage before any manual retry. Do not blindly reset a Source to `queued` or repeat paid work. The student sees processing stopped; no partial chunks are published. Automatic recovery and a founder retry command are not implemented in Phase 5.
 
 Workflow arguments/results contain only student/Source IDs, timing and status, never unwrapped keys, page text, images or chunk text. Payload encryption alone would not make such content deletable with its Source key.
 
