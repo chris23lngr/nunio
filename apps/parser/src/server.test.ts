@@ -144,6 +144,13 @@ it("refuses byte mismatches, malformed PDFs, excessive pages and compressed bomb
   expect((await parseUpload(pdfFixture({ pages: 101 }))).status).toBe(413);
   expect((await parseUpload(pdfFixture({ bomb: true }))).status).toBe(422);
 });
+it("refuses a compressed bomb whose stream qpdf cannot decode and so cannot measure", async () => {
+  const { pdfFixture } = await import("../test/fixtures.js");
+  expect(
+    (await parseUpload(pdfFixture({ bomb: true, invalidPredictor: true })))
+      .status,
+  ).toBe(422);
+}, 60_000);
 
 it("parses a PDF that qpdf reads with warnings only, such as a repeated dictionary key", async () => {
   const { pdfFixture } = await import("../test/fixtures.js");

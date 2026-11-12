@@ -80,9 +80,13 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
     new Promise<void>((resolve, reject) => {
       const child = spawn(...command(tool, args), {
         ...options(),
-        stdio: ["ignore", "pipe", "ignore"],
+        stdio: ["ignore", "pipe", "pipe"],
       });
       let bytes = 0;
+      let warnings = "";
+      child.stderr.on("data", (chunk: Buffer) => {
+        if (warnings.length < 65_536) warnings += chunk.toString();
+      });
       child.stdout.on("data", (chunk: Buffer) => {
         bytes += chunk.length;
         if (bytes > limit) child.kill("SIGKILL");
@@ -90,8 +94,13 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
       child.on("error", (error) =>
         reject(refusal("code" in error ? error.code : undefined)),
       );
+      // qpdf exits 3 on warnings alone, such as a repeated key in LaTeX output. A stream it cannot decode
+      // is copied still compressed and so goes unmeasured, which leaves the bound to Poppler: refuse that.
+      const readable = (code: number | null) =>
+        code === 0 ||
+        (code === 3 && !/stream data|damaged stream/i.test(warnings));
       child.on("close", (code) =>
-        code === 0 && bytes <= limit ? resolve() : reject(refusal(code)),
+        readable(code) && bytes <= limit ? resolve() : reject(refusal(code)),
       );
     });
   try {
@@ -101,11 +110,9 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
     );
     if (!Number.isSafeInteger(pages) || pages < 1 || pages > 100)
       throw new ParseError(413, "page_limit");
-    // Warnings alone (exit 3), such as a repeated dictionary key in LaTeX output, leave the PDF readable.
     await measure(
       "qpdf",
       [
-        "--warning-exit-0",
         path,
         "--stream-data=uncompress",
         "--decode-level=all",

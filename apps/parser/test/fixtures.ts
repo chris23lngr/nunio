@@ -7,6 +7,7 @@ export function pdfFixture({
   inflated,
   image = false,
   duplicateKey = false,
+  invalidPredictor = false,
 }: {
   pages?: number;
   text?: string;
@@ -15,6 +16,8 @@ export function pdfFixture({
   image?: boolean;
   /** Repeats a page's /Group key, as LaTeX output often does; qpdf reads it but exits 3 with a warning. */
   duplicateKey?: boolean;
+  /** Gives the Flate stream a predictor qpdf cannot decode, so qpdf warns and copies it still compressed. */
+  invalidPredictor?: boolean;
 } = {}): Buffer {
   // A bomb decompresses beyond the parser's 512 MiB bound.
   const inflatedBytes = inflated ?? (bomb ? 544 * 1024 * 1024 : 0);
@@ -38,7 +41,7 @@ export function pdfFixture({
   add(
     Buffer.concat([
       Buffer.from(
-        `<< /Length ${content.length}${inflatedBytes ? " /Filter /FlateDecode" : ""} >>\nstream\n`,
+        `<< /Length ${content.length}${inflatedBytes ? " /Filter /FlateDecode" : ""}${invalidPredictor ? " /DecodeParms << /Predictor 12 /Columns 4 /BitsPerComponent 3 >>" : ""} >>\nstream\n`,
       ),
       content,
       Buffer.from("\nendstream"),
