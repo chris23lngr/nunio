@@ -61,6 +61,32 @@ export const ActionShown = z
   })
   .openapi("ActionShown");
 
+/**
+ * Performs a Chat's Action once the student approved it, wherever they did: it has no Run to do so (ADR-0019,
+ * delegation-gate.md "Chat origin"). Its record then tells how it went.
+ */
+export async function performApproved(
+  c: Context<AppBindings>,
+  p: Principal,
+  record: ActionRecord,
+) {
+  if (record.runId !== null || record.approval?.decision !== "approved")
+    return record;
+  const delegation = c.get("delegation");
+  await delegation
+    .perform(p, { key: record.key, intent: record.intent })
+    .catch((error: unknown) =>
+      console.error(
+        JSON.stringify({
+          msg: "approved Chat Action failed",
+          actionId: record.id,
+          error: String(error),
+        }),
+      ),
+    );
+  return (await delegation.history(p, { ids: [record.id] }))[0] ?? record;
+}
+
 /** The Actions awaiting the student's Approval, each as the exact Action the card shows. */
 async function approvalsOf(c: Context<AppBindings>, p: Principal) {
   const now = new Date();
@@ -151,6 +177,7 @@ export function registerApprovalRoutes(routes: OpenAPIHono<AppBindings>) {
           return c.json({ error: "stale" }, 409);
         throw error;
       }
+      await performApproved(c, p, record);
       // A committed decision is the durable outbox; reconciliation retries an unacknowledged wake.
       await c
         .get("delegation")

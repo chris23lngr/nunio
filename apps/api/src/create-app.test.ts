@@ -3318,6 +3318,62 @@ describe("Chat", () => {
     ).toBe("expired");
   });
 
+  it("performs a Chat proposal approved on Home, without continuing the Chat", async () => {
+    const { headers, chatId, obligationId } =
+      await planningChat("chat-propose-home");
+    const day = berlinDay(8);
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+    );
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const { action } = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    prompts.length = 0;
+
+    const approved = await app.request(
+      `${apiOrigin}/api/me/approvals/${action.id}`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          decision: "approve",
+          fingerprint: action.fingerprint,
+        }),
+      },
+    );
+
+    expect(approved.status).toBe(200);
+    expect(
+      await admin.studyBlock.findMany({
+        where: { obligationId },
+        select: { start: true, end: true, placedBy: true },
+      }),
+    ).toEqual([
+      {
+        start: deadline(day, "10:00", "Europe/Berlin"),
+        end: deadline(day, "12:00", "Europe/Berlin"),
+        placedBy: "nunio",
+      },
+    ]);
+    const messages = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { parts: { type: string; action?: unknown }[] }[];
+    expect(messages).toHaveLength(2);
+    expect(
+      messages[1]!.parts.find((part) => part.type === "tool-proposeStudyBlock")
+        ?.action,
+    ).toMatchObject({ status: "done", decision: "approved" });
+    expect(prompts).toEqual([]);
+  });
+
   it("offers no search in a Chat with nothing selected, but still the Plan", async () => {
     const { headers, id } = await emptyChat("chat-no-search");
     reply = "Für diesen Chat ist kein Material ausgewählt.";
