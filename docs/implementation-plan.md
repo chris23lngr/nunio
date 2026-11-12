@@ -626,7 +626,7 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 - [x] The last step has no tools, and no request forces a tool (`create-app.test.ts`, "lets the model search at most five times…"; `packages/ai/src/answer.test.ts`, "offers the tools without forcing one…").
 - [x] Neither the stream nor the stored message contains a full tool result (`create-app.test.ts`, "gives the model the passages a search found…").
 - [x] Deleting a Source withdraws every answer whose tool results held its passages or extracted wording (`apps/api/src/create-app.test.ts`, "lists earlier messages… withdrawing an answer…" and "withdraws an answer built on the Plan…").
-- [ ] A Chat proposal is performed only after the student approves the fingerprint shown. A changed proposal needs a new Approval, and repeated clicks perform once.
+- [x] A Chat proposal is performed only after the student approves the fingerprint shown (`apps/api/src/create-app.test.ts`, "performs a proposal approved in the Chat…", which refuses another fingerprint with 409). A changed proposal needs a new Approval, and repeated clicks perform once (`packages/delegation/src/gate.test.ts`).
 - [x] A Model without a tool-capable zero-retention endpoint is not offered (`packages/delegation/src/model-catalog.test.ts`; `packages/ai/src/prices.test.ts`).
 - [x] Retrieval eval with model-driven search, including the share of questions about the material answered without a search, is recorded: [phase-14-chat-search-eval.json](operations/phase-14-chat-search-eval.json). The founder sets thresholds; labels are still pending the founder's spot-check.
 - [ ] Injection eval: Sources with embedded instructions start no Artifact Run, and any proposal they cause appears only as a card.
@@ -656,6 +656,13 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 - `courseFacts({ course })` reads a Course's Obligations, exam logistics, course rules, AI-use Rule and Topics through the planning scope, which now also serves `exam_logistics` and `ai_use_rule`. The student sees the Course and a count.
 - Both tools are offered in every Chat, and a Chat with nothing selected still has no search. The model's instructions bind dates and the Plan to these tools' results.
 - The web shows them as steps (`Plan gelesen: 16.11.–22.11.`, `Kursinfos gelesen: Analysis I`).
+
+**Progress (2026-11-12).** Stage 4 is implemented; the ADR-0019 amendment records where it departs from the decision as first written.
+- `plan.check` refuses a proposed Study Block that breaks a hard rule and notes broken Preferences.
+- The Plan tool names work and blocks `O1`, `T1` and `B1`, and `proposeStudyBlock` and `proposeStudyBlockMove` are checked through `toolApproval` before the student is asked. A valid proposal ends the turn.
+- The gate asks each Action right after the answer is saved, under `chatId:messageId:n`, and the API decorates each card with its Action and status.
+- The API performs an approved Chat Action wherever it was approved. From the Chat card, the model then reports the outcome in a new answer, which the web reads apart from `useChat` so the card never shows twice.
+- Expired Chat Approvals drop out of Approvals and Home, and later turns see each earlier proposal's status.
 
 **Anti-pattern guards.**
 - `toolChoice` is only `auto` or `none`.
