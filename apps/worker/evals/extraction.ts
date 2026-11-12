@@ -26,13 +26,13 @@ import {
   DefiniteFailure,
   principal,
 } from "@nunio/delegation";
-import { createSourceKeys, decryptSourceText } from "@nunio/keys";
+import { createSourceKeys } from "@nunio/keys";
 import { createFacts, createSources } from "@nunio/knowledge";
 import { createParserServer } from "@nunio/parser/server";
 import { parseSource } from "../src/source-activities.ts";
 import { scoreBoundCourse } from "./extraction/assignment.js";
 import type { Judgement, TopicLabel } from "./extraction/topics.js";
-import { parseJudgement, scoreTopics, topicKey } from "./extraction/topics.js";
+import { parseJudgement, scoreTopics } from "./extraction/topics.js";
 
 interface Label {
   course: string;
@@ -347,27 +347,18 @@ async function evaluate(
             f.type === "exam_logistics" && norm(f.value).includes(l.contains),
         ) ?? false,
   }));
-  const sourceRow = await admin.source.findUniqueOrThrow({
-    where: { id: upload.source.id },
-  });
-  const sourceKey = keys.unwrap(sourceRow.id, {
-    version: sourceRow.keyVersion!,
-    ciphertext: sourceRow.keyCiphertext!,
-  });
-  const figureFacts = (
-    await admin.factExtraction.findMany({
-      where: { sourceId: sourceRow.id },
-      include: { fact: true },
-    })
-  ).filter((row) => {
-    const wording = JSON.parse(
-      decryptSourceText(sourceKey, sourceRow.id, row.ciphertext),
-    ) as { uncertainty: string | null };
-    return wording.uncertainty?.includes(
-      "aus einer Abbildungsbeschreibung abgeleitet",
-    );
-  });
-  sourceKey.fill(0);
+  // A Fact is figure-only when every citation this Source gives it is grounded in a figure description.
+  const figureFacts = courses.flatMap((c) =>
+    c.facts.filter((f) => {
+      const cited = f.values
+        .flatMap((v) => v.citations)
+        .filter((citation) => citation.sourceId === upload.source.id);
+      return (
+        cited.length > 0 &&
+        cited.every((citation) => citation.grounding === "figure")
+      );
+    }),
+  );
   // Defaults keep the existing label set usable until the enriched labels land.
   const topicLabels = (document.topics ?? []).map((label) => ({
     ...label,
@@ -393,16 +384,7 @@ async function evaluate(
           document.courses.find((label) => courseFor(label)?.id === c.id)
             ?.title ??
           c.title,
-        key:
-          topicKey(
-            calls
-              .flatMap((call) => call.value.facts)
-              .filter((raw) => raw.type === "topic"),
-            f.value,
-            f.values
-              .flatMap((v) => v.citations)
-              .filter((citation) => citation.sourceId === upload.source.id),
-          ) ?? f.value,
+        key: f.key,
         value: f.value,
       })),
   );
@@ -458,7 +440,7 @@ async function evaluate(
     },
     figureOnly: {
       facts: figureFacts.length,
-      topics: figureFacts.filter((f) => f.fact.type === "topic").length,
+      topics: figureFacts.filter((f) => f.type === "topic").length,
     },
     run,
     language: document.language,
@@ -493,15 +475,7 @@ async function evaluate(
         .filter((f) => f.type === "topic")
         .map((f) => ({
           course: c.code ?? c.title,
-          key: topicKey(
-            calls
-              .flatMap((call) => call.value.facts)
-              .filter((raw) => raw.type === "topic"),
-            f.value,
-            f.values
-              .flatMap((v) => v.citations)
-              .filter((citation) => citation.sourceId === upload.source.id),
-          ),
+          key: f.key,
           value: f.value,
           citations: f.values
             .flatMap((v) => v.citations)

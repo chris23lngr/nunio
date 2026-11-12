@@ -52,24 +52,6 @@ export function scoreTopics(
   };
 }
 
-/** Values such as "covered" are not identities: locate the raw key through its page quote. */
-export function topicKey(
-  raw: { key: string; value: string; page: number; quote: string }[],
-  value: string,
-  citations: { page: number; quote: string }[],
-) {
-  const matches = raw.filter(
-    (item) =>
-      item.value === value &&
-      citations.some(
-        (citation) =>
-          citation.page === item.page && citation.quote === item.quote,
-      ),
-  );
-  const keys = [...new Set(matches.map((item) => item.key))];
-  return keys.length === 1 ? keys[0] : undefined;
-}
-
 export function parseJudgement(
   response: string,
   labels: TopicLabel[],
