@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { createAnswerer } from "./answer.js";
 import type { Models } from "./models.js";
 import { createModels } from "./models.js";
-import { testCatalog } from "./test-catalog.js";
+import { sonnet, testCatalog } from "./test-catalog.js";
 
 /** Chat answers come from whichever Model the student chose; these tests use the explanation default. */
 const answererFrom = (models: Models) =>
@@ -99,6 +99,55 @@ it("sends the instructions apart from the conversation, which it sends as given"
     ["user", "Wann ist die Klausur?"],
     ["assistant", "Am 10. Februar."],
     ["user", "Und um wie viel Uhr?"],
+  ]);
+});
+
+it("offers the tools without forcing one, routing a Chat only to endpoints that support them", async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const answerer = createAnswerer(
+    createModels({
+      apiKey: "test",
+      baseURL: "https://provider.invalid",
+      catalog: testCatalog,
+      fetch: streaming([content("Am 10. Februar."), finished("stop")], bodies),
+    }).fromConfig(sonnet),
+  );
+  const step = {
+    messages: [{ role: "user" as const, content: "Wann ist die Klausur?" }],
+    tools: { searchMaterial: search },
+  };
+  const options = { signal: AbortSignal.timeout(1000), write: () => {} };
+
+  await answerer.step({ ...step, last: false }, options);
+  await answerer.step({ ...step, last: true }, options);
+
+  expect(
+    bodies.map((body) => ({
+      provider: body.provider,
+      tool_choice: body.tool_choice,
+      tools: (body.tools as { function: { name: string } }[]).map(
+        (tool) => tool.function.name,
+      ),
+    })),
+  ).toEqual([
+    {
+      provider: {
+        zdr: true,
+        data_collection: "deny",
+        require_parameters: true,
+      },
+      tool_choice: "auto",
+      tools: ["searchMaterial"],
+    },
+    {
+      provider: {
+        zdr: true,
+        data_collection: "deny",
+        require_parameters: true,
+      },
+      tool_choice: "none",
+      tools: ["searchMaterial"],
+    },
   ]);
 });
 
