@@ -13,14 +13,17 @@ const report = JSON.parse(await readFile(input, "utf8")) as {
     topicJudgement: {
       labels: TopicLabel[];
       extracted: ExtractedTopic[];
-      decisions: Judgement;
+      decisions: Judgement | null;
     };
   }[];
 };
+// Scenario results ("scenario/deck") repeat the plain decks; sampling them would crowd out the rest.
 const candidates = report.documents.flatMap((document) => {
+  if (document.id.includes("/")) return [];
   if (!document.topicJudgement)
     throw new Error(`${document.id}: no Topic judgements recorded`);
   const { labels, extracted, decisions } = document.topicJudgement;
+  if (!decisions) return [];
   return extracted.map((topic, topicId) => {
     const labelId = decisions[topicId] ?? null;
     return {
@@ -30,6 +33,7 @@ const candidates = report.documents.flatMap((document) => {
       topic,
       labelId,
       label: labelId === null ? null : labels[labelId],
+      courseLabels: labels.filter((label) => label.course === topic.course),
     };
   });
 });
@@ -49,7 +53,7 @@ await writeFile(
     "| --- | --- | --- | --- | --- | --- |",
     ...sample.map(
       (item) =>
-        `| ☐ | ${cell(item.deck)} / ${item.run} / ${item.topicId} | ${cell(item.topic.course)} | ${cell(`${item.topic.key}: ${item.topic.value}`)} | ${cell(item.label?.aliases.join(" / ") ?? "keins")} | |`,
+        `| ☐ | ${cell(item.deck)} / ${item.run} / ${item.topicId} | ${cell(item.topic.course)} | ${cell(`${item.topic.key}: ${item.topic.value}`)} | ${cell(item.label ? `${item.label.aliases.join(" / ")} (${item.label.course})` : `keins; zur Auswahl: ${item.courseLabels.map((label) => label.aliases[0]).join("; ") || "keine Begriffe"}`)} | |`,
     ),
     "",
   ].join("\n"),

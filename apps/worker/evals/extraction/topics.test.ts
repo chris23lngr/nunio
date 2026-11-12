@@ -85,10 +85,10 @@ it("reports recall separately for required figure-only Topics", () => {
   });
 });
 
-it("parses explicit IDs regardless of answer order and treats missing entries as no match", () => {
+it("parses explicit IDs regardless of answer order", () => {
   expect(
     parseJudgement(
-      '{"decisions":[{"topicId":2,"labelId":null},{"topicId":0,"labelId":0}]}',
+      '{"decisions":[{"topicId":2,"labelId":null},{"topicId":0,"labelId":0},{"topicId":1,"labelId":null}]}',
       [label()],
       [topic(), topic(), topic()],
     ),
@@ -103,11 +103,15 @@ it.each([
   '{"decisions":[{"topicId":0,"labelId":"0"}]}',
   '{"decisions":[{"topicId":0}]}',
   '{"decisions":[{"topicId":0,"labelId":0},{"topicId":0,"labelId":null}]}',
-])("rejects malformed or ambiguous judge responses: %s", (response) => {
-  expect(() => parseJudgement(response, [label()], [topic()])).toThrow(
-    "Invalid Topic judgement",
-  );
-});
+  '{"decisions":[{"topicId":0,"labelId":0}]}',
+])(
+  "rejects malformed, ambiguous or incomplete judge responses: %s",
+  (response) => {
+    expect(() =>
+      parseJudgement(response, [label()], [topic(), topic()]),
+    ).toThrow("Invalid Topic judgement");
+  },
+);
 
 const decisions = ["a", "b", "c"].flatMap((deck) =>
   Array.from({ length: 8 }, (_, index) => ({

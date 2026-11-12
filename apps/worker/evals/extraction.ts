@@ -31,7 +31,7 @@ import { createFacts, createSources } from "@nunio/knowledge";
 import { createParserServer } from "@nunio/parser/server";
 import { parseSource } from "../src/source-activities.ts";
 import { scoreBoundCourse } from "./extraction/assignment.js";
-import type { TopicLabel } from "./extraction/topics.js";
+import type { Judgement, TopicLabel } from "./extraction/topics.js";
 import { parseJudgement, scoreTopics, topicKey } from "./extraction/topics.js";
 
 interface Label {
@@ -406,28 +406,35 @@ async function evaluate(
         value: f.value,
       })),
   );
-  let judgement = extractedTopics.map(() => null as number | null);
+  // A failed judge leaves this deck unscored instead of losing the whole paid run.
+  let judgement: Judgement | null = extractedTopics.map(() => null);
+  let judgeFailure: string | null = null;
   let judgeCostMicroUsd = 0;
   if (document.topics && extractedTopics.length) {
-    const input = { labels: topicLabels, extracted: extractedTopics };
-    const judged = await delegation.meter(
-      p,
-      { microUsd: topicJudge.estimateMicroUsd(input) },
-      async (signal) => {
-        try {
-          const response = await topicJudge.judge(input, { signal });
-          judgeCostMicroUsd = response.usage.microUsd;
-          return response;
-        } catch (error) {
-          if (isDefiniteFailure(error))
-            throw new DefiniteFailure("Provider rejected Topic judge");
-          throw error;
-        }
-      },
-    );
-    if (judged.status === "refused")
-      throw new Error(`Topic judge: ${judged.reason}`);
-    judgement = parseJudgement(judged.value, topicLabels, extractedTopics);
+    try {
+      const input = { labels: topicLabels, extracted: extractedTopics };
+      const judged = await delegation.meter(
+        p,
+        { microUsd: topicJudge.estimateMicroUsd(input) },
+        async (signal) => {
+          try {
+            const response = await topicJudge.judge(input, { signal });
+            judgeCostMicroUsd = response.usage.microUsd;
+            return response;
+          } catch (error) {
+            if (isDefiniteFailure(error))
+              throw new DefiniteFailure("Provider rejected Topic judge");
+            throw error;
+          }
+        },
+      );
+      if (judged.status === "refused")
+        throw new Error(`Topic judge: ${judged.reason}`);
+      judgement = parseJudgement(judged.value, topicLabels, extractedTopics);
+    } catch (error) {
+      judgement = null;
+      judgeFailure = error instanceof Error ? error.message : String(error);
+    }
   }
   const usage = await delegation.allowance(p);
   const result = {
@@ -470,12 +477,15 @@ async function evaluate(
       usage.heldMicroUsd -
       before.usedMicroUsd -
       before.heldMicroUsd,
-    topics: scoreTopics(topicLabels, extractedTopics, judgement),
+    topics: judgement
+      ? scoreTopics(topicLabels, extractedTopics, judgement)
+      : null,
     topicJudgement: {
       model: topicJudge.model,
       labels: topicLabels,
       extracted: extractedTopics,
       decisions: judgement,
+      failure: judgeFailure,
       costMicroUsd: judgeCostMicroUsd,
     },
     topicItems: courses.flatMap((c) =>
@@ -612,7 +622,8 @@ try {
       results.push({ ...result, id: `${scenario.id}/${id}` });
       actualCourses = result.courses.extracted;
       allSourcesAssigned &&=
-        result.extraction === "done" && result.topics.extracted > 0;
+        result.extraction === "done" &&
+        result.topicJudgement.extracted.length > 0;
     }
     scenarios.push({
       id: scenario.id,
@@ -661,16 +672,16 @@ const report = {
     documents: results.length,
     topics: {
       precision: ratio(
-        sum((r) => r.topics.matched),
-        sum((r) => r.topics.scored),
+        sum((r) => r.topics?.matched ?? 0),
+        sum((r) => r.topics?.scored ?? 0),
       ),
       recall: ratio(
-        sum((r) => r.topics.matched),
-        sum((r) => r.topics.labelled),
+        sum((r) => r.topics?.matched ?? 0),
+        sum((r) => r.topics?.labelled ?? 0),
       ),
       figureOnlyRecall: ratio(
-        sum((r) => r.topics.figureOnly.matched),
-        sum((r) => r.topics.figureOnly.labelled),
+        sum((r) => r.topics?.figureOnly.matched ?? 0),
+        sum((r) => r.topics?.figureOnly.labelled ?? 0),
       ),
     },
     obligations: {
@@ -712,6 +723,10 @@ const report = {
     },
     medianReviewableAfterMs: median,
     costMicroUsd: sum((r) => r.costMicroUsd),
+    judgeCostMicroUsd: sum((r) => r.topicJudgement.costMicroUsd),
+    judgeFailures: results
+      .filter((r) => r.topicJudgement.failure)
+      .map((r) => `${r.id} (run ${r.run})`),
     injectionPassed: results
       .filter((r) => r.injection)
       .every((r) => r.injection!.passed),

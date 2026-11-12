@@ -100,10 +100,11 @@ export function parseJudgement(
       seen.add(decision.topicId);
       judgement[decision.topicId] = decision.labelId;
     }
+    if (seen.size !== extracted.length) throw new Error("missing topicId");
     return judgement;
   } catch (cause) {
     throw new Error(
-      "Invalid Topic judgement: expected JSON decisions with known topicId and labelId (or null)",
+      "Invalid Topic judgement: expected one JSON decision per topicId with a known labelId (or null)",
       { cause },
     );
   }
