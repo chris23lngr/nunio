@@ -102,7 +102,15 @@ export const SpecStyling: Story = {
     await expect(style(active).color).toBe(
       dark ? "rgb(240, 239, 237)" : "rgb(44, 44, 43)",
     )
-    await expect(style(inactive).backgroundColor).toBe(TRANSPARENT)
+    // Switching back must let the deselected tab finish fading to transparent.
+    await userEvent.click(inactive)
+    await Promise.all(
+      inactive.getAnimations().map((animation) => animation.finished),
+    )
+    await userEvent.click(active)
+    await waitFor(() =>
+      expect(style(inactive).backgroundColor).toBe(TRANSPARENT),
+    )
     await expect(style(inactive).color).toBe(
       dark ? "rgb(173, 169, 163)" : "rgb(125, 122, 117)",
     )
@@ -115,6 +123,7 @@ export const SpecStyling: Story = {
     await expect(style(icon).color).toBe(style(inactive).color)
 
     // Keyboard focus rings the tab like a button
+    await userEvent.click(canvasElement)
     await userEvent.tab()
     await expect(active).toHaveFocus()
     await expect(style(active).boxShadow).toContain(FOCUS_RING_BLUE)
