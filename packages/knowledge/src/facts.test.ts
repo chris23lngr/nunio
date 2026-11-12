@@ -2068,3 +2068,173 @@ it("treats an unknown Course ID as a grounded proposal, keeping its Topics in th
     },
   ]);
 });
+
+it("keeps a picked Course's Topics when the student merges it during extraction", async () => {
+  const p = await student();
+  const from = await ownCourse(p, "Analysis lecture");
+  const into = await ownCourse(p, "Analysis module");
+  const source = await readySource(p, "lecture.pdf", [
+    { page: 1, text: "gleichmäßige Konvergenz" },
+  ]);
+  const extractor = scripted({
+    ...empty,
+    courses: [{ ...analysis, existingCourseId: from, page: 0, quote: "" }],
+    facts: [
+      {
+        course: from,
+        type: "topic",
+        key: "gleichmäßige Konvergenz",
+        value: "gleichmäßige Konvergenz",
+        page: 1,
+        quote: "gleichmäßige Konvergenz",
+        uncertainty: null,
+      },
+    ],
+  });
+  const extract = extractor.extract;
+  extractor.extract = async (window, options) => {
+    expect(options.context?.courses).toContainEqual(
+      expect.objectContaining({ id: from }),
+    );
+    expect(await facts.mergeCourses(p, from, into)).toEqual({ status: "ok" });
+    return extract(window, options);
+  };
+
+  expect(
+    await facts.extract(p, source, { extractor, delegation }),
+  ).toMatchObject({
+    status: "done",
+    dropped: 0,
+  });
+  expect((await facts.review(p)).courses).toMatchObject([
+    {
+      id: into,
+      facts: [{ type: "topic", value: "gleichmäßige Konvergenz" }],
+    },
+  ]);
+});
+
+it.each([false, true])(
+  "requires grounding for a new proposal after a picked Course is rejected during extraction (grounded: %s)",
+  async (grounded) => {
+    const p = await student();
+    await sheet3Source(p, "analysis.pdf");
+    const existing = (await facts.review(p)).courses[0]!;
+    const source = await readySource(p, "lecture.pdf", [
+      { page: 1, text: "MA-102 Lineare Algebra\nVektorräume" },
+    ]);
+    const extractor = scripted({
+      ...empty,
+      courses: [
+        {
+          existingCourseId: existing.id,
+          code: "MA-102",
+          title: "Lineare Algebra",
+          page: grounded ? 1 : 0,
+          quote: grounded ? "MA-102 Lineare Algebra" : "",
+        },
+      ],
+      facts: [
+        {
+          course: existing.id,
+          type: "topic",
+          key: "Vektorräume",
+          value: "Vektorräume",
+          page: 1,
+          quote: "Vektorräume",
+          uncertainty: null,
+        },
+      ],
+    });
+    const extract = extractor.extract;
+    extractor.extract = async (window, options) => {
+      expect(options.context?.courses).toContainEqual(
+        expect.objectContaining({ id: existing.id }),
+      );
+      expect(await facts.decideCourse(p, existing.id, "reject")).toEqual({
+        status: "ok",
+      });
+      return extract(window, options);
+    };
+
+    expect(
+      await facts.extract(p, source, { extractor, delegation }),
+    ).toMatchObject({
+      status: "done",
+      dropped: grounded ? 0 : 2,
+    });
+    const review = await facts.review(p);
+    expect(review.courses.find((c) => c.id === existing.id)).toMatchObject({
+      status: "rejected",
+      facts: [],
+    });
+    const proposal = review.courses.find((c) => c.title === "Lineare Algebra");
+    if (grounded) {
+      expect(proposal).toMatchObject({
+        status: "proposed",
+        facts: [{ value: "Vektorräume" }],
+      });
+      expect(proposal?.id).not.toBe(existing.id);
+    } else expect(proposal).toBeUndefined();
+  },
+);
+
+it("resolves picked Course title and code aliases from the server, never the model's names", async () => {
+  const p = await student();
+  await sheet3Source(p, "analysis.pdf");
+  const existing = (await facts.review(p)).courses[0]!;
+  const source = await readySource(p, "lecture.pdf", [
+    { page: 1, text: `${sheet3.quote}\ngleichmäßige Konvergenz` },
+  ]);
+  const topic = {
+    course: existing.title,
+    type: "topic" as const,
+    key: "gleichmäßige Konvergenz",
+    value: "gleichmäßige Konvergenz",
+    page: 1,
+    quote: "gleichmäßige Konvergenz",
+    uncertainty: null,
+  };
+  expect(
+    await facts.extract(p, source, {
+      extractor: scripted({
+        ...empty,
+        courses: [
+          {
+            existingCourseId: existing.id,
+            code: "invented-code",
+            title: "invented-title",
+            page: 0,
+            quote: "",
+          },
+        ],
+        obligations: [{ ...sheet3, course: existing.code! }],
+        facts: [
+          topic,
+          { ...topic, course: "invented-title", key: "invented-topic" },
+          { ...topic, course: "invented-code", key: "another-invented-topic" },
+        ],
+      }),
+      delegation,
+    }),
+  ).toMatchObject({ status: "done", dropped: 2 });
+  const review = await facts.review(p);
+  expect(review.courses).toHaveLength(1);
+  expect(review.courses[0]).toMatchObject({
+    id: existing.id,
+    title: analysis.title,
+    code: analysis.code,
+    facts: [{ value: "gleichmäßige Konvergenz" }],
+    obligations: [
+      {
+        values: [
+          {
+            citations: expect.arrayContaining([
+              expect.objectContaining({ sourceId: source }),
+            ]),
+          },
+        ],
+      },
+    ],
+  });
+});
