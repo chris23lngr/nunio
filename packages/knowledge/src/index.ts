@@ -1,12 +1,6 @@
-/** Source lifecycle, Fact extraction and review, Chats, and scoped knowledge retrieval. */
+/** Source lifecycle, Fact extraction and review, and scoped knowledge retrieval. */
 
 export { type AiUse, type AiUseClass, aiUseClasses } from "./ai-use.js";
-export {
-  type AskStep,
-  type ChatMessage,
-  type Chats,
-  createChats,
-} from "./chats.js";
 export { type Courses, createCourses } from "./courses.js";
 export { createDerivedText, type DerivedText, type Sealed } from "./derived.js";
 export {

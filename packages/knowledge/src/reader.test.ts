@@ -13,8 +13,6 @@ import {
 import type { SourceKeys } from "@nunio/keys";
 import { createSourceKeys } from "@nunio/keys";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
-import type { Chats } from "./chats.js";
-import { createChats } from "./chats.js";
 import type { Facts } from "./facts.js";
 import { createFacts } from "./facts.js";
 import { createProjects } from "./projects.js";
@@ -32,7 +30,6 @@ let database: TestDatabase;
 let admin: PrismaClient;
 let runtime: PrismaClient;
 let sources: Sources;
-let chats: Chats;
 let facts: Facts;
 let reader: KnowledgeReader;
 let delegation: Delegation;
@@ -93,7 +90,6 @@ beforeAll(async () => {
     delegation,
     clock,
   });
-  chats = createChats({ db: runtime, keys, reader, delegation });
 }, 180_000);
 afterAll(async () => {
   await runtime?.$disconnect();
@@ -114,14 +110,30 @@ async function student(limitMicroUsd = 5_000_000): Promise<Principal> {
   return principal.fromSession({ studentId: id });
 }
 
-/** Creates a Chat over the given selection, failing if it is refused. */
+/** Records a Chat over the given selection, as `@nunio/chat` does once it has checked it. */
 async function createChat(
   p: Principal,
   selection: { courseIds: string[]; sourceIds: string[] },
 ) {
-  const created = await chats.create(p, selection);
-  if (created.status !== "ok") throw new Error(created.status);
-  return created;
+  if (p.kind !== "student") throw new Error(p.kind);
+  const { studentId } = p;
+  const id = randomUUID();
+  await admin.chat.create({ data: { id, studentId } });
+  await admin.chatCourse.createMany({
+    data: selection.courseIds.map((courseId) => ({
+      chatId: id,
+      courseId,
+      studentId,
+    })),
+  });
+  await admin.chatSource.createMany({
+    data: selection.sourceIds.map((sourceId) => ({
+      chatId: id,
+      sourceId,
+      studentId,
+    })),
+  });
+  return { id };
 }
 
 /** Narrows a retrieval's items to passages, failing on anything else. */

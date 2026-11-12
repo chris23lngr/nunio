@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
+import type { AskStep } from "@nunio/chat";
 import { principal } from "@nunio/delegation";
-import type { AskStep } from "@nunio/knowledge";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import type { AppBindings } from "./app.js";
 

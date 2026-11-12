@@ -4,9 +4,8 @@ import type { PrismaClient } from "@nunio/db";
 import type { Delegation, Principal } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
-import { createDerivedText } from "./derived.js";
-import { definitely } from "./provider.js";
-import type { Citation, KnowledgeReader, Provenance } from "./reader.js";
+import type { Citation, KnowledgeReader, Provenance } from "@nunio/knowledge";
+import { createDerivedText, definitely } from "@nunio/knowledge";
 
 export type ChatMessage = {
   id: string;

@@ -12,6 +12,7 @@ import type {
 } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
+import { createChats } from "@nunio/chat";
 import type { Pool, PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -33,7 +34,6 @@ import { createAuth } from "@nunio/identity";
 import { createSourceKeys } from "@nunio/keys";
 import type { Facts, Sources } from "@nunio/knowledge";
 import {
-  createChats,
   createCourses,
   createFacts,
   createKnowledgeReader,
