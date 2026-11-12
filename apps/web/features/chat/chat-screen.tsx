@@ -10,8 +10,10 @@ import {
   MessageScrollerViewport,
 } from "@nunio/ui/components/message-scroller/message-scroller";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { readUIMessageStream } from "ai";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { decideApproval } from "@/features/approvals/api/approval-mutations";
 import { PageHeader } from "@/features/shared/components/page-header";
 import { useAppForm } from "@/lib/form";
 import { randomId } from "@/lib/random-id";
@@ -22,7 +24,7 @@ import {
   createChat,
   failureMessage,
 } from "./api/chat-mutations";
-import type { ChatUIMessage, Turn } from "./api/chat-queries";
+import type { ChatUIMessage, SavedProposal, Turn } from "./api/chat-queries";
 import {
   chatCourseQueries,
   chatQueries,
@@ -35,11 +37,20 @@ import { ChatEmptyState } from "./components/chat-empty-state";
 import { ChatMessage } from "./components/chat-message";
 import { KnowledgeSelector } from "./components/knowledge-selector";
 import { ModelSelector } from "./components/model-selector";
+import { approvalOf } from "./components/proposal-card";
 
 /** The messages before the question `questionId`, or all of them when it isn't there. */
 function beforeQuestion(messages: ChatUIMessage[], questionId: string) {
   const index = messages.findIndex((message) => message.id === questionId);
   return index === -1 ? messages : messages.slice(0, index);
+}
+
+/** Replaces the message with the same ID, or adds it at the end. */
+function upsert(messages: ChatUIMessage[], message: ChatUIMessage) {
+  const index = messages.findIndex((m) => m.id === message.id);
+  return index === -1
+    ? [...messages, message]
+    : messages.map((m, i) => (i === index ? message : m));
 }
 
 const waitingAnswer: ChatUIMessage = {
@@ -188,12 +199,85 @@ export function ChatScreen({
         turn.current = null;
         setMessages((messages) => [
           ...beforeQuestion(messages, current.questionId),
-          toUIMessage(question),
+          ...(question ? [toUIMessage(question)] : []),
           toUIMessage(answer),
         ]);
         refresh();
       },
     });
+
+  // Deciding on a proposal's card in the Chat (ADR-0019). Denying is the plain Approval route; approving also streams
+  // nunio's report on it as a new answer, read here rather than through useChat, which would continue the answer the
+  // card belongs to and show the card twice.
+  const denial = useMutation(decideApproval(apiOrigin, client));
+  const [reporting, setReporting] = useState(false);
+  const decide = async (saved: SavedProposal, decision: "approve" | "deny") => {
+    const approval = approvalOf(saved);
+    if (!approval) return;
+    setError(null);
+    if (decision === "deny")
+      return denial.mutate(
+        { approval, decision },
+        {
+          onError: (cause) => setError(cause.message),
+          onSettled: refresh,
+        },
+      );
+    setReporting(true);
+    let reported: string | undefined;
+    try {
+      const chunks = await transport.sendMessages({
+        chatId: openChat.key,
+        messages: [],
+        abortSignal: undefined,
+        trigger: "submit-message",
+        messageId: undefined,
+        body: {
+          model,
+          approval: { id: saved.approvalId, fingerprint: approval.fingerprint },
+        },
+      });
+      const [shown, watched] = chunks.tee();
+      let committed: Turn | undefined;
+      let refused: string | undefined;
+      const watching = (async () => {
+        const reader = watched.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) return;
+          if (value.type === "data-committed") committed = value.data as Turn;
+          if (value.type === "data-refused")
+            refused = (value.data as { error: string }).error;
+        }
+      })();
+      for await (const message of readUIMessageStream<ChatUIMessage>({
+        stream: shown,
+      })) {
+        reported = message.id;
+        setMessages((current) => upsert(current, message));
+      }
+      await watching;
+      if (!committed) throw answerError(refused);
+      const { question: _, ...answer } = committed;
+      setMessages((current) => upsert(current, toUIMessage(answer)));
+    } catch (cause) {
+      if (reported)
+        setMessages((current) => current.filter((m) => m.id !== reported));
+      setError(failureMessage(cause));
+    } finally {
+      setReporting(false);
+      refresh();
+    }
+  };
+  // Stable for the memoized messages, while always deciding with the current Chat and Model.
+  const decideRef = useRef(decide);
+  decideRef.current = decide;
+  const onDecide = useCallback(
+    (saved: SavedProposal, decision: "approve" | "deny") =>
+      void decideRef.current(saved, decision),
+    [],
+  );
+  const deciding = reporting || denial.isPending;
 
   const form = useAppForm({
     defaultValues: { text: "", courseIds: [] as string[] },
@@ -303,7 +387,11 @@ export function ChatScreen({
                       messageId={key}
                       scrollAnchor={message.role === "user"}
                     >
-                      <ChatMessage message={message} />
+                      <ChatMessage
+                        message={message}
+                        deciding={deciding}
+                        onDecide={onDecide}
+                      />
                     </MessageScrollerItem>
                   );
                 })}

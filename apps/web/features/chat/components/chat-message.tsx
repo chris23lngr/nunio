@@ -11,9 +11,10 @@ import {
 import { Reasoning } from "@nunio/ui/components/reasoning/reasoning";
 import { memo, useMemo, useState } from "react";
 import { sourceReferences } from "@/features/shared/components/source-citations";
-import type { ChatUIMessage } from "../api/chat-queries";
+import type { ChatUIMessage, SavedProposal } from "../api/chat-queries";
 import { messageText } from "../api/chat-queries";
 import { MessageActions } from "./message-actions";
+import { ProposalCard } from "./proposal-card";
 import type { ToolPart } from "./tool-steps";
 import { ToolSteps } from "./tool-steps";
 
@@ -30,8 +31,13 @@ function renderReference(reference: MdxReference) {
 /** One message, from its first streamed part to its saved form, in the same element. */
 export const ChatMessage = memo(function ChatMessage({
   message,
+  deciding = false,
+  onDecide = () => {},
 }: {
   message: ChatUIMessage;
+  /** A decision on one of the message's proposals is being recorded. */
+  deciding?: boolean;
+  onDecide?: (saved: SavedProposal, decision: "approve" | "deny") => void;
 }) {
   const student = message.role === "user";
   const saved = message.metadata;
@@ -44,6 +50,9 @@ export const ChatMessage = memo(function ChatMessage({
   const reasoning = thoughts.map((part) => part.text).join("\n\n");
   const steps = message.parts.filter((part): part is ToolPart =>
     part.type.startsWith("tool-"),
+  );
+  const proposals = steps.filter((part) =>
+    part.type.startsWith("tool-propose"),
   );
   // An answer with nothing streamed yet shows the waiting line.
   const waiting = !student && !saved && !text && !reasoning;
@@ -102,6 +111,16 @@ export const ChatMessage = memo(function ChatMessage({
             />
           )
         )}
+        {!student &&
+          !withdrawn &&
+          proposals.map((part) => (
+            <ProposalCard
+              key={part.toolCallId}
+              saved={saved?.proposals?.[part.toolCallId]}
+              busy={deciding}
+              onDecide={onDecide}
+            />
+          ))}
         {saved && (
           <MessageActions
             createdAt={saved.createdAt}

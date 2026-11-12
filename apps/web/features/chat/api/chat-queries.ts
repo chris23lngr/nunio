@@ -7,6 +7,11 @@ import { createApiClient } from "@/lib/api-client";
 export type Chat =
   paths["/api/me/chats/{id}"]["get"]["responses"][200]["content"]["application/json"];
 export type Message = Chat["messages"][number];
+/** A saved proposal, with the Action the student is asked to approve and where it stands. */
+export type SavedProposal = Extract<
+  Message["parts"][number],
+  { approvalId: string }
+>;
 /** A saved tool call: what nunio read for an answer, as the student was shown it. */
 type ToolPart = Extract<Message["parts"][number], { toolCallId: string }>;
 type ChatTools = {
@@ -21,8 +26,8 @@ export type Course = Chat["courses"][number];
 /** A Course the student can chat about, with its color. */
 export type CourseOption = Course & { color: CourseColor };
 
-/** A saved answer and its question, as the stream's `data-committed` carries them. */
-export type Turn = Message & { question: Message };
+/** A saved answer and its question, as the stream's `data-committed` carries them; a report on an approval has none. */
+export type Turn = Message & { question: Message | null };
 
 /** A Chat message as useChat holds it; metadata arrives once the message is saved. */
 export type ChatUIMessage = UIMessage<
@@ -32,6 +37,8 @@ export type ChatUIMessage = UIMessage<
     withdrawn?: true;
     /** The name of the model that wrote a saved answer. */
     model?: string;
+    /** A saved answer's proposals, by tool call, as their cards show them. */
+    proposals?: Record<string, SavedProposal>;
   },
   { committed: Turn; refused: { error: string } },
   ChatTools
@@ -46,6 +53,11 @@ export function toUIMessage(message: Message): ChatUIMessage {
       citations: message.citations,
       ...(message.text === null ? { withdrawn: true as const } : {}),
       ...(message.model ? { model: message.model.name } : {}),
+      proposals: Object.fromEntries(
+        message.parts.flatMap((part) =>
+          "approvalId" in part ? [[part.toolCallId, part] as const] : [],
+        ),
+      ),
     },
     parts: message.parts.map((part): ChatUIMessage["parts"][number] => {
       // A proposal still asks the student, under the approval the stream announced.
