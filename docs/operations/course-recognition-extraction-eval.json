@@ -3274,5 +3274,510 @@
       "reproduction": "qpdf <excerpt.pdf> --stream-data=uncompress --decode-level=all --object-streams=disable - (count stdout bytes)",
       "fixed": false
     }
+  ],
+  "followUpRuns": [
+    {
+      "checkedAt": "2026-11-12T10:02:41.801Z",
+      "includedFeatureHead": "88f5482a3b16c499d8592c9a532b0d0bfdef4d4b",
+      "includedChanges": [
+        "#69 streaming decoded-size check, 512 MiB limit",
+        "#70 previous eval evidence",
+        "#71 review fixes",
+        "#72 separately metered page retries, settled truncated scans, scan reasoning disabled, shared figure marker",
+        "#74 review fixes"
+      ],
+      "model": "anthropic/claude-haiku-5.5",
+      "routing": "international",
+      "parser": "repository parser code in-process with host qpdf/Poppler, not the container image",
+      "labels": "draft, not yet spot-checked by founder",
+      "runsPerDocument": 1,
+      "selectedDocuments": ["dhbw-digitaltechnik"],
+      "scenarios": [],
+      "scenarioSelectionNote": "No configured scenario references dhbw-digitaltechnik; both configured scenarios use only the RUB NLP decks.",
+      "budgetMicroUsd": 3000000,
+      "enforcedAllowanceMicroUsd": 2900000,
+      "summary": {
+        "ingestion": "ready",
+        "extraction": "done",
+        "parsedPages": 35,
+        "storedPages": 35,
+        "visionCallsIncludingRetries": 35,
+        "visionRetries": 0,
+        "truncatedVisionCalls": 0,
+        "failedVisionCalls": 0,
+        "visionCostMicroUsd": 12371,
+        "topics": {
+          "labelled": 8,
+          "extracted": 10,
+          "matched": 3,
+          "precision": 0.3,
+          "recall": 0.375
+        },
+        "figureOnly": {
+          "facts": 0,
+          "topics": 0
+        },
+        "storedFigureDescriptionLines": 71,
+        "reviewableAfterMs": 45076,
+        "reviewableTargetMs": 600000,
+        "costMicroUsd": 16489
+      },
+      "figureOnlyMethod": "Count stored Fact extractions whose decrypted uncertainty contains aus einer Abbildungsbeschreibung abgeleitet",
+      "figureDescriptionSamples": [
+        {
+          "page": 10,
+          "description": "[Abbildung] Kein Bild oder Diagramm vorhanden; das Bild enth\u00e4lt nur Text und Aufz\u00e4hlungspunkte."
+        },
+        {
+          "page": 17,
+          "description": "[Abbildung] Zeitverlauf eines analogen Signals: Eine kontinuierliche, schwingende blaue Kurve \u00fcber der Zeitachse t (horizontale Achse mit Pfeil, vertikale Achse mit Pfeil). Die Amplitude variiert stetig mit wechselnden Ausschl\u00e4gen nach oben und unten um die Nulllinie, ohne diskrete Stufen."
+        },
+        {
+          "page": 27,
+          "description": "[Abbildung] Diagramm mit blauer Linie (ansteigende Gerade von 0 bis etwa 10) und roten St\u00e4ben an den Abtastpunkten; die St\u00e4be bzw. Abtastwerte liegen auf den Stufen einer Quantisierung, y-Achse von 0 bis 12, x-Achse mit Abtastpunkten, die die zeitliche Abtastung des analogen Signals darstellen."
+        },
+        {
+          "page": 34,
+          "description": "[Abbildung] Schema der Abstraktionsebenen des Hardwareentwurfs: Links sind sechs Ebenen untereinander als K\u00e4sten dargestellt (Systemebene, Algorithmische Ebene, Register Transfer Ebene, Logikebene, Transistorebene, Geometrie/Topologie). Jeder Ebene ist rechts ein Beispiel zugeordnet, das die Beschreibungsform zeigt."
+        },
+        {
+          "page": 35,
+          "description": "[Abbildung] Wahrheitstabelle: Spalten a, b, c mit Werten f\u00fcr alle Kombinationen; c ist 1 nur bei a=1 und b=1 (Zeilen 0 0 0, 0 1 0, 1 0 0, 1 1 1)."
+        }
+      ],
+      "visionAttempts": [
+        {
+          "pages": [1],
+          "truncated": false,
+          "microUsd": 479
+        },
+        {
+          "pages": [2],
+          "truncated": false,
+          "microUsd": 486
+        },
+        {
+          "pages": [4],
+          "truncated": false,
+          "microUsd": 274
+        },
+        {
+          "pages": [3],
+          "truncated": false,
+          "microUsd": 261
+        },
+        {
+          "pages": [5],
+          "truncated": false,
+          "microUsd": 272
+        },
+        {
+          "pages": [6],
+          "truncated": false,
+          "microUsd": 223
+        },
+        {
+          "pages": [7],
+          "truncated": false,
+          "microUsd": 479
+        },
+        {
+          "pages": [8],
+          "truncated": false,
+          "microUsd": 526
+        },
+        {
+          "pages": [9],
+          "truncated": false,
+          "microUsd": 246
+        },
+        {
+          "pages": [10],
+          "truncated": false,
+          "microUsd": 251
+        },
+        {
+          "pages": [11],
+          "truncated": false,
+          "microUsd": 289
+        },
+        {
+          "pages": [12],
+          "truncated": false,
+          "microUsd": 289
+        },
+        {
+          "pages": [13],
+          "truncated": false,
+          "microUsd": 262
+        },
+        {
+          "pages": [14],
+          "truncated": false,
+          "microUsd": 266
+        },
+        {
+          "pages": [15],
+          "truncated": false,
+          "microUsd": 466
+        },
+        {
+          "pages": [16],
+          "truncated": false,
+          "microUsd": 260
+        },
+        {
+          "pages": [17],
+          "truncated": false,
+          "microUsd": 307
+        },
+        {
+          "pages": [18],
+          "truncated": false,
+          "microUsd": 350
+        },
+        {
+          "pages": [19],
+          "truncated": false,
+          "microUsd": 359
+        },
+        {
+          "pages": [20],
+          "truncated": false,
+          "microUsd": 434
+        },
+        {
+          "pages": [21],
+          "truncated": false,
+          "microUsd": 449
+        },
+        {
+          "pages": [22],
+          "truncated": false,
+          "microUsd": 278
+        },
+        {
+          "pages": [23],
+          "truncated": false,
+          "microUsd": 276
+        },
+        {
+          "pages": [24],
+          "truncated": false,
+          "microUsd": 302
+        },
+        {
+          "pages": [25],
+          "truncated": false,
+          "microUsd": 330
+        },
+        {
+          "pages": [26],
+          "truncated": false,
+          "microUsd": 260
+        },
+        {
+          "pages": [27],
+          "truncated": false,
+          "microUsd": 319
+        },
+        {
+          "pages": [28],
+          "truncated": false,
+          "microUsd": 299
+        },
+        {
+          "pages": [29],
+          "truncated": false,
+          "microUsd": 461
+        },
+        {
+          "pages": [30],
+          "truncated": false,
+          "microUsd": 472
+        },
+        {
+          "pages": [31],
+          "truncated": false,
+          "microUsd": 402
+        },
+        {
+          "pages": [32],
+          "truncated": false,
+          "microUsd": 282
+        },
+        {
+          "pages": [33],
+          "truncated": false,
+          "microUsd": 460
+        },
+        {
+          "pages": [34],
+          "truncated": false,
+          "microUsd": 526
+        },
+        {
+          "pages": [35],
+          "truncated": false,
+          "microUsd": 476
+        }
+      ],
+      "documentSource": {
+        "url": "https://virtual-course.de/Vorlesungen/pdf/Folien_Digital.pdf",
+        "pages": [1, 35],
+        "sha256": "7ba2421c76b1bb77cf2ef337319c0e120aa731e4ea72e61f4547aaa4e4ad2fff",
+        "licence": "CC-BY-SA-4.0",
+        "attribution": "R\u00fcdiger Heintz, DHBW Mannheim, Vorlesung Digitaltechnik Teil 1, Version 2.15, 2026; pages 1\u201335. Figure lines are model descriptions."
+      },
+      "documents": [
+        {
+          "id": "dhbw-digitaltechnik",
+          "assignment": {
+            "boundCourseId": null,
+            "proposals": 1,
+            "itemCourseIds": [
+              "f36ddc3c-ca66-4266-b74c-198460a75d47",
+              "f36ddc3c-ca66-4266-b74c-198460a75d47",
+              "f36ddc3c-ca66-4266-b74c-198460a75d47",
+              "f36ddc3c-ca66-4266-b74c-198460a75d47",
+              "f36ddc3c-ca66-4266-b74c-198460a75d47",
+              "f36ddc3c-ca66-4266-b74c-198460a75d47",
+              "f36ddc3c-ca66-4266-b74c-198460a75d47",
+              "f36ddc3c-ca66-4266-b74c-198460a75d47",
+              "f36ddc3c-ca66-4266-b74c-198460a75d47",
+              "f36ddc3c-ca66-4266-b74c-198460a75d47",
+              "f36ddc3c-ca66-4266-b74c-198460a75d47",
+              "f36ddc3c-ca66-4266-b74c-198460a75d47",
+              "f36ddc3c-ca66-4266-b74c-198460a75d47"
+            ]
+          },
+          "figureOnly": {
+            "facts": 0,
+            "topics": 0
+          },
+          "run": 1,
+          "language": "de",
+          "kind": "slides",
+          "scan": false,
+          "ingestion": "ready",
+          "ingestionFailure": null,
+          "extraction": "done",
+          "dropped": 0,
+          "grounding": {
+            "claimedPage": 14,
+            "otherPage": 0,
+            "nowhere": 0,
+            "examples": []
+          },
+          "failures": [],
+          "reviewableAfterMs": 45076,
+          "costMicroUsd": 16489,
+          "topics": {
+            "labelled": 8,
+            "extracted": 10,
+            "matched": 3,
+            "precision": 0.3,
+            "recall": 0.375
+          },
+          "topicItems": [
+            {
+              "course": "Digitaltechnik",
+              "key": "Digitale vs. analoge Information",
+              "value": "Digitale Information wird mit einer begrenzten abz\u00e4hlbaren Menge an Symbolen dargestellt, analoge Information ist kontinuierlich.",
+              "citations": [
+                {
+                  "extractionId": "62a78c77-a847-4cf7-8a1b-501f6e24e4ee",
+                  "sourceId": "008deaf6-24ef-4487-bb84-0c13546c4531",
+                  "title": "dhbw-digitaltechnik.pdf",
+                  "page": 12,
+                  "quote": "eine Information mit einer begrenzten abz\u00e4hlbaren Menge an Symbolen dargestellt wird"
+                }
+              ]
+            },
+            {
+              "course": "Digitaltechnik",
+              "key": "Codierung",
+              "value": "\u00dcbersetzung von Information in digitale Symbole mittels eindeutiger Zuordnung.",
+              "citations": [
+                {
+                  "extractionId": "17534a96-a675-4034-a83c-c846e0706704",
+                  "sourceId": "008deaf6-24ef-4487-bb84-0c13546c4531",
+                  "title": "dhbw-digitaltechnik.pdf",
+                  "page": 16,
+                  "quote": "Den Vorgang der \u00dcbersetzung von Information in digitale Symbole wird als Codierung bezeichnet."
+                }
+              ]
+            },
+            {
+              "course": "Digitaltechnik",
+              "key": "Bin\u00e4rtechnik",
+              "value": "Variante der Digitaltechnik mit nur zwei Symbolen bzw. Zust\u00e4nden.",
+              "citations": [
+                {
+                  "extractionId": "23fed7a3-45f2-4718-9190-14065a9b3528",
+                  "sourceId": "008deaf6-24ef-4487-bb84-0c13546c4531",
+                  "title": "dhbw-digitaltechnik.pdf",
+                  "page": 23,
+                  "quote": "Variante der Digitaltechnik mit nur zwei Symbolen/Zust\u00e4nden"
+                }
+              ]
+            },
+            {
+              "course": "Digitaltechnik",
+              "key": "Bit",
+              "value": "Ein einzelnes Bin\u00e4rzeichen.",
+              "citations": [
+                {
+                  "extractionId": "9cc81f68-d18a-4017-b1b7-75a29f32e942",
+                  "sourceId": "008deaf6-24ef-4487-bb84-0c13546c4531",
+                  "title": "dhbw-digitaltechnik.pdf",
+                  "page": 24,
+                  "quote": "Ein einzelnes Bin\u00e4rzeichen wird als Bit bezeichnet."
+                }
+              ]
+            },
+            {
+              "course": "Digitaltechnik",
+              "key": "Stellenwertsystem",
+              "value": "Zahlensystem mit Stellenwerten zur Basis 10 bzw. Basis 2.",
+              "citations": [
+                {
+                  "extractionId": "e2609d3a-c405-4527-adc2-b49de29ad731",
+                  "sourceId": "008deaf6-24ef-4487-bb84-0c13546c4531",
+                  "title": "dhbw-digitaltechnik.pdf",
+                  "page": 25,
+                  "quote": "Das Dezimalsystem ist ein Stellenwertsystem zur Basis 10"
+                }
+              ]
+            },
+            {
+              "course": "Digitaltechnik",
+              "key": "Quantisierung",
+              "value": "Abbildung eines analogen Werts auf ein Vielfaches eines festgelegten Quants.",
+              "citations": [
+                {
+                  "extractionId": "cb9271bf-2ff0-4447-9e3c-696c40cad6de",
+                  "sourceId": "008deaf6-24ef-4487-bb84-0c13546c4531",
+                  "title": "dhbw-digitaltechnik.pdf",
+                  "page": 26,
+                  "quote": "Die Abbildung auf ein Quant nennt man Quantisierung."
+                }
+              ]
+            },
+            {
+              "course": "Digitaltechnik",
+              "key": "A/D- und D/A-Wandler",
+              "value": "Bausteine zur Wandlung zwischen analogen und digitalen Werten.",
+              "citations": [
+                {
+                  "extractionId": "ece5ffea-01d9-48e4-8193-2b611e59d7dc",
+                  "sourceId": "008deaf6-24ef-4487-bb84-0c13546c4531",
+                  "title": "dhbw-digitaltechnik.pdf",
+                  "page": 26,
+                  "quote": "Technische Bausteine die eine derartige Wandlung durchf\u00fchren nennt man A/D-Wandler."
+                }
+              ]
+            },
+            {
+              "course": "Digitaltechnik",
+              "key": "Abtastung",
+              "value": "Zeitliche Abtastung eines analogen Signals.",
+              "citations": [
+                {
+                  "extractionId": "6d3ebb1f-5547-4ef0-b5d1-8f2486d88bb4",
+                  "sourceId": "008deaf6-24ef-4487-bb84-0c13546c4531",
+                  "title": "dhbw-digitaltechnik.pdf",
+                  "page": 27,
+                  "quote": "Dazu wird das analoge Signal zeitlich abgetastet und die abgetasteten Werte quantisiert."
+                }
+              ]
+            },
+            {
+              "course": "Digitaltechnik",
+              "key": "Abstraktionsebenen des Hardwareentwurfs",
+              "value": "Systemebene, algorithmische Ebene, Register-Transfer-Ebene, Logikebene, Transistorebene und Geometrie/Topologie.",
+              "citations": [
+                {
+                  "extractionId": "8d77a2cc-492e-476a-a44c-3ef3ec419d46",
+                  "sourceId": "008deaf6-24ef-4487-bb84-0c13546c4531",
+                  "title": "dhbw-digitaltechnik.pdf",
+                  "page": 34,
+                  "quote": "Hardwareentwurf f\u00fcr IC Entwicklung / FPGA Programmierung"
+                }
+              ]
+            },
+            {
+              "course": "Digitaltechnik",
+              "key": "Wahrheitstabelle",
+              "value": "Tabellarische Darstellung der Ausgangswerte einer Logikfunktion f\u00fcr alle Eingangskombinationen.",
+              "citations": [
+                {
+                  "extractionId": "f10f34c2-8f99-4cc0-8c14-273ecad34510",
+                  "sourceId": "008deaf6-24ef-4487-bb84-0c13546c4531",
+                  "title": "dhbw-digitaltechnik.pdf",
+                  "page": 35,
+                  "quote": "Wir konzentrieren uns auf algebraische Ausdr\u00fccke und Wahrheitstabellen."
+                }
+              ]
+            }
+          ],
+          "labelsStatus": "draft, not yet spot-checked by founder",
+          "courses": {
+            "labelled": 1,
+            "extracted": 1,
+            "matched": 1,
+            "unlabelled": []
+          },
+          "obligations": {
+            "labelled": 0,
+            "extracted": 1,
+            "matched": 0,
+            "precision": 0,
+            "recall": null,
+            "kindAccuracy": null
+          },
+          "deadlines": {
+            "labelledDated": 0,
+            "extractedDated": 0,
+            "correct": 0,
+            "precision": null,
+            "recall": null,
+            "undatedInventedDate": 0,
+            "timeAccuracy": null
+          },
+          "logistics": {
+            "labelled": 0,
+            "found": 0
+          },
+          "items": [
+            {
+              "course": "Digitaltechnik",
+              "kind": "exam",
+              "title": "Klausur",
+              "date": null,
+              "time": null,
+              "uncertainty": "Im Dokument ist kein Termin der Klausur angegeben.; Deadline unresolved",
+              "label": null
+            }
+          ]
+        }
+      ],
+      "featureBugs": [],
+      "qualityObservations": [
+        "Stored page 10 contains a spurious figure line saying no figure exists. This is model-output quality evidence, not a confirmed implementation defect.",
+        "Only 3 exact draft aliases match: Quantisierung, Abtastung, Wahrheitstabelle. Other extracted names such as Digitale vs. analoge Information and Bin\u00e4rtechnik differ from the draft aliases. Labels and descriptions remain unreviewed by founder.",
+        "The model also extracted an undated Klausur Obligation despite the empty draft Obligation labels. The stored page 4 includes exam-format text (Klausur ohne Hilfsmittel); this is a label/output mismatch, not an invented dated deadline."
+      ],
+      "runNotes": [
+        "Exactly one live pass for DHBW, with no repeated run or diagnostic model calls.",
+        "Used a temporary copy of the existing harness with observation wrappers around parser and ScanReader, read-only decryption of stored chunks, and a USD 2.90 Allowance ceiling. Extraction, scoring, ingestion and retry implementations were unchanged; only this result file is committed.",
+        "Vision calls counted at ScanReader.read; model SDK retries are disabled. Each call has a unique page mapping and was separately metered by the ingestion implementation. No retry path was exercised in this run.",
+        "Sample descriptions were read from decrypted stored Source chunks and reassembled with the repository joinChunks helper; samples include four content diagrams and the spurious page-10 line.",
+        "Figure-only Facts still detected via the German uncertainty text, not by isFigureLine. Samples selected from stored text with exported isFigureLine from @nunio/ai. Topic count is the topic subset of stored Fact extraction rows.",
+        "Cost is the pipeline metered usage including scans, embeddings and extraction, rounded to micro-USD; all 35 scans completed normally with reported usage.",
+        "OPENROUTER_API_KEY loaded only into the eval environment from the supplied env file; missing OPENROUTER_BASE_URL supplied as ADR-0012 international endpoint https://openrouter.ai/api/v1.",
+        "Previous result fields are preserved unchanged; earlier parser failure is historical and superseded for this deck by this successful ingestion."
+      ]
+    }
   ]
 }
