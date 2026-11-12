@@ -25,10 +25,12 @@ export {
   type DataHandlingLabel,
   isDefiniteFailure,
   isTransientFailure,
-  type ModelId,
+  type ModelConfig,
   type Models,
+  type ReasoningEffort,
   type RegisteredModel,
   type Task,
+  taskModels,
 } from "./models.js";
 export {
   type CritiqueInput,
@@ -40,6 +42,13 @@ export {
   type PracticeItem,
   type Written,
 } from "./practice.js";
+export {
+  fetchZeroRetentionPrices,
+  isCoveredModel,
+  type PriceTier,
+  priceZeroRetentionEndpoints,
+  type SyncedModel,
+} from "./prices.js";
 export {
   createEmbedder,
   createScanReader,

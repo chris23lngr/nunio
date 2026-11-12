@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { createExtractor } from "./extraction.js";
 import { createModels } from "./models.js";
 import { figureMarker } from "./source-models.js";
+import { testCatalog } from "./test-catalog.js";
 
 const extracted = {
   courses: [
@@ -84,6 +85,7 @@ it("extracts through structured output without tools, keeping page text fenced i
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
+      catalog: testCatalog,
       fetch: recorded(bodies, JSON.stringify(extracted)),
     }),
   );
@@ -147,6 +149,7 @@ it("refuses a truncated answer rather than storing part of it", async () => {
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
+      catalog: testCatalog,
       fetch: recorded([], '{"courses": [', "length"),
     }),
   );
@@ -159,7 +162,11 @@ it("refuses a truncated answer rather than storing part of it", async () => {
 
 it("windows pages within a size bound, overlapping by one page where both fit", () => {
   const extractor = createExtractor(
-    createModels({ apiKey: "test", baseURL: "https://provider.invalid" }),
+    createModels({
+      apiKey: "test",
+      baseURL: "https://provider.invalid",
+      catalog: testCatalog,
+    }),
   );
   const page = (n: number, kb: number) => ({
     page: n,
@@ -183,6 +190,7 @@ it("keeps source title and candidate Courses inside nonce-fenced user data", asy
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
+      catalog: testCatalog,
       fetch: recorded(bodies, JSON.stringify(extracted)),
     }),
   );

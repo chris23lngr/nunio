@@ -1,6 +1,12 @@
 import { expect, it } from "vitest";
 import { createAnswerer } from "./answer.js";
+import type { Models } from "./models.js";
 import { createModels } from "./models.js";
+import { testCatalog } from "./test-catalog.js";
+
+/** Chat answers come from whichever Model the student chose; these tests use the explanation default. */
+const answererFrom = (models: Models) =>
+  createAnswerer(models.forTask("explanation"));
 
 function recorded(
   bodies: Record<string, unknown>[],
@@ -34,10 +40,11 @@ function recorded(
 
 it("answers from a data message apart from the question, keeping only citation tags it was given", async () => {
   const bodies: Record<string, unknown>[] = [];
-  const answerer = createAnswerer(
+  const answerer = answererFrom(
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
+      catalog: testCatalog,
       fetch: recorded(
         bodies,
         "Die Klausur ist am 10. Februar [S1], laut Aushang [S7].",
@@ -85,10 +92,11 @@ it("answers from a data message apart from the question, keeping only citation t
 });
 
 it("refuses a truncated answer rather than showing part of it", async () => {
-  const answerer = createAnswerer(
+  const answerer = answererFrom(
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
+      catalog: testCatalog,
       fetch: recorded([], "Die Klausur ist am", "length"),
     }),
   );
@@ -108,10 +116,11 @@ it("streams text before completion and returns sanitized citations and terminal 
   const encoder = new TextEncoder();
   const deltas: string[] = [];
   const reasoning: [string, boolean][] = [];
-  const answerer = createAnswerer(
+  const answerer = answererFrom(
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
+      catalog: testCatalog,
       fetch: async () =>
         new Response(
           new ReadableStream({
@@ -227,10 +236,11 @@ for (const outcome of ["length", "missing-usage", "error", "eof"] as const) {
       [...data, ...(outcome === "eof" ? [] : [terminal])]
         .map((value) => `data: ${JSON.stringify(value)}\n\n`)
         .join("") + "data: [DONE]\n\n";
-    const answerer = createAnswerer(
+    const answerer = answererFrom(
       createModels({
         apiKey: "test",
         baseURL: "https://provider.invalid",
+        catalog: testCatalog,
         fetch: async () =>
           new Response(body, {
             headers: { "content-type": "text/event-stream" },
@@ -247,10 +257,11 @@ for (const outcome of ["length", "missing-usage", "error", "eof"] as const) {
 }
 
 it("returns reasoning with a completed JSON answer", async () => {
-  const answerer = createAnswerer(
+  const answerer = answererFrom(
     createModels({
       apiKey: "test",
       baseURL: "https://provider.invalid",
+      catalog: testCatalog,
       fetch: recorded([], "Die Antwort [S1].", "stop", "Ich prüfe die Quelle."),
     }),
   );
@@ -263,4 +274,15 @@ it("returns reasoning with a completed JSON answer", async () => {
     cited: ["S1"],
     reasoning: "Ich prüfe die Quelle.",
   });
+});
+
+it("names the Model it answers with, for the answer's record", () => {
+  const answerer = answererFrom(
+    createModels({
+      apiKey: "test",
+      baseURL: "https://provider.invalid",
+      catalog: testCatalog,
+    }),
+  );
+  expect(answerer.modelKey).toBe("sonnet-5.5-reasoning-high");
 });
