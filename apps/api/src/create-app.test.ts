@@ -3374,6 +3374,72 @@ describe("Chat", () => {
     expect(prompts).toEqual([]);
   });
 
+  it("performs a proposal approved in the Chat and has the model report it in a new message", async () => {
+    const { headers, chatId, obligationId } = await planningChat(
+      "chat-propose-approve",
+    );
+    const day = berlinDay(8);
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+    );
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const card = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    const stream = (body: unknown) =>
+      app.request(`${apiOrigin}/api/me/chats/${chatId}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+    expect(
+      (
+        await stream({
+          approval: { id: card.approvalId, fingerprint: "not-the-card" },
+        })
+      ).status,
+    ).toBe(409);
+    reply = "Erledigt, der Lernblock steht in deinem Plan.";
+    prompts.length = 0;
+
+    const chunks = await sseChunks(
+      await stream({
+        approval: { id: card.approvalId, fingerprint: card.action.fingerprint },
+      }),
+    );
+
+    expect(await admin.studyBlock.count({ where: { obligationId } })).toBe(1);
+    expect(prompts).toHaveLength(1);
+    expect(JSON.stringify(prompts[0])).toContain("approved");
+    const started = chunks.find((chunk) => chunk.type === "start");
+    const committed = chunks.find((chunk) => chunk.type === "data-committed");
+    expect(committed.data).toMatchObject({
+      id: started.messageId,
+      role: "assistant",
+      text: "Erledigt, der Lernblock steht in deinem Plan.",
+      question: null,
+    });
+    const messages = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { id: string; parts: { type: string; action?: unknown }[] }[];
+    expect(messages.map((message) => message.id)).toEqual([
+      expect.any(String),
+      asked.body.id,
+      started.messageId,
+    ]);
+    expect(
+      messages[1]!.parts.find((part) => part.type === "tool-proposeStudyBlock")
+        ?.action,
+    ).toMatchObject({ status: "done", decision: "approved" });
+  });
+
   it("offers no search in a Chat with nothing selected, but still the Plan", async () => {
     const { headers, id } = await emptyChat("chat-no-search");
     reply = "Für diesen Chat ist kein Material ausgewählt.";

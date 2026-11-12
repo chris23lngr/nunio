@@ -126,7 +126,202 @@ export function createChats({
       }
     );
   }
+  /** What answering in a Chat needs: its history, the context message, and this turn's tools. */
+  async function turnFor(p: Principal, chatId: string) {
+    const [history, timeZone] = await Promise.all([
+      earlier(p, chatId),
+      plan.timeZone(p),
+    ]);
+    if (!history) return null;
+    const context = chatContext(clock.now(), timeZone, history.courses);
+    const turn = createTurn();
+    const tools = {
+      // A Chat with nothing selected has nothing to search.
+      ...(history.selected
+        ? { searchMaterial: searchTool(turn, reader, p, chatId) }
+        : {}),
+      agenda: agendaTool(turn, {
+        reader,
+        plan,
+        p,
+        timeZone,
+        courses: context.courses,
+      }),
+      courseFacts: courseFactsTool(turn, {
+        reader,
+        p,
+        courses: context.courses,
+      }),
+      proposeStudyBlock: proposeStudyBlockTool(),
+    };
+    /** Proposals that passed the Plan's rules, by tool call, waiting for the student once the answer is saved. */
+    const proposals = new Map<string, Proposal>();
+    const toolApproval = {
+      proposeStudyBlock: approveStudyBlock(turn, {
+        plan,
+        p,
+        timeZone,
+        proposals,
+      }),
+    };
+    return { history, context, turn, tools, proposals, toolApproval };
+  }
+  /** The saved answers of a Chat, newest first, with their parts opened. */
+  async function answers(p: Principal, chatId: string) {
+    return withOwner(db, p, async (tx) => {
+      const rows = await tx.chatMessage.findMany({
+        where: { chatId, role: "assistant", partsContent: { not: null } },
+        orderBy: { createdAt: "desc" },
+      });
+      return Promise.all(
+        rows.map(async (row) => {
+          const parts = await derived.open(tx, `${row.id}:parts`, {
+            content: row.partsContent!,
+            contentKey: row.partsKey,
+            derivedFrom: row.derivedFrom,
+          });
+          return {
+            id: row.id,
+            derivedFrom: row.derivedFrom,
+            parts: parts === null ? [] : (JSON.parse(parts) as ChatPart[]),
+          };
+        }),
+      );
+    });
+  }
   return {
+    /** The proposal a Chat's answer asked under `approvalId`, with the Action key it was asked as. */
+    async proposal(p: Principal, chatId: string, approvalId: string) {
+      for (const answer of await answers(p, chatId))
+        for (const part of answer.parts)
+          if (
+            part.type === "tool-proposeStudyBlock" &&
+            part.approvalId === approvalId
+          )
+            return { answerId: answer.id, ...part };
+      return null;
+    },
+    /**
+     * Has the model tell the student how an approved proposal went, in a new answer of its own (ADR-0019). It is
+     * given the Chat's history, the proposal it made and the gate's outcome, and may call no tool.
+     */
+    async report(
+      p: Principal,
+      chatId: string,
+      approvalId: string,
+      outcome: string,
+      answerer: Answerer,
+      options: {
+        signal?: AbortSignal;
+        write?: (chunk: UIMessageChunk) => void;
+        /** The ID for the recorded answer, when the caller already shows it. */
+        id?: string;
+      } = {},
+    ) {
+      const [setUp, proposal] = await Promise.all([
+        turnFor(p, chatId),
+        this.proposal(p, chatId, approvalId),
+      ]);
+      if (!setUp || !proposal) return { status: "gone" } as const;
+      const { history, context, tools } = setUp;
+      const answered = (await answers(p, chatId)).find(
+        (answer) => answer.id === proposal.answerId,
+      )!;
+      const messages: ModelMessage[] = [
+        ...history.turns.flatMap((turn): ModelMessage[] => [
+          { role: "user", content: turn.question },
+          { role: "assistant", content: turn.answer },
+        ]),
+        { role: "user", content: context.text },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: proposal.toolCallId,
+              toolName: "proposeStudyBlock",
+              input: proposal.input,
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: proposal.toolCallId,
+              toolName: "proposeStudyBlock",
+              output: { type: "text", value: outcome },
+            },
+          ],
+        },
+      ];
+      const chunks: UIMessageChunk[] = [];
+      const input = { messages, tools, last: true };
+      const stepped = await delegation.meter(
+        p,
+        { microUsd: answerer.estimateMicroUsd(input) },
+        (deadline) =>
+          definitely(() =>
+            answerer.step(input, {
+              signal: options.signal
+                ? AbortSignal.any([deadline, options.signal])
+                : deadline,
+              write: (chunk) => {
+                chunks.push(chunk);
+                options.write?.(chunk);
+              },
+            }),
+          ),
+      );
+      if (stepped.status === "refused") return stepped;
+      const parts = await partsFrom(chunks, new Set(), () => undefined);
+      const text = parts
+        .flatMap((part) => (part.type === "text" ? [part.text] : []))
+        .join("\n\n");
+      // It restates the answer it follows, so it goes with that answer's Sources.
+      const derivedFrom = [
+        ...new Set([...answered.derivedFrom, ...history.derivedFrom]),
+      ];
+      const id = options.id ?? randomUUID();
+      const createdAt = new Date();
+      const recorded = await withOwner(db, p, async (tx, studentId) => {
+        const sealed = await derived.seal(tx, id, derivedFrom, text);
+        const sealedParts = await derived.seal(
+          tx,
+          `${id}:parts`,
+          derivedFrom,
+          JSON.stringify(parts),
+        );
+        if (!sealed || !sealedParts) return null;
+        return tx.chatMessage.create({
+          data: {
+            id,
+            chatId,
+            studentId,
+            role: "assistant",
+            ...sealed,
+            partsContent: sealedParts.content,
+            partsKey: sealedParts.contentKey,
+            citations: [],
+            modelKey: answerer.modelKey,
+            createdAt,
+          },
+          select: { model: { select: { key: true, name: true } } },
+        });
+      });
+      if (!recorded) return { status: "gone" } as const;
+      const message: ChatMessage = {
+        id,
+        role: "assistant",
+        text,
+        parts,
+        createdAt: createdAt.toISOString(),
+        citations: [],
+        model: recorded.model,
+      };
+      return { status: "ok", message } as const;
+    },
     async detail(p: Principal, id: string) {
       const chat = await withOwner(db, p, (tx) =>
         tx.chat.findUnique({
@@ -214,43 +409,10 @@ export function createChats({
         options.onStep?.(name, now - started);
         started = now;
       };
-      const [history, timeZone] = await Promise.all([
-        earlier(p, chatId),
-        plan.timeZone(p),
-      ]);
+      const setUp = await turnFor(p, chatId);
       step("history");
-      if (!history) return { status: "gone" } as const;
-      const context = chatContext(clock.now(), timeZone, history.courses);
-      const turn = createTurn();
-      const tools = {
-        // A Chat with nothing selected has nothing to search.
-        ...(history.selected
-          ? { searchMaterial: searchTool(turn, reader, p, chatId) }
-          : {}),
-        agenda: agendaTool(turn, {
-          reader,
-          plan,
-          p,
-          timeZone,
-          courses: context.courses,
-        }),
-        courseFacts: courseFactsTool(turn, {
-          reader,
-          p,
-          courses: context.courses,
-        }),
-        proposeStudyBlock: proposeStudyBlockTool(),
-      };
-      /** Proposals that passed the Plan's rules, by tool call, waiting for the student once the answer is saved. */
-      const proposals = new Map<string, Proposal>();
-      const toolApproval = {
-        proposeStudyBlock: approveStudyBlock(turn, {
-          plan,
-          p,
-          timeZone,
-          proposals,
-        }),
-      };
+      if (!setUp) return { status: "gone" } as const;
+      const { history, context, turn, tools, proposals, toolApproval } = setUp;
       const messages: ModelMessage[] = [
         ...history.turns.flatMap((turn): ModelMessage[] => [
           { role: "user", content: turn.question },

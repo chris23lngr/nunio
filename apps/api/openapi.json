@@ -6433,28 +6433,65 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4000
+                      },
+                      "model": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "description": "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers."
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "text"
+                    ],
+                    "additionalProperties": false
                   },
-                  "text": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4000
-                  },
-                  "model": {
-                    "type": "string",
-                    "maxLength": 100,
-                    "description": "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers."
+                  {
+                    "type": "object",
+                    "properties": {
+                      "approval": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "fingerprint": {
+                            "type": "string",
+                            "maxLength": 200
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "fingerprint"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Approves the proposal the answer asked under this approval ID, with the fingerprint its card showed (ADR-0010); the model then reports how it went in a new answer."
+                      },
+                      "model": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "description": "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers."
+                      }
+                    },
+                    "required": [
+                      "approval"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "id",
-                  "text"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -6507,7 +6544,7 @@
             }
           },
           "409": {
-            "description": "The question ID is already used.",
+            "description": "The question ID is already used, or the approval is not the card's open request.",
             "content": {
               "application/json": {
                 "schema": {
