@@ -2923,6 +2923,52 @@ describe("Chat", () => {
     ).toEqual([]);
   });
 
+  it("gives the model the passages a search found, but the student only how many and where", async () => {
+    const cookie = await signUp("chat-search-summary");
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const handbook = await chatSource(
+      cookie,
+      "Modulhandbuch.pdf",
+      "Die Klausur ist am 10. Februar im Audimax.",
+    );
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [handbook] }),
+      })
+    ).json()) as { id: string };
+    steps.push(searches("Klausur"));
+    reply = "Der Termin steht im Modulhandbuch [S1].";
+    prompts.length = 0;
+
+    const stream = await (
+      await app.request(`${apiOrigin}/api/me/chats/${id}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          id: randomUUID(),
+          text: "Wann ist die Klausur?",
+        }),
+      })
+    ).text();
+
+    expect(JSON.stringify(prompts[1])).toContain("im Audimax");
+    expect(stream).toContain("data-committed");
+    expect(stream).not.toContain("im Audimax");
+    const reopened = await (
+      await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+        headers: { cookie },
+      })
+    ).text();
+    expect(reopened).toContain("Modulhandbuch.pdf");
+    expect(reopened).not.toContain("im Audimax");
+  });
+
   it("lets the model search at most five times, then has it answer without tools", async () => {
     const cookie = await signUp("chat-step-limit");
     const headers = {
