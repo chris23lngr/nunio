@@ -1,5 +1,5 @@
 {
-  "about": "Phase 6 extraction eval set. Original syllabus and handbook labels were spot-checked by the founder (2026-11-08). Slide Topic and Course assignment labels are draft, not yet spot-checked by founder. Obligation `match` lists lowercase substrings of an acceptable title or key; `optional` items count neither as misses nor, when found, as false positives. Public handbooks are fetched by URL and cut to fixed pages, never committed.",
+  "about": "Phase 6 extraction eval set. Original syllabus and handbook labels were spot-checked by the founder (2026-11-08). Slide Course assignment labels are draft, not yet spot-checked by founder; slide Topic labels come from labels/<id>.md, written blind by the founder (docs/design/topic-quality.md). `heldOut` decks run only with EVAL_HELD_OUT=1. Obligation `match` lists lowercase substrings of an acceptable title or key; `optional` items count neither as misses nor, when found, as false positives. Public handbooks are fetched by URL and cut to fixed pages, never committed.",
   "documents": [
     {
       "id": "synthetic-de-analysis",
@@ -465,7 +465,7 @@
       "licence": "CC-BY-SA-4.0",
       "attribution": "Ivan Habernal, Ruhr University Bochum, Natural Language Processing with Deep Learning, 2026",
       "licenceUrl": "https://github.com/trusthlt/nlp-with-deep-learning-lectures/blob/67639ff063ff0fa3274686c0bf147e6278755608/README.md",
-      "labelsStatus": "draft, not yet spot-checked by founder",
+      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
       "courses": [
         {
           "code": null,
@@ -473,49 +473,7 @@
         }
       ],
       "obligations": [],
-      "logistics": [],
-      "topics": [
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["supervised learning", "supervised machine learning"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["loss function", "loss functions"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["gradient descent"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["partial derivatives", "partial derivative"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["chain rule", "multivariable chain rule"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["backpropagation"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["computational graph", "computational graphs"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["jacobian", "jacobian matrix"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["gradient"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["derivatives", "derivative"]
-        }
-      ]
+      "logistics": []
     },
     {
       "id": "rub-nlp-03",
@@ -529,7 +487,7 @@
       "licence": "CC-BY-SA-4.0",
       "attribution": "Ivan Habernal, Ruhr University Bochum, Natural Language Processing with Deep Learning, 2026",
       "licenceUrl": "https://github.com/trusthlt/nlp-with-deep-learning-lectures/blob/67639ff063ff0fa3274686c0bf147e6278755608/README.md",
-      "labelsStatus": "draft, not yet spot-checked by founder",
+      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
       "courses": [
         {
           "code": null,
@@ -537,57 +495,7 @@
         }
       ],
       "obligations": [],
-      "logistics": [],
-      "topics": [
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["backpropagation"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["computational graph", "computational graphs"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["chain rule", "multivariable chain rule"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["tokenization"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["bag of words", "bag-of-words"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["byte pair encoding", "byte-pair encoding", "bpe"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["binary text classification", "binary classification"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": ["sigmoid", "sigmoid function"]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": [
-            "cross-entropy loss",
-            "binary cross-entropy",
-            "binary cross-entropy loss"
-          ]
-        },
-        {
-          "course": "Natural Language Processing with Deep Learning",
-          "aliases": [
-            "stochastic gradient descent",
-            "minibatch stochastic gradient descent",
-            "mini-batch stochastic gradient descent"
-          ]
-        }
-      ]
+      "logistics": []
     },
     {
       "id": "dhbw-digitaltechnik",
@@ -602,54 +510,155 @@
       "licence": "CC-BY-SA-4.0",
       "attribution": "Rüdiger Heintz, DHBW Mannheim, Vorlesung Digitaltechnik Teil 1, Version 2.15, 2026; unmodified pages 1–35",
       "licenceUrl": "https://virtual-course.de/Vorlesungen/",
-      "labelsStatus": "draft, not yet spot-checked by founder",
-      "courses": [
-        {
-          "code": null,
-          "title": "Digitaltechnik"
-        }
-      ],
+      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "courses": [{ "code": null, "title": "Digitaltechnik" }],
+      "obligations": [],
+      "logistics": []
+    },
+    {
+      "id": "dhbw-digitaltechnik-flipflops",
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "source": {
+        "url": "https://virtual-course.de/Vorlesungen/pdf/Folien_Digital.pdf",
+        "sha256": "7ba2421c76b1bb77cf2ef337319c0e120aa731e4ea72e61f4547aaa4e4ad2fff",
+        "pages": [252, 280]
+      },
+      "licence": "CC-BY-SA-4.0",
+      "attribution": "Rüdiger Heintz, DHBW Mannheim, Vorlesung Digitaltechnik, Version 2.15, 2026; unmodified pages 252–280",
+      "licenceUrl": "https://virtual-course.de/Vorlesungen/",
+      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "courses": [{ "code": null, "title": "Digitaltechnik" }],
+      "obligations": [],
+      "logistics": []
+    },
+    {
+      "id": "dhbw-signale-systeme-signale",
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "source": {
+        "url": "https://virtual-course.de/Vorlesungen/pdf/Folien_SundS.pdf",
+        "sha256": "180836bf28d2de47da96e0364bfed4e1c5531b3d1ea9b2bf8d1c32b46ba82af9",
+        "pages": [28, 64]
+      },
+      "licence": "CC-BY-SA-4.0",
+      "attribution": "Rüdiger Heintz, DHBW Mannheim, Vorlesung Signale und Systeme, Version 1.7.7, 2026; unmodified pages 28–64",
+      "licenceUrl": "https://virtual-course.de/Vorlesungen/",
+      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "courses": [{ "code": null, "title": "Signale und Systeme" }],
       "obligations": [],
       "logistics": [],
-      "topics": [
-        {
-          "course": "Digitaltechnik",
-          "aliases": [
-            "analoge und digitale signale",
-            "analog- und digitalsignale",
-            "analoge signale",
-            "digitale signale"
-          ]
-        },
-        {
-          "course": "Digitaltechnik",
-          "aliases": ["abtastung", "zeitdiskretisierung"]
-        },
-        {
-          "course": "Digitaltechnik",
-          "aliases": ["quantisierung"]
-        },
-        {
-          "course": "Digitaltechnik",
-          "aliases": ["binäre signale", "binärsignale"]
-        },
-        {
-          "course": "Digitaltechnik",
-          "aliases": ["boolesche algebra", "schaltalgebra"]
-        },
-        {
-          "course": "Digitaltechnik",
-          "aliases": ["wahrheitstabelle", "wahrheitstabellen"]
-        },
-        {
-          "course": "Digitaltechnik",
-          "aliases": ["logische verknüpfungen", "logikgatter"]
-        },
-        {
-          "course": "Digitaltechnik",
-          "aliases": ["logikpegel", "logische pegel"]
-        }
-      ]
+      "heldOut": true
+    },
+    {
+      "id": "dhbw-signale-systeme-frequenzanalyse",
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "source": {
+        "url": "https://virtual-course.de/Vorlesungen/pdf/Folien_SundS.pdf",
+        "sha256": "180836bf28d2de47da96e0364bfed4e1c5531b3d1ea9b2bf8d1c32b46ba82af9",
+        "pages": [65, 97]
+      },
+      "licence": "CC-BY-SA-4.0",
+      "attribution": "Rüdiger Heintz, DHBW Mannheim, Vorlesung Signale und Systeme, Version 1.7.7, 2026; unmodified pages 65–97",
+      "licenceUrl": "https://virtual-course.de/Vorlesungen/",
+      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "courses": [{ "code": null, "title": "Signale und Systeme" }],
+      "obligations": [],
+      "logistics": [],
+      "heldOut": true
+    },
+    {
+      "id": "dhbw-bildverarbeitung-bildaufnahme",
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "source": {
+        "url": "https://virtual-course.de/Vorlesungen/pdf/Folien_Bildverarbeitung.pdf",
+        "sha256": "919219a9eaca93c6aa727a2be0cb12fe105ff152b9aeee12e26501330f8828d9",
+        "pages": [46, 72]
+      },
+      "licence": "CC-BY-SA-4.0",
+      "attribution": "Rüdiger Heintz, DHBW Mannheim, Vorlesung Bildverarbeitung Teil 1, Version 2.8.1, 2026; unmodified pages 46–72",
+      "licenceUrl": "https://virtual-course.de/Vorlesungen/",
+      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "courses": [{ "code": null, "title": "Bildverarbeitung" }],
+      "obligations": [],
+      "logistics": []
+    },
+    {
+      "id": "dhbw-messtechnik-messbruecken",
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "source": {
+        "url": "https://virtual-course.de/Vorlesungen/pdf/Folien_Messtechnik.pdf",
+        "sha256": "30e53d4fe15c1c03aebb7f2ae6eb73cf59028ab9cf250a5f5041b9ab0e8323b6",
+        "pages": [14, 39]
+      },
+      "licence": "CC-BY-SA-4.0",
+      "attribution": "Rüdiger Heintz, DHBW Mannheim, Elektronik und Messtechnik, Teil Messtechnik, Version 1.70, 2026; unmodified pages 14–39",
+      "licenceUrl": "https://virtual-course.de/Vorlesungen/",
+      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "courses": [{ "code": null, "title": "Elektronik und Messtechnik" }],
+      "obligations": [],
+      "logistics": []
+    },
+    {
+      "id": "dhbw-stuttgart-mct1-datenpfad",
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "source": {
+        "url": "https://dantschi.github.io/mct1/vorlesungen/05_single-cycle-datenpfad-handout.pdf",
+        "sha256": "b6b40920f2b2bb26949bd3e5579b588d43fc494e97f1b4dcb3ba32b9d825dcc0"
+      },
+      "licence": "CC-BY-4.0",
+      "attribution": "Daniel Klünder, DHBW Stuttgart, Mikrocomputertechnik 1, Einheit 5: Der Single-Cycle-Datenpfad (Handout), 2026; unmodified",
+      "licenceUrl": "https://github.com/dantschi/mct1/blob/ee0d2e1c8692f724766897848a247d392d1ad4c5/README.md#oer-und-lizenz",
+      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "courses": [{ "code": null, "title": "Mikrocomputertechnik 1" }],
+      "obligations": [],
+      "logistics": []
+    },
+    {
+      "id": "uo-ec607-intro",
+      "language": "en",
+      "kind": "slides",
+      "scan": false,
+      "source": {
+        "url": "https://raw.githubusercontent.com/uo-ec607/lectures/632b5e526ec3d869be75d09d9a84ab61f00df168/01-intro/01-Intro.pdf",
+        "sha256": "da25444b4c5437caf469e24afb6b2d401cf05ac2e96028d343fcd20a7974ccb0",
+        "pages": [17, 40]
+      },
+      "licence": "MIT",
+      "attribution": "Grant R. McDermott, University of Oregon, EC 607 Data Science for Economists, Lecture 1: Introduction; unmodified pages 17–40",
+      "licenceUrl": "https://github.com/uo-ec607/lectures/blob/632b5e526ec3d869be75d09d9a84ab61f00df168/README.md#license",
+      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "courses": [{ "code": "EC 607", "title": "Data Science for Economists" }],
+      "obligations": [],
+      "logistics": []
+    },
+    {
+      "id": "uo-ec607-git",
+      "language": "en",
+      "kind": "slides",
+      "scan": false,
+      "source": {
+        "url": "https://raw.githubusercontent.com/uo-ec607/lectures/632b5e526ec3d869be75d09d9a84ab61f00df168/02-git/02-Git.pdf",
+        "sha256": "eb9d10e4ccf2d41b486b320afcfd60f41c0007391453a941ddc5c452316b67d7",
+        "pages": [1, 40]
+      },
+      "licence": "MIT",
+      "attribution": "Grant R. McDermott, University of Oregon, EC 607 Data Science for Economists, Lecture 2: Version control with Git(Hub); unmodified pages 1–40",
+      "licenceUrl": "https://github.com/uo-ec607/lectures/blob/632b5e526ec3d869be75d09d9a84ab61f00df168/README.md#license",
+      "labelsStatus": "Topic labels pending: founder labels blind in labels/<id>.md",
+      "courses": [{ "code": "EC 607", "title": "Data Science for Economists" }],
+      "obligations": [],
+      "logistics": []
     }
   ],
   "scenarios": [

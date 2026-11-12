@@ -1,10 +1,6 @@
-export interface TopicLabel {
-  course: string;
-  aliases: string[];
-  pages: number[];
-  optional: boolean;
-  figureOnly: boolean;
-}
+import type { TopicLabel } from "./labels.js";
+
+export type { TopicLabel };
 export interface ExtractedTopic {
   course: string;
   key: string;
