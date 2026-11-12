@@ -122,12 +122,12 @@ test("Kurs ändern binds the Source to another choice and reads it again", async
   const user = userEvent.setup();
 
   await user.click(screen.getByRole("button", { name: "Kurs ändern" }));
-  expect((screen.getByLabelText("Kurs") as HTMLSelectElement).value).toBe(
-    "course-1",
+  expect(screen.getByLabelText("Kurs").textContent).toContain(
+    "MA-101 Analysis I",
   );
-  await user.selectOptions(
-    screen.getByLabelText("Kurs"),
-    "Automatisch erkennen",
+  await user.click(screen.getByLabelText("Kurs"));
+  await user.click(
+    await screen.findByRole("option", { name: "Automatisch erkennen" }),
   );
   await user.click(screen.getByRole("button", { name: "Neu lesen" }));
 
@@ -189,9 +189,9 @@ test("Kurs ändern keeps a changed Course when reading could not start, and star
   );
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Kurs ändern" }));
-  await user.selectOptions(
-    screen.getByLabelText("Kurs"),
-    "Automatisch erkennen",
+  await user.click(screen.getByLabelText("Kurs"));
+  await user.click(
+    await screen.findByRole("option", { name: "Automatisch erkennen" }),
   );
   await user.click(screen.getByRole("button", { name: "Neu lesen" }));
 
@@ -229,7 +229,7 @@ test("Kurs ändern shows an Archived bound Course as the current choice, and wai
 
   await screen.findByText("Kurs: MA-101 Analysis I (archiviert)");
   await userEvent.click(screen.getByRole("button", { name: "Kurs ändern" }));
-  expect((screen.getByLabelText("Kurs") as HTMLSelectElement).value).toBe(
-    "course-1",
+  expect(screen.getByLabelText("Kurs").textContent).toContain(
+    "MA-101 Analysis I",
   );
 });
