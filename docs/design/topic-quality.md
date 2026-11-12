@@ -38,21 +38,36 @@ Three runs per deck. At most USD 20 for the whole feature and USD 3 per live run
 
 ## Baseline (2026-11-12)
 
-The extraction code is unchanged from `main`. 8 dev decks, 3 runs each. MCT1 is excluded: the parser refuses it (PR #84). The judge is **not calibrated yet**; the checklist is `apps/worker/evals/extraction/calibration/baseline-bound.md`.
+The extraction code is unchanged from `main`. 8 dev decks, 3 runs each. MCT1 is excluded: the parser refuses it (PR #84). Scores count the decks themselves; the scenario runs repeat the NLP decks and are left out.
 
-| Run                                                                                                 | Topic precision | Topic recall | Figure-only recall | Cost     |
-| --------------------------------------------------------------------------------------------------- | --------------- | ------------ | ------------------ | -------- |
-| Bound to the labelled Course (`EVAL_BOUND=1`), report `docs/operations/topic-quality-baseline.json` | 86.8 %          | 34.1 %       | 14.3 % (3 of 21)   | USD 0.66 |
-| Course recognised by the model, as in the product's first upload (report not committed)             | 71.8 %          | 26.4 %       | 14.3 %             | USD 0.64 |
+| Run                                                                                                     | Judge                   | Topic precision | Topic recall | Figure-only recall |
+| ------------------------------------------------------------------------------------------------------- | ----------------------- | --------------- | ------------ | ------------------ |
+| **Bound to the labelled Course** (`EVAL_BOUND=1`), report `docs/operations/topic-quality-baseline.json` | **strict (calibrated)** | **73.2 %**      | **28.1 %**   | 14.3 % (3 of 21)   |
+| Same run                                                                                                | first judge             | 83.7 %          | 31.1 %       | 14.3 %             |
+| Course recognised by the model, as in the product's first upload (report not committed)                 | first judge             | 71.8 %          | 26.4 %       | 14.3 %             |
 
-The bound run is the Topic baseline. The unbound run mostly measures Course recognition:
+The bound run is the Topic baseline. It cost USD 0.66, plus USD 0.19 to re-judge it. The unbound run (USD 0.64) mostly measures Course recognition:
 - Three excerpts don't name their Course, and with no existing Course extraction returned nothing.
 - EC 607 was named "R for data science", so none of its Topics could match.
 
 Findings:
 - **Bound Sources without a Course name yield nothing.** `dhbw-digitaltechnik-flipflops` and `dhbw-bildverarbeitung-bildaufnahme` got 0 Topics in all 6 runs. The raw model answer was `{"courses":[],"obligations":[],"facts":[]}` for a 29-page, 48k-character window. A bound Source gets no candidate Courses in its context (`facts.ts`, "A Source bound to a Course puts everything there"). The instructions require every item to reference a picked or quoted Course, so with no Course name on the pages the model returns nothing.
 - **The recall is capped by the instructions.** The founder labelled 13–30 required concepts per deck; the instructions ask for "roughly 5–20" and the model returns 7–14 per deck.
-- Precision is high wherever Topics come back (68–97 % per deck).
+- Per-deck precision with the strict judge ranges from 53 % (`dhbw-digitaltechnik`) to 95 % (`rub-nlp-03`).
+
+### Judge calibration
+
+The founder delegated rating to an independent model rater (Claude Fable 5.2, medium). The rater saw no judge decisions. In round 1 the founder reviewed every disagreement.
+
+1. **First judge**, sample `apps/worker/evals/extraction/calibration/baseline-bound.md` (seed 42):
+   - 42 of 50 agreed with the rater.
+   - 3 more were artefacts of the one-to-one rule: the rater saw no other Topics of the run.
+   - The founder sided with the rater on all 5 real disagreements. That makes 45 of 50 (90 %), but 3 were false matches: broader, combined or workflow Topics. The precision was inflated by about 10 points.
+2. **Strict judge** (`packages/ai/src/topic-judge.ts`), fresh sample (seed 7, 33 of 50 cases new). The rater also saw the run's other Topics. Agreement: **48 of 50 (96 %)**, and 32 of the 33 new cases.
+   - "log-linear model" again collides with its own label's alias "Logistic regression", which another Topic in that run already matched.
+   - "optimales Impedanzverhältnis" is narrower than the label "Impedanzverhältnis".
+
+   The judge's numbers count from here (threshold ≥ 90 %).
 
 ## Phase B order
 
