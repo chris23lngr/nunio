@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 14 (Chat tools) planned, 2026-11-12; it precedes the Phase 12 gates. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -583,6 +583,60 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
    - `disableCSRFCheck`, `disableOriginCheck`, `FROM node:.*alpine`.
 3. **Full test run.** Unit, contract, Testcontainers integration, workflow replay, and end-to-end on staging: upload a syllabus, review it, then a Responsibility Run proposes a Study Block, the student approves it, and the Action is done.
 4. **First-use timing.** Re-measure the ten-minute result on staging with eval materials.
+
+---
+
+## Phase 14: Chat tools
+
+> **How this serves the primary goal:** the student asks in one place about their material and what is due, and has nunio plan or prepare practice there, instead of switching screens. The Chat's selection, `meter` and the delegation gate keep this within explicit permissions.
+
+Phase 14 is built before the Phase 12 gates, and its evals join them. Work happens on the integration branch `feat/chat-tools`, with one PR per stage into it and a single PR to `main` at the end.
+
+**What to implement.**
+
+1. **`packages/chat` and history.**
+   - Move `createChats` and the ask flow out of `knowledge` without changing behaviour ([knowledge-retrieval.md](design/knowledge-retrieval.md), "Chat tools decisions").
+   - Then send the last 10 questions and answers (ADR-0019, "History").
+2. **Tool loop and search.**
+   - First, a spike that verifies three things, each from `ai@7`'s behaviour, not its types. A check that fails becomes a decision for the founder before code builds on it.
+     - Merging one `toUIMessageStream` per step renders in `useChat` without duplicated or reordered parts.
+     - A server-built approval response continues a turn.
+     - `@openrouter/ai-sdk-provider` passes `provider.require_parameters` through.
+   - Then the step loop under `meter` (at most 6 steps, the last without tools) and `searchMaterial`.
+   - Tool parts with client-only outputs and the sealed `parts` column (ADR-0016 amendment).
+   - Removing `POST /api/me/chats/{id}/messages`.
+   - The Model Catalog's tool-support condition (ADR-0018 amendment).
+3. **Read tools** (ADR-0020):
+   - `agenda({ from, to })`, up to 31 days: Obligations with deadline and review state, Tasks, Study Blocks and Fixed Events;
+   - `courseFacts({ courseId })`: a Course's Facts with Provenance.
+4. **Proposals.**
+   - `proposeStudyBlockCreate` and `proposeStudyBlockMove`, checked against the Plan's rules and held for the student through `toolApproval`.
+   - The gate Action recorded at commit.
+   - The approval response on the stream route, then the continuation message.
+   - Cards in the Chat and on Home.
+5. **Artifacts.**
+   - Tools that start a practice set or flashcards Run at commit, at most one per turn and only within the selection.
+   - A status card linking to the Artifact.
+
+**Documentation references.** ADR-0001, 0010, 0011, 0016, 0018, 0019, 0020; [delegation-gate.md](design/delegation-gate.md) "Chat origin"; [knowledge-retrieval.md](design/knowledge-retrieval.md) "Chat tools decisions"; [study-execution.md](design/study-execution.md); the AI SDK docs shipped in `packages/ai/node_modules/ai/docs`.
+
+**Verification checklist.**
+- [ ] A follow-up question carries the history. The captured prompt holds the earlier questions and answers, without withdrawn answers or old tags.
+- [ ] Every step is metered on its own, and a turn refused at any step records nothing.
+- [ ] The last step has no tools, and no request forces a tool.
+- [ ] Neither the stream nor the stored message contains a full tool result.
+- [ ] Deleting a Source withdraws every answer whose tool results held its passages or extracted wording.
+- [ ] A Chat proposal is performed only after the student approves the fingerprint shown. A changed proposal needs a new Approval, and repeated clicks perform once.
+- [ ] A Model without a tool-capable zero-retention endpoint is not offered.
+- [ ] Retrieval eval with model-driven search, including the share of questions about the material answered without a search. The founder sets thresholds after the first measurement.
+- [ ] Injection eval: Sources with embedded instructions start no Artifact Run, and any proposal they cause appears only as a card.
+
+**Anti-pattern guards.**
+- `toolChoice` is only `auto` or `none`.
+- An AI SDK approval response never grants authority by itself; only `decide` does.
+- Never accept message history from the client.
+- No Drafts or Critiques from a Chat.
+- Never splice tool results into the system prompt.
 
 ---
 
