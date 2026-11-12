@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { courseListQuery } from "@/features/courses/api/course-queries";
 import {
   deleteSource,
@@ -21,6 +21,9 @@ export function SourcesScreen({ apiOrigin }: { apiOrigin: string }) {
   const sources = query.data ?? [];
   const courses = useQuery(courseListQuery(apiOrigin)).data?.courses ?? [];
   const [error, setError] = useState<string | null>(null);
+  const [course, setCourse] = useState("");
+  // Files of the current selection already uploaded, which a retry after a part-way failure skips.
+  const done = useRef(new WeakSet<File>());
   const deleteMutation = useMutation(deleteSource(apiOrigin, queryClient));
   const uploadMutation = useMutation(uploadSource(apiOrigin, queryClient));
   const readAgainMutation = useMutation(
@@ -42,8 +45,20 @@ export function SourcesScreen({ apiOrigin }: { apiOrigin: string }) {
     readAgainMutation.reset();
     deleteMutation.reset();
     uploadMutation.mutate(
-      { files, course: courseChoiceFrom(form) },
-      { onSuccess: () => form.reset() },
+      {
+        files,
+        course: courseChoiceFrom(course, form),
+        done: done.current,
+        // A retry binds to the Course this upload created instead of creating another.
+        onCourse: setCourse,
+      },
+      {
+        onSuccess: () => {
+          form.reset();
+          setCourse("");
+          done.current = new WeakSet();
+        },
+      },
     );
   }
 
@@ -77,6 +92,8 @@ export function SourcesScreen({ apiOrigin }: { apiOrigin: string }) {
       <SourceUploadForm
         onSubmit={upload}
         courses={courses}
+        course={course}
+        onCourse={setCourse}
         disabled={busy}
         uploading={uploadMutation.isPending}
       />

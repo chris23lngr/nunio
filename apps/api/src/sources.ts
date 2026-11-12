@@ -50,13 +50,35 @@ const courseErrors = {
   400: json(ErrorBody, "The new Course has no title."),
   404: json(ErrorBody, "Source or Course is gone."),
 };
+const Refused = ErrorBody.extend({
+  course: z
+    .object({
+      id: z.string(),
+      title: z.string(),
+      status: z.enum(["proposed", "accepted", "rejected"]),
+      archived: z.boolean(),
+    })
+    .optional()
+    .openapi({
+      description:
+        "With error clash: the Course that has this code or title; the student chooses that one instead.",
+    }),
+});
+type Refusal =
+  | { status: "invalid" | "gone" | "course_archived" }
+  | { status: "clash"; course: z.infer<typeof Refused>["course"] };
 /** Maps a refused Course choice to its response. */
-const courseRefusal = (status: "invalid" | "gone" | "course_archived") =>
-  status === "invalid"
+const courseRefusal = (result: Refusal) =>
+  result.status === "invalid"
     ? ({ body: { error: "invalid" }, code: 400 } as const)
-    : status === "gone"
+    : result.status === "gone"
       ? ({ body: { error: "gone" }, code: 404 } as const)
-      : ({ body: { error: "course_archived" }, code: 409 } as const);
+      : result.status === "clash"
+        ? ({
+            body: { error: "clash", course: result.course },
+            code: 409,
+          } as const)
+        : ({ body: { error: "course_archived" }, code: 409 } as const);
 export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
     createRoute({
@@ -143,7 +165,10 @@ export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
         ),
         ...errors,
         ...courseErrors,
-        409: json(ErrorBody, "The chosen Course is Archived."),
+        409: json(
+          Refused,
+          "The chosen Course is Archived (error course_archived), or another Course has the new one's code or title (error clash).",
+        ),
       },
     }),
     async (c) => {
@@ -158,7 +183,7 @@ export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
       if (result.status === "refused")
         return c.json({ error: result.reason }, 403);
       if (result.status !== "ok") {
-        const { body, code } = courseRefusal(result.status);
+        const { body, code } = courseRefusal(result);
         return c.json(body, code);
       }
       return c.json(
@@ -227,8 +252,12 @@ export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
           "Extraction queued and metered again; its extractions are replaced once it is done.",
         ),
         409: json(
+          Refused,
+          "Extraction is running (error running), the chosen Course is Archived (error course_archived), or another Course has the new one's code or title (error clash).",
+        ),
+        503: json(
           ErrorBody,
-          "Extraction is running, or the chosen Course is Archived (error course_archived).",
+          "The Course changed and the Source waits to be read, but reading could not start (error not_started); POST /api/me/sources/{id}/extract starts it.",
         ),
         ...errors,
         ...courseErrors,
@@ -248,12 +277,17 @@ export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
         );
       if (result.status === "running") return c.json({ error: "running" }, 409);
       if (result.status !== "ok") {
-        const { body, code } = courseRefusal(result.status);
+        const { body, code } = courseRefusal(result);
         return c.json(body, code);
       }
-      await c
-        .get("sourceWorkflows")
-        .start("extractSource", actor.studentId, id);
+      try {
+        await c
+          .get("sourceWorkflows")
+          .start("extractSource", actor.studentId, id);
+      } catch {
+        // The new Course is kept and the Source waits to be read; asking to extract it again starts the reading.
+        return c.json({ error: "not_started" }, 503);
+      }
       return c.json({ status: "queued" as const }, 202);
     },
   );

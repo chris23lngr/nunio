@@ -4267,7 +4267,7 @@
             }
           },
           "409": {
-            "description": "The chosen Course is Archived.",
+            "description": "The chosen Course is Archived (error course_archived), or another Course has the new one's code or title (error clash).",
             "content": {
               "application/json": {
                 "schema": {
@@ -4275,6 +4275,35 @@
                   "properties": {
                     "error": {
                       "type": "string"
+                    },
+                    "course": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "proposed",
+                            "accepted",
+                            "rejected"
+                          ]
+                        },
+                        "archived": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "archived"
+                      ],
+                      "description": "With error clash: the Course that has this code or title; the student chooses that one instead."
                     }
                   },
                   "required": [
@@ -4533,7 +4562,54 @@
             }
           },
           "409": {
-            "description": "Extraction is running, or the chosen Course is Archived (error course_archived).",
+            "description": "Extraction is running (error running), the chosen Course is Archived (error course_archived), or another Course has the new one's code or title (error clash).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "course": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "proposed",
+                            "accepted",
+                            "rejected"
+                          ]
+                        },
+                        "archived": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "archived"
+                      ],
+                      "description": "With error clash: the Course that has this code or title; the student chooses that one instead."
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Course changed and the Source waits to be read, but reading could not start (error not_started); POST /api/me/sources/{id}/extract starts it.",
             "content": {
               "application/json": {
                 "schema": {

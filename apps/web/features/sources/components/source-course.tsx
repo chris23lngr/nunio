@@ -3,11 +3,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { courseListQuery } from "@/features/courses/api/course-queries";
-import { changeSourceCourse } from "../api/source-mutations";
+import {
+  changeSourceCourse,
+  ReadingNotStarted,
+  readSourceAgain,
+} from "../api/source-mutations";
 import { sourceQueries } from "../api/source-queries";
-import { CourseChoiceFields, courseChoiceFrom } from "./course-choice-fields";
+import {
+  CourseChoiceFields,
+  courseChoiceFrom,
+  courseName,
+} from "./course-choice-fields";
 
-/** The Course a Source is bound to, and "Kurs ändern", which reads a ready Source again under the new choice. */
+/**
+ * The Course a Source is bound to, and "Kurs ändern", which reads a ready Source again under the new choice. A Source
+ * left waiting, such as when that reading could not start, can be started here.
+ */
 export function SourceCourse({
   apiOrigin,
   sourceId,
@@ -19,19 +30,27 @@ export function SourceCourse({
   const source = useQuery(sourceQueries(apiOrigin)).data?.find(
     (s) => s.id === sourceId,
   );
-  const courses = useQuery(courseListQuery(apiOrigin)).data?.courses ?? [];
+  const courseList = useQuery(courseListQuery(apiOrigin));
+  const courses = courseList.data?.courses ?? [];
   const change = useMutation(changeSourceCourse(apiOrigin, queryClient));
+  const start = useMutation(readSourceAgain(apiOrigin, queryClient));
   const [editing, setEditing] = useState(false);
+  const [selected, setSelected] = useState("");
   if (!source) return null;
   const bound = courses.find((course) => course.id === source.courseId);
-  const reading =
-    source.extraction === "running" || source.extraction === "pending";
+  const ready = source.status === "ready";
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     change.mutate(
-      { id: sourceId, course: courseChoiceFrom(event.currentTarget) },
-      { onSuccess: () => setEditing(false) },
+      { id: sourceId, course: courseChoiceFrom(selected, event.currentTarget) },
+      {
+        onSuccess: () => setEditing(false),
+        // The Course did change; what is left is starting the reading, offered below.
+        onError: (error) => {
+          if (error instanceof ReadingNotStarted) setEditing(false);
+        },
+      },
     );
   }
 
@@ -40,34 +59,71 @@ export function SourceCourse({
       <div className="flex flex-wrap items-center gap-3">
         <span>
           Kurs:{" "}
-          {bound
-            ? `${bound.code ? `${bound.code} ` : ""}${bound.title}`
-            : "automatisch erkannt"}
+          {!source.courseId
+            ? "automatisch erkannt"
+            : bound
+              ? courseName(bound)
+              : "wird geladen …"}
         </span>
-        {source.status === "ready" && !reading && !editing && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              change.reset();
-              setEditing(true);
-            }}
-          >
-            Kurs ändern
-          </Button>
-        )}
+        {/* Only once the Courses are loaded, so the current choice shows and keeping it never unbinds. */}
+        {ready &&
+          source.extraction !== "running" &&
+          source.extraction !== "pending" &&
+          courseList.isSuccess &&
+          !editing && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                change.reset();
+                setSelected(bound?.id ?? "");
+                setEditing(true);
+              }}
+            >
+              Kurs ändern
+            </Button>
+          )}
       </div>
-      {change.isSuccess && (
+      {ready && source.extraction === "running" && (
+        <p role="status">Wird gerade gelesen …</p>
+      )}
+      {change.isSuccess && source.extraction !== "running" ? (
         <p role="status">
           Wird neu gelesen. Was nunio darin findet, ersetzt danach die
           bisherigen Ergebnisse.
         </p>
+      ) : (
+        ready &&
+        source.extraction === "pending" && (
+          <div className="flex flex-wrap items-center gap-3">
+            <span>Wartet darauf, gelesen zu werden.</span>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={start.isPending}
+              onClick={() => {
+                change.reset();
+                start.mutate(sourceId);
+              }}
+            >
+              Lesen starten
+            </Button>
+          </div>
+        )
       )}
+      {start.isError && (
+        <p role="alert">
+          Das Lesen konnte nicht starten. Bitte versuche es erneut.
+        </p>
+      )}
+      {!editing && change.error && <p role="alert">{change.error.message}</p>}
       {editing && (
         <form onSubmit={submit} className="flex max-w-sm flex-col gap-3">
           <CourseChoiceFields
             courses={courses}
-            defaultCourseId={bound?.id ?? null}
+            current={bound}
+            selected={selected}
+            onSelect={setSelected}
             disabled={change.isPending}
           />
           <p className="text-base-500">

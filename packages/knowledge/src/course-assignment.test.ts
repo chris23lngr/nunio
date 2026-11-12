@@ -479,3 +479,78 @@ it("gives the model no Courses to pick from for a bound Source and ignores one i
   expect(await citedIn(analysis)).toEqual([bound.id]);
   expect(await citedIn(statistik)).toEqual([unbound.id]);
 });
+
+it("unbinds a Course's Sources when the student rejects it, and restoring it binds none again", async () => {
+  const p = await student();
+  const analysis = await proposal(p, "Analysis", null);
+  await facts.decideCourse(p, analysis, "accept");
+  const source = await upload(p, "Folien.pdf", [{ page: 1, text: slides }], {
+    id: analysis,
+  });
+  const boundTo = async () =>
+    (await sources.list(p)).find((s) => s.id === source.id)?.courseId;
+
+  await facts.decideCourse(p, analysis, "reject");
+  expect(await boundTo()).toBeNull();
+  await facts.decideCourse(p, analysis, "restore");
+  expect(await boundTo()).toBeNull();
+});
+
+it("reads a Source bound to a rejected Course automatically", async () => {
+  const p = await student();
+  const analysis = await proposal(p, "Analysis I", null);
+  await facts.decideCourse(p, analysis, "reject");
+  const source = await upload(p, "Folien.pdf", [{ page: 1, text: slides }]);
+  // A binding older than the rule that rejecting unbinds.
+  await admin.source.update({
+    where: { id: source.id },
+    data: { courseId: analysis },
+  });
+
+  await extract(p, source.id, fromSlides);
+
+  expect(
+    (await reviewed(p)).map((course) => [course.title, course.status]),
+  ).toEqual([
+    ["Analysis", "proposed"],
+    ["Analysis I", "rejected"],
+  ]);
+});
+
+it("refuses a new Course at upload or Kurs ändern whose code or title another Course has, as creating it by hand does", async () => {
+  const p = await student();
+  const analysis = await ownCourse(p, "Analysis I", "MA-101");
+  const source = await upload(p, "Folien.pdf", [{ page: 1, text: slides }]);
+  const clash = {
+    status: "clash",
+    course: {
+      id: analysis,
+      title: "Analysis I",
+      status: "accepted",
+      archived: false,
+    },
+  };
+
+  expect(
+    await sources.upload(p, {
+      title: "Folien 2.pdf",
+      bytes: 100,
+      type: "application/pdf",
+      course: { title: "analysis i", code: null },
+    }),
+  ).toEqual(clash);
+  expect(
+    await facts.changeCourse(p, source.id, {
+      title: "Analysis",
+      code: "MA-101",
+    }),
+  ).toEqual(clash);
+  expect(
+    await courses.create(p, {
+      title: "Analysis I",
+      code: null,
+      semester: "2026-ws",
+    }),
+  ).toEqual(clash);
+  expect((await courses.list(p)).courses).toHaveLength(1);
+});

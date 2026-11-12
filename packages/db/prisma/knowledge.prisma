@@ -18,9 +18,10 @@ model Source {
   /// When the student last asked to extract again; a re-extraction is timed from here, not from the upload.
   extractionRequestedAt DateTime?
   /// The Course the student bound it to at upload or by "Kurs ändern"; null means nunio recognizes its Courses.
-  /// Binding: extraction puts everything it finds under this Course. The foreign key (SET NULL on delete) is in SQL only,
-  /// since Prisma cannot null one column of a composite key.
+  /// Binding: extraction puts everything it finds under this Course. Deleting the Course nulls only courseId (the
+  /// migration's SET NULL ("courseId")), so the Source stays (ADR-0015).
   courseId      String?
+  course        Course?   @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: SetNull)
 
   chunks      SourceChunk[]
   courses     SourceCourse[]
@@ -113,6 +114,7 @@ model Course {
   priorities  Priority[]
   preference  CoursePreference?
   projects    ProjectCourse[]
+  boundSources Source[]
   distinctFrom DistinctCoursePair[] @relation("distinct")
   distinctTo   DistinctCoursePair[] @relation("distinctOther")
 
@@ -133,6 +135,7 @@ model DistinctCoursePair {
 
   @@id([courseId, otherId])
   @@index([studentId])
+  @@index([otherId])
   @@map("distinct_course_pair")
 }
 
