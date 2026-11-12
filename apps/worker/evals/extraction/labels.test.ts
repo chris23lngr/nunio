@@ -45,6 +45,8 @@ it.each([
   ["unreadable pages", "| Quantisierung | | drei | | |"],
   ["a boolean other than ja", "| Quantisierung | | 3 | nein | |"],
   ["no concept", "| | Quantization | 3 | | |"],
+  ["a reversed page range", "| Quantisierung | | 7–5 | | |"],
+  ["page 0", "| Quantisierung | | 0 | | |"],
 ])("rejects a row with %s, naming its line", (_, row) => {
   expect(() => parseTopicLabels(file(row))).toThrow("line 7");
 });
@@ -61,4 +63,16 @@ it("rejects an empty alias between separators, naming its line", () => {
   expect(() =>
     parseTopicLabels(file("| Quantisierung | Quantization; ; | 3 | | |")),
   ).toThrow("line 7");
+});
+
+it("keeps a concept named like the header column", () => {
+  expect(parseTopicLabels(file("| Konzept | | 2 | | |"))).toEqual([
+    {
+      course: "Digitaltechnik",
+      aliases: ["Konzept"],
+      pages: [2],
+      optional: false,
+      figureOnly: false,
+    },
+  ]);
 });

@@ -18,17 +18,24 @@ const set = JSON.parse(await readFile(here("./set.json"), "utf8")) as {
 for (const name of await readdir(here("./labels/"))) {
   if (!name.endsWith(".md") || name === "LEITFADEN.md") continue;
   const id = name.slice(0, -".md".length);
+  const text = await readFile(here(`./labels/${name}`), "utf8");
   let topics: ReturnType<typeof parseTopicLabels>;
   try {
-    topics = parseTopicLabels(await readFile(here(`./labels/${name}`), "utf8"));
+    topics = parseTopicLabels(text);
   } catch (error) {
     throw new Error(`${name}: ${(error as Error).message}`);
   }
-  if (!topics.length) continue;
   const document = set.documents.find((d) => d.id === id);
   if (!document) throw new Error(`${name}: no document "${id}" in set.json`);
-  if (!document.courses.some((c) => c.title === topics[0]!.course))
+  // Checked before skipping empty templates, so a wrong Kurs line shows up before labelling starts.
+  const course = text
+    .split("\n")
+    .find((line) => line.startsWith("Kurs:"))!
+    .slice("Kurs:".length)
+    .trim();
+  if (!document.courses.some((c) => c.title === course))
     throw new Error(`${name}: Kurs is not a Course of "${id}"`);
+  if (!topics.length) continue;
   document.topics = topics;
   document.labelsStatus = "Topic labels written blind by founder";
   console.log(`${id}: ${topics.length} Topic labels`);

@@ -29,7 +29,7 @@ Zwei Folien zum selben Konzept ergeben eine Zeile; tragen Sie beide Seiten ein.
 ## Spalten
 
 - **Konzept:** der Name, wie er im Deck steht.
-- **Aliase:** weitere Namen, getrennt durch `;`. Schreibvarianten („Bag of Words; bag-of-words“), Deutsch/Englisch („Abtastung; Sampling“), Singular/Plural („Wahrheitstabelle; Wahrheitstabellen“) und gängige Abkürzungen („BPE“). Keine leeren Einträge, keine Oberbegriffe.
+- **Aliase:** weitere Namen, getrennt durch `;`. Schreibvarianten („Bag of Words; bag-of-words“), Deutsch/Englisch („Abtastung; Sampling“), Singular/Plural („Wahrheitstabelle; Wahrheitstabellen“) und gängige Abkürzungen („BPE“). Keine leeren Einträge, keine Oberbegriffe, kein `|` in Namen.
 - **Seiten:** wo das Konzept behandelt wird, z. B. `3, 5–7`. Die Zählung steht im Kopf jeder Datei: bei einem Ausschnitt ist Seite 1 die erste Ausschnittseite.
 - **optional:** `ja`, wenn das Konzept nur gestreift wird und es weder fehlen noch stören soll, falls ein Modell es findet. Sonst leer.
 - **nur Abbildung:** `ja`, wenn man das Konzept nur aus einer Abbildung versteht (Schaltbild, Diagramm, Plot, Bild einer Tabelle) und der Folientext es nicht erklärt. Sonst leer.

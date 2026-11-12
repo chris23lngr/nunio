@@ -367,7 +367,8 @@ async function evaluate(
     optional: label.optional ?? false,
     figureOnly: label.figureOnly ?? false,
   }));
-  const extractedTopics = (document.topics ? courses : []).flatMap((c) =>
+  // Collected even without labels: the scenarios check that every Source yields Topics.
+  const extractedTopics = courses.flatMap((c) =>
     c.facts
       .filter(
         (f) =>
@@ -390,7 +391,9 @@ async function evaluate(
       })),
   );
   // A failed judge leaves this deck unscored instead of losing the whole paid run.
-  let judgement: Judgement | null = extractedTopics.map(() => null);
+  let judgement: Judgement | null = document.topics
+    ? extractedTopics.map(() => null)
+    : null;
   let judgeFailure: string | null = null;
   let judgeCostMicroUsd = 0;
   if (document.topics && extractedTopics.length) {

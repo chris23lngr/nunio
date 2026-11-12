@@ -17,6 +17,7 @@ export function parseTopicLabels(markdown: string): TopicLabel[] {
   if (!course) throw new Error("missing `Kurs:` line");
   const labels: TopicLabel[] = [];
   const concepts = new Set<string>();
+  let header = true;
   lines.forEach((line, index) => {
     const row = line.trim();
     if (!row.startsWith("|") || /^[-:|\s]+$/.test(row)) return;
@@ -24,7 +25,11 @@ export function parseTopicLabels(markdown: string): TopicLabel[] {
       .replace(/^\||\|$/g, "")
       .split("|")
       .map((cell) => cell.trim());
-    if (cells[0] === "Konzept") return;
+    // The table's first row is its header.
+    if (header) {
+      header = false;
+      return;
+    }
     const fail = (reason: string) => {
       throw new Error(`line ${index + 1}: ${reason}`);
     };
@@ -46,19 +51,23 @@ export function parseTopicLabels(markdown: string): TopicLabel[] {
     if (names.includes("")) fail("empty alias");
     if (!/^\d+(\s*[–-]\s*\d+)?(\s*,\s*\d+(\s*[–-]\s*\d+)?)*$/.test(pages))
       fail(`unreadable Seiten "${pages}"`);
+    const ranges = pages.split(",").map((range) => {
+      const [from, to = from] = range.split(/[–-]/).map(Number) as [
+        number,
+        number?,
+      ];
+      if (from < 1 || to < from) fail(`unreadable Seiten "${pages}"`);
+      return [from, to] as const;
+    });
     for (const flag of [optional, figureOnly])
       if (flag !== "" && flag !== "ja")
         fail(`expected "ja" or empty, got "${flag}"`);
     labels.push({
       course,
       aliases: names,
-      pages: pages.split(",").flatMap((range) => {
-        const [from, to = from] = range.split(/[–-]/).map(Number) as [
-          number,
-          number?,
-        ];
-        return Array.from({ length: to - from + 1 }, (_, i) => from + i);
-      }),
+      pages: ranges.flatMap(([from, to]) =>
+        Array.from({ length: to - from + 1 }, (_, i) => from + i),
+      ),
       optional: optional === "ja",
       figureOnly: figureOnly === "ja",
     });
