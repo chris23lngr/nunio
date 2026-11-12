@@ -4,7 +4,8 @@
 //   apps/worker/node_modules/.bin/tsx --env-file=packages/ai/.env.staging apps/worker/evals/retrieval.ts
 import { writeFile } from "node:fs/promises";
 import { createChats } from "@nunio/chat";
-import { createKnowledgeReader } from "@nunio/knowledge";
+import { createFacts, createKnowledgeReader } from "@nunio/knowledge";
+import { createPlan } from "@nunio/planning";
 import { startRetrievalEval } from "./retrieval/documents.ts";
 
 const { provider, embedder, db, keys, delegation, documents, close } =
@@ -17,7 +18,9 @@ const reader = createKnowledgeReader({
   delegation,
   clock: { now: () => new Date() },
 });
-const chats = createChats({ db, keys, reader, delegation });
+const clock = { now: () => new Date() };
+const plan = createPlan({ db, facts: createFacts({ db, keys, clock }), clock });
+const chats = createChats({ db, keys, reader, delegation, plan, clock });
 const limit = 10,
   ks = [1, 3, 5, 8] as const,
   candidates = [0.3, 0.4, 0.45, 0.5, 0.55, 0.6];

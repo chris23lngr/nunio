@@ -328,10 +328,17 @@ beforeAll(async () => {
     delegation,
     clock: { now: () => new Date() },
   });
-  const chats = createChats({ db: prisma, keys, reader, delegation });
   const plan = createPlan({
     db: prisma,
     facts,
+    clock: { now: () => new Date() },
+  });
+  const chats = createChats({
+    db: prisma,
+    keys,
+    reader,
+    delegation,
+    plan,
     clock: { now: () => new Date() },
   });
   responsibilities = createResponsibilities({
@@ -2794,9 +2801,11 @@ describe("Chat", () => {
     expect((await ask("Und um wie viel Uhr?")).status).toBe(200);
 
     expect(prompts).toHaveLength(1);
+    const context = ["user", expect.stringContaining("Europe/Berlin")];
     expect(conversation(prompts[0])).toEqual([
       ["user", "Wann ist die Klausur?"],
       ["assistant", "Am 10. Februar."],
+      context,
       ["user", "Und um wie viel Uhr?"],
     ]);
     await app.request(`${apiOrigin}/api/me/sources/${handbook}`, {
@@ -2816,7 +2825,7 @@ describe("Chat", () => {
     ]);
     prompts.length = 0;
     await ask("Und wo?");
-    expect(conversation(prompts[0])).toEqual([["user", "Und wo?"]]);
+    expect(conversation(prompts[0])).toEqual([context, ["user", "Und wo?"]]);
   });
 
   it("refuses a selection with another student's or a deleted Source or Course", async () => {
@@ -2918,6 +2927,30 @@ describe("Chat", () => {
         })
       ).json(),
     ).toEqual([]);
+  });
+
+  it("tells the model today's date, the student's time zone and their Courses by handle", async () => {
+    const { headers } = await reviewFixture("chat-context");
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+      })
+    ).json()) as { id: string };
+    reply = "Du hast einen Kurs.";
+    prompts.length = 0;
+
+    await askInChat(headers, id, "Welche Kurse habe ich?");
+
+    const today = new Date().toLocaleDateString("en-CA", {
+      timeZone: "Europe/Berlin",
+    });
+    const context = conversation(prompts[0])
+      .map(([, text]) => text)
+      .find((text) => text?.includes("Europe/Berlin"));
+    expect(context).toContain(today);
+    expect(context).toMatch(/K1\W+Analysis I/);
   });
 
   it("offers no search in a Chat with nothing selected", async () => {

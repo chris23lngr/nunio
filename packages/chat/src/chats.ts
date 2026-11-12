@@ -6,7 +6,9 @@ import { withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type { Citation, KnowledgeReader, Provenance } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
+import type { Plan } from "@nunio/planning";
 import type { ModelMessage, UIMessageChunk } from "ai";
+import { chatContext } from "./context.js";
 import { historyFrom, historyTurns } from "./history.js";
 import type { ChatPart } from "./parts.js";
 import { partsFrom } from "./parts.js";
@@ -38,11 +40,15 @@ export function createChats({
   keys,
   reader,
   delegation,
+  plan,
+  clock,
 }: {
   db: PrismaClient;
   keys: SourceKeys;
   reader: KnowledgeReader;
   delegation: Delegation;
+  plan: Pick<Plan, "timeZone">;
+  clock: { now(): Date };
 }) {
   const derived = createDerivedText(keys);
   async function resolve(p: Principal, citations: Citation[]) {
@@ -78,13 +84,24 @@ export function createChats({
           derivedFrom: row.derivedFrom,
         })),
       );
+      // The Courses a Plan includes: not rejected, merged or Archived.
+      const courses = await tx.course.findMany({
+        where: { status: { in: ["proposed", "accepted"] }, archivedAt: null },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, title: true, code: true, semester: true },
+      });
       return {
         messages,
+        courses,
         selected: chat._count.courses + chat._count.sources > 0,
       };
     });
     return (
-      recent && { ...historyFrom(recent.messages), selected: recent.selected }
+      recent && {
+        ...historyFrom(recent.messages),
+        courses: recent.courses,
+        selected: recent.selected,
+      }
     );
   }
   return {
@@ -175,15 +192,20 @@ export function createChats({
         options.onStep?.(name, now - started);
         started = now;
       };
-      const history = await earlier(p, chatId);
+      const [history, timeZone] = await Promise.all([
+        earlier(p, chatId),
+        plan.timeZone(p),
+      ]);
       step("history");
       if (!history) return { status: "gone" } as const;
+      const context = chatContext(clock.now(), timeZone, history.courses);
       const search = createSearch(reader, p, chatId);
       const messages: ModelMessage[] = [
         ...history.turns.flatMap((turn): ModelMessage[] => [
           { role: "user", content: turn.question },
           { role: "assistant", content: turn.answer },
         ]),
+        { role: "user", content: context.text },
         { role: "user", content: question },
       ];
       const chunks: UIMessageChunk[] = [];
