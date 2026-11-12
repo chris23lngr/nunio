@@ -1,7 +1,7 @@
 import type { paths } from "@nunio/api-client";
 import { Field, FieldLabel } from "@nunio/ui/components/field/field";
 import { Input } from "@nunio/ui/components/input/input";
-import { useId, useState } from "react";
+import { useId } from "react";
 import type { CourseSummary } from "@/features/courses/api/course-queries";
 
 /** An accepted Course, a new one, or null: nunio recognizes the Courses itself. */
@@ -9,57 +9,69 @@ export type CourseChoice = NonNullable<
   paths["/api/me/sources/{id}/course"]["post"]["requestBody"]
 >["content"]["application/json"]["course"];
 
-const newCourse = "new";
+/** The select's value for a new Course; "" is "Automatisch erkennen", anything else a Course id. */
+export const newCourse = "new";
 
-/** Reads the choice the fields below put in their form. */
-export function courseChoiceFrom(form: HTMLFormElement): CourseChoice {
+/** The choice the student selected, with the new Course's name read from the form's fields below. */
+export function courseChoiceFrom(
+  selected: string,
+  form: HTMLFormElement,
+): CourseChoice {
+  if (!selected) return null;
+  if (selected !== newCourse) return { id: selected };
   const data = new FormData(form);
   const field = (name: string) => String(data.get(name) ?? "").trim();
-  const course = field("course");
-  if (!course) return null;
-  if (course !== newCourse) return { id: course };
   return { title: field("courseTitle"), code: field("courseCode") || null };
 }
 
-/** The Courses a Source can be bound to: accepted ones that are not Archived. */
-export const bindable = (courses: CourseSummary[]) =>
-  courses.filter((course) => course.status === "accepted" && !course.archived);
+export const courseName = (course: CourseSummary) =>
+  `${course.code ? `${course.code} ` : ""}${course.title}${course.archived ? " (archiviert)" : ""}`;
 
-/** Choosing the Course a Source belongs to: an existing one, a new one, or "Automatisch erkennen". */
+/**
+ * Choosing the Course a Source belongs to: an accepted Course that is not Archived, a new one, or "Automatisch
+ * erkennen". The Course a Source is bound to now stays listed even when it no longer could be chosen, so keeping the
+ * current choice never unbinds it.
+ */
 export function CourseChoiceFields({
   courses,
-  defaultCourseId = null,
+  current,
+  selected,
+  onSelect,
   disabled,
 }: {
   courses: CourseSummary[];
-  defaultCourseId?: string | null;
+  current?: CourseSummary;
+  selected: string;
+  onSelect: (value: string) => void;
   disabled?: boolean;
 }) {
   const id = useId();
-  const [creating, setCreating] = useState(false);
+  const choosable = courses.filter(
+    (course) =>
+      (course.status === "accepted" && !course.archived) ||
+      course.id === current?.id,
+  );
   return (
     <>
       <Field>
         <FieldLabel htmlFor={`${id}-course`}>Kurs</FieldLabel>
         <select
           id={`${id}-course`}
-          name="course"
           className="h-7.5 rounded-md bg-white px-2 text-sm text-base-800 shadow-sm outline outline-base-700/15"
-          defaultValue={defaultCourseId ?? ""}
+          value={selected}
           disabled={disabled}
-          onChange={(event) => setCreating(event.target.value === newCourse)}
+          onChange={(event) => onSelect(event.target.value)}
         >
           <option value="">Automatisch erkennen</option>
-          {bindable(courses).map((course) => (
+          {choosable.map((course) => (
             <option key={course.id} value={course.id}>
-              {course.code ? `${course.code} ` : ""}
-              {course.title}
+              {courseName(course)}
             </option>
           ))}
           <option value={newCourse}>Neuer Kurs …</option>
         </select>
       </Field>
-      {creating && (
+      {selected === newCourse && (
         <>
           <Field>
             <FieldLabel htmlFor={`${id}-title`}>Titel</FieldLabel>

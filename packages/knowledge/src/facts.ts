@@ -967,6 +967,12 @@ export function createFacts({
                     : // A rejected Course comes back as a plain proposal, never as an Archived one.
                       { status: "rejected", archivedAt: null },
               });
+        // Its Sources are read automatically from now on; restoring the Course binds none again.
+        if (count && decision === "reject")
+          await tx.source.updateMany({
+            where: { courseId },
+            data: { courseId: null },
+          });
         return { status: count ? "ok" : "gone" } as const;
       });
     },
@@ -1573,18 +1579,24 @@ function figureLines(text: string, figures: boolean) {
   return text.split("\n").filter((line) => isFigureLine(line) === figures);
 }
 
-/** The Course a Source is bound to, standing for the Course it was merged into; null when it is read automatically. */
+/**
+ * The Course a Source is bound to, standing for the Course it was merged into; null when it is read automatically,
+ * including when that Course is rejected.
+ */
 async function boundCourse(tx: Transaction, sourceId: string) {
   const { courseId } = await tx.source.findUniqueOrThrow({
     where: { id: sourceId },
     select: { courseId: true },
   });
   if (!courseId) return null;
-  const course = await tx.course.findUnique({
-    where: { id: courseId },
-    select: { mergedIntoId: true },
-  });
-  return course?.mergedIntoId ?? courseId;
+  const select = { id: true, status: true, mergedIntoId: true };
+  let course = await tx.course.findUnique({ where: { id: courseId }, select });
+  if (course?.mergedIntoId)
+    course = await tx.course.findUnique({
+      where: { id: course.mergedIntoId },
+      select,
+    });
+  return course && course.status !== "rejected" ? course.id : null;
 }
 
 /** Undoes line-break hyphenation and soft hyphens, so a quote matches the page text it was read from. */

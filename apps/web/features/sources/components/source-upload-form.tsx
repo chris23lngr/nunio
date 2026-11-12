@@ -5,11 +5,15 @@ import { CourseChoiceFields } from "./course-choice-fields";
 export function SourceUploadForm({
   onSubmit,
   courses,
+  course,
+  onCourse,
   disabled,
   uploading,
 }: {
   onSubmit: FormEventHandler<HTMLFormElement>;
   courses: CourseSummary[];
+  course: string;
+  onCourse: (value: string) => void;
   disabled: boolean;
   uploading: boolean;
 }) {
@@ -27,7 +31,12 @@ export function SourceUploadForm({
         />
       </label>
       {/* One choice for every file of this upload. */}
-      <CourseChoiceFields courses={courses} disabled={disabled} />
+      <CourseChoiceFields
+        courses={courses}
+        selected={course}
+        onSelect={onCourse}
+        disabled={disabled}
+      />
       <button type="submit" disabled={disabled}>
         {uploading ? "Uploading PDF…" : "Upload PDF"}
       </button>
