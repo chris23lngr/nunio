@@ -413,12 +413,10 @@ async function evaluate(
           ),
       )
       .map((f) => ({
+        // Topic labels name their Course by title (the label file's Kurs line), never by code.
         course:
           document.courses.find((label) => courseFor(label)?.id === c.id)
-            ?.code ??
-          document.courses.find((label) => courseFor(label)?.id === c.id)
-            ?.title ??
-          c.title,
+            ?.title ?? c.title,
         key: f.key,
         value: f.value,
       })),
@@ -593,12 +591,21 @@ try {
   const only = process.env.EVAL_DOCUMENTS?.split(",");
   // Held-out decks (docs/design/topic-quality.md) run only for the final measurement.
   const heldOut = process.env.EVAL_HELD_OUT === "1";
+  // EVAL_BOUND=1 uploads each document into its labelled Course, so Topic scores don't depend on recognition.
+  const bound = process.env.EVAL_BOUND === "1";
   // One pass by default; EVAL_RUNS can repeat documents within the capped eval allowance.
   for (let run = 1; run <= runs; run++) {
     for (const document of set.documents.filter(
       (d) => (!only || only.includes(d.id)) && (heldOut || !d.heldOut),
     ))
-      results.push(await evaluate(document, run));
+      results.push(
+        await evaluate(
+          document,
+          run,
+          undefined,
+          bound ? document.courses[0] : undefined,
+        ),
+      );
   }
   for (const scenario of set.scenarios.filter(
     (s) => !only || s.documents.some((id) => only.includes(id)),
