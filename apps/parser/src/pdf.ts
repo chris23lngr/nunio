@@ -1,7 +1,9 @@
 import { execFile, spawn } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pipeline } from "node:stream/promises";
 
 export interface ParsedPdf {
   pages: { page: number; text: string; imageBase64?: string }[];
@@ -23,8 +25,14 @@ const maxOutputBytes = 64 * 1024 * 1024;
  * deck like it reaches about 480 MiB. Flate bombs expand up to about 1000:1 and stay refused.
  */
 const maxDecompressedBytes = 512 * 1024 * 1024;
+/**
+ * Image codecs qpdf never decodes. Poppler decodes them, bounded only by `prlimit` (ADR-0009). A stream that
+ * still carries any other filter after qpdf's full decode is one qpdf could not decode, so it went unmeasured.
+ */
+const imageFilters = new Set(["/JBIG2Decode", "/JPXDecode", "/CCITTFaxDecode"]);
 
-// qpdf's decompressed stream output is capped before Poppler reads the document.
+// qpdf rewrites the upload fully decoded, capped in size, and Poppler reads only that rewrite, so the
+// bound covers the same dictionaries and streams Poppler renders.
 // https://qpdf.readthedocs.io/en/stable/cli.html#option-stream-data
 export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
   if (bytes.length > maxPdfBytes) throw new ParseError(413, "pdf_limit");
@@ -37,6 +45,7 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
     throw new ParseError(422, "invalid_pdf");
   const dir = await mkdtemp(join(tmpdir(), "nunio-pdf-"));
   const path = join(dir, "source.pdf");
+  const decoded = join(dir, "decoded.pdf");
   // A 100-page deck renders one page per Poppler call, so the budget covers every page, not just scans.
   const deadline = Date.now() + 240_000;
   const linux = process.platform === "linux";
@@ -64,19 +73,24 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
       code === "ENOENT" ? 502 : 422,
       code === "ENOENT" ? "parser_unavailable" : "invalid_or_excessive_pdf",
     );
-  const run = (tool: string, args: string[]) =>
+  const run = (tool: string, args: string[], maxBuffer = 2 * 1024 * 1024) =>
     new Promise<Buffer>((resolve, reject) => {
       execFile(
         ...command(tool, args),
-        { ...options(), maxBuffer: 2 * 1024 * 1024, encoding: "buffer" },
+        { ...options(), maxBuffer, encoding: "buffer" },
         (error, stdout) => {
           if (error) reject(refusal("code" in error ? error.code : undefined));
           else resolve(stdout);
         },
       );
     });
-  /** Counts a tool's output and kills it past `limit`, without holding the output in memory. */
-  const measure = (tool: string, args: string[], limit: number) =>
+  /** Writes a tool's output to `target` and kills it past `limit`, without holding the output in memory. */
+  const measure = (
+    tool: string,
+    args: string[],
+    limit: number,
+    target: string,
+  ) =>
     new Promise<void>((resolve, reject) => {
       const child = spawn(...command(tool, args), {
         ...options(),
@@ -87,11 +101,20 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
         bytes += chunk.length;
         if (bytes > limit) child.kill("SIGKILL");
       });
+      const written = pipeline(child.stdout, createWriteStream(target)).then(
+        () => true,
+        () => false,
+      );
       child.on("error", (error) =>
         reject(refusal("code" in error ? error.code : undefined)),
       );
+      // qpdf exits 3 when it read the upload with warnings. Poppler reads only what qpdf wrote.
       child.on("close", (code) =>
-        code === 0 && bytes <= limit ? resolve() : reject(refusal(code)),
+        written.then((ok) =>
+          ok && (code === 0 || code === 3) && bytes <= limit
+            ? resolve()
+            : reject(refusal(code)),
+        ),
       );
     });
   try {
@@ -111,8 +134,32 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
         "-",
       ],
       maxDecompressedBytes,
+      decoded,
     );
-    const texts = (await run("pdftotext", ["-layout", path, "-"]))
+    // A 332-page deck lists its objects in about 4.6 MB of JSON.
+    const objects: Record<
+      string,
+      { stream?: { dict: Record<string, unknown> } }
+    > = JSON.parse(
+      (
+        await run(
+          "qpdf",
+          ["--json=2", "--json-key=qpdf", "--json-stream-data=none", decoded],
+          32 * 1024 * 1024,
+        )
+      ).toString("utf8"),
+    ).qpdf[1];
+    // Poppler also reads a filter from /F, the abbreviation inline images use; qpdf reads it as a file.
+    for (const object of Object.values(objects))
+      for (const key of ["/Filter", "/F"]) {
+        const filter = object.stream?.dict[key];
+        if (
+          filter !== undefined &&
+          ![filter].flat().every((name) => imageFilters.has(name as string))
+        )
+          throw new ParseError(422, "invalid_or_excessive_pdf");
+      }
+    const texts = (await run("pdftotext", ["-layout", decoded, "-"]))
       .toString("utf8")
       .split("\f");
     const result: ParsedPdf = { pages: [] };
@@ -133,7 +180,7 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
         "-jpeg",
         "-jpegopt",
         "quality=80",
-        path,
+        decoded,
         prefix,
       ]);
       const image = await readFile(`${prefix}.jpg`);

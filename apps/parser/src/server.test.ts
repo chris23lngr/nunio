@@ -144,6 +144,41 @@ it("refuses byte mismatches, malformed PDFs, excessive pages and compressed bomb
   expect((await parseUpload(pdfFixture({ pages: 101 }))).status).toBe(413);
   expect((await parseUpload(pdfFixture({ bomb: true }))).status).toBe(422);
 });
+it("refuses a compressed bomb whose filter Poppler reads from the /F key", async () => {
+  const { pdfFixture } = await import("../test/fixtures.js");
+  expect(
+    (await parseUpload(pdfFixture({ bomb: true, filterKey: "/F" }))).status,
+  ).toBe(422);
+}, 60_000);
+it("refuses a compressed bomb whose stream qpdf cannot decode and so cannot measure", async () => {
+  const { pdfFixture } = await import("../test/fixtures.js");
+  // qpdf warns about the first predictor, after many harmless warnings, and silently skips the second.
+  for (const [decodeParms, duplicateKeys] of [
+    ["/Predictor 12 /Columns 4 /BitsPerComponent 3", 0],
+    ["/Predictor 12 /Columns 4 /BitsPerComponent 3", 3000],
+    ["/Predictor 12 /Columns 0", 0],
+  ] as const)
+    expect(
+      (
+        await parseUpload(
+          pdfFixture({ bomb: true, decodeParms, duplicateKeys }),
+        )
+      ).status,
+    ).toBe(422);
+}, 120_000);
+
+it("parses a PDF that qpdf reads with warnings only, such as a repeated dictionary key", async () => {
+  const { pdfFixture } = await import("../test/fixtures.js");
+  const parsed = await parseUpload(pdfFixture({ duplicateKeys: 1 }));
+  expect(parsed.status).toBe(200);
+  expect(parsed.body.pages[0]!.text).toContain("examination");
+});
+it("reads a PDF as qpdf measured it when a stream repeats its /Filter key", async () => {
+  const { pdfFixture } = await import("../test/fixtures.js");
+  const parsed = await parseUpload(pdfFixture({ shadowedFilter: true }));
+  expect(parsed.status).toBe(200);
+  expect(parsed.body.pages[0]!.text).not.toContain("examination");
+});
 
 it("preserves German characters in born-digital pages", async () => {
   const { pdfFixture } = await import("../test/fixtures.js");
