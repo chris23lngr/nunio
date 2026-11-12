@@ -23,6 +23,9 @@ const maxOutputBytes = 64 * 1024 * 1024;
  * deck like it reaches about 480 MiB. Flate bombs expand up to about 1000:1 and stay refused.
  */
 const maxDecompressedBytes = 512 * 1024 * 1024;
+/** qpdf warnings that leave every stream decoded, such as the repeated keys LaTeX output often has. */
+const harmlessWarning =
+  /^WARNING: .*: dictionary has duplicated key \/\S+; last occurrence overrides earlier ones$|^qpdf: operation succeeded with warnings(; resulting file may have some problems)?$/;
 
 // qpdf's decompressed stream output is capped before Poppler reads the document.
 // https://qpdf.readthedocs.io/en/stable/cli.html#option-stream-data
@@ -83,9 +86,21 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
         stdio: ["ignore", "pipe", "pipe"],
       });
       let bytes = 0;
-      let warnings = "";
+      // qpdf exits 3 on warnings alone. Only warnings known to leave every stream decoded keep the PDF
+      // readable: a stream qpdf cannot decode is copied still compressed and would go unmeasured.
+      let unexpected = false;
+      let partial = "";
+      const check = (line: string) => {
+        if (line && !harmlessWarning.test(line)) unexpected = true;
+      };
       child.stderr.on("data", (chunk: Buffer) => {
-        if (warnings.length < 65_536) warnings += chunk.toString();
+        const lines = (partial + chunk.toString("latin1")).split("\n");
+        partial = lines.pop() ?? "";
+        lines.forEach(check);
+        if (partial.length > 4096) {
+          unexpected = true;
+          partial = "";
+        }
       });
       child.stdout.on("data", (chunk: Buffer) => {
         bytes += chunk.length;
@@ -94,14 +109,12 @@ export async function parsePdf(bytes: Buffer): Promise<ParsedPdf> {
       child.on("error", (error) =>
         reject(refusal("code" in error ? error.code : undefined)),
       );
-      // qpdf exits 3 on warnings alone, such as a repeated key in LaTeX output. A stream it cannot decode
-      // is copied still compressed and so goes unmeasured, which leaves the bound to Poppler: refuse that.
-      const readable = (code: number | null) =>
-        code === 0 ||
-        (code === 3 && !/stream data|damaged stream/i.test(warnings));
-      child.on("close", (code) =>
-        readable(code) && bytes <= limit ? resolve() : reject(refusal(code)),
-      );
+      child.on("close", (code) => {
+        check(partial);
+        const readable = code === 0 || (code === 3 && !unexpected);
+        if (readable && bytes <= limit) resolve();
+        else reject(refusal(code));
+      });
     });
   try {
     await writeFile(path, bytes);

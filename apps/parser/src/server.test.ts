@@ -146,15 +146,20 @@ it("refuses byte mismatches, malformed PDFs, excessive pages and compressed bomb
 });
 it("refuses a compressed bomb whose stream qpdf cannot decode and so cannot measure", async () => {
   const { pdfFixture } = await import("../test/fixtures.js");
-  expect(
-    (await parseUpload(pdfFixture({ bomb: true, invalidPredictor: true })))
-      .status,
-  ).toBe(422);
-}, 60_000);
+  // Many harmless warnings first, so the stream's warning comes late in qpdf's output.
+  for (const duplicateKeys of [0, 3000])
+    expect(
+      (
+        await parseUpload(
+          pdfFixture({ bomb: true, invalidPredictor: true, duplicateKeys }),
+        )
+      ).status,
+    ).toBe(422);
+}, 120_000);
 
 it("parses a PDF that qpdf reads with warnings only, such as a repeated dictionary key", async () => {
   const { pdfFixture } = await import("../test/fixtures.js");
-  const parsed = await parseUpload(pdfFixture({ duplicateKey: true }));
+  const parsed = await parseUpload(pdfFixture({ duplicateKeys: 1 }));
   expect(parsed.status).toBe(200);
   expect(parsed.body.pages[0]!.text).toContain("examination");
 });

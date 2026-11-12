@@ -6,7 +6,7 @@ export function pdfFixture({
   bomb = false,
   inflated,
   image = false,
-  duplicateKey = false,
+  duplicateKeys = 0,
   invalidPredictor = false,
 }: {
   pages?: number;
@@ -14,8 +14,8 @@ export function pdfFixture({
   bomb?: boolean;
   inflated?: number;
   image?: boolean;
-  /** Repeats a page's /Group key, as LaTeX output often does; qpdf reads it but exits 3 with a warning. */
-  duplicateKey?: boolean;
+  /** This many objects repeat a dictionary key, as LaTeX output does; qpdf warns for each and exits 3. */
+  duplicateKeys?: number;
   /** Gives the Flate stream a predictor qpdf cannot decode, so qpdf warns and copies it still compressed. */
   invalidPredictor?: boolean;
 } = {}): Buffer {
@@ -25,7 +25,15 @@ export function pdfFixture({
   const add = (text: string | Buffer) => {
     objects.push(Buffer.isBuffer(text) ? text : Buffer.from(text));
   };
-  add("<< /Type /Catalog /Pages 2 0 R >>");
+  // Objects with a repeated key follow the page objects and the image.
+  const firstDuplicate = 5 + pages + (image ? 1 : 0);
+  const duplicates = Array.from(
+    { length: duplicateKeys },
+    (_, i) => `${firstDuplicate + i} 0 R`,
+  );
+  add(
+    `<< /Type /Catalog /Pages 2 0 R${duplicates.length ? ` /Duplicates [${duplicates.join(" ")}]` : ""} >>`,
+  );
   add(
     `<< /Type /Pages /Kids [${Array.from({ length: pages }, (_, i) => `${5 + i} 0 R`).join(" ")}] /Count ${pages} >>`,
   );
@@ -49,12 +57,13 @@ export function pdfFixture({
   );
   for (let i = 0; i < pages; i++)
     add(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 200] /Resources << /Font << /F1 3 0 R >>${image ? ` /XObject << /Im1 ${5 + pages} 0 R >>` : ""} >> /Contents 4 0 R${duplicateKey ? " /Group << /S /Transparency >> /Group << /S /Transparency >>" : ""} >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 200] /Resources << /Font << /F1 3 0 R >>${image ? ` /XObject << /Im1 ${5 + pages} 0 R >>` : ""} >> /Contents 4 0 R >>`,
     );
   if (image)
     add(
       "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 1 >>\nstream\n0\nendstream",
     );
+  for (let i = 0; i < duplicateKeys; i++) add("<< /Group 1 /Group 2 >>");
   let body = Buffer.from("%PDF-1.7\n");
   const offsets = [0];
   for (const [i, object] of objects.entries()) {
