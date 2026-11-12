@@ -40,8 +40,54 @@ const Message = z
         "Model reasoning, absent for older messages or once a dependent Source is deleted.",
       ),
     citations: z.array(Citation),
+    model: z
+      .object({ key: z.string(), name: z.string() })
+      .nullable()
+      .describe(
+        "The Model Catalog entry that wrote an answer; null for questions and older answers.",
+      ),
   })
   .openapi("ChatMessage");
+const ChatModelList = z
+  .object({
+    models: z.array(
+      z.object({
+        key: z.string(),
+        name: z.string(),
+        provider: z.string(),
+        description: z.string(),
+        dataHandling: z.object({
+          provider: z.literal("OpenRouter"),
+          upstream: z.array(z.string()),
+          routing: z.literal("international"),
+          zeroRetention: z.literal(true),
+        }),
+        cost: z.object({
+          relativeToDefault: z
+            .number()
+            .describe(
+              "Price relative to the default Model, from synced prices.",
+            ),
+          tier: z.enum(["low", "medium", "high"]),
+        }),
+      }),
+    ),
+    default: z.string().nullable(),
+    selected: z
+      .string()
+      .nullable()
+      .describe(
+        "The student's remembered choice while offered, else the default.",
+      ),
+  })
+  .openapi("ChatModelList");
+const modelChoice = z
+  .string()
+  .max(100)
+  .optional()
+  .describe(
+    "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers.",
+  );
 const Selection = z
   .object({
     courseIds: z.array(z.string().uuid()).max(50),
@@ -63,6 +109,28 @@ const chatParams = z.object({ id: z.string().uuid() });
 export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
     createRoute({
+      method: "get",
+      path: "/api/me/models",
+      responses: {
+        200: json(
+          ChatModelList,
+          "The Models the student may choose for Chat answers.",
+        ),
+        401: json(ErrorBody, "Sign in required."),
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      return c.json(
+        await c.get("chatModels").list(principal.fromSession(actor)),
+        200,
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
       method: "post",
       path: "/api/me/chats/{id}/messages/stream",
       request: {
@@ -75,6 +143,7 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
                 .object({
                   id: z.string().uuid(),
                   text: z.string().trim().min(1).max(4000),
+                  model: modelChoice,
                 })
                 .strict(),
             },
@@ -89,6 +158,10 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
         },
         ...errors,
         409: json(ErrorBody, "The question ID is already used."),
+        422: json(
+          ErrorBody,
+          "model_unavailable: the chosen Model is not offered.",
+        ),
       },
     }),
     async (c) => {
@@ -112,6 +185,8 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
       mark("detail");
       if (!chat) return c.json({ error: "gone" }, 404);
       if (reused) return c.json({ error: "conflict" }, 409);
+      const answerer = await c.get("chatModels").answererFor(p, body.model);
+      if (!answerer) return c.json({ error: "model_unavailable" }, 422);
       const stream = createUIMessageStream({
         onError: () =>
           "Die Antwort wurde unterbrochen. Bitte versuche es erneut.",
@@ -129,7 +204,7 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
           try {
             const result = await c
               .get("chats")
-              .ask(p, id, body.text, c.get("answerer"), {
+              .ask(p, id, body.text, answerer, {
                 signal: c.req.raw.signal,
                 ids: { question: body.id, answer: answerId },
                 onStep: (step, ms) => {
@@ -294,7 +369,10 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
           content: {
             "application/json": {
               schema: z
-                .object({ text: z.string().trim().min(1).max(4000) })
+                .object({
+                  text: z.string().trim().min(1).max(4000),
+                  model: modelChoice,
+                })
                 .strict(),
             },
           },
@@ -309,6 +387,10 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
           ErrorBody,
           "Usage is refused, such as an exhausted Allowance.",
         ),
+        422: json(
+          ErrorBody,
+          "model_unavailable: the chosen Model is not offered.",
+        ),
         ...errors,
       },
     }),
@@ -316,14 +398,13 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
       c.header("cache-control", "no-store");
       const actor = await c.get("auth").authenticate(c.req.raw);
       if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const p = principal.fromSession(actor);
+      const body = c.req.valid("json");
+      const answerer = await c.get("chatModels").answererFor(p, body.model);
+      if (!answerer) return c.json({ error: "model_unavailable" }, 422);
       const result = await c
         .get("chats")
-        .ask(
-          principal.fromSession(actor),
-          c.req.valid("param").id,
-          c.req.valid("json").text,
-          c.get("answerer"),
-        );
+        .ask(p, c.req.valid("param").id, body.text, answerer);
       if (result.status === "gone") return c.json({ error: "gone" }, 404);
       if (result.status === "refused")
         return c.json({ error: result.reason }, 403);

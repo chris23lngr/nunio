@@ -884,6 +884,113 @@
           }
         ]
       },
+      "ChatModelList": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "dataHandling": {
+                  "type": "object",
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "enum": [
+                        "OpenRouter"
+                      ]
+                    },
+                    "upstream": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "routing": {
+                      "type": "string",
+                      "enum": [
+                        "international"
+                      ]
+                    },
+                    "zeroRetention": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "provider",
+                    "upstream",
+                    "routing",
+                    "zeroRetention"
+                  ]
+                },
+                "cost": {
+                  "type": "object",
+                  "properties": {
+                    "relativeToDefault": {
+                      "type": "number",
+                      "description": "Price relative to the default Model, from synced prices."
+                    },
+                    "tier": {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "relativeToDefault",
+                    "tier"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "name",
+                "provider",
+                "description",
+                "dataHandling",
+                "cost"
+              ]
+            }
+          },
+          "default": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selected": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The student's remembered choice while offered, else the default."
+          }
+        },
+        "required": [
+          "models",
+          "default",
+          "selected"
+        ]
+      },
       "ChatMessage": {
         "type": "object",
         "properties": {
@@ -999,6 +1106,25 @@
                 "provenance"
               ]
             }
+          },
+          "model": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "name"
+            ],
+            "description": "The Model Catalog entry that wrote an answer; null for questions and older answers."
           }
         },
         "required": [
@@ -1006,7 +1132,8 @@
           "role",
           "createdAt",
           "text",
-          "citations"
+          "citations",
+          "model"
         ]
       },
       "Plan": {
@@ -5934,6 +6061,40 @@
         }
       }
     },
+    "/api/me/models": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "The Models the student may choose for Chat answers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/me/chats/{id}/messages/stream": {
       "post": {
         "parameters": [
@@ -5962,6 +6123,11 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 4000
+                  },
+                  "model": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "description": "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers."
                   }
                 },
                 "required": [
@@ -6022,6 +6188,24 @@
           },
           "409": {
             "description": "The question ID is already used.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "model_unavailable: the chosen Model is not offered.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6327,6 +6511,11 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 4000
+                  },
+                  "model": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "description": "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers."
                   }
                 },
                 "required": [
@@ -6401,6 +6590,24 @@
           },
           "404": {
             "description": "The Chat is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "model_unavailable: the chosen Model is not offered.",
             "content": {
               "application/json": {
                 "schema": {
