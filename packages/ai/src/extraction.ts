@@ -183,7 +183,7 @@ const instructions = [
   "For a picked Course, copy its ID, title and code; page may be 0 and quote empty because this assignment needs no page quote. All obligations and facts must reference that ID, and the picked Course must appear in courses.",
   "If no candidate fits, propose a new Course with existingCourseId null and a page plus verbatim quote supporting its name. File names alone cannot ground a new Course.",
   "For teaching material extract every distinct concept these pages teach that a student must understand, such as gleichmäßige Konvergenz; a page may teach none, one or several. Not headings such as Einleitung or Organisatorisches.",
-  "Include the basic terms a deck introduces or defines, even simple ones such as Stichprobe or data type, and concepts that only a figure description shows, such as a Blockschaltbild.",
+  "Include basic terms the deck defines or explains, even simple ones such as Stichprobe. A Topic is something a student needs to answer an exam question: leave out terms only mentioned in passing and the parts or data of an example.",
   'Each Topic names exactly one concept, as the document names it: never join concepts with "und", "and" or "vs.", give each its own Topic. A rule, practice, workflow or list of items is not a Topic. Avoid duplicates.',
   `Lines beginning exactly with "${figureMarker}" are figure descriptions written by another model. Topics and other facts may cite these lines; obligations, deadlines and course names must not rely on them.`,
   "Except picked existing Courses, every item must quote a short verbatim excerpt of the page it comes from, and give that page's number.",
