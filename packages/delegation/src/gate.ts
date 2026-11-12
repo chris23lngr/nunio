@@ -113,6 +113,8 @@ export interface ActionRecord {
 export interface HistoryQuery {
   /** These Actions only, whatever their status. */
   ids?: string[];
+  /** The Actions asked under these keys, such as a Chat answer's `chatId:messageId:n`. */
+  keys?: string[];
   runId?: string;
   responsibilityId?: string;
   status?: ActionRecord["status"];
@@ -818,6 +820,7 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
         tx.action.findMany({
           where: {
             ...(q.ids && { id: { in: q.ids } }),
+            ...(q.keys && { key: { in: q.keys } }),
             ...(q.runId && { runId: q.runId }),
             ...(q.status && { status: q.status }),
             ...(q.responsibilityId && {
