@@ -49,3 +49,4 @@ export {
   type ScanReader,
   SourceModelRejected,
 } from "./source-models.js";
+export { createTopicJudge } from "./topic-judge.js";
