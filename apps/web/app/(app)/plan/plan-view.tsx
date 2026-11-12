@@ -2,8 +2,16 @@
 
 import type { paths } from "@nunio/api-client";
 import { createApiClient } from "@nunio/api-client";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@nunio/ui/components/select/select";
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { asMinute, asTime } from "@/lib/time";
 import {
   hours,
@@ -44,6 +52,9 @@ const when = (value: string | null) =>
 
 /** The student's Plan, the proposal nunio would make now, and the Limits it plans within. */
 export function PlanView({ apiOrigin }: { apiOrigin: string }) {
+  const id = useId();
+  const [taskObligation, setTaskObligation] = useState<string | null>("");
+  const [weekday, setWeekday] = useState<string | null>("1");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -258,6 +269,7 @@ export function PlanView({ apiOrigin }: { apiOrigin: string }) {
       <section aria-labelledby="tasks-title">
         <h2 id="tasks-title">Tasks</h2>
         <form
+          onReset={() => setTaskObligation("")}
           onSubmit={(event) => {
             const data = form(event);
             const obligationId = String(data.get("obligation") ?? "");
@@ -276,16 +288,39 @@ export function PlanView({ apiOrigin }: { apiOrigin: string }) {
           <label>
             Task <input name="title" required maxLength={500} disabled={busy} />
           </label>
-          <label>
+          <label htmlFor={`${id}-obligation`}>
             For{" "}
-            <select name="obligation" disabled={busy}>
-              <option value="">No Obligation</option>
-              {plan.obligations.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.title}
-                </option>
-              ))}
-            </select>
+            <Select
+              name="obligation"
+              value={taskObligation}
+              onValueChange={setTaskObligation}
+              disabled={busy}
+              items={[
+                { value: "", label: "No Obligation" },
+                ...plan.obligations.map((o) => ({
+                  value: o.id,
+                  label: o.title,
+                })),
+              ]}
+            >
+              <SelectTrigger id={`${id}-obligation`} aria-label="For">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent
+                align="start"
+                sideOffset={8}
+                alignItemWithTrigger={false}
+              >
+                <SelectGroup>
+                  <SelectItem value="">No Obligation</SelectItem>
+                  {plan.obligations.map((o) => (
+                    <SelectItem key={o.id} value={o.id}>
+                      {o.title}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </label>
           <button type="submit" disabled={busy}>
             Add
@@ -524,6 +559,7 @@ export function PlanView({ apiOrigin }: { apiOrigin: string }) {
           ))}
         </ul>
         <form
+          onReset={() => setWeekday("1")}
           onSubmit={(event) => {
             const data = form(event);
             void act(
@@ -539,15 +575,34 @@ export function PlanView({ apiOrigin }: { apiOrigin: string }) {
             );
           }}
         >
-          <label>
+          <label htmlFor={`${id}-weekday`}>
             Every{" "}
-            <select name="weekday">
-              {weekdays.map((day, i) => (
-                <option key={day} value={i + 1}>
-                  {day}
-                </option>
-              ))}
-            </select>
+            <Select
+              name="weekday"
+              value={weekday}
+              onValueChange={setWeekday}
+              items={weekdays.map((day, i) => ({
+                value: String(i + 1),
+                label: day,
+              }))}
+            >
+              <SelectTrigger id={`${id}-weekday`} aria-label="Every">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent
+                align="start"
+                sideOffset={8}
+                alignItemWithTrigger={false}
+              >
+                <SelectGroup>
+                  {weekdays.map((day, i) => (
+                    <SelectItem key={day} value={String(i + 1)}>
+                      {day}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </label>
           <label>
             from <input name="from" type="time" required />

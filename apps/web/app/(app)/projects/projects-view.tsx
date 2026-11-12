@@ -2,8 +2,16 @@
 
 import type { paths } from "@nunio/api-client";
 import { createApiClient } from "@nunio/api-client";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@nunio/ui/components/select/select";
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 type Project =
   paths["/api/me/projects"]["get"]["responses"][200]["content"]["application/json"][number];
@@ -12,6 +20,8 @@ type Course =
 
 /** Optional workspaces, such as exam preparation, over the student's Courses and toward at most one Obligation. */
 export function ProjectsView({ apiOrigin }: { apiOrigin: string }) {
+  const id = useId();
+  const [obligation, setObligation] = useState<string | null>("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +101,7 @@ export function ProjectsView({ apiOrigin }: { apiOrigin: string }) {
         thesis, across one or more Courses.
       </p>
       {error && <p role="alert">{error}</p>}
-      <form onSubmit={create}>
+      <form onSubmit={create} onReset={() => setObligation("")}>
         <label>
           Name <input name="name" required maxLength={255} disabled={busy} />
         </label>
@@ -104,16 +114,35 @@ export function ProjectsView({ apiOrigin }: { apiOrigin: string }) {
             </label>
           ))}
         </fieldset>
-        <label>
+        <label htmlFor={`${id}-obligation`}>
           Toward{" "}
-          <select name="obligation">
-            <option value="">No Obligation</option>
-            {obligations.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.title}
-              </option>
-            ))}
-          </select>
+          <Select
+            name="obligation"
+            value={obligation}
+            onValueChange={setObligation}
+            items={[
+              { value: "", label: "No Obligation" },
+              ...obligations.map((o) => ({ value: o.id, label: o.title })),
+            ]}
+          >
+            <SelectTrigger id={`${id}-obligation`} aria-label="Toward">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent
+              align="start"
+              sideOffset={8}
+              alignItemWithTrigger={false}
+            >
+              <SelectGroup>
+                <SelectItem value="">No Obligation</SelectItem>
+                {obligations.map((o) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    {o.title}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </label>
         <button type="submit" disabled={busy}>
           Create

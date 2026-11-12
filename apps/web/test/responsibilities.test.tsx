@@ -50,9 +50,10 @@ test("the student delegates 'keep this course organized' for one of their accept
   );
 
   const course = await screen.findByRole("combobox", { name: "Course" });
-  await within(course).findByRole("option", { name: "Analysis I" });
-  expect(within(course).queryByRole("option", { name: "Physik I" })).toBeNull();
-  await userEvent.selectOptions(course, "Analysis I");
+  await userEvent.click(course);
+  await screen.findByRole("option", { name: "Analysis I" });
+  expect(screen.queryByRole("option", { name: "Physik I" })).toBeNull();
+  await userEvent.click(screen.getByRole("option", { name: "Analysis I" }));
   await userEvent.click(
     screen.getByRole("button", { name: "Keep this course organized" }),
   );
@@ -218,11 +219,14 @@ test("the student delegates 'prepare me for this exam' for one of their exams", 
   );
 
   const exam = await screen.findByRole("combobox", { name: "Exam" });
-  await within(exam).findByRole("option", { name: "Klausur (Analysis I)" });
+  await userEvent.click(exam);
+  await screen.findByRole("option", { name: "Klausur (Analysis I)" });
   expect(
-    within(exam).queryByRole("option", { name: /Blatt 3|Probeklausur/ }),
+    screen.queryByRole("option", { name: /Blatt 3|Probeklausur/ }),
   ).toBeNull();
-  await userEvent.selectOptions(exam, "Klausur (Analysis I)");
+  await userEvent.click(
+    screen.getByRole("option", { name: "Klausur (Analysis I)" }),
+  );
   await userEvent.click(
     screen.getByRole("button", { name: "Prepare me for this exam" }),
   );

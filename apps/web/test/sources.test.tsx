@@ -246,15 +246,15 @@ test("the Course choice offers accepted Courses that are not Archived, a new one
   );
   api.route("GET", "/api/me/sources", () => Response.json([]));
   render(<Journey />);
+  const select = screen.getByLabelText("Kurs");
+  expect(select.textContent).toContain("Automatisch erkennen");
+  await userEvent.click(select);
   await screen.findByRole("option", { name: "MA-101 Analysis I" });
-
-  const select = screen.getByLabelText("Kurs") as HTMLSelectElement;
-  expect([...select.options].map((option) => option.text)).toEqual([
-    "Automatisch erkennen",
-    "MA-101 Analysis I",
-    "Neuer Kurs …",
-  ]);
-  expect(select.value).toBe("");
+  expect(
+    screen.getAllByRole("option").map((option) => option.textContent),
+  ).toEqual(["Automatisch erkennen", "MA-101 Analysis I", "Neuer Kurs …"]);
+  await userEvent.keyboard("{Escape}");
+  expect(select.textContent).toContain("Automatisch erkennen");
 });
 
 test("uploading several PDFs into a new Course creates it once and binds every file to it", async () => {
@@ -282,7 +282,8 @@ test("uploading several PDFs into a new Course creates it once and binds every f
     new File(["%PDF"], "Folien 1.pdf", { type: "application/pdf" }),
     new File(["%PDF"], "Folien 2.pdf", { type: "application/pdf" }),
   ]);
-  await user.selectOptions(screen.getByLabelText("Kurs"), "Neuer Kurs …");
+  await user.click(screen.getByLabelText("Kurs"));
+  await user.click(await screen.findByRole("option", { name: "Neuer Kurs …" }));
   await user.type(screen.getByLabelText("Titel"), "Analysis I");
   await user.type(screen.getByLabelText("Kürzel (optional)"), "MA-101");
   fireEvent.submit(screen.getByLabelText("PDF").closest("form")!);
@@ -314,14 +315,17 @@ test("uploading into an existing Course binds the file to it, and reports a Cour
     return Response.json({ error: "gone" }, { status: 404 });
   });
   render(<Journey />);
-  await screen.findByRole("option", { name: "MA-101 Analysis I" });
+  await screen.findByText(/No Sources yet/);
   const user = userEvent.setup();
 
   await user.upload(
     screen.getByLabelText("PDF"),
     new File(["%PDF"], "Folien.pdf", { type: "application/pdf" }),
   );
-  await user.selectOptions(screen.getByLabelText("Kurs"), "MA-101 Analysis I");
+  await user.click(screen.getByLabelText("Kurs"));
+  await user.click(
+    await screen.findByRole("option", { name: "MA-101 Analysis I" }),
+  );
   fireEvent.submit(screen.getByLabelText("PDF").closest("form")!);
 
   expect((await screen.findByRole("alert")).textContent).toBe(
@@ -372,15 +376,16 @@ test("a multi-file upload that fails part-way selects the Course it created and 
     new File(["%PDF"], "Folien 1.pdf", { type: "application/pdf" }),
     new File(["%PDF"], "Folien 2.pdf", { type: "application/pdf" }),
   ]);
-  await user.selectOptions(screen.getByLabelText("Kurs"), "Neuer Kurs …");
+  await user.click(screen.getByLabelText("Kurs"));
+  await user.click(await screen.findByRole("option", { name: "Neuer Kurs …" }));
   await user.type(screen.getByLabelText("Titel"), "Analysis I");
   const form = screen.getByLabelText("PDF").closest("form")!;
 
   fireEvent.submit(form);
   await screen.findByText(/The upload did not finish/);
   await waitFor(() =>
-    expect((screen.getByLabelText("Kurs") as HTMLSelectElement).value).toBe(
-      "course-new",
+    expect(screen.getByLabelText("Kurs").textContent).toContain(
+      "MA-101 Analysis I",
     ),
   );
   expect(screen.queryByLabelText("Titel")).toBeNull();
@@ -417,7 +422,8 @@ test("a finished upload returns the Course choice to automatic recognition, hidi
     screen.getByLabelText("PDF"),
     new File(["%PDF"], "Folien.pdf", { type: "application/pdf" }),
   );
-  await user.selectOptions(screen.getByLabelText("Kurs"), "Neuer Kurs …");
+  await user.click(screen.getByLabelText("Kurs"));
+  await user.click(await screen.findByRole("option", { name: "Neuer Kurs …" }));
   await user.type(screen.getByLabelText("Titel"), "Analysis I");
 
   fireEvent.submit(screen.getByLabelText("PDF").closest("form")!);
@@ -425,7 +431,9 @@ test("a finished upload returns the Course choice to automatic recognition, hidi
   await waitFor(() => expect(completed).toBe(true));
   expect(sent).toEqual({ title: "Analysis I", code: null });
   await waitFor(() =>
-    expect((screen.getByLabelText("Kurs") as HTMLSelectElement).value).toBe(""),
+    expect(screen.getByLabelText("Kurs").textContent).toContain(
+      "Automatisch erkennen",
+    ),
   );
   expect(screen.queryByLabelText("Titel")).toBeNull();
 });
@@ -453,7 +461,8 @@ test("a new Course named like an existing one is refused with that Course's name
     screen.getByLabelText("PDF"),
     new File(["%PDF"], "Folien.pdf", { type: "application/pdf" }),
   );
-  await user.selectOptions(screen.getByLabelText("Kurs"), "Neuer Kurs …");
+  await user.click(screen.getByLabelText("Kurs"));
+  await user.click(await screen.findByRole("option", { name: "Neuer Kurs …" }));
   await user.type(screen.getByLabelText("Titel"), "analysis i");
 
   fireEvent.submit(screen.getByLabelText("PDF").closest("form")!);

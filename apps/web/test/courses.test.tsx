@@ -120,11 +120,9 @@ test("offers the current Semester, those with Courses and all of them, and keeps
   const user = userEvent.setup();
 
   expect(await cards()).toEqual(["AlgorithmenNichts fällig"]);
-  await user.click(screen.getByRole("button", { name: "Sommersemester 2026" }));
+  await user.click(screen.getByRole("combobox", { name: "Semester" }));
   expect(
-    (await screen.findAllByRole("menuitemradio")).map(
-      (item) => item.textContent,
-    ),
+    (await screen.findAllByRole("option")).map((item) => item.textContent),
   ).toEqual([
     "Wintersemester 2026/27 (aktuell)",
     "Sommersemester 2026",
@@ -132,14 +130,14 @@ test("offers the current Semester, those with Courses and all of them, and keeps
   ]);
 
   await user.click(
-    await screen.findByRole("menuitemradio", { name: "Alle Semester" }),
+    await screen.findByRole("option", { name: "Alle Semester" }),
   );
   expect(replace).toHaveBeenLastCalledWith("/courses?semester=all", {
     scroll: false,
   });
-  await user.click(screen.getByRole("button", { name: "Sommersemester 2026" }));
+  await user.click(screen.getByRole("combobox", { name: "Semester" }));
   await user.click(
-    await screen.findByRole("menuitemradio", {
+    await screen.findByRole("option", {
       name: "Wintersemester 2026/27 (aktuell)",
     }),
   );
@@ -306,9 +304,9 @@ test("creates a Course in the shown Semester, and names the Course a clash point
 
   await user.click(await screen.findByRole("button", { name: "Erstellen" }));
   const dialog = await screen.findByRole("dialog", { name: "Kurs erstellen" });
-  expect(
-    (within(dialog).getByLabelText("Semester") as HTMLSelectElement).value,
-  ).toBe("2026-ss");
+  expect(within(dialog).getByLabelText("Semester").textContent).toContain(
+    "Sommersemester 2026",
+  );
   await user.type(within(dialog).getByLabelText("Titel"), "analysis i");
   await user.click(
     within(dialog).getByRole("button", { name: "Kurs erstellen" }),
@@ -501,9 +499,9 @@ test("edits a Course's name, Semester and color", async () => {
   ).toBe("Analysis I");
   await user.clear(within(dialog).getByLabelText("Titel"));
   await user.type(within(dialog).getByLabelText("Titel"), "Analysis 1");
-  await user.selectOptions(
-    within(dialog).getByLabelText("Semester"),
-    "2027-ss",
+  await user.click(within(dialog).getByLabelText("Semester"));
+  await user.click(
+    await screen.findByRole("option", { name: "Sommersemester 2027" }),
   );
   await user.click(within(dialog).getByRole("radio", { name: "Türkis" }));
   await user.click(within(dialog).getByRole("button", { name: "Speichern" }));

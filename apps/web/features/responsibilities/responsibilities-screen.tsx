@@ -1,7 +1,16 @@
 "use client";
 
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@nunio/ui/components/select/select";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useId } from "react";
 import { useAppForm } from "@/lib/form";
 import { delegateResponsibility } from "./api/responsibility-mutations";
 import {
@@ -14,6 +23,7 @@ const states = { active: "active", paused: "paused", ended: "ended" } as const;
 
 /** What the student delegated to nunio, and delegating one more Course or exam. */
 export function ResponsibilitiesScreen({ apiOrigin }: { apiOrigin: string }) {
+  const id = useId();
   const queryClient = useQueryClient();
   const delegated = useQuery(responsibilityListQueries(apiOrigin)).data ?? [];
   const courses = useQuery(delegableCourseQueries(apiOrigin)).data ?? [];
@@ -81,24 +91,42 @@ export function ResponsibilitiesScreen({ apiOrigin }: { apiOrigin: string }) {
           }}
         >
           {(field) => (
-            <label>
+            <label htmlFor={`${id}-course`}>
               Course
-              <select
+              <Select
+                items={courses.map((course) => ({
+                  value: course.id,
+                  label: course.title,
+                }))}
                 name={field.name}
                 required
-                value={field.state.value}
-                onBlur={field.handleBlur}
-                onChange={(event) => field.handleChange(event.target.value)}
+                value={field.state.value || null}
+                onValueChange={(value) => field.handleChange(value ?? "")}
               >
-                <option value="" disabled>
-                  Choose a Course
-                </option>
-                {courses.map((course) => (
-                  <option key={course.id} value={course.id}>
-                    {course.title}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  id={`${id}-course`}
+                  aria-label="Course"
+                  onBlur={field.handleBlur}
+                >
+                  <SelectValue placeholder="Choose a Course" />
+                </SelectTrigger>
+                <SelectContent
+                  align="start"
+                  sideOffset={8}
+                  alignItemWithTrigger={false}
+                >
+                  <SelectGroup>
+                    <SelectItem value="" disabled>
+                      Choose a Course
+                    </SelectItem>
+                    {courses.map((course) => (
+                      <SelectItem key={course.id} value={course.id}>
+                        {course.title}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </label>
           )}
         </form.Field>
@@ -124,24 +152,42 @@ export function ResponsibilitiesScreen({ apiOrigin }: { apiOrigin: string }) {
           }}
         >
           {(field) => (
-            <label>
+            <label htmlFor={`${id}-exam`}>
               Exam
-              <select
+              <Select
+                items={exams.map((exam) => ({
+                  value: exam.id,
+                  label: exam.label,
+                }))}
                 name={field.name}
                 required
-                value={field.state.value}
-                onBlur={field.handleBlur}
-                onChange={(event) => field.handleChange(event.target.value)}
+                value={field.state.value || null}
+                onValueChange={(value) => field.handleChange(value ?? "")}
               >
-                <option value="" disabled>
-                  Choose an exam
-                </option>
-                {exams.map((exam) => (
-                  <option key={exam.id} value={exam.id}>
-                    {exam.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  id={`${id}-exam`}
+                  aria-label="Exam"
+                  onBlur={field.handleBlur}
+                >
+                  <SelectValue placeholder="Choose an exam" />
+                </SelectTrigger>
+                <SelectContent
+                  align="start"
+                  sideOffset={8}
+                  alignItemWithTrigger={false}
+                >
+                  <SelectGroup>
+                    <SelectItem value="" disabled>
+                      Choose an exam
+                    </SelectItem>
+                    {exams.map((exam) => (
+                      <SelectItem key={exam.id} value={exam.id}>
+                        {exam.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </label>
           )}
         </examForm.Field>

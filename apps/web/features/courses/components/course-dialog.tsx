@@ -10,6 +10,14 @@ import {
 } from "@nunio/ui/components/dialog/dialog";
 import { Field, FieldLabel } from "@nunio/ui/components/field/field";
 import { Input } from "@nunio/ui/components/input/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@nunio/ui/components/select/select";
 import type { FormEvent } from "react";
 import { useId, useState } from "react";
 import type { CourseColor } from "../api/course-queries";
@@ -99,20 +107,33 @@ export function CourseDialog({
             </Field>
             <Field>
               <FieldLabel htmlFor={`${id}-semester`}>Semester</FieldLabel>
-              <select
-                id={`${id}-semester`}
-                className="h-7.5 rounded-md bg-white px-2 text-sm text-base-800 shadow-sm outline outline-base-700/15"
+              <Select
+                items={semesters.map((value) => ({
+                  value,
+                  label: semesterLabel(value),
+                }))}
                 value={fields.semester}
-                onChange={(e) =>
-                  setFields({ ...fields, semester: e.target.value })
-                }
+                onValueChange={(value) => {
+                  if (value !== null) setFields({ ...fields, semester: value });
+                }}
               >
-                {semesters.map((semester) => (
-                  <option key={semester} value={semester}>
-                    {semesterLabel(semester)}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id={`${id}-semester`} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent
+                  align="start"
+                  sideOffset={8}
+                  alignItemWithTrigger={false}
+                >
+                  <SelectGroup>
+                    {semesters.map((semester) => (
+                      <SelectItem key={semester} value={semester}>
+                        {semesterLabel(semester)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </Field>
             {editing && (
               <fieldset className="flex flex-col gap-2">

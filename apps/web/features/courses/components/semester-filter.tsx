@@ -1,12 +1,11 @@
-import { Button } from "@nunio/ui/components/button/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@nunio/ui/components/dropdown-menu/dropdown-menu";
-import { ChevronDown } from "lucide-react";
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@nunio/ui/components/select/select";
 import { semesterLabel } from "../course-format";
 
 /** The current Semester, every other Semester that has Courses (newest first), and all of them. */
@@ -30,27 +29,32 @@ export function SemesterFilter({
     { value: "all", label: "Alle Semester" },
   ];
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" />}>
-        {selected === "all" ? "Alle Semester" : semesterLabel(selected)}
-        <ChevronDown data-icon="inline-end" aria-hidden="true" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuRadioGroup
-          value={selected}
-          onValueChange={(value) => onSelect(String(value))}
-        >
+    <Select
+      items={options}
+      value={selected}
+      onValueChange={(value) => {
+        if (value !== null) onSelect(value);
+      }}
+    >
+      <SelectTrigger aria-label="Semester">
+        <SelectValue>
+          {selected === "all" ? "Alle Semester" : semesterLabel(selected)}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent
+        align="end"
+        sideOffset={8}
+        alignItemWithTrigger={false}
+        className="w-max min-w-(--anchor-width)"
+      >
+        <SelectGroup>
           {options.map((option) => (
-            <DropdownMenuRadioItem
-              key={option.value}
-              value={option.value}
-              closeOnClick
-            >
+            <SelectItem key={option.value} value={option.value}>
               {option.label}
-            </DropdownMenuRadioItem>
+            </SelectItem>
           ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }
