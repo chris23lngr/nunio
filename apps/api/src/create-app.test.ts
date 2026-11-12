@@ -156,6 +156,15 @@ const searches = (query: string) => [
     input: JSON.stringify({ query }),
   },
 ];
+/** The Chat model calls `toolName` with `input`. */
+const calls = (toolName: string, input: unknown) => [
+  {
+    type: "tool-call",
+    toolCallId: `call-${randomUUID()}`,
+    toolName,
+    input: JSON.stringify(input),
+  },
+];
 const says = (text: string) => [
   { type: "text-start", id: "text" },
   { type: "text-delta", id: "text", delta: text },
@@ -2953,7 +2962,84 @@ describe("Chat", () => {
     expect(context).toMatch(/K1\W+Analysis I/);
   });
 
-  it("offers no search in a Chat with nothing selected", async () => {
+  it("reads the Plan for a week: Obligations with their Citations, Study Blocks and Fixed Events, showing the student only counts", async () => {
+    const { cookie, headers } = await reviewFixture("chat-agenda");
+    const student = await studentId(cookie);
+    const { id: sourceId } = await admin.source.findFirstOrThrow({
+      where: { studentId: student },
+    });
+    const obligation = await admin.obligation.findFirstOrThrow({
+      where: { studentId: student },
+    });
+    const post = (path: string, body: unknown) =>
+      app.request(`${apiOrigin}${path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+    expect(
+      (
+        await post("/api/me/study-blocks", {
+          work: { kind: "obligation", id: obligation.id },
+          start: "2026-11-18T09:00:00Z",
+          end: "2026-11-18T11:00:00Z",
+        })
+      ).ok,
+    ).toBe(true);
+    for (const [title, start, end] of [
+      ["Vorlesung Analysis", "2026-11-19T13:00:00Z", "2026-11-19T15:00:00Z"],
+      ["Weihnachtsfeier", "2026-12-18T17:00:00Z", "2026-12-18T22:00:00Z"],
+    ])
+      expect(
+        (await post("/api/me/fixed-events", { title, start, end })).ok,
+      ).toBe(true);
+    const { id } = (await (
+      await post("/api/me/chats", { courseIds: [], sourceIds: [] })
+    ).json()) as { id: string };
+    steps.push(
+      calls("agenda", { from: "2026-11-16", to: "2026-11-22" }),
+      says("Übungsblatt 3 ist am 20. November fällig [S1]."),
+    );
+    prompts.length = 0;
+
+    const chunks = await sseChunks(
+      await post(`/api/me/chats/${id}/messages/stream`, {
+        id: randomUUID(),
+        text: "Was steht nächste Woche an?",
+      }),
+    );
+
+    expect(chunks).toContainEqual(
+      expect.objectContaining({
+        type: "tool-output-available",
+        output: {
+          from: "2026-11-16",
+          to: "2026-11-22",
+          obligations: 1,
+          studyBlocks: 1,
+          fixedEvents: 1,
+        },
+      }),
+    );
+    const answering = JSON.stringify(prompts[1]);
+    for (const shown of ["Übungsblatt 3", "Vorlesung Analysis", "10:00"])
+      expect(answering).toContain(shown);
+    expect(answering).not.toContain("Weihnachtsfeier");
+    const committed = chunks.find((chunk) => chunk.type === "data-committed");
+    expect(committed.data.citations).toEqual([
+      {
+        tag: "S1",
+        provenance: {
+          kind: "source",
+          sourceId,
+          title: "Analysis.pdf",
+          location: { page: 1 },
+        },
+      },
+    ]);
+  });
+
+  it("offers no search in a Chat with nothing selected, but still the Plan", async () => {
     const { headers, id } = await emptyChat("chat-no-search");
     reply = "Für diesen Chat ist kein Material ausgewählt.";
     offeredTools.length = 0;
@@ -2969,7 +3055,7 @@ describe("Chat", () => {
       }),
     );
 
-    expect(offeredTools).toEqual([[]]);
+    expect(offeredTools).toEqual([["agenda"]]);
     expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
   });
 

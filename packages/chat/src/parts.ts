@@ -1,5 +1,6 @@
 import type { UIMessageChunk } from "ai";
 import { readUIMessageStream } from "ai";
+import type { AgendaOutput } from "./agenda.js";
 import type { SearchOutput } from "./search.js";
 
 /** One part of an answer, as the student saw it and as it is stored. */
@@ -11,6 +12,12 @@ export type ChatPart =
       toolCallId: string;
       input: { query: string };
       output: SearchOutput;
+    }
+  | {
+      type: "tool-agenda";
+      toolCallId: string;
+      input: { from: string; to: string };
+      output: AgendaOutput;
     };
 
 /** Removes Citation tags that no search returned, so they never show as Citations. */
@@ -42,14 +49,19 @@ export async function partsFrom(
       const text = withoutUnknownTags(p.text, tags);
       return text ? [{ type: "text", text }] : [];
     }
-    if (p.type === "tool-searchMaterial" && p.state === "output-available")
+    // A tool call shows once it has a result, with what the student was shown of it.
+    if (
+      typeof p.type === "string" &&
+      p.type.startsWith("tool-") &&
+      p.state === "output-available"
+    )
       return [
         {
-          type: "tool-searchMaterial",
-          toolCallId: p.toolCallId as string,
-          input: p.input as { query: string },
-          output: p.output as SearchOutput,
-        },
+          type: p.type,
+          toolCallId: p.toolCallId,
+          input: p.input,
+          output: p.output,
+        } as ChatPart,
       ];
     return [];
   });

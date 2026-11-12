@@ -8,11 +8,13 @@ import type { Citation, KnowledgeReader, Provenance } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
 import type { ModelMessage, UIMessageChunk } from "ai";
+import { agendaTool } from "./agenda.js";
 import { chatContext } from "./context.js";
 import { historyFrom, historyTurns } from "./history.js";
 import type { ChatPart } from "./parts.js";
 import { partsFrom } from "./parts.js";
-import { createSearch } from "./search.js";
+import { searchTool } from "./search.js";
+import { createTurn } from "./turn.js";
 
 /** At most this many model steps answer one question; the last one must answer (ADR-0019). */
 const maxSteps = 6;
@@ -47,7 +49,7 @@ export function createChats({
   keys: SourceKeys;
   reader: KnowledgeReader;
   delegation: Delegation;
-  plan: Pick<Plan, "timeZone">;
+  plan: Pick<Plan, "timeZone" | "view">;
   clock: { now(): Date };
 }) {
   const derived = createDerivedText(keys);
@@ -199,7 +201,20 @@ export function createChats({
       step("history");
       if (!history) return { status: "gone" } as const;
       const context = chatContext(clock.now(), timeZone, history.courses);
-      const search = createSearch(reader, p, chatId);
+      const turn = createTurn();
+      const tools = {
+        // A Chat with nothing selected has nothing to search.
+        ...(history.selected
+          ? { searchMaterial: searchTool(turn, reader, p, chatId) }
+          : {}),
+        agenda: agendaTool(turn, {
+          reader,
+          plan,
+          p,
+          timeZone,
+          handles: context.handles,
+        }),
+      };
       const messages: ModelMessage[] = [
         ...history.turns.flatMap((turn): ModelMessage[] => [
           { role: "user", content: turn.question },
@@ -217,8 +232,7 @@ export function createChats({
         options.signal?.throwIfAborted();
         const input = {
           messages,
-          // A Chat with nothing selected has nothing to search.
-          tools: history.selected ? search.tools : {},
+          tools,
           last: n === maxSteps,
         };
         const stepped = await delegation.meter(
@@ -234,7 +248,7 @@ export function createChats({
               }),
             ),
         );
-        const refusal = search.refusal();
+        const refusal = turn.refusal();
         if (refusal === "gone") return { status: "gone" } as const;
         if (refusal) return { status: "refused", reason: refusal } as const;
         if (stepped.status === "refused") return stepped;
@@ -245,7 +259,7 @@ export function createChats({
       options.signal?.throwIfAborted();
       const parts = await partsFrom(
         chunks,
-        new Set(search.citations.map((citation) => citation.tag)),
+        new Set(turn.citations.map((citation) => citation.tag)),
       );
       const text = parts
         .flatMap((part) => (part.type === "text" ? [part.text] : []))
@@ -256,11 +270,11 @@ export function createChats({
       const cited = [
         ...new Set([...text.matchAll(/\[(S\d+)\]/g)].map((match) => match[1])),
       ].flatMap((tag) =>
-        search.citations.filter((citation) => citation.tag === tag),
+        turn.citations.filter((citation) => citation.tag === tag),
       );
       // The answer may restate earlier answers, so it is withdrawn with their Sources too.
       const derivedFrom = [
-        ...new Set([...search.sources, ...history.derivedFrom]),
+        ...new Set([...turn.sources, ...history.derivedFrom]),
       ];
       const id = options.ids?.answer ?? randomUUID();
       const questionId = options.ids?.question ?? randomUUID();

@@ -1,5 +1,6 @@
 /** Chats: a selection of Courses and Sources, and the questions the student asks over it. */
 
+export type { AgendaOutput } from "./agenda.js";
 export {
   type AskStep,
   type ChatMessage,

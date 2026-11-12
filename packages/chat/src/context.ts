@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { fenced } from "./turn.js";
 
 export type ContextCourse = {
   id: string;
@@ -33,18 +33,18 @@ export function chatContext(
     timeZone,
   }).format(now);
   const date = now.toLocaleDateString("en-CA", { timeZone });
-  const fence = randomBytes(8).toString("hex");
   const text = [
     `Today is ${day}, ${date}, in the student's time zone ${timeZone}.`,
     courses.length
       ? [
           "The student's Courses, by the handle to name them with in tools:",
-          `<<<BEGIN courses ${fence}>>>`,
-          ...courses.map(
-            (course, i) =>
-              `K${i + 1}: ${course.title}${course.code ? ` (${course.code})` : ""}, ${semesterName(course.semester)}`,
+          fenced(
+            "courses",
+            courses.map(
+              (course, i) =>
+                `K${i + 1}: ${course.title}${course.code ? ` (${course.code})` : ""}, ${semesterName(course.semester)}`,
+            ),
           ),
-          `<<<END courses ${fence}>>>`,
         ].join("\n")
       : "The student has no Courses yet.",
   ].join("\n");
