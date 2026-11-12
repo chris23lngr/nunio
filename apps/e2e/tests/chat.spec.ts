@@ -53,6 +53,8 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     color: "rose",
   };
   const messages: unknown[] = [];
+  /** The Model each streamed question asked for. */
+  const sentModels: (string | undefined)[] = [];
   await context.route(`${origins.api}/api/me/courses`, (route) =>
     route.fulfill({ headers: cors, json: { courses: [course] } }),
   );
@@ -92,7 +94,9 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
         const sent = JSON.parse(Buffer.concat(body).toString()) as {
           id: string;
           text: string;
+          model?: string;
         };
+        sentModels.push(sent.model);
         const answerId = randomUUID();
         emit({ type: "start", messageId: answerId });
         emit({ type: "reasoning-start", id: "reasoning" });
@@ -114,11 +118,13 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
           text: sent.text,
           createdAt: new Date().toISOString(),
           citations: [],
+          model: null,
         };
         const response = {
           id: answerId,
           role: "assistant",
           reasoning: "Ich prüfe deine Materialien.",
+          model: { key: "opus-5.5-reasoning-high", name: "Opus 5.5" },
           text: `## Antwort aus Kursmaterial\n\n${"Ein Absatz zum aktiven Lernen.\n\n".repeat(25)}| Methode | Beschreibung | Minuten |\n| --- | --- | ---: |\n| Abrufen | Eine ausführliche Beschreibung der Lernmethode | 15 |\n\nQuelle [S1].`,
           createdAt: new Date().toISOString(),
           citations: [
@@ -196,7 +202,9 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     await expect(page).toHaveURL(`${origins.app}/`);
     await page.goto(`${origins.app}/chat`);
     await expect(page.getByRole("heading", { name: /Justus/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Modell: / })).toBeVisible();
+    // The picker lists the seeded Model Catalog from the real API, defaulting to Sonnet.
+    const picker = page.getByRole("button", { name: /^Modell: / });
+    await expect(picker).toHaveAccessibleName("Modell: Sonnet 5.5");
     await expect(page.getByRole("heading", { name: /Justus/ })).toHaveCSS(
       "font-size",
       "30px",
@@ -204,6 +212,18 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     await page.screenshot({
       path: testInfo.outputPath("chat-empty-desktop.png"),
     });
+    await picker.click();
+    await page.getByRole("menuitem", { name: "Opus 5.5" }).hover();
+    await expect(
+      page.getByText("Verbrauch: hoch · etwa 2× Sonnet 5.5"),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "Über OpenRouter · Amazon Bedrock, Google · keine Datenspeicherung",
+      ),
+    ).toBeVisible();
+    await page.getByRole("menuitem", { name: "Opus 5.5" }).click();
+    await expect(picker).toHaveAccessibleName("Modell: Opus 5.5");
     await page.getByRole("button", { name: "Wissen verwalten" }).click();
     await page
       .getByRole("menuitemcheckbox", { name: /Microeconomics/ })
@@ -238,6 +258,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
       page.getByText("Dieser Anfang kommt vor dem Abschluss."),
     ).toBeVisible();
     await expect.poll(() => typeof answer).toBe("function");
+    expect(sentModels).toEqual(["opus-5.5-reasoning-high"]);
     answer();
     await expect(
       page.getByRole("heading", { name: "Antwort aus Kursmaterial" }),
