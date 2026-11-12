@@ -490,6 +490,14 @@
                       },
                       "quote": {
                         "type": "string"
+                      },
+                      "grounding": {
+                        "type": "string",
+                        "enum": [
+                          "text",
+                          "figure"
+                        ],
+                        "description": "figure when the quote is only in a figure description the scan model wrote, not the page's own words."
                       }
                     },
                     "required": [
@@ -497,7 +505,8 @@
                       "sourceId",
                       "title",
                       "page",
-                      "quote"
+                      "quote",
+                      "grounding"
                     ]
                   }
                 }
@@ -632,6 +641,10 @@
               "ai_use_rule"
             ]
           },
+          "key": {
+            "type": "string",
+            "description": "nunio's normalized identity for the Fact within its Course and type, such as a Topic's name."
+          },
           "value": {
             "type": "string"
           },
@@ -665,6 +678,14 @@
                       },
                       "quote": {
                         "type": "string"
+                      },
+                      "grounding": {
+                        "type": "string",
+                        "enum": [
+                          "text",
+                          "figure"
+                        ],
+                        "description": "figure when the quote is only in a figure description the scan model wrote, not the page's own words."
                       }
                     },
                     "required": [
@@ -672,7 +693,8 @@
                       "sourceId",
                       "title",
                       "page",
-                      "quote"
+                      "quote",
+                      "grounding"
                     ]
                   }
                 }
@@ -693,6 +715,7 @@
           "disagreement",
           "unsupported",
           "type",
+          "key",
           "value",
           "values"
         ]

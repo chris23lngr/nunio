@@ -2431,3 +2431,35 @@ it("marks each citation grounded in the page's text or only in a figure descript
   await facts.decideCourse(p, algebraCourse!.id, "restore");
   expect(await grounding()).toEqual(expected);
 });
+
+it("grounds a quote in the page's text when a figure description repeats it", async () => {
+  const p = await student();
+  const sourceId = await readySource(p, "Folien.pdf", [
+    {
+      page: 1,
+      text: "MA-101 Analysis I\nKapitel 4: Fourier-Reihen.\n[Abbildung] Skizze: Fourier-Reihen.",
+    },
+  ]);
+  await facts.extract(p, sourceId, {
+    delegation,
+    extractor: scripted({
+      ...empty,
+      courses: [analysis],
+      facts: [
+        {
+          course: "MA-101",
+          type: "topic",
+          key: "Fourier-Reihen",
+          value: "Fourier-Reihen",
+          page: 1,
+          quote: "Fourier-Reihen",
+          uncertainty: null,
+        },
+      ],
+    }),
+  });
+  const [fact] = (await facts.review(p)).courses[0]!.facts;
+  expect(
+    fact!.values.flatMap((v) => v.citations.map((c) => c.grounding)),
+  ).toEqual(["text"]);
+});
