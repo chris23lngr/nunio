@@ -2913,6 +2913,73 @@ describe("Chat", () => {
       ).json(),
     ).toEqual([]);
   });
+
+  it("refuses a turn when the Allowance no longer covers a later step, recording nothing but keeping the steps taken charged", async () => {
+    const cookie = await signUp("chat-later-step");
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const handbook = await chatSource(
+      cookie,
+      "Modulhandbuch.pdf",
+      "Die Klausur ist am 10. Februar.",
+    );
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [handbook] }),
+      })
+    ).json()) as { id: string };
+    const allowance = async () =>
+      (await (
+        await app.request(`${apiOrigin}/api/me/allowance`, {
+          headers: { cookie },
+        })
+      ).json()) as { usedMicroUsd: number; heldMicroUsd: number };
+    const before = (await allowance()).usedMicroUsd;
+    // Enough for the first step and its search, each charged 1 µUSD, but not for a second step.
+    await admin.allowance.update({
+      where: { studentId: await studentId(cookie) },
+      data: { limitMicroUsd: before + 2 },
+    });
+    steps.push(searches("Klausur"));
+    reply = "Am 10. Februar [S1].";
+    prompts.length = 0;
+
+    const chunks = await sseChunks(
+      await app.request(`${apiOrigin}/api/me/chats/${id}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          id: randomUUID(),
+          text: "Wann ist die Klausur?",
+        }),
+      }),
+    );
+
+    expect(prompts).toHaveLength(1);
+    expect(chunks).toContainEqual(
+      expect.objectContaining({
+        type: "data-refused",
+        data: { error: "allowance_exhausted" },
+      }),
+    );
+    expect(chunks.map((chunk) => chunk.type)).not.toContain("data-committed");
+    expect(
+      await (
+        await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+          headers: { cookie },
+        })
+      ).json(),
+    ).toEqual([]);
+    expect(await allowance()).toMatchObject({
+      usedMicroUsd: before + 2,
+      heldMicroUsd: 0,
+    });
+  });
 });
 
 describe("Plan", () => {
