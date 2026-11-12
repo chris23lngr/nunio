@@ -102,12 +102,15 @@ export const SpecStyling: Story = {
     await expect(style(active).color).toBe(
       dark ? "rgb(240, 239, 237)" : "rgb(44, 44, 43)",
     )
-    // Switching back must let the deselected tab finish fading to transparent.
-    await userEvent.click(inactive)
-    await Promise.all(
-      inactive.getAnimations().map((animation) => animation.finished),
-    )
-    await userEvent.click(active)
+    // Synthetic clicks do not move Chromium's pointer or clear CSS :hover.
+    if (import.meta.env.MODE === "test") {
+      const { userEvent: browser } = await import("vitest/browser")
+      await browser.hover(inactive)
+      await Promise.all(
+        inactive.getAnimations().map((animation) => animation.finished),
+      )
+      await browser.hover(canvas.getByRole("tabpanel"))
+    }
     await waitFor(() =>
       expect(style(inactive).backgroundColor).toBe(TRANSPARENT),
     )
@@ -123,7 +126,6 @@ export const SpecStyling: Story = {
     await expect(style(icon).color).toBe(style(inactive).color)
 
     // Keyboard focus rings the tab like a button
-    await userEvent.click(canvasElement)
     await userEvent.tab()
     await expect(active).toHaveFocus()
     await expect(style(active).boxShadow).toContain(FOCUS_RING_BLUE)
