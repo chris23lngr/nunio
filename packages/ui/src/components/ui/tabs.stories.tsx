@@ -102,7 +102,18 @@ export const SpecStyling: Story = {
     await expect(style(active).color).toBe(
       dark ? "rgb(240, 239, 237)" : "rgb(44, 44, 43)",
     )
-    await expect(style(inactive).backgroundColor).toBe(TRANSPARENT)
+    // Synthetic clicks do not move Chromium's pointer or clear CSS :hover.
+    if (import.meta.env.MODE === "test") {
+      const { userEvent: browser } = await import("vitest/browser")
+      await browser.hover(inactive)
+      await Promise.all(
+        inactive.getAnimations().map((animation) => animation.finished),
+      )
+      await browser.hover(canvas.getByRole("tabpanel"))
+    }
+    await waitFor(() =>
+      expect(style(inactive).backgroundColor).toBe(TRANSPARENT),
+    )
     await expect(style(inactive).color).toBe(
       dark ? "rgb(173, 169, 163)" : "rgb(125, 122, 117)",
     )
