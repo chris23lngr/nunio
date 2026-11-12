@@ -7,6 +7,10 @@ import { createApiClient } from "@/lib/api-client";
 export type Chat =
   paths["/api/me/chats/{id}"]["get"]["responses"][200]["content"]["application/json"];
 export type Message = Chat["messages"][number];
+type SearchPart = Extract<
+  Message["parts"][number],
+  { type: "tool-searchMaterial" }
+>;
 export type Course = Chat["courses"][number];
 /** A Course the student can chat about, with its color. */
 export type CourseOption = Course & { color: CourseColor };
@@ -23,7 +27,13 @@ export type ChatUIMessage = UIMessage<
     /** The name of the model that wrote a saved answer. */
     model?: string;
   },
-  { committed: Turn; refused: { error: string } }
+  { committed: Turn; refused: { error: string } },
+  {
+    searchMaterial: {
+      input: SearchPart["input"];
+      output: SearchPart["output"];
+    };
+  }
 >;
 
 export function toUIMessage(message: Message): ChatUIMessage {
@@ -36,26 +46,19 @@ export function toUIMessage(message: Message): ChatUIMessage {
       ...(message.text === null ? { withdrawn: true as const } : {}),
       ...(message.model ? { model: message.model.name } : {}),
     },
-    parts: [
-      ...(message.reasoning
-        ? [
-            {
-              type: "reasoning" as const,
-              text: message.reasoning,
-              state: "done" as const,
-            },
-          ]
-        : []),
-      ...(message.text !== null
-        ? [
-            {
-              type: "text" as const,
-              text: message.text,
-              state: "done" as const,
-            },
-          ]
-        : []),
-    ],
+    parts: message.parts.map((part): ChatUIMessage["parts"][number] => {
+      if (part.type === "tool-searchMaterial")
+        return {
+          type: "tool-searchMaterial",
+          toolCallId: part.toolCallId,
+          state: "output-available",
+          input: part.input,
+          output: part.output,
+        };
+      return part.type === "reasoning"
+        ? { type: "reasoning", text: part.text, state: "done" }
+        : { type: "text", text: part.text, state: "done" };
+    }),
   };
 }
 

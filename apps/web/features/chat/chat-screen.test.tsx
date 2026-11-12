@@ -192,6 +192,7 @@ test("first send fixes the selected courses and displays the persisted turn", as
     id: "question-1",
     role: "student",
     text: "Erkläre die Grundlagen",
+    parts: [{ type: "text", text: "Erkläre die Grundlagen" }],
     citations: [],
     createdAt: "2026-11-10T09:48:00Z",
   };
@@ -199,6 +200,7 @@ test("first send fixes the selected courses and displays the persisted turn", as
     id: "answer-1",
     role: "assistant",
     text: "## Grundlagen\n\nEine **gute Antwort**.",
+    parts: [{ type: "text", text: "## Grundlagen\n\nEine **gute Antwort**." }],
     citations: [],
     createdAt: "2026-11-10T09:48:00Z",
   };
@@ -256,6 +258,7 @@ test("reopening a Chat restores its locked selection, title, citations and remov
           id: "q",
           role: "student",
           text: "Wann ist die Klausur?",
+          parts: [{ type: "text", text: "Wann ist die Klausur?" }],
           createdAt: "2026-11-10T09:48:00Z",
           citations: [],
         },
@@ -264,6 +267,13 @@ test("reopening a Chat restores its locked selection, title, citations and remov
           role: "assistant",
           text: "Im Februar [S1].",
           reasoning: "Ich habe den Termin im Handbuch geprüft.",
+          parts: [
+            {
+              type: "reasoning",
+              text: "Ich habe den Termin im Handbuch geprüft.",
+            },
+            { type: "text", text: "Im Februar [S1]." },
+          ],
           createdAt: "2026-11-10T09:48:00Z",
           citations: [
             {
@@ -281,6 +291,7 @@ test("reopening a Chat restores its locked selection, title, citations and remov
           id: "gone",
           role: "assistant",
           text: null,
+          parts: [],
           createdAt: "2026-11-10T09:48:00Z",
           citations: [{ tag: "S2", provenance: "gone" }],
         },
@@ -336,12 +347,14 @@ test("an answer failure preserves the draft and retries the existing Chat withou
           id: "answer",
           role: "assistant",
           text: "Hier ist die Antwort.",
+          parts: [{ type: "text", text: "Hier ist die Antwort." }],
           citations: [],
           createdAt: "2026-11-10T09:48:00Z",
           question: {
             id: "question",
             role: "student",
             text: "Meine Frage",
+            parts: [{ type: "text", text: "Meine Frage" }],
             citations: [],
             createdAt: "2026-11-10T09:48:00Z",
           },
@@ -474,6 +487,7 @@ test("a saved answer names the model that wrote it", async () => {
           id: "q",
           role: "student",
           text: "Frage",
+          parts: [{ type: "text", text: "Frage" }],
           createdAt: "2026-11-10T09:48:00Z",
           citations: [],
         },
@@ -481,6 +495,7 @@ test("a saved answer names the model that wrote it", async () => {
           id: "old",
           role: "assistant",
           text: "Alte Antwort",
+          parts: [{ type: "text", text: "Alte Antwort" }],
           createdAt: "2026-11-10T09:48:00Z",
           citations: [],
           model: null,
@@ -489,6 +504,7 @@ test("a saved answer names the model that wrote it", async () => {
           id: "new",
           role: "assistant",
           text: "Neue Antwort",
+          parts: [{ type: "text", text: "Neue Antwort" }],
           createdAt: "2026-11-10T09:48:00Z",
           citations: [],
           model: { key: "opus-5.5", name: "Opus 5.5" },
@@ -530,6 +546,9 @@ test("deleting a Source clears cached Chat answers and reloads their withdrawn s
           id: "answer",
           role: "assistant",
           text: deleted ? null : "Privater Inhalt aus dem Handbuch.",
+          parts: deleted
+            ? []
+            : [{ type: "text", text: "Privater Inhalt aus dem Handbuch." }],
           citations: [],
           createdAt: "2026-11-10T09:48:00Z",
         },
@@ -594,12 +613,17 @@ test("renders partial Markdown before accepting the committed answer", async () 
                   role: "assistant",
                   text: "Die gespeicherte Antwort.",
                   reasoning: "Ich prüfe deine Materialien.",
+                  parts: [
+                    { type: "reasoning", text: "Ich prüfe deine Materialien." },
+                    { type: "text", text: "Die gespeicherte Antwort." },
+                  ],
                   createdAt: "2026-11-10T09:48:00Z",
                   citations: [],
                   question: {
                     id: "question-1",
                     role: "student",
                     text: "Meine Frage",
+                    parts: [{ type: "text", text: "Meine Frage" }],
                     createdAt: "2026-11-10T09:48:00Z",
                     citations: [],
                   },
@@ -667,12 +691,14 @@ test("a saved answer keeps the element it streamed into, and the composer stays 
                 id: "answer-1",
                 role: "assistant",
                 text: "Eine Antwort.",
+                parts: [{ type: "text", text: "Eine Antwort." }],
                 createdAt: "2026-11-10T09:48:00Z",
                 citations: [],
                 question: {
                   id,
                   role: "student",
                   text: "Meine Frage",
+                  parts: [{ type: "text", text: "Meine Frage" }],
                   createdAt: "2026-11-10T09:48:00Z",
                   citations: [],
                 },
@@ -722,6 +748,101 @@ test("a saved answer keeps the element it streamed into, and the composer stays 
   );
   expect(streamed.getAttribute("aria-busy")).toBeNull();
   expect(textarea.value).toBe("Nächste Frage");
+});
+
+test("shows each search as a step while answering, in the same element once saved, and again when reopened", async () => {
+  const search = {
+    type: "tool-searchMaterial",
+    toolCallId: "call-1",
+    input: { query: "Klausur Termin" },
+    output: { found: 2, sources: ["Modulhandbuch.pdf"] },
+  };
+  const answer = {
+    id: "answer-1",
+    role: "assistant",
+    text: "Am 10. Februar [S1].",
+    parts: [search, { type: "text", text: "Am 10. Februar [S1]." }],
+    createdAt: "2026-11-10T09:48:00Z",
+    citations: [],
+    model: null,
+  };
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: saved }),
+  );
+  let finish = () => {};
+  const encoder = new TextEncoder();
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    const { id } = (await request.json()) as { id: string };
+    const question = {
+      id,
+      role: "student",
+      text: "Wann ist die Klausur?",
+      parts: [{ type: "text", text: "Wann ist die Klausur?" }],
+      createdAt: "2026-11-10T09:48:00Z",
+      citations: [],
+      model: null,
+    };
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          const emit = (data: unknown) =>
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
+            );
+          emit({ type: "start", messageId: "answer-1" });
+          emit({ type: "start-step" });
+          emit({
+            type: "tool-input-available",
+            toolCallId: "call-1",
+            toolName: "searchMaterial",
+            input: search.input,
+          });
+          emit({
+            type: "tool-output-available",
+            toolCallId: "call-1",
+            output: search.output,
+          });
+          emit({ type: "finish-step" });
+          emit({ type: "start-step" });
+          emit({ type: "text-start", id: "text" });
+          emit({ type: "text-delta", id: "text", delta: answer.text });
+          finish = () => {
+            emit({ type: "text-end", id: "text" });
+            emit({ type: "finish-step" });
+            saved.push(question, answer);
+            emit({ type: "data-committed", data: { ...answer, question } });
+            emit({ type: "finish" });
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          };
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  const { unmount } = mount("chat-1");
+  await chatLoaded();
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Nachricht" }),
+    "Wann ist die Klausur?",
+  );
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  let step: HTMLElement;
+  try {
+    step = await screen.findByText("Durchsucht: „Klausur Termin“");
+    expect(screen.getByText("2 Treffer in Modulhandbuch.pdf")).toBeTruthy();
+  } finally {
+    finish();
+  }
+  await screen.findByRole("article", { name: "Antwort von nunio" });
+  expect(screen.getByText("Durchsucht: „Klausur Termin“")).toBe(step);
+  unmount();
+
+  mount("chat-1");
+  expect(await screen.findByText("Durchsucht: „Klausur Termin“")).toBeTruthy();
+  expect(screen.getByText("2 Treffer in Modulhandbuch.pdf")).toBeTruthy();
 });
 
 test("the waiting status stays until the first word when nunio does not reason", async () => {
@@ -823,12 +944,17 @@ test("one answer element carries the waiting line, open reasoning and text until
                     role: "assistant",
                     text: "Die Antwort.",
                     reasoning: "Ich prüfe.",
+                    parts: [
+                      { type: "reasoning", text: "Ich prüfe." },
+                      { type: "text", text: "Die Antwort." },
+                    ],
                     createdAt: "2026-11-10T09:48:00Z",
                     citations: [],
                     question: {
                       id,
                       role: "student",
                       text: "Meine Frage",
+                      parts: [{ type: "text", text: "Meine Frage" }],
                       createdAt: "2026-11-10T09:48:00Z",
                       citations: [],
                     },
@@ -1084,11 +1210,19 @@ test("a turn saved before Stop took effect stays in the Chat, not in the compose
     const { id } = (await request.json()) as { id: string };
     const createdAt = "2026-11-10T09:48:00Z";
     saved = [
-      { id, role: "student", text: "Meine Frage", citations: [], createdAt },
+      {
+        id,
+        role: "student",
+        text: "Meine Frage",
+        parts: [{ type: "text", text: "Meine Frage" }],
+        citations: [],
+        createdAt,
+      },
       {
         id: "answer-1",
         role: "assistant",
         text: "Ein Anfang und mehr.",
+        parts: [{ type: "text", text: "Ein Anfang und mehr." }],
         citations: [],
         createdAt,
       },
@@ -1143,6 +1277,9 @@ test("deleting a Source while an answer streams withdraws earlier answers and ke
           id: "answer",
           role: "assistant",
           text: deleted ? null : "Privater Inhalt aus dem Handbuch.",
+          parts: deleted
+            ? []
+            : [{ type: "text", text: "Privater Inhalt aus dem Handbuch." }],
           citations: [],
           createdAt: "2026-11-10T09:48:00Z",
         },
