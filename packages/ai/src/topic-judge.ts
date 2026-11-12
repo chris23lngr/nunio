@@ -20,6 +20,7 @@ const instructions = [
   "For every extracted Topic, choose the label describing the same concept, or null if none.",
   "Use semantic equivalence, including paraphrases and translations, rather than exact wording.",
   "Only match within the same Course. A broader heading or a merely related concept is not equivalent.",
+  "Match only when the Topic has the label's meaning and scope. It is not a match when it is broader than the label, combines several labelled concepts, lists several items such as a set of commands, or states a rule, practice or workflow that merely involves the labelled concept.",
   "Assign each label at most once. If predictions duplicate a concept, match the best one and mark the others null.",
   "Prefer a required label over an optional equivalent. Do not infer concepts absent from the provided data.",
   'Return only JSON: {"decisions":[{"topicId":0,"labelId":null}]} using the supplied IDs.',
