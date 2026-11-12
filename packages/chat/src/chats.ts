@@ -14,8 +14,27 @@ import { courseFactsTool } from "./course-facts.js";
 import { historyFrom, historyTurns } from "./history.js";
 import type { ChatPart } from "./parts.js";
 import { partsFrom } from "./parts.js";
+import type { Proposal } from "./proposals.js";
+import { approveStudyBlock, proposeStudyBlockTool } from "./proposals.js";
 import { searchTool } from "./search.js";
 import { createTurn } from "./turn.js";
+
+/** Whether a tool call waits for the student: approval asked, and not yet answered. */
+function awaitsApproval(messages: readonly ModelMessage[]) {
+  const asked = new Set<string>();
+  const answered = new Set<string>();
+  for (const message of messages)
+    if (Array.isArray(message.content))
+      for (const part of message.content as {
+        type: string;
+        approvalId?: string;
+      }[]) {
+        if (part.type === "tool-approval-request") asked.add(part.approvalId!);
+        if (part.type === "tool-approval-response")
+          answered.add(part.approvalId!);
+      }
+  return [...asked].some((id) => !answered.has(id));
+}
 
 /** At most this many model steps answer one question; the last one must answer (ADR-0019). */
 const maxSteps = 6;
@@ -50,7 +69,7 @@ export function createChats({
   keys: SourceKeys;
   reader: KnowledgeReader;
   delegation: Delegation;
-  plan: Pick<Plan, "timeZone" | "view">;
+  plan: Pick<Plan, "timeZone" | "view" | "check">;
   clock: { now(): Date };
 }) {
   const derived = createDerivedText(keys);
@@ -220,6 +239,17 @@ export function createChats({
           p,
           courses: context.courses,
         }),
+        proposeStudyBlock: proposeStudyBlockTool(),
+      };
+      /** Proposals that passed the Plan's rules, by tool call, waiting for the student once the answer is saved. */
+      const proposals = new Map<string, Proposal>();
+      const toolApproval = {
+        proposeStudyBlock: approveStudyBlock(turn, {
+          plan,
+          p,
+          timeZone,
+          proposals,
+        }),
       };
       const messages: ModelMessage[] = [
         ...history.turns.flatMap((turn): ModelMessage[] => [
@@ -239,6 +269,7 @@ export function createChats({
         const input = {
           messages,
           tools,
+          toolApproval,
           last: n === maxSteps,
         };
         const stepped = await delegation.meter(
@@ -259,7 +290,9 @@ export function createChats({
         if (refusal) return { status: "refused", reason: refusal } as const;
         if (stepped.status === "refused") return stepped;
         messages.push(...stepped.value.messages);
-        if (stepped.value.finishReason === "stop") break;
+        // A proposal waits for the student, so the turn ends with it; its call has no result to send on.
+        if (stepped.value.finishReason === "stop" || awaitsApproval(messages))
+          break;
       }
       step("generation");
       options.signal?.throwIfAborted();

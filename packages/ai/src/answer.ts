@@ -1,4 +1,9 @@
-import type { ModelMessage, ToolSet, UIMessageChunk } from "ai";
+import type {
+  ModelMessage,
+  ToolApprovalConfiguration,
+  ToolSet,
+  UIMessageChunk,
+} from "ai";
 import { asSchema, streamText } from "ai";
 import type { RegisteredModel } from "./models.js";
 
@@ -10,6 +15,8 @@ export interface AnswerStep {
   tools: ToolSet;
   /** The turn's last step, in which the model must answer instead of calling a tool. */
   last: boolean;
+  /** Which tool calls wait for the student instead of running, such as a proposed Action. */
+  toolApproval?: ToolApprovalConfiguration<ToolSet, unknown>;
 }
 
 export interface Answerer {
@@ -57,7 +64,7 @@ export function createAnswerer(model: RegisteredModel): Answerer {
           }),
         ),
       ]),
-    async step({ messages, tools, last }, { signal, write }) {
+    async step({ messages, tools, last, toolApproval }, { signal, write }) {
       let failure: unknown;
       const offered = Object.keys(tools).length > 0;
       const result = streamText({
@@ -67,6 +74,7 @@ export function createAnswerer(model: RegisteredModel): Answerer {
         instructions: { role: "system", content: instructions },
         messages,
         tools,
+        ...(toolApproval ? { toolApproval } : {}),
         // Withholding tools, never forcing one (ADR-0011): the last step must answer.
         ...(offered ? { toolChoice: last ? "none" : "auto" } : {}),
         onError: ({ error }) => {

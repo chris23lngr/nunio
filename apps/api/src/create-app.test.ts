@@ -35,7 +35,7 @@ import {
   createSources,
 } from "@nunio/knowledge";
 import { createOutreach } from "@nunio/outreach";
-import { createPlan } from "@nunio/planning";
+import { createPlan, deadline } from "@nunio/planning";
 import { createUnderstanding } from "@nunio/understanding";
 import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
 import { hashPassword } from "better-auth/crypto";
@@ -1975,6 +1975,39 @@ async function emptyChat(name: string) {
 }
 
 /** The JSON chunks of an AI SDK UI message stream. */
+/** A Berlin calendar date `days` from today, as YYYY-MM-DD. */
+const berlinDay = (days: number) =>
+  new Date(Date.now() + days * 86_400_000).toLocaleDateString("en-CA", {
+    timeZone: "Europe/Berlin",
+  });
+
+/** A student with an Obligation due in ten days and a Chat with nothing selected, for proposing Study Blocks. */
+async function planningChat(name: string) {
+  const cookie = await signUp(name);
+  const headers = {
+    cookie,
+    origin: appOrigin,
+    "content-type": "application/json",
+  };
+  const p = principal.fromSession({ studentId: await studentId(cookie) });
+  const entered = await facts.enterObligation(p, {
+    course: { title: "Analysis I", code: "MA-101" },
+    kind: "assignment",
+    title: "Übungsblatt 4",
+    due: { date: berlinDay(10), time: "12:00", timeZone: null },
+    destination: null,
+  });
+  if (entered.status !== "ok") throw new Error(entered.status);
+  const { id } = (await (
+    await app.request(`${apiOrigin}/api/me/chats`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+    })
+  ).json()) as { id: string };
+  return { cookie, headers, p, chatId: id, obligationId: entered.id };
+}
+
 async function sseChunks(response: Response) {
   return (await response.text())
     .split("\n\n")
@@ -3128,6 +3161,43 @@ describe("Chat", () => {
     ]);
   });
 
+  it("returns a proposed Study Block that breaks the Plan's rules to the model, without asking the student", async () => {
+    const { headers, chatId } = await planningChat("chat-propose-refused");
+    const day = berlinDay(8);
+    await app.request(`${apiOrigin}/api/me/fixed-events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        title: "Vorlesung",
+        start: deadline(day, "10:00", "Europe/Berlin"),
+        end: deadline(day, "12:00", "Europe/Berlin"),
+      }),
+    });
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+      says("Da hast du schon die Vorlesung."),
+    );
+    prompts.length = 0;
+
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+
+    expect(asked.status).toBe(200);
+    expect(JSON.stringify(prompts[1])).toMatch(/O1\W+[^"]*Übungsblatt 4/);
+    expect(JSON.stringify(prompts[2])).toContain("overlaps a Fixed Event");
+    expect(
+      await (
+        await app.request(`${apiOrigin}/api/me/approvals`, {
+          headers: { cookie: headers.cookie },
+        })
+      ).json(),
+    ).toEqual([]);
+  });
+
   it("offers no search in a Chat with nothing selected, but still the Plan", async () => {
     const { headers, id } = await emptyChat("chat-no-search");
     reply = "Für diesen Chat ist kein Material ausgewählt.";
@@ -3144,7 +3214,9 @@ describe("Chat", () => {
       }),
     );
 
-    expect(offeredTools).toEqual([["agenda", "courseFacts"]]);
+    expect(offeredTools).toEqual([
+      ["agenda", "courseFacts", "proposeStudyBlock"],
+    ]);
     expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
   });
 
