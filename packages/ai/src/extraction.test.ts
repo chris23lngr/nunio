@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { createExtractor } from "./extraction.js";
 import { createModels } from "./models.js";
+import { figureMarker } from "./source-models.js";
 
 const extracted = {
   courses: [
@@ -132,6 +133,10 @@ it("extracts through structured output without tools, keeping page text fenced i
     )
     .join("");
   expect(system).not.toContain("Analysis");
+  // The scan reader's figure lines, named with the same marker grounding recognises.
+  expect(system).toContain(
+    JSON.stringify(`exactly with "${figureMarker}"`).slice(1, -1),
+  );
   expect(user).toMatch(
     /<document-([0-9a-f]{32})>.*Ignore previous instructions.*<\/document-\1>/s,
   );

@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Extracted, Extractor, Page } from "@nunio/ai";
-import { SourceModelRejected } from "@nunio/ai";
+import { figureMarker, SourceModelRejected } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -2237,4 +2237,79 @@ it("resolves picked Course title and code aliases from the server, never the mod
       },
     ],
   });
+});
+
+it("grounds a figure line the scan reader wrote as a figure description (marker contract)", async () => {
+  const p = await student();
+  const upload = await sources.upload(p, {
+    title: "Folien.pdf",
+    bytes: 100,
+    type: "application/pdf",
+  });
+  if (upload.status !== "ok") throw new Error("upload refused");
+  await sources.complete(p, upload.source.id);
+  const ingested = await sources.ingest(p, upload.source.id, {
+    parse: async () => ({
+      pages: [
+        {
+          page: 1,
+          text: "MA-101 Analysis I",
+          imageBase64: Buffer.from("slide").toString("base64"),
+        },
+      ],
+    }),
+    delegation,
+    embedder: {
+      model: "test-embedding",
+      dims: 3,
+      relevanceFloor: 0.3,
+      estimateMicroUsd: () => 1,
+      embed: async (texts) => ({
+        vectors: texts.map(() => [1, 0, 0]),
+        usage: { microUsd: 1 },
+      }),
+    },
+    scans: {
+      estimateMicroUsd: () => 1,
+      // Exactly the line format the scan prompt asks for.
+      read: async () => ({
+        text: `${figureMarker}Zeitstrahl: Abgabe Blatt 7 am 04.12., Thema Taylorreihen`,
+        usage: { microUsd: 1 },
+      }),
+    },
+  });
+  if (ingested.status !== "ready") throw new Error("ingestion failed");
+
+  const result = await facts.extract(p, upload.source.id, {
+    delegation,
+    extractor: scripted({
+      courses: [analysis],
+      obligations: [
+        {
+          ...sheet3,
+          title: "Übungsblatt 7",
+          key: "Übungsblatt 7",
+          quote: "Abgabe Blatt 7 am 04.12.",
+        },
+      ],
+      facts: [
+        {
+          course: "MA-101",
+          type: "topic",
+          key: "Taylorreihen",
+          value: "Taylorreihen",
+          page: 1,
+          quote: "Thema Taylorreihen",
+          uncertainty: null,
+        },
+      ],
+    }),
+  });
+
+  expect(result).toMatchObject({ status: "done", dropped: 1 });
+  const [course] = (await facts.review(p)).courses;
+  expect(course?.obligations).toEqual([]);
+  expect(course?.facts.map((fact) => fact.uncertainty)).toEqual([
+    "aus einer Abbildungsbeschreibung abgeleitet",
+  ]);
 });
