@@ -31,11 +31,16 @@ export class KnowledgeUnavailable extends Error {
 export class ScopeMismatchError extends Error {
   override name = "ScopeMismatchError";
 }
-/** The Plan spans every Course, so planning sees their Facts; course content always stays under explicit selection. */
+/**
+ * The Plan spans every Course, so planning sees their Facts, and so does a Chat's reading of them (ADR-0020); course
+ * content always stays under explicit selection.
+ */
 const planningTypes: readonly FactType[] = [
   "obligation",
   "course_rule",
   "topic",
+  "exam_logistics",
+  "ai_use_rule",
   "fixed_event",
 ];
 /** Intersected with the selection, never unioned. A Project narrows to its Courses. */
