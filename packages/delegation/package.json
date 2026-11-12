@@ -22,9 +22,11 @@
     "pg": "8.23.1",
     "typescript": "5.9.3",
     "vitest": "5.0.5",
-    "@biomejs/biome": "2.6.3"
+    "@biomejs/biome": "2.6.3",
+    "tsx": "4.23.15"
   },
   "dependencies": {
+    "@nunio/ai": "workspace:*",
     "@nunio/db": "workspace:*",
     "zod": "4.6.7"
   }

@@ -36,6 +36,11 @@ export {
   type Usage,
 } from "./meter.js";
 export {
+  type CatalogModel,
+  createModelCatalog,
+  type ModelCatalog,
+} from "./model-catalog.js";
+export {
   type Principal,
   principal,
   type Transaction,
