@@ -104,7 +104,7 @@ Step 4:
 
 - The instructions ask for every concept the pages teach, with no fixed count, one concept per Topic. Deterministic
   dedup was dropped: in step 1 no two Topics of one run matched the same label, and again none did in step 4.
-- Recall and precision rise on every deck. Runs return 9–28 Topics, and none ended early.
+- Recall and precision rise on every deck. Runs return 5–28 Topics, and no extraction failed or ended early.
 - 40 required concepts were missed in all 3 runs. 35 of them are basic terms the deck introduces, such as
   "Label", "Token", "Binärzahl" or "git status"; 5 are figure-only.
 
