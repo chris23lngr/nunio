@@ -1,69 +1,127 @@
 import { generateText } from "ai";
 import { describe, expect, it } from "vitest";
+import type { ModelConfig } from "./index.js";
 import {
   createModels,
   isDefiniteFailure,
   isTransientFailure,
 } from "./index.js";
+import { haiku, opus, sonnet, testCatalog } from "./test-catalog.js";
 
 const models = createModels({
   apiKey: "test-key",
   baseURL: "https://openrouter.test/api/v1",
+  catalog: testCatalog,
 });
 
-describe("the model registry", () => {
-  it.each([
-    "openai/gpt-5",
-    "anthropic/claude-fable-5-1",
-    "anthropic/claude-haiku-5.5:free",
-    "",
-  ])("rejects the model ID %j outside the allowlist", (id) => {
-    expect(() => models.byId(id)).toThrow(/not in the model allowlist/);
-  });
+/** A Haiku row with OpenRouter's long-context surcharge from 100k prompt tokens: $0.50 / $2.50 per million. */
+const longContextHaiku: ModelConfig = {
+  ...haiku,
+  prices: [
+    {
+      minPromptTokens: 0,
+      inputMicroUsdPerMTok: 100_000,
+      outputMicroUsdPerMTok: 500_000,
+    },
+    {
+      minPromptTokens: 100_000,
+      inputMicroUsdPerMTok: 500_000,
+      outputMicroUsdPerMTok: 2_500_000,
+    },
+  ],
+};
 
+describe("the model registry", () => {
   // ADR-0011 starting defaults, confirmed by evaluations before the pilot.
   it.each([
-    ["extraction", "anthropic/claude-haiku-5.5"],
-    ["scan", "anthropic/claude-haiku-5.5"],
-    ["classification", "anthropic/claude-haiku-5.5"],
-    ["estimation", "anthropic/claude-haiku-5.5"],
-    ["agent", "anthropic/claude-sonnet-5.5"],
-    ["explanation", "anthropic/claude-sonnet-5.5"],
-    ["feedback", "anthropic/claude-sonnet-5.5"],
-    ["planning", "anthropic/claude-opus-5.5"],
-  ] as const)("defaults %s to %s", (task, id) => {
-    expect(models.forTask(task).id).toBe(id);
+    ["extraction", "haiku-5.5-reasoning-high"],
+    ["scan", "haiku-5.5-reasoning-high"],
+    ["classification", "haiku-5.5-reasoning-high"],
+    ["estimation", "haiku-5.5-reasoning-high"],
+    ["agent", "sonnet-5.5-reasoning-high"],
+    ["explanation", "sonnet-5.5-reasoning-high"],
+    ["feedback", "sonnet-5.5-reasoning-high"],
+    ["planning", "opus-5.5-reasoning-high"],
+  ] as const)("defaults %s to the catalog's %s", (task, key) => {
+    expect(models.forTask(task).key).toBe(key);
   });
 
-  it.each([
-    "anthropic/claude-haiku-5.5",
-    "anthropic/claude-sonnet-5.5",
-    "anthropic/claude-opus-5.5",
-  ])("labels %s with how it handles student data", (id) => {
-    // ADR-0012 and its spike f amendment: international routing, zero retention, Bedrock or Google upstream.
-    expect(models.byId(id).label).toEqual({
+  it("fails clearly when the catalog lacks a task's model", () => {
+    const partial = createModels({
+      apiKey: "test-key",
+      baseURL: "https://openrouter.test/api/v1",
+      catalog: [haiku, sonnet],
+    });
+
+    expect(() => partial.forTask("planning")).toThrow(
+      /opus-5\.5-reasoning-high/,
+    );
+  });
+
+  it.each(["anthropic/claude-fable-5-1", "anthropic/claude-mythos-5"])(
+    "refuses a catalog holding the Covered Model %s",
+    (providerModelId) => {
+      expect(() =>
+        createModels({
+          apiKey: "test-key",
+          baseURL: "https://openrouter.test/api/v1",
+          catalog: [
+            ...testCatalog,
+            { ...sonnet, key: "covered", providerModelId },
+          ],
+        }),
+      ).toThrow(/Covered Model/);
+    },
+  );
+
+  it("refuses a Covered Model chosen per request", () => {
+    expect(() =>
+      models.fromConfig({
+        ...sonnet,
+        key: "fable-5.1-reasoning-high",
+        providerModelId: "anthropic/claude-fable-5-1",
+      }),
+    ).toThrow(/Covered Model/);
+  });
+
+  it("labels a model with how its catalog row handles student data", () => {
+    // ADR-0012 and its spike f amendment: international routing, zero retention, the row's upstreams.
+    expect(
+      models.fromConfig({ ...sonnet, upstream: ["Amazon Bedrock"] }).label,
+    ).toEqual({
       provider: "OpenRouter",
-      upstream: ["Amazon Bedrock", "Google"],
+      upstream: ["Amazon Bedrock"],
       routing: "international",
       zeroRetention: true,
     });
   });
 
-  // OpenRouter prices per million tokens (input / output): Haiku $0.10 / $0.50, Sonnet $2 / $10, Opus $4 / $20.
+  // Test catalog prices per million tokens (input / output): Haiku $0.10 / $0.50, Sonnet $2 / $10, Opus $4 / $20.
   // A token covers at least one UTF-8 byte, so 10,000 bytes plus 200 tokens of message framing bound the input.
   it.each([
-    ["anthropic/claude-haiku-5.5", 1_020 + 4_000],
-    ["anthropic/claude-sonnet-5.5", 20_400 + 80_000],
-    ["anthropic/claude-opus-5.5", 40_800 + 160_000],
+    [haiku.key, haiku, 1_020 + 4_000],
+    [sonnet.key, sonnet, 20_400 + 80_000],
+    [opus.key, opus, 40_800 + 160_000],
   ])(
     "estimates %s from 10,000 bytes of German input plus its full 8k output budget",
-    (id, microUsd) => {
+    (_, config, microUsd) => {
       const input = "Prüfung".repeat(1_250); // "ü" takes two bytes: 8 bytes per word.
 
       expect(new TextEncoder().encode(input).byteLength).toBe(10_000);
-      expect(models.byId(id).estimateMicroUsd([input])).toBe(microUsd);
+      expect(models.fromConfig(config).estimateMicroUsd([input])).toBe(
+        microUsd,
+      );
     },
   );
+
+  it("estimates at the long-context price once the input bound reaches its tier", () => {
+    const model = models.fromConfig(longContextHaiku);
+
+    // 99,799 bytes + 200 framing = 99,999 tokens at $0.10 (9,999.9) plus 8,000 output at $0.50 (4,000).
+    expect(model.estimateMicroUsd(["x".repeat(99_799)])).toBe(14_000);
+    // 99,800 bytes + 200 framing = 100,000 tokens at $0.50 (50,000) plus 8,000 output at $2.50 (20,000).
+    expect(model.estimateMicroUsd(["x".repeat(99_800)])).toBe(70_000);
+  });
 
   it("gives extraction a 32k output budget, because Haiku's reasoning tokens share it, and reserves for all of it", () => {
     const input = "Prüfung".repeat(1_250);
@@ -71,10 +129,20 @@ describe("the model registry", () => {
 
     expect(extraction.callSettings.maxOutputTokens).toBe(32_000);
     expect(extraction.estimateMicroUsd([input])).toBe(1_020 + 16_000);
-    expect(models.forTask("agent").callSettings.maxOutputTokens).toBe(8_000);
   });
 
-  it("sends every request to zero-retention endpoints only, with a bounded output budget", async () => {
+  it("gives other tasks their catalog row's output budget", () => {
+    const roomy = createModels({
+      apiKey: "test-key",
+      baseURL: "https://openrouter.test/api/v1",
+      catalog: [haiku, { ...sonnet, maxOutputTokens: 12_000 }, opus],
+    });
+
+    expect(roomy.forTask("agent").callSettings.maxOutputTokens).toBe(12_000);
+    expect(roomy.forTask("scan").callSettings.maxOutputTokens).toBe(8_000);
+  });
+
+  it("sends a catalog row's exact configuration, to zero-retention endpoints only", async () => {
     const bodies: Record<string, unknown>[] = [];
     const recording = createModels({
       apiKey: "test-key",
@@ -83,20 +151,28 @@ describe("the model registry", () => {
         bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
         return Response.json(completion("pong"));
       },
+      catalog: testCatalog,
     });
-    const haiku = recording.byId("anthropic/claude-haiku-5.5");
+    const model = recording.fromConfig({
+      ...sonnet,
+      key: "sonnet-5.5-reasoning-medium",
+      reasoningEffort: "medium",
+      maxOutputTokens: 4_000,
+    });
 
     await generateText({
-      model: haiku.model,
-      ...haiku.callSettings,
+      model: model.model,
+      ...model.callSettings,
       prompt: "Reply with: pong",
     });
 
+    expect(model.key).toBe("sonnet-5.5-reasoning-medium");
     expect(bodies).toEqual([
       expect.objectContaining({
-        model: "anthropic/claude-haiku-5.5",
+        model: "anthropic/claude-sonnet-5.5",
         provider: { zdr: true, data_collection: "deny" },
-        max_tokens: 8_000,
+        reasoning: { effort: "medium" },
+        max_tokens: 4_000,
         usage: { include: true },
       }),
     ]);
@@ -113,39 +189,48 @@ describe("the model registry", () => {
         apiKey: "test-key",
         baseURL: "https://openrouter.test/api/v1",
         fetch: async () => Response.json(completion("pong", { cost })),
+        catalog: testCatalog,
       });
-      const haiku = reporting.byId("anthropic/claude-haiku-5.5");
+      const model = reporting.fromConfig(haiku);
 
       const result = await generateText({
-        model: haiku.model,
-        ...haiku.callSettings,
+        model: model.model,
+        ...model.callSettings,
         prompt: "Reply with: pong",
       });
 
-      expect(haiku.actualMicroUsd(result)).toBe(microUsd);
+      expect(model.actualMicroUsd(result)).toBe(microUsd);
     },
   );
 
-  it("prices the reported tokens when OpenRouter reports no cost", async () => {
-    const silent = createModels({
-      apiKey: "test-key",
-      baseURL: "https://openrouter.test/api/v1",
-      fetch: async () =>
-        Response.json(
-          completion("pong", { promptTokens: 1_000, completionTokens: 200 }),
-        ),
-    });
-    const sonnet = silent.byId("anthropic/claude-sonnet-5.5");
-
-    const result = await generateText({
-      model: sonnet.model,
-      ...sonnet.callSettings,
-      prompt: "Reply with: pong",
-    });
-
+  it.each([
     // 1,000 input tokens at $2 per million plus 200 output tokens at $10 per million.
-    expect(sonnet.actualMicroUsd(result)).toBe(2_000 + 2_000);
-  });
+    ["sonnet", sonnet, 1_000, 200, 2_000 + 2_000],
+    // 150,000 input tokens reach the long-context tier: at $0.50 (75,000) plus 1,000 output at $2.50 (2,500).
+    ["long-context haiku", longContextHaiku, 150_000, 1_000, 75_000 + 2_500],
+    // 99,999 input tokens stay below it: at $0.10 (9,999.9) plus 1,000 output at $0.50 (500).
+    ["long-context haiku", longContextHaiku, 99_999, 1_000, 10_500],
+  ])(
+    "prices the reported tokens of %s when OpenRouter reports no cost (%i in, %i out)",
+    async (_, config, promptTokens, completionTokens, microUsd) => {
+      const silent = createModels({
+        apiKey: "test-key",
+        baseURL: "https://openrouter.test/api/v1",
+        fetch: async () =>
+          Response.json(completion("pong", { promptTokens, completionTokens })),
+        catalog: testCatalog,
+      });
+      const model = silent.fromConfig(config);
+
+      const result = await generateText({
+        model: model.model,
+        ...model.callSettings,
+        prompt: "Reply with: pong",
+      });
+
+      expect(model.actualMicroUsd(result)).toBe(microUsd);
+    },
+  );
 
   it("leaves retries to the caller: a failed request is sent once", async () => {
     let requests = 0;
@@ -159,13 +244,14 @@ describe("the model registry", () => {
           { status: 503 },
         );
       },
+      catalog: testCatalog,
     });
-    const haiku = failing.byId("anthropic/claude-haiku-5.5");
+    const model = failing.fromConfig(haiku);
 
     await expect(
       generateText({
-        model: haiku.model,
-        ...haiku.callSettings,
+        model: model.model,
+        ...model.callSettings,
         prompt: "Reply with: pong",
       }),
     ).rejects.toThrow();
@@ -194,12 +280,13 @@ describe("isDefiniteFailure", () => {
             { error: { message: "rejected", code: status } },
             { status },
           ),
+        catalog: testCatalog,
       });
-      const haiku = rejecting.byId("anthropic/claude-haiku-5.5");
+      const model = rejecting.fromConfig(haiku);
 
       const error = await generateText({
-        model: haiku.model,
-        ...haiku.callSettings,
+        model: model.model,
+        ...model.callSettings,
         prompt: "Reply with: pong",
       }).catch((e: unknown) => e);
 
@@ -214,12 +301,13 @@ describe("isDefiniteFailure", () => {
       fetch: async () => {
         throw new TypeError("fetch failed");
       },
+      catalog: testCatalog,
     });
-    const haiku = offline.byId("anthropic/claude-haiku-5.5");
+    const model = offline.fromConfig(haiku);
 
     const error = await generateText({
-      model: haiku.model,
-      ...haiku.callSettings,
+      model: model.model,
+      ...model.callSettings,
       prompt: "Reply with: pong",
     }).catch((e: unknown) => e);
 
@@ -281,11 +369,12 @@ describe("isTransientFailure", () => {
             { error: { message: "rejected", code: status } },
             { status },
           ),
+        catalog: testCatalog,
       });
-      const haiku = rejecting.byId("anthropic/claude-haiku-5.5");
+      const model = rejecting.fromConfig(haiku);
       const error = await generateText({
-        model: haiku.model,
-        ...haiku.callSettings,
+        model: model.model,
+        ...model.callSettings,
         prompt: "Reply with: pong",
       }).catch((e: unknown) => e);
       expect(isTransientFailure(error)).toBe(transient);
@@ -299,11 +388,12 @@ describe("isTransientFailure", () => {
       fetch: async () => {
         throw new TypeError("fetch failed");
       },
+      catalog: testCatalog,
     });
-    const haiku = offline.byId("anthropic/claude-haiku-5.5");
+    const model = offline.fromConfig(haiku);
     const error = await generateText({
-      model: haiku.model,
-      ...haiku.callSettings,
+      model: model.model,
+      ...model.callSettings,
       prompt: "Reply with: pong",
     }).catch((e: unknown) => e);
     expect(isTransientFailure(error)).toBe(true);

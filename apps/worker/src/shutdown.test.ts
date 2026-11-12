@@ -2,17 +2,25 @@ import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { once } from "node:events";
+import type { TestDatabase } from "@nunio/db/testing";
+import { startTestDatabase } from "@nunio/db/testing";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 let env: TestWorkflowEnvironment;
+/** The worker reads its task Models from the Model Catalog at start. */
+let db: TestDatabase;
 
 beforeAll(async () => {
-  env = await TestWorkflowEnvironment.createLocal();
-}, 120_000);
+  [env, db] = await Promise.all([
+    TestWorkflowEnvironment.createLocal(),
+    startTestDatabase(),
+  ]);
+}, 180_000);
 
 afterAll(async () => {
   await env?.teardown();
+  await db?.stop();
 });
 
 /** Starts the real worker entrypoint and resolves once it logs `msg`. */
@@ -63,8 +71,8 @@ describe("the worker process", () => {
       CODEC_KEY_VERSION: "v1",
       SHUTDOWN_GRACE_SECONDS: "10",
       PARSER_HOSTPORT: "127.0.0.1:1",
-      // Unused by this test; the worker refuses to start without its Source settings.
-      DATABASE_URL: "postgresql://runtime@127.0.0.1:1/nunio",
+      // Read once for the Model Catalog's task Models; otherwise unused by this test.
+      DATABASE_URL: db.runtimeConnectionString,
       SOURCE_KEY_VERSION: "v1",
       SOURCE_MASTER_KEYS: JSON.stringify({
         v1: randomBytes(32).toString("base64"),

@@ -5,12 +5,13 @@ import { MessageFooter } from "@nunio/ui/components/message/message";
 import { Copy, Pencil } from "lucide-react";
 import { useState } from "react";
 
-/** The row under a saved message: its time, copy, and (for the student's own message) edit. */
+/** The row under a saved message: its time, model, copy, and (for the student's own message) edit. */
 export function MessageActions({
   createdAt,
   text,
   own,
   withdrawn = false,
+  model,
 }: {
   createdAt: string;
   /** What the copy button writes to the clipboard. */
@@ -19,6 +20,8 @@ export function MessageActions({
   own: boolean;
   /** A withdrawn answer has nothing to copy. */
   withdrawn?: boolean;
+  /** The name of the model that wrote the answer, if known. */
+  model?: string;
 }) {
   const [copied, setCopied] = useState("");
   return (
@@ -30,6 +33,7 @@ export function MessageActions({
         }).format(new Date(createdAt))}{" "}
         Uhr
       </time>
+      {model && <span className="text-base-500">{model}</span>}
       {!withdrawn && (
         <Button
           variant="ghost"

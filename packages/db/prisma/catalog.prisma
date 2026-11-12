@@ -1,0 +1,55 @@
+// The Model Catalog (ADR-0017), owned by @nunio/delegation. A row is one exact, immutable call
+// configuration; rows are retired, never deleted, so every answer keeps pointing at what wrote it.
+model CatalogModel {
+  key                    String    @id
+  /// OpenRouter's model ID, such as anthropic/claude-sonnet-5.5.
+  providerModelId        String
+  /// low, medium or high; sent as OpenRouter's reasoning effort.
+  reasoningEffort        String
+  maxOutputTokens        Int
+  name                   String
+  /// The model's maker, shown in the picker.
+  provider               String
+  description            String
+  position               Int       @default(0)
+  /// The founder's switches; the price sync never writes them.
+  chatEnabled            Boolean   @default(false)
+  chatDefault            Boolean   @default(false)
+  retiredAt              DateTime?
+  /// Synced from OpenRouter's zero-retention endpoints: [{ minPromptTokens, inputMicroUsdPerMTok, outputMicroUsdPerMTok }].
+  prices                 Json?
+  upstream               String[]  @default([])
+  zeroRetentionAvailable Boolean   @default(false)
+  syncedAt               DateTime?
+  createdAt              DateTime  @default(now())
+
+  messages    ChatMessage[]
+  preferences ChatPreference[]
+  changes     ModelCatalogChange[]
+
+  @@map("catalog_model")
+}
+
+// The founder's audit trail of Model Catalog changes.
+model ModelCatalogChange {
+  id       String       @id @default(uuid())
+  modelKey String
+  model    CatalogModel @relation(fields: [modelKey], references: [key])
+  action   String
+  operator String
+  at       DateTime     @default(now())
+
+  @@index([modelKey])
+  @@map("model_catalog_change")
+}
+
+// The Model a student last chose for Chat answers.
+model ChatPreference {
+  studentId String       @id
+  student   User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  modelKey  String
+  model     CatalogModel @relation(fields: [modelKey], references: [key])
+  updatedAt DateTime     @default(now()) @updatedAt
+
+  @@map("chat_preference")
+}

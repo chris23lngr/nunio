@@ -98,6 +98,7 @@ export const ChatMessage = memo(function ChatMessage({
             text={text}
             own={student}
             withdrawn={withdrawn}
+            model={saved.model}
           />
         )}
       </MessageContent>

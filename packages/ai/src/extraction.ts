@@ -218,7 +218,7 @@ export function createExtractor(models: Models): Extractor {
     return `${data}<document-${nonce}>\n${window.map((page) => `[page ${page.page}]\n${page.text}`).join("\n")}\n</document-${nonce}>`;
   };
   return {
-    model: model.id,
+    model: model.key,
     windows(pages) {
       const windows: Page[][] = [];
       const size = (page: Page) => Buffer.byteLength(page.text);

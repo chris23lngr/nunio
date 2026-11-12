@@ -15,6 +15,8 @@ export type ChatMessage = {
   text: string | null;
   reasoning?: string;
   citations: { tag: string; provenance: Provenance | "gone" }[];
+  /** The Model Catalog entry that wrote an answer; null for questions and older answers. */
+  model: { key: string; name: string } | null;
   createdAt: string;
 };
 
@@ -212,7 +214,7 @@ export function createChats({
             createdAt,
           },
         });
-        await tx.chatMessage.create({
+        const answer = await tx.chatMessage.create({
           data: {
             id,
             chatId,
@@ -222,10 +224,12 @@ export function createChats({
             reasoningContent: reasoning?.content,
             reasoningKey: reasoning?.contentKey,
             citations: cited,
+            modelKey: answerer.modelKey,
             createdAt,
           },
+          select: { model: { select: { key: true, name: true } } },
         });
-        return true;
+        return answer;
       }).catch((error: unknown) => {
         // A question ID already saved, here or by a concurrent request, fails the primary key.
         if ((error as { code?: unknown }).code === "P2002")
@@ -244,6 +248,7 @@ export function createChats({
           : {}),
         createdAt: createdAt.toISOString(),
         citations: await resolve(p, cited),
+        model: recorded.model,
       };
       return {
         status: "ok",
@@ -253,6 +258,7 @@ export function createChats({
           role: "student",
           text: question,
           citations: [],
+          model: null,
           createdAt: createdAt.toISOString(),
         } satisfies ChatMessage,
       } as const;
@@ -266,7 +272,10 @@ export function createChats({
         const chat = await tx.chat.findUnique({
           where: { id: chatId },
           include: {
-            messages: { orderBy: [{ createdAt: "asc" }, { role: "asc" }] },
+            messages: {
+              orderBy: [{ createdAt: "asc" }, { role: "asc" }],
+              include: { model: { select: { key: true, name: true } } },
+            },
           },
         });
         if (!chat) return null;
@@ -288,6 +297,7 @@ export function createChats({
               text,
               ...(reasoning ? { reasoning } : {}),
               citations: message.citations as Citation[],
+              model: message.model,
             };
           }),
         );

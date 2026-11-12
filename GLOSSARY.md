@@ -162,6 +162,14 @@ _Avoid_: Limit, quota, allowance
 The student's total included AI usage, shared across all Runs and the reading of Sources, and counted in the model cost it incurs. During the pilot only the founder increases it, manually; it does not reset automatically.
 _Avoid_: Credits, quota, budget
 
+**Model**:
+One exact, immutable configuration for calling an AI model, named by its key such as `sonnet-5.5-reasoning-high`: the provider's model, its reasoning effort and its output budget. A different configuration is a different Model.
+_Avoid_: Variant, model ID, LLM
+
+**Model Catalog**:
+The founder-managed list of Models, with which ones Chat offers, the Chat default, and prices synced from the AI provider. Students choose among the Models it offers; tasks use Models chosen in code.
+_Avoid_: Allowlist, model registry
+
 **Invitation**:
 The founder's single-use offer for one email address to join the pilot, shared manually and expiring after seven days. Accepting it reserves it for a pending account; pilot access activates only after email verification.
 _Avoid_: Invite code, referral, sign-up link

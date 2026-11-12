@@ -1,5 +1,7 @@
 # Claude on Amazon Bedrock (EU) as the single AI provider for the pilot
 
+> **Amended (2026-11-19):** the model allowlist is now the Model Catalog ([ADR-0018](0018-model-catalog-in-the-database.md)).
+
 > **Deferred (2026-10-30):** OpenRouter's EU endpoint is the interim provider ([ADR-0012](0012-openrouter-eu-as-interim-ai-provider.md)). This ADR remains the target. Its rules for model-calling code apply now; its AWS setup applies when nunio switches back. Render OIDC to AWS is now GA (Pro workspace), so the worker should use OIDC rather than access keys after the switch.
 
 nunio's models are Claude Haiku, Sonnet, and Opus 5.5 on Amazon Bedrock, called through the EU cross-region inference profiles (`eu.anthropic.claude-*-5-5`) from `eu-central-1` with `@ai-sdk/amazon-bedrock/anthropic`. Embeddings also run on Bedrock, so retrieval adds no further processor. Anthropic's own API is ruled out because it can only process in `global` or `us`, which fails ADR-0008. On Bedrock, the EU profile destinations are a fixed set of EU regions, zero retention is a self-service setting that can be enforced by policy, AWS is the processor under its SCC-backed DPA, and Anthropic never receives the data. Evidence: [ai-providers.md](../research/ai-providers.md).

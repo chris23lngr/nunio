@@ -19,6 +19,7 @@ import {
 import { Check, ChevronDown } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
+import type { ChatModel } from "../api/model-queries";
 
 // All models are Anthropic's. The viewBox is 256×257, so 16px tall is ~16px wide.
 const logo = (
@@ -31,22 +32,37 @@ const logo = (
   />
 );
 
-type Model = {
-  id: string;
-  name: string;
-  provider: string;
-  description: string;
-};
+const tiers = { low: "niedrig", medium: "mittel", high: "hoch" };
+const multiplier = new Intl.NumberFormat("de-DE", {
+  maximumSignificantDigits: 2,
+});
+
+/** What a model uses up, relative to the default model `standard`. */
+function costLine(model: ChatModel, standard: ChatModel | undefined) {
+  if (model.key === standard?.key) return "Verbrauch: Standard";
+  if (!standard) return `Verbrauch: ${tiers[model.cost.tier]}`;
+  return `Verbrauch: ${tiers[model.cost.tier]} · etwa ${multiplier.format(model.cost.relativeToDefault)}× ${standard.name}`;
+}
+
+function dataLine({ dataHandling }: ChatModel) {
+  return `Über ${dataHandling.provider} · ${dataHandling.upstream.join(", ")} · keine Datenspeicherung`;
+}
 
 export function ModelSelector({
   models,
   value,
+  defaultModel,
+  onValueChange,
 }: {
-  models: Model[];
+  models: ChatModel[];
   value: string;
+  /** Key of the default model, which costs are stated against. */
+  defaultModel: string | null;
+  onValueChange: (key: string) => void;
 }) {
-  const current = models.find(({ id }) => id === value);
-  const [card, setCard] = useState<{ model: Model; row: HTMLElement }>();
+  const current = models.find(({ key }) => key === value);
+  const standard = models.find(({ key }) => key === defaultModel);
+  const [card, setCard] = useState<{ model: ChatModel; row: HTMLElement }>();
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -64,8 +80,9 @@ export function ModelSelector({
             <DropdownMenuLabel>Modelle</DropdownMenuLabel>
             {models.map((model) => (
               <DropdownMenuItem
-                key={model.id}
-                aria-current={model.id === value || undefined}
+                key={model.key}
+                aria-current={model.key === value || undefined}
+                onClick={() => onValueChange(model.key)}
                 // Base UI focuses the highlighted row on hover and arrow keys.
                 onFocus={(event) => {
                   setCard({ model, row: event.currentTarget });
@@ -74,7 +91,7 @@ export function ModelSelector({
               >
                 {logo}
                 {model.name}
-                {model.id === value && (
+                {model.key === value && (
                   <Check className="ml-auto text-base-600" />
                 )}
               </DropdownMenuItem>
@@ -104,6 +121,17 @@ export function ModelSelector({
               </span>
             </PopoverTitle>
             <PopoverDescription>{card?.model.description}</PopoverDescription>
+            {/* Plain paragraphs: Base UI links only one description to the card. */}
+            {card && (
+              <p className="text-base-500 text-xs leading-4">
+                {costLine(card.model, standard)}
+              </p>
+            )}
+            {card && (
+              <p className="text-base-500 text-xs leading-4">
+                {dataLine(card.model)}
+              </p>
+            )}
           </PopoverHeader>
         </PopoverContent>
       </Popover>

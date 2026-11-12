@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import type { ModelConfig } from "@nunio/ai";
 import {
   createEmbedder,
   createExtractor,
@@ -38,8 +39,14 @@ const settings = [
   "PARSER_HOSTPORT",
 ] as const;
 
-/** Reads every setting up front: a misconfigured worker fails at startup, not after taking a Source. */
-export function createSourceActivities(env: NodeJS.ProcessEnv) {
+/**
+ * Reads every setting up front: a misconfigured worker fails at startup, not after taking a Source.
+ * `catalog` is the Model Catalog's task Models, read once at start.
+ */
+export function createSourceActivities(
+  env: NodeJS.ProcessEnv,
+  catalog: readonly ModelConfig[],
+) {
   const missing = settings.filter((name) => !env[name]);
   if (missing.length)
     throw new Error(`Missing settings: ${missing.join(", ")}`);
@@ -55,7 +62,7 @@ export function createSourceActivities(env: NodeJS.ProcessEnv) {
     apiKey: env.OPENROUTER_API_KEY!,
     baseURL: env.OPENROUTER_BASE_URL!,
   };
-  const models = createModels(provider);
+  const models = createModels({ ...provider, catalog });
   const embedder = createEmbedder(provider),
     scans = createScanReader(models),
     extractor = createExtractor(models);
