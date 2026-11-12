@@ -845,6 +845,110 @@ test("shows each search as a step while answering, in the same element once save
   expect(screen.getByText("2 Treffer in Modulhandbuch.pdf")).toBeTruthy();
 });
 
+test("shows reading the Plan and a Course's Facts as steps, while answering and when reopened", async () => {
+  const agenda = {
+    type: "tool-agenda",
+    toolCallId: "call-agenda",
+    input: { from: "2026-11-16", to: "2026-11-22" },
+    output: {
+      from: "2026-11-16",
+      to: "2026-11-22",
+      obligations: 1,
+      studyBlocks: 2,
+      fixedEvents: 0,
+    },
+  };
+  const facts = {
+    type: "tool-courseFacts",
+    toolCallId: "call-facts",
+    input: { course: "K1" },
+    output: { course: "Analysis I", facts: 9 },
+  };
+  const answer = {
+    id: "answer-1",
+    role: "assistant",
+    text: "Blatt 3 ist fällig.",
+    parts: [agenda, facts, { type: "text", text: "Blatt 3 ist fällig." }],
+    createdAt: "2026-11-10T09:48:00Z",
+    citations: [],
+    model: null,
+  };
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: saved }),
+  );
+  let finish = () => {};
+  const encoder = new TextEncoder();
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    const { id } = (await request.json()) as { id: string };
+    const question = {
+      id,
+      role: "student",
+      text: "Was steht an?",
+      parts: [{ type: "text", text: "Was steht an?" }],
+      createdAt: "2026-11-10T09:48:00Z",
+      citations: [],
+      model: null,
+    };
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          const emit = (data: unknown) =>
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
+            );
+          emit({ type: "start", messageId: "answer-1" });
+          emit({ type: "start-step" });
+          for (const part of [agenda, facts]) {
+            emit({
+              type: "tool-input-available",
+              toolCallId: part.toolCallId,
+              toolName: part.type.slice(5),
+              input: part.input,
+            });
+            emit({
+              type: "tool-output-available",
+              toolCallId: part.toolCallId,
+              output: part.output,
+            });
+          }
+          emit({ type: "finish-step" });
+          finish = () => {
+            saved.push(question, answer);
+            emit({ type: "data-committed", data: { ...answer, question } });
+            emit({ type: "finish" });
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          };
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  const { unmount } = mount("chat-1");
+  await chatLoaded();
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Nachricht" }),
+    "Was steht an?",
+  );
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  try {
+    expect(await screen.findByText("Plan gelesen: 16.11.–22.11.")).toBeTruthy();
+    expect(screen.getByText("1 Frist, 2 Lernblöcke, 0 Termine")).toBeTruthy();
+    expect(screen.getByText("Kursinfos gelesen: Analysis I")).toBeTruthy();
+    expect(screen.getByText("9 Einträge")).toBeTruthy();
+  } finally {
+    finish();
+  }
+  await screen.findByRole("article", { name: "Antwort von nunio" });
+  unmount();
+
+  mount("chat-1");
+  expect(await screen.findByText("Plan gelesen: 16.11.–22.11.")).toBeTruthy();
+  expect(screen.getByText("Kursinfos gelesen: Analysis I")).toBeTruthy();
+});
+
 test("the waiting status stays until the first word when nunio does not reason", async () => {
   api.route("GET", "/api/me/chats/chat-1", () =>
     Response.json({ id: "chat-1", courses: [], messages: [] }),
