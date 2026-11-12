@@ -3501,6 +3501,43 @@ describe("Chat", () => {
     ).toEqual([{ start: at(next, "14:00"), end: at(next, "16:00") }]);
   });
 
+  it("tells the model in later turns what became of an earlier proposal", async () => {
+    const { headers, chatId } = await planningChat("chat-propose-history");
+    const day = berlinDay(8);
+    steps.push(calls("agenda", { from: berlinDay(7), to: berlinDay(13) }), [
+      ...says("Hier ist mein Vorschlag."),
+      ...calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+    ]);
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const { action } = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    await app.request(`${apiOrigin}/api/me/approvals/${action.id}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        decision: "approve",
+        fingerprint: action.fingerprint,
+      }),
+    });
+    reply = "Gern.";
+    prompts.length = 0;
+
+    await askInChat(headers, chatId, "Danke!");
+
+    const answer = conversation(prompts[0]).find(
+      ([role]) => role === "assistant",
+    )?.[1];
+    expect(answer).toContain("Hier ist mein Vorschlag.");
+    expect(answer).toMatch(
+      new RegExp(`Übungsblatt 4.*${day}T10:00.*approved and done`),
+    );
+  });
+
   it("offers no search in a Chat with nothing selected, but still the Plan", async () => {
     const { headers, id } = await emptyChat("chat-no-search");
     reply = "Für diesen Chat ist kein Material ausgewählt.";

@@ -105,11 +105,25 @@ export function createChats({
         take: historyTurns * 2,
       });
       const messages = await Promise.all(
-        rows.reverse().map(async (row) => ({
-          role: row.role as ChatMessage["role"],
-          text: await derived.open(tx, row.id, row),
-          derivedFrom: row.derivedFrom,
-        })),
+        rows.reverse().map(async (row) => {
+          const text = await derived.open(tx, row.id, row);
+          const parts =
+            text !== null && row.partsContent
+              ? await derived.open(tx, `${row.id}:parts`, {
+                  content: row.partsContent,
+                  contentKey: row.partsKey,
+                  derivedFrom: row.derivedFrom,
+                })
+              : null;
+          return {
+            role: row.role as ChatMessage["role"],
+            text,
+            derivedFrom: row.derivedFrom,
+            proposals: parts
+              ? (JSON.parse(parts) as ChatPart[]).filter(isProposal)
+              : [],
+          };
+        }),
       );
       // The Courses a Plan includes: not rejected, merged or Archived.
       const courses = await tx.course.findMany({
@@ -123,12 +137,75 @@ export function createChats({
         selected: chat._count.courses + chat._count.sources > 0,
       };
     });
-    return (
-      recent && {
-        ...historyFrom(recent.messages),
-        courses: recent.courses,
-        selected: recent.selected,
-      }
+    if (!recent) return null;
+    const lines = await proposalLines(
+      p,
+      recent.messages.flatMap((message) => message.proposals),
+    );
+    return {
+      // Each earlier proposal follows its answer as a line, with what became of it (ADR-0019, "History").
+      ...historyFrom(
+        recent.messages.map(({ proposals, ...message }) => ({
+          ...message,
+          text:
+            message.text === null || !proposals.length
+              ? message.text
+              : [message.text, ...proposals.map((part) => lines.get(part.key)!)]
+                  .filter(Boolean)
+                  .join("\n\n"),
+        })),
+      ),
+      courses: recent.courses,
+      selected: recent.selected,
+    };
+  }
+  /** One line per earlier proposal, by its key: what was proposed, and where its Action stands now. */
+  async function proposalLines(
+    p: Principal,
+    proposals: Extract<ChatPart, { approvalId: string }>[],
+  ) {
+    if (!proposals.length) return new Map<string, string>();
+    const [records, view] = await Promise.all([
+      delegation.history(p, { keys: proposals.map((part) => part.key) }),
+      plan.view(p),
+    ]);
+    const now = clock.now();
+    return new Map(
+      proposals.map((part) => {
+        const record = records.find((r) => r.key === part.key);
+        const args = (record?.args ?? {}) as {
+          workId?: string;
+          studyBlockId?: string;
+        };
+        const workId =
+          args.workId ??
+          view.studyBlocks.find((b) => b.id === args.studyBlockId)?.work.id;
+        const title =
+          view.tasks.find((t) => t.id === workId)?.title ??
+          view.obligations.find((o) => o.id === workId)?.title ??
+          "work that is gone";
+        const what =
+          part.type === "tool-proposeStudyBlock"
+            ? "add a Study Block"
+            : "move the Study Block";
+        const status = !record
+          ? "it could not be asked"
+          : record.approval?.decision === "denied"
+            ? "denied by the student"
+            : record.status === "awaiting_approval"
+              ? record.approval && record.approval.expiresAt <= now
+                ? "expired unanswered"
+                : "still waiting for the student's approval"
+              : record.status === "done"
+                ? "approved and done"
+                : record.status === "refused"
+                  ? `not performed (${record.refusal})`
+                  : "approved, but not confirmed to have taken effect";
+        return [
+          part.key,
+          `(You proposed to ${what} for "${title}" at ${part.input.start}–${part.input.end.slice(11)}: ${status}.)`,
+        ] as const;
+      }),
     );
   }
   /** What answering in a Chat needs: its history, the context message, and this turn's tools. */
