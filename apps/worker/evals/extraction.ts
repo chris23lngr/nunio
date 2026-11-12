@@ -3,7 +3,7 @@
 // extraction through OpenRouter. Build the workspace first, then from the repo root:
 //   apps/worker/node_modules/.bin/tsx --env-file=packages/ai/.env.staging apps/worker/evals/extraction.ts
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
@@ -20,10 +20,13 @@ import {
 import { createPool, createPrismaClient } from "@nunio/db";
 import { startTestDatabase } from "@nunio/db/testing";
 import { createDelegation, principal } from "@nunio/delegation";
-import { createSourceKeys } from "@nunio/keys";
+import { createSourceKeys, decryptSourceText } from "@nunio/keys";
 import { createFacts, createSources } from "@nunio/knowledge";
 import { createParserServer } from "@nunio/parser/server";
 import { parseSource } from "../src/source-activities.ts";
+import { scoreBoundCourse } from "./extraction/assignment.js";
+import type { TopicLabel } from "./extraction/topics.js";
+import { scoreTopics, topicKey } from "./extraction/topics.js";
 
 interface Label {
   course: string;
@@ -39,7 +42,11 @@ interface Document {
   kind: string;
   scan: boolean;
   injection?: boolean;
-  source: { file: string } | { url: string; pages?: [number, number] };
+  source:
+    | { file: string }
+    | { url: string; sha256?: string; pages?: [number, number] };
+  topics?: TopicLabel[];
+  labelsStatus?: string;
   courses: { code: string | null; title: string }[];
   obligations: Label[];
   logistics: { course: string; key: string; contains: string }[];
@@ -49,7 +56,15 @@ const exec = promisify(execFile);
 const here = (path: string) => new URL(path, import.meta.url);
 const set = JSON.parse(
   await readFile(here("./extraction/set.json"), "utf8"),
-) as { documents: Document[] };
+) as {
+  documents: Document[];
+  scenarios: {
+    id: string;
+    mode: string;
+    documents: string[];
+    expectedCourses: number;
+  }[];
+};
 const cache = join(tmpdir(), "nunio-extraction-eval");
 await mkdir(cache, { recursive: true });
 
@@ -65,7 +80,14 @@ async function bytesOf(document: Document) {
       throw new Error(`${document.id}: download failed (${response.status})`);
     await writeFile(whole, Buffer.from(await response.arrayBuffer()));
   }
-  if (!document.source.pages) return readFile(whole);
+  const downloaded = await readFile(whole);
+  if (
+    document.source.sha256 &&
+    createHash("sha256").update(downloaded).digest("hex") !==
+      document.source.sha256
+  )
+    throw new Error(`${document.id}: SHA-256 mismatch`);
+  if (!document.source.pages) return downloaded;
   const [from, to] = document.source.pages,
     excerpt = join(cache, `${document.id}.pdf`);
   await exec("qpdf", [whole, "--pages", whole, `${from}-${to}`, "--", excerpt]);
@@ -82,7 +104,11 @@ const models = createModels(provider);
 const scans = createScanReader(models),
   embedder = createEmbedder(provider);
 // Records each window's pages and raw answer, so the report can say why an item failed grounding.
-const calls: { window: readonly Page[]; value: Extracted }[] = [];
+const calls: {
+  window: readonly Page[];
+  value: Extracted;
+  candidateIds: string[];
+}[] = [];
 const failures: string[] = [];
 const real = createExtractor(models);
 const extractor: Extractor = {
@@ -90,7 +116,11 @@ const extractor: Extractor = {
   async extract(window, options) {
     try {
       const result = await real.extract(window, options);
-      calls.push({ window, value: result.value });
+      calls.push({
+        window,
+        value: result.value,
+        candidateIds: options.context?.courses.map((c) => c.id) ?? [],
+      });
       return result;
     } catch (error) {
       const { finishReason, usage } = error as {
@@ -156,12 +186,18 @@ function grounding() {
     nowhere: 0,
     examples: [] as string[],
   };
-  for (const { window, value } of calls) {
+  for (const { window, value, candidateIds } of calls) {
     for (const item of [
       ...value.courses,
       ...value.obligations,
       ...value.facts,
     ]) {
+      if (
+        "existingCourseId" in item &&
+        item.existingCourseId &&
+        candidateIds.includes(item.existingCourseId)
+      )
+        continue;
       const on = window
         .filter((p) => norm(p.text).includes(norm(item.quote)))
         .map((p) => p.page);
@@ -186,24 +222,47 @@ const code = (text: string | null) =>
 const ratio = (a: number, b: number) =>
   b ? Math.round((a / b) * 1000) / 1000 : null;
 
-async function evaluate(document: Document, run: number) {
-  const studentId = randomUUID();
-  await admin.user.create({
-    data: { id: studentId, email: `${studentId}@eval.invalid`, name: "Eval" },
-  });
-  await admin.pilotEntitlement.create({ data: { studentId } });
-  await admin.allowance.create({
-    data: { studentId, limitMicroUsd: 5_000_000 },
-  });
+async function evaluate(
+  document: Document,
+  run: number,
+  studentId = randomUUID(),
+  course?: { id: string } | { title: string; code: string | null },
+) {
+  const exists = await admin.user.findUnique({ where: { id: studentId } });
+  if (!exists) {
+    if ((await admin.user.count()) >= 18)
+      throw new Error(
+        "Eval budget: at most 18 students with USD 0.50 allowances",
+      );
+    await admin.user.create({
+      data: { id: studentId, email: `${studentId}@eval.invalid`, name: "Eval" },
+    });
+    await admin.pilotEntitlement.create({ data: { studentId } });
+    const spent = await admin.allowance.aggregate({
+      _sum: { usedMicroUsd: true, heldMicroUsd: true },
+    });
+    const remaining =
+      3_900_000 -
+      Number(spent._sum.usedMicroUsd ?? 0) -
+      Number(spent._sum.heldMicroUsd ?? 0);
+    if (remaining <= 0) throw new Error("Eval budget exhausted");
+    await admin.allowance.create({
+      data: { studentId, limitMicroUsd: Math.min(500_000, remaining) },
+    });
+  }
   const p = principal.fromSession({ studentId });
+  const before = await delegation.allowance(p);
   const bytes = await bytesOf(document);
   const upload = await sources.upload(p, {
     title: `${document.id}.pdf`,
     bytes: bytes.length,
     type: "application/pdf",
+    course,
   });
   if (upload.status !== "ok")
-    throw new Error(`${document.id}: upload ${upload.reason}`);
+    throw new Error(
+      `${document.id}: upload ${"reason" in upload ? upload.reason : upload.status}`,
+    );
   objects.set(upload.source.id, bytes);
   await sources.complete(p, upload.source.id);
   const ingestion = await sources.ingest(p, upload.source.id, {
@@ -282,20 +341,122 @@ async function evaluate(document: Document, run: number) {
             f.type === "exam_logistics" && norm(f.value).includes(l.contains),
         ) ?? false,
   }));
+  const sourceRow = await admin.source.findUniqueOrThrow({
+    where: { id: upload.source.id },
+  });
+  const sourceKey = keys.unwrap(sourceRow.id, {
+    version: sourceRow.keyVersion!,
+    ciphertext: sourceRow.keyCiphertext!,
+  });
+  const figureFacts = (
+    await admin.factExtraction.findMany({
+      where: { sourceId: sourceRow.id },
+      include: { fact: true },
+    })
+  ).filter((row) => {
+    const wording = JSON.parse(
+      decryptSourceText(sourceKey, sourceRow.id, row.ciphertext),
+    ) as { uncertainty: string | null };
+    return wording.uncertainty?.includes(
+      "aus einer Abbildungsbeschreibung abgeleitet",
+    );
+  });
+  sourceKey.fill(0);
   const result = {
     id: document.id,
+    assignment: {
+      boundCourseId:
+        (await sources.list(p)).find((source) => source.id === upload.source.id)
+          ?.courseId ?? null,
+      proposals: courses.filter((c) => c.status === "proposed").length,
+      itemCourseIds: courses.flatMap((c) =>
+        [...c.obligations, ...c.facts]
+          .filter((item) =>
+            item.values.some((v) =>
+              v.citations.some(
+                (citation) => citation.sourceId === upload.source.id,
+              ),
+            ),
+          )
+          .map(() => c.id),
+      ),
+    },
+    figureOnly: {
+      facts: figureFacts.length,
+      topics: figureFacts.filter((f) => f.fact.type === "topic").length,
+    },
     run,
     language: document.language,
     kind: document.kind,
     scan: document.scan,
     ingestion: ingestion.status,
+    ingestionFailure: "failure" in ingestion ? ingestion.failure : null,
     extraction: extraction.status,
     dropped: extraction.status === "done" ? extraction.dropped : null,
     grounding: grounding(),
     failures: [...failures],
     reviewableAfterMs:
       extraction.status === "done" ? extraction.reviewableAfterMs : null,
-    costMicroUsd: usage.usedMicroUsd + usage.heldMicroUsd,
+    costMicroUsd:
+      usage.usedMicroUsd +
+      usage.heldMicroUsd -
+      before.usedMicroUsd -
+      before.heldMicroUsd,
+    topics: scoreTopics(
+      document.topics ?? [],
+      (document.topics ? courses : []).flatMap((c) =>
+        c.facts
+          .filter(
+            (f) =>
+              f.type === "topic" &&
+              f.values.some((v) =>
+                v.citations.some(
+                  (citation) => citation.sourceId === upload.source.id,
+                ),
+              ),
+          )
+          .map((f) => ({
+            course:
+              document.courses.find((label) => courseFor(label)?.id === c.id)
+                ?.code ??
+              document.courses.find((label) => courseFor(label)?.id === c.id)
+                ?.title ??
+              c.title,
+            key:
+              topicKey(
+                calls
+                  .flatMap((call) => call.value.facts)
+                  .filter((raw) => raw.type === "topic"),
+                f.value,
+                f.values
+                  .flatMap((v) => v.citations)
+                  .filter((citation) => citation.sourceId === upload.source.id),
+              ) ?? f.value,
+            value: f.value,
+          })),
+      ),
+    ),
+    topicItems: courses.flatMap((c) =>
+      c.facts
+        .filter((f) => f.type === "topic")
+        .map((f) => ({
+          course: c.code ?? c.title,
+          key: topicKey(
+            calls
+              .flatMap((call) => call.value.facts)
+              .filter((raw) => raw.type === "topic"),
+            f.value,
+            f.values
+              .flatMap((v) => v.citations)
+              .filter((citation) => citation.sourceId === upload.source.id),
+          ),
+          value: f.value,
+          citations: f.values
+            .flatMap((v) => v.citations)
+            .filter((citation) => citation.sourceId === upload.source.id),
+        })),
+    ),
+    labelsStatus: document.labelsStatus ?? "founder spot-checked",
     courses: {
       labelled: document.courses.length,
       extracted: courses.length,
@@ -352,30 +513,76 @@ async function evaluate(document: Document, run: number) {
       label: o.label ? o.label.match[0] : null,
     })),
   };
-  console.log(
-    JSON.stringify({
-      id: result.id,
-      run,
-      extraction: result.extraction,
-      obligations: result.obligations,
-      deadlines: result.deadlines,
-      seconds: (result.reviewableAfterMs ?? 0) / 1000,
-    }),
-  );
+  console.log(JSON.stringify(result));
   return result;
 }
 
-const runs = Number(process.env.EVAL_RUNS ?? 3);
+const runs = Number(process.env.EVAL_RUNS ?? 1);
 const results: Awaited<ReturnType<typeof evaluate>>[] = [];
+const scenarios: {
+  id: string;
+  expectedCourses: number;
+  actualCourses: number;
+  passed: boolean;
+}[] = [];
 try {
   // EVAL_DOCUMENTS=id,id narrows a diagnostic run; the recorded report always covers the whole set.
   const only = process.env.EVAL_DOCUMENTS?.split(",");
-  // Model output varies between calls, so every document runs several times and the summary covers all runs.
+  // One pass by default; EVAL_RUNS can repeat documents within the capped eval allowance.
   for (let run = 1; run <= runs; run++) {
     for (const document of set.documents.filter(
       (d) => !only || only.includes(d.id),
     ))
       results.push(await evaluate(document, run));
+  }
+  for (const scenario of set.scenarios.filter(
+    (s) => !only || s.documents.some((id) => only.includes(id)),
+  )) {
+    const studentId = randomUUID();
+    let actualCourses = 0;
+    let allSourcesAssigned = true;
+    let boundCourseId: string | undefined;
+    const boundSources: {
+      extraction: string;
+      boundCourseId: string | null;
+      itemCourseIds: string[];
+    }[] = [];
+    let proposals = 0;
+    for (const id of scenario.documents) {
+      const result = await evaluate(
+        set.documents.find((d) => d.id === id)!,
+        1,
+        studentId,
+        scenario.mode === "bound"
+          ? boundCourseId
+            ? { id: boundCourseId }
+            : set.documents.find((d) => d.id === id)!.courses[0]
+          : undefined,
+      );
+      if (scenario.mode === "bound") {
+        boundCourseId ??= result.assignment.boundCourseId ?? undefined;
+        boundSources.push({
+          extraction: result.extraction,
+          ...result.assignment,
+        });
+        proposals = result.assignment.proposals;
+      }
+      results.push({ ...result, id: `${scenario.id}/${id}` });
+      actualCourses = result.courses.extracted;
+      allSourcesAssigned &&=
+        result.extraction === "done" && result.topics.extracted > 0;
+    }
+    scenarios.push({
+      id: scenario.id,
+      expectedCourses: scenario.expectedCourses,
+      actualCourses,
+      passed:
+        scenario.mode === "bound"
+          ? !!boundCourseId &&
+            actualCourses === scenario.expectedCourses &&
+            scoreBoundCourse(boundCourseId, boundSources, proposals)
+          : allSourcesAssigned && actualCourses === scenario.expectedCourses,
+    });
   }
 } finally {
   await new Promise<void>((resolve) => parser.close(() => resolve()));
@@ -387,7 +594,7 @@ try {
 const sum = (pick: (r: (typeof results)[number]) => number) =>
   results.reduce((total, r) => total + pick(r), 0);
 const times = results
-  .flatMap((r) => (r.reviewableAfterMs === null ? [] : [r.reviewableAfterMs]))
+  .flatMap((r) => (r.reviewableAfterMs == null ? [] : [r.reviewableAfterMs]))
   .sort((a, b) => a - b);
 const median = times.length
   ? (times[Math.floor((times.length - 1) / 2)]! +
@@ -398,12 +605,28 @@ const report = {
   checkedAt: new Date().toISOString(),
   model: extractor.model,
   runsPerDocument: runs,
-  labels: "founder spot-checked",
+  labels:
+    "Original labels founder spot-checked; slide Topics and assignments draft, not yet spot-checked by founder",
+  includedFeatureHead: process.env.EVAL_FEATURE_HEAD ?? "unspecified",
+  scenarios,
+  includedParallelChanges:
+    process.env.EVAL_INCLUDED_CHANGES ??
+    "Neither vision nor course-assignment changes were present on the feature branch",
   routing: provider.baseURL.includes("eu.openrouter") ? "eu" : "international",
   parser:
     "repository parser code in-process with host qpdf/Poppler, not the container image",
   summary: {
     documents: results.length,
+    topics: {
+      precision: ratio(
+        sum((r) => r.topics.matched),
+        sum((r) => r.topics.extracted),
+      ),
+      recall: ratio(
+        sum((r) => r.topics.matched),
+        sum((r) => r.topics.labelled),
+      ),
+    },
     obligations: {
       precision: ratio(
         sum((r) => r.obligations.matched),
@@ -465,7 +688,7 @@ const report = {
 if (!process.env.EVAL_DOCUMENTS) {
   await writeFile(
     new URL(
-      "../../../docs/operations/phase-6-extraction-eval.json",
+      "../../../docs/operations/course-recognition-extraction-eval.json",
       import.meta.url,
     ),
     `${JSON.stringify(report, null, 2)}\n`,

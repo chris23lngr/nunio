@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { createExtractor } from "./extraction.js";
 import { createModels } from "./models.js";
+import { figureMarker } from "./source-models.js";
 
 const extracted = {
   courses: [
@@ -132,6 +133,10 @@ it("extracts through structured output without tools, keeping page text fenced i
     )
     .join("");
   expect(system).not.toContain("Analysis");
+  // The scan reader's figure lines, named with the same marker grounding recognises.
+  expect(system).toContain(
+    JSON.stringify(`exactly with "${figureMarker}"`).slice(1, -1),
+  );
   expect(user).toMatch(
     /<document-([0-9a-f]{32})>.*Ignore previous instructions.*<\/document-\1>/s,
   );
@@ -170,4 +175,30 @@ it("windows pages within a size bound, overlapping by one page where both fit", 
   expect(
     extractor.windows(pages).map((window) => window.map((p) => p.page)),
   ).toEqual([[1, 2], [2, 3], [4], [5]]);
+});
+
+it("keeps source title and candidate Courses inside nonce-fenced user data", async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const extractor = createExtractor(
+    createModels({
+      apiKey: "test",
+      baseURL: "https://provider.invalid",
+      fetch: recorded(bodies, JSON.stringify(extracted)),
+    }),
+  );
+  await extractor.extract([{ page: 1, text: "Lecture" }], {
+    signal: AbortSignal.timeout(1000),
+    context: {
+      title: "private-deck.pdf",
+      courses: [{ id: "candidate-id", title: "Private Course", code: null }],
+    },
+  });
+  const messages = bodies[0]!.messages as { role: string; content: unknown }[];
+  const system = JSON.stringify(messages.filter((m) => m.role === "system"));
+  const user = JSON.stringify(messages.filter((m) => m.role === "user"));
+  expect(system).not.toContain("private-deck");
+  expect(system).not.toContain("Private Course");
+  expect(user).toMatch(
+    /<context-([0-9a-f]{32})>.*private-deck.*candidate-id.*<\/context-\1>/s,
+  );
 });

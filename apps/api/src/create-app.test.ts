@@ -63,6 +63,8 @@ let prisma: PrismaClient;
 /** The migration role, for fixtures and fault injection outside RLS. */
 /** Workflows the API asked to start, as [kind, studentId, sourceId]. */
 const started: unknown[][] = [];
+/** Makes starting a workflow fail, as when Temporal is unreachable. */
+let workflowsDown = false;
 let admin: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let sources: Sources;
@@ -310,6 +312,7 @@ beforeAll(async () => {
     }),
     sourceWorkflows: {
       start: async (...args) => {
+        if (workflowsDown) throw new Error("Temporal unavailable");
         started.push(args);
       },
     },
@@ -1336,6 +1339,197 @@ it("starts extracting a Source again on request, refusing while it runs and once
     headers,
   });
   expect((await extract()).status).toBe(404);
+});
+
+it("binds every file of an upload to one Course, new or chosen, refusing a Course that is gone or a title that is empty", async () => {
+  const cookie = await signUp("source-course");
+  const headers = {
+    cookie,
+    origin: appOrigin,
+    "content-type": "application/json",
+  };
+  const post = (title: string, course: unknown) =>
+    app.request(`${apiOrigin}/api/me/sources`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        title,
+        bytes: 1234,
+        type: "application/pdf",
+        course,
+      }),
+    });
+
+  const first = await post("Folien 1.pdf", {
+    title: "Analysis I",
+    code: "MA-101",
+  });
+  expect(first.status).toBe(201);
+  const { source } = (await first.json()) as {
+    source: { id: string; courseId: string };
+  };
+  const second = await post("Folien 2.pdf", { id: source.courseId });
+  expect(second.status).toBe(201);
+  expect(await second.json()).toMatchObject({
+    source: { courseId: source.courseId },
+  });
+  expect((await post("Folien 3.pdf", null)).status).toBe(201);
+  expect((await post("Folien 4.pdf", { id: randomUUID() })).status).toBe(404);
+  const clash = await post("Folien 6.pdf", { title: "analysis i", code: null });
+  expect([clash.status, await clash.json()]).toEqual([
+    409,
+    {
+      error: "clash",
+      course: {
+        id: source.courseId,
+        title: "Analysis I",
+        status: "accepted",
+        archived: false,
+      },
+    },
+  ]);
+  expect((await post("Folien 5.pdf", { title: "", code: null })).status).toBe(
+    400,
+  );
+
+  const listed = await app.request(`${apiOrigin}/api/me/sources`, {
+    headers: { cookie },
+  });
+  expect(
+    ((await listed.json()) as { courseId: string | null }[]).map(
+      (s) => s.courseId,
+    ),
+  ).toEqual([source.courseId, source.courseId, null]);
+  const courses = await app.request(`${apiOrigin}/api/me/courses`, {
+    headers: { cookie },
+  });
+  expect(await courses.json()).toMatchObject({
+    courses: [{ title: "Analysis I", status: "accepted", entered: true }],
+  });
+});
+
+it("changes a Source's Course and reads it again, refusing while it is read and once it is gone", async () => {
+  const { cookie, headers } = await reviewFixture("source-change-course");
+  const [source] = (await (
+    await app.request(`${apiOrigin}/api/me/sources`, { headers: { cookie } })
+  ).json()) as { id: string }[];
+  const change = (course: unknown, origin = appOrigin) =>
+    app.request(`${apiOrigin}/api/me/sources/${source!.id}/course`, {
+      method: "POST",
+      headers: { ...headers, origin },
+      body: JSON.stringify({ course }),
+    });
+
+  expect((await change(null, evilOrigin)).status).toBe(403);
+  const queued = await change({ title: "Analysis 1", code: null });
+  expect([queued.status, await queued.json()]).toEqual([
+    202,
+    { status: "queued" },
+  ]);
+  expect(started).toContainEqual([
+    "extractSource",
+    expect.any(String),
+    source!.id,
+  ]);
+  expect(
+    (
+      (await (
+        await app.request(`${apiOrigin}/api/me/sources`, {
+          headers: { cookie },
+        })
+      ).json()) as { courseId: string | null }[]
+    )[0]!.courseId,
+  ).toEqual(expect.any(String));
+  await admin.source.update({
+    where: { id: source!.id },
+    data: { extraction: "running" },
+  });
+  expect((await change(null)).status).toBe(409);
+  await app.request(`${apiOrigin}/api/me/sources/${source!.id}`, {
+    method: "DELETE",
+    headers,
+  });
+  expect((await change(null)).status).toBe(404);
+});
+
+it("tells the student a changed Course is kept when reading could not start, and starts it again on request", async () => {
+  const { cookie, headers } = await reviewFixture("source-change-down");
+  const sourcesNow = async () =>
+    (await (
+      await app.request(`${apiOrigin}/api/me/sources`, { headers: { cookie } })
+    ).json()) as { id: string; courseId: string | null; extraction: string }[];
+  const [source] = await sourcesNow();
+
+  workflowsDown = true;
+  const changed = await app.request(
+    `${apiOrigin}/api/me/sources/${source!.id}/course`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ course: { title: "Analysis 1", code: null } }),
+    },
+  );
+  workflowsDown = false;
+
+  expect([changed.status, await changed.json()]).toEqual([
+    503,
+    { error: "not_started" },
+  ]);
+  expect(await sourcesNow()).toEqual([
+    expect.objectContaining({
+      courseId: expect.any(String),
+      extraction: "pending",
+    }),
+  ]);
+  const again = await app.request(
+    `${apiOrigin}/api/me/sources/${source!.id}/extract`,
+    { method: "POST", headers },
+  );
+  expect(again.status).toBe(202);
+  expect(started).toContainEqual([
+    "extractSource",
+    expect.any(String),
+    source!.id,
+  ]);
+});
+
+it("suggests merging alike Courses until the student says they differ", async () => {
+  const { cookie, headers } = await reviewFixture("review-similar");
+  const own = (await (
+    await app.request(`${apiOrigin}/api/me/courses`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        title: "Analysis 1",
+        code: null,
+        semester: "2026-ws",
+      }),
+    })
+  ).json()) as { id: string };
+  const suggestions = async () =>
+    (
+      await app.request(`${apiOrigin}/api/me/courses/merge-suggestions`, {
+        headers: { cookie },
+      })
+    ).json();
+  const proposed = (
+    (await (
+      await app.request(`${apiOrigin}/api/me/review`, { headers: { cookie } })
+    ).json()) as ReviewBody
+  ).courses.find((course) => course.id !== own.id);
+
+  expect(await suggestions()).toEqual([
+    { courseId: proposed!.id, intoId: own.id },
+  ]);
+  const keepApart = (origin: string) =>
+    app.request(`${apiOrigin}/api/me/courses/${proposed!.id}/keep-apart`, {
+      method: "POST",
+      headers: { ...headers, origin },
+      body: JSON.stringify({ other: own.id }),
+    });
+  expect((await keepApart(evilOrigin)).status).toBe(403);
+  expect((await keepApart(appOrigin)).status).toBe(200);
+  expect(await suggestions()).toEqual([]);
 });
 
 it("merges one Course into another, reporting conflicting Corrections and Courses that are gone", async () => {

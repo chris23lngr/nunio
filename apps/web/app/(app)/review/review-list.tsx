@@ -7,6 +7,8 @@ import { useEffect, useState } from "react";
 
 type Course =
   paths["/api/me/review"]["get"]["responses"][200]["content"]["application/json"]["courses"][number];
+type MergeSuggestion =
+  paths["/api/me/courses/merge-suggestions"]["get"]["responses"][200]["content"]["application/json"][number];
 type Obligation = Course["obligations"][number];
 type Fact = Course["facts"][number];
 type Item =
@@ -73,6 +75,7 @@ const label = ({ kind, item }: Item) =>
 
 export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
   const [courses, setCourses] = useState<Course[] | null>(null);
+  const [suggestions, setSuggestions] = useState<MergeSuggestion[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -82,10 +85,16 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
     let cancelled = false;
     const load = async () => {
       try {
-        const result = await createApiClient(apiOrigin).GET("/api/me/review");
+        const client = createApiClient(apiOrigin);
+        const [result, similar] = await Promise.all([
+          client.GET("/api/me/review"),
+          client.GET("/api/me/courses/merge-suggestions"),
+        ]);
         if (cancelled) return;
         if (!result.data) return setError("Could not load your review.");
         setCourses(result.data.courses);
+        // Suggestions only help; Review works without them.
+        setSuggestions(similar.data ?? []);
       } catch {
         if (!cancelled) setError("Could not load your review.");
       }
@@ -161,6 +170,9 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
       )
     )
       return;
+    await mergeInto(course, target);
+  }
+  async function mergeInto(course: Course, target: Course) {
     setBusy(true);
     setError(null);
     try {
@@ -195,6 +207,46 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
       setBusy(false);
       setVersion((v) => v + 1);
     }
+  }
+  /** "Nein, verschieden": Review never suggests merging these two again. */
+  const keepApart = (course: Course, other: Course) =>
+    act(
+      () =>
+        client().POST("/api/me/courses/{id}/keep-apart", {
+          params: { path: { id: course.id } },
+          body: { other: other.id },
+        }),
+      "Das konnte nicht gespeichert werden. Bitte versuche es erneut.",
+    );
+  // A render function like the others: it must not remount on each poll.
+  function suggestionsFor(course: Course) {
+    return suggestions.flatMap(({ courseId, intoId }) => {
+      const target = open.find((other) => other.id === intoId);
+      if (courseId !== course.id || !target) return [];
+      return [
+        <p key={intoId}>
+          <span>Ähnlich zu {courseName(target)} – zusammenführen?</span>{" "}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              void mergeInto(course, target);
+            }}
+          >
+            Zusammenführen
+          </button>{" "}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              void keepApart(course, target);
+            }}
+          >
+            Nein, verschieden
+          </button>
+        </p>,
+      ];
+    });
   }
   function correct(event: FormEvent<HTMLFormElement>, { kind, item }: Item) {
     event.preventDefault();
@@ -594,6 +646,7 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
               {course.code ? `${course.code} ` : ""}
               {course.title}
             </h2>
+            {suggestionsFor(course)}
             {course.status === "proposed" ? (
               <>
                 <p>

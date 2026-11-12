@@ -3,6 +3,7 @@ import type { Extracted, Extractor } from "@nunio/ai";
 import {
   isDate,
   isDefiniteFailure,
+  isFigureLine,
   isTime,
   isTimeZone,
   SourceModelRejected,
@@ -21,7 +22,8 @@ import { decryptSourceText, encryptSourceText } from "@nunio/keys";
 import type { AiUse, AiUseClass } from "./ai-use.js";
 import { isAiUseClass, resolveAiUse } from "./ai-use.js";
 import { pruneItems } from "./items.js";
-import { newCourse } from "./new-course.js";
+import type { CourseChoice } from "./new-course.js";
+import { chosenCourse, newCourse } from "./new-course.js";
 import { normalize } from "./normalize.js";
 import { semesterAt } from "./semester.js";
 import { joinChunks } from "./sources.js";
@@ -224,14 +226,38 @@ export function createFacts({
             text: decryptSourceText(key, sourceId, chunk.ciphertext),
           })),
         );
+        const candidateWhere = {
+          semester: semesterAt(clock.now()),
+          status: {
+            in: ["accepted", "proposed"] as ("accepted" | "proposed")[],
+          },
+          archivedAt: null,
+          mergedIntoId: null,
+        };
+        // A Source bound to a Course puts everything there, so the model needs no Courses to choose from.
+        const context = {
+          title: source.title,
+          courses: source.courseId
+            ? []
+            : await withOwner(db, p, (tx) =>
+                tx.course.findMany({
+                  where: candidateWhere,
+                  select: { id: true, title: true, code: true },
+                }),
+              ),
+        };
+        const candidateIds = new Set(
+          context.courses.map((course) => course.id),
+        );
         const results: Extracted[] = [];
         for (const window of deps.extractor.windows(pages)) {
           const result = await deps.delegation.meter(
             p,
-            { microUsd: deps.extractor.estimateMicroUsd(window) },
+            { microUsd: deps.extractor.estimateMicroUsd(window, context) },
             async (signal) => {
               try {
                 return await deps.extractor.extract(window, {
+                  context,
                   signal: deps.signal
                     ? AbortSignal.any([signal, deps.signal])
                     : signal,
@@ -253,8 +279,18 @@ export function createFacts({
           new Uint8Array(
             encryptSourceText(key, sourceId, JSON.stringify(wording)),
           );
+        // A figure description is the scan model's reading, not the page's own words (see figureLines).
         const pageText = new Map(
-          pages.map((page) => [page.page, groundingForm(page.text)]),
+          pages.map((page) => [
+            page.page,
+            groundingForm(figureLines(page.text, false).join("\n")),
+          ]),
+        );
+        const figureText = new Map(
+          pages.map((page) => [
+            page.page,
+            figureLines(page.text, true).map(groundingForm),
+          ]),
         );
         const grounded = (item: { page: number; quote: string }) => {
           const quote = groundingForm(item.quote);
@@ -263,15 +299,41 @@ export function createFacts({
             Boolean(pageText.get(item.page)?.includes(quote))
           );
         };
+        const inFigure = (item: { page: number; quote: string }) => {
+          const quote = groundingForm(item.quote);
+          return (
+            quote.length > 0 &&
+            Boolean(figureText.get(item.page)?.some((l) => l.includes(quote)))
+          );
+        };
         const all = {
           courses: results.flatMap((r) => r.courses),
           obligations: results.flatMap((r) => r.obligations),
           facts: results.flatMap((r) => r.facts),
         };
         const kept = {
-          courses: all.courses.filter(grounded),
+          courses: all.courses.filter(
+            (course) =>
+              (course.existingCourseId &&
+                candidateIds.has(course.existingCourseId)) ||
+              grounded(course),
+          ),
           obligations: all.obligations.filter(grounded),
-          facts: all.facts.filter(grounded),
+          // Facts read only from a figure stay, flagged; Obligations and Courses need the page's own words.
+          facts: all.facts.flatMap((item) =>
+            grounded(item)
+              ? [item]
+              : inFigure(item)
+                ? [
+                    {
+                      ...item,
+                      uncertainty: [item.uncertainty, figureUncertainty]
+                        .filter(Boolean)
+                        .join("; "),
+                    },
+                  ]
+                : [],
+          ),
         };
         let dropped =
           all.courses.length -
@@ -310,6 +372,15 @@ export function createFacts({
             ),
           };
           await tx.sourceCourse.deleteMany({ where: { sourceId } });
+          // Binding: a Source the student assigned to a Course puts everything it holds there, whatever Courses the
+          // model named; only an unbound Source has its Courses recognized below.
+          const bound = await boundCourse(tx, sourceId);
+          if (bound)
+            await tx.sourceCourse.create({
+              data: { sourceId, courseId: bound, studentId },
+            });
+          const courseOf = (name: string) =>
+            bound ?? courses.get(normalize(name));
           const courses = new Map<string, string>();
           // A Source repeating a value (overlapping windows, a summary table) yields one extraction, cited on its first page.
           const firstSeen = new Map<string, { id: string; page: number }>();
@@ -326,7 +397,51 @@ export function createFacts({
             }
             return Boolean(seen);
           };
-          for (const course of kept.courses) {
+          for (const course of bound ? [] : kept.courses) {
+            const candidate =
+              course.existingCourseId &&
+              candidateIds.has(course.existingCourseId)
+                ? await tx.course.findUnique({
+                    where: { id: course.existingCourseId },
+                    select: {
+                      id: true,
+                      mergedIntoId: true,
+                      title: true,
+                      code: true,
+                    },
+                  })
+                : null;
+            const picked = candidate
+              ? await tx.course.findFirst({
+                  where: {
+                    ...candidateWhere,
+                    id: candidate.mergedIntoId ?? candidate.id,
+                  },
+                  select: { id: true, title: true, code: true },
+                })
+              : null;
+            if (candidate && picked) {
+              await tx.sourceCourse.upsert({
+                where: { sourceId_courseId: { sourceId, courseId: picked.id } },
+                create: { sourceId, courseId: picked.id, studentId },
+                update: {},
+              });
+              for (const name of [
+                candidate.id,
+                candidate.title,
+                candidate.code,
+                picked.id,
+                picked.title,
+                picked.code,
+              ])
+                if (name) courses.set(normalize(name), picked.id);
+              continue;
+            }
+            // An unknown or no-longer-eligible ID is only a proposal, requiring page grounding.
+            if (!grounded(course)) {
+              dropped++;
+              continue;
+            }
             const matchCode = course.code ? normalize(course.code) : null,
               matchTitle = normalize(course.title);
             // By code first, then by title when no code contradicts it; anything ambiguous becomes a new proposal.
@@ -372,11 +487,15 @@ export function createFacts({
               create: { sourceId, courseId: id, studentId },
               update: {},
             });
-            for (const name of [course.code, course.title])
+            for (const name of [
+              course.existingCourseId,
+              course.code,
+              course.title,
+            ])
               if (name) courses.set(normalize(name), id);
           }
           for (const item of kept.obligations) {
-            const courseId = courses.get(normalize(item.course));
+            const courseId = courseOf(item.course);
             if (!courseId) {
               dropped++;
               continue;
@@ -470,7 +589,7 @@ export function createFacts({
             });
           }
           for (const item of kept.facts) {
-            const courseId = courses.get(normalize(item.course));
+            const courseId = courseOf(item.course);
             if (!courseId) {
               dropped++;
               continue;
@@ -659,6 +778,32 @@ export function createFacts({
         return { status: "ok" } as const;
       });
     },
+    /**
+     * "Kurs ändern": binds a ready Source to another Course, a new one, or none, and queues it to be read again, which
+     * replaces its extractions only once that reading is done. Refused while it is being read.
+     */
+    async changeCourse(p: Principal, sourceId: string, choice: CourseChoice) {
+      return withOwner(db, p, async (tx, studentId) => {
+        await tx.$queryRaw`SELECT "id" FROM "source" WHERE "id" = ${sourceId} FOR UPDATE`;
+        const source = await tx.source.findFirst({
+          where: { id: sourceId, deletedAt: null, status: "ready" },
+        });
+        if (!source) return { status: "gone" } as const;
+        if (source.extraction === "running")
+          return { status: "running" } as const;
+        const course = await chosenCourse(tx, studentId, choice, clock.now());
+        if (course.status !== "ok") return course;
+        await tx.source.update({
+          where: { id: sourceId },
+          data: {
+            courseId: course.courseId,
+            extraction: "pending",
+            extractionRequestedAt: clock.now(),
+          },
+        });
+        return { status: "ok" } as const;
+      });
+    },
     async confirm(p: Principal, item: ItemRef) {
       return setState(p, item, "confirmed");
     },
@@ -822,6 +967,12 @@ export function createFacts({
                     : // A rejected Course comes back as a plain proposal, never as an Archived one.
                       { status: "rejected", archivedAt: null },
               });
+        // Its Sources are read automatically from now on; restoring the Course binds none again.
+        if (count && decision === "reject")
+          await tx.source.updateMany({
+            where: { courseId },
+            data: { courseId: null },
+          });
         return { status: count ? "ok" : "gone" } as const;
       });
     },
@@ -899,6 +1050,11 @@ export function createFacts({
           });
         }
         await tx.sourceCourse.deleteMany({ where: { courseId: fromId } });
+        // A Source bound to the merged Course is bound to the target, so reading it again lands there too.
+        await tx.source.updateMany({
+          where: { courseId: fromId },
+          data: { courseId: intoId },
+        });
         for (const { item, target } of obligationPairs) {
           await tx.obligationExtraction.updateMany({
             where: { obligationId: item.id },
@@ -1414,6 +1570,33 @@ function valuesOf<
       });
   }
   return [...values.values()];
+}
+
+/** Marks a line in which the scan model describes a figure; `@nunio/ai`'s scan prompt writes it. */
+const figureUncertainty = "aus einer Abbildungsbeschreibung abgeleitet";
+/** A page's figure description lines, or every other line; `@nunio/ai` owns the line format. */
+function figureLines(text: string, figures: boolean) {
+  return text.split("\n").filter((line) => isFigureLine(line) === figures);
+}
+
+/**
+ * The Course a Source is bound to, standing for the Course it was merged into; null when it is read automatically,
+ * including when that Course is rejected.
+ */
+async function boundCourse(tx: Transaction, sourceId: string) {
+  const { courseId } = await tx.source.findUniqueOrThrow({
+    where: { id: sourceId },
+    select: { courseId: true },
+  });
+  if (!courseId) return null;
+  const select = { id: true, status: true, mergedIntoId: true };
+  let course = await tx.course.findUnique({ where: { id: courseId }, select });
+  if (course?.mergedIntoId)
+    course = await tx.course.findUnique({
+      where: { id: course.mergedIntoId },
+      select,
+    });
+  return course && course.status !== "rejected" ? course.id : null;
 }
 
 /** Undoes line-break hyphenation and soft hyphens, so a quote matches the page text it was read from. */

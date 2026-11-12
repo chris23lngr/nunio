@@ -1,16 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
-import type {
-  Principal,
-  Responsibilities,
-  Transaction,
-} from "@nunio/delegation";
+import type { Principal, Responsibilities } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { Facts } from "./facts.js";
 import type { CourseColor } from "./new-course.js";
-import { courseColors, matchKeys, newCourse } from "./new-course.js";
+import { clashing, courseColors, matchKeys, newCourse } from "./new-course.js";
 import type { Semester } from "./semester.js";
 import { semesterAt, semesterChoices } from "./semester.js";
+import { similarCourses } from "./similar-courses.js";
 
 export type Courses = ReturnType<typeof createCourses>;
 
@@ -149,35 +146,6 @@ function overviewOrder(
     return da ? -1 : 1;
   }
   return a.title.localeCompare(b.title, "de");
-}
-
-/** Another Course with this code or title, which would make matching a later Source to either one ambiguous. */
-async function clashing(
-  tx: Transaction,
-  names: { matchTitle: string; matchCode: string | null },
-  except?: string,
-) {
-  const other = await tx.course.findFirst({
-    where: {
-      status: { not: "merged" },
-      ...(except ? { id: { not: except } } : {}),
-      OR: [
-        { matchTitle: names.matchTitle },
-        ...(names.matchCode ? [{ matchCode: names.matchCode }] : []),
-      ],
-    },
-  });
-  return other
-    ? ({
-        status: "clash",
-        course: {
-          id: other.id,
-          title: other.title,
-          status: other.status as "proposed" | "accepted" | "rejected",
-          archived: other.archivedAt !== null,
-        },
-      } as const)
-    : null;
 }
 
 /** The student's Courses: their Semester, color, and lifecycle beyond review. */
@@ -347,6 +315,65 @@ export function createCourses({
       return withOwner(db, p, async (tx) => {
         const { count } = await tx.course.deleteMany({ where: { id } });
         return { status: count ? "ok" : "gone" } as const;
+      });
+    },
+
+    /**
+     * Pairs of the student's Courses that look like one, for Review to suggest merging: same Semester, neither rejected
+     * nor merged, and not kept apart by the student. Each names the Course to merge and the one to merge it into: the
+     * accepted one over a proposal, else the older.
+     */
+    async similar(p: Principal) {
+      return withOwner(db, p, async (tx) => {
+        const rows = await tx.course.findMany({
+          where: { status: { in: ["proposed", "accepted"] } },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          select: {
+            id: true,
+            title: true,
+            code: true,
+            semester: true,
+            status: true,
+          },
+        });
+        const apart = new Set(
+          (await tx.distinctCoursePair.findMany()).map(
+            (pair) => `${pair.courseId} ${pair.otherId}`,
+          ),
+        );
+        return rows.flatMap((into, i) =>
+          rows
+            .slice(i + 1)
+            .filter(
+              (course) =>
+                course.semester === into.semester &&
+                !apart.has([into.id, course.id].sort().join(" ")) &&
+                similarCourses(into, course),
+            )
+            .map((course) =>
+              course.status === "accepted" && into.status === "proposed"
+                ? { courseId: into.id, intoId: course.id }
+                : { courseId: course.id, intoId: into.id },
+            ),
+        );
+      });
+    },
+
+    /** "Nein, verschieden": the student says two Courses differ, so Review never suggests merging them again. */
+    async keepApart(p: Principal, id: string, otherId: string) {
+      const [courseId, other] = [id, otherId].sort() as [string, string];
+      return withOwner(db, p, async (tx, studentId) => {
+        const found = await tx.course.count({
+          where: { id: { in: [courseId, other] } },
+        });
+        if (courseId === other || found !== 2)
+          return { status: "gone" } as const;
+        await tx.distinctCoursePair.upsert({
+          where: { courseId_otherId: { courseId, otherId: other } },
+          create: { studentId, courseId, otherId: other },
+          update: {},
+        });
+        return { status: "ok" } as const;
       });
     },
 

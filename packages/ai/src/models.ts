@@ -28,7 +28,11 @@ export type ModelId = keyof typeof allowlist;
 
 const maxOutputTokens = 8_000;
 /** Haiku 5.5 spends most of an 8k budget on reasoning over a long window, truncating the structured answer. */
-const taskOutputTokens: Partial<Record<Task, number>> = { extraction: 32_000 };
+/** A page's transcription and figure lines stay well below 8k tokens, so a scan reserves far less than extraction. */
+const taskOutputTokens: Partial<Record<Task, number>> = {
+  extraction: 32_000,
+  scan: 8_000,
+};
 /** Generous per-text allowance for role markers and message framing around the text's own tokens. */
 const framingTokens = 200;
 const encoder = new TextEncoder();
@@ -36,6 +40,7 @@ const encoder = new TextEncoder();
 /** ADR-0011 starting defaults, each to be confirmed by evaluations before the pilot. */
 const defaults = {
   extraction: "anthropic/claude-haiku-5.5",
+  scan: "anthropic/claude-haiku-5.5",
   classification: "anthropic/claude-haiku-5.5",
   estimation: "anthropic/claude-haiku-5.5",
   agent: "anthropic/claude-sonnet-5.5",
@@ -163,4 +168,18 @@ export function isDefiniteFailure(error: unknown): boolean {
     error.statusCode < 500 &&
     error.statusCode !== 408
   );
+}
+
+/**
+ * Whether a failed call is worth another, separately metered attempt: a rate limit (429), a timeout (408),
+ * a provider error (5xx), or no answer at all (a lost connection or an aborted wait). Other 4xx are final.
+ */
+export function isTransientFailure(error: unknown): boolean {
+  if (APICallError.isInstance(error) && error.statusCode !== undefined)
+    return (
+      error.statusCode === 429 ||
+      error.statusCode === 408 ||
+      error.statusCode >= 500
+    );
+  return true;
 }

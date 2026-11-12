@@ -1,12 +1,19 @@
 import { createHash, randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { Embedder, ScanReader } from "@nunio/ai";
-import { isDefiniteFailure, SourceModelRejected } from "@nunio/ai";
+import {
+  isDefiniteFailure,
+  isTransientFailure,
+  SourceModelRejected,
+} from "@nunio/ai";
 import type { PrismaClient, SourceFailure } from "@nunio/db";
 import type { Delegation, Principal, Transaction } from "@nunio/delegation";
 import { accessRefusal, DefiniteFailure, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import { encryptSourceText } from "@nunio/keys";
 import { pruneItems } from "./items.js";
+import type { CourseChoice } from "./new-course.js";
+import { chosenCourse } from "./new-course.js";
 
 export const maxSourceBytes = 20 * 1024 * 1024;
 // Chunks overlap by 200 code points; <=6000 UTF-8 bytes per embedding.
@@ -15,6 +22,12 @@ const chunkStride = 1200,
 const embeddingBatch = 16,
   maxChunks = 2000,
   maxTextBytes = 2 * 1024 * 1024;
+/** Page images read at once, each through its own metered call. */
+const scanConcurrency = 4;
+/** Pauses before a page's second and third reading after a transient failure. */
+const scanRetryDelaysMs = [1_000, 3_000];
+/** Ingestion may not go on: the Source is gone or `meter` refused; another attempt would not help. */
+class IngestionStopped extends Error {}
 /** Rebuilds each page's text from its chunks in ordinal order, inverting the overlapping split below. */
 export function joinChunks(chunks: readonly { page: number; text: string }[]) {
   const pages = new Map<number, string[]>();
@@ -89,10 +102,12 @@ export function createSources({
   db,
   keys,
   storage,
+  clock = { now: () => new Date() },
 }: {
   db: PrismaClient;
   keys: SourceKeys;
   storage: SourceStorage;
+  clock?: { now(): Date };
 }) {
   const sourceLock = (tx: Transaction, id: string) =>
     tx.$queryRaw`SELECT "id" FROM "source" WHERE "id" = ${id} FOR UPDATE`;
@@ -130,7 +145,12 @@ export function createSources({
     },
     async upload(
       p: Principal,
-      input: { title: string; bytes: number; type: string },
+      input: {
+        title: string;
+        bytes: number;
+        type: string;
+        course?: CourseChoice;
+      },
     ) {
       if (
         input.type !== "application/pdf" ||
@@ -147,11 +167,19 @@ export function createSources({
       return withOwner(db, p, async (tx, studentId) => {
         const reason = await accessRefusal(tx, studentId);
         if (reason) return { status: "refused", reason } as const;
+        const course = await chosenCourse(
+          tx,
+          studentId,
+          input.course ?? null,
+          clock.now(),
+        );
+        if (course.status !== "ok") return course;
         const upload = await storage.upload(id, key, input.bytes);
         const source = await tx.source.create({
           data: {
             id,
             studentId,
+            courseId: course.courseId,
             title: input.title.trim(),
             bytes: input.bytes,
             keyVersion: wrapped.version,
@@ -161,7 +189,12 @@ export function createSources({
         });
         return {
           status: "ok",
-          source: { id: source.id, title: source.title, status: source.status },
+          source: {
+            id: source.id,
+            title: source.title,
+            status: source.status,
+            courseId: source.courseId,
+          },
           upload,
         } as const;
       });
@@ -176,6 +209,7 @@ export function createSources({
             status: true,
             failure: true,
             extraction: true,
+            courseId: true,
           },
           orderBy: { createdAt: "asc" },
         }),
@@ -294,7 +328,9 @@ export function createSources({
         ) => Promise<{ value: T; usage: { microUsd: number } }>,
       ) => {
         if (!(await stillIngesting()))
-          throw new Error("Source is no longer available for ingestion");
+          throw new IngestionStopped(
+            "Source is no longer available for ingestion",
+          );
         const result = await deps.delegation.meter(
           p,
           { microUsd: estimate },
@@ -308,7 +344,9 @@ export function createSources({
                 error instanceof SourceModelRejected ||
                 isDefiniteFailure(error)
               )
-                throw new DefiniteFailure("Provider rejected ingestion");
+                throw new DefiniteFailure("Provider rejected ingestion", {
+                  cause: error,
+                });
               throw error;
             }
           },
@@ -316,7 +354,7 @@ export function createSources({
         if (result.status === "refused") {
           throw result.reason === "allowance_exhausted"
             ? new IngestionError(result.reason)
-            : new Error(result.reason);
+            : new IngestionStopped(result.reason);
         }
         return result.value;
       };
@@ -326,25 +364,70 @@ export function createSources({
           ...download,
           expectedBytes: source.bytes,
         });
+        // Page images are read a few at a time to keep a long slide deck within the ten-minute target.
+        const texts = parsed.pages.map((page) => page.text);
+        let next = 0,
+          failure: { error: unknown } | undefined;
+        await Promise.all(
+          Array.from({ length: scanConcurrency }, async () => {
+            while (!failure && next < parsed.pages.length) {
+              const index = next++;
+              const page = parsed.pages[index]!;
+              if (!page.imageBase64) continue;
+              const image = Buffer.from(page.imageBase64, "base64");
+              try {
+                const estimate = deps.scans.estimateMicroUsd(image, page.text);
+                // One failed page would otherwise fail the Source and have the student pay again for every page.
+                // Each attempt is its own metered call; only failures that may pass on another try are retried.
+                for (let attempt = 0; ; attempt++) {
+                  try {
+                    const reading = await meteredModelCall(
+                      estimate,
+                      async (signal) => {
+                        const result = await deps.scans.read(image, {
+                          text: page.text,
+                          signal,
+                        });
+                        return { value: result, usage: result.usage };
+                      },
+                    );
+                    // Its usage is settled; a truncated reading is retried like a transient failure.
+                    if (reading.truncated)
+                      throw new Error("Page reading truncated");
+                    // Reading supplements, never replaces, whatever text the parser extracted.
+                    texts[index] = [page.text.trim(), reading.text.trim()]
+                      .filter(Boolean)
+                      .join("\n");
+                    break;
+                  } catch (error) {
+                    const cause =
+                      error instanceof DefiniteFailure ? error.cause : error;
+                    if (
+                      attempt >= scanRetryDelaysMs.length ||
+                      failure ||
+                      deps.signal?.aborted ||
+                      error instanceof IngestionError ||
+                      error instanceof IngestionStopped ||
+                      cause instanceof SourceModelRejected ||
+                      !isTransientFailure(cause)
+                    )
+                      throw error;
+                    await sleep(scanRetryDelaysMs[attempt], undefined, {
+                      signal: deps.signal,
+                    });
+                  }
+                }
+              } catch (error) {
+                failure ??= { error };
+              }
+            }
+          }),
+        );
+        if (failure) throw failure.error;
         const chunks: { page: number; text: string }[] = [];
-        for (const page of parsed.pages) {
-          let text = page.text;
-          if (page.imageBase64) {
-            const image = Buffer.from(page.imageBase64, "base64");
-            // Transcription supplements, never replaces, whatever text the parser extracted.
-            const transcription = await meteredModelCall(
-              deps.scans.estimateMicroUsd(image),
-              async (signal) => {
-                const result = await deps.scans.read(image, { signal });
-                return { value: result.text, usage: result.usage };
-              },
-            );
-            text = [page.text.trim(), transcription.trim()]
-              .filter(Boolean)
-              .join("\n");
-          }
+        for (const [index, page] of parsed.pages.entries()) {
           // Split by Unicode code points, preserving non-ASCII text.
-          const chars = Array.from(text.trim());
+          const chars = Array.from(texts[index]!.trim());
           for (let offset = 0; offset < chars.length; offset += chunkStride) {
             chunks.push({
               page: page.page,

@@ -14,8 +14,27 @@ const Source = z
       description: "Why processing stopped, when the student can act on it.",
     }),
     extraction: z.enum(ExtractionStatus),
+    courseId: z.string().nullable().openapi({
+      description:
+        "The Course the student bound it to; everything read from it goes there. Null: nunio recognizes its Courses.",
+    }),
   })
   .openapi("Source");
+const CourseChoice = z
+  .union([
+    z.object({ id: z.string().uuid() }).strict(),
+    z
+      .object({
+        title: z.string().min(1).max(500),
+        code: z.string().max(50).nullable(),
+      })
+      .strict(),
+  ])
+  .nullable()
+  .openapi("CourseChoice", {
+    description:
+      'An accepted, unarchived Course; a new one, created accepted in the current Semester; or null, "automatisch erkennen".',
+  });
 const ErrorBody = z.object({ error: z.string() });
 const json = (schema: z.ZodType, description: string) => ({
   description,
@@ -27,6 +46,39 @@ const errors = {
   404: json(ErrorBody, "Source is gone."),
 };
 const params = z.object({ id: z.string().uuid() });
+const courseErrors = {
+  400: json(ErrorBody, "The new Course has no title."),
+  404: json(ErrorBody, "Source or Course is gone."),
+};
+const Refused = ErrorBody.extend({
+  course: z
+    .object({
+      id: z.string(),
+      title: z.string(),
+      status: z.enum(["proposed", "accepted", "rejected"]),
+      archived: z.boolean(),
+    })
+    .optional()
+    .openapi({
+      description:
+        "With error clash: the Course that has this code or title; the student chooses that one instead.",
+    }),
+});
+type Refusal =
+  | { status: "invalid" | "gone" | "course_archived" }
+  | { status: "clash"; course: z.infer<typeof Refused>["course"] };
+/** Maps a refused Course choice to its response. */
+const courseRefusal = (result: Refusal) =>
+  result.status === "invalid"
+    ? ({ body: { error: "invalid" }, code: 400 } as const)
+    : result.status === "gone"
+      ? ({ body: { error: "gone" }, code: 404 } as const)
+      : result.status === "clash"
+        ? ({
+            body: { error: "clash", course: result.course },
+            code: 409,
+          } as const)
+        : ({ body: { error: "course_archived" }, code: 409 } as const);
 export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
     createRoute({
@@ -90,6 +142,10 @@ export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
                 title: z.string().min(1).max(255),
                 bytes: z.number().int().positive().max(maxSourceBytes),
                 type: z.literal("application/pdf"),
+                course: CourseChoice.optional().openapi({
+                  description:
+                    "Applies to this file; for several files with a new Course, send it with the first and its returned courseId with the rest.",
+                }),
               }),
             },
           },
@@ -108,6 +164,11 @@ export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
           "Upload directly to quarantine using PUT and these headers.",
         ),
         ...errors,
+        ...courseErrors,
+        409: json(
+          Refused,
+          "The chosen Course is Archived (error course_archived), or another Course has the new one's code or title (error clash).",
+        ),
       },
     }),
     async (c) => {
@@ -121,6 +182,10 @@ export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
       );
       if (result.status === "refused")
         return c.json({ error: result.reason }, 403);
+      if (result.status !== "ok") {
+        const { body, code } = courseRefusal(result);
+        return c.json(body, code);
+      }
       return c.json(
         {
           source: result.source,
@@ -161,6 +226,68 @@ export function registerSourceRoutes(routes: OpenAPIHono<AppBindings>) {
       await c
         .get("sourceWorkflows")
         .start("extractSource", actor.studentId, id);
+      return c.json({ status: "queued" as const }, 202);
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/sources/{id}/course",
+      description:
+        "Kurs ändern: bind a ready Source to another Course, a new one, or none, and read it again.",
+      request: {
+        params,
+        body: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: z.object({ course: CourseChoice }).strict(),
+            },
+          },
+        },
+      },
+      responses: {
+        202: json(
+          z.object({ status: z.literal("queued") }),
+          "Extraction queued and metered again; its extractions are replaced once it is done.",
+        ),
+        409: json(
+          Refused,
+          "Extraction is running (error running), the chosen Course is Archived (error course_archived), or another Course has the new one's code or title (error clash).",
+        ),
+        503: json(
+          ErrorBody,
+          "The Course changed and the Source waits to be read, but reading could not start (error not_started); POST /api/me/sources/{id}/extract starts it.",
+        ),
+        ...errors,
+        ...courseErrors,
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const id = c.req.valid("param").id;
+      const result = await c
+        .get("facts")
+        .changeCourse(
+          principal.fromSession(actor),
+          id,
+          c.req.valid("json").course,
+        );
+      if (result.status === "running") return c.json({ error: "running" }, 409);
+      if (result.status !== "ok") {
+        const { body, code } = courseRefusal(result);
+        return c.json(body, code);
+      }
+      try {
+        await c
+          .get("sourceWorkflows")
+          .start("extractSource", actor.studentId, id);
+      } catch {
+        // The new Course is kept and the Source waits to be read; asking to extract it again starts the reading.
+        return c.json({ error: "not_started" }, 503);
+      }
       return c.json({ status: "queued" as const }, 202);
     },
   );

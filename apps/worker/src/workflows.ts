@@ -42,8 +42,10 @@ export async function checkParser(): Promise<{ status: string }> {
 
 // Ingestion is not retried wholesale: a crashed model call may already have incurred usage.
 // A founder investigates failed/interrupted ingestions and held reservations until Phase 9 reconciliation.
+// 30 minutes fits a 100-page deck whose every page needs both retries (~20 min of page readings, four at a
+// time, plus parsing and embedding); heartbeats still catch a lost worker within 30 seconds.
 const { processSource } = proxyActivities<SourceActivities>({
-  startToCloseTimeout: "15 minutes",
+  startToCloseTimeout: "30 minutes",
   heartbeatTimeout: "30 seconds",
   retry: { maximumAttempts: 1 },
 });

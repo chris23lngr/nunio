@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { createModels, createScanReader, figureMarker } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -422,11 +423,16 @@ it("records why a Source failed when the student can act on it, and nothing for 
 });
 async function ingestPages(
   pages: { page: number; text: string; imageBase64?: string }[],
+  read: Ingestion["scans"]["read"] = async () => ({
+    text: "Klausur am 3. Juli",
+    usage: { microUsd: 1 },
+  }),
+  limitMicroUsd = 5_000_000,
 ) {
   const p = await student();
   if (p.kind !== "student") throw new Error("student");
   await admin.allowance.create({
-    data: { studentId: p.studentId, limitMicroUsd: 5_000_000 },
+    data: { studentId: p.studentId, limitMicroUsd },
   });
   const uploaded = await sources.upload(p, {
     title: "Scan.pdf",
@@ -437,7 +443,7 @@ async function ingestPages(
   await sources.complete(p, uploaded.source.id);
   const delegation = createDelegation({ db: runtime, aiEnabled: () => true });
   const metered: number[] = [];
-  const read: Buffer[] = [];
+  const images: Buffer[] = [];
   const embedded: string[] = [];
   const result = await sources.ingest(
     p,
@@ -453,9 +459,9 @@ async function ingestPages(
       },
       scans: {
         estimateMicroUsd: () => 7,
-        read: async (image) => {
-          read.push(image);
-          return { text: "Klausur am 3. Juli", usage: { microUsd: 1 } };
+        read: (image, options) => {
+          images.push(image);
+          return read(image, options);
         },
       },
       embedder: {
@@ -473,8 +479,58 @@ async function ingestPages(
       },
     }),
   );
-  return { result, metered, read, embedded };
+  return {
+    result,
+    metered,
+    read: images,
+    embedded,
+    held: await delegation.held(p),
+  };
 }
+/** The real scan reader over a scripted OpenRouter: each request gets the next status and finish reason. */
+function scriptedReader(
+  ...replies: (number | { finish: "stop" | "length"; text: string })[]
+) {
+  let requests = 0;
+  const reader = createScanReader(
+    createModels({
+      apiKey: "test",
+      baseURL: "https://openrouter.test/api/v1",
+      fetch: async () => {
+        requests++;
+        const reply = replies.shift();
+        if (reply === undefined) throw new Error("no scripted reply left");
+        if (typeof reply === "number")
+          return Response.json(
+            { error: { message: "scripted", code: reply } },
+            { status: reply },
+          );
+        return Response.json({
+          id: "gen-test",
+          object: "chat.completion",
+          created: 0,
+          model: "anthropic/claude-haiku-5.5",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: reply.text },
+              finish_reason: reply.finish,
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        });
+      },
+    }),
+  );
+  return { read: reader.read, requests: () => requests };
+}
+const onePage = [
+  {
+    page: 1,
+    text: "Folie 1",
+    imageBase64: Buffer.from("image 1").toString("base64"),
+  },
+];
 it("meters a scanned page's transcription and indexes its text", async () => {
   const png = Buffer.from("scanned page image");
   const { result, metered, read, embedded } = await ingestPages([
@@ -496,6 +552,100 @@ it("keeps a page's extracted text when it is also transcribed", async () => {
   expect(result).toEqual({ status: "ready" });
   expect(embedded.join("\n")).toContain("Raum H1");
   expect(embedded.join("\n")).toContain("Klausur am 3. Juli");
+});
+it("reads up to four pages at once, each with its text layer, and keeps page order", async () => {
+  let inFlight = 0,
+    peak = 0,
+    fill = () => {};
+  // The first reads wait until four are in flight (or two seconds pass), so the peak never depends on timing.
+  const full = new Promise<void>((resolve) => {
+    fill = resolve;
+  });
+  const layers: string[] = [];
+  const pages = Array.from({ length: 10 }, (_, i) => ({
+    page: i + 1,
+    text: `Folie ${i + 1}`,
+    imageBase64: Buffer.from(`image ${i + 1}`).toString("base64"),
+  }));
+  const { result, metered, embedded } = await ingestPages(
+    pages,
+    async (image, { text }) => {
+      layers.push(text);
+      peak = Math.max(peak, ++inFlight);
+      if (inFlight === 4) fill();
+      await Promise.race([
+        full,
+        new Promise((resolve) => setTimeout(resolve, 2_000)),
+      ]);
+      const page = Number(image.toString().split(" ")[1]);
+      // Later pages answer first, so completion order differs from page order.
+      await new Promise((resolve) => setTimeout(resolve, 50 - page * 4));
+      inFlight--;
+      return { text: `[Abbildung] Diagramm ${page}`, usage: { microUsd: 1 } };
+    },
+  );
+  expect(result).toEqual({ status: "ready" });
+  expect(peak).toBe(4);
+  expect(metered.filter((estimate) => estimate === 7)).toHaveLength(10);
+  expect(layers.sort()).toEqual(pages.map((page) => page.text).sort());
+  expect(embedded).toEqual(
+    pages.map(
+      (page) => `Folie ${page.page}\n[Abbildung] Diagramm ${page.page}`,
+    ),
+  );
+});
+it("stops reading further pages after one fails", async () => {
+  let reads = 0;
+  const pages = Array.from({ length: 10 }, (_, i) => ({
+    page: i + 1,
+    text: "",
+    imageBase64: Buffer.from(`image ${i + 1}`).toString("base64"),
+  }));
+  const { result } = await ingestPages(pages, async () => {
+    reads++;
+    throw new Error("provider unavailable");
+  });
+  expect(result).toEqual({ status: "failed" });
+  // Four pages in flight, each tried once and retried twice; no further page starts.
+  expect(reads).toBe(12);
+});
+it("retries a page after a rate limit and a provider error, metering each attempt", async () => {
+  const reader = scriptedReader(429, 503, {
+    finish: "stop",
+    text: `${figureMarker}Ablaufdiagramm`,
+  });
+  const { result, metered, embedded } = await ingestPages(onePage, reader.read);
+  expect(result).toEqual({ status: "ready" });
+  expect(reader.requests()).toBe(3);
+  expect(metered.filter((estimate) => estimate === 7)).toHaveLength(3);
+  expect(embedded).toEqual([`Folie 1\n${figureMarker}Ablaufdiagramm`]);
+});
+it("does not retry a definite rejection such as an invalid image", async () => {
+  const reader = scriptedReader(400, { finish: "stop", text: "unused" });
+  const { result } = await ingestPages(onePage, reader.read);
+  expect(result).toEqual({ status: "failed" });
+  expect(reader.requests()).toBe(1);
+});
+it("does not retry a page once the Allowance is exhausted", async () => {
+  const reader = scriptedReader({ finish: "stop", text: "unused" });
+  const { result, metered } = await ingestPages(onePage, reader.read, 0);
+  expect(result).toEqual({ status: "failed", failure: "allowance_exhausted" });
+  expect(metered).toEqual([7]);
+  expect(reader.requests()).toBe(0);
+});
+it("settles a truncated reading's usage and reads the page again", async () => {
+  const reader = scriptedReader(
+    { finish: "length", text: "Folie 1 Folie 1 Folie" },
+    { finish: "stop", text: `${figureMarker}Zeitstrahl` },
+  );
+  const { result, metered, embedded, held } = await ingestPages(
+    onePage,
+    reader.read,
+  );
+  expect(result).toEqual({ status: "ready" });
+  expect(metered.filter((estimate) => estimate === 7)).toHaveLength(2);
+  expect(held).toEqual([]);
+  expect(embedded).toEqual([`Folie 1\n${figureMarker}Zeitstrahl`]);
 });
 
 it("fails a Source whose key the worker cannot unwrap instead of leaving it processing", async () => {

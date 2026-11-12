@@ -2,7 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { courseListQuery } from "@/features/courses/api/course-queries";
 import {
   deleteSource,
   readSourceAgain,
@@ -10,6 +11,7 @@ import {
 } from "./api/source-mutations";
 import type { Source } from "./api/source-queries";
 import { sourceQueries } from "./api/source-queries";
+import { courseChoiceFrom } from "./components/course-choice-fields";
 import { SourceList } from "./components/source-list";
 import { SourceUploadForm } from "./components/source-upload-form";
 
@@ -17,7 +19,11 @@ export function SourcesScreen({ apiOrigin }: { apiOrigin: string }) {
   const queryClient = useQueryClient();
   const query = useQuery(sourceQueries(apiOrigin));
   const sources = query.data ?? [];
+  const courses = useQuery(courseListQuery(apiOrigin)).data?.courses ?? [];
   const [error, setError] = useState<string | null>(null);
+  const [course, setCourse] = useState("");
+  // Files of the current selection already uploaded, which a retry after a part-way failure skips.
+  const done = useRef(new WeakSet<File>());
   const deleteMutation = useMutation(deleteSource(apiOrigin, queryClient));
   const uploadMutation = useMutation(uploadSource(apiOrigin, queryClient));
   const readAgainMutation = useMutation(
@@ -31,13 +37,29 @@ export function SourcesScreen({ apiOrigin }: { apiOrigin: string }) {
   function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    const file = (form.elements.namedItem("source") as HTMLInputElement)
-      .files?.[0];
-    if (!file) return setError("Choose a PDF up to 20 MB.");
+    const files = [
+      ...((form.elements.namedItem("source") as HTMLInputElement).files ?? []),
+    ];
+    if (!files.length) return setError("Choose a PDF up to 20 MB.");
     setError(null);
     readAgainMutation.reset();
     deleteMutation.reset();
-    uploadMutation.mutate(file, { onSuccess: () => form.reset() });
+    uploadMutation.mutate(
+      {
+        files,
+        course: courseChoiceFrom(course, form),
+        done: done.current,
+        // A retry binds to the Course this upload created instead of creating another.
+        onCourse: setCourse,
+      },
+      {
+        onSuccess: () => {
+          form.reset();
+          setCourse("");
+          done.current = new WeakSet();
+        },
+      },
+    );
   }
 
   function remove(source: Source) {
@@ -69,6 +91,9 @@ export function SourcesScreen({ apiOrigin }: { apiOrigin: string }) {
       </p>
       <SourceUploadForm
         onSubmit={upload}
+        courses={courses}
+        course={course}
+        onCourse={setCourse}
         disabled={busy}
         uploading={uploadMutation.isPending}
       />

@@ -1,5 +1,5 @@
 {
-  "about": "Phase 6 extraction eval set. Labels were drafted by the agent and spot-checked by the founder (2026-11-08). Obligation `match` lists lowercase substrings of an acceptable title or key; `optional` items count neither as misses nor, when found, as false positives. Public handbooks are fetched by URL and cut to fixed pages, never committed.",
+  "about": "Phase 6 extraction eval set. Original syllabus and handbook labels were spot-checked by the founder (2026-11-08). Slide Topic and Course assignment labels are draft, not yet spot-checked by founder. Obligation `match` lists lowercase substrings of an acceptable title or key; `optional` items count neither as misses nor, when found, as false positives. Public handbooks are fetched by URL and cut to fixed pages, never committed.",
   "documents": [
     {
       "id": "synthetic-de-analysis",
@@ -452,6 +452,220 @@
         { "course": "WI2", "key": "exam.duration", "contains": "120" },
         { "course": "Inf2", "key": "exam.duration", "contains": "120" }
       ]
+    },
+    {
+      "id": "rub-nlp-02",
+      "language": "en",
+      "kind": "slides",
+      "scan": false,
+      "source": {
+        "url": "https://raw.githubusercontent.com/trusthlt/nlp-with-deep-learning-lectures/67639ff063ff0fa3274686c0bf147e6278755608/lectures/lecture02/pdf/nlpwdl2026-lecture02-handout.pdf",
+        "sha256": "b4d8be8b0e87492e85004f936acbb416c026e6ca04c022dfbdd38482ddaaa65c"
+      },
+      "licence": "CC-BY-SA-4.0",
+      "attribution": "Ivan Habernal, Ruhr University Bochum, Natural Language Processing with Deep Learning, 2026",
+      "licenceUrl": "https://github.com/trusthlt/nlp-with-deep-learning-lectures/blob/67639ff063ff0fa3274686c0bf147e6278755608/README.md",
+      "labelsStatus": "draft, not yet spot-checked by founder",
+      "courses": [
+        {
+          "code": null,
+          "title": "Natural Language Processing with Deep Learning"
+        }
+      ],
+      "obligations": [],
+      "logistics": [],
+      "topics": [
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["supervised learning", "supervised machine learning"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["loss function", "loss functions"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["gradient descent"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["partial derivatives", "partial derivative"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["chain rule", "multivariable chain rule"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["backpropagation"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["computational graph", "computational graphs"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["jacobian", "jacobian matrix"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["gradient"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["derivatives", "derivative"]
+        }
+      ]
+    },
+    {
+      "id": "rub-nlp-03",
+      "language": "en",
+      "kind": "slides",
+      "scan": false,
+      "source": {
+        "url": "https://raw.githubusercontent.com/trusthlt/nlp-with-deep-learning-lectures/67639ff063ff0fa3274686c0bf147e6278755608/lectures/lecture03/pdf/nlpwdl2026-lecture03-handout.pdf",
+        "sha256": "ddae10a27dd0f3e0c20f08fb63cadb2c0b6f7bc58711c0513b7aaef4212382c5"
+      },
+      "licence": "CC-BY-SA-4.0",
+      "attribution": "Ivan Habernal, Ruhr University Bochum, Natural Language Processing with Deep Learning, 2026",
+      "licenceUrl": "https://github.com/trusthlt/nlp-with-deep-learning-lectures/blob/67639ff063ff0fa3274686c0bf147e6278755608/README.md",
+      "labelsStatus": "draft, not yet spot-checked by founder",
+      "courses": [
+        {
+          "code": null,
+          "title": "Natural Language Processing with Deep Learning"
+        }
+      ],
+      "obligations": [],
+      "logistics": [],
+      "topics": [
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["backpropagation"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["computational graph", "computational graphs"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["chain rule", "multivariable chain rule"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["tokenization"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["bag of words", "bag-of-words"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["byte pair encoding", "byte-pair encoding", "bpe"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["binary text classification", "binary classification"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": ["sigmoid", "sigmoid function"]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "cross-entropy loss",
+            "binary cross-entropy",
+            "binary cross-entropy loss"
+          ]
+        },
+        {
+          "course": "Natural Language Processing with Deep Learning",
+          "aliases": [
+            "stochastic gradient descent",
+            "minibatch stochastic gradient descent",
+            "mini-batch stochastic gradient descent"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dhbw-digitaltechnik",
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "source": {
+        "url": "https://virtual-course.de/Vorlesungen/pdf/Folien_Digital.pdf",
+        "sha256": "7ba2421c76b1bb77cf2ef337319c0e120aa731e4ea72e61f4547aaa4e4ad2fff",
+        "pages": [1, 35]
+      },
+      "licence": "CC-BY-SA-4.0",
+      "attribution": "Rüdiger Heintz, DHBW Mannheim, Vorlesung Digitaltechnik Teil 1, Version 2.15, 2026; unmodified pages 1–35",
+      "licenceUrl": "https://virtual-course.de/Vorlesungen/",
+      "labelsStatus": "draft, not yet spot-checked by founder",
+      "courses": [
+        {
+          "code": null,
+          "title": "Digitaltechnik"
+        }
+      ],
+      "obligations": [],
+      "logistics": [],
+      "topics": [
+        {
+          "course": "Digitaltechnik",
+          "aliases": [
+            "analoge und digitale signale",
+            "analog- und digitalsignale",
+            "analoge signale",
+            "digitale signale"
+          ]
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["abtastung", "zeitdiskretisierung"]
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["quantisierung"]
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["binäre signale", "binärsignale"]
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["boolesche algebra", "schaltalgebra"]
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["wahrheitstabelle", "wahrheitstabellen"]
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["logische verknüpfungen", "logikgatter"]
+        },
+        {
+          "course": "Digitaltechnik",
+          "aliases": ["logikpegel", "logische pegel"]
+        }
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "several-files-one-course",
+      "mode": "automatic",
+      "documents": ["rub-nlp-02", "rub-nlp-03"],
+      "expectedCourses": 1,
+      "labelsStatus": "draft, not yet spot-checked by founder"
+    },
+    {
+      "id": "bound-course",
+      "mode": "bound",
+      "documents": ["rub-nlp-02", "rub-nlp-03"],
+      "expectedCourses": 1,
+      "labelsStatus": "draft, not yet spot-checked by founder"
     }
   ]
 }

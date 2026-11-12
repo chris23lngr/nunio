@@ -1,6 +1,10 @@
 import { generateText } from "ai";
 import { describe, expect, it } from "vitest";
-import { createModels, isDefiniteFailure } from "./index.js";
+import {
+  createModels,
+  isDefiniteFailure,
+  isTransientFailure,
+} from "./index.js";
 
 const models = createModels({
   apiKey: "test-key",
@@ -20,6 +24,7 @@ describe("the model registry", () => {
   // ADR-0011 starting defaults, confirmed by evaluations before the pilot.
   it.each([
     ["extraction", "anthropic/claude-haiku-5.5"],
+    ["scan", "anthropic/claude-haiku-5.5"],
     ["classification", "anthropic/claude-haiku-5.5"],
     ["estimation", "anthropic/claude-haiku-5.5"],
     ["agent", "anthropic/claude-sonnet-5.5"],
@@ -254,3 +259,56 @@ function completion(
     },
   };
 }
+
+describe("isTransientFailure", () => {
+  // Worth another metered attempt: a rate limit, a timeout, a provider error, or a lost connection.
+  it.each([
+    [429, true],
+    [408, true],
+    [500, true],
+    [503, true],
+    [400, false],
+    [401, false],
+    [402, false],
+  ])(
+    "treats a provider response with status %i as transient: %s",
+    async (status, transient) => {
+      const rejecting = createModels({
+        apiKey: "test-key",
+        baseURL: "https://openrouter.test/api/v1",
+        fetch: async () =>
+          Response.json(
+            { error: { message: "rejected", code: status } },
+            { status },
+          ),
+      });
+      const haiku = rejecting.byId("anthropic/claude-haiku-5.5");
+      const error = await generateText({
+        model: haiku.model,
+        ...haiku.callSettings,
+        prompt: "Reply with: pong",
+      }).catch((e: unknown) => e);
+      expect(isTransientFailure(error)).toBe(transient);
+    },
+  );
+
+  it("treats a lost connection and a timeout as transient", async () => {
+    const offline = createModels({
+      apiKey: "test-key",
+      baseURL: "https://openrouter.test/api/v1",
+      fetch: async () => {
+        throw new TypeError("fetch failed");
+      },
+    });
+    const haiku = offline.byId("anthropic/claude-haiku-5.5");
+    const error = await generateText({
+      model: haiku.model,
+      ...haiku.callSettings,
+      prompt: "Reply with: pong",
+    }).catch((e: unknown) => e);
+    expect(isTransientFailure(error)).toBe(true);
+    expect(
+      isTransientFailure(new DOMException("timed out", "TimeoutError")),
+    ).toBe(true);
+  });
+});

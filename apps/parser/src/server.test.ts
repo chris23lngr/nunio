@@ -82,27 +82,59 @@ async function parseUpload(bytes: Buffer, expectedBytes = bytes.length) {
     await new Promise<void>((resolve) => parser.close(() => resolve()));
   }
 }
-it("extracts a real PDF and renders pages without text for the worker", async () => {
+/** Reads a baseline or progressive JPEG's dimensions from its first SOF marker. */
+function jpegSize(image: Buffer) {
+  for (let at = 2; at + 9 < image.length; ) {
+    const marker = image[at + 1]!;
+    if (marker >= 0xc0 && marker <= 0xc2)
+      return {
+        height: image.readUInt16BE(at + 5),
+        width: image.readUInt16BE(at + 7),
+      };
+    at += 2 + image.readUInt16BE(at + 2);
+  }
+  throw new Error("no SOF marker");
+}
+it("extracts a real PDF and renders every page, text or not, as a JPEG for the worker", async () => {
   const { pdfFixture } = await import("../test/fixtures.js");
-  const text = await parseUpload(pdfFixture());
-  expect(text.status).toBe(200);
-  expect(text.body.pages[0]!.text).toContain("examination");
-  expect(text.body.pages[0]!.imageBase64).toBeUndefined();
-  const scan = await parseUpload(pdfFixture({ text: "" }));
-  expect(scan.status).toBe(200);
-  expect(
-    Buffer.from(scan.body.pages[0]!.imageBase64!, "base64")
-      .subarray(0, 8)
-      .toString("hex"),
-  ).toBe("89504e470d0a1a0a");
+  for (const fixture of [
+    pdfFixture({ pages: 2 }),
+    pdfFixture({ text: "" }),
+    pdfFixture({ image: true }),
+  ]) {
+    const parsed = await parseUpload(fixture);
+    expect(parsed.status).toBe(200);
+    for (const page of parsed.body.pages) {
+      const image = Buffer.from(page.imageBase64!, "base64");
+      expect(image.subarray(0, 3).toString("hex")).toBe("ffd8ff");
+      // The 600 x 200 pt fixture page scales to a 1568 px long edge.
+      expect(jpegSize(image)).toEqual({ width: 1568, height: 523 });
+    }
+  }
+  const text = await parseUpload(pdfFixture({ pages: 2 }));
+  expect(text.body.pages.map((page) => page.page)).toEqual([1, 2]);
+  expect(text.body.pages[1]!.text).toContain("examination");
 });
-it("keeps a text-rich page with a logo as extracted text, without rendering it", async () => {
+it("renders a 100-page deck within its limits", async () => {
   const { pdfFixture } = await import("../test/fixtures.js");
-  const parsed = await parseUpload(pdfFixture({ image: true }));
+  const parsed = await parseUpload(pdfFixture({ pages: 100 }));
   expect(parsed.status).toBe(200);
-  expect(parsed.body.pages[0]!.text).toContain("examination");
-  expect(parsed.body.pages[0]!.imageBase64).toBeUndefined();
-});
+  expect(parsed.body.pages).toHaveLength(100);
+  expect(parsed.body.pages.every((page) => page.imageBase64)).toBe(true);
+}, 120_000);
+it("parses an image-heavy PDF that decompresses beyond 32 MiB", async () => {
+  const { pdfFixture } = await import("../test/fixtures.js");
+  // The openly licensed dhbw-digitaltechnik deck decompresses to 52,352,795 bytes.
+  const parsed = await parseUpload(pdfFixture({ inflated: 60 * 1024 * 1024 }));
+  expect(parsed.status).toBe(200);
+  expect(parsed.body.pages).toHaveLength(1);
+}, 60_000);
+it("refuses a PDF that decompresses beyond the parser's bound", async () => {
+  const { pdfFixture } = await import("../test/fixtures.js");
+  expect(
+    (await parseUpload(pdfFixture({ inflated: 513 * 1024 * 1024 }))).status,
+  ).toBe(422);
+}, 60_000);
 it("refuses byte mismatches, malformed PDFs, excessive pages and compressed bombs", async () => {
   const { pdfFixture } = await import("../test/fixtures.js");
   expect((await parseUpload(pdfFixture(), 10)).status).toBe(413);
