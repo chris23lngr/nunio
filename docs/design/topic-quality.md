@@ -108,6 +108,20 @@ Step 4:
 - 40 required concepts were missed in all 3 runs. 35 of them are basic terms the deck introduces, such as
   "Label", "Token", "Binärzahl" or "git status"; 5 are figure-only.
 
+Recall variants after step 4 (#97, closed): each raised recall to 83–85 % and dropped precision to 63–65 %, with
+about 30 Topics per run instead of 15. The founder kept the step-4 instructions.
+
+| Variant                                              | Topic precision | Topic recall | Topics per run |
+| ---------------------------------------------------- | --------------- | ------------ | -------------- |
+| Ask for basic terms and figure-only concepts         | 63.8 %          | 82.8 %       | 30.3           |
+| Basic terms the deck defines; no passing mentions    | 65.1 %          | 83.4 %       | 30.4           |
+| Same, plus "one Topic per one or two content slides" | 62.7 %          | 84.6 %       | 31.8           |
+| Only the slide anchor (stopped after 11 of 24 runs)  | 64.3 %          | 82.7 %       | 30.4           |
+
+Many of the extra Topics are real terms the labels don't list, such as "Wahrheitstabelle" or "Lochkamera", and
+passing mentions such as "signal" or "node". The figure-only clause changed nothing, and its example
+"Blockschaltbild" leaked into the output.
+
 ### Figure diagnosis (step 2)
 
 One bound run (8 dev decks, USD 0.25) kept the pages the extractor saw (`EVAL_PAGES`, never committed); 15 pages
