@@ -725,13 +725,16 @@ export function createPlan({
     },
     /** Takes one Fixed Event out of its series' Course, so it is no Course Event, as for a cancelled lecture slot. */
     async detachEvent(p: Principal, id: string) {
-      return withOwner(db, p, async (tx) => {
+      const detached = await withOwner(db, p, async (tx) => {
         const { count } = await tx.fixedEvent.updateMany({
           where: { id, seriesId: { not: null } },
           data: { detachedAt: clock.now() },
         });
         return { status: count ? "ok" : "gone" } as const;
       });
+      // It is no Course Event any more, so its Routine's Tasks follow.
+      if (detached.status === "ok") await this.applyRoutines(p);
+      return detached;
     },
     async removeFixedEvent(p: Principal, id: string) {
       return withOwner(db, p, async (tx) => {
@@ -746,7 +749,7 @@ export function createPlan({
     async addCalendar(p: Principal, input: { name: string; ics: string }) {
       const name = titleOf(input.name, 255);
       if (!name) return { status: "invalid" } as const;
-      return withOwner(db, p, async (tx, studentId) => {
+      const added = await withOwner(db, p, async (tx, studentId) => {
         const timeZone =
           (await tx.planPreference.findFirst())?.timeZone ?? defaults.timeZone;
         const now = clock.now();
@@ -837,6 +840,9 @@ export function createPlan({
           skipped: reading.skipped,
         } as const;
       });
+      // Moved, new and cancelled Course Events change what the Routines call for.
+      if (added.status === "ok") await this.applyRoutines(p);
+      return added;
     },
     /** Deletes a calendar Source and, immediately, every Fixed Event read from it. */
     async removeCalendar(p: Principal, id: string) {
@@ -1058,7 +1064,7 @@ export function createPlan({
       id: string,
       decision: { courseId: string } | { reject: true },
     ) {
-      return withOwner(db, p, async (tx) => {
+      const decided = await withOwner(db, p, async (tx) => {
         if ("reject" in decision) {
           const { count } = await tx.eventSeries.updateMany({
             where: { id },
@@ -1082,6 +1088,9 @@ export function createPlan({
         });
         return { status: count ? "ok" : "gone" } as const;
       });
+      // Its events become, or stop being, Course Events, which its Routine follows.
+      if (decided.status === "ok") await this.applyRoutines(p);
+      return decided;
     },
     /** The student's Routine for an Event Series: minutes to prepare for and to follow up on each of its Course Events. */
     async setRoutine(
@@ -1099,11 +1108,35 @@ export function createPlan({
       const status = await withOwner(db, p, async (tx, studentId) => {
         if (!(await tx.eventSeries.findUnique({ where: { id: seriesId } })))
           return "gone" as const;
+        const before = await tx.routine.findUnique({ where: { seriesId } });
         await tx.routine.upsert({
           where: { seriesId },
           create: { seriesId, studentId, ...input },
           update: input,
         });
+        if (!before) return "ok" as const;
+        // Only open Tasks nothing has happened to follow the change, and never an Estimate the student changed on one.
+        const minutes = {
+          preparation: [before.preparationMinutes, preparationMinutes],
+          follow_up: [before.followUpMinutes, followUpMinutes],
+        } as const;
+        const tasks = await tx.task.findMany({
+          where: {
+            fixedEvent: { seriesId },
+            doneAt: null,
+            studyBlocks: { none: { start: { lt: clock.now() } } },
+          },
+        });
+        for (const task of tasks) {
+          const [old, now] = minutes[task.role!];
+          if (task.estimateMinutes !== old || old === now) continue;
+          if (now === 0) await tx.task.delete({ where: { id: task.id } });
+          else
+            await tx.task.update({
+              where: { id: task.id },
+              data: { estimateMinutes: now },
+            });
+        }
         return "ok" as const;
       });
       if (status === "ok") await this.applyRoutines(p);
@@ -1126,6 +1159,52 @@ export function createPlan({
           where: { seriesId: { in: routines.map((r) => r.seriesId) } },
           orderBy: [{ start: "asc" }, { end: "asc" }],
         });
+        // A Task whose event is no longer a Course Event goes if nothing happened to it; otherwise it stays, without it.
+        const courseEvents = new Set(
+          events
+            .filter((event) => {
+              const series = routines.find(
+                (r) => r.seriesId === event.seriesId,
+              )?.series;
+              return (
+                !event.detachedAt &&
+                series?.confirmedAt &&
+                series.courseId &&
+                active.has(series.courseId)
+              );
+            })
+            .map((event) => event.id),
+        );
+        const stale = await tx.task.findMany({
+          where: {
+            role: { not: null },
+            OR: [
+              { fixedEventId: null },
+              { fixedEventId: { notIn: [...courseEvents] } },
+            ],
+          },
+          include: { studyBlocks: true },
+        });
+        const touched = (task: (typeof stale)[number]) =>
+          task.doneAt ||
+          task.studyBlocks.some((b) => b.start < now || b.lockedAt);
+        for (const task of stale) {
+          if (touched(task))
+            await tx.task.update({
+              where: { id: task.id },
+              data: { fixedEventId: null, role: null },
+            });
+          else await tx.task.delete({ where: { id: task.id } });
+        }
+        // Preparing once the lecture has begun is pointless, so an untouched Preparation goes then; a Follow-up stays.
+        const begun = events
+          .filter((event) => event.start <= now)
+          .map((event) => event.id);
+        for (const task of await tx.task.findMany({
+          where: { role: "preparation", fixedEventId: { in: begun } },
+          include: { studyBlocks: true },
+        }))
+          if (!touched(task)) await tx.task.delete({ where: { id: task.id } });
         const existing = new Set(
           (
             await tx.task.findMany({

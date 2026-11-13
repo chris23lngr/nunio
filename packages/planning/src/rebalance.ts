@@ -195,14 +195,27 @@ export function rebalance(state: PlanState): Proposal {
     preferences: { studyWindow, maxMinutesPerDay },
   } = state;
   const calendar = [...state.fixedEvents, ...state.protectedTime];
+  const works = workOf(state);
   const conflicting = state.studyBlocks.filter((block) =>
     overlaps(calendar, block.start.getTime(), block.end.getTime()),
   );
   const overlapping: Overlap[] = conflicting
     .filter((block) => block.locked)
     .map((block) => ({ blockId: block.id, reason: "locked" }));
-  // A block the calendar now overlaps leaves the Plan to be placed again, unless it is Locked.
-  const displaced = conflicting.filter((block) => !block.locked);
+  /** A block still ahead that lies outside its work's window, as when its Course Event moved. */
+  const outsideWindow = (block: PlanState["studyBlocks"][number]) => {
+    const work = works.find((w) => w.id === block.workId);
+    return (
+      block.start >= state.now &&
+      Boolean(work?.earliest && work.due) &&
+      (block.start < work!.earliest! || block.end > work!.due!)
+    );
+  };
+  // A block the calendar now overlaps, or outside its window, leaves the Plan to be placed again, unless it is Locked.
+  const displaced = state.studyBlocks.filter(
+    (block) =>
+      !block.locked && (conflicting.includes(block) || outsideWindow(block)),
+  );
   const kept = state.studyBlocks.filter((block) => !displaced.includes(block));
   const usedPerDay = new Map<string, number>();
   for (const block of kept) addMinutes(usedPerDay, block, timeZone);
@@ -211,7 +224,11 @@ export function rebalance(state: PlanState): Proposal {
   const moves: Move[] = [];
   const shortfalls: Shortfall[] = [];
   const first = Math.ceil(state.now.getTime() / slotMs) * slotMs;
-  const works = workOf(state);
+  /** The first slot a work may take: now, or its window's start. */
+  const startOf = (work: { earliest: Date | null } | undefined) =>
+    work?.earliest
+      ? Math.max(first, Math.ceil(work.earliest.getTime() / slotMs) * slotMs)
+      : first;
   const dueOf = (workId: string) =>
     works.find((work) => work.id === workId)?.due?.getTime() ??
     first + horizonMs;
@@ -254,7 +271,7 @@ export function rebalance(state: PlanState): Proposal {
       due = dueOf(block.workId);
     let placed = false;
     for (
-      let start = first;
+      let start = startOf(works.find((w) => w.id === block.workId));
       start + slots * slotMs <= due && !placed;
       start += slotMs
     ) {
@@ -303,9 +320,7 @@ export function rebalance(state: PlanState): Proposal {
       continue;
     const due = work.due.getTime();
     // Work with a window starts no earlier than its window does.
-    const start = work.earliest
-      ? Math.max(first, Math.ceil(work.earliest.getTime() / slotMs) * slotMs)
-      : first;
+    const start = startOf(work);
     // Time the Plan already holds for this work before its deadline counts towards the Estimate.
     const planned = [
       ...kept.filter((block) => block.workId === work.id),

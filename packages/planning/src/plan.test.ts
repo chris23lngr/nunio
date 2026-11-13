@@ -952,10 +952,10 @@ it("adds only a Follow-up for a past Course Event whose window is open, and roll
 
   now = at("2026-11-10 08:00");
   await plan.applyRoutines(p);
+  // The second lecture began yesterday, so its untouched Preparation is gone.
   expect(await roles()).toEqual([
     "1 follow_up",
     "2 follow_up",
-    "2 preparation",
     "3 follow_up",
     "3 preparation",
     "4 follow_up",
@@ -1001,6 +1001,190 @@ it("applies every student's Routines in one tick, as the daily schedule does", a
   // Follow-ups for the lectures on 2, 9, 16 and 23 November.
   for (const { p } of students)
     expect((await plan.view(p)).tasks).toHaveLength(4);
+});
+
+/** A student whose Analysis lecture is confirmed, with a Routine of 30 minutes before and 60 after each lecture. */
+async function studentWithRoutine() {
+  const s = await studentWithCalendar();
+  await plan.decideSeries(s.p, s.lecture.id, { courseId: s.analysisId });
+  await plan.setRoutine(s.p, s.lecture.id, {
+    preparationMinutes: 30,
+    followUpMinutes: 60,
+  });
+  const lectures = (await plan.view(s.p)).fixedEvents.filter(
+    (e) => e.seriesId === s.lecture.id,
+  );
+  /** The Routine's Tasks as "lecture role minutes", lectures numbered from 1. */
+  const tasks = async () =>
+    (await plan.view(s.p)).tasks
+      .map(
+        (t) =>
+          `${lectures.findIndex((e) => e.id === t.fixedEventId) + 1} ${t.role} ${t.estimate?.minutes}`,
+      )
+      .sort();
+  const taskOf = async (lecture: number, role: "preparation" | "follow_up") =>
+    (await plan.view(s.p)).tasks.find(
+      (t) => t.fixedEventId === lectures[lecture - 1]!.id && t.role === role,
+    )!;
+  return { ...s, lectures, tasks, taskOf };
+}
+
+it("changes a Routine's open, untouched Tasks with it, never an Estimate the student set on one", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, lecture, tasks, taskOf } = await studentWithRoutine();
+  await plan.estimate(
+    p,
+    { kind: "task", id: (await taskOf(2, "follow_up")).id },
+    120,
+  );
+  await plan.placeBlock(p, {
+    work: { kind: "task", id: (await taskOf(1, "follow_up")).id },
+    ...span("2026-11-02 13:00", "2026-11-02 14:00"),
+  });
+
+  now = at("2026-11-03 08:00");
+  await plan.setRoutine(p, lecture.id, {
+    preparationMinutes: 0,
+    followUpMinutes: 90,
+  });
+
+  expect(await tasks()).toEqual([
+    // Its follow-up already had time in the Plan, so it stays as it was.
+    "1 follow_up 60",
+    "2 follow_up 120",
+    "3 follow_up 90",
+  ]);
+});
+
+it("follows the student taking an event out of its Course, or the series out of every Course, at once", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture, lectures, tasks } =
+    await studentWithRoutine();
+
+  await plan.detachEvent(p, lectures[0]!.id);
+  expect(await tasks()).toEqual(["2 follow_up 60", "2 preparation 30"]);
+
+  await plan.decideSeries(p, lecture.id, { reject: true });
+  expect(await tasks()).toEqual([]);
+
+  await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+  expect(await tasks()).toEqual(["2 follow_up 60", "2 preparation 30"]);
+});
+
+it("drops a Preparation whose lecture began with nothing done for it, and keeps a lapsed Follow-up as backlog", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, tasks, taskOf } = await studentWithRoutine();
+  const prepared = await taskOf(2, "preparation");
+  await plan.placeBlock(p, {
+    work: { kind: "task", id: prepared.id },
+    ...span("2026-11-08 09:00", "2026-11-08 09:30"),
+  });
+
+  now = at("2026-11-10 08:00");
+  await plan.applyRoutines(p);
+
+  expect(await tasks()).toEqual([
+    "1 follow_up 60",
+    "2 follow_up 60",
+    "2 preparation 30",
+    "3 follow_up 60",
+    "3 preparation 30",
+    "4 follow_up 60",
+    "4 preparation 30",
+  ]);
+  const lapsed = (await taskOf(1, "follow_up")).id;
+  const { proposal } = await plan.view(p);
+  expect(proposal.unplanned).toEqual(
+    expect.arrayContaining([
+      { workId: lapsed, reason: "past_due" },
+      { workId: prepared.id, reason: "past_due" },
+    ]),
+  );
+  expect(proposal.moves.some((m) => m.workId === lapsed)).toBe(false);
+});
+
+it("moves a Routine's Task window with its Course Event, and the Task's block back into it", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, taskOf } = await studentWithRoutine();
+  const followUp = await taskOf(1, "follow_up");
+  const block = await plan.placeBlock(p, {
+    work: { kind: "task", id: followUp.id },
+    ...span("2026-11-03 09:00", "2026-11-03 10:00"),
+  });
+  if (block.status !== "ok") throw new Error(block.status);
+
+  // The first lecture moves from Monday 10:00–12:00 to Wednesday 14:00–16:00.
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(
+      weeklyLecture,
+      [
+        "UID:analysis@uni",
+        "RECURRENCE-ID:20261102T090000Z",
+        "SUMMARY:Analysis I",
+        "DTSTART:20261104T130000Z",
+        "DTEND:20261104T150000Z",
+      ],
+      cafeShift,
+    ),
+  });
+
+  expect(await taskOf(1, "follow_up")).toMatchObject({
+    id: followUp.id,
+    window: span("2026-11-04 16:00", "2026-11-09 10:00"),
+  });
+  expect((await plan.view(p)).proposal.moves).toContainEqual(
+    expect.objectContaining({
+      kind: "move",
+      blockId: block.id,
+      to: span("2026-11-04 16:00", "2026-11-04 17:00"),
+    }),
+  );
+});
+
+it("removes a cancelled Course Event's untouched Tasks, keeping one with a Locked block or done, without the event", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, tasks, taskOf } = await studentWithRoutine();
+  const followUp = await taskOf(2, "follow_up");
+  const block = await plan.placeBlock(p, {
+    work: { kind: "task", id: followUp.id },
+    ...span("2026-11-09 13:00", "2026-11-09 14:00"),
+  });
+  if (block.status !== "ok") throw new Error(block.status);
+  await plan.lockBlock(p, block.id, true);
+  await plan.completeTask(p, (await taskOf(2, "preparation")).id, true);
+
+  // The lecture on 9 November is cancelled.
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf([...weeklyLecture, "EXDATE:20261109T090000Z"], cafeShift),
+  });
+
+  expect(await tasks()).toEqual([
+    "0 null 30",
+    "0 null 60",
+    "1 follow_up 60",
+    "1 preparation 30",
+  ]);
+  const kept = (await plan.view(p)).tasks.filter((t) => !t.role);
+  expect(kept).toHaveLength(2);
+  expect(kept).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        title: "Vorbereitung: Analysis I",
+        courseId: analysisId,
+        done: true,
+        fixedEventId: null,
+      }),
+      expect.objectContaining({
+        id: followUp.id,
+        courseId: analysisId,
+        done: false,
+        fixedEventId: null,
+        window: null,
+      }),
+    ]),
+  );
 });
 
 it("ranks Courses, Projects and Obligations in one list, an Obligation's own rank winning over its Project's and Course's", async () => {

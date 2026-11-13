@@ -486,4 +486,36 @@ describe("rebalance", () => {
       }),
     ]);
   });
+
+  it("moves a block out of its Task's window, as when the lecture moved, into the window", () => {
+    const followUp = {
+      id: "follow-up",
+      obligationId: null,
+      estimateMinutes: 60,
+      done: false,
+      // The lecture moved from Monday to Tuesday, ending 12:00.
+      earliest: at("2026-11-10 12:00"),
+      due: at("2026-11-12 10:00"),
+    };
+    const block = {
+      id: "b1",
+      workId: "follow-up",
+      placedBy: "nunio" as const,
+      locked: false,
+      ...span("2026-11-09 14:00", "2026-11-09 15:00"),
+    };
+
+    expect(
+      rebalance({ ...base, tasks: [followUp], studyBlocks: [block] }).moves,
+    ).toEqual([
+      {
+        kind: "move",
+        blockId: "b1",
+        workId: "follow-up",
+        from: span("2026-11-09 14:00", "2026-11-09 15:00"),
+        to: span("2026-11-10 12:00", "2026-11-10 13:00"),
+        needsApproval: false,
+      },
+    ]);
+  });
 });

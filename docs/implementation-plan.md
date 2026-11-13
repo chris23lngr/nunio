@@ -730,12 +730,12 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 **Verification checklist.**
 - [x] A Task without an Obligation but in a Course is covered by that Course's Grant and limit, and goes when the Course is deleted (`packages/planning/src/plan.test.ts`, "keeps a Task in a Course…"; `packages/delegation/src/gate.test.ts`, "creates a block for a Task in the Grant's Course…").
 - [x] Adding the same `.ics` file twice leaves the same Fixed Events and Event Series. A moved occurrence keeps its ID, and a removed or cancelled one goes (`packages/planning/src/plan.test.ts`, "updates a calendar added again…", "moves a Fixed Event the calendar moved…", "groups a calendar's Fixed Events into Event Series…"; `calendar.test.ts`, "leaves out a cancelled occurrence…").
-- [ ] A moved occurrence keeps its Tasks, and a removed occurrence cancels its open Tasks.
+- [x] A moved occurrence keeps its Tasks, and a removed occurrence cancels its open Tasks (`packages/planning/src/plan.test.ts`, "moves a Routine's Task window with its Course Event…", "removes a cancelled Course Event's untouched Tasks…").
 - [x] The assignment call receives no event description, location or attendee, and is metered. A rejected proposal stays rejected after re-reading (`packages/ai/src/series-assignment.test.ts`; `packages/planning/src/plan.test.ts`, "refuses to propose Courses for Event Series…", "keeps an Event Series the student said belongs to no Course…").
 - [x] An unconfirmed series produces no Tasks. A confirmed one with a Routine produces exactly one Preparation and one Follow-up per Course Event in the next 14 days, also after repeated runs (`packages/planning/src/plan.test.ts`, "adds no Tasks for a series only proposed…", "adds a Preparation and a Follow-up for each Course Event…").
 - [x] `rebalance` never places a Follow-up before its Course Event ends, nor a Preparation after its Course Event starts (`rebalance.test.ts`, "places a Task with a window…").
-- [ ] Changing a Routine updates only open Tasks with no past Study Block, and never an Estimate the student set.
-- [ ] A lapsed Follow-up stays open and is not planned again by Rebalance.
+- [x] Changing a Routine updates only open Tasks with no past Study Block, and never an Estimate the student set (`plan.test.ts`, "changes a Routine's open, untouched Tasks…").
+- [x] A lapsed Follow-up stays open and is not planned again by Rebalance (`plan.test.ts`, "drops a Preparation whose lecture began…").
 - [ ] The Chat proposes a Study Block for a Follow-up the student names, and reopening or adding a Task needs an Approval of the exact Action.
 
 **Progress (2026-11-13).** Stage 1 is implemented.
@@ -760,6 +760,12 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 - `plan.setRoutine` stores a Routine and applies it at once (`PUT /api/me/event-series/{id}/routine`). `plan.applyRoutines` adds what is missing for Course Events starting in the next 14 days, and a Follow-up for a past one whose window is still open.
 - The worker's daily `routine-tick` Schedule runs `plan.tickRoutines`, which lists students through `routine_students()`, a security-definer function like `outreach_students()`.
 - `plan.view` gives each Task its `window`, and `rebalance` places a Task with a window only within it.
+
+**Progress (2026-11-13).** 4b is implemented.
+- Changing a Routine changes an open Task's Estimate, or removes the Task when the minutes go to 0, only if it has no past Study Block and its Estimate is still the old minutes. Telling the student's own Estimate apart that way needs no new column.
+- `applyRoutines` also tidies up, and runs after a calendar is added, a series is decided or an event is taken out. A Routine Task whose event is gone, taken out, or no longer in a confirmed series of an active Course is deleted if nothing happened to it. Otherwise it stays, without its event, as a Task in the Course, which the Plan lists as having no deadline; it is not done, has a past block, or has a Locked block.
+- An untouched Preparation goes once its lecture began. A lapsed Follow-up stays and shows as `past_due`.
+- `rebalance` moves a block that is still ahead but outside its work's window, unless it is Locked, as it does a block the calendar overlaps.
 
 **Anti-pattern guards.**
 - Never change a Fixed Event, and never let a Routine create a Study Block outside Rebalance or a proposal.
