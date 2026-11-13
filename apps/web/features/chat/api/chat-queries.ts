@@ -12,6 +12,11 @@ export type SavedProposal = Extract<
   Message["parts"][number],
   { approvalId: string }
 >;
+/** Where an Artifact an answer started stands; null if it could not be started. */
+export type ChatArtifact = Extract<
+  Message["parts"][number],
+  { artifact: unknown }
+>["artifact"];
 /** A saved tool call: what nunio read for an answer, as the student was shown it. */
 type ToolPart = Extract<Message["parts"][number], { toolCallId: string }>;
 type ChatTools = {
@@ -39,6 +44,8 @@ export type ChatUIMessage = UIMessage<
     model?: string;
     /** A saved answer's proposals, by tool call, as their cards show them. */
     proposals?: Record<string, SavedProposal>;
+    /** Where the Artifacts a saved answer started stand, by tool call. */
+    artifacts?: Record<string, ChatArtifact>;
   },
   { committed: Turn; refused: { error: string } },
   ChatTools
@@ -53,6 +60,11 @@ export function toUIMessage(message: Message): ChatUIMessage {
       citations: message.citations,
       ...(message.text === null ? { withdrawn: true as const } : {}),
       ...(message.model ? { model: message.model.name } : {}),
+      artifacts: Object.fromEntries(
+        message.parts.flatMap((part) =>
+          "artifact" in part ? [[part.toolCallId, part.artifact] as const] : [],
+        ),
+      ),
       proposals: Object.fromEntries(
         message.parts.flatMap((part) =>
           "approvalId" in part ? [[part.toolCallId, part] as const] : [],
@@ -69,11 +81,15 @@ export function toUIMessage(message: Message): ChatUIMessage {
           input: part.input,
           approval: { id: part.approvalId },
         } as ChatUIMessage["parts"][number];
-      if ("toolCallId" in part)
+      if ("toolCallId" in part) {
+        const { artifact: _, ...tool } = part as typeof part & {
+          artifact?: unknown;
+        };
         return {
-          ...part,
+          ...tool,
           state: "output-available",
         } as ChatUIMessage["parts"][number];
+      }
       return part.type === "reasoning"
         ? { type: "reasoning", text: part.text, state: "done" }
         : { type: "text", text: part.text, state: "done" };

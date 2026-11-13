@@ -63,6 +63,16 @@ function describe(part: ToolPart) {
           ? count(part.output.facts, "Eintrag", "Einträge")
           : undefined,
       };
+    case "tool-startPracticeSet":
+    case "tool-startFlashcards":
+      return {
+        icon: <BookOpen />,
+        title:
+          part.type === "tool-startPracticeSet"
+            ? "Practice Set gestartet"
+            : "Flashcards gestartet",
+        result: done ? count(part.output.topics, "Topic", "Topics") : undefined,
+      };
     default:
       return undefined;
   }
