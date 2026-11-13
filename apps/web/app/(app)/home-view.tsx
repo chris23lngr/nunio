@@ -16,7 +16,14 @@ type Home =
   paths["/api/me/home"]["get"]["responses"][200]["content"]["application/json"];
 type Attention = Home["attention"][number];
 
-function Item({ item }: { item: Attention }) {
+function Item({
+  item,
+  onSkip,
+}: {
+  item: Attention;
+  /** Skips a Routine until a deadline, as a Shortfall's tradeoff offers (ADR-0021). */
+  onSkip: (routine: string, until: string) => void;
+}) {
   if (item.kind === "shortfall")
     return (
       <li>
@@ -29,7 +36,20 @@ function Item({ item }: { item: Attention }) {
         <ul>
           {item.tradeoffs.map((t, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: Tradeoffs have no id and the list is replaced, never reordered.
-            <li key={i}>{tradeoffText(t)}</li>
+            <li key={i}>
+              {tradeoffText(t)}
+              {t.kind === "skip_routine" && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={() => onSkip(t.routine, String(t.until))}
+                  >
+                    Routine aussetzen
+                  </button>
+                </>
+              )}
+            </li>
           ))}
         </ul>
         <Link href="/plan">Open the Plan</Link>
@@ -69,6 +89,20 @@ const artifactNames = {
 export function HomeView({ apiOrigin }: { apiOrigin: string }) {
   const [home, setHome] = useState<Home | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
+  const skip = async (routine: string, until: string) => {
+    try {
+      const { response } = await createApiClient(apiOrigin).POST(
+        "/api/me/event-series/{id}/routine/skip",
+        { params: { path: { id: routine } }, body: { until } },
+      );
+      if (!response.ok) throw new Error();
+    } catch {
+      setError("Could not skip the Routine.");
+    } finally {
+      setVersion((v) => v + 1);
+    }
+  };
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -89,7 +123,7 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [apiOrigin]);
+  }, [apiOrigin, version]);
   if (error) return <p role="alert">{error}</p>;
   if (!home) return <p>Loading your day…</p>;
   return (
@@ -99,8 +133,14 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
         {home.attention.length ? (
           <ul>
             {home.attention.map((item, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: Attention items have no id and the list is replaced, never reordered.
-              <Item key={i} item={item} />
+              <Item
+                // biome-ignore lint/suspicious/noArrayIndexKey: Attention items have no id and the list is replaced, never reordered.
+                key={i}
+                item={item}
+                onSkip={(routine, until) => {
+                  void skip(routine, until);
+                }}
+              />
             ))}
           </ul>
         ) : (

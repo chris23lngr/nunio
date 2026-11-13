@@ -1,4 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { HomeView } from "@/app/(app)/home-view";
 import { api } from "./api";
@@ -31,6 +32,52 @@ test("lists the Artifacts nunio made that the student has not opened yet", async
     ["Practice set", "/study/artifacts/a1"],
     ["Flashcards", "/study/artifacts/a2"],
   ]);
+});
+
+test("a Shortfall offers skipping a Routine until its deadline, which the student chooses", async () => {
+  const until = "2026-11-20T17:00:00.000Z";
+  let skipped: unknown;
+  api.route(
+    "POST",
+    "/api/me/event-series/s-om/routine/skip",
+    async (request) => {
+      skipped = await request.json();
+      return Response.json({ status: "ok" });
+    },
+  );
+  api.route("GET", "/api/me/home", () =>
+    Response.json({
+      attention: [
+        {
+          kind: "shortfall",
+          workId: "exam",
+          title: "Klausur Statistik",
+          course: "Statistics II",
+          due: until,
+          shortMinutes: 240,
+          unreviewed: false,
+          tradeoffs: [
+            {
+              kind: "skip_routine",
+              routine: "s-om",
+              until,
+              gainedMinutes: 180,
+            },
+          ],
+        },
+      ],
+      ongoing: [],
+      artifacts: [],
+      agentWork: [],
+    }),
+  );
+  render(<HomeView apiOrigin={api.origin} />);
+
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Routine aussetzen" }),
+  );
+
+  await waitFor(() => expect(skipped).toEqual({ until }));
 });
 
 test("says when nothing is ready", async () => {

@@ -17,6 +17,7 @@ type Series =
 type Course =
   paths["/api/me/review"]["get"]["responses"][200]["content"]["application/json"]["courses"][number];
 type Decision = { courseId: string } | { reject: true };
+type Minutes = { preparationMinutes: number; followUpMinutes: number };
 
 /**
  * The calendar's Event Series still to decide on (ADR-0021): nunio's proposed Course, another one, or none. Only a
@@ -26,6 +27,7 @@ export function SeriesReview({ apiOrigin }: { apiOrigin: string }) {
   const [series, setSeries] = useState<Series[] | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [chosen, setChosen] = useState<Record<string, string>>({});
+  const [minutes, setMinutes] = useState<Record<string, Minutes>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
@@ -54,15 +56,25 @@ export function SeriesReview({ apiOrigin }: { apiOrigin: string }) {
     };
   }, [apiOrigin, version]);
 
-  async function decide(id: string, decision: Decision) {
+  async function decide(id: string, decision: Decision, routine?: Minutes) {
     setBusy(true);
     setError(null);
     try {
-      const { response } = await createApiClient(apiOrigin).POST(
+      const client = createApiClient(apiOrigin);
+      const params = { path: { id } };
+      const { response } = await client.POST(
         "/api/me/event-series/{id}/decision",
-        { params: { path: { id } }, body: decision },
+        { params, body: decision },
       );
       if (!response.ok) throw new Error();
+      // The Routine follows the decision, so its Tasks land on Course Events.
+      if (routine) {
+        const set = await client.PUT("/api/me/event-series/{id}/routine", {
+          params,
+          body: routine,
+        });
+        if (!set.response.ok) throw new Error();
+      }
     } catch {
       setError("Deine Entscheidung wurde nicht gespeichert.");
     } finally {
@@ -85,6 +97,31 @@ export function SeriesReview({ apiOrigin }: { apiOrigin: string }) {
       {error && <p role="alert">{error}</p>}
       {open.map((s) => {
         const courseId = chosen[s.id] ?? s.courseId;
+        const routine = minutes[s.id] ?? {
+          preparationMinutes: s.routine?.preparationMinutes ?? 30,
+          followUpMinutes: s.routine?.followUpMinutes ?? 60,
+        };
+        const field = (key: keyof Minutes, label: string) => (
+          <label>
+            {label}{" "}
+            <input
+              type="number"
+              min={0}
+              max={1440}
+              step={15}
+              value={routine[key]}
+              onChange={(event) =>
+                setMinutes((all) => ({
+                  ...all,
+                  [s.id]: {
+                    ...routine,
+                    [key]: event.target.valueAsNumber || 0,
+                  },
+                }))
+              }
+            />
+          </label>
+        );
         return (
           <fieldset key={s.id}>
             <legend>{s.title}</legend>
@@ -117,11 +154,13 @@ export function SeriesReview({ apiOrigin }: { apiOrigin: string }) {
                 </SelectGroup>
               </SelectContent>
             </Select>{" "}
+            {field("preparationMinutes", "Vorbereitung (Minuten)")}{" "}
+            {field("followUpMinutes", "Nachbereitung (Minuten)")}{" "}
             <button
               type="button"
               disabled={busy || !courseId}
               onClick={() => {
-                if (courseId) void decide(s.id, { courseId });
+                if (courseId) void decide(s.id, { courseId }, routine);
               }}
             >
               Bestätigen

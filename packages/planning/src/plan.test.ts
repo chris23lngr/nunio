@@ -609,6 +609,7 @@ it("groups a calendar's Fixed Events into Event Series by title, whether repeate
       title: "Analysis I",
       courseId: null,
       state: "undecided",
+      routine: null,
     },
     {
       id: expect.any(String),
@@ -616,6 +617,7 @@ it("groups a calendar's Fixed Events into Event Series by title, whether repeate
       title: "Tutorium Analysis",
       courseId: null,
       state: "undecided",
+      routine: null,
     },
   ]);
   const [lecture, tutorium] = view.eventSeries;
@@ -1249,6 +1251,15 @@ it("skips a Routine until a Shortfall's deadline when the student chooses it, th
   expect(await plan.skipRoutine(p, lecture.id, at("2026-11-10 18:00"))).toEqual(
     { status: "ok" },
   );
+  expect(
+    (await plan.view(p)).eventSeries.find((s) => s.id === lecture.id),
+  ).toMatchObject({
+    routine: {
+      preparationMinutes: 30,
+      followUpMinutes: 60,
+      skippedUntil: at("2026-11-10 18:00"),
+    },
+  });
   // The lectures on 2 and 9 November begin before the skip ends, so they get nothing.
   expect(await tasks()).toEqual([]);
 

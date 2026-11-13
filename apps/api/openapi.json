@@ -2186,6 +2186,33 @@
                     "rejected"
                   ],
                   "description": "Only a confirmed series' events are Course Events; a rejected one belongs to no Course."
+                },
+                "routine": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "preparationMinutes": {
+                      "type": "integer"
+                    },
+                    "followUpMinutes": {
+                      "type": "integer"
+                    },
+                    "skippedUntil": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "preparationMinutes",
+                    "followUpMinutes",
+                    "skippedUntil"
+                  ],
+                  "description": "The student's Routine for the series, if any."
                 }
               },
               "required": [
@@ -2193,7 +2220,8 @@
                 "calendarId",
                 "title",
                 "courseId",
-                "state"
+                "state",
+                "routine"
               ]
             },
             "description": "The Fixed Events of one calendar that share a title (ADR-0021)."

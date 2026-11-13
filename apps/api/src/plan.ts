@@ -202,6 +202,14 @@ const PlanView = z
             .describe(
               "Only a confirmed series' events are Course Events; a rejected one belongs to no Course.",
             ),
+          routine: z
+            .object({
+              preparationMinutes: z.number().int(),
+              followUpMinutes: z.number().int(),
+              skippedUntil: z.date().nullable(),
+            })
+            .nullable()
+            .describe("The student's Routine for the series, if any."),
         }),
       )
       .describe(

@@ -8,7 +8,15 @@ import { TestProviders } from "./providers";
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
 
-beforeEach(() => replace.mockReset());
+beforeEach(() => {
+  replace.mockReset();
+  servePlan([]);
+});
+
+/** The Plan's Event Series, which the Course cards show with their Routines. */
+function servePlan(eventSeries: unknown[]) {
+  api.route("GET", "/api/me/plan", () => Response.json({ eventSeries }));
+}
 
 const choices = [
   "2027-ss",
@@ -566,4 +574,65 @@ test("says when a proposal cannot be decided, or what archiving touches cannot b
       "nunio plant und arbeitet nicht mehr für diesen Kurs.",
     ),
   ).toBeTruthy();
+});
+
+test("a Course card lists its calendar series with their Routines, which the student changes or skips", async () => {
+  const om = course({ title: "Operations Management" });
+  serveCourses([om]);
+  servePlan([
+    {
+      id: "s-om",
+      calendarId: "cal-1",
+      title: "OM Vorlesung",
+      courseId: om.id,
+      state: "confirmed",
+      routine: {
+        preparationMinutes: 30,
+        followUpMinutes: 60,
+        skippedUntil: null,
+      },
+    },
+    {
+      id: "s-yoga",
+      calendarId: "cal-1",
+      title: "Yoga",
+      courseId: null,
+      state: "rejected",
+      routine: null,
+    },
+  ]);
+  const calls: [string, unknown][] = [];
+  api.route("PUT", "/api/me/event-series/s-om/routine", async (request) => {
+    calls.push(["routine", await request.json()]);
+    return Response.json({ status: "ok" });
+  });
+  api.route(
+    "POST",
+    "/api/me/event-series/s-om/routine/skip",
+    async (request) => {
+      calls.push(["skip", await request.json()]);
+      return Response.json({ status: "ok" });
+    },
+  );
+  const user = userEvent.setup();
+  renderScreen();
+
+  const series = await screen.findByRole("group", { name: "OM Vorlesung" });
+  expect(screen.queryByRole("group", { name: "Yoga" })).toBeNull();
+  const followUp = within(series).getByRole("spinbutton", {
+    name: "Nachbereitung (Minuten)",
+  });
+  await user.clear(followUp);
+  await user.type(followUp, "90");
+  await user.click(within(series).getByRole("button", { name: "Speichern" }));
+  await user.type(within(series).getByLabelText("Aussetzen bis"), "2026-11-20");
+  await user.click(within(series).getByRole("button", { name: "Aussetzen" }));
+
+  await waitFor(() =>
+    expect(calls).toEqual([
+      ["routine", { preparationMinutes: 30, followUpMinutes: 90 }],
+      // Through 20 November: lectures beginning before the next day get nothing.
+      ["skip", { until: new Date(2026, 10, 21).toISOString() }],
+    ]),
+  );
 });

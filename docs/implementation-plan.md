@@ -773,6 +773,13 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 - `plan.skipRoutine` (`POST /api/me/event-series/{id}/routine/skip`) sets `routine.skippedUntil`. Course Events that begin before then get no Preparation or Follow-up, and their untouched ones go.
 - Not yet handled: a Shortfall of a Routine's own Task still offers skipping that same Routine.
 
+**Progress (2026-11-13).** 4d is implemented.
+- `plan.view` gives each Event Series its `routine` (minutes and `skippedUntil`).
+- **Review:** "Kalender-Serien" asks for Preparation and Follow-up minutes, suggesting 30 and 60. Confirming a series also sets its Routine.
+- **Course cards:** each card has a "Termine & Routinen" section for its confirmed series, where the student changes the minutes or skips the Routine through a chosen day.
+- **Plan:** below the week there is an "Aufgaben" list of open Tasks with their Course and deadline. The student ticks a Task off there, or adds one in a Course or with none.
+- **Home:** a Shortfall's `skip_routine` tradeoff has a "Routine aussetzen" button.
+
 **Anti-pattern guards.**
 - Never change a Fixed Event, and never let a Routine create a Study Block outside Rebalance or a proposal.
 - Never send event descriptions, locations or attendees to a model.

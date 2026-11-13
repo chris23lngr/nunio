@@ -203,20 +203,36 @@ export function createPlan({
     const eventSeries = (
       await tx.eventSeries.findMany({
         orderBy: [{ title: "asc" }, { id: "asc" }],
+        include: { routine: true },
       })
-    ).map(({ id, calendarId, title, courseId, confirmedAt, rejectedAt }) => ({
-      id,
-      calendarId,
-      title,
-      courseId,
-      state: (rejectedAt
-        ? "rejected"
-        : !courseId
-          ? "undecided"
-          : confirmedAt
-            ? "confirmed"
-            : "proposed") as SeriesState,
-    }));
+    ).map(
+      ({
+        id,
+        calendarId,
+        title,
+        courseId,
+        confirmedAt,
+        rejectedAt,
+        routine,
+      }) => ({
+        id,
+        calendarId,
+        title,
+        courseId,
+        state: (rejectedAt
+          ? "rejected"
+          : !courseId
+            ? "undecided"
+            : confirmedAt
+              ? "confirmed"
+              : "proposed") as SeriesState,
+        routine: routine && {
+          preparationMinutes: routine.preparationMinutes,
+          followUpMinutes: routine.followUpMinutes,
+          skippedUntil: routine.skippedUntil,
+        },
+      }),
+    );
     const fixedEvents = eventRows.map(
       ({ id, title, start, end, calendarId, seriesId, detachedAt }) => {
         const series = eventSeries.find((s) => s.id === seriesId);

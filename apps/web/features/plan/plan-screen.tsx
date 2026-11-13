@@ -25,6 +25,7 @@ import { PlanLegend } from "./components/plan-legend";
 import { ProtectedTimeBlock } from "./components/protected-time-block";
 import { SuggestionsButton } from "./components/suggestions-button";
 import { SuggestionsSheet } from "./components/suggestions-sheet";
+import { TaskList } from "./components/task-list";
 import { WeekGrid } from "./components/week-grid";
 import type { DisplayOptions } from "./components/week-toolbar";
 import { WeekToolbar } from "./components/week-toolbar";
@@ -99,6 +100,30 @@ export function PlanScreen({
     ? (courses.data?.courses.find((c) => c.id === event.courseId)?.title ??
       null)
     : null;
+  const task = useMutation({
+    mutationFn: async (
+      change:
+        | { complete: string }
+        | { add: { title: string; courseId: string | null } },
+    ) => {
+      const client = createApiClient(apiOrigin);
+      const { response } =
+        "complete" in change
+          ? await client.POST("/api/me/tasks/{id}/done", {
+              params: { path: { id: change.complete } },
+              body: { done: true },
+            })
+          : await client.POST("/api/me/tasks", {
+              body: { ...change.add, obligationId: null },
+            });
+      if (!response.ok)
+        throw new Error("Die Aufgabe konnte nicht gespeichert werden.");
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({
+        queryKey: planQuery(apiOrigin).queryKey,
+      }),
+  });
   const detach = useMutation({
     mutationFn: async (id: string) => {
       const { response } = await createApiClient(apiOrigin).POST(
@@ -253,6 +278,31 @@ export function PlanScreen({
         {plan.data && (
           <div className="mt-6 w-full max-w-[calc(64rem+4rem)] px-8">
             <PlanLegend />
+          </div>
+        )}
+        {plan.data && (
+          <div className="mt-10 w-full max-w-[calc(64rem+4rem)] px-8">
+            <TaskList
+              tasks={plan.data.tasks
+                .filter((t) => !t.done)
+                .map((t) => {
+                  const obligation = plan.data.obligations.find(
+                    (o) => o.id === t.obligationId,
+                  );
+                  const due = t.window?.end ?? obligation?.due ?? null;
+                  return {
+                    id: t.id,
+                    title: t.title,
+                    course: t.course ?? obligation?.course ?? null,
+                    due: due ? new Date(due) : null,
+                  };
+                })}
+              courses={(courses.data?.courses ?? []).filter(
+                (c) => c.status === "accepted" && !c.archived,
+              )}
+              onComplete={(id) => task.mutate({ complete: id })}
+              onAdd={(added) => task.mutate({ add: added })}
+            />
           </div>
         )}
       </div>
