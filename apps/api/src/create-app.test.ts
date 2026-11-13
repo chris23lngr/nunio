@@ -3561,6 +3561,138 @@ describe("Chat", () => {
     ).toMatchObject({ status: "done", decision: "approved" });
   });
 
+  it("proposes a Follow-up for a Course Event the Plan showed, adds it once approved, and reopens it when done", async () => {
+    const { headers, chatId, obligationId } =
+      await planningChat("chat-propose-task");
+    const { courseId } = await admin.obligation.findUniqueOrThrow({
+      where: { id: obligationId },
+    });
+    const call = (method: string, path: string, body?: unknown) =>
+      app.request(`${apiOrigin}/api/me${path}`, {
+        method,
+        headers,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    const day = berlinDay(8);
+    const stamp = (time: string) =>
+      deadline(day, time, "Europe/Berlin")
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .slice(0, 15);
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//test//EN",
+      "BEGIN:VEVENT",
+      "UID:vl-3@uni",
+      `DTSTAMP:${stamp("08:00")}Z`,
+      "SUMMARY:Analysis Vorlesung",
+      `DTSTART:${stamp("10:00")}Z`,
+      `DTEND:${stamp("12:00")}Z`,
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    await call("POST", "/calendar-sources", { name: "Stundenplan.ics", ics });
+    const plan = async () =>
+      (await (await call("GET", "/plan")).json()) as {
+        eventSeries: { id: string }[];
+        fixedEvents: { id: string }[];
+        tasks: {
+          id: string;
+          title: string;
+          courseId: string | null;
+          fixedEventId: string | null;
+          role: string | null;
+          done: boolean;
+        }[];
+      };
+    const [series] = (await plan()).eventSeries;
+    await call("POST", `/event-series/${series!.id}/decision`, { courseId });
+    const [event] = (await plan()).fixedEvents;
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeTask", {
+        event: "E1",
+        role: "follow_up",
+        title: "Vorlesung nacharbeiten",
+        minutes: 60,
+      }),
+    );
+    prompts.length = 0;
+
+    const asked = await askInChat(
+      headers,
+      chatId,
+      "Ich muss die Vorlesung diese Woche noch nacharbeiten.",
+    );
+
+    expect(JSON.stringify(prompts[1])).toMatch(
+      /E1\W+[^"]*Analysis Vorlesung[^"]*K1/,
+    );
+    const card = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeTask",
+    );
+    expect(card).toMatchObject({
+      action: {
+        status: "awaiting_approval",
+        shown: {
+          kind: "task.create",
+          work: { title: "Vorlesung nacharbeiten", course: "Analysis I" },
+        },
+      },
+    });
+    const approve = async (part: {
+      approvalId: string;
+      action: { fingerprint: string };
+    }) =>
+      sseChunks(
+        await call("POST", `/chats/${chatId}/messages/stream`, {
+          approval: {
+            id: part.approvalId,
+            fingerprint: part.action.fingerprint,
+          },
+        }),
+      );
+    reply = "Erledigt, die Nachbereitung steht in deinem Plan.";
+    await approve(card);
+    const [task] = (await plan()).tasks;
+    expect(task).toMatchObject({
+      title: "Vorlesung nacharbeiten",
+      courseId,
+      fixedEventId: event!.id,
+      role: "follow_up",
+      done: false,
+    });
+
+    await call("POST", `/tasks/${task!.id}/done`, { done: true });
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeTaskReopen", { task: "T1" }),
+    );
+    prompts.length = 0;
+    const again = await askInChat(
+      headers,
+      chatId,
+      "Ich muss da doch nochmal ran.",
+    );
+    expect(JSON.stringify(prompts[1])).toMatch(/Follow-up T1 \(done\)/);
+    const reopen = again.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeTaskReopen",
+    );
+    expect(reopen).toMatchObject({
+      action: {
+        shown: {
+          kind: "task.reopen",
+          work: { title: "Vorlesung nacharbeiten" },
+        },
+      },
+    });
+    await approve(reopen);
+    expect((await plan()).tasks).toEqual([
+      expect.objectContaining({ id: task!.id, done: false }),
+    ]);
+  });
+
   it("proposes moving a Study Block the Plan showed, and moves it once approved", async () => {
     const { headers, chatId, obligationId } =
       await planningChat("chat-propose-move");
@@ -3857,7 +3989,13 @@ describe("Chat", () => {
     );
 
     expect(offeredTools).toEqual([
-      ["agenda", "proposeStudyBlock", "proposeStudyBlockMove"],
+      [
+        "agenda",
+        "proposeStudyBlock",
+        "proposeStudyBlockMove",
+        "proposeTask",
+        "proposeTaskReopen",
+      ],
     ]);
     expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
   });

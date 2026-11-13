@@ -230,4 +230,55 @@ describe("the Plan executor", () => {
       await executor.lookup("action-1:1", { studentId: s.studentId }),
     ).toEqual({ status: "absent" });
   });
+
+  it("adds one Task in a Course, however often the same key is executed, and reopens a done one", async () => {
+    const s = await student();
+    const { courseId } = await admin.obligation.findUniqueOrThrow({
+      where: { id: s.obligationId },
+    });
+    const intent = {
+      kind: "task.create" as const,
+      title: "VL 3 nacharbeiten",
+      courseId,
+      fixedEventId: null,
+      role: null,
+      estimateMinutes: 60,
+    };
+
+    const first = await executor.execute(
+      { studentId: s.studentId, actionId: "action-1", intent },
+      { idempotencyKey: "action-1:1", signal },
+    );
+    const again = await executor.execute(
+      { studentId: s.studentId, actionId: "action-1", intent },
+      { idempotencyKey: "action-1:1", signal },
+    );
+
+    expect(again).toEqual(first);
+    const [task] = (await plan.view(s.p)).tasks;
+    expect((await plan.view(s.p)).tasks).toEqual([
+      expect.objectContaining({
+        title: "VL 3 nacharbeiten",
+        courseId,
+        estimate: { minutes: 60, estimatedBy: "student", rationale: null },
+        done: false,
+      }),
+    ]);
+    expect(first).toEqual({ status: "done", effect: { taskId: task!.id } });
+
+    await plan.completeTask(s.p, task!.id, true);
+    expect(
+      await executor.execute(
+        {
+          studentId: s.studentId,
+          actionId: "action-2",
+          intent: { kind: "task.reopen", taskId: task!.id },
+        },
+        { idempotencyKey: "action-2:1", signal },
+      ),
+    ).toEqual({ status: "done", effect: { taskId: task!.id } });
+    expect((await plan.view(s.p)).tasks).toEqual([
+      expect.objectContaining({ id: task!.id, done: false }),
+    ]);
+  });
 });

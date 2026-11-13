@@ -29,15 +29,15 @@ const Citation = z.object({
     .union([Provenance, z.literal("gone")])
     .describe('Resolved when shown; "gone" once its Source is deleted.'),
 });
-/** A proposed Study Block, with the Action the student is asked to approve. */
-const proposalPart = <Type extends string>(
+/** A proposed Study Block or Task, with the Action the student is asked to approve. */
+const proposalPart = <Type extends string, Input extends z.ZodType>(
   type: Type,
-  names: Record<string, z.ZodString>,
+  input: Input,
 ) =>
   z.object({
     type: z.literal(type),
     toolCallId: z.string(),
-    input: z.object({ ...names, start: z.string(), end: z.string() }),
+    input,
     approvalId: z.string(),
     notes: z
       .array(z.enum(["outside_study_window", "daily_limit", "work_limit"]))
@@ -114,8 +114,25 @@ const Part = z
             ),
         }),
     ),
-    proposalPart("tool-proposeStudyBlock", { work: z.string() }),
-    proposalPart("tool-proposeStudyBlockMove", { block: z.string() }),
+    proposalPart(
+      "tool-proposeStudyBlock",
+      z.object({ work: z.string(), start: z.string(), end: z.string() }),
+    ),
+    proposalPart(
+      "tool-proposeStudyBlockMove",
+      z.object({ block: z.string(), start: z.string(), end: z.string() }),
+    ),
+    proposalPart(
+      "tool-proposeTask",
+      z.object({
+        title: z.string(),
+        course: z.string().optional(),
+        event: z.string().optional(),
+        role: z.enum(["preparation", "follow_up"]).optional(),
+        minutes: z.number().int().optional(),
+      }),
+    ),
+    proposalPart("tool-proposeTaskReopen", z.object({ task: z.string() })),
   ])
   .openapi("ChatMessagePart");
 const Message = z

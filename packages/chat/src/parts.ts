@@ -34,24 +34,46 @@ export type ChatPart =
       input: { topics: string[] };
       output: ArtifactOutput;
     }
-  | ProposalPart<"tool-proposeStudyBlock", { work: string }>
-  | ProposalPart<"tool-proposeStudyBlockMove", { block: string }>;
+  | ProposalPart<
+      "tool-proposeStudyBlock",
+      { work: string; start: string; end: string }
+    >
+  | ProposalPart<
+      "tool-proposeStudyBlockMove",
+      { block: string; start: string; end: string }
+    >
+  | ProposalPart<
+      "tool-proposeTask",
+      {
+        title: string;
+        course?: string;
+        event?: string;
+        role?: "preparation" | "follow_up";
+        minutes?: number;
+      }
+    >
+  | ProposalPart<"tool-proposeTaskReopen", { task: string }>;
 
-/** A proposed Study Block, asked of the student as an Action under `key` once the answer is saved. */
+/** A proposed Study Block or Task, asked of the student as an Action under `key` once the answer is saved. */
 export type ProposalPart<Type extends string, Input> = {
   type: Type;
   toolCallId: string;
-  input: Input & { start: string; end: string };
+  input: Input;
   approvalId: string;
   key: string;
   notes: BlockNote[];
 };
 
+const proposalTypes = new Set([
+  "tool-proposeStudyBlock",
+  "tool-proposeStudyBlockMove",
+  "tool-proposeTask",
+  "tool-proposeTaskReopen",
+]);
 export const isProposal = (
   part: ChatPart,
 ): part is Extract<ChatPart, { approvalId: string }> =>
-  part.type === "tool-proposeStudyBlock" ||
-  part.type === "tool-proposeStudyBlockMove";
+  proposalTypes.has(part.type);
 
 /** Removes Citation tags that no search returned, so they never show as Citations. */
 export const withoutUnknownTags = (text: string, tags: ReadonlySet<string>) =>

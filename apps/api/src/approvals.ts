@@ -23,12 +23,37 @@ const Approval = z
 
 type PlanView = Awaited<ReturnType<AppBindings["Variables"]["plan"]["view"]>>;
 
+/** A Course's title, from the Plan's Obligations or Tasks in it. */
+const courseTitle = (plan: PlanView, courseId: string | null) =>
+  (courseId &&
+    (plan.obligations.find((o) => o.courseId === courseId)?.course ??
+      plan.tasks.find((t) => t.courseId === courseId)?.course)) ||
+  null;
+
 /** One Action as the student sees it: which work, where its block is now, and where it would go. */
 export function describeAction(
   plan: PlanView,
   kind: ActionRecord["kind"],
   args: unknown,
 ) {
+  // A Task Action places nothing in time: it names the Task it adds or reopens (ADR-0021).
+  if (kind === "task.create" || kind === "task.reopen") {
+    const { title, courseId, taskId } = args as {
+      title?: string;
+      courseId?: string | null;
+      taskId?: string;
+    };
+    const task = plan.tasks.find((t) => t.id === taskId);
+    return {
+      kind,
+      work: {
+        title: title ?? task?.title ?? "Work that is gone",
+        course: courseTitle(plan, courseId ?? task?.courseId ?? null),
+      },
+      from: null,
+      to: null,
+    };
+  }
   const { workId, studyBlockId, start, end } = args as {
     workId?: string;
     studyBlockId?: string;
@@ -52,12 +77,19 @@ export function describeAction(
 }
 export const ActionShown = z
   .object({
-    kind: z.enum(["studyBlock.create", "studyBlock.move"]),
+    kind: z.enum([
+      "studyBlock.create",
+      "studyBlock.move",
+      "task.create",
+      "task.reopen",
+    ]),
     work: z.object({ title: z.string(), course: z.string().nullable() }),
     from: Span.nullable().describe(
-      "Where the block is now; null for a new block.",
+      "Where the block is now; null for a new block or a Task Action.",
     ),
-    to: Span,
+    to: Span.nullable().describe(
+      "Where the block would go; null for a Task Action.",
+    ),
   })
   .openapi("ActionShown");
 

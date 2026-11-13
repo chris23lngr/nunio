@@ -28,12 +28,11 @@ export interface RunRef {
   responsibilityId: string;
 }
 
-/** Dates cross Temporal as ISO strings; the gate takes Dates. */
-const revive = (intent: ActionIntent): ActionIntent => ({
-  ...intent,
-  start: new Date(intent.start),
-  end: new Date(intent.end),
-});
+/** Dates cross Temporal as ISO strings; the gate takes Dates. Runs propose only Study Blocks, which have them. */
+const revive = (intent: ActionIntent): ActionIntent =>
+  "start" in intent
+    ? { ...intent, start: new Date(intent.start), end: new Date(intent.end) }
+    : intent;
 
 export function createRunActivities({
   db,

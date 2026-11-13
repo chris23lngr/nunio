@@ -167,13 +167,14 @@ const findAction = (
 const stored = (args: unknown) =>
   JSON.parse(JSON.stringify(args)) as Record<string, unknown>;
 function revive(kind: string, json: unknown): ActionIntent {
-  const { start, end, ...rest } = json as Record<string, string>;
+  const { start, end, ...rest } = json as Record<string, unknown>;
   return {
     kind,
     ...definitions[kind as Kind].parse({
       ...rest,
-      start: new Date(start!),
-      end: new Date(end!),
+      // Only Study Block Actions have a time span; a Task Action has none (ADR-0021).
+      ...(start === undefined ? {} : { start: new Date(start as string) }),
+      ...(end === undefined ? {} : { end: new Date(end as string) }),
     }),
   } as ActionIntent;
 }
@@ -268,8 +269,11 @@ function localInstant(dayUtc: number, minute: number, timeZone: string) {
 /** Whether an interval touches the student's Protected Time, weekly or one-off, on their local days. */
 async function intoProtectedTime(
   tx: Transaction,
-  { start, end }: { start: Date; end: Date },
+  args: { start?: Date; end?: Date },
 ) {
+  // A Task Action places nothing in time.
+  const { start, end } = args;
+  if (!start || !end) return false;
   const timeZone =
     (await tx.planPreference.findFirst())?.timeZone ?? "Europe/Berlin";
   const from = start.getTime(),
@@ -321,6 +325,27 @@ async function subjectOf(
     if (await tx.task.findUnique({ where: { id: intent.workId } }))
       return workOf({ obligationId: null, taskId: intent.workId });
     return null;
+  }
+  if (intent.kind === "task.create") {
+    // Its Course and Course Event must be the student's own.
+    if (
+      (intent.courseId &&
+        !(await tx.course.findUnique({ where: { id: intent.courseId } }))) ||
+      (intent.fixedEventId &&
+        !(await tx.fixedEvent.findUnique({
+          where: { id: intent.fixedEventId },
+        })))
+    )
+      return null;
+    return { courseId: intent.courseId, obligationId: null };
+  }
+  if (intent.kind === "task.reopen") {
+    const task = await tx.task.findUnique({ where: { id: intent.taskId } });
+    if (!task) return null;
+    return {
+      ...(await workOf({ obligationId: null, taskId: task.id })),
+      title: task.title,
+    };
   }
   const block = await tx.studyBlock.findUnique({
     where: { id: intent.studyBlockId },
@@ -592,7 +617,10 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
           fingerprint,
           now,
           responsibility,
-          intoProtectedTime: await intoProtectedTime(tx, args),
+          intoProtectedTime: await intoProtectedTime(
+            tx,
+            args as { start?: Date; end?: Date },
+          ),
           approval: existing?.approval
             ? {
                 id: existing.approval.id,

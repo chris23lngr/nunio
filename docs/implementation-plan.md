@@ -736,7 +736,7 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 - [x] `rebalance` never places a Follow-up before its Course Event ends, nor a Preparation after its Course Event starts (`rebalance.test.ts`, "places a Task with a window…").
 - [x] Changing a Routine updates only open Tasks with no past Study Block, and never an Estimate the student set (`plan.test.ts`, "changes a Routine's open, untouched Tasks…").
 - [x] A lapsed Follow-up stays open and is not planned again by Rebalance (`plan.test.ts`, "drops a Preparation whose lecture began…").
-- [ ] The Chat proposes a Study Block for a Follow-up the student names, and reopening or adding a Task needs an Approval of the exact Action.
+- [x] The Chat proposes a Study Block for a Follow-up the student names, and reopening or adding a Task needs an Approval of the exact Action (`apps/api/src/create-app.test.ts`, "proposes a Study Block for a Task in a Course…", "proposes a Follow-up for a Course Event…"; `packages/delegation/src/gate.test.ts`, "asks before adding or reopening a Task…").
 
 **Progress (2026-11-13).** Stage 1 is implemented.
 - `task.courseId` is set only on a Task toward no Obligation, which a check constraint enforces. Deleting the Course deletes such Tasks, and merging moves them.
@@ -779,6 +779,16 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 - **Course cards:** each card has a "Termine & Routinen" section for its confirmed series, where the student changes the minutes or skips the Routine through a chosen day.
 - **Plan:** below the week there is an "Aufgaben" list of open Tasks with their Course and deadline. The student ticks a Task off there, or adds one in a Course or with none.
 - **Home:** a Shortfall's `skip_routine` tradeoff has a "Routine aussetzen" button.
+
+**Progress (2026-11-13).** Stage 5 is implemented.
+- **Action kinds:** `task.create` (`title`, `courseId`, `fixedEventId`, `role`, `estimateMinutes`) and `task.reopen` (`taskId`) pass the per-kind contract suite. No Grant covers either, and they skip the Protected Time check, since they place nothing in time.
+- **Gate:** reviving stored arguments now restores `start` and `end` only for kinds that have them.
+- **Executor:** the Plan executor adds or reopens a Task once per key. `plan_effect` records a `studyBlockId` or a `taskId`.
+- **`agenda`:** marks a Fixed Event that is a Course Event with a handle such as `E1`, its Course, and its Preparation and Follow-up with handles and done or open.
+- **`proposeTask`:** takes a Course Event and role, or a Course, or neither. It is refused for a Course Event that already has a Task in that role, pointing the model to a Study Block or reopening instead. `proposeTaskReopen` takes a done Task.
+- **Approval:** both are asked like Study Block proposals, and adding a Study Block for the new Task follows in the continuation after the Approval (G2).
+- **Cards:** the Approval card shows "Add the Task …" and "Reopen the Task …" with no time, and the Chat's line for a decided proposal reads "Aufgabe …" with "Angelegt" or "Wieder geöffnet".
+- A Task Action's Course on its card comes from the Plan's Obligations or Tasks in that Course, so a Course with neither shows none.
 
 **Anti-pattern guards.**
 - Never change a Fixed Event, and never let a Routine create a Study Block outside Rebalance or a proposal.

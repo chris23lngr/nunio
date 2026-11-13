@@ -23,6 +23,8 @@ import {
   intentOf,
   proposeStudyBlockMoveTool,
   proposeStudyBlockTool,
+  proposeTaskReopenTool,
+  proposeTaskTool,
 } from "./proposals.js";
 import { searchTool } from "./search.js";
 import { createTurn } from "./turn.js";
@@ -213,18 +215,28 @@ export function createChats({
         const args = (record?.args ?? {}) as {
           workId?: string;
           studyBlockId?: string;
+          taskId?: string;
+          title?: string;
         };
         const workId =
           args.workId ??
+          args.taskId ??
           view.studyBlocks.find((b) => b.id === args.studyBlockId)?.work.id;
         const title =
+          args.title ??
           view.tasks.find((t) => t.id === workId)?.title ??
           view.obligations.find((o) => o.id === workId)?.title ??
           "work that is gone";
-        const what =
-          part.type === "tool-proposeStudyBlock"
-            ? "add a Study Block"
-            : "move the Study Block";
+        const what = {
+          "tool-proposeStudyBlock": "add a Study Block",
+          "tool-proposeStudyBlockMove": "move the Study Block",
+          "tool-proposeTask": "add the Task",
+          "tool-proposeTaskReopen": "reopen the Task",
+        }[part.type];
+        const when =
+          "start" in part.input
+            ? ` at ${part.input.start}–${part.input.end.slice(11)}`
+            : "";
         const status = !record
           ? "it could not be asked"
           : record.approval?.decision === "denied"
@@ -240,7 +252,7 @@ export function createChats({
                   : "approved, but not confirmed to have taken effect";
         return [
           part.key,
-          `(You proposed to ${what} for "${title}" at ${part.input.start}–${part.input.end.slice(11)}: ${status}.)`,
+          `(You proposed to ${what} for "${title}"${when}: ${status}.)`,
         ] as const;
       }),
     );
@@ -293,13 +305,23 @@ export function createChats({
         : {}),
       proposeStudyBlock: proposeStudyBlockTool(),
       proposeStudyBlockMove: proposeStudyBlockMoveTool(),
+      proposeTask: proposeTaskTool(),
+      proposeTaskReopen: proposeTaskReopenTool(),
     };
     /** Proposals that passed the Plan's rules, by tool call, waiting for the student once the answer is saved. */
     const proposals = new Map<string, Proposal>();
-    const approve = approveProposal(turn, { plan, p, timeZone, proposals });
+    const approve = approveProposal(turn, {
+      plan,
+      p,
+      timeZone,
+      proposals,
+      courses: context.courses,
+    });
     const toolApproval = {
       proposeStudyBlock: approve.create,
       proposeStudyBlockMove: approve.move,
+      proposeTask: approve.task,
+      proposeTaskReopen: approve.reopen,
     };
     return { history, context, turn, tools, proposals, toolApproval, started };
   }

@@ -62,7 +62,7 @@ export function agendaTool(
   const at = (instant: Date) => local.format(instant).replace(",", "");
   const time = (instant: Date) => at(instant).slice(11);
   return tool({
-    description: `Reads the student's Plan for a range of days: the Obligations due in it, each with its Tasks and the tag to cite it by, the open Tasks toward no Obligation, then Study Blocks and Fixed Events. Obligations, Tasks and Study Blocks carry a handle such as O1, T1 or B1, which proposals name them by. Dates are YYYY-MM-DD in the student's time zone, at most ${maxDays} days apart, both included.`,
+    description: `Reads the student's Plan for a range of days: the Obligations due in it, each with its Tasks and the tag to cite it by, the open Tasks toward no Obligation, then Study Blocks and Fixed Events. A Fixed Event that is a Course Event names its Course and its Preparation and Follow-up, if any. Obligations, Tasks, Study Blocks and Course Events carry a handle such as O1, T1, B1 or E1, which proposals name them by. Dates are YYYY-MM-DD in the student's time zone, at most ${maxDays} days apart, both included.`,
     inputSchema: jsonSchema<{ from: string; to: string }>({
       type: "object",
       properties: { from: date, to: date },
@@ -142,7 +142,23 @@ export function agendaTool(
         ),
         "Fixed Events:",
         ...(events.length ? [] : ["none"]),
-        ...events.map((e) => `${at(e.start)}–${time(e.end)} · ${e.title}`),
+        ...events.map((e) => {
+          const line = `${at(e.start)}–${time(e.end)} · ${e.title}`;
+          if (!e.courseId) return line;
+          // A Course Event, with the Preparation and Follow-up it has, done or not (ADR-0021).
+          const course = handleOf.get(e.courseId);
+          const title = course ? courses.get(course)?.title : undefined;
+          const roles = view.tasks
+            .filter((t) => t.fixedEventId === e.id && t.role)
+            .map(
+              (t) =>
+                `${t.role === "preparation" ? "Preparation" : "Follow-up"} ${turn.handleFor("task", t.id)} (${t.done ? "done" : "open"})`,
+            );
+          return [
+            `${turn.handleFor("event", e.id)} · ${line} · Course Event of ${title ?? "a Course"}${course ? ` (${course})` : ""}`,
+            ...roles,
+          ].join(" · ");
+        }),
       ];
       turn.give(toolCallId, fenced("plan", lines));
       return {

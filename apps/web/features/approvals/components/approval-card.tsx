@@ -26,8 +26,24 @@ export function ApprovalCard({
   onDecide: (decision: "approve" | "deny") => void;
 }) {
   const { action } = approval;
-  const verb = action.kind === "studyBlock.move" ? "Move" : "Add";
-  const heading = `${verb} the block for ${action.work.title}`;
+  const { heading, approveLabel } = {
+    "studyBlock.create": {
+      heading: `Add the block for ${action.work.title}`,
+      approveLabel: "Approve this block",
+    },
+    "studyBlock.move": {
+      heading: `Move the block for ${action.work.title}`,
+      approveLabel: "Approve this move",
+    },
+    "task.create": {
+      heading: `Add the Task ${action.work.title}`,
+      approveLabel: "Approve this Task",
+    },
+    "task.reopen": {
+      heading: `Reopen the Task ${action.work.title}`,
+      approveLabel: "Approve reopening it",
+    },
+  }[action.kind];
   return (
     <ApprovalPresentation
       role="article"
@@ -35,21 +51,19 @@ export function ApprovalCard({
       title={heading}
       busy={busy}
       onDecide={onDecide}
-      approveLabel={
-        action.kind === "studyBlock.move"
-          ? "Approve this move"
-          : "Approve this block"
-      }
+      approveLabel={approveLabel}
       denyLabel="Don't"
       description={
         <>
           {approval.responsibility
             ? `${presets[approval.responsibility.preset] ?? "A Responsibility"} asks`
             : "nunio asks"}
-          {action.work.course && ` for ${action.work.course}`}:{" "}
-          {action.from
-            ? `from ${span(action.from)} to ${span(action.to)}`
-            : `on ${span(action.to)}`}
+          {action.work.course && ` for ${action.work.course}`}
+          {/* A Task Action places nothing in time (ADR-0021). */}
+          {action.to &&
+            (action.from
+              ? `: from ${span(action.from)} to ${span(action.to)}`
+              : `: on ${span(action.to)}`)}
           .
         </>
       }

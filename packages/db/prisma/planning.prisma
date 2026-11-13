@@ -229,7 +229,9 @@ model PlanEffect {
   idempotencyKey String
   studentId      String
   student        User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  studyBlockId   String
+  /// The block a Study Block Action placed or moved, or the Task a Task Action added or reopened.
+  studyBlockId   String?
+  taskId         String?
   createdAt      DateTime @default(now())
 
   @@id([studentId, idempotencyKey])
