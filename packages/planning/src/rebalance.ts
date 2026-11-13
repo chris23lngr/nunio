@@ -405,8 +405,10 @@ export function rebalance(state: PlanState): Proposal {
       }
       // Skipping a Routine is the student's choice, so it is offered whatever the Routine's Priority.
       const routines = new Map<string, number>();
+      // Skipping the Routine the short work comes from would only take time from it.
+      const own = state.tasks.find((task) => task.id === work.id)?.routine;
       for (const task of state.tasks) {
-        if (!task.routine || task.id === work.id) continue;
+        if (!task.routine || task.routine === own) continue;
         const time = [
           ...kept.filter(
             (b) => b.workId === task.id && !b.locked && b.start.getTime() < due,

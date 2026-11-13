@@ -771,7 +771,7 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 - A Task toward no Obligation ranks as its Course does, so `free_time_from` offers its time only to work that matters more.
 - A Shortfall also offers `skip_routine` for each Routine whose Tasks hold time before the deadline. It is offered whatever the Routine's Priority, because skipping is the student's choice. It names the Event Series, the deadline as `until`, and the minutes gained.
 - `plan.skipRoutine` (`POST /api/me/event-series/{id}/routine/skip`) sets `routine.skippedUntil`. Course Events that begin before then get no Preparation or Follow-up, and their untouched ones go.
-- Not yet handled: a Shortfall of a Routine's own Task still offers skipping that same Routine.
+- A Shortfall of a Routine's own Task offers skipping other Routines only, never its own.
 
 **Progress (2026-11-13).** 4d is implemented.
 - `plan.view` gives each Event Series its `routine` (minutes and `skippedUntil`).

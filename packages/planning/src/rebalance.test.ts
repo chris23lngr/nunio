@@ -525,6 +525,44 @@ describe("rebalance", () => {
     );
   });
 
+  it("never offers skipping the Routine whose own Task is short, only other Routines", () => {
+    const task = (id: string, routine: string) => ({
+      id,
+      obligationId: null,
+      estimateMinutes: 60,
+      done: false,
+      earliest: at("2026-11-09 08:00"),
+      due: at("2026-11-12 10:00"),
+      routine,
+    });
+    const block = (id: string, workId: string, from: string, to: string) => ({
+      id,
+      workId,
+      placedBy: "student" as const,
+      locked: false,
+      ...span(from, to),
+    });
+
+    const shortfall = rebalance({
+      ...base,
+      tasks: [
+        { ...task("short", "s-analysis"), estimateMinutes: 20 * 60 },
+        task("sibling", "s-analysis"),
+        task("other", "s-physik"),
+      ],
+      studyBlocks: [
+        block("b1", "sibling", "2026-11-10 09:00", "2026-11-10 10:00"),
+        block("b2", "other", "2026-11-10 10:00", "2026-11-10 11:00"),
+      ],
+    }).shortfalls.find((s) => s.workId === "short");
+
+    expect(
+      shortfall!.tradeoffs.flatMap((t) =>
+        t.kind === "skip_routine" ? [t.routine] : [],
+      ),
+    ).toEqual(["s-physik"]);
+  });
+
   it("moves a block out of its Task's window, as when the lecture moved, into the window", () => {
     const followUp = {
       id: "follow-up",
