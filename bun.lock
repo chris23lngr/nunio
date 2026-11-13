@@ -123,6 +123,7 @@
         "@nunio/knowledge": "workspace:*",
         "@nunio/outreach": "workspace:*",
         "@nunio/planning": "workspace:*",
+        "@nunio/understanding": "workspace:*",
         "@temporalio/activity": "1.25.0",
         "@temporalio/client": "1.25.0",
         "@temporalio/common": "1.25.0",
