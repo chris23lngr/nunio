@@ -29,6 +29,10 @@
   --destructive-500: oklch(64.5% 0.246 16.4);
   --destructive-700: oklch(51.4% 0.222 16.9);
   --destructive-800: oklch(45.5% 0.188 13.7);
+
+  /* Amber colors used by warnings in Paper. */
+  --warning-600: oklch(66.6% 0.179 58.3);
+  --warning-700: oklch(55.5% 0.163 49);
 }
 
 /* Map Paper’s names to Tailwind’s utility namespaces. */
@@ -59,5 +63,7 @@
   --color-destructive-500: var(--destructive-500);
   --color-destructive-700: var(--destructive-700);
   --color-destructive-800: var(--destructive-800);
+  --color-warning-600: var(--warning-600);
+  --color-warning-700: var(--warning-700);
   --inset-shadow-button-primary: inset 0 1px 0 var(--primary-300);
 }
