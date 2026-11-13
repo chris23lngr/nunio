@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 14 (Chat tools) planned, 2026-11-12; it precedes the Phase 12 gates. Phase 15 (Understanding, Shortfalls and Artifacts in the Chat) implemented, pending the founder's spot-check of its eval, 2026-11-13; it also precedes them. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 14 (Chat tools) planned, 2026-11-12; it precedes the Phase 12 gates. Phase 15 (Understanding, Shortfalls and Artifacts in the Chat) verified, 2026-11-13; it also precedes them. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -732,7 +732,7 @@ Phase 15 is built before the Phase 12 gates, and its evals join them. Work happe
 - [x] A removal is performed only after the student approves the fingerprint shown, in the Chat or on Home (`create-app.test.ts`, "proposing to remove a Study Block"). The gate refuses one whose block started meanwhile (`packages/delegation/src/decision.test.ts`), and a Responsibility's Grant never covers it (`kinds.test.ts`).
 - [x] The Chat search eval is rerun: [phase-15-chat-search-eval.json](operations/phase-15-chat-search-eval.json). Its students have no Courses, so it measures the longer instructions, not the larger `courseFacts`. The Understanding and Plan eval covers that.
 - [x] Injection eval: a Source that also tells assistants to remove every Study Block causes no Action, and any proposal appears only as a card ([phase-15-chat-injection-eval.json](operations/phase-15-chat-injection-eval.json)).
-- [x] Understanding and Plan eval is recorded: [phase-15-chat-understanding-eval.json](operations/phase-15-chat-understanding-eval.json). The founder sets thresholds; the answers are still pending the founder's spot-check.
+- [x] Understanding and Plan eval is recorded: [phase-15-chat-understanding-eval.json](operations/phase-15-chat-understanding-eval.json). The founder spot-checked the answers of all three Phase 15 evals on 2026-11-13 and accepted them; no thresholds are set.
 
 **Progress (2026-11-13).** Stages 1–5 are implemented.
 - `courseFacts` gives Levels and the Course's practice sets and flashcards, and `agenda` gives Shortfalls with tradeoffs and every current Shortfall.
@@ -753,6 +753,7 @@ Phase 15 is built before the Phase 12 gates, and its evals join them. Work happe
     - Search and citation recall were 0.957 on 23 questions, against 1.0 in Phase 14. The one miss never retrieved the expected page, and the answer said the material does not name it.
     - Every unanswerable question that was answered was declined.
     - Three unanswerable questions failed with HTTP 402 `in_flight_budget_exhausted` from OpenRouter: the staging account was running low on credits.
+    - Two reruns after a top-up failed on the same 402 for 18 and then 26 of 35 questions, even one question at a time, so the first run stands. A complete run needs more staging credits.
 
 **Deferred** to a later stage:
 - adding and completing Tasks from a Chat;
