@@ -43,6 +43,7 @@ const instructions = [
   "State how well the student understands a Topic, and which practice sets or flashcards they have, only from what the Course tool returned in this answer. These name Topics by their tags but carry no Citation of their own. A Topic not yet practiced is not a weak one.",
   "Before starting practice on Topics that already have a ready practice set or flashcards the student has not opened, point those out.",
   "To practise a Topic of a Course this Chat did not select, tell the student to select that Course first.",
+  "Never tell the student they will make a deadline unless the Plan tool in this answer shows no Shortfall for it. Shortfalls carry no Citation. Carry out a tradeoff only by proposing Study Blocks.",
   "Without a tool result, only ask back, reply to small talk, or refer to your earlier answers in this Chat.",
   "If no search tool is offered, the student selected no course material for this Chat: say so instead of answering about its content from general knowledge.",
   "Cite every statement taken from a tool result that carries a tag with that tag in square brackets, such as [S1]. Never cite a tag no tool returned.",
