@@ -9,6 +9,7 @@ export {
   CourseStatus,
   ExtractionStatus,
   FactType,
+  Grounding,
   ObligationKind,
   ReviewState,
   SourceFailure,

@@ -191,7 +191,10 @@ it("puts everything a bound Source holds under its Course, proposing none and dr
 
   const result = await extract(p, source.id, fromSlides);
 
-  expect(result).toMatchObject({ status: "done", dropped: 0 });
+  expect(result).toMatchObject({
+    status: "done",
+    dropped: { ungrounded: 0, noCourse: 0, aiUseRule: 0 },
+  });
   expect(await reviewed(p)).toEqual([
     expect.objectContaining({
       id: analysis,
@@ -433,7 +436,7 @@ it("never suggests a pair again once the student says they differ", async () => 
   });
 });
 
-it("gives the model no Courses to pick from for a bound Source and ignores one it picks, but offers them when unbound", async () => {
+it("offers a bound Source only its own Course and ignores another it picks, but offers all Courses when unbound", async () => {
   const p = await student();
   const analysis = await ownCourse(p, "Analysis I", "MA-101");
   const statistik = await ownCourse(p, "Statistik II", null);
@@ -461,7 +464,10 @@ it("gives the model no Courses to pick from for a bound Source and ignores one i
   await extract(p, unbound.id, picksStatistik);
 
   expect(contexts).toEqual([
-    { title: "Folien.pdf", courses: [] },
+    {
+      title: "Folien.pdf",
+      courses: [{ id: analysis, title: "Analysis I", code: "MA-101" }],
+    },
     {
       title: "Skript.pdf",
       courses: expect.arrayContaining([
