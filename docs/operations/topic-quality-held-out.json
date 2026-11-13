@@ -1,0 +1,5662 @@
+{
+  "checkedAt": "2026-11-13T09:49:20.787Z",
+  "model": "haiku-5.5-reasoning-high",
+  "runsPerDocument": 3,
+  "labels": "Original labels founder spot-checked; slide Topics and assignments draft, not yet spot-checked by founder",
+  "includedFeatureHead": "ab6bb62",
+  "scenarios": [],
+  "includedParallelChanges": "Final held-out measurement of Topic quality",
+  "routing": "international",
+  "parser": "repository parser code in-process with host qpdf/Poppler, not the container image",
+  "summary": {
+    "documents": 6,
+    "topics": {
+      "precision": 0.904,
+      "recall": 0.707,
+      "figureOnlyRecall": null
+    },
+    "obligations": {
+      "precision": null,
+      "recall": null
+    },
+    "deadlines": {
+      "precision": null,
+      "recall": null,
+      "undatedInventedDate": 0
+    },
+    "courses": {
+      "precision": 1,
+      "recall": 1
+    },
+    "logistics": {
+      "recall": null
+    },
+    "medianReviewableAfterMs": 60956.5,
+    "costMicroUsd": 203569,
+    "judgeCostMicroUsd": 75094,
+    "judgeFailures": [],
+    "injectionPassed": true,
+    "failedExtractions": [],
+    "worstObligationRecall": {
+      "synthetic-de-analysis": null,
+      "synthetic-en-econometrics": null,
+      "synthetic-de-physik-scan": null,
+      "synthetic-de-injection": null,
+      "ude-gs-bildungswissenschaften": null,
+      "wwu-bwl-excerpt": null,
+      "wwu-wi-excerpt": null,
+      "rub-nlp-02": null,
+      "rub-nlp-03": null,
+      "dhbw-digitaltechnik": null,
+      "dhbw-digitaltechnik-flipflops": null,
+      "dhbw-signale-systeme-signale": 0,
+      "dhbw-signale-systeme-frequenzanalyse": 0,
+      "dhbw-bildverarbeitung-bildaufnahme": null,
+      "dhbw-messtechnik-messbruecken": null,
+      "dhbw-stuttgart-mct1-datenpfad": null,
+      "uo-ec607-intro": null,
+      "uo-ec607-git": null
+    }
+  },
+  "documents": [
+    {
+      "id": "dhbw-signale-systeme-signale",
+      "assignment": {
+        "boundCourseId": "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+        "proposals": 0,
+        "itemCourseIds": [
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa",
+          "6a9de525-1c73-4b2d-b3b9-7113946169aa"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
+      "run": 1,
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "ingestion": "ready",
+      "ingestionFailure": null,
+      "extraction": "done",
+      "dropped": {
+        "ungrounded": 0,
+        "noCourse": 0,
+        "aiUseRule": 0
+      },
+      "grounding": {
+        "claimedPage": 29,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "failures": [],
+      "reviewableAfterMs": 61363,
+      "costMicroUsd": 36125,
+      "topics": {
+        "labelled": 24,
+        "extracted": 29,
+        "scored": 23,
+        "matched": 22,
+        "precision": 0.9565217391304348,
+        "recall": 0.9166666666666666,
+        "figureOnly": {
+          "labelled": 0,
+          "matched": 0,
+          "recall": null
+        }
+      },
+      "topicJudgement": {
+        "model": "sonnet-5.5-topic-judge",
+        "labels": [
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Elementarsignal",
+              "Elementarsignale",
+              "Elementary signals"
+            ],
+            "pages": [2, 21],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Testsignal", "Testsignale", "Test signal"],
+            "pages": [2],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Distributionstheorie",
+              "Distributionen",
+              "Distribution theory"
+            ],
+            "pages": [2],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Konstante", "Konstantes Signal", "Konstante Funktion"],
+            "pages": [3],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Einheitssprung",
+              "Sprungfunktion",
+              "Schritt-Funktion",
+              "Schrittfunktion",
+              "Heaviside-Funktion",
+              "Unit step",
+              "Step function"
+            ],
+            "pages": [4, 5, 15],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Exponentialfunktion",
+              "Exponentialsignal",
+              "Exponential function"
+            ],
+            "pages": [6, 7],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Zeitkonstante", "Time constant"],
+            "pages": [6, 7, 8],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Systemidentifikation", "System identification"],
+            "pages": [8, 21],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Rechteckfunktion",
+              "Rechteck",
+              "Rechteckimpuls",
+              "Rechtecksignal",
+              "Rect-Funktion",
+              "Rectangular function"
+            ],
+            "pages": [9, 22, 23, 24],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ausblendeigenschaft",
+              "Siebeigenschaft",
+              "Sifting property"
+            ],
+            "pages": [9, 20, 25],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Rampenfunktion",
+              "Rampe",
+              "Rampensignal",
+              "Ramp function"
+            ],
+            "pages": [10, 11, 29],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Harmonische Schwingung",
+              "Harmonische Schwingungen",
+              "Sinusschwingung",
+              "Kosinusschwingung",
+              "Harmonic oscillation"
+            ],
+            "pages": [12],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Nullphasenwinkel", "Nullphase", "Initial phase"],
+            "pages": [12],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Gedämpfte harmonische Schwingung",
+              "Gedämpfte harmonische Schwingungen",
+              "Gedämpfte Sinusschwingung",
+              "Exponentiell gedämpfte Sinusschwingung",
+              "Damped oscillation"
+            ],
+            "pages": [13, 14],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ableitung nichtstetiger Funktionen",
+              "Ableitung unstetiger Funktionen"
+            ],
+            "pages": [15, 16, 17],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Delta-Distribution",
+              "Dirac-Impuls",
+              "Dirac-Funktion",
+              "Dirac-Stoß",
+              "Stoßfunktion",
+              "Einheitsimpulsfunktion",
+              "Nadelimpuls",
+              "Impulsfunktion",
+              "Dirac delta"
+            ],
+            "pages": [16, 17, 18, 19, 20, 25],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Funktionenfolge", "Funktionenfolgen"],
+            "pages": [16, 19],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ideale Abtastung",
+              "Ideale Abtastungen",
+              "Ideal sampling"
+            ],
+            "pages": [20],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Systemantwort",
+              "Antwort eines Systems",
+              "System response"
+            ],
+            "pages": [21, 22, 23, 24, 25, 26],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Linearität",
+              "Linearity",
+              "Superposition",
+              "Überlagerung"
+            ],
+            "pages": [21, 23],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Zeitinvarianz", "Time invariance"],
+            "pages": [21, 23],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "LTI-System",
+              "LTI-Systeme",
+              "LTI System",
+              "Lineares zeitinvariantes System"
+            ],
+            "pages": [6, 13, 21],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Faltung",
+              "Faltungsintegral",
+              "Faltungsoperator",
+              "Convolution"
+            ],
+            "pages": [26, 27, 28],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Impulsantwort", "Impulse response"],
+            "pages": [26, 27, 28, 29, 36],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Sprungantwort", "Step response"],
+            "pages": [8, 29],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Kausalität",
+              "Kausales System",
+              "Kausales Signal",
+              "Causality"
+            ],
+            "pages": [27, 36],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Einschwingen",
+              "Einschwingvorgang",
+              "Einschwingen eines Systems"
+            ],
+            "pages": [28],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Energiesignal", "Energiesignale", "Energy signal"],
+            "pages": [30, 31],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Signalenergie",
+              "Energie eines Signals",
+              "Signal energy"
+            ],
+            "pages": [30],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Leistungssignal", "Leistungssignale", "Power signal"],
+            "pages": [32],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Signalleistung",
+              "Leistung eines Signals",
+              "Signal power"
+            ],
+            "pages": [30, 32],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Gerades Signal",
+              "Gerade Funktion",
+              "Even function",
+              "Achsensymmetrie"
+            ],
+            "pages": [33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ungerades Signal",
+              "Ungerade Funktion",
+              "Odd function",
+              "Punktsymmetrie"
+            ],
+            "pages": [33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Zerlegung in gerade und ungerade Signalanteile",
+              "Gerader Signalanteil",
+              "Ungerader Signalanteil",
+              "Gerade-ungerade-Zerlegung"
+            ],
+            "pages": [34, 35],
+            "optional": false,
+            "figureOnly": false
+          }
+        ],
+        "extracted": [
+          {
+            "course": "Signale und Systeme",
+            "key": "distributionstheorie",
+            "value": "Distributionstheorie"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "elementarsignal",
+            "value": "Elementarsignal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "testsignal",
+            "value": "Testsignal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "konstante",
+            "value": "Konstante"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "einheitssprung",
+            "value": "Einheitssprung"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "exponentialfunktion",
+            "value": "Exponentialfunktion"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "zeitkonstante",
+            "value": "Zeitkonstante"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "rechteckfunktion",
+            "value": "Rechteckfunktion"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "rampe",
+            "value": "Rampe"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "harmonische schwingung",
+            "value": "Harmonische Schwingung"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "nullphasenwinkel",
+            "value": "Nullphasenwinkel"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "gedämpfte harmonische schwingung",
+            "value": "Gedämpfte harmonische Schwingung"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "delta-distribution",
+            "value": "Delta-Distribution"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "ausblendeigenschaft",
+            "value": "Ausblendeigenschaft"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "dirac-impuls",
+            "value": "Dirac-Impuls"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "linearität",
+            "value": "Linearität"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "lti-system",
+            "value": "LTI-System"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "systemidentifikation",
+            "value": "Systemidentifikation"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "zeitinvarianz",
+            "value": "Zeitinvarianz"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "systemantwort",
+            "value": "Systemantwort"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "faltungsintegral",
+            "value": "Faltungsintegral"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "impulsantwort",
+            "value": "Impulsantwort"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "energiesignal",
+            "value": "Energiesignal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "signalenergie",
+            "value": "Signalenergie"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "leistungssignal",
+            "value": "Leistungssignal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "gerades signal",
+            "value": "Gerades Signal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "ungerades signal",
+            "value": "Ungerades Signal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "signalzerlegung",
+            "value": "Signalzerlegung"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "kausalität",
+            "value": "Kausalität"
+          }
+        ],
+        "decisions": [
+          2,
+          0,
+          1,
+          3,
+          4,
+          5,
+          6,
+          8,
+          10,
+          11,
+          12,
+          13,
+          15,
+          9,
+          null,
+          19,
+          21,
+          7,
+          20,
+          18,
+          22,
+          23,
+          27,
+          28,
+          29,
+          31,
+          32,
+          33,
+          25
+        ],
+        "failure": null,
+        "costMicroUsd": 13976
+      },
+      "topicItems": [
+        {
+          "course": "Signale und Systeme",
+          "key": "distributionstheorie",
+          "value": "Distributionstheorie",
+          "citations": [
+            {
+              "extractionId": "2d4898aa-d683-4702-a904-dc64ddd91892",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 2,
+              "quote": "Die Distributionstheorie ermöglicht die Bestimmung der Ableitungen.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "elementarsignal",
+          "value": "Elementarsignal",
+          "citations": [
+            {
+              "extractionId": "c6732a35-127e-4786-81c5-8b0ad704d8f6",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 2,
+              "quote": "Elementarsignale stellen einfache idealisierte Signale dar.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "testsignal",
+          "value": "Testsignal",
+          "citations": [
+            {
+              "extractionId": "389e78b6-62b4-4318-8ec9-d1e01b17afb1",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 2,
+              "quote": "Diese Elementarsignale werden als Testsignale bezeichnet.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "konstante",
+          "value": "Konstante",
+          "citations": [
+            {
+              "extractionId": "4b122091-917a-4cf0-b9f9-f4c7397c481a",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 3,
+              "quote": "y(t) := 1",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "einheitssprung",
+          "value": "Einheitssprung",
+          "citations": [
+            {
+              "extractionId": "515dc14b-24c8-4b6a-9955-6b2abf851f7d",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 4,
+              "quote": "Heaviside-Funktion",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "exponentialfunktion",
+          "value": "Exponentialfunktion",
+          "citations": [
+            {
+              "extractionId": "47421db6-8c82-4670-a980-00bf3ad9b4be",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 6,
+              "quote": "ELEMENTARSIGNALE - EXPONENTIALFUNKTION",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "zeitkonstante",
+          "value": "Zeitkonstante",
+          "citations": [
+            {
+              "extractionId": "5c20a539-f34d-4b2a-9452-ab10251d3895",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 6,
+              "quote": "τ : Zeitkonstante",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "rechteckfunktion",
+          "value": "Rechteckfunktion",
+          "citations": [
+            {
+              "extractionId": "7f28e7d8-df4a-4307-ad35-ed1463f9f1a9",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 9,
+              "quote": "den betrachteten Bereich mathematisch zu beschreiben",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "rampe",
+          "value": "Rampe",
+          "citations": [
+            {
+              "extractionId": "339dae33-2752-4ef1-9ed7-8a1fce9a3bb6",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 10,
+              "quote": "In diesem Fall werden oft Rampen benutzt.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "harmonische schwingung",
+          "value": "Harmonische Schwingung",
+          "citations": [
+            {
+              "extractionId": "4ce4a5eb-5ae8-4899-a88a-2a78193b479a",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 12,
+              "quote": "Notwendig zur Beschreibung elektromagnetischer Strahlung",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "nullphasenwinkel",
+          "value": "Nullphasenwinkel",
+          "citations": [
+            {
+              "extractionId": "ab9f72fa-3a95-4dab-bc52-79edffa6f8d8",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 12,
+              "quote": "Nullphasenwinkel",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "gedämpfte harmonische schwingung",
+          "value": "Gedämpfte harmonische Schwingung",
+          "citations": [
+            {
+              "extractionId": "83a3ca4f-b995-4ef9-88bb-85ed4507dd8b",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 13,
+              "quote": "exponentiell gedämpfte Sinusschwingung auf.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "delta-distribution",
+          "value": "Delta-Distribution",
+          "citations": [
+            {
+              "extractionId": "43ab9fc9-a237-494a-895b-db494dda3abf",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 18,
+              "quote": "Delta-Distribution bezeichnet.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "ausblendeigenschaft",
+          "value": "Ausblendeigenschaft",
+          "citations": [
+            {
+              "extractionId": "0b00ca35-cc95-426a-82fe-3ab6d0ae66c3",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 20,
+              "quote": "Die gesamte Fläche tritt dabei zum Zeitpunkt 0 auf.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "dirac-impuls",
+          "value": "Dirac-Impuls",
+          "citations": [
+            {
+              "extractionId": "43f05a46-c095-4df3-acbf-12d941d9285e",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 20,
+              "quote": "Das Integral über einen Dirac-Impulses ist ein Einheitssprung.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "linearität",
+          "value": "Linearität",
+          "citations": [
+            {
+              "extractionId": "654f5587-6e3f-4a79-82f2-773b0f13bd82",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 21,
+              "quote": "Da LTI-Systeme linear und zeitinvariant sind",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "lti-system",
+          "value": "LTI-System",
+          "citations": [
+            {
+              "extractionId": "de808b43-69ac-4fca-b9dc-fb8b4b7b38cf",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 21,
+              "quote": "Da LTI-Systeme linear und zeitinvariant sind",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "systemidentifikation",
+          "value": "Systemidentifikation",
+          "citations": [
+            {
+              "extractionId": "fedfb7f5-9869-4b4e-94ed-f5e671325753",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 21,
+              "quote": "Mittels Elementarsignalen lassen sich Systeme identifizieren.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "zeitinvarianz",
+          "value": "Zeitinvarianz",
+          "citations": [
+            {
+              "extractionId": "a78f8b81-a6f0-4e92-a6f6-94b3f5dd7218",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 21,
+              "quote": "Da LTI-Systeme linear und zeitinvariant sind",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "systemantwort",
+          "value": "Systemantwort",
+          "citations": [
+            {
+              "extractionId": "cd352c5e-ff7c-4e38-96b5-6945b41ebaae",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 23,
+              "quote": "Ist die Systemantwort",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "faltungsintegral",
+          "value": "Faltungsintegral",
+          "citations": [
+            {
+              "extractionId": "b49d7e7a-c24f-4f3e-a073-609dcc264c8b",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 26,
+              "quote": "Dieses Integral wird als Faltungsintegral bezeichnet",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "impulsantwort",
+          "value": "Impulsantwort",
+          "citations": [
+            {
+              "extractionId": "9e7c4b1e-2fc7-4062-80de-7333ed954363",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 26,
+              "quote": "Ist nun die Impulsantwort eines Systems",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "energiesignal",
+          "value": "Energiesignal",
+          "citations": [
+            {
+              "extractionId": "951015a6-0a78-4362-97e2-f4e25a13d3fb",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 30,
+              "quote": "Ein Signal wird als Energiesignal bezeichnet",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "signalenergie",
+          "value": "Signalenergie",
+          "citations": [
+            {
+              "extractionId": "bd015cf9-c773-4cd8-84cb-3bffa6ee7fab",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 30,
+              "quote": "Daraus ergibt sich die Signalenergie mit:",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "leistungssignal",
+          "value": "Leistungssignal",
+          "citations": [
+            {
+              "extractionId": "69c4981f-4ebe-41b2-aa2f-904a7004ae3a",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 32,
+              "quote": "ist ein Leistungssignale, wenn es eine unendliche",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "gerades signal",
+          "value": "Gerades Signal",
+          "citations": [
+            {
+              "extractionId": "b9770b49-4a87-49d4-ba3d-3e695f2ea242",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 33,
+              "quote": "Gerades Signal / Gerade Funktion",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "ungerades signal",
+          "value": "Ungerades Signal",
+          "citations": [
+            {
+              "extractionId": "bbebbbe4-89d6-453e-8719-151962c5f5b7",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 33,
+              "quote": "Ungerades Signal / Ungerade Funktion",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "signalzerlegung",
+          "value": "Signalzerlegung",
+          "citations": [
+            {
+              "extractionId": "e24c8c12-1c42-4d56-b314-edb6af665d7a",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 34,
+              "quote": "Jedes beliebige Signal kann in gerade und ungerade Signalteile zerlegt werden!",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "kausalität",
+          "value": "Kausalität",
+          "citations": [
+            {
+              "extractionId": "e3649a55-c0cb-4e18-acc9-2b3a4f1ff88d",
+              "sourceId": "08d4f077-5edc-4d4d-9576-e19b85830c4c",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 36,
+              "quote": "Für ein kausales Signal gilt",
+              "grounding": "text"
+            }
+          ]
+        }
+      ],
+      "labelsStatus": "Topic labels written blind by founder",
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 0,
+        "extracted": 0,
+        "matched": 0,
+        "precision": null,
+        "recall": null,
+        "kindAccuracy": null
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 0,
+        "found": 0
+      },
+      "items": []
+    },
+    {
+      "id": "dhbw-signale-systeme-frequenzanalyse",
+      "assignment": {
+        "boundCourseId": "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+        "proposals": 0,
+        "itemCourseIds": [
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a",
+          "f2c4e9a0-1ab0-4d3c-ac4c-aee17ac1de0a"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
+      "run": 1,
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "ingestion": "ready",
+      "ingestionFailure": null,
+      "extraction": "done",
+      "dropped": {
+        "ungrounded": 2,
+        "noCourse": 0,
+        "aiUseRule": 0
+      },
+      "grounding": {
+        "claimedPage": 21,
+        "otherPage": 0,
+        "nowhere": 2,
+        "examples": [
+          "nowhere: page 3, found []: \"Mittels der Eulerformel wird eine Verbindung zwischen beiden geschaffen.\"",
+          "nowhere: page 8, found []: \"Mathematiker haben nachgewiesen, dass Leistungssignale konvergieren.\""
+        ]
+      },
+      "failures": [],
+      "reviewableAfterMs": 56171,
+      "costMicroUsd": 32758,
+      "topics": {
+        "labelled": 25,
+        "extracted": 21,
+        "scored": 19,
+        "matched": 16,
+        "precision": 0.8421052631578947,
+        "recall": 0.64,
+        "figureOnly": {
+          "labelled": 0,
+          "matched": 0,
+          "recall": null
+        }
+      },
+      "topicJudgement": {
+        "model": "sonnet-5.5-topic-judge",
+        "labels": [
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Spektrum",
+              "Spektren",
+              "Frequenzspektrum",
+              "Spektrale Darstellung",
+              "Spektrale Zerlegung",
+              "Spectrum"
+            ],
+            "pages": [2, 8, 19, 20, 23],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Eulerformel", "Euler-Formel", "Euler's formula"],
+            "pages": [3, 4],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Komplexe Exponentialfunktion",
+              "Komplexe Exponentialfunktionen",
+              "Complex exponential"
+            ],
+            "pages": [3, 5],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Betrag und Phase", "Magnitude and phase"],
+            "pages": [5, 19, 22],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Phasenverschiebung",
+              "Phasenverschiebungen",
+              "Phase shift"
+            ],
+            "pages": [3, 6, 7],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Konjugiert komplexes Paar",
+              "Konjugiert komplexe Koeffizienten",
+              "Konjugiert komplexe Zahlen"
+            ],
+            "pages": [4, 7, 10, 11, 12, 23],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Drehzeiger",
+              "Zeiger",
+              "Gegenläufige Zeiger",
+              "Phasor"
+            ],
+            "pages": [6, 12, 23],
+            "optional": true,
+            "figureOnly": true
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Fourier-Reihe",
+              "Komplexe Fourier-Reihe",
+              "Fourier series"
+            ],
+            "pages": [8, 9, 10, 13, 22, 24, 30, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Zeitbereich", "Time domain"],
+            "pages": [9, 28],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Frequenzraum", "Frequenzbereich", "Frequency domain"],
+            "pages": [9],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Amplituden-Phasen-Form",
+              "Amplituden-Phasenform",
+              "Amplitude-phase form"
+            ],
+            "pages": [11, 12],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Komplexwertige Signale",
+              "Komplexwertiges Signal",
+              "Complex-valued signals"
+            ],
+            "pages": [11],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Fourier-Koeffizienten",
+              "Koeffizienten der Fourier-Reihe",
+              "Fourier coefficients"
+            ],
+            "pages": [10, 13, 16, 17, 18, 19, 22, 23],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Orthogonalität",
+              "Orthogonale Funktionen",
+              "Orthogonality"
+            ],
+            "pages": [13, 14, 15],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "L2-Skalarprodukt",
+              "L²-Skalarprodukt",
+              "L2 inner product"
+            ],
+            "pages": [14, 16, 17],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Konvergenz der Fourier-Reihe",
+              "Convergence of Fourier series"
+            ],
+            "pages": [8, 22],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Linienspektrum",
+              "Linienspektren",
+              "Spektrallinien",
+              "Line spectrum"
+            ],
+            "pages": [23, 24],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Negative Frequenzen", "Negative Frequency"],
+            "pages": [23],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Nichtperiodisches Signal",
+              "Nichtperiodische Signale",
+              "Aperiodisches Signal"
+            ],
+            "pages": [24, 30, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Fourier-Transformation",
+              "Fourier-Transformierte",
+              "Fourier transform",
+              "Hintransformation",
+              "Fourier-Hintransformation"
+            ],
+            "pages": [24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Grenzübergang zur Fourier-Transformation",
+              "Grenzwertübergang zur Fourier-Transformation"
+            ],
+            "pages": [24, 25, 26],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Spektralfunktion",
+              "Kontinuierliche Spektralfunktion",
+              "Kontinuierliches Spektrum"
+            ],
+            "pages": [25, 26],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Rücktransformation",
+              "Inverse Fourier-Transformation",
+              "Inverse Fourier transform"
+            ],
+            "pages": [27, 29],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Integraltransformation",
+              "Integraltransformationen",
+              "Integraloperator",
+              "Integral transform"
+            ],
+            "pages": [28],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Transformationskern", "Integralkern"],
+            "pages": [28],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Laplace-Transformation", "Laplace transform"],
+            "pages": [28],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Transformationspaar",
+              "Korrespondenz",
+              "Fourier-Korrespondenz",
+              "Fourier-Paar"
+            ],
+            "pages": [29, 31, 32],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Gleichanteil",
+              "Gleichwert",
+              "Mittelwert",
+              "DC component"
+            ],
+            "pages": [30, 32, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Grundschwingung", "Fundamental"],
+            "pages": [30, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Oberschwingungen",
+              "Oberschwingung",
+              "Oberwellen",
+              "Harmonics"
+            ],
+            "pages": [30, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Linearität der Fourier-Transformation",
+              "Linearity of the Fourier transform"
+            ],
+            "pages": [30, 33],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Dirac-Impuls",
+              "Delta-Distribution",
+              "Dirac-Funktion",
+              "Dirac delta"
+            ],
+            "pages": [31, 32],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ausblendeigenschaft",
+              "Siebeigenschaft",
+              "Sifting property"
+            ],
+            "pages": [31, 32],
+            "optional": true,
+            "figureOnly": false
+          }
+        ],
+        "extracted": [
+          {
+            "course": "Signale und Systeme",
+            "key": "komplexe exponentialfunktion",
+            "value": "komplexe Exponentialfunktion"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "phasenverschiebung",
+            "value": "Phasenverschiebung"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "fourier-reihe",
+            "value": "Fourier-Reihe"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "grundkreisfrequenz",
+            "value": "Grundkreisfrequenz"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "amplituden-phasen-form",
+            "value": "Amplituden-Phasen-Form"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "konjugiert komplexes paar",
+            "value": "konjugiert komplexes Paar"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "l2-skalarprodukt",
+            "value": "L2-Skalarprodukt"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "orthogonalität",
+            "value": "Orthogonalität"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "koeffizienten der fourier-reihe",
+            "value": "Koeffizienten der Fourier-Reihe"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "linienspektrum",
+            "value": "Linienspektrum"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "negative frequenzen",
+            "value": "negative Frequenzen"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "nichtperiodische signale",
+            "value": "nichtperiodische Signale"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "periodische fortsetzung",
+            "value": "periodische Fortsetzung"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "grenzwertübergang",
+            "value": "Grenzwertübergang"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "hintransformation",
+            "value": "Hintransformation"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "rücktransformation",
+            "value": "Rücktransformation"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "fourier-transformation",
+            "value": "Fourier-Transformation"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "integraltransformation",
+            "value": "Integraltransformation"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "gleichanteil",
+            "value": "Gleichanteil"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "ausblendeigenschaft",
+            "value": "Ausblendeigenschaft"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "dirac-funktion",
+            "value": "Dirac-Funktion"
+          }
+        ],
+        "decisions": [
+          2,
+          4,
+          7,
+          null,
+          10,
+          5,
+          14,
+          13,
+          12,
+          16,
+          17,
+          18,
+          null,
+          20,
+          null,
+          22,
+          19,
+          23,
+          27,
+          32,
+          31
+        ],
+        "failure": null,
+        "costMicroUsd": 12178
+      },
+      "topicItems": [
+        {
+          "course": "Signale und Systeme",
+          "key": "komplexe exponentialfunktion",
+          "value": "komplexe Exponentialfunktion",
+          "citations": [
+            {
+              "extractionId": "ca0020ae-6ae7-4e4b-a8b2-652b1a01ece5",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 3,
+              "quote": "Die komplexe Exponentialfunktion bieten hierfür Lösungen.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "phasenverschiebung",
+          "value": "Phasenverschiebung",
+          "citations": [
+            {
+              "extractionId": "21dbfbb6-24f1-4e1a-ab0b-a9180c26d138",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 3,
+              "quote": "Phasenverschiebungen lassen sich dann einfach umsetzen.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "fourier-reihe",
+          "value": "Fourier-Reihe",
+          "citations": [
+            {
+              "extractionId": "69d750d8-2657-4d52-bbf1-7dae9386dafc",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 8,
+              "quote": "Als komplexe Fourier-Reihe nach Joseph Fourier",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "grundkreisfrequenz",
+          "value": "Grundkreisfrequenz",
+          "citations": [
+            {
+              "extractionId": "52d1bdb5-2f69-4370-bd16-130429e2bd3c",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 8,
+              "quote": "mit einer Grundkreisfrequenz",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "amplituden-phasen-form",
+          "value": "Amplituden-Phasen-Form",
+          "citations": [
+            {
+              "extractionId": "12d53fcf-07ee-4de1-bcf7-fde3121d2961",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 11,
+              "quote": "ergibt sich die Amplituden-Phasen-Form.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "konjugiert komplexes paar",
+          "value": "konjugiert komplexes Paar",
+          "citations": [
+            {
+              "extractionId": "49c4ebfd-0267-4d99-9e88-aebab6a7416a",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 11,
+              "quote": "ein konjugiert komplexes Paar",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "l2-skalarprodukt",
+          "value": "L2-Skalarprodukt",
+          "citations": [
+            {
+              "extractionId": "32b6f2b5-ec64-43b6-b8fb-01d9f92ecfca",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 14,
+              "quote": "das L2-Skalarprodukt 0 werden",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "orthogonalität",
+          "value": "Orthogonalität",
+          "citations": [
+            {
+              "extractionId": "71603739-9d01-4d80-a25c-b48531a9a363",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 14,
+              "quote": "Für orthogonale Funktionen im Intervall [a,b] muss das L2-Skalarprodukt 0 werden",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "koeffizienten der fourier-reihe",
+          "value": "Koeffizienten der Fourier-Reihe",
+          "citations": [
+            {
+              "extractionId": "fc173528-b49b-4da7-ac4b-b3b27adb3d47",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 18,
+              "quote": "eine Formel um die Koeffizienten der Fourier-Reihe zu bestimmen",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "linienspektrum",
+          "value": "Linienspektrum",
+          "citations": [
+            {
+              "extractionId": "032fbc45-16e1-4feb-b3f9-4deea3049131",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 23,
+              "quote": "der Abstand zwischen den einzelnen Linien im Linienspektrum",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "negative frequenzen",
+          "value": "negative Frequenzen",
+          "citations": [
+            {
+              "extractionId": "138bfac1-ead2-4560-a383-3d2ddf532c22",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 23,
+              "quote": "Durch diese Betrachtung ergeben sich negative Frequenzen!",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "nichtperiodische signale",
+          "value": "nichtperiodische Signale",
+          "citations": [
+            {
+              "extractionId": "abc9761c-2c92-4bf1-bf18-034de972c460",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 24,
+              "quote": "Ein nichtperiodisches Signal kann als Grenzfall eines periodischen Signals",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "periodische fortsetzung",
+          "value": "periodische Fortsetzung",
+          "citations": [
+            {
+              "extractionId": "863da175-517d-4452-be2d-2ba274edc906",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 24,
+              "quote": "dieser Abschnitt wird anschließend periodisch",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "grenzwertübergang",
+          "value": "Grenzwertübergang",
+          "citations": [
+            {
+              "extractionId": "1b742e63-b7bf-4172-9b70-e32ec6755e8b",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 26,
+              "quote": "Hier ist der Übergang für Bestimmung der Koeffizient dargestellt",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "hintransformation",
+          "value": "Hintransformation",
+          "citations": [
+            {
+              "extractionId": "a8f19d8a-33fe-4878-8f7b-4ef1854a09f5",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 27,
+              "quote": "wird als Hintransformation bezeichnet.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "rücktransformation",
+          "value": "Rücktransformation",
+          "citations": [
+            {
+              "extractionId": "74600e43-6714-4ffa-966b-453812661ffc",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 27,
+              "quote": "wird als Rücktransformation bezeichnet.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "fourier-transformation",
+          "value": "Fourier-Transformation",
+          "citations": [
+            {
+              "extractionId": "8418faaa-c6a1-461a-abfc-754e5d261066",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 28,
+              "quote": "Die Fourier-Transformation gehört zur Gruppe der Integraltransformation",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "integraltransformation",
+          "value": "Integraltransformation",
+          "citations": [
+            {
+              "extractionId": "1411b369-f6f9-4a63-9d4c-b7388cabca84",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 28,
+              "quote": "Die Fourier-Transformation gehört zur Gruppe der Integraltransformation",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "gleichanteil",
+          "value": "Gleichanteil",
+          "citations": [
+            {
+              "extractionId": "f664da15-6bbf-4f0c-8f6a-3e1dfeed3b95",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 30,
+              "quote": "aus einem Gleichanteil",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "ausblendeigenschaft",
+          "value": "Ausblendeigenschaft",
+          "citations": [
+            {
+              "extractionId": "1d187f95-b2e3-4b65-ab60-23aa801fd197",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 31,
+              "quote": "Wegen der Ausblendeigenschaft der Dirac-Funktion ergibt sich",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "dirac-funktion",
+          "value": "Dirac-Funktion",
+          "citations": [
+            {
+              "extractionId": "1491c723-69c6-4c47-a596-605db1114a54",
+              "sourceId": "2f89d2a8-626b-41a3-bb1e-2e8a4a06752b",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 31,
+              "quote": "Wegen der Ausblendeigenschaft der Dirac-Funktion ergibt sich",
+              "grounding": "text"
+            }
+          ]
+        }
+      ],
+      "labelsStatus": "Topic labels written blind by founder",
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 0,
+        "extracted": 0,
+        "matched": 0,
+        "precision": null,
+        "recall": null,
+        "kindAccuracy": null
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 0,
+        "found": 0
+      },
+      "items": []
+    },
+    {
+      "id": "dhbw-signale-systeme-signale",
+      "assignment": {
+        "boundCourseId": "e09130c2-27b0-4a22-81f5-329fd2c66235",
+        "proposals": 0,
+        "itemCourseIds": [
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235",
+          "e09130c2-27b0-4a22-81f5-329fd2c66235"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
+      "run": 2,
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "ingestion": "ready",
+      "ingestionFailure": null,
+      "extraction": "done",
+      "dropped": {
+        "ungrounded": 1,
+        "noCourse": 0,
+        "aiUseRule": 0
+      },
+      "grounding": {
+        "claimedPage": 23,
+        "otherPage": 0,
+        "nowhere": 1,
+        "examples": [
+          "nowhere: page 20, found []: \"Dadurch ergibt sich eine Ausblendeigenschaft.\""
+        ]
+      },
+      "failures": [],
+      "reviewableAfterMs": 64491,
+      "costMicroUsd": 34034,
+      "topics": {
+        "labelled": 24,
+        "extracted": 23,
+        "scored": 20,
+        "matched": 20,
+        "precision": 1,
+        "recall": 0.8333333333333334,
+        "figureOnly": {
+          "labelled": 0,
+          "matched": 0,
+          "recall": null
+        }
+      },
+      "topicJudgement": {
+        "model": "sonnet-5.5-topic-judge",
+        "labels": [
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Elementarsignal",
+              "Elementarsignale",
+              "Elementary signals"
+            ],
+            "pages": [2, 21],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Testsignal", "Testsignale", "Test signal"],
+            "pages": [2],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Distributionstheorie",
+              "Distributionen",
+              "Distribution theory"
+            ],
+            "pages": [2],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Konstante", "Konstantes Signal", "Konstante Funktion"],
+            "pages": [3],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Einheitssprung",
+              "Sprungfunktion",
+              "Schritt-Funktion",
+              "Schrittfunktion",
+              "Heaviside-Funktion",
+              "Unit step",
+              "Step function"
+            ],
+            "pages": [4, 5, 15],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Exponentialfunktion",
+              "Exponentialsignal",
+              "Exponential function"
+            ],
+            "pages": [6, 7],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Zeitkonstante", "Time constant"],
+            "pages": [6, 7, 8],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Systemidentifikation", "System identification"],
+            "pages": [8, 21],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Rechteckfunktion",
+              "Rechteck",
+              "Rechteckimpuls",
+              "Rechtecksignal",
+              "Rect-Funktion",
+              "Rectangular function"
+            ],
+            "pages": [9, 22, 23, 24],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ausblendeigenschaft",
+              "Siebeigenschaft",
+              "Sifting property"
+            ],
+            "pages": [9, 20, 25],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Rampenfunktion",
+              "Rampe",
+              "Rampensignal",
+              "Ramp function"
+            ],
+            "pages": [10, 11, 29],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Harmonische Schwingung",
+              "Harmonische Schwingungen",
+              "Sinusschwingung",
+              "Kosinusschwingung",
+              "Harmonic oscillation"
+            ],
+            "pages": [12],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Nullphasenwinkel", "Nullphase", "Initial phase"],
+            "pages": [12],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Gedämpfte harmonische Schwingung",
+              "Gedämpfte harmonische Schwingungen",
+              "Gedämpfte Sinusschwingung",
+              "Exponentiell gedämpfte Sinusschwingung",
+              "Damped oscillation"
+            ],
+            "pages": [13, 14],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ableitung nichtstetiger Funktionen",
+              "Ableitung unstetiger Funktionen"
+            ],
+            "pages": [15, 16, 17],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Delta-Distribution",
+              "Dirac-Impuls",
+              "Dirac-Funktion",
+              "Dirac-Stoß",
+              "Stoßfunktion",
+              "Einheitsimpulsfunktion",
+              "Nadelimpuls",
+              "Impulsfunktion",
+              "Dirac delta"
+            ],
+            "pages": [16, 17, 18, 19, 20, 25],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Funktionenfolge", "Funktionenfolgen"],
+            "pages": [16, 19],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ideale Abtastung",
+              "Ideale Abtastungen",
+              "Ideal sampling"
+            ],
+            "pages": [20],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Systemantwort",
+              "Antwort eines Systems",
+              "System response"
+            ],
+            "pages": [21, 22, 23, 24, 25, 26],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Linearität",
+              "Linearity",
+              "Superposition",
+              "Überlagerung"
+            ],
+            "pages": [21, 23],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Zeitinvarianz", "Time invariance"],
+            "pages": [21, 23],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "LTI-System",
+              "LTI-Systeme",
+              "LTI System",
+              "Lineares zeitinvariantes System"
+            ],
+            "pages": [6, 13, 21],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Faltung",
+              "Faltungsintegral",
+              "Faltungsoperator",
+              "Convolution"
+            ],
+            "pages": [26, 27, 28],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Impulsantwort", "Impulse response"],
+            "pages": [26, 27, 28, 29, 36],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Sprungantwort", "Step response"],
+            "pages": [8, 29],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Kausalität",
+              "Kausales System",
+              "Kausales Signal",
+              "Causality"
+            ],
+            "pages": [27, 36],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Einschwingen",
+              "Einschwingvorgang",
+              "Einschwingen eines Systems"
+            ],
+            "pages": [28],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Energiesignal", "Energiesignale", "Energy signal"],
+            "pages": [30, 31],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Signalenergie",
+              "Energie eines Signals",
+              "Signal energy"
+            ],
+            "pages": [30],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Leistungssignal", "Leistungssignale", "Power signal"],
+            "pages": [32],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Signalleistung",
+              "Leistung eines Signals",
+              "Signal power"
+            ],
+            "pages": [30, 32],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Gerades Signal",
+              "Gerade Funktion",
+              "Even function",
+              "Achsensymmetrie"
+            ],
+            "pages": [33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ungerades Signal",
+              "Ungerade Funktion",
+              "Odd function",
+              "Punktsymmetrie"
+            ],
+            "pages": [33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Zerlegung in gerade und ungerade Signalanteile",
+              "Gerader Signalanteil",
+              "Ungerader Signalanteil",
+              "Gerade-ungerade-Zerlegung"
+            ],
+            "pages": [34, 35],
+            "optional": false,
+            "figureOnly": false
+          }
+        ],
+        "extracted": [
+          {
+            "course": "Signale und Systeme",
+            "key": "elementarsignal",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "testsignal",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "distributionstheorie",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "konstante",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "einheitssprung",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "zeitkonstante",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "exponentialfunktion",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "rechteckfunktion",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "rampe",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "harmonische schwingung",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "nullphasenwinkel",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "gedämpfte harmonische schwingung",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "ableitung nichtstetiger funktionen",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "delta-distribution",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "lti-system",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "systemantwort",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "impulsantwort",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "faltungsintegral",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "energiesignal",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "leistungssignal",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "gerades signal",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "ungerades signal",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "kausalität",
+            "value": ""
+          }
+        ],
+        "decisions": [
+          0, 1, 2, 3, 4, 6, 5, 8, 10, 11, 12, 13, 14, 15, 21, 18, 23, 22, 27,
+          29, 31, 32, 25
+        ],
+        "failure": null,
+        "costMicroUsd": 12234
+      },
+      "topicItems": [
+        {
+          "course": "Signale und Systeme",
+          "key": "elementarsignal",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "91daa665-7963-465b-a481-9067b5dfbbd4",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 2,
+              "quote": "Elementarsignale stellen einfache idealisierte Signale dar.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "testsignal",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "2c09f321-57b1-407e-81e1-0321cfba6293",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 2,
+              "quote": "Diese Elementarsignale werden als Testsignale bezeichnet.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "distributionstheorie",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "fc832c7a-2cd7-4d11-a646-bf4ed6b5e982",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 2,
+              "quote": "Die Distributionstheorie ermöglicht die Bestimmung der Ableitungen.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "konstante",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "c275f720-ce54-41c9-955f-e70c2a9cfc19",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 3,
+              "quote": "y(t) := 1",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "einheitssprung",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "979bb1db-5ad4-4ef1-9f21-8da841dcc34e",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 4,
+              "quote": "Schritt-Funktion",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "zeitkonstante",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "d7365e43-bd4e-4f06-9927-d1d08e0e031b",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 6,
+              "quote": "τ : Zeitkonstante",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "exponentialfunktion",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "e1a52c5e-2df7-4c3c-a51e-5bac222e6544",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 6,
+              "quote": "Wachstumsprozesse lassen sich damit beschreiben.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "rechteckfunktion",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "afdf916f-bcd2-4bcf-89df-9606987ff284",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 9,
+              "quote": "Signale können in der Praxis nicht von -∞ bis +∞ betrachtet werden",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "rampe",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "f157c2f7-1c81-405b-8ae3-19d1c820c872",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 10,
+              "quote": "In diesem Fall werden oft Rampen benutzt.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "harmonische schwingung",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "1e612242-7533-4df3-a68d-1efed93f80e5",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 12,
+              "quote": "Notwendig zur Beschreibung elektromagnetischer Strahlung",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "nullphasenwinkel",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "68806429-4e31-4978-8a6c-031d63e14e60",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 12,
+              "quote": "A: Amplitude, φ0 : Nullphasenwinkel",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "gedämpfte harmonische schwingung",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "c18fb5dc-28f4-4f72-b970-03ab7ca4aac9",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 13,
+              "quote": "Oftmals tritt bei LTI-Systemen eine exponentiell gedämpfte Sinusschwingung auf.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "ableitung nichtstetiger funktionen",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "cd04f326-0cd9-4788-9444-e8eca5afea2d",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 15,
+              "quote": "Am Eingang von Systemen können nichtstetige Funktionen anliegen.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "delta-distribution",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "950e336b-170e-498e-b3c5-6b1c6558242b",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 18,
+              "quote": "Die Ableitung des Sprungs wird als Delta-Distribution bezeichnet.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "lti-system",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "e5e23293-75e4-47be-b33c-e97a73163955",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 21,
+              "quote": "Da LTI-Systeme linear und zeitinvariant sind",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "systemantwort",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "731a0f4a-64e2-4718-8c8f-2f9165f5e110",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 23,
+              "quote": "Beachte: Ist die Systemantwort länger als die Rechteckbreite",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "impulsantwort",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "7f51970a-c3a3-4b99-8e64-a083e47b9952",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 26,
+              "quote": "Ist nun die Impulsantwort eines Systems",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "faltungsintegral",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "b829451f-1279-4abe-b197-cf0ad2c4bafb",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 26,
+              "quote": "Dieses Integral wird als Faltungsintegral bezeichnet",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "energiesignal",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "981b2881-e123-4ae2-81eb-5b5daa545e1d",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 30,
+              "quote": "Ein Signal wird als Energiesignal bezeichnet",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "leistungssignal",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "9edacd50-f306-4e8e-b3af-d4a6a539b6a1",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 32,
+              "quote": "Das reell- oder komplexwertige Signal g(t) ist ein Leistungssignale",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "gerades signal",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "7001d67e-b420-4b2d-9bcb-afe3ff8689c0",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 33,
+              "quote": "Für ein gerades Signal gilt",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "ungerades signal",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "6b8f7974-30a1-4e25-95ed-081e2c93ac72",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 33,
+              "quote": "Für ein ungerades Signal gilt",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "kausalität",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "f8a4ac25-707a-4263-b4ef-5204c00ec5c8",
+              "sourceId": "b4d2ed78-9c4b-4014-b0cf-04285f4daf8a",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 36,
+              "quote": "Kausalität ist wichtig bei der Betrachtung von Systemen",
+              "grounding": "text"
+            }
+          ]
+        }
+      ],
+      "labelsStatus": "Topic labels written blind by founder",
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 0,
+        "extracted": 0,
+        "matched": 0,
+        "precision": null,
+        "recall": null,
+        "kindAccuracy": null
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 0,
+        "found": 0
+      },
+      "items": []
+    },
+    {
+      "id": "dhbw-signale-systeme-frequenzanalyse",
+      "assignment": {
+        "boundCourseId": "485163a6-0342-4d5d-b963-160cfaa42f74",
+        "proposals": 0,
+        "itemCourseIds": [
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74",
+          "485163a6-0342-4d5d-b963-160cfaa42f74"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
+      "run": 2,
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "ingestion": "ready",
+      "ingestionFailure": null,
+      "extraction": "done",
+      "dropped": {
+        "ungrounded": 2,
+        "noCourse": 0,
+        "aiUseRule": 0
+      },
+      "grounding": {
+        "claimedPage": 20,
+        "otherPage": 0,
+        "nowhere": 2,
+        "examples": [
+          "nowhere: page 3, found []: \"Mittels der Eulerformel wird eine Verbindung zwischen beiden geschaffen.\"",
+          "nowhere: page 8, found []: \"Mathematiker haben nachgewiesen, dass Leistungssignale konvergieren.\""
+        ]
+      },
+      "failures": [],
+      "reviewableAfterMs": 60550,
+      "costMicroUsd": 31632,
+      "topics": {
+        "labelled": 25,
+        "extracted": 20,
+        "scored": 18,
+        "matched": 14,
+        "precision": 0.7777777777777778,
+        "recall": 0.56,
+        "figureOnly": {
+          "labelled": 0,
+          "matched": 0,
+          "recall": null
+        }
+      },
+      "topicJudgement": {
+        "model": "sonnet-5.5-topic-judge",
+        "labels": [
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Spektrum",
+              "Spektren",
+              "Frequenzspektrum",
+              "Spektrale Darstellung",
+              "Spektrale Zerlegung",
+              "Spectrum"
+            ],
+            "pages": [2, 8, 19, 20, 23],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Eulerformel", "Euler-Formel", "Euler's formula"],
+            "pages": [3, 4],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Komplexe Exponentialfunktion",
+              "Komplexe Exponentialfunktionen",
+              "Complex exponential"
+            ],
+            "pages": [3, 5],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Betrag und Phase", "Magnitude and phase"],
+            "pages": [5, 19, 22],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Phasenverschiebung",
+              "Phasenverschiebungen",
+              "Phase shift"
+            ],
+            "pages": [3, 6, 7],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Konjugiert komplexes Paar",
+              "Konjugiert komplexe Koeffizienten",
+              "Konjugiert komplexe Zahlen"
+            ],
+            "pages": [4, 7, 10, 11, 12, 23],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Drehzeiger",
+              "Zeiger",
+              "Gegenläufige Zeiger",
+              "Phasor"
+            ],
+            "pages": [6, 12, 23],
+            "optional": true,
+            "figureOnly": true
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Fourier-Reihe",
+              "Komplexe Fourier-Reihe",
+              "Fourier series"
+            ],
+            "pages": [8, 9, 10, 13, 22, 24, 30, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Zeitbereich", "Time domain"],
+            "pages": [9, 28],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Frequenzraum", "Frequenzbereich", "Frequency domain"],
+            "pages": [9],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Amplituden-Phasen-Form",
+              "Amplituden-Phasenform",
+              "Amplitude-phase form"
+            ],
+            "pages": [11, 12],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Komplexwertige Signale",
+              "Komplexwertiges Signal",
+              "Complex-valued signals"
+            ],
+            "pages": [11],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Fourier-Koeffizienten",
+              "Koeffizienten der Fourier-Reihe",
+              "Fourier coefficients"
+            ],
+            "pages": [10, 13, 16, 17, 18, 19, 22, 23],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Orthogonalität",
+              "Orthogonale Funktionen",
+              "Orthogonality"
+            ],
+            "pages": [13, 14, 15],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "L2-Skalarprodukt",
+              "L²-Skalarprodukt",
+              "L2 inner product"
+            ],
+            "pages": [14, 16, 17],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Konvergenz der Fourier-Reihe",
+              "Convergence of Fourier series"
+            ],
+            "pages": [8, 22],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Linienspektrum",
+              "Linienspektren",
+              "Spektrallinien",
+              "Line spectrum"
+            ],
+            "pages": [23, 24],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Negative Frequenzen", "Negative Frequency"],
+            "pages": [23],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Nichtperiodisches Signal",
+              "Nichtperiodische Signale",
+              "Aperiodisches Signal"
+            ],
+            "pages": [24, 30, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Fourier-Transformation",
+              "Fourier-Transformierte",
+              "Fourier transform",
+              "Hintransformation",
+              "Fourier-Hintransformation"
+            ],
+            "pages": [24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Grenzübergang zur Fourier-Transformation",
+              "Grenzwertübergang zur Fourier-Transformation"
+            ],
+            "pages": [24, 25, 26],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Spektralfunktion",
+              "Kontinuierliche Spektralfunktion",
+              "Kontinuierliches Spektrum"
+            ],
+            "pages": [25, 26],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Rücktransformation",
+              "Inverse Fourier-Transformation",
+              "Inverse Fourier transform"
+            ],
+            "pages": [27, 29],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Integraltransformation",
+              "Integraltransformationen",
+              "Integraloperator",
+              "Integral transform"
+            ],
+            "pages": [28],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Transformationskern", "Integralkern"],
+            "pages": [28],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Laplace-Transformation", "Laplace transform"],
+            "pages": [28],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Transformationspaar",
+              "Korrespondenz",
+              "Fourier-Korrespondenz",
+              "Fourier-Paar"
+            ],
+            "pages": [29, 31, 32],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Gleichanteil",
+              "Gleichwert",
+              "Mittelwert",
+              "DC component"
+            ],
+            "pages": [30, 32, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Grundschwingung", "Fundamental"],
+            "pages": [30, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Oberschwingungen",
+              "Oberschwingung",
+              "Oberwellen",
+              "Harmonics"
+            ],
+            "pages": [30, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Linearität der Fourier-Transformation",
+              "Linearity of the Fourier transform"
+            ],
+            "pages": [30, 33],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Dirac-Impuls",
+              "Delta-Distribution",
+              "Dirac-Funktion",
+              "Dirac delta"
+            ],
+            "pages": [31, 32],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ausblendeigenschaft",
+              "Siebeigenschaft",
+              "Sifting property"
+            ],
+            "pages": [31, 32],
+            "optional": true,
+            "figureOnly": false
+          }
+        ],
+        "extracted": [
+          {
+            "course": "Signale und Systeme",
+            "key": "phasenverschiebung",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "betrag",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "phase",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "grundkreisfrequenz",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "fourier-reihe",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "konvergenz",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "amplituden-phasen-form",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "konjugiert komplexes paar",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "orthogonalität",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "l2-skalarprodukt",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "fourier-koeffizienten",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "linienspektrum",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "negative frequenzen",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "hintransformation",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "rücktransformation",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "fourier-transformation",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "integraltransformation",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "dirac-funktion",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "gleichanteil",
+            "value": ""
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "oberschwingung",
+            "value": ""
+          }
+        ],
+        "decisions": [
+          4,
+          null,
+          null,
+          null,
+          7,
+          15,
+          10,
+          5,
+          13,
+          14,
+          12,
+          16,
+          17,
+          null,
+          22,
+          19,
+          23,
+          31,
+          27,
+          29
+        ],
+        "failure": null,
+        "costMicroUsd": 11492
+      },
+      "topicItems": [
+        {
+          "course": "Signale und Systeme",
+          "key": "phasenverschiebung",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "57364e1d-4284-4d48-848e-8fee9565d99b",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 3,
+              "quote": "Phasenverschiebungen lassen sich dann einfach umsetzen.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "betrag",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "ce007c01-12a6-4f97-94e9-773ce8fc0750",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 5,
+              "quote": "Betrag",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "phase",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "4414619b-478e-41d3-8495-602d98305b6d",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 5,
+              "quote": "Phase",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "grundkreisfrequenz",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "70045762-0f68-4d82-87bf-f130e11aaa4a",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 8,
+              "quote": "mit einer Grundkreisfrequenz",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "fourier-reihe",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "6884cb90-2648-4d64-92ff-a8969cfb1a90",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 8,
+              "quote": "Als komplexe Fourier-Reihe nach Joseph Fourier",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "konvergenz",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "fae8db01-ce9f-48ae-b46f-f67079d7d048",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 8,
+              "quote": "Die Konvergenzbetrachtung ist in diesem Fall sehr komplex.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "amplituden-phasen-form",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "7eeb9ea7-e4b9-4130-b1c6-fbd7a9938958",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 11,
+              "quote": "ergibt sich die Amplituden-Phasen-Form.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "konjugiert komplexes paar",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "794e666d-89f1-4c8e-a546-ee97fa6e6566",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 11,
+              "quote": "ein konjugiert komplexes Paar",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "orthogonalität",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "c69633cb-f21f-4af1-b303-af0cfd7d5c23",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 13,
+              "quote": "Mittels Nachweis der Orthogonalität kann eine Eineindeutigkeit garantieren werden.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "l2-skalarprodukt",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "f7a7f0e9-a866-4334-b0fe-3293d5f5f647",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 14,
+              "quote": "das L2-Skalarprodukt 0 werden",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "fourier-koeffizienten",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "735188f7-0330-49c1-a901-31f7708d8c74",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 18,
+              "quote": "Nun kennen wir eine Formel um die Koeffizienten der Fourier-Reihe zu bestimmen",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "linienspektrum",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "a96d1844-bec8-4757-bca3-cddcf79cc558",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 23,
+              "quote": "im Linienspektrum",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "negative frequenzen",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "a20e8453-bbe7-4ebc-8a30-4c06064d8da8",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 23,
+              "quote": "Durch diese Betrachtung ergeben sich negative Frequenzen!",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "hintransformation",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "2573b948-8611-4514-97d7-3fa89d190d69",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 27,
+              "quote": "wird als Hintransformation bezeichnet.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "rücktransformation",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "cb7ce538-94e1-424e-a7bc-402075458a1a",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 27,
+              "quote": "wird als Rücktransformation bezeichnet.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "fourier-transformation",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "7a8e4514-4ac6-4488-b1c3-893b833863fa",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 28,
+              "quote": "Die Fourier-Transformation gehört zur Gruppe der Integraltransformation",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "integraltransformation",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "6d5bfc34-8993-4ef7-965e-3f25f5a94cb8",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 28,
+              "quote": "gehört zur Gruppe der Integraltransformation",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "dirac-funktion",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "34c4456c-4b62-42ad-993e-044c8426eb34",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 31,
+              "quote": "Wegen der Ausblendeigenschaft der Dirac-Funktion ergibt sich",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "gleichanteil",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "eb26847d-612c-458e-85e4-591e118ffb1c",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 33,
+              "quote": "sich aus einem Gleichanteil",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "oberschwingung",
+          "value": "",
+          "citations": [
+            {
+              "extractionId": "d65ee18d-463b-4d83-866f-f69d0c8ad459",
+              "sourceId": "5cccf037-346a-4651-aa59-1231919eea7a",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 33,
+              "quote": "vielen Oberschwingungen",
+              "grounding": "text"
+            }
+          ]
+        }
+      ],
+      "labelsStatus": "Topic labels written blind by founder",
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 0,
+        "extracted": 0,
+        "matched": 0,
+        "precision": null,
+        "recall": null,
+        "kindAccuracy": null
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 0,
+        "found": 0
+      },
+      "items": []
+    },
+    {
+      "id": "dhbw-signale-systeme-signale",
+      "assignment": {
+        "boundCourseId": "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+        "proposals": 0,
+        "itemCourseIds": [
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334",
+          "ddbfdaf1-1bfc-47f6-994e-99e23a301334"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
+      "run": 3,
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "ingestion": "ready",
+      "ingestionFailure": null,
+      "extraction": "done",
+      "dropped": {
+        "ungrounded": 0,
+        "noCourse": 0,
+        "aiUseRule": 0
+      },
+      "grounding": {
+        "claimedPage": 28,
+        "otherPage": 0,
+        "nowhere": 0,
+        "examples": []
+      },
+      "failures": [],
+      "reviewableAfterMs": 125086,
+      "costMicroUsd": 38098,
+      "topics": {
+        "labelled": 24,
+        "extracted": 28,
+        "scored": 23,
+        "matched": 21,
+        "precision": 0.9130434782608695,
+        "recall": 0.875,
+        "figureOnly": {
+          "labelled": 0,
+          "matched": 0,
+          "recall": null
+        }
+      },
+      "topicJudgement": {
+        "model": "sonnet-5.5-topic-judge",
+        "labels": [
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Elementarsignal",
+              "Elementarsignale",
+              "Elementary signals"
+            ],
+            "pages": [2, 21],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Testsignal", "Testsignale", "Test signal"],
+            "pages": [2],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Distributionstheorie",
+              "Distributionen",
+              "Distribution theory"
+            ],
+            "pages": [2],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Konstante", "Konstantes Signal", "Konstante Funktion"],
+            "pages": [3],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Einheitssprung",
+              "Sprungfunktion",
+              "Schritt-Funktion",
+              "Schrittfunktion",
+              "Heaviside-Funktion",
+              "Unit step",
+              "Step function"
+            ],
+            "pages": [4, 5, 15],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Exponentialfunktion",
+              "Exponentialsignal",
+              "Exponential function"
+            ],
+            "pages": [6, 7],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Zeitkonstante", "Time constant"],
+            "pages": [6, 7, 8],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Systemidentifikation", "System identification"],
+            "pages": [8, 21],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Rechteckfunktion",
+              "Rechteck",
+              "Rechteckimpuls",
+              "Rechtecksignal",
+              "Rect-Funktion",
+              "Rectangular function"
+            ],
+            "pages": [9, 22, 23, 24],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ausblendeigenschaft",
+              "Siebeigenschaft",
+              "Sifting property"
+            ],
+            "pages": [9, 20, 25],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Rampenfunktion",
+              "Rampe",
+              "Rampensignal",
+              "Ramp function"
+            ],
+            "pages": [10, 11, 29],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Harmonische Schwingung",
+              "Harmonische Schwingungen",
+              "Sinusschwingung",
+              "Kosinusschwingung",
+              "Harmonic oscillation"
+            ],
+            "pages": [12],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Nullphasenwinkel", "Nullphase", "Initial phase"],
+            "pages": [12],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Gedämpfte harmonische Schwingung",
+              "Gedämpfte harmonische Schwingungen",
+              "Gedämpfte Sinusschwingung",
+              "Exponentiell gedämpfte Sinusschwingung",
+              "Damped oscillation"
+            ],
+            "pages": [13, 14],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ableitung nichtstetiger Funktionen",
+              "Ableitung unstetiger Funktionen"
+            ],
+            "pages": [15, 16, 17],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Delta-Distribution",
+              "Dirac-Impuls",
+              "Dirac-Funktion",
+              "Dirac-Stoß",
+              "Stoßfunktion",
+              "Einheitsimpulsfunktion",
+              "Nadelimpuls",
+              "Impulsfunktion",
+              "Dirac delta"
+            ],
+            "pages": [16, 17, 18, 19, 20, 25],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Funktionenfolge", "Funktionenfolgen"],
+            "pages": [16, 19],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ideale Abtastung",
+              "Ideale Abtastungen",
+              "Ideal sampling"
+            ],
+            "pages": [20],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Systemantwort",
+              "Antwort eines Systems",
+              "System response"
+            ],
+            "pages": [21, 22, 23, 24, 25, 26],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Linearität",
+              "Linearity",
+              "Superposition",
+              "Überlagerung"
+            ],
+            "pages": [21, 23],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Zeitinvarianz", "Time invariance"],
+            "pages": [21, 23],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "LTI-System",
+              "LTI-Systeme",
+              "LTI System",
+              "Lineares zeitinvariantes System"
+            ],
+            "pages": [6, 13, 21],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Faltung",
+              "Faltungsintegral",
+              "Faltungsoperator",
+              "Convolution"
+            ],
+            "pages": [26, 27, 28],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Impulsantwort", "Impulse response"],
+            "pages": [26, 27, 28, 29, 36],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Sprungantwort", "Step response"],
+            "pages": [8, 29],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Kausalität",
+              "Kausales System",
+              "Kausales Signal",
+              "Causality"
+            ],
+            "pages": [27, 36],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Einschwingen",
+              "Einschwingvorgang",
+              "Einschwingen eines Systems"
+            ],
+            "pages": [28],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Energiesignal", "Energiesignale", "Energy signal"],
+            "pages": [30, 31],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Signalenergie",
+              "Energie eines Signals",
+              "Signal energy"
+            ],
+            "pages": [30],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Leistungssignal", "Leistungssignale", "Power signal"],
+            "pages": [32],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Signalleistung",
+              "Leistung eines Signals",
+              "Signal power"
+            ],
+            "pages": [30, 32],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Gerades Signal",
+              "Gerade Funktion",
+              "Even function",
+              "Achsensymmetrie"
+            ],
+            "pages": [33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ungerades Signal",
+              "Ungerade Funktion",
+              "Odd function",
+              "Punktsymmetrie"
+            ],
+            "pages": [33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Zerlegung in gerade und ungerade Signalanteile",
+              "Gerader Signalanteil",
+              "Ungerader Signalanteil",
+              "Gerade-ungerade-Zerlegung"
+            ],
+            "pages": [34, 35],
+            "optional": false,
+            "figureOnly": false
+          }
+        ],
+        "extracted": [
+          {
+            "course": "Signale und Systeme",
+            "key": "distributionstheorie",
+            "value": "Distributionstheorie"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "elementarsignal",
+            "value": "Elementarsignal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "testsignal",
+            "value": "Testsignal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "unstetige funktion",
+            "value": "Unstetige Funktion"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "konstante",
+            "value": "Konstante"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "einheitssprung",
+            "value": "Einheitssprung"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "exponentialfunktion",
+            "value": "Exponentialfunktion"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "zeitkonstante",
+            "value": "Zeitkonstante"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "rechteckfunktion",
+            "value": "Rechteckfunktion"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "rampe",
+            "value": "Rampe"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "harmonische schwingung",
+            "value": "Harmonische Schwingung"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "nullphasenwinkel",
+            "value": "Nullphasenwinkel"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "gedämpfte harmonische schwingung",
+            "value": "Gedämpfte harmonische Schwingung"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "delta-distribution",
+            "value": "Delta-Distribution"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "ausblendeigenschaft",
+            "value": "Ausblendeigenschaft"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "lti-system",
+            "value": "LTI-System"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "linearität",
+            "value": "Linearität"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "systemantwort",
+            "value": "Systemantwort"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "zeitinvarianz",
+            "value": "Zeitinvarianz"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "faltungsintegral",
+            "value": "Faltungsintegral"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "impulsantwort",
+            "value": "Impulsantwort"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "energiesignal",
+            "value": "Energiesignal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "signalenergie",
+            "value": "Signalenergie"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "leistungssignal",
+            "value": "Leistungssignal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "gerades signal",
+            "value": "Gerades Signal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "ungerades signal",
+            "value": "Ungerades Signal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "akausales signal",
+            "value": "Akausales Signal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "kausalität",
+            "value": "Kausalität"
+          }
+        ],
+        "decisions": [
+          2,
+          0,
+          1,
+          null,
+          3,
+          4,
+          5,
+          6,
+          8,
+          10,
+          11,
+          12,
+          13,
+          15,
+          9,
+          21,
+          19,
+          18,
+          20,
+          22,
+          23,
+          27,
+          28,
+          29,
+          31,
+          32,
+          null,
+          25
+        ],
+        "failure": null,
+        "costMicroUsd": 13730
+      },
+      "topicItems": [
+        {
+          "course": "Signale und Systeme",
+          "key": "distributionstheorie",
+          "value": "Distributionstheorie",
+          "citations": [
+            {
+              "extractionId": "8925ede1-d013-4861-ac4f-e588b1c00530",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 2,
+              "quote": "Die Distributionstheorie ermöglicht die Bestimmung der Ableitungen.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "elementarsignal",
+          "value": "Elementarsignal",
+          "citations": [
+            {
+              "extractionId": "d31e34ee-4f3a-48eb-baaf-b1926878247c",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 2,
+              "quote": "Elementarsignale stellen einfache idealisierte Signale dar.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "testsignal",
+          "value": "Testsignal",
+          "citations": [
+            {
+              "extractionId": "d4e2a041-3ab7-4f31-bbe1-9a9f5b8d378c",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 2,
+              "quote": "Diese Elementarsignale werden als Testsignale bezeichnet",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "unstetige funktion",
+          "value": "Unstetige Funktion",
+          "citations": [
+            {
+              "extractionId": "77c22201-a5e8-4a71-b633-dcec34a1f8d8",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 2,
+              "quote": "Unstetige Funktionen sind im klassischen Sinne nicht differenzierbar.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "konstante",
+          "value": "Konstante",
+          "citations": [
+            {
+              "extractionId": "4437cf2e-ad90-4d16-86af-8e28e215096e",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 3,
+              "quote": "ELEMENTARSIGNALE - KONSTANTE",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "einheitssprung",
+          "value": "Einheitssprung",
+          "citations": [
+            {
+              "extractionId": "ae3571e9-dce8-4c07-a61a-77e0551c7a05",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 4,
+              "quote": "Heaviside-Funktion",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "exponentialfunktion",
+          "value": "Exponentialfunktion",
+          "citations": [
+            {
+              "extractionId": "b7489473-0390-4d24-b416-fda2cc8cdbd9",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 6,
+              "quote": "ELEMENTARSIGNALE - EXPONENTIALFUNKTION",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "zeitkonstante",
+          "value": "Zeitkonstante",
+          "citations": [
+            {
+              "extractionId": "68e02502-1fb4-4cd6-a704-d01ed5fc3a46",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 6,
+              "quote": "Zeitkonstante",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "rechteckfunktion",
+          "value": "Rechteckfunktion",
+          "citations": [
+            {
+              "extractionId": "04c7768a-9032-40e6-aeeb-79de47a69abf",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 9,
+              "quote": "ELEMENTARSIGNALE - RECHTECK",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "rampe",
+          "value": "Rampe",
+          "citations": [
+            {
+              "extractionId": "0cbc963f-1a3e-4837-af0d-9661d2253b94",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 10,
+              "quote": "ELEMENTARSIGNALE - RAMPE",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "harmonische schwingung",
+          "value": "Harmonische Schwingung",
+          "citations": [
+            {
+              "extractionId": "a55c41d7-a8d9-4190-8dd8-012026e2d013",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 12,
+              "quote": "Notwendig zur Beschreibung elektromagnetischer Strahlung",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "nullphasenwinkel",
+          "value": "Nullphasenwinkel",
+          "citations": [
+            {
+              "extractionId": "a3c7a48f-062e-40ec-a68f-ffdb47c7b91b",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 12,
+              "quote": "Nullphasenwinkel",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "gedämpfte harmonische schwingung",
+          "value": "Gedämpfte harmonische Schwingung",
+          "citations": [
+            {
+              "extractionId": "19f7e7fb-c20c-4542-beb8-366a6c3bb6ff",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 13,
+              "quote": "exponentiell gedämpfte Sinusschwingung",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "delta-distribution",
+          "value": "Delta-Distribution",
+          "citations": [
+            {
+              "extractionId": "608409fe-17fe-4445-91ab-41dd3da14b91",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 18,
+              "quote": "wird als Delta-Distribution bezeichnet",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "ausblendeigenschaft",
+          "value": "Ausblendeigenschaft",
+          "citations": [
+            {
+              "extractionId": "675bbae5-de14-4ecc-a606-be5959734b3d",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 20,
+              "quote": "Die gesamte Fläche tritt dabei zum Zeitpunkt 0 auf",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "lti-system",
+          "value": "LTI-System",
+          "citations": [
+            {
+              "extractionId": "610b1a05-5421-421c-bffd-81e5e99b00d4",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 21,
+              "quote": "Da LTI-Systeme linear und zeitinvariant sind",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "linearität",
+          "value": "Linearität",
+          "citations": [
+            {
+              "extractionId": "abda41a7-d94e-4312-8191-715af9c56acd",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 23,
+              "quote": "aus der Linearität und Zeitinvarianz",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "systemantwort",
+          "value": "Systemantwort",
+          "citations": [
+            {
+              "extractionId": "ac187a00-f71a-46c5-9711-c50568180330",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 23,
+              "quote": "Ist die Systemantwort",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "zeitinvarianz",
+          "value": "Zeitinvarianz",
+          "citations": [
+            {
+              "extractionId": "ec1f7aba-ae05-48c1-9525-7ea75d2bf41f",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 23,
+              "quote": "aus der Linearität und Zeitinvarianz",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "faltungsintegral",
+          "value": "Faltungsintegral",
+          "citations": [
+            {
+              "extractionId": "c7f80787-39b9-4535-8c54-cdae5333d55f",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 26,
+              "quote": "Dieses Integral wird als Faltungsintegral bezeichnet",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "impulsantwort",
+          "value": "Impulsantwort",
+          "citations": [
+            {
+              "extractionId": "ca3b1fbf-20f9-4af1-908c-88624335d794",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 26,
+              "quote": "Ist nun die Impulsantwort eines Systems",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "energiesignal",
+          "value": "Energiesignal",
+          "citations": [
+            {
+              "extractionId": "3c50ff0d-cf7a-4e8f-ba8b-fc4e38e53e35",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 30,
+              "quote": "Ein Signal wird als Energiesignal bezeichnet",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "signalenergie",
+          "value": "Signalenergie",
+          "citations": [
+            {
+              "extractionId": "48393f55-d974-466d-8ab1-e5e528c1c899",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 30,
+              "quote": "Daraus ergibt sich die Signalenergie mit",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "leistungssignal",
+          "value": "Leistungssignal",
+          "citations": [
+            {
+              "extractionId": "c469963c-1810-4415-b317-2c8d4c1cd877",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 32,
+              "quote": "Das reell- oder komplexwertige Signal g(t) ist ein Leistungssignale",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "gerades signal",
+          "value": "Gerades Signal",
+          "citations": [
+            {
+              "extractionId": "99bf16e4-f92e-4f1e-b099-2e2bb178cc01",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 33,
+              "quote": "Gerades Signal / Gerade Funktion",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "ungerades signal",
+          "value": "Ungerades Signal",
+          "citations": [
+            {
+              "extractionId": "7a8d2062-cedf-4928-8c19-bba231164c34",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 33,
+              "quote": "Ungerades Signal / Ungerade Funktion",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "akausales signal",
+          "value": "Akausales Signal",
+          "citations": [
+            {
+              "extractionId": "571dcf58-81f6-4ad6-ab24-2a3067bde11a",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 36,
+              "quote": "Ist diese Bedingung nicht erfüllt, liegt ein akausales Signal vor",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "kausalität",
+          "value": "Kausalität",
+          "citations": [
+            {
+              "extractionId": "a4f17ab6-e0ec-4c16-b8c0-0e41457f6b81",
+              "sourceId": "5ba92716-0000-4eb7-8e01-a3e4fa818ffe",
+              "title": "dhbw-signale-systeme-signale.pdf",
+              "page": 36,
+              "quote": "Kausalität ist wichtig bei der Betrachtung von Systemen",
+              "grounding": "text"
+            }
+          ]
+        }
+      ],
+      "labelsStatus": "Topic labels written blind by founder",
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 0,
+        "extracted": 0,
+        "matched": 0,
+        "precision": null,
+        "recall": null,
+        "kindAccuracy": null
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 0,
+        "found": 0
+      },
+      "items": []
+    },
+    {
+      "id": "dhbw-signale-systeme-frequenzanalyse",
+      "assignment": {
+        "boundCourseId": "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+        "proposals": 0,
+        "itemCourseIds": [
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd",
+          "37a876f5-7f86-440e-ae2f-cadf38e7cccd"
+        ]
+      },
+      "figureOnly": {
+        "facts": 0,
+        "topics": 0
+      },
+      "run": 3,
+      "language": "de",
+      "kind": "slides",
+      "scan": false,
+      "ingestion": "ready",
+      "ingestionFailure": null,
+      "extraction": "done",
+      "dropped": {
+        "ungrounded": 3,
+        "noCourse": 0,
+        "aiUseRule": 0
+      },
+      "grounding": {
+        "claimedPage": 15,
+        "otherPage": 0,
+        "nowhere": 3,
+        "examples": [
+          "nowhere: page 3, found []: \"Mittels der Eulerformel wird eine Verbindung zwischen beiden geschaffen.\"",
+          "nowhere: page 8, found []: \"Mathematiker haben nachgewiesen, dass Leistungssignale konvergieren.\"",
+          "nowhere: page 19, found []: \"Daher lässt sich durch Auftragen der Koeffizientenwerte über deren Index eine sp\""
+        ]
+      },
+      "failures": [],
+      "reviewableAfterMs": 57848,
+      "costMicroUsd": 30922,
+      "topics": {
+        "labelled": 25,
+        "extracted": 15,
+        "scored": 12,
+        "matched": 11,
+        "precision": 0.9166666666666666,
+        "recall": 0.44,
+        "figureOnly": {
+          "labelled": 0,
+          "matched": 0,
+          "recall": null
+        }
+      },
+      "topicJudgement": {
+        "model": "sonnet-5.5-topic-judge",
+        "labels": [
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Spektrum",
+              "Spektren",
+              "Frequenzspektrum",
+              "Spektrale Darstellung",
+              "Spektrale Zerlegung",
+              "Spectrum"
+            ],
+            "pages": [2, 8, 19, 20, 23],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Eulerformel", "Euler-Formel", "Euler's formula"],
+            "pages": [3, 4],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Komplexe Exponentialfunktion",
+              "Komplexe Exponentialfunktionen",
+              "Complex exponential"
+            ],
+            "pages": [3, 5],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Betrag und Phase", "Magnitude and phase"],
+            "pages": [5, 19, 22],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Phasenverschiebung",
+              "Phasenverschiebungen",
+              "Phase shift"
+            ],
+            "pages": [3, 6, 7],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Konjugiert komplexes Paar",
+              "Konjugiert komplexe Koeffizienten",
+              "Konjugiert komplexe Zahlen"
+            ],
+            "pages": [4, 7, 10, 11, 12, 23],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Drehzeiger",
+              "Zeiger",
+              "Gegenläufige Zeiger",
+              "Phasor"
+            ],
+            "pages": [6, 12, 23],
+            "optional": true,
+            "figureOnly": true
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Fourier-Reihe",
+              "Komplexe Fourier-Reihe",
+              "Fourier series"
+            ],
+            "pages": [8, 9, 10, 13, 22, 24, 30, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Zeitbereich", "Time domain"],
+            "pages": [9, 28],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Frequenzraum", "Frequenzbereich", "Frequency domain"],
+            "pages": [9],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Amplituden-Phasen-Form",
+              "Amplituden-Phasenform",
+              "Amplitude-phase form"
+            ],
+            "pages": [11, 12],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Komplexwertige Signale",
+              "Komplexwertiges Signal",
+              "Complex-valued signals"
+            ],
+            "pages": [11],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Fourier-Koeffizienten",
+              "Koeffizienten der Fourier-Reihe",
+              "Fourier coefficients"
+            ],
+            "pages": [10, 13, 16, 17, 18, 19, 22, 23],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Orthogonalität",
+              "Orthogonale Funktionen",
+              "Orthogonality"
+            ],
+            "pages": [13, 14, 15],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "L2-Skalarprodukt",
+              "L²-Skalarprodukt",
+              "L2 inner product"
+            ],
+            "pages": [14, 16, 17],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Konvergenz der Fourier-Reihe",
+              "Convergence of Fourier series"
+            ],
+            "pages": [8, 22],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Linienspektrum",
+              "Linienspektren",
+              "Spektrallinien",
+              "Line spectrum"
+            ],
+            "pages": [23, 24],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Negative Frequenzen", "Negative Frequency"],
+            "pages": [23],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Nichtperiodisches Signal",
+              "Nichtperiodische Signale",
+              "Aperiodisches Signal"
+            ],
+            "pages": [24, 30, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Fourier-Transformation",
+              "Fourier-Transformierte",
+              "Fourier transform",
+              "Hintransformation",
+              "Fourier-Hintransformation"
+            ],
+            "pages": [24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Grenzübergang zur Fourier-Transformation",
+              "Grenzwertübergang zur Fourier-Transformation"
+            ],
+            "pages": [24, 25, 26],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Spektralfunktion",
+              "Kontinuierliche Spektralfunktion",
+              "Kontinuierliches Spektrum"
+            ],
+            "pages": [25, 26],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Rücktransformation",
+              "Inverse Fourier-Transformation",
+              "Inverse Fourier transform"
+            ],
+            "pages": [27, 29],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Integraltransformation",
+              "Integraltransformationen",
+              "Integraloperator",
+              "Integral transform"
+            ],
+            "pages": [28],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Transformationskern", "Integralkern"],
+            "pages": [28],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Laplace-Transformation", "Laplace transform"],
+            "pages": [28],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Transformationspaar",
+              "Korrespondenz",
+              "Fourier-Korrespondenz",
+              "Fourier-Paar"
+            ],
+            "pages": [29, 31, 32],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Gleichanteil",
+              "Gleichwert",
+              "Mittelwert",
+              "DC component"
+            ],
+            "pages": [30, 32, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": ["Grundschwingung", "Fundamental"],
+            "pages": [30, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Oberschwingungen",
+              "Oberschwingung",
+              "Oberwellen",
+              "Harmonics"
+            ],
+            "pages": [30, 33],
+            "optional": false,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Linearität der Fourier-Transformation",
+              "Linearity of the Fourier transform"
+            ],
+            "pages": [30, 33],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Dirac-Impuls",
+              "Delta-Distribution",
+              "Dirac-Funktion",
+              "Dirac delta"
+            ],
+            "pages": [31, 32],
+            "optional": true,
+            "figureOnly": false
+          },
+          {
+            "course": "Signale und Systeme",
+            "aliases": [
+              "Ausblendeigenschaft",
+              "Siebeigenschaft",
+              "Sifting property"
+            ],
+            "pages": [31, 32],
+            "optional": true,
+            "figureOnly": false
+          }
+        ],
+        "extracted": [
+          {
+            "course": "Signale und Systeme",
+            "key": "komplexe exponentialfunktion",
+            "value": "Darstellung von Phasen und Phasenverschiebungen durch komplexe Exponentialfunktionen"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "konvergenz",
+            "value": "Konvergenz der Fourier-Reihe für ein Signal"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "fourier-reihe",
+            "value": "Reihenentwicklung periodischer Funktionen in komplexe Exponentialfunktionen"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "amplituden-phasen-form",
+            "value": "Darstellung einer Fourier-Reihe aus Kosinus-Schwingungen mit Amplitude und Phase"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "l2-skalarprodukt",
+            "value": "Skalarprodukt für Funktionen im Intervall, mit dem Orthogonalität geprüft wird"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "orthogonalität",
+            "value": "Exponentialfunktionen sind über eine Periode zueinander orthogonal, außer für n+m=0"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "fourier-koeffizienten",
+            "value": "Bestimmung der Koeffizienten cn der Fourier-Reihe über das Skalarprodukt"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "negative frequenzen",
+            "value": "Negative Frequenzen entstehen durch komplexe Exponentialfunktionen und können bei reellen Signalen ignoriert werden"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "fourier-transformation",
+            "value": "Analyse nichtperiodischer Signale als Grenzfall der Fourier-Reihe"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "rücktransformation",
+            "value": "Berechnung von g(t) aus G(ω) über das Integral mit e^(jωt)"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "hintransformation",
+            "value": "Berechnung von G(ω) aus g(t) über das Integral mit e^(-jωt)"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "integraltransformation",
+            "value": "Transformation einer Funktion mittels Integraloperator und Transformationskern"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "transformationspaar",
+            "value": "Zusammengehörige Funktionen g(t) und G(ω) mit Korrespondenzzeichen"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "linearität der fourier-transformation",
+            "value": "Die Fourier-Transformation ist linear, daher lassen sich Summen aus Gleichanteil und harmonischen Schwingungen beschreiben"
+          },
+          {
+            "course": "Signale und Systeme",
+            "key": "dirac-funktion",
+            "value": "Ausblendeigenschaft der Dirac-Funktion zur Berechnung der Rücktransformation"
+          }
+        ],
+        "decisions": [
+          2,
+          15,
+          7,
+          10,
+          14,
+          13,
+          12,
+          17,
+          19,
+          22,
+          null,
+          23,
+          26,
+          30,
+          32
+        ],
+        "failure": null,
+        "costMicroUsd": 11484
+      },
+      "topicItems": [
+        {
+          "course": "Signale und Systeme",
+          "key": "komplexe exponentialfunktion",
+          "value": "Darstellung von Phasen und Phasenverschiebungen durch komplexe Exponentialfunktionen",
+          "citations": [
+            {
+              "extractionId": "274e9082-dd14-44cd-88da-ca08806b62d0",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 3,
+              "quote": "Die komplexe Exponentialfunktion bieten hierfür Lösungen.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "konvergenz",
+          "value": "Konvergenz der Fourier-Reihe für ein Signal",
+          "citations": [
+            {
+              "extractionId": "5630783e-e0a6-471a-af1a-523333e5fed0",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 8,
+              "quote": "Konvergiert diese Reihe für ein Signal",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "fourier-reihe",
+          "value": "Reihenentwicklung periodischer Funktionen in komplexe Exponentialfunktionen",
+          "citations": [
+            {
+              "extractionId": "3eadf37e-bc3c-4db1-a351-bd915d529e5e",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 8,
+              "quote": "Als komplexe Fourier-Reihe nach Joseph Fourier",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "amplituden-phasen-form",
+          "value": "Darstellung einer Fourier-Reihe aus Kosinus-Schwingungen mit Amplitude und Phase",
+          "citations": [
+            {
+              "extractionId": "0b1abe9a-e20f-4bb2-932a-a0290aff8ff3",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 11,
+              "quote": "ergibt sich die Amplituden-Phasen-Form.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "l2-skalarprodukt",
+          "value": "Skalarprodukt für Funktionen im Intervall, mit dem Orthogonalität geprüft wird",
+          "citations": [
+            {
+              "extractionId": "733977b8-77b4-40e8-88ba-60c7e78004f2",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 14,
+              "quote": "das L2-Skalarprodukt 0 werden",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "orthogonalität",
+          "value": "Exponentialfunktionen sind über eine Periode zueinander orthogonal, außer für n+m=0",
+          "citations": [
+            {
+              "extractionId": "a1d0400c-a1ed-4531-a859-aa5bed8f92cf",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 15,
+              "quote": "Es ist zu erkennen, dass für alle (n + m) ∈ Z ∖ {0} die Fläche zu 0 wird",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "fourier-koeffizienten",
+          "value": "Bestimmung der Koeffizienten cn der Fourier-Reihe über das Skalarprodukt",
+          "citations": [
+            {
+              "extractionId": "a6aeebee-7a83-4257-98cb-524f4f58ba04",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 16,
+              "quote": "Was hilft uns nun die Orthogonalität bei der Bestimmung der Koeffizienten der Fourier-Reihe?",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "negative frequenzen",
+          "value": "Negative Frequenzen entstehen durch komplexe Exponentialfunktionen und können bei reellen Signalen ignoriert werden",
+          "citations": [
+            {
+              "extractionId": "c50fe0ef-8560-4431-a7db-8167753ea41e",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 23,
+              "quote": "Durch diese Betrachtung ergeben sich negative Frequenzen!",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "fourier-transformation",
+          "value": "Analyse nichtperiodischer Signale als Grenzfall der Fourier-Reihe",
+          "citations": [
+            {
+              "extractionId": "52241e0d-2fe9-4bbe-973c-2f69ab29ab05",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 24,
+              "quote": "Die Fourier-Reihe beschreibt periodische Signale.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "rücktransformation",
+          "value": "Berechnung von g(t) aus G(ω) über das Integral mit e^(jωt)",
+          "citations": [
+            {
+              "extractionId": "9be59e3c-a327-4c35-90dd-fd85d15efaa3",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 27,
+              "quote": "wird als Rücktransformation bezeichnet.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "hintransformation",
+          "value": "Berechnung von G(ω) aus g(t) über das Integral mit e^(-jωt)",
+          "citations": [
+            {
+              "extractionId": "95053b89-5bc9-4fa9-8834-4e83ff422c8a",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 27,
+              "quote": "wird als Hintransformation bezeichnet.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "integraltransformation",
+          "value": "Transformation einer Funktion mittels Integraloperator und Transformationskern",
+          "citations": [
+            {
+              "extractionId": "2614d72d-2a53-4425-b750-0661137efc2e",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 28,
+              "quote": "Die Fourier-Transformation gehört zur Gruppe der Integraltransformation",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "transformationspaar",
+          "value": "Zusammengehörige Funktionen g(t) und G(ω) mit Korrespondenzzeichen",
+          "citations": [
+            {
+              "extractionId": "dd09dce0-974d-4cab-b821-828f21da469b",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 29,
+              "quote": "bilden ein Transformationspaar",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "linearität der fourier-transformation",
+          "value": "Die Fourier-Transformation ist linear, daher lassen sich Summen aus Gleichanteil und harmonischen Schwingungen beschreiben",
+          "citations": [
+            {
+              "extractionId": "a600a7c6-87d6-475a-bc96-32db318b3cec",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 30,
+              "quote": "Wie wir später noch zeigen werden ist die Fourier-Transformation linear.",
+              "grounding": "text"
+            }
+          ]
+        },
+        {
+          "course": "Signale und Systeme",
+          "key": "dirac-funktion",
+          "value": "Ausblendeigenschaft der Dirac-Funktion zur Berechnung der Rücktransformation",
+          "citations": [
+            {
+              "extractionId": "42d7fc9a-0a20-4e5f-9859-db5a1a9e6b83",
+              "sourceId": "b006685f-573c-46b1-a34d-eb41fc35a7ef",
+              "title": "dhbw-signale-systeme-frequenzanalyse.pdf",
+              "page": 31,
+              "quote": "Wegen der Ausblendeigenschaft der Dirac-Funktion ergibt sich",
+              "grounding": "text"
+            }
+          ]
+        }
+      ],
+      "labelsStatus": "Topic labels written blind by founder",
+      "courses": {
+        "labelled": 1,
+        "extracted": 1,
+        "matched": 1,
+        "unlabelled": []
+      },
+      "obligations": {
+        "labelled": 0,
+        "extracted": 0,
+        "matched": 0,
+        "precision": null,
+        "recall": null,
+        "kindAccuracy": null
+      },
+      "deadlines": {
+        "labelledDated": 0,
+        "extractedDated": 0,
+        "correct": 0,
+        "precision": null,
+        "recall": null,
+        "undatedInventedDate": 0,
+        "timeAccuracy": null
+      },
+      "logistics": {
+        "labelled": 0,
+        "found": 0
+      },
+      "items": []
+    }
+  ]
+}

@@ -163,7 +163,7 @@ it("stores grounded Obligations under a proposed Course and shows them for revie
 
   expect(result).toEqual({
     status: "done",
-    dropped: 0,
+    dropped: { ungrounded: 0, noCourse: 0, aiUseRule: 0 },
     reviewableAfterMs: expect.any(Number),
   });
   expect(await facts.review(p)).toEqual({
@@ -213,6 +213,7 @@ it("stores grounded Obligations under a proposed Course and shows them for revie
                     title: "Analysis.pdf",
                     page: 1,
                     quote: "Abgabe Blatt 3: 20.11., 12 Uhr",
+                    grounding: "text",
                   },
                 ],
               },
@@ -280,13 +281,56 @@ it("drops and counts items whose quote is not on their page or whose Course is u
   });
 
   expect(result).toEqual(
-    expect.objectContaining({ status: "done", dropped: 4 }),
+    expect.objectContaining({
+      status: "done",
+      dropped: { ungrounded: 3, noCourse: 1, aiUseRule: 0 },
+    }),
   );
   const [course] = (await facts.review(p)).courses;
   expect(course?.obligations.map((o) => o.title)).toEqual([
     "Übungsblatt 3",
     "Prüfungsanmeldung",
   ]);
+});
+
+it("counts dropped items per reason: ungrounded, without a Course, and an unresolvable AI-use Rule", async () => {
+  const p = await student();
+  const sourceId = await readySource(p, "Analysis.pdf", [
+    {
+      page: 1,
+      text: "MA-101 Analysis I\nAbgabe Blatt 3: 20.11., 12 Uhr\nKI ist für Blatt 9 erlaubt.",
+    },
+  ]);
+
+  const result = await facts.extract(p, sourceId, {
+    delegation,
+    extractor: scripted({
+      courses: [analysis],
+      obligations: [
+        sheet3,
+        { ...sheet3, key: "Übungsblatt 9", quote: "Abgabe Blatt 9: 27.11." },
+        { ...sheet3, course: "Lineare Algebra", key: "Übungsblatt 1" },
+      ],
+      facts: [
+        {
+          course: "MA-101",
+          type: "ai_use_rule",
+          key: "Blatt 9",
+          value: "allowed",
+          page: 1,
+          quote: "KI ist für Blatt 9 erlaubt.",
+          uncertainty: null,
+        },
+      ],
+    }),
+  });
+
+  expect(result).toEqual(
+    expect.objectContaining({
+      status: "done",
+      dropped: { ungrounded: 1, noCourse: 1, aiUseRule: 1 },
+    }),
+  );
 });
 
 it("matches Courses across windows and Sources by code, then title, and never merges an unclear match", async () => {
@@ -351,7 +395,10 @@ it("matches Courses across windows and Sources by code, then title, and never me
   });
 
   expect(result).toEqual(
-    expect.objectContaining({ status: "done", dropped: 0 }),
+    expect.objectContaining({
+      status: "done",
+      dropped: { ungrounded: 0, noCourse: 0, aiUseRule: 0 },
+    }),
   );
   expect(
     (await facts.review(p)).courses.map((c) => [
@@ -556,7 +603,10 @@ it("keeps Facts read only from a figure description with an uncertainty, but dro
     }),
   });
 
-  expect(result).toMatchObject({ status: "done", dropped: 2 });
+  expect(result).toMatchObject({
+    status: "done",
+    dropped: { ungrounded: 2, noCourse: 0, aiUseRule: 0 },
+  });
   const { courses } = await facts.review(p);
   expect(courses.map((course) => course.code)).toEqual(["MA-101"]);
   expect(courses[0]?.obligations).toEqual([]);
@@ -631,6 +681,7 @@ it("stores Topics, course rules and exam logistics with their passage", async ()
     {
       id: expect.any(String),
       type: "topic",
+      key: "gleichmäßige konvergenz",
       value: "Gleichmäßige Konvergenz",
       uncertainty: null,
       state: "unreviewed",
@@ -654,6 +705,7 @@ it("stores Topics, course rules and exam logistics with their passage", async ()
               title: "Analysis.pdf",
               page: 1,
               quote: "gleichmäßige Konvergenz",
+              grounding: "text",
             },
           ],
         },
@@ -1171,7 +1223,7 @@ it("extracts a Source again on request, replacing its extractions and carrying r
 
   expect(result).toEqual({
     status: "done",
-    dropped: 0,
+    dropped: { ungrounded: 0, noCourse: 0, aiUseRule: 0 },
     reextractionMs: expect.any(Number),
   });
   expect(await item("Übungsblatt 3")).toEqual(
@@ -1662,7 +1714,10 @@ it("extracts a Course's AI-use Rule and one Obligation's own, which wins for tha
     ),
   ]);
 
-  expect(result).toMatchObject({ status: "done", dropped: 2 });
+  expect(result).toMatchObject({
+    status: "done",
+    dropped: { ungrounded: 0, noCourse: 0, aiUseRule: 2 },
+  });
   expect(await facts.aiUse(p, sheet)).toMatchObject({
     status: "conditional",
     level: "obligation",
@@ -1912,7 +1967,10 @@ it("assigns lecture decks to a candidate Course by ID without grounding its name
   };
   expect(
     await facts.extract(p, second, { extractor, delegation }),
-  ).toMatchObject({ status: "done", dropped: 0 });
+  ).toMatchObject({
+    status: "done",
+    dropped: { ungrounded: 0, noCourse: 0, aiUseRule: 0 },
+  });
   const review = await facts.review(p);
   expect(review.courses).toHaveLength(1);
   expect(review.courses[0]?.facts).toMatchObject([
@@ -1954,7 +2012,10 @@ it("never trusts a foreign candidate ID without grounding a new proposal", async
     }),
     delegation,
   });
-  expect(result).toMatchObject({ status: "done", dropped: 2 });
+  expect(result).toMatchObject({
+    status: "done",
+    dropped: { ungrounded: 1, noCourse: 1, aiUseRule: 0 },
+  });
   expect((await facts.review(p)).courses).toEqual([]);
 });
 
@@ -2059,7 +2120,10 @@ it("treats an unknown Course ID as a grounded proposal, keeping its Topics in th
       }),
       delegation,
     }),
-  ).toMatchObject({ status: "done", dropped: 0 });
+  ).toMatchObject({
+    status: "done",
+    dropped: { ungrounded: 0, noCourse: 0, aiUseRule: 0 },
+  });
   expect((await facts.review(p)).courses).toMatchObject([
     {
       title: "Analysis I",
@@ -2104,7 +2168,7 @@ it("keeps a picked Course's Topics when the student merges it during extraction"
     await facts.extract(p, source, { extractor, delegation }),
   ).toMatchObject({
     status: "done",
-    dropped: 0,
+    dropped: { ungrounded: 0, noCourse: 0, aiUseRule: 0 },
   });
   expect((await facts.review(p)).courses).toMatchObject([
     {
@@ -2161,7 +2225,9 @@ it.each([false, true])(
       await facts.extract(p, source, { extractor, delegation }),
     ).toMatchObject({
       status: "done",
-      dropped: grounded ? 0 : 2,
+      dropped: grounded
+        ? { ungrounded: 0, noCourse: 0, aiUseRule: 0 }
+        : { ungrounded: 1, noCourse: 1, aiUseRule: 0 },
     });
     const review = await facts.review(p);
     expect(review.courses.find((c) => c.id === existing.id)).toMatchObject({
@@ -2217,7 +2283,10 @@ it("resolves picked Course title and code aliases from the server, never the mod
       }),
       delegation,
     }),
-  ).toMatchObject({ status: "done", dropped: 2 });
+  ).toMatchObject({
+    status: "done",
+    dropped: { ungrounded: 0, noCourse: 2, aiUseRule: 0 },
+  });
   const review = await facts.review(p);
   expect(review.courses).toHaveLength(1);
   expect(review.courses[0]).toMatchObject({
@@ -2306,10 +2375,160 @@ it("grounds a figure line the scan reader wrote as a figure description (marker 
     }),
   });
 
-  expect(result).toMatchObject({ status: "done", dropped: 1 });
+  expect(result).toMatchObject({
+    status: "done",
+    dropped: { ungrounded: 1, noCourse: 0, aiUseRule: 0 },
+  });
   const [course] = (await facts.review(p)).courses;
   expect(course?.obligations).toEqual([]);
   expect(course?.facts.map((fact) => fact.uncertainty)).toEqual([
     "aus einer Abbildungsbeschreibung abgeleitet",
   ]);
+});
+
+it("shows each Topic's normalized key, across Sources and after a Correction", async () => {
+  const p = await student();
+  const topic = (key: string) => ({
+    course: "MA-101",
+    type: "topic" as const,
+    key,
+    value: key,
+    page: 1,
+    quote: key,
+    uncertainty: null,
+  });
+  for (const [title, key] of [
+    ["Folien 1.pdf", "Fourier-Reihen"],
+    ["Folien 2.pdf", "FOURIER-Reihen "],
+  ] as const) {
+    const sourceId = await readySource(p, title, [
+      { page: 1, text: `MA-101 Analysis I\n${key}` },
+    ]);
+    await facts.extract(p, sourceId, {
+      delegation,
+      extractor: scripted({
+        ...empty,
+        courses: [analysis],
+        facts: [topic(key)],
+      }),
+    });
+  }
+  const [fact] = (await facts.review(p)).courses[0]!.facts;
+  expect(fact).toMatchObject({ type: "topic", key: "fourier-reihen" });
+  expect(fact!.values.flatMap((v) => v.citations)).toHaveLength(2);
+
+  await facts.correct(p, { kind: "fact", id: fact!.id }, { value: "Fourier" });
+
+  expect((await facts.review(p)).courses[0]!.facts).toEqual([
+    expect.objectContaining({ value: "Fourier", key: "fourier-reihen" }),
+  ]);
+});
+
+it("marks each citation grounded in the page's text or only in a figure description, per Source", async () => {
+  const p = await student();
+  const algebra = {
+    code: "MA-102",
+    title: "Lineare Algebra",
+    page: 1,
+    quote: "MA-102 Lineare Algebra",
+  };
+  const topic = (course: string, key: string) => ({
+    course,
+    type: "topic" as const,
+    key,
+    value: key,
+    page: 1,
+    quote: key,
+    uncertainty: null,
+  });
+  for (const [title, text] of [
+    [
+      "Folien.pdf",
+      "MA-101 Analysis I\nMA-102 Lineare Algebra\n[Abbildung] Skizze: Fourier-Reihen, Eigenwerte.",
+    ],
+    ["Skript.pdf", "MA-101 Analysis I\nKapitel 4: Fourier-Reihen."],
+  ] as const) {
+    const sourceId = await readySource(p, title, [{ page: 1, text }]);
+    await facts.extract(p, sourceId, {
+      delegation,
+      extractor: scripted({
+        ...empty,
+        courses: title === "Folien.pdf" ? [analysis, algebra] : [analysis],
+        facts:
+          title === "Folien.pdf"
+            ? [topic("MA-101", "Fourier-Reihen"), topic("MA-102", "Eigenwerte")]
+            : [topic("MA-101", "Fourier-Reihen")],
+      }),
+    });
+  }
+  const grounding = async () =>
+    (await facts.review(p)).courses.map((course) => [
+      course.code,
+      course.facts.map((fact) => [
+        fact.key,
+        fact.values.flatMap((value) =>
+          value.citations.map((c) => [c.title, c.grounding]),
+        ),
+      ]),
+    ]);
+  const expected = [
+    [
+      "MA-101",
+      [
+        [
+          "fourier-reihen",
+          [
+            ["Folien.pdf", "figure"],
+            ["Skript.pdf", "text"],
+          ],
+        ],
+      ],
+    ],
+    ["MA-102", [["eigenwerte", [["Folien.pdf", "figure"]]]]],
+  ];
+  expect(await grounding()).toEqual(expected);
+
+  const [analysisCourse, algebraCourse] = (await facts.review(p)).courses;
+  await facts.correct(
+    p,
+    { kind: "fact", id: analysisCourse!.facts[0]!.id },
+    { value: "Fourier-Analysis" },
+  );
+  await facts.decideCourse(p, algebraCourse!.id, "reject");
+  expect(await grounding()).toEqual([expected[0], ["MA-102", []]]);
+
+  await facts.decideCourse(p, algebraCourse!.id, "restore");
+  expect(await grounding()).toEqual(expected);
+});
+
+it("grounds a quote in the page's text when a figure description repeats it", async () => {
+  const p = await student();
+  const sourceId = await readySource(p, "Folien.pdf", [
+    {
+      page: 1,
+      text: "MA-101 Analysis I\nKapitel 4: Fourier-Reihen.\n[Abbildung] Skizze: Fourier-Reihen.",
+    },
+  ]);
+  await facts.extract(p, sourceId, {
+    delegation,
+    extractor: scripted({
+      ...empty,
+      courses: [analysis],
+      facts: [
+        {
+          course: "MA-101",
+          type: "topic",
+          key: "Fourier-Reihen",
+          value: "Fourier-Reihen",
+          page: 1,
+          quote: "Fourier-Reihen",
+          uncertainty: null,
+        },
+      ],
+    }),
+  });
+  const [fact] = (await facts.review(p)).courses[0]!.facts;
+  expect(
+    fact!.values.flatMap((v) => v.citations.map((c) => c.grounding)),
+  ).toEqual(["text"]);
 });

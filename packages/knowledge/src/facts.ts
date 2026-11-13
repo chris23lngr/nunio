@@ -10,6 +10,7 @@ import {
 } from "@nunio/ai";
 import type {
   FactType,
+  Grounding,
   ObligationKind,
   PrismaClient,
   ReviewState,
@@ -65,6 +66,8 @@ type Citation = {
   title: string;
   page: number;
   quote: string;
+  /** "figure" when the quote was found only in a figure description, the scan model's reading of the page. */
+  grounding: Grounding;
 };
 type Provenance =
   | { kind: "correction" }
@@ -102,6 +105,8 @@ interface ReviewObligation extends ReviewItem<{ due: DueValue }> {
 }
 interface ReviewFact extends ReviewItem<{ value: string }> {
   type: FactType;
+  /** The normalized identity key Sources are matched by, such as a Topic's name; it never changes. */
+  key: string;
   value: string;
 }
 
@@ -234,17 +239,16 @@ export function createFacts({
           archivedAt: null,
           mergedIntoId: null,
         };
-        // A Source bound to a Course puts everything there, so the model needs no Courses to choose from.
+        // A Source bound to a Course puts everything there whatever the model names. It still sees that Course,
+        // so a deck that never names its Course (a mid-series lecture) has one to attach its items to.
         const context = {
           title: source.title,
-          courses: source.courseId
-            ? []
-            : await withOwner(db, p, (tx) =>
-                tx.course.findMany({
-                  where: candidateWhere,
-                  select: { id: true, title: true, code: true },
-                }),
-              ),
+          courses: await withOwner(db, p, (tx) =>
+            tx.course.findMany({
+              where: source.courseId ? { id: source.courseId } : candidateWhere,
+              select: { id: true, title: true, code: true },
+            }),
+          ),
         };
         const candidateIds = new Set(
           context.courses.map((course) => course.id),
@@ -322,11 +326,12 @@ export function createFacts({
           // Facts read only from a figure stay, flagged; Obligations and Courses need the page's own words.
           facts: all.facts.flatMap((item) =>
             grounded(item)
-              ? [item]
+              ? [{ ...item, grounding: "text" as Grounding }]
               : inFigure(item)
                 ? [
                     {
                       ...item,
+                      grounding: "figure" as Grounding,
                       uncertainty: [item.uncertainty, figureUncertainty]
                         .filter(Boolean)
                         .join("; "),
@@ -335,13 +340,18 @@ export function createFacts({
                 : [],
           ),
         };
-        let dropped =
-          all.courses.length -
-          kept.courses.length +
-          all.obligations.length -
-          kept.obligations.length +
-          all.facts.length -
-          kept.facts.length;
+        // Counts only, never content: why items were dropped shows in the worker log and the eval report.
+        const dropped = {
+          ungrounded:
+            all.courses.length -
+            kept.courses.length +
+            all.obligations.length -
+            kept.obligations.length +
+            all.facts.length -
+            kept.facts.length,
+          noCourse: 0,
+          aiUseRule: 0,
+        };
         const stored = await withOwner(db, p, async (tx, studentId) => {
           await tx.$queryRaw`SELECT "id" FROM "source" WHERE "id" = ${sourceId} FOR UPDATE`;
           if (
@@ -439,7 +449,7 @@ export function createFacts({
             }
             // An unknown or no-longer-eligible ID is only a proposal, requiring page grounding.
             if (!grounded(course)) {
-              dropped++;
+              dropped.ungrounded++;
               continue;
             }
             const matchCode = course.code ? normalize(course.code) : null,
@@ -497,7 +507,7 @@ export function createFacts({
           for (const item of kept.obligations) {
             const courseId = courseOf(item.course);
             if (!courseId) {
-              dropped++;
+              dropped.noCourse++;
               continue;
             }
             const timeZone = item.due.date
@@ -591,7 +601,7 @@ export function createFacts({
           for (const item of kept.facts) {
             const courseId = courseOf(item.course);
             if (!courseId) {
-              dropped++;
+              dropped.noCourse++;
               continue;
             }
             let matchKey = normalize(item.key),
@@ -600,7 +610,7 @@ export function createFacts({
               const ruled = await aiUseKey(tx, courseId, item.key);
               value = normalize(item.value);
               if (!ruled || !isAiUseClass(value)) {
-                dropped++;
+                dropped.aiUseRule++;
                 continue;
               }
               matchKey = ruled;
@@ -629,7 +639,11 @@ export function createFacts({
               await repeated(owned.id, key, item.page, (id) =>
                 tx.factExtraction.update({
                   where: { id },
-                  data: { page: item.page, ciphertext: seal(wording) },
+                  data: {
+                    page: item.page,
+                    grounding: item.grounding,
+                    ciphertext: seal(wording),
+                  },
                 }),
               )
             )
@@ -652,6 +666,7 @@ export function createFacts({
                 factId: owned.id,
                 sourceId,
                 page: item.page,
+                grounding: item.grounding,
                 ciphertext: seal(wording),
                 overruledAt: overruled(existing, key, extractedAt),
               },
@@ -1367,6 +1382,7 @@ export function createFacts({
                     const shared = {
                       id: row.id,
                       type: row.type,
+                      key: row.matchKey,
                       state: row.state,
                       unsupported: row.unsupported,
                       disagreement:
@@ -1525,6 +1541,8 @@ function valuesOf<
       id: string;
       sourceId: string;
       page: number;
+      /** Absent for Obligations, which are only ever grounded in the page's text. */
+      grounding?: Grounding;
       overruledAt: Date | null;
       source: { title: string };
     };
@@ -1552,6 +1570,7 @@ function valuesOf<
       title: extraction.source.title,
       page: extraction.page,
       quote: wording.quote,
+      grounding: extraction.grounding ?? "text",
     };
     const key = keyOf(entry),
       value = values.get(key);
