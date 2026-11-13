@@ -26,7 +26,10 @@ const operatorId: string = operator;
 class Refused extends Error {}
 
 /** The model's maker as the picker shows it, from OpenRouter's ID prefix. */
-const makers: Record<string, string> = { anthropic: "Anthropic" };
+const makers: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+};
 
 const prisma = createPrismaClient(createPool(databaseURL));
 
