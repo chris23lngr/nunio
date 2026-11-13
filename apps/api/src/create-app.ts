@@ -9,6 +9,8 @@ import {
 } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
+import type { Chats } from "@nunio/chat";
+import { createChats } from "@nunio/chat";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { Delegation, Responsibilities } from "@nunio/delegation";
@@ -20,15 +22,8 @@ import {
 import type { Auth } from "@nunio/identity";
 import { createAuth } from "@nunio/identity";
 import { sourceKeysFromEnv } from "@nunio/keys";
-import type {
-  Chats,
-  Courses,
-  Facts,
-  Projects,
-  Sources,
-} from "@nunio/knowledge";
+import type { Courses, Facts, Projects, Sources } from "@nunio/knowledge";
 import {
-  createChats,
   createCourses,
   createFacts,
   createKnowledgeReader,

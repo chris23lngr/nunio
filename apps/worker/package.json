@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@nunio/chat": "workspace:*",
     "@nunio/parser": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
     "@temporalio/testing": "1.25.0",

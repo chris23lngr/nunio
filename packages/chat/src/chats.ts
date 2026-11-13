@@ -4,9 +4,9 @@ import type { PrismaClient } from "@nunio/db";
 import type { Delegation, Principal } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
-import { createDerivedText } from "./derived.js";
-import { definitely } from "./provider.js";
-import type { Citation, KnowledgeReader, Provenance } from "./reader.js";
+import type { Citation, KnowledgeReader, Provenance } from "@nunio/knowledge";
+import { createDerivedText, definitely } from "@nunio/knowledge";
+import { historyFrom, historyTurns } from "./history.js";
 
 export type ChatMessage = {
   id: string;
@@ -45,6 +45,24 @@ export function createChats({
       tag,
       provenance: provenance.get(cite) ?? ("gone" as const),
     }));
+  }
+  /** The Chat's recent messages, decrypted, as the history the next answer is given. */
+  async function earlier(p: Principal, chatId: string) {
+    const recent = await withOwner(db, p, async (tx) => {
+      const rows = await tx.chatMessage.findMany({
+        where: { chatId },
+        orderBy: [{ createdAt: "desc" }, { role: "desc" }],
+        take: historyTurns * 2,
+      });
+      return Promise.all(
+        rows.reverse().map(async (row) => ({
+          role: row.role as ChatMessage["role"],
+          text: await derived.open(tx, row.id, row),
+          derivedFrom: row.derivedFrom,
+        })),
+      );
+    });
+    return historyFrom(recent);
   }
   return {
     async detail(p: Principal, id: string) {
@@ -135,11 +153,10 @@ export function createChats({
         options.onStep?.(name, now - started);
         started = now;
       };
-      const retrieval = await reader.retrieve(
-        p,
-        { chatId },
-        { kind: "passages", text: question },
-      );
+      const [retrieval, history] = await Promise.all([
+        reader.retrieve(p, { chatId }, { kind: "passages", text: question }),
+        earlier(p, chatId),
+      ]);
       step("retrieval");
       if (retrieval.status === "refused") {
         return retrieval.reason === "not_owner"
@@ -151,6 +168,7 @@ export function createChats({
         question,
         data,
         tags: citations.map((citation) => citation.tag),
+        history: history.turns,
       };
       options.signal?.throwIfAborted();
       const answered = await delegation.meter(
@@ -173,12 +191,14 @@ export function createChats({
       const cited = answered.value.cited.flatMap((tag) =>
         citations.filter((citation) => citation.tag === tag),
       );
+      // The answer may restate earlier answers, so it is withdrawn with their Sources too.
       const derivedFrom = [
-        ...new Set(
-          retrieval.items.flatMap((item) =>
+        ...new Set([
+          ...retrieval.items.flatMap((item) =>
             item.provenance.kind === "source" ? [item.provenance.sourceId] : [],
           ),
-        ),
+          ...history.derivedFrom,
+        ]),
       ];
       const id = options.ids?.answer ?? randomUUID();
       const questionId = options.ids?.question ?? randomUUID();

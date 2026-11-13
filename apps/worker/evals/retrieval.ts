@@ -16,15 +16,12 @@ import {
   createScanReader,
   fetchZeroRetentionPrices,
 } from "@nunio/ai";
+import { createChats } from "@nunio/chat";
 import { createPool, createPrismaClient } from "@nunio/db";
 import { startTestDatabase } from "@nunio/db/testing";
 import { createDelegation, principal } from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
-import {
-  createChats,
-  createKnowledgeReader,
-  createSources,
-} from "@nunio/knowledge";
+import { createKnowledgeReader, createSources } from "@nunio/knowledge";
 import { createParserServer } from "@nunio/parser/server";
 import { parseSource } from "../src/source-activities.ts";
 
