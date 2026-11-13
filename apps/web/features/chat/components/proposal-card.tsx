@@ -39,11 +39,13 @@ export function approvalOf(saved: SavedProposal) {
 function outcome(action: NonNullable<SavedProposal["action"]>) {
   if (action.decision === "denied") return "Abgelehnt";
   if (action.status === "done")
-    return action.shown.kind === "studyBlock.move"
-      ? "Verschoben"
-      : action.shown.kind === "studyBlock.remove"
-        ? "Entfernt"
-        : "Angelegt";
+    return {
+      "studyBlock.create": "Angelegt",
+      "studyBlock.move": "Verschoben",
+      "studyBlock.remove": "Entfernt",
+      "task.create": "Angelegt",
+      "task.reopen": "Wieder geöffnet",
+    }[action.shown.kind];
   if (action.status === "expired") return "Abgelaufen";
   if (action.status === "refused") return "Nicht möglich";
   return "Nicht bestätigt";
@@ -98,7 +100,9 @@ export function ProposalCard({
             {!saved
               ? "Vorschlag wird gespeichert …"
               : action
-                ? `Lernblock für ${action.shown.work.title}`
+                ? action.shown.kind.startsWith("task.")
+                  ? `Aufgabe ${action.shown.work.title}`
+                  : `Lernblock für ${action.shown.work.title}`
                 : "Dieser Vorschlag konnte nicht gestellt werden"}
           </TraceTitle>
           {action && <TraceDescription>{outcome(action)}</TraceDescription>}

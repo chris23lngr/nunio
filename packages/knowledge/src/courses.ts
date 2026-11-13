@@ -222,9 +222,13 @@ export function createCourses({
   facts: Pick<Facts, "review">;
   responsibilities: Pick<Responsibilities, "pauseForCourse" | "endForCourse">;
 }) {
-  /** The Study Blocks for the Course's work: its Obligations, and Tasks toward them. */
+  /** The Course's Tasks: those toward its Obligations, and those in it. */
+  const tasks = (courseId: string) => ({
+    OR: [{ obligation: { courseId } }, { courseId }],
+  });
+  /** The Study Blocks for the Course's work: its Obligations and its Tasks. */
   const blocks = (courseId: string) => ({
-    OR: [{ obligation: { courseId } }, { task: { obligation: { courseId } } }],
+    OR: [{ obligation: { courseId } }, { task: tasks(courseId) }],
   });
   /** Those still ahead. */
   const futureBlocks = (courseId: string) => ({
@@ -331,9 +335,7 @@ export function createCourses({
           return null;
         return {
           obligations: await tx.obligation.count({ where: { courseId: id } }),
-          tasks: await tx.task.count({
-            where: { obligation: { courseId: id } },
-          }),
+          tasks: await tx.task.count({ where: tasks(id) }),
           studyBlocks: await tx.studyBlock.count({ where: blocks(id) }),
           futureStudyBlocks: await tx.studyBlock.count({
             where: futureBlocks(id),

@@ -7,9 +7,12 @@ import { colors, dueText } from "../course-format";
 export function CourseCard({
   course,
   menu,
+  children,
 }: {
   course: CourseSummary;
   menu?: ReactNode;
+  /** More about the Course below its next deadline, such as its calendar series. */
+  children?: ReactNode;
 }) {
   return (
     <li
@@ -55,6 +58,7 @@ export function CourseCard({
           </span>
         )}
       </p>
+      {children}
     </li>
   );
 }

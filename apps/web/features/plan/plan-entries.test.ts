@@ -19,6 +19,7 @@ function plan(overrides: Partial<Plan> = {}): Plan {
     tasks: [],
     studyBlocks: [],
     fixedEvents: [],
+    eventSeries: [],
     calendars: [],
     priorities: [],
     limits: {
@@ -81,14 +82,23 @@ test("a Study Block for an Obligation is titled by it and colored by its Course"
   ]);
 });
 
-test("a Study Block for a Task is titled by it and colored by its Obligation's Course", () => {
-  const task = (id: string, obligationId: string | null) => ({
+test("a Study Block for a Task is titled by it and colored by its Obligation's Course or its own", () => {
+  const task = (
+    id: string,
+    obligationId: string | null,
+    course: { courseId: string; course: string } | null = null,
+  ) => ({
     id,
-    title: id === "t-1" ? "Altklausur 2024" : "Kapitel 6 lesen",
+    title: { "t-1": "Altklausur 2024", "t-2": "Kapitel 6 lesen" }[id] ?? id,
     obligationId,
+    courseId: course?.courseId ?? null,
+    course: course?.course ?? null,
     estimate: null,
     maxMinutesPerDay: null,
     done: false,
+    fixedEventId: null,
+    role: null,
+    window: null,
   });
   const block = (id: string, taskId: string) => ({
     id,
@@ -99,11 +109,22 @@ test("a Study Block for a Task is titled by it and colored by its Obligation's C
     locked: true,
   });
 
-  const [ofExam, loose] = planEntries(
+  const [ofExam, loose, inCourse] = planEntries(
     plan({
       obligations: [exam],
-      tasks: [task("t-1", "ob-1"), task("t-2", null)],
-      studyBlocks: [block("b-1", "t-1"), block("b-2", "t-2")],
+      tasks: [
+        task("t-1", "ob-1"),
+        task("t-2", null),
+        task("VL 3 nacharbeiten", null, {
+          courseId: "c-stats",
+          course: "Statistics II",
+        }),
+      ],
+      studyBlocks: [
+        block("b-1", "t-1"),
+        block("b-2", "t-2"),
+        block("b-3", "VL 3 nacharbeiten"),
+      ],
     }),
     colors,
   );
@@ -115,6 +136,10 @@ test("a Study Block for a Task is titled by it and colored by its Obligation's C
     locked: true,
   });
   expect(loose).toMatchObject({ title: "Kapitel 6 lesen", course: null });
+  expect(inCourse).toMatchObject({
+    title: "VL 3 nacharbeiten",
+    course: { title: "Statistics II", color: "fuchsia" },
+  });
 });
 
 test("a Fixed Event is shown without a Course, since the API links none", () => {
@@ -127,6 +152,8 @@ test("a Fixed Event is shown without a Course, since the API links none", () => 
           start: at(14, 10),
           end: at(14, 14),
           calendarId: "cal-1",
+          seriesId: null,
+          courseId: null,
         },
       ],
     }),
@@ -262,6 +289,8 @@ test("a day's planned minutes add up its Study Blocks only", () => {
         start: at(13, 11),
         end: at(13, 13),
         calendarId: null,
+        seriesId: null,
+        courseId: null,
       },
     ],
   });
@@ -360,6 +389,8 @@ test("a Fixed Event's details say what, when, and which calendar it came from", 
         start: at(9, 10),
         end: at(9, 12),
         calendarId: "cal-1",
+        seriesId: null,
+        courseId: null,
       },
       {
         id: "f-2",
@@ -367,6 +398,8 @@ test("a Fixed Event's details say what, when, and which calendar it came from", 
         start: at(10, 8),
         end: at(10, 9),
         calendarId: null,
+        seriesId: null,
+        courseId: null,
       },
     ],
   });
@@ -376,6 +409,7 @@ test("a Fixed Event's details say what, when, and which calendar it came from", 
     start: new Date(2026, 10, 9, 10),
     end: new Date(2026, 10, 9, 12),
     calendar: "Uni-Stundenplan",
+    courseId: null,
   });
   expect(fixedEventDetails(p, "f-2")).toMatchObject({ calendar: null });
   expect(fixedEventDetails(p, "missing")).toBeNull();

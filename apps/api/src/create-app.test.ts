@@ -2,7 +2,14 @@ import { execFile } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import type { Embedder, Estimator, Extracted, Grader, Maker } from "@nunio/ai";
+import type {
+  Embedder,
+  Estimator,
+  Extracted,
+  Grader,
+  Maker,
+  SeriesAssigner,
+} from "@nunio/ai";
 import { createAnswerer, createModels } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
@@ -274,6 +281,16 @@ const estimator: Estimator = {
     };
   },
 };
+/** Puts every Event Series in the student's first Course. */
+const seriesAssigner: SeriesAssigner = {
+  assignMicroUsd: () => 1,
+  async assign(input) {
+    return {
+      value: input.series.map(() => input.courses[0]?.handle ?? null),
+      usage: { microUsd: 1 },
+    };
+  },
+};
 /** One dimension per keyword, so a question finds the passages that share its keywords. */
 const chatEmbedder: Embedder = {
   model: "test-embedding",
@@ -438,6 +455,7 @@ beforeAll(async () => {
     }),
     plan,
     estimator,
+    seriesAssigner,
     projects: createProjects({ db: prisma }),
     courses: createCourses({
       db: prisma,
@@ -3335,6 +3353,67 @@ describe("Chat", () => {
     expect(reopened[1]!.parts).toContainEqual(card);
   });
 
+  it("proposes a Study Block for a Task in a Course that is toward no Obligation", async () => {
+    const { headers, chatId, obligationId } = await planningChat(
+      "chat-propose-course-task",
+    );
+    const { courseId } = await admin.obligation.findUniqueOrThrow({
+      where: { id: obligationId },
+    });
+    expect(
+      (
+        await app.request(`${apiOrigin}/api/me/tasks`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            title: "Vorlesung 3 nacharbeiten",
+            obligationId: null,
+            courseId,
+          }),
+        })
+      ).status,
+    ).toBe(201);
+    const day = berlinDay(8);
+    steps.push(calls("agenda", { from: berlinDay(7), to: berlinDay(13) }), [
+      ...says("Ich schlage dir einen Lernblock vor."),
+      ...calls("proposeStudyBlock", {
+        work: "T1",
+        start: `${day}T13:00`,
+        end: `${day}T14:00`,
+      }),
+    ]);
+    prompts.length = 0;
+
+    const chunks = await sseChunks(
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          id: randomUUID(),
+          text: "Plane heute 13–14 Uhr zum Nacharbeiten der Vorlesung ein.",
+        }),
+      }),
+    );
+
+    expect(JSON.stringify(prompts[1])).toMatch(
+      /T1\W+[^"]*Vorlesung 3 nacharbeiten[^"]*K1/,
+    );
+    const committed = chunks.find((chunk) => chunk.type === "data-committed");
+    expect(
+      committed.data.parts.find(
+        (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+      ),
+    ).toMatchObject({
+      action: {
+        status: "awaiting_approval",
+        shown: {
+          kind: "studyBlock.create",
+          work: { title: "Vorlesung 3 nacharbeiten", course: "Analysis I" },
+        },
+      },
+    });
+  });
+
   it("leaves an expired Chat proposal out of the Approvals, and shows it as expired in the Chat", async () => {
     const { headers, chatId } = await planningChat("chat-propose-expired");
     const day = berlinDay(8);
@@ -3499,6 +3578,138 @@ describe("Chat", () => {
       messages[1]!.parts.find((part) => part.type === "tool-proposeStudyBlock")
         ?.action,
     ).toMatchObject({ status: "done", decision: "approved" });
+  });
+
+  it("proposes a Follow-up for a Course Event the Plan showed, adds it once approved, and reopens it when done", async () => {
+    const { headers, chatId, obligationId } =
+      await planningChat("chat-propose-task");
+    const { courseId } = await admin.obligation.findUniqueOrThrow({
+      where: { id: obligationId },
+    });
+    const call = (method: string, path: string, body?: unknown) =>
+      app.request(`${apiOrigin}/api/me${path}`, {
+        method,
+        headers,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    const day = berlinDay(8);
+    const stamp = (time: string) =>
+      deadline(day, time, "Europe/Berlin")
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .slice(0, 15);
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//test//EN",
+      "BEGIN:VEVENT",
+      "UID:vl-3@uni",
+      `DTSTAMP:${stamp("08:00")}Z`,
+      "SUMMARY:Analysis Vorlesung",
+      `DTSTART:${stamp("10:00")}Z`,
+      `DTEND:${stamp("12:00")}Z`,
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    await call("POST", "/calendar-sources", { name: "Stundenplan.ics", ics });
+    const plan = async () =>
+      (await (await call("GET", "/plan")).json()) as {
+        eventSeries: { id: string }[];
+        fixedEvents: { id: string }[];
+        tasks: {
+          id: string;
+          title: string;
+          courseId: string | null;
+          fixedEventId: string | null;
+          role: string | null;
+          done: boolean;
+        }[];
+      };
+    const [series] = (await plan()).eventSeries;
+    await call("POST", `/event-series/${series!.id}/decision`, { courseId });
+    const [event] = (await plan()).fixedEvents;
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeTask", {
+        event: "E1",
+        role: "follow_up",
+        title: "Vorlesung nacharbeiten",
+        minutes: 60,
+      }),
+    );
+    prompts.length = 0;
+
+    const asked = await askInChat(
+      headers,
+      chatId,
+      "Ich muss die Vorlesung diese Woche noch nacharbeiten.",
+    );
+
+    expect(JSON.stringify(prompts[1])).toMatch(
+      /E1\W+[^"]*Analysis Vorlesung[^"]*K1/,
+    );
+    const card = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeTask",
+    );
+    expect(card).toMatchObject({
+      action: {
+        status: "awaiting_approval",
+        shown: {
+          kind: "task.create",
+          work: { title: "Vorlesung nacharbeiten", course: "Analysis I" },
+        },
+      },
+    });
+    const approve = async (part: {
+      approvalId: string;
+      action: { fingerprint: string };
+    }) =>
+      sseChunks(
+        await call("POST", `/chats/${chatId}/messages/stream`, {
+          approval: {
+            id: part.approvalId,
+            fingerprint: part.action.fingerprint,
+          },
+        }),
+      );
+    reply = "Erledigt, die Nachbereitung steht in deinem Plan.";
+    await approve(card);
+    const [task] = (await plan()).tasks;
+    expect(task).toMatchObject({
+      title: "Vorlesung nacharbeiten",
+      courseId,
+      fixedEventId: event!.id,
+      role: "follow_up",
+      done: false,
+    });
+
+    await call("POST", `/tasks/${task!.id}/done`, { done: true });
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeTaskReopen", { task: "T1" }),
+    );
+    prompts.length = 0;
+    const again = await askInChat(
+      headers,
+      chatId,
+      "Ich muss da doch nochmal ran.",
+    );
+    expect(JSON.stringify(prompts[1])).toMatch(/Follow-up T1 \(done\)/);
+    const reopen = again.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeTaskReopen",
+    );
+    expect(reopen).toMatchObject({
+      action: {
+        shown: {
+          kind: "task.reopen",
+          work: { title: "Vorlesung nacharbeiten" },
+        },
+      },
+    });
+    await approve(reopen);
+    expect((await plan()).tasks).toEqual([
+      expect.objectContaining({ id: task!.id, done: false }),
+    ]);
   });
 
   it("proposes moving a Study Block the Plan showed, and moves it once approved", async () => {
@@ -4139,6 +4350,8 @@ describe("Chat", () => {
         "proposeStudyBlock",
         "proposeStudyBlockMove",
         "proposeStudyBlockRemove",
+        "proposeTask",
+        "proposeTaskReopen",
       ],
     ]);
     expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
@@ -4662,6 +4875,7 @@ describe("Plan", () => {
         id: expect.any(String),
         events: 1,
         skipped: { allDay: 0, outsideWindow: 0, truncated: false },
+        proposedCourses: 1,
       },
     ]);
     expect(
@@ -4686,6 +4900,158 @@ describe("Plan", () => {
       (await call("DELETE", `/calendar-sources/${view.calendars[0]!.id}`))
         .status,
     ).toBe(200);
+  });
+
+  it("proposes a Course for each Event Series of an added calendar, which the student confirms or rejects, and takes one event out", async () => {
+    const { cookie, headers } = await planFixture("plan-series");
+    const call = (method: string, path: string, body?: unknown) =>
+      app.request(`${apiOrigin}/api/me${path}`, {
+        method,
+        headers,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    const stamp = (days: number, hour: number) => {
+      const day = new Date(Date.now() + days * 24 * 60 * 60_000)
+        .toISOString()
+        .slice(0, 10)
+        .replace(/-/g, "");
+      return `${day}T${String(hour).padStart(2, "0")}0000Z`;
+    };
+    const event = (uid: string, title: string, days: number) => [
+      "BEGIN:VEVENT",
+      `UID:${uid}`,
+      `DTSTAMP:${stamp(0, 0)}`,
+      `SUMMARY:${title}`,
+      `DTSTART:${stamp(days, 9)}`,
+      `DTEND:${stamp(days, 11)}`,
+      "END:VEVENT",
+    ];
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//test//EN",
+      ...event("vl-1@uni", "Analysis Vorlesung", 1),
+      ...event("vl-2@uni", "Analysis Vorlesung", 8),
+      ...event("yoga@uni", "Yoga", 2),
+      "END:VCALENDAR",
+    ].join("\r\n");
+    type View = {
+      eventSeries: {
+        id: string;
+        title: string;
+        courseId: string | null;
+        state: string;
+      }[];
+      fixedEvents: { id: string; courseId: string | null }[];
+      tasks: {
+        fixedEventId: string | null;
+        role: string | null;
+        window: { start: string; end: string } | null;
+      }[];
+    };
+    const view = async () =>
+      (await (
+        await app.request(`${apiOrigin}/api/me/plan`, { headers: { cookie } })
+      ).json()) as View;
+
+    const added = await call("POST", "/calendar-sources", {
+      name: "Stundenplan.ics",
+      ics,
+    });
+    expect([added.status, await added.json()]).toEqual([
+      201,
+      expect.objectContaining({ events: 3, proposedCourses: 2 }),
+    ]);
+    const [lecture, yoga] = (await view()).eventSeries;
+    expect([lecture, yoga]).toEqual([
+      expect.objectContaining({
+        title: "Analysis Vorlesung",
+        state: "proposed",
+      }),
+      expect.objectContaining({ title: "Yoga", state: "proposed" }),
+    ]);
+
+    expect(
+      (
+        await call("POST", `/event-series/${lecture!.id}/decision`, {
+          courseId: lecture!.courseId,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("POST", `/event-series/${yoga!.id}/decision`, {
+          reject: true,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("POST", `/event-series/${randomUUID()}/decision`, {
+          reject: true,
+        })
+      ).status,
+    ).toBe(404);
+    const decided = await view();
+    expect(decided.eventSeries.map((s) => s.state)).toEqual([
+      "confirmed",
+      "rejected",
+    ]);
+    const courseEvents = decided.fixedEvents.filter((e) => e.courseId);
+    expect(courseEvents).toHaveLength(2);
+
+    expect(
+      (
+        await call("PUT", `/event-series/${lecture!.id}/routine`, {
+          preparationMinutes: 30,
+          followUpMinutes: 60,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("PUT", `/event-series/${lecture!.id}/routine`, {
+          preparationMinutes: -5,
+          followUpMinutes: 60,
+        })
+      ).status,
+    ).toBe(400);
+    const tasks = (await view()).tasks;
+    expect(tasks.map((t) => [t.fixedEventId, t.role]).sort()).toEqual(
+      [
+        [courseEvents[0]!.id, "follow_up"],
+        [courseEvents[0]!.id, "preparation"],
+        [courseEvents[1]!.id, "follow_up"],
+        [courseEvents[1]!.id, "preparation"],
+      ].sort(),
+    );
+    expect(tasks.every((t) => t.window !== null)).toBe(true);
+
+    // Skipping the Routine past both lectures leaves them without Preparations and Follow-ups.
+    const until = new Date(Date.now() + 10 * 24 * 60 * 60_000);
+    expect(
+      (
+        await call("POST", `/event-series/${lecture!.id}/routine/skip`, {
+          until,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("POST", `/event-series/${randomUUID()}/routine/skip`, {
+          until,
+        })
+      ).status,
+    ).toBe(404);
+    expect((await view()).tasks).toEqual([]);
+
+    expect(
+      (await call("POST", `/fixed-events/${courseEvents[0]!.id}/detach`))
+        .status,
+    ).toBe(200);
+    expect(
+      (await view()).fixedEvents.filter((e) => e.courseId).map((e) => e.id),
+    ).toEqual([courseEvents[1]!.id]);
   });
 });
 

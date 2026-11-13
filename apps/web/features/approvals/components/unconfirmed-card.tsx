@@ -11,13 +11,14 @@ export function UnconfirmedCard({
   onResolve: (resolution: "happened" | "did_not_happen") => void;
 }) {
   const { action } = unconfirmed;
-  const verb =
-    action.kind === "studyBlock.move"
-      ? "move"
-      : action.kind === "studyBlock.remove"
-        ? "remove"
-        : "add";
-  const heading = `nunio could not confirm: ${verb} the block for ${action.work.title}`;
+  const what = {
+    "studyBlock.create": `add the block for ${action.work.title}`,
+    "studyBlock.move": `move the block for ${action.work.title}`,
+    "studyBlock.remove": `remove the block for ${action.work.title}`,
+    "task.create": `add the Task ${action.work.title}`,
+    "task.reopen": `reopen the Task ${action.work.title}`,
+  }[action.kind];
+  const heading = `nunio could not confirm: ${what}`;
   return (
     <article aria-label={heading}>
       <h3>{heading}</h3>

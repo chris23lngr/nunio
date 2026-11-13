@@ -15,7 +15,13 @@ function headingOf({ kind, action, title, shortMinutes }: Intervention) {
       : `${hours(shortMinutes)} short for ${title}`;
   if (kind === "disagreement") return `Sources disagree about ${title}`;
   const what = action
-    ? `${action.kind === "studyBlock.move" ? "move" : action.kind === "studyBlock.remove" ? "remove" : "add"} the block for ${action.work.title}`
+    ? {
+        "studyBlock.create": `add the block for ${action.work.title}`,
+        "studyBlock.move": `move the block for ${action.work.title}`,
+        "studyBlock.remove": `remove the block for ${action.work.title}`,
+        "task.create": `add the Task ${action.work.title}`,
+        "task.reopen": `reopen the Task ${action.work.title}`,
+      }[action.kind]
     : "an Action that is gone";
   return kind === "approval_expired"
     ? `An approval expired: ${what}`

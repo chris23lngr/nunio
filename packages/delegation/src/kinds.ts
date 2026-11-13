@@ -23,6 +23,15 @@ const schemas = {
       end: z.date(),
     })
     .refine(ordered, message),
+  /** A Task in a Course, or a Course Event's Preparation or Follow-up (ADR-0022). */
+  "task.create": z.strictObject({
+    title: z.string().trim().min(1).max(500),
+    courseId: z.string().min(1).nullable(),
+    fixedEventId: z.string().min(1).nullable(),
+    role: z.enum(["preparation", "follow_up"]).nullable(),
+    estimateMinutes: z.number().int().positive().max(60_000).nullable(),
+  }),
+  "task.reopen": z.strictObject({ taskId: z.string().min(1) }),
   // The block as the student was shown it, so a removed one can still be named (ADR-0021).
   "studyBlock.remove": z
     .strictObject({
@@ -35,7 +44,7 @@ const schemas = {
 };
 
 /** What the gate re-reads at dispatch about the work an Action is for. */
-/** A Task toward no Obligation has no Course. */
+/** A Task toward no Obligation has its own Course, or none. */
 export interface WorkSubject {
   courseId: string | null;
   obligationId: string | null;
@@ -47,9 +56,15 @@ export interface BlockSubject extends WorkSubject {
   placedBy: "nunio" | "student";
   locked: boolean;
 }
+/** ...and about the Task a reopening would change. */
+export interface TaskSubject extends WorkSubject {
+  title: string;
+}
 type Subjects = {
   "studyBlock.create": WorkSubject;
   "studyBlock.move": BlockSubject;
+  "task.create": WorkSubject;
+  "task.reopen": TaskSubject;
   "studyBlock.remove": BlockSubject;
 };
 
@@ -66,6 +81,9 @@ const covers = {
   // A Rebalance moves a block the student placed or moved only with their Approval.
   "studyBlock.move": (scope: GrantScope, _: unknown, block: BlockSubject) =>
     inScope(scope, block) && block.placedBy === "nunio",
+  // No Responsibility adds or reopens Tasks: only the student, from a Chat, with their Approval (ADR-0022).
+  "task.create": () => false,
+  "task.reopen": () => false,
   // Only the student removes a block: no Grant covers it (ADR-0021).
   "studyBlock.remove": () => false,
 };
@@ -74,12 +92,16 @@ const versions = {
   "studyBlock.create": 1,
   "studyBlock.move": 1,
   "studyBlock.remove": 1,
+  "task.create": 1,
+  "task.reopen": 1,
 };
-/** What the student is shown beyond the arguments: for a move, where the block is now. */
+/** What the student is shown beyond the arguments: for a move or removal, where the block is now; for a reopening, which Task. */
 const shown = {
   "studyBlock.create": () => null,
   "studyBlock.move": ({ start, end }: BlockSubject) => ({ start, end }),
   "studyBlock.remove": ({ start, end }: BlockSubject) => ({ start, end }),
+  "task.create": () => null,
+  "task.reopen": ({ title }: TaskSubject) => ({ title }),
 };
 
 /** JSON with sorted keys and ISO dates, so equal Actions always hash alike. */
@@ -138,6 +160,8 @@ function definition<K extends keyof typeof schemas>(kind: K) {
 export const definitions = {
   "studyBlock.create": definition("studyBlock.create"),
   "studyBlock.move": definition("studyBlock.move"),
+  "task.create": definition("task.create"),
+  "task.reopen": definition("task.reopen"),
   "studyBlock.remove": definition("studyBlock.remove"),
 };
 

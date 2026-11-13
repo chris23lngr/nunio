@@ -5,8 +5,11 @@ export type Refusal =
   | "gone"
   | Exclude<Extract<Retrieval, { status: "refused" }>["reason"], "not_owner">;
 
-/** A work or Study Block a tool showed under a handle. */
-export type Handled = { kind: "obligation" | "task" | "block"; id: string };
+/** A work, Study Block or Course Event a tool showed under a handle. */
+export type Handled = {
+  kind: "obligation" | "task" | "block" | "event";
+  id: string;
+};
 
 /** Lines of student data the model must read as data, fenced so nothing inside can pass for an instruction. */
 export function fenced(name: string, lines: readonly string[]) {
@@ -30,11 +33,13 @@ export function createTurn() {
   const handles = new Map<string, Handled>();
   let refusal: Refusal | undefined;
   return {
-    /** A short handle for a work or Study Block, such as O1, T1 or B1, which proposals name it by. */
+    /** A short handle for a work, Study Block or Course Event, such as O1, T1, B1 or E1, which proposals name it by. */
     handleFor(kind: Handled["kind"], id: string) {
       for (const [handle, known] of handles)
         if (known.kind === kind && known.id === id) return handle;
-      const prefix = { obligation: "O", task: "T", block: "B" }[kind];
+      const prefix = { obligation: "O", task: "T", block: "B", event: "E" }[
+        kind
+      ];
       const handle = `${prefix}${[...handles.keys()].filter((h) => h.startsWith(prefix)).length + 1}`;
       handles.set(handle, { kind, id });
       return handle;

@@ -14,6 +14,7 @@ import { createModelCatalogActivities } from "./model-catalog-activities.js";
 import { ensureModelPriceSchedule } from "./model-price-schedule.js";
 import { ensureOutreachSchedule } from "./outreach-schedule.js";
 import { ensureReconcileSchedule } from "./reconcile-schedule.js";
+import { ensureRoutineSchedule } from "./routine-schedule.js";
 import { runActivitiesFromEnv } from "./run-activities.js";
 import { createSourceActivities } from "./source-activities.js";
 
@@ -64,6 +65,7 @@ const runActivities = runActivitiesFromEnv(
 await ensureReconcileSchedule(client, taskQueue);
 await ensureOutreachSchedule(client, taskQueue);
 await ensureModelPriceSchedule(client, taskQueue);
+await ensureRoutineSchedule(client, taskQueue);
 const worker = await Worker.create({
   connection,
   namespace: required("TEMPORAL_NAMESPACE"),
