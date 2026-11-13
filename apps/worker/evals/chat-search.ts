@@ -60,6 +60,7 @@ const chats = createChats({
     request: async () => ({ status: "refused", reason: "gone" }),
     list: async () => [],
   },
+  understanding: { levels: async () => [] },
   startArtifactRun: async () => {},
 });
 const answerer = createAnswerer(

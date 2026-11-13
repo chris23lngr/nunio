@@ -36,6 +36,7 @@ import {
 } from "@nunio/knowledge";
 import { createOutreach } from "@nunio/outreach";
 import { createPlan, createPlanExecutor, deadline } from "@nunio/planning";
+import type { Understanding } from "@nunio/understanding";
 import { createUnderstanding } from "@nunio/understanding";
 import { APICallError } from "ai";
 import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
@@ -71,6 +72,7 @@ let facts: Facts;
 let delegation: Delegation;
 let responsibilities: Responsibilities;
 let artifacts: Artifacts;
+let understanding: Understanding;
 /** The Artifact Runs the API asked to start, by run ID; the worker would then make each. */
 const artifactRuns: string[] = [];
 const artifactWorkflows: ArtifactWorkflows = {
@@ -376,6 +378,9 @@ beforeAll(async () => {
       request: (...args) => artifacts.request(...args),
       list: (...args) => artifacts.list(...args),
     },
+    understanding: {
+      levels: (...args) => understanding.levels(...args),
+    },
     startArtifactRun: (runId) => artifactWorkflows.start(runId),
   });
   responsibilities = createResponsibilities({
@@ -393,19 +398,20 @@ beforeAll(async () => {
     maker,
     clock: { now: () => new Date() },
   });
+  understanding = createUnderstanding({
+    db: prisma,
+    keys,
+    artifacts,
+    reader,
+    facts,
+    delegation,
+    grader,
+    clock: { now: () => new Date() },
+  });
   app = createApp({
     artifacts,
     artifactWorkflows,
-    understanding: createUnderstanding({
-      db: prisma,
-      keys,
-      artifacts,
-      reader,
-      facts,
-      delegation,
-      grader,
-      clock: { now: () => new Date() },
-    }),
+    understanding,
     responsibilities,
     runWorkflows,
     auth,
@@ -3716,6 +3722,97 @@ describe("Chat", () => {
 
     expect(JSON.stringify(prompts[2])).toContain("selected Courses");
     expect(artifactRuns).toEqual([]);
+  });
+
+  describe("courseFacts with Understanding Levels and Artifacts", () => {
+    /** What the model was given after reading K1's Facts, and the tag of its Topic. */
+    async function readCourseFacts(
+      headers: Record<string, string>,
+      chatId: string,
+    ) {
+      steps.push(calls("courseFacts", { course: "K1" }), says("Gern."));
+      prompts.length = 0;
+      expect((await askInChat(headers, chatId, "Wo stehe ich?")).status).toBe(
+        200,
+      );
+      const given = JSON.stringify(prompts[1]);
+      const tag = /\[(S\d+)\] Analysis I, Topic/.exec(given)?.[1];
+      return { given, tag };
+    }
+
+    it("gives a Topic without Evidence as not yet practiced", async () => {
+      const { headers, chatId } = await topicChat("chat-levels-none");
+
+      const { given, tag } = await readCourseFacts(headers, chatId);
+
+      expect(tag).toBeDefined();
+      expect(given).toContain(`[${tag}] not yet practiced`);
+    });
+
+    it("gives a Topic's Level with what the Attempts show, the Self-assessment and the day of the last Evidence, even to a Chat that selected nothing", async () => {
+      const s = await studyFixture("chat-levels-disputed");
+      const { artifactId, runId } = (await (
+        await s.send("/api/me/artifacts", {
+          kind: "practice_set",
+          topicIds: [s.topicId],
+          from: s.selection,
+        })
+      ).json()) as { artifactId: string; runId: string };
+      await artifacts.make(runId);
+      await s.send("/api/me/attempts", {
+        artifactId,
+        itemId: "1",
+        text: "Konvergenz.",
+      });
+      await s.send(`/api/me/topics/${s.topicId}/self-assessment`, {
+        level: "solid",
+      });
+      const { id: chatId } = (await (
+        await s.send("/api/me/chats", { courseIds: [], sourceIds: [] })
+      ).json()) as { id: string };
+
+      const { given, tag } = await readCourseFacts(
+        {
+          cookie: s.cookie,
+          origin: appOrigin,
+          "content-type": "application/json",
+        },
+        chatId,
+      );
+
+      expect(given).toContain(
+        `[${tag}] disputed (Attempts: shaky, Self-assessment: solid, last Evidence ${berlinDay(0)})`,
+      );
+    });
+
+    it("lists the Course's ready practice set by its Topics, without its content", async () => {
+      const s = await studyFixture("chat-course-artifacts");
+      const { runId } = (await (
+        await s.send("/api/me/artifacts", {
+          kind: "practice_set",
+          topicIds: [s.topicId],
+          from: s.selection,
+        })
+      ).json()) as { runId: string };
+      await artifacts.make(runId);
+      const { id: chatId } = (await (
+        await s.send("/api/me/chats", { courseIds: [], sourceIds: [] })
+      ).json()) as { id: string };
+
+      const { given, tag } = await readCourseFacts(
+        {
+          cookie: s.cookie,
+          origin: appOrigin,
+          "content-type": "application/json",
+        },
+        chatId,
+      );
+
+      expect(given).toContain(
+        `practice set, ready, not opened, made ${berlinDay(0)}, Topics [${tag}]`,
+      );
+      expect(given).not.toContain("Was kommt in der Klausur dran?");
+    });
   });
 
   it("tells the model in later turns where an Artifact it started stands", async () => {

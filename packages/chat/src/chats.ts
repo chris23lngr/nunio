@@ -8,6 +8,7 @@ import type { SourceKeys } from "@nunio/keys";
 import type { Citation, KnowledgeReader, Provenance } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
+import type { Understanding } from "@nunio/understanding";
 import type { ModelMessage, UIMessageChunk } from "ai";
 import { agendaTool } from "./agenda.js";
 import { chatContext } from "./context.js";
@@ -74,6 +75,7 @@ export function createChats({
   plan,
   clock,
   artifacts,
+  understanding,
   startArtifactRun,
 }: {
   db: PrismaClient;
@@ -83,6 +85,7 @@ export function createChats({
   plan: Pick<Plan, "timeZone" | "view" | "check">;
   clock: { now(): Date };
   artifacts: Pick<Artifacts, "request" | "list">;
+  understanding: Pick<Understanding, "levels">;
   /** Starts an Artifact's Run, which then makes it; an API adapter over Temporal. */
   startArtifactRun: (runId: string) => Promise<void>;
 }) {
@@ -287,7 +290,10 @@ export function createChats({
         ? {
             courseFacts: courseFactsTool(turn, {
               reader,
+              understanding,
+              artifacts,
               p,
+              timeZone,
               courses: context.courses,
             }),
           }
