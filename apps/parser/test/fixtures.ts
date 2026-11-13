@@ -6,12 +6,24 @@ export function pdfFixture({
   bomb = false,
   inflated,
   image = false,
+  duplicateKeys = 0,
+  decodeParms,
+  shadowedFilter = false,
+  filterKey = "/Filter",
 }: {
   pages?: number;
   text?: string;
   bomb?: boolean;
   inflated?: number;
   image?: boolean;
+  /** This many objects repeat a dictionary key, as LaTeX output does; qpdf warns for each and exits 3. */
+  duplicateKeys?: number;
+  /** /DecodeParms for the Flate stream, such as a predictor qpdf cannot decode and so copies still compressed. */
+  decodeParms?: string;
+  /** Compresses the page, then repeats /Filter empty after 1000 other keys: qpdf keeps the last, Poppler the first. */
+  shadowedFilter?: boolean;
+  /** Names the Flate filter under another key, such as /F, which Poppler also reads as a filter. */
+  filterKey?: string;
 } = {}): Buffer {
   // A bomb decompresses beyond the parser's 512 MiB bound.
   const inflatedBytes = inflated ?? (bomb ? 544 * 1024 * 1024 : 0);
@@ -19,7 +31,15 @@ export function pdfFixture({
   const add = (text: string | Buffer) => {
     objects.push(Buffer.isBuffer(text) ? text : Buffer.from(text));
   };
-  add("<< /Type /Catalog /Pages 2 0 R >>");
+  // Objects with a repeated key follow the page objects and the image.
+  const firstDuplicate = 5 + pages + (image ? 1 : 0);
+  const duplicates = Array.from(
+    { length: duplicateKeys },
+    (_, i) => `${firstDuplicate + i} 0 R`,
+  );
+  add(
+    `<< /Type /Catalog /Pages 2 0 R${duplicates.length ? ` /Duplicates [${duplicates.join(" ")}]` : ""} >>`,
+  );
   add(
     `<< /Type /Pages /Kids [${Array.from({ length: pages }, (_, i) => `${5 + i} 0 R`).join(" ")}] /Count ${pages} >>`,
   );
@@ -27,15 +47,21 @@ export function pdfFixture({
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
   );
   // A Flate stream of `inflated` spaces: a few KiB in the file, many MiB once decompressed.
+  const page = Buffer.from(
+    `BT /F1 12 Tf 20 100 Td (${text}) Tj ET${image ? " q 50 0 0 50 500 120 cm /Im1 Do Q" : ""}`,
+  );
   const content = inflatedBytes
     ? deflateSync(Buffer.alloc(inflatedBytes, 32), { level: 9 })
-    : Buffer.from(
-        `BT /F1 12 Tf 20 100 Td (${text}) Tj ET${image ? " q 50 0 0 50 500 120 cm /Im1 Do Q" : ""}`,
-      );
+    : shadowedFilter
+      ? deflateSync(page)
+      : page;
+  const shadow = shadowedFilter
+    ? ` ${Array.from({ length: 1000 }, (_, i) => `/Pad${i} 0`).join(" ")} /Filter []`
+    : "";
   add(
     Buffer.concat([
       Buffer.from(
-        `<< /Length ${content.length}${inflatedBytes ? " /Filter /FlateDecode" : ""} >>\nstream\n`,
+        `<< /Length ${content.length}${inflatedBytes || shadowedFilter ? ` ${filterKey} /FlateDecode` : ""}${shadow}${decodeParms ? ` /DecodeParms << ${decodeParms} >>` : ""} >>\nstream\n`,
       ),
       content,
       Buffer.from("\nendstream"),
@@ -49,6 +75,7 @@ export function pdfFixture({
     add(
       "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 1 >>\nstream\n0\nendstream",
     );
+  for (let i = 0; i < duplicateKeys; i++) add("<< /Group 1 /Group 2 >>");
   let body = Buffer.from("%PDF-1.7\n");
   const offsets = [0];
   for (const [i, object] of objects.entries()) {
