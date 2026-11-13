@@ -1064,3 +1064,20 @@ it("prepares a Handoff with the Obligation's Destination, its AI-use Rule and th
   expect(await artifacts.handoff(p, examId)).toBe("not_handed_in");
   expect(await artifacts.handoff(await student(), sheetId)).toBe("gone");
 });
+
+it("keeps the ID a caller chose for an Artifact, so a Chat answer can point to it before it is made", async () => {
+  const p = await student();
+  const { courseId, topicId } = await courseWithTopic(p);
+  const artifacts = artifactsWith(fakeMaker().maker);
+  const id = randomUUID();
+
+  const started = await artifacts.request(p, {
+    kind: "flashcards",
+    topicIds: [topicId],
+    from: { selection: { courseIds: [courseId], sourceIds: [] } },
+    artifactId: id,
+  });
+
+  expect(started).toMatchObject({ status: "started", artifactId: id });
+  expect((await artifacts.list(p, {})).map((a) => a.id)).toEqual([id]);
+});
