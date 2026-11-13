@@ -33,9 +33,11 @@ export function chatContext(
     timeZone,
   }).format(now);
   const date = now.toLocaleDateString("en-CA", { timeZone });
+  // Without Courses there is nothing to name; saying so would read as "nothing to look up", though selected material
+  // can still be searched.
   const text = [
     `Today is ${day}, ${date}, in the student's time zone ${timeZone}.`,
-    courses.length
+    ...(courses.length
       ? [
           "The student's Courses, by the handle to name them with in tools:",
           fenced(
@@ -45,8 +47,8 @@ export function chatContext(
                 `K${i + 1}: ${course.title}${course.code ? ` (${course.code})` : ""}, ${semesterName(course.semester)}`,
             ),
           ),
-        ].join("\n")
-      : "The student has no Courses yet.",
+        ]
+      : []),
   ].join("\n");
   return { text, courses: byHandle };
 }
