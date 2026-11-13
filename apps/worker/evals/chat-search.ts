@@ -19,7 +19,7 @@ const chatModel = {
   reasoningEffort: "high" as const,
   maxOutputTokens: 8_000,
 };
-const concurrency = 4;
+const concurrency = 2;
 
 const { provider, catalog, embedder, db, keys, delegation, documents, close } =
   await startRetrievalEval([chatModel]);
@@ -83,7 +83,16 @@ async function ask(document: EvalDocument, text: string) {
     .ask(document.p, chat.id, text, answerer)
     .catch((error: unknown) => ({
       status: "failed" as const,
-      error: String(error),
+      // A provider's rejection hides under DefiniteFailure; keep what it said.
+      error: [
+        String(error),
+        (error as { cause?: { statusCode?: number } }).cause?.statusCode,
+        (
+          error as { cause?: { responseBody?: string } }
+        ).cause?.responseBody?.slice(0, 500),
+      ]
+        .filter(Boolean)
+        .join(" | "),
     }));
   const costMicroUsd = (await used()) - before;
   if (result.status !== "ok")

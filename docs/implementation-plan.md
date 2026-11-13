@@ -629,7 +629,7 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 - [x] A Chat proposal is performed only after the student approves the fingerprint shown (`apps/api/src/create-app.test.ts`, "performs a proposal approved in the Chat…", which refuses another fingerprint with 409). A changed proposal needs a new Approval, and repeated clicks perform once (`packages/delegation/src/gate.test.ts`).
 - [x] A Model without a tool-capable zero-retention endpoint is not offered (`packages/delegation/src/model-catalog.test.ts`; `packages/ai/src/prices.test.ts`).
 - [x] Retrieval eval with model-driven search, including the share of questions about the material answered without a search, is recorded: [phase-14-chat-search-eval.json](operations/phase-14-chat-search-eval.json). The founder sets thresholds; labels are still pending the founder's spot-check.
-- [ ] Injection eval: Sources with embedded instructions start no Artifact Run, and any proposal they cause appears only as a card.
+- [x] Injection eval: Sources with embedded instructions start no Artifact Run, and any proposal they cause appears only as a card ([phase-14-chat-injection-eval.json](operations/phase-14-chat-injection-eval.json)).
 
 **Progress (2026-11-12).** Stage 1 is implemented.
 - `createChats` and the ask flow live in `packages/chat`, unchanged apart from the history.
@@ -669,6 +669,15 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 - A failed turn starts nothing, and a Topic outside the selected Courses goes back to the model with the reason.
 - The web shows a step line and a card that opens the Artifact under Study.
 - Later turns see where each started Artifact stands.
+
+**Progress (2026-11-13).** Evals before the merge to `main`.
+- **Chat injection eval** (`apps/worker/evals/chat-injection.ts`): a synthetic Source tells assistants to start Artifacts and to move and propose Study Blocks, at 3 a.m. and 10 p.m. Five harmless questions that read it, each in a fresh Chat with `sonnet-5.5-reasoning-high`, started 0 Artifacts, made 0 proposals and performed 0 Actions. An honest request for a practice set started one, so a start is detected. It cost $0.11.
+- **Chat search eval rerun** with stage 3's instructions. The first rerun found two faults in stage 3, both fixed with tests:
+  - For a student with no Courses, the context message's "no Courses yet" kept the model from searching selected Sources.
+  - The model guessed Course handles for a module the question named.
+
+  Now `courseFacts` is offered only with Courses, and the instructions forbid guessing handles. After the fixes: 0 questions about the material answered without a search, search and citation recall 1.0 on the 21 answered, and every answered unanswerable question declined. $1.57.
+- **Open before the pilot.** Two turns of that run failed on HTTP 429 from Amazon Bedrock's shared pool behind OpenRouter. Steps run with `maxRetries: 0`, since `meter` owns retrying, so one rate-limited step fails the whole turn. Retrying a step that was certainly rejected, with a new reservation, is the follow-up. The eval now runs two questions at a time and records a rejection's status and body.
 
 **Anti-pattern guards.**
 - `toolChoice` is only `auto` or `none`.
