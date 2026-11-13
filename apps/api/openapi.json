@@ -2159,13 +2159,64 @@
               "end"
             ],
             "description": "Where the block would go; null for a removal or a Task Action."
+          },
+          "task": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "role": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "preparation",
+                  "follow_up",
+                  null
+                ]
+              },
+              "minutes": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "event": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "title",
+                  "start"
+                ]
+              }
+            },
+            "required": [
+              "role",
+              "minutes",
+              "event"
+            ],
+            "description": "What a new Task is for: its Course Event and role, and the minutes it needs; null for any other Action."
           }
         },
         "required": [
           "kind",
           "work",
           "from",
-          "to"
+          "to",
+          "task"
         ]
       },
       "Plan": {
@@ -7288,24 +7339,60 @@
                   {
                     "type": "object",
                     "properties": {
-                      "approval": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                            "maxLength": 200
-                          },
-                          "fingerprint": {
-                            "type": "string",
-                            "maxLength": 200
-                          }
+                      "decisions": {
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "approvalId": {
+                                  "type": "string",
+                                  "maxLength": 200
+                                },
+                                "decision": {
+                                  "type": "string",
+                                  "enum": [
+                                    "approve"
+                                  ]
+                                },
+                                "fingerprint": {
+                                  "type": "string",
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "approvalId",
+                                "decision",
+                                "fingerprint"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "approvalId": {
+                                  "type": "string",
+                                  "maxLength": 200
+                                },
+                                "decision": {
+                                  "type": "string",
+                                  "enum": [
+                                    "deny"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "approvalId",
+                                "decision"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
                         },
-                        "required": [
-                          "id",
-                          "fingerprint"
-                        ],
-                        "additionalProperties": false,
-                        "description": "Approves the proposal the answer asked under this approval ID, with the fingerprint its card showed (ADR-0010); the model then reports how it went in a new answer."
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "description": "The student's decisions on one answer's proposals, each applied on its own; the model then reports how they went in one new answer."
                       },
                       "model": {
                         "type": "string",
@@ -7314,7 +7401,7 @@
                       }
                     },
                     "required": [
-                      "approval"
+                      "decisions"
                     ],
                     "additionalProperties": false
                   }
@@ -7371,7 +7458,7 @@
             }
           },
           "409": {
-            "description": "The question ID is already used, or the approval is not the card's open request.",
+            "description": "The question ID is already used, or the decided proposals belong to different answers.",
             "content": {
               "application/json": {
                 "schema": {

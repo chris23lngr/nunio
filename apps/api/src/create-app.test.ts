@@ -3514,6 +3514,279 @@ describe("Chat", () => {
     expect(prompts).toEqual([]);
   });
 
+  it("decides an answer's proposals at once: performs the approved, records the denied, and reports both in one new message", async () => {
+    const { headers, chatId, obligationId } =
+      await planningChat("chat-propose-batch");
+    const [day, next] = [berlinDay(8), berlinDay(9)];
+    steps.push(calls("agenda", { from: berlinDay(7), to: berlinDay(13) }), [
+      ...calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+      ...calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${next}T10:00`,
+        end: `${next}T12:00`,
+      }),
+    ]);
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const [first, second] = asked.body.parts.filter(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    reply = "Den ersten Block habe ich eingetragen, den zweiten nicht.";
+    prompts.length = 0;
+
+    const chunks = await sseChunks(
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          decisions: [
+            {
+              approvalId: first.approvalId,
+              decision: "approve",
+              fingerprint: first.action.fingerprint,
+            },
+            { approvalId: second.approvalId, decision: "deny" },
+          ],
+        }),
+      }),
+    );
+
+    expect(
+      await admin.studyBlock.findMany({
+        where: { obligationId },
+        select: { start: true },
+      }),
+    ).toEqual([{ start: deadline(day, "10:00", "Europe/Berlin") }]);
+    expect(prompts).toHaveLength(1);
+    const prompt = JSON.stringify(prompts[0]);
+    expect(prompt).toContain("approved");
+    expect(prompt).toContain("denied");
+    const started = chunks.find((chunk) => chunk.type === "start");
+    expect(
+      chunks.find((chunk) => chunk.type === "data-committed").data,
+    ).toMatchObject({
+      id: started.messageId,
+      text: "Den ersten Block habe ich eingetragen, den zweiten nicht.",
+    });
+    const messages = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { id: string; parts: { type: string; action?: unknown }[] }[];
+    expect(messages.map((message) => message.id)).toEqual([
+      expect.any(String),
+      asked.body.id,
+      started.messageId,
+    ]);
+    expect(
+      messages[1]!.parts
+        .filter((part) => part.type === "tool-proposeStudyBlock")
+        .map((part) => part.action),
+    ).toEqual([
+      expect.objectContaining({ status: "done", decision: "approved" }),
+      expect.objectContaining({ decision: "denied" }),
+    ]);
+  });
+
+  it("still performs the rest of a batch when one proposal expired meanwhile, and tells the model which one", async () => {
+    const { headers, chatId, obligationId } = await planningChat(
+      "chat-propose-batch-stale",
+    );
+    const [day, next] = [berlinDay(8), berlinDay(9)];
+    steps.push(calls("agenda", { from: berlinDay(7), to: berlinDay(13) }), [
+      ...calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+      ...calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${next}T10:00`,
+        end: `${next}T12:00`,
+      }),
+    ]);
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const [first, second] = asked.body.parts.filter(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    await admin.approval.updateMany({
+      where: { actionId: first.action.id },
+      data: { expiresAt: new Date(Date.now() - 60_000) },
+    });
+    reply =
+      "Der erste Vorschlag war abgelaufen, den zweiten habe ich eingetragen.";
+    prompts.length = 0;
+
+    const response = await app.request(
+      `${apiOrigin}/api/me/chats/${chatId}/messages/stream`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          decisions: [first, second].map((part) => ({
+            approvalId: part.approvalId,
+            decision: "approve",
+            fingerprint: part.action.fingerprint,
+          })),
+        }),
+      },
+    );
+    await sseChunks(response);
+
+    expect(response.status).toBe(200);
+    expect(
+      await admin.studyBlock.findMany({
+        where: { obligationId },
+        select: { start: true },
+      }),
+    ).toEqual([{ start: deadline(next, "10:00", "Europe/Berlin") }]);
+    expect(JSON.stringify(prompts[0])).toContain("expired or changed");
+    const messages = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { parts: { type: string; action?: { status: string } }[] }[];
+    expect(
+      messages[1]!.parts
+        .filter((part) => part.type === "tool-proposeStudyBlock")
+        .map((part) => part.action?.status),
+    ).toEqual(["expired", "done"]);
+  });
+
+  it("refuses a batch that names a proposal twice, or approves one without its fingerprint", async () => {
+    const { headers, chatId } = await planningChat("chat-propose-batch-shape");
+    const day = berlinDay(8);
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+    );
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const card = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    const send = (decisions: unknown[]) =>
+      app.request(`${apiOrigin}/api/me/chats/${chatId}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ decisions }),
+      });
+
+    const twice = await send([
+      { approvalId: card.approvalId, decision: "deny" },
+      { approvalId: card.approvalId, decision: "deny" },
+    ]);
+    const unprinted = await send([
+      { approvalId: card.approvalId, decision: "approve" },
+    ]);
+
+    expect([twice.status, unprinted.status]).toEqual([400, 400]);
+    expect(
+      await admin.approval.count({
+        where: { actionId: card.action.id, decision: null },
+      }),
+    ).toBe(1);
+  });
+
+  it("shows a proposal as failed only when the student said it did not happen, and a failed attempt as refused", async () => {
+    const { headers, chatId } = await planningChat("chat-propose-failed");
+    const [day, next] = [berlinDay(8), berlinDay(9)];
+    steps.push(calls("agenda", { from: berlinDay(7), to: berlinDay(13) }), [
+      ...calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+      ...calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${next}T10:00`,
+        end: `${next}T12:00`,
+      }),
+    ]);
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const [reported, attempted] = asked.body.parts.filter(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    await admin.action.update({
+      where: { id: reported.action.id },
+      data: { status: "unconfirmed" },
+    });
+    await admin.action.update({
+      where: { id: attempted.action.id },
+      data: { status: "failed", failure: "the executor gave up" },
+    });
+
+    await app.request(
+      `${apiOrigin}/api/me/actions/${reported.action.id}/resolve`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ resolution: "did_not_happen" }),
+      },
+    );
+
+    const messages = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { parts: { type: string; action?: { status: string } }[] }[];
+    expect(
+      messages[1]!.parts
+        .filter((part) => part.type === "tool-proposeStudyBlock")
+        .map((part) => part.action?.status),
+    ).toEqual(["failed", "refused"]);
+  });
+
+  it("refuses a batch mixing proposals from different answers", async () => {
+    const { headers, chatId } = await planningChat("chat-propose-batch-mixed");
+    const day = berlinDay(8);
+    const propose = async (time: string) => {
+      steps.push(
+        calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+        calls("proposeStudyBlock", {
+          work: "O1",
+          start: `${day}T${time}`,
+          end: `${day}T${time.replace(/^1/, "2")}`,
+        }),
+      );
+      const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+      return asked.body.parts.find(
+        (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+      );
+    };
+    const [first, second] = [await propose("10:00"), await propose("13:00")];
+
+    const response = await app.request(
+      `${apiOrigin}/api/me/chats/${chatId}/messages/stream`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          decisions: [first, second].map((part) => ({
+            approvalId: part.approvalId,
+            decision: "deny",
+          })),
+        }),
+      },
+    );
+
+    expect(response.status).toBe(409);
+    expect(
+      await admin.approval.count({
+        where: {
+          actionId: { in: [first.action.id, second.action.id] },
+          decision: null,
+        },
+      }),
+    ).toBe(2);
+  });
+
   it("performs a proposal approved in the Chat and has the model report it in a new message", async () => {
     const { headers, chatId, obligationId } = await planningChat(
       "chat-propose-approve",
@@ -3537,21 +3810,20 @@ describe("Chat", () => {
         headers,
         body: JSON.stringify(body),
       });
-    expect(
-      (
-        await stream({
-          approval: { id: card.approvalId, fingerprint: "not-the-card" },
-        })
-      ).status,
-    ).toBe(409);
+    const approve = (fingerprint: string) =>
+      stream({
+        decisions: [
+          { approvalId: card.approvalId, decision: "approve", fingerprint },
+        ],
+      });
+    reply = "Der Vorschlag hat sich geändert.";
+    await sseChunks(await approve("not-the-card"));
+    expect(await admin.studyBlock.count({ where: { obligationId } })).toBe(0);
+    expect(JSON.stringify(prompts.at(-1))).toContain("expired or changed");
     reply = "Erledigt, der Lernblock steht in deinem Plan.";
     prompts.length = 0;
 
-    const chunks = await sseChunks(
-      await stream({
-        approval: { id: card.approvalId, fingerprint: card.action.fingerprint },
-      }),
-    );
+    const chunks = await sseChunks(await approve(card.action.fingerprint));
 
     expect(await admin.studyBlock.count({ where: { obligationId } })).toBe(1);
     expect(prompts).toHaveLength(1);
@@ -3572,6 +3844,7 @@ describe("Chat", () => {
     expect(messages.map((message) => message.id)).toEqual([
       expect.any(String),
       asked.body.id,
+      expect.any(String),
       started.messageId,
     ]);
     expect(
@@ -3657,6 +3930,14 @@ describe("Chat", () => {
         shown: {
           kind: "task.create",
           work: { title: "Vorlesung nacharbeiten", course: "Analysis I" },
+          task: {
+            role: "follow_up",
+            minutes: 60,
+            event: {
+              title: "Analysis Vorlesung",
+              start: deadline(day, "10:00", "Europe/Berlin").toISOString(),
+            },
+          },
         },
       },
     });
@@ -3666,10 +3947,13 @@ describe("Chat", () => {
     }) =>
       sseChunks(
         await call("POST", `/chats/${chatId}/messages/stream`, {
-          approval: {
-            id: part.approvalId,
-            fingerprint: part.action.fingerprint,
-          },
+          decisions: [
+            {
+              approvalId: part.approvalId,
+              decision: "approve",
+              fingerprint: part.action.fingerprint,
+            },
+          ],
         }),
       );
     reply = "Erledigt, die Nachbereitung steht in deinem Plan.";
@@ -3755,6 +4039,7 @@ describe("Chat", () => {
         start: at(next, "14:00").toISOString(),
         end: at(next, "16:00").toISOString(),
       },
+      task: null,
     });
     await app.request(`${apiOrigin}/api/me/approvals/${card.action.id}`, {
       method: "POST",
@@ -3824,6 +4109,7 @@ describe("Chat", () => {
           end: at("12:00").toISOString(),
         },
         to: null,
+        task: null,
       });
       await app.request(`${apiOrigin}/api/me/approvals/${card.action.id}`, {
         method: "POST",
@@ -3879,10 +4165,13 @@ describe("Chat", () => {
             method: "POST",
             headers,
             body: JSON.stringify({
-              approval: {
-                id: card.approvalId,
-                fingerprint: card.action.fingerprint,
-              },
+              decisions: [
+                {
+                  approvalId: card.approvalId,
+                  decision: "approve",
+                  fingerprint: card.action.fingerprint,
+                },
+              ],
             }),
           },
         ),
@@ -5516,6 +5805,7 @@ describe("Approvals", () => {
             start: "2099-01-02T14:00:00.000Z",
             end: "2099-01-02T15:00:00.000Z",
           },
+          task: null,
         },
         fingerprint: asked.asking.fingerprint,
         expiresAt: asked.asking.expiresAt.toISOString(),
@@ -5934,6 +6224,7 @@ describe("Responsibilities", () => {
             start: "2099-01-02T14:00:00.000Z",
             end: "2099-01-02T15:00:00.000Z",
           },
+          task: null,
         },
       },
     ]);

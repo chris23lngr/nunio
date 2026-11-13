@@ -32,6 +32,14 @@ Instructions hidden in a Source can steer tool calls. A proposal does nothing wi
 - **What the student sees.** The card shows the Artifact's status as of when the Chat loaded, and the step line counts the Topics rather than naming them.
 - **History.** A started Artifact adds a line with its status to later turns.
 
+**Amendment (2026-11-13, proposal batches):** an answer's proposals are decided together.
+- **At the composer.** A waiting proposal is asked at the composer, not in its answer, which only shows where each proposal stands. The oldest answer's waiting proposals come first; a later answer's wait until those are sent.
+- **One batch.** The student decides each card in turn and may go back. A decision before the last card is only noted in the browser, so leaving the Chat drops it. The last decision sends them all as `{ decisions: [{ approvalId, decision, fingerprint? }] }` on the stream route; proposals from different answers are refused.
+- **Each on its own.** The API applies every decision through the gate, one after another. One that expired or changed meanwhile does nothing and leaves the others standing.
+- **One report.** The model reports on all of them in one new answer, denials included, since it then knows what the student declined. This replaces "a denial continues nothing" for the Chat; a denial on Home still continues nothing.
+- **Unconfirmed.** An approved proposal nunio could not confirm is asked about at the composer before any batch, and the student's answer is saved at once without a report.
+- **Where each stands.** A proposal approved after expiry shows as expired, and a failed attempt as refused; only the student's own "it did not happen" shows as failed. A new Task's card also names its Course Event, role and minutes.
+
 **Amendment (2026-11-13):** [ADR-0021](0021-a-chat-sees-understanding-shortfalls-and-artifacts.md) adds Understanding Levels, Shortfalls and Artifacts to the read tools, adds `studyBlock.remove` to the proposals, and lists further work a Chat does not offer.
 
 ## Considered Options

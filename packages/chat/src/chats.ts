@@ -388,14 +388,13 @@ export function createChats({
       return null;
     },
     /**
-     * Has the model tell the student how an approved proposal went, in a new answer of its own (ADR-0019). It is
-     * given the Chat's history, the proposal it made and the gate's outcome, and may call no tool.
+     * Has the model tell the student how their decisions on one answer's proposals went, in a new answer of its own
+     * (ADR-0019). It is given the Chat's history, the proposals it made and each one's outcome, and may call no tool.
      */
     async report(
       p: Principal,
       chatId: string,
-      approvalId: string,
-      outcome: string,
+      outcomes: { approvalId: string; outcome: string }[],
       answerer: Answerer,
       options: {
         signal?: AbortSignal;
@@ -404,14 +403,18 @@ export function createChats({
         id?: string;
       } = {},
     ) {
-      const [setUp, proposal] = await Promise.all([
+      const [setUp, ...proposals] = await Promise.all([
         turnFor(p, chatId),
-        this.proposal(p, chatId, approvalId),
+        ...outcomes.map((o) => this.proposal(p, chatId, o.approvalId)),
       ]);
-      if (!setUp || !proposal) return { status: "gone" } as const;
+      const found = proposals.flatMap((proposal) =>
+        proposal ? [proposal] : [],
+      );
+      if (!setUp || found.length === 0 || found.length < outcomes.length)
+        return { status: "gone" } as const;
       const { history, context, tools } = setUp;
       const answered = (await answers(p, chatId)).find(
-        (answer) => answer.id === proposal.answerId,
+        (answer) => answer.id === found[0]!.answerId,
       )!;
       const messages: ModelMessage[] = [
         ...history.turns.flatMap((turn): ModelMessage[] => [
@@ -421,25 +424,21 @@ export function createChats({
         { role: "user", content: context.text },
         {
           role: "assistant",
-          content: [
-            {
-              type: "tool-call",
-              toolCallId: proposal.toolCallId,
-              toolName: proposal.type.slice("tool-".length),
-              input: proposal.input,
-            },
-          ],
+          content: found.map((proposal) => ({
+            type: "tool-call" as const,
+            toolCallId: proposal.toolCallId,
+            toolName: proposal.type.slice("tool-".length),
+            input: proposal.input,
+          })),
         },
         {
           role: "tool",
-          content: [
-            {
-              type: "tool-result",
-              toolCallId: proposal.toolCallId,
-              toolName: proposal.type.slice("tool-".length),
-              output: { type: "text", value: outcome },
-            },
-          ],
+          content: found.map((proposal, n) => ({
+            type: "tool-result" as const,
+            toolCallId: proposal.toolCallId,
+            toolName: proposal.type.slice("tool-".length),
+            output: { type: "text" as const, value: outcomes[n]!.outcome },
+          })),
         },
       ];
       const chunks: UIMessageChunk[] = [];
