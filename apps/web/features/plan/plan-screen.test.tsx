@@ -494,6 +494,23 @@ test("the Plan lists open Tasks, which the student completes, and adds one in a 
   );
 });
 
+test("a Task that cannot be added tells the student in the Aufgaben section", async () => {
+  api.route("POST", "/api/me/tasks", () => new Response(null, { status: 500 }));
+  mount();
+  const user = userEvent.setup();
+
+  const list = await screen.findByRole("region", { name: "Aufgaben" });
+  await user.type(
+    within(list).getByRole("textbox", { name: "Neue Aufgabe" }),
+    "Skript lesen",
+  );
+  await user.click(within(list).getByRole("button", { name: "Hinzufügen" }));
+
+  expect((await within(list).findByRole("alert")).textContent).toBe(
+    "Die Aufgabe konnte nicht gespeichert werden.",
+  );
+});
+
 test("a Course Event shows its Course, and the student can take it out of it", async () => {
   let detached = false;
   api.route("POST", "/api/me/fixed-events/f-1/detach", () => {

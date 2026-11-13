@@ -27,11 +27,13 @@ const noCourse = "none";
 export function TaskList({
   tasks,
   courses,
+  error,
   onComplete,
   onAdd,
 }: {
   tasks: TaskItem[];
   courses: { id: string; title: string }[];
+  error: string | null;
   onComplete: (id: string) => void;
   onAdd: (task: { title: string; courseId: string | null }) => void;
 }) {
@@ -118,6 +120,11 @@ export function TaskList({
           Hinzufügen
         </Button>
       </form>
+      {error && (
+        <p role="alert" className="text-sm text-destructive-700">
+          {error}
+        </p>
+      )}
     </section>
   );
 }

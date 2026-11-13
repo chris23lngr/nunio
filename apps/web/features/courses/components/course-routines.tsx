@@ -13,10 +13,12 @@ type Minutes = { preparationMinutes: number; followUpMinutes: number };
  */
 export function CourseRoutines({
   series,
+  error,
   onSave,
   onSkip,
 }: {
   series: Series[];
+  error: string | null;
   onSave: (seriesId: string, minutes: Minutes) => void;
   onSkip: (seriesId: string, until: Date) => void;
 }) {
@@ -30,6 +32,11 @@ export function CourseRoutines({
       {series.map((s) => (
         <SeriesRoutine key={s.id} series={s} onSave={onSave} onSkip={onSkip} />
       ))}
+      {error && (
+        <p role="alert" className="text-sm text-destructive-700">
+          {error}
+        </p>
+      )}
     </section>
   );
 }

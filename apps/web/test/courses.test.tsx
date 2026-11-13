@@ -636,3 +636,34 @@ test("a Course card lists its calendar series with their Routines, which the stu
     ]),
   );
 });
+
+test("a Routine change that fails tells the student on its Course card", async () => {
+  const om = course({ title: "Operations Management" });
+  serveCourses([om]);
+  servePlan([
+    {
+      id: "s-om",
+      calendarId: "cal-1",
+      title: "OM Vorlesung",
+      courseId: om.id,
+      state: "confirmed",
+      routine: null,
+    },
+  ]);
+  api.route(
+    "PUT",
+    "/api/me/event-series/s-om/routine",
+    () => new Response(null, { status: 500 }),
+  );
+  const user = userEvent.setup();
+  renderScreen();
+
+  const routines = await screen.findByRole("region", {
+    name: "Termine & Routinen",
+  });
+  await user.click(within(routines).getByRole("button", { name: "Speichern" }));
+
+  expect((await within(routines).findByRole("alert")).textContent).toBe(
+    "Das hat nicht geklappt. Versuche es noch einmal.",
+  );
+});

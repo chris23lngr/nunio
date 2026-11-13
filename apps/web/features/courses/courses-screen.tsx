@@ -308,30 +308,39 @@ export function CoursesScreen({
           }
           className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-3"
         >
-          {shown.map((course) => (
-            <CourseCard
-              key={course.id}
-              course={course}
-              menu={
-                <CourseMenu
-                  course={course}
-                  onAction={(action) => startAction(course, action)}
+          {shown.map((course) => {
+            const series = (plan.data?.eventSeries ?? []).filter(
+              (s) => s.state === "confirmed" && s.courseId === course.id,
+            );
+            return (
+              <CourseCard
+                key={course.id}
+                course={course}
+                menu={
+                  <CourseMenu
+                    course={course}
+                    onAction={(action) => startAction(course, action)}
+                  />
+                }
+              >
+                <CourseRoutines
+                  series={series}
+                  // The failed change shows on the card of the series it was for.
+                  error={
+                    series.some((s) => s.id === routine.variables?.seriesId)
+                      ? (routine.error?.message ?? null)
+                      : null
+                  }
+                  onSave={(seriesId, minutes) =>
+                    routine.mutate({ seriesId, minutes })
+                  }
+                  onSkip={(seriesId, until) =>
+                    routine.mutate({ seriesId, until })
+                  }
                 />
-              }
-            >
-              <CourseRoutines
-                series={(plan.data?.eventSeries ?? []).filter(
-                  (s) => s.state === "confirmed" && s.courseId === course.id,
-                )}
-                onSave={(seriesId, minutes) =>
-                  routine.mutate({ seriesId, minutes })
-                }
-                onSkip={(seriesId, until) =>
-                  routine.mutate({ seriesId, until })
-                }
-              />
-            </CourseCard>
-          ))}
+              </CourseCard>
+            );
+          })}
         </ul>
       )}
       {list.data && creating && (

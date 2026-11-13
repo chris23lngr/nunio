@@ -300,6 +300,7 @@ export function PlanScreen({
               courses={(courses.data?.courses ?? []).filter(
                 (c) => c.status === "accepted" && !c.archived,
               )}
+              error={task.error?.message ?? null}
               onComplete={(id) => task.mutate({ complete: id })}
               onAdd={(added) => task.mutate({ add: added })}
             />
