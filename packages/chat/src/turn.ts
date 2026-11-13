@@ -5,6 +5,9 @@ export type Refusal =
   | "gone"
   | Exclude<Extract<Retrieval, { status: "refused" }>["reason"], "not_owner">;
 
+/** A work or Study Block a tool showed under a handle. */
+export type Handled = { kind: "obligation" | "task" | "block"; id: string };
+
 /** Lines of student data the model must read as data, fenced so nothing inside can pass for an instruction. */
 export function fenced(name: string, lines: readonly string[]) {
   const fence = randomBytes(8).toString("hex");
@@ -24,8 +27,20 @@ export function createTurn() {
   const citations: Citation[] = [];
   const sources = new Set<string>();
   const results = new Map<string, string>();
+  const handles = new Map<string, Handled>();
   let refusal: Refusal | undefined;
   return {
+    /** A short handle for a work or Study Block, such as O1, T1 or B1, which proposals name it by. */
+    handleFor(kind: Handled["kind"], id: string) {
+      for (const [handle, known] of handles)
+        if (known.kind === kind && known.id === id) return handle;
+      const prefix = { obligation: "O", task: "T", block: "B" }[kind];
+      const handle = `${prefix}${[...handles.keys()].filter((h) => h.startsWith(prefix)).length + 1}`;
+      handles.set(handle, { kind, id });
+      return handle;
+    },
+    /** What a handle this turn gave out names. */
+    lookup: (handle: string) => handles.get(handle),
     /** Every tag the turn's tools returned, in order. */
     citations: citations as readonly Citation[],
     /** Every Source whose wording a tool returned, so the answer is withdrawn with any of them. */

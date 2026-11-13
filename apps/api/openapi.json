@@ -1338,7 +1338,311 @@
               "input",
               "output"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-proposeStudyBlock"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string"
+                  },
+                  "end": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "work",
+                  "start",
+                  "end"
+                ]
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "outside_study_window",
+                    "daily_limit",
+                    "work_limit"
+                  ]
+                },
+                "description": "Preferences the block would break, shown before approving."
+              },
+              "action": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "expiresAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "awaiting_approval",
+                      "expired",
+                      "dispatching",
+                      "done",
+                      "failed",
+                      "refused",
+                      "unconfirmed"
+                    ]
+                  },
+                  "decision": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "approved",
+                      "denied",
+                      null
+                    ]
+                  },
+                  "shown": {
+                    "$ref": "#/components/schemas/ActionShown"
+                  }
+                },
+                "required": [
+                  "id",
+                  "fingerprint",
+                  "expiresAt",
+                  "status",
+                  "decision",
+                  "shown"
+                ],
+                "description": "The Action the student is asked to approve; null if it could not be asked."
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "approvalId",
+              "notes",
+              "action"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-proposeStudyBlockMove"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "block": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string"
+                  },
+                  "end": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "block",
+                  "start",
+                  "end"
+                ]
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "outside_study_window",
+                    "daily_limit",
+                    "work_limit"
+                  ]
+                },
+                "description": "Preferences the block would break, shown before approving."
+              },
+              "action": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "expiresAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "awaiting_approval",
+                      "expired",
+                      "dispatching",
+                      "done",
+                      "failed",
+                      "refused",
+                      "unconfirmed"
+                    ]
+                  },
+                  "decision": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "approved",
+                      "denied",
+                      null
+                    ]
+                  },
+                  "shown": {
+                    "$ref": "#/components/schemas/ActionShown"
+                  }
+                },
+                "required": [
+                  "id",
+                  "fingerprint",
+                  "expiresAt",
+                  "status",
+                  "decision",
+                  "shown"
+                ],
+                "description": "The Action the student is asked to approve; null if it could not be asked."
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "approvalId",
+              "notes",
+              "action"
+            ]
           }
+        ]
+      },
+      "ActionShown": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "studyBlock.create",
+              "studyBlock.move"
+            ]
+          },
+          "work": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "course": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "title",
+              "course"
+            ]
+          },
+          "from": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "description": "Where the block is now; null for a new block."
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "work",
+          "from",
+          "to"
         ]
       },
       "Plan": {
@@ -2615,80 +2919,6 @@
           "fingerprint",
           "expiresAt",
           "responsibility"
-        ]
-      },
-      "ActionShown": {
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "studyBlock.create",
-              "studyBlock.move"
-            ]
-          },
-          "work": {
-            "type": "object",
-            "properties": {
-              "title": {
-                "type": "string"
-              },
-              "course": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            },
-            "required": [
-              "title",
-              "course"
-            ]
-          },
-          "from": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "start": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "end": {
-                "type": "string",
-                "format": "date-time"
-              }
-            },
-            "required": [
-              "start",
-              "end"
-            ],
-            "description": "Where the block is now; null for a new block."
-          },
-          "to": {
-            "type": "object",
-            "properties": {
-              "start": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "end": {
-                "type": "string",
-                "format": "date-time"
-              }
-            },
-            "required": [
-              "start",
-              "end"
-            ]
-          }
-        },
-        "required": [
-          "kind",
-          "work",
-          "from",
-          "to"
         ]
       },
       "Responsibility": {
@@ -6318,28 +6548,65 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4000
+                      },
+                      "model": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "description": "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers."
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "text"
+                    ],
+                    "additionalProperties": false
                   },
-                  "text": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4000
-                  },
-                  "model": {
-                    "type": "string",
-                    "maxLength": 100,
-                    "description": "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers."
+                  {
+                    "type": "object",
+                    "properties": {
+                      "approval": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "fingerprint": {
+                            "type": "string",
+                            "maxLength": 200
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "fingerprint"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Approves the proposal the answer asked under this approval ID, with the fingerprint its card showed (ADR-0010); the model then reports how it went in a new answer."
+                      },
+                      "model": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "description": "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers."
+                      }
+                    },
+                    "required": [
+                      "approval"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "id",
-                  "text"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -6392,7 +6659,7 @@
             }
           },
           "409": {
-            "description": "The question ID is already used.",
+            "description": "The question ID is already used, or the approval is not the card's open request.",
             "content": {
               "application/json": {
                 "schema": {

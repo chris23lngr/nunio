@@ -35,7 +35,7 @@ import {
   createSources,
 } from "@nunio/knowledge";
 import { createOutreach } from "@nunio/outreach";
-import { createPlan } from "@nunio/planning";
+import { createPlan, createPlanExecutor, deadline } from "@nunio/planning";
 import { createUnderstanding } from "@nunio/understanding";
 import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
 import { hashPassword } from "better-auth/crypto";
@@ -306,7 +306,15 @@ beforeAll(async () => {
       },
     },
   });
-  delegation = createDelegation({ db: prisma, aiEnabled: () => true });
+  delegation = createDelegation({
+    db: prisma,
+    aiEnabled: () => true,
+    executors: { plan: createPlanExecutor({ db: prisma }) },
+    deadlineOf: async (studentId, obligationId) =>
+      (await plan.view(principal.fromSession({ studentId }))).obligations.find(
+        (o) => o.id === obligationId,
+      )?.due ?? null,
+  });
   const keys = createSourceKeys({
     activeVersion: "test",
     masters: { test: randomBytes(32) },
@@ -1975,6 +1983,39 @@ async function emptyChat(name: string) {
 }
 
 /** The JSON chunks of an AI SDK UI message stream. */
+/** A Berlin calendar date `days` from today, as YYYY-MM-DD. */
+const berlinDay = (days: number) =>
+  new Date(Date.now() + days * 86_400_000).toLocaleDateString("en-CA", {
+    timeZone: "Europe/Berlin",
+  });
+
+/** A student with an Obligation due in ten days and a Chat with nothing selected, for proposing Study Blocks. */
+async function planningChat(name: string) {
+  const cookie = await signUp(name);
+  const headers = {
+    cookie,
+    origin: appOrigin,
+    "content-type": "application/json",
+  };
+  const p = principal.fromSession({ studentId: await studentId(cookie) });
+  const entered = await facts.enterObligation(p, {
+    course: { title: "Analysis I", code: "MA-101" },
+    kind: "assignment",
+    title: "Übungsblatt 4",
+    due: { date: berlinDay(10), time: "12:00", timeZone: null },
+    destination: null,
+  });
+  if (entered.status !== "ok") throw new Error(entered.status);
+  const { id } = (await (
+    await app.request(`${apiOrigin}/api/me/chats`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+    })
+  ).json()) as { id: string };
+  return { cookie, headers, p, chatId: id, obligationId: entered.id };
+}
+
 async function sseChunks(response: Response) {
   return (await response.text())
     .split("\n\n")
@@ -3128,6 +3169,375 @@ describe("Chat", () => {
     ]);
   });
 
+  it("returns a proposed Study Block that breaks the Plan's rules to the model, without asking the student", async () => {
+    const { headers, chatId } = await planningChat("chat-propose-refused");
+    const day = berlinDay(8);
+    await app.request(`${apiOrigin}/api/me/fixed-events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        title: "Vorlesung",
+        start: deadline(day, "10:00", "Europe/Berlin"),
+        end: deadline(day, "12:00", "Europe/Berlin"),
+      }),
+    });
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+      says("Da hast du schon die Vorlesung."),
+    );
+    prompts.length = 0;
+
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+
+    expect(asked.status).toBe(200);
+    expect(JSON.stringify(prompts[1])).toMatch(/O1\W+[^"]*Übungsblatt 4/);
+    expect(JSON.stringify(prompts[2])).toContain("overlaps a Fixed Event");
+    expect(
+      await (
+        await app.request(`${apiOrigin}/api/me/approvals`, {
+          headers: { cookie: headers.cookie },
+        })
+      ).json(),
+    ).toEqual([]);
+  });
+
+  it("asks the student to approve a proposed Study Block once the answer is saved, in the Chat and among the Approvals", async () => {
+    const { headers, chatId } = await planningChat("chat-propose");
+    const day = berlinDay(8);
+    steps.push(calls("agenda", { from: berlinDay(7), to: berlinDay(13) }), [
+      ...says("Ich schlage dir einen Lernblock vor."),
+      ...calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+    ]);
+    prompts.length = 0;
+
+    const chunks = await sseChunks(
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: randomUUID(), text: "Plane Blatt 4 ein." }),
+      }),
+    );
+
+    expect(prompts).toHaveLength(2);
+    expect(chunks.map((chunk) => chunk.type)).toContain(
+      "tool-approval-request",
+    );
+    const committed = chunks.find((chunk) => chunk.type === "data-committed");
+    const card = committed.data.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    expect(card).toMatchObject({
+      approvalId: expect.any(String),
+      notes: [],
+      action: {
+        id: expect.any(String),
+        fingerprint: expect.any(String),
+        status: "awaiting_approval",
+        shown: {
+          kind: "studyBlock.create",
+          work: { title: "Übungsblatt 4", course: "Analysis I" },
+          from: null,
+          to: {
+            start: deadline(day, "10:00", "Europe/Berlin").toISOString(),
+            end: deadline(day, "12:00", "Europe/Berlin").toISOString(),
+          },
+        },
+      },
+    });
+    expect(
+      await (
+        await app.request(`${apiOrigin}/api/me/approvals`, {
+          headers: { cookie: headers.cookie },
+        })
+      ).json(),
+    ).toMatchObject([
+      {
+        actionId: card.action.id,
+        fingerprint: card.action.fingerprint,
+        responsibility: null,
+      },
+    ]);
+    const reopened = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { parts: unknown[] }[];
+    expect(reopened[1]!.parts).toContainEqual(card);
+  });
+
+  it("leaves an expired Chat proposal out of the Approvals, and shows it as expired in the Chat", async () => {
+    const { headers, chatId } = await planningChat("chat-propose-expired");
+    const day = berlinDay(8);
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+    );
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const card = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    await admin.approval.updateMany({
+      where: { action: { id: card.action.id } },
+      data: { expiresAt: new Date(Date.now() - 60_000) },
+    });
+
+    expect(
+      await (
+        await app.request(`${apiOrigin}/api/me/approvals`, {
+          headers: { cookie: headers.cookie },
+        })
+      ).json(),
+    ).toEqual([]);
+    const home = (await (
+      await app.request(`${apiOrigin}/api/me/home`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { agentWork: { kind: string }[] };
+    expect(home.agentWork.map((item) => item.kind)).not.toContain("approval");
+    const reopened = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { parts: { type: string; action?: { status: string } }[] }[];
+    expect(
+      reopened[1]!.parts.find((part) => part.type === "tool-proposeStudyBlock")
+        ?.action?.status,
+    ).toBe("expired");
+  });
+
+  it("performs a Chat proposal approved on Home, without continuing the Chat", async () => {
+    const { headers, chatId, obligationId } =
+      await planningChat("chat-propose-home");
+    const day = berlinDay(8);
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+    );
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const { action } = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    prompts.length = 0;
+
+    const approved = await app.request(
+      `${apiOrigin}/api/me/approvals/${action.id}`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          decision: "approve",
+          fingerprint: action.fingerprint,
+        }),
+      },
+    );
+
+    expect(approved.status).toBe(200);
+    expect(
+      await admin.studyBlock.findMany({
+        where: { obligationId },
+        select: { start: true, end: true, placedBy: true },
+      }),
+    ).toEqual([
+      {
+        start: deadline(day, "10:00", "Europe/Berlin"),
+        end: deadline(day, "12:00", "Europe/Berlin"),
+        placedBy: "nunio",
+      },
+    ]);
+    const messages = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { parts: { type: string; action?: unknown }[] }[];
+    expect(messages).toHaveLength(2);
+    expect(
+      messages[1]!.parts.find((part) => part.type === "tool-proposeStudyBlock")
+        ?.action,
+    ).toMatchObject({ status: "done", decision: "approved" });
+    expect(prompts).toEqual([]);
+  });
+
+  it("performs a proposal approved in the Chat and has the model report it in a new message", async () => {
+    const { headers, chatId, obligationId } = await planningChat(
+      "chat-propose-approve",
+    );
+    const day = berlinDay(8);
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+    );
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const card = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    const stream = (body: unknown) =>
+      app.request(`${apiOrigin}/api/me/chats/${chatId}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+    expect(
+      (
+        await stream({
+          approval: { id: card.approvalId, fingerprint: "not-the-card" },
+        })
+      ).status,
+    ).toBe(409);
+    reply = "Erledigt, der Lernblock steht in deinem Plan.";
+    prompts.length = 0;
+
+    const chunks = await sseChunks(
+      await stream({
+        approval: { id: card.approvalId, fingerprint: card.action.fingerprint },
+      }),
+    );
+
+    expect(await admin.studyBlock.count({ where: { obligationId } })).toBe(1);
+    expect(prompts).toHaveLength(1);
+    expect(JSON.stringify(prompts[0])).toContain("approved");
+    const started = chunks.find((chunk) => chunk.type === "start");
+    const committed = chunks.find((chunk) => chunk.type === "data-committed");
+    expect(committed.data).toMatchObject({
+      id: started.messageId,
+      role: "assistant",
+      text: "Erledigt, der Lernblock steht in deinem Plan.",
+      question: null,
+    });
+    const messages = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { id: string; parts: { type: string; action?: unknown }[] }[];
+    expect(messages.map((message) => message.id)).toEqual([
+      expect.any(String),
+      asked.body.id,
+      started.messageId,
+    ]);
+    expect(
+      messages[1]!.parts.find((part) => part.type === "tool-proposeStudyBlock")
+        ?.action,
+    ).toMatchObject({ status: "done", decision: "approved" });
+  });
+
+  it("proposes moving a Study Block the Plan showed, and moves it once approved", async () => {
+    const { headers, chatId, obligationId } =
+      await planningChat("chat-propose-move");
+    const [day, next] = [berlinDay(8), berlinDay(9)];
+    const at = (date: string, time: string) =>
+      deadline(date, time, "Europe/Berlin");
+    await app.request(`${apiOrigin}/api/me/study-blocks`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        work: { kind: "obligation", id: obligationId },
+        start: at(day, "10:00"),
+        end: at(day, "12:00"),
+      }),
+    });
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeStudyBlockMove", {
+        block: "B1",
+        start: `${next}T14:00`,
+        end: `${next}T16:00`,
+      }),
+    );
+
+    const asked = await askInChat(
+      headers,
+      chatId,
+      "Schieb den Block auf morgen Nachmittag.",
+    );
+    const card = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlockMove",
+    );
+    expect(card.action.shown).toEqual({
+      kind: "studyBlock.move",
+      work: { title: "Übungsblatt 4", course: "Analysis I" },
+      from: {
+        start: at(day, "10:00").toISOString(),
+        end: at(day, "12:00").toISOString(),
+      },
+      to: {
+        start: at(next, "14:00").toISOString(),
+        end: at(next, "16:00").toISOString(),
+      },
+    });
+    await app.request(`${apiOrigin}/api/me/approvals/${card.action.id}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        decision: "approve",
+        fingerprint: card.action.fingerprint,
+      }),
+    });
+
+    expect(
+      await admin.studyBlock.findMany({
+        where: { obligationId },
+        select: { start: true, end: true },
+      }),
+    ).toEqual([{ start: at(next, "14:00"), end: at(next, "16:00") }]);
+  });
+
+  it("tells the model in later turns what became of an earlier proposal", async () => {
+    const { headers, chatId } = await planningChat("chat-propose-history");
+    const day = berlinDay(8);
+    steps.push(calls("agenda", { from: berlinDay(7), to: berlinDay(13) }), [
+      ...says("Hier ist mein Vorschlag."),
+      ...calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+    ]);
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const { action } = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    await app.request(`${apiOrigin}/api/me/approvals/${action.id}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        decision: "approve",
+        fingerprint: action.fingerprint,
+      }),
+    });
+    reply = "Gern.";
+    prompts.length = 0;
+
+    await askInChat(headers, chatId, "Danke!");
+
+    const answer = conversation(prompts[0]).find(
+      ([role]) => role === "assistant",
+    )?.[1];
+    expect(answer).toContain("Hier ist mein Vorschlag.");
+    expect(answer).toMatch(
+      new RegExp(`Übungsblatt 4.*${day}T10:00.*approved and done`),
+    );
+  });
+
   it("offers no search in a Chat with nothing selected, but still the Plan", async () => {
     const { headers, id } = await emptyChat("chat-no-search");
     reply = "Für diesen Chat ist kein Material ausgewählt.";
@@ -3144,7 +3554,9 @@ describe("Chat", () => {
       }),
     );
 
-    expect(offeredTools).toEqual([["agenda", "courseFacts"]]);
+    expect(offeredTools).toEqual([
+      ["agenda", "courseFacts", "proposeStudyBlock", "proposeStudyBlockMove"],
+    ]);
     expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
   });
 

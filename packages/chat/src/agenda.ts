@@ -61,7 +61,7 @@ export function agendaTool(
   const at = (instant: Date) => local.format(instant).replace(",", "");
   const time = (instant: Date) => at(instant).slice(11);
   return tool({
-    description: `Reads the student's Plan for a range of days: the Obligations due in it, each with its Tasks and the tag to cite it by, then Study Blocks and Fixed Events. Dates are YYYY-MM-DD in the student's time zone, at most ${maxDays} days apart, both included.`,
+    description: `Reads the student's Plan for a range of days: the Obligations due in it, each with its Tasks and the tag to cite it by, then Study Blocks and Fixed Events. Obligations, Tasks and Study Blocks carry a handle such as O1, T1 or B1, which proposals name them by. Dates are YYYY-MM-DD in the student's time zone, at most ${maxDays} days apart, both included.`,
     inputSchema: jsonSchema<{ from: string; to: string }>({
       type: "object",
       properties: { from: date, to: date },
@@ -116,17 +116,20 @@ export function agendaTool(
           ].filter(Boolean);
           const course = handleOf.get(o.courseId);
           return [
-            `${fact ? `[${turn.tagFor(fact.cite)}] ` : ""}${at(o.due!)} · ${o.title} · ${o.kind} · ${o.course}${course ? ` (${course})` : ""}${notes.length ? ` · ${notes.join(", ")}` : ""}`,
+            `${fact ? `[${turn.tagFor(fact.cite)}] ` : ""}${turn.handleFor("obligation", o.id)} · ${at(o.due!)} · ${o.title} · ${o.kind} · ${o.course}${course ? ` (${course})` : ""}${notes.length ? ` · ${notes.join(", ")}` : ""}`,
             ...view.tasks
               .filter((t) => t.obligationId === o.id)
-              .map((t) => `  Task: ${t.title}${t.done ? " (done)" : ""}`),
+              .map(
+                (t) =>
+                  `  Task ${turn.handleFor("task", t.id)}: ${t.title}${t.done ? " (done)" : ""}`,
+              ),
           ];
         }),
         "Study Blocks:",
         ...(blocks.length ? [] : ["none"]),
         ...blocks.map(
           (b) =>
-            `${at(b.start)}–${time(b.end)} · for ${titleOf(b.work) ?? "work that is gone"}${b.locked ? " · locked" : ""}`,
+            `${turn.handleFor("block", b.id)} · ${at(b.start)}–${time(b.end)} · for ${titleOf(b.work) ?? "work that is gone"}${b.locked ? " · locked" : ""}`,
         ),
         "Fixed Events:",
         ...(events.length ? [] : ["none"]),

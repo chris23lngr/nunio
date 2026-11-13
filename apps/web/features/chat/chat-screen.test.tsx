@@ -949,6 +949,224 @@ test("shows reading the Plan and a Course's Facts as steps, while answering and 
   expect(screen.getByText("Kursinfos gelesen: Analysis I")).toBeTruthy();
 });
 
+test("shows a saved proposal as a card, and approving it there streams nunio's report", async () => {
+  const question = {
+    id: "question-1",
+    role: "student",
+    text: "Plane Blatt 4 ein.",
+    parts: [{ type: "text", text: "Plane Blatt 4 ein." }],
+    createdAt: "2026-11-10T09:48:00Z",
+    citations: [],
+    model: null,
+  };
+  const proposal = (status: string, decision: string | null) => ({
+    type: "tool-proposeStudyBlock",
+    toolCallId: "call-1",
+    input: { work: "O1", start: "2026-11-20T10:00", end: "2026-11-20T12:00" },
+    approvalId: "approval-1",
+    notes: ["outside_study_window"],
+    action: {
+      id: "action-1",
+      fingerprint: "abcdef1234567890",
+      expiresAt: "2099-01-01T00:00:00Z",
+      status,
+      decision,
+      shown: {
+        kind: "studyBlock.create",
+        work: { title: "Übungsblatt 4", course: "Analysis I" },
+        from: null,
+        to: { start: "2026-11-20T09:00:00Z", end: "2026-11-20T11:00:00Z" },
+      },
+    },
+  });
+  const answer = (status: string, decision: string | null) => ({
+    id: "answer-1",
+    role: "assistant",
+    text: "Hier ist mein Vorschlag.",
+    parts: [
+      { type: "text", text: "Hier ist mein Vorschlag." },
+      proposal(status, decision),
+    ],
+    createdAt: "2026-11-10T09:48:00Z",
+    citations: [],
+    model: null,
+  });
+  const report = {
+    id: "report-1",
+    role: "assistant",
+    text: "Erledigt, der Block steht.",
+    parts: [{ type: "text", text: "Erledigt, der Block steht." }],
+    createdAt: "2026-11-10T09:50:00Z",
+    citations: [],
+    model: null,
+  };
+  let saved: unknown[] = [question, answer("awaiting_approval", null)];
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: saved }),
+  );
+  const sent: unknown[] = [];
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    sent.push(await request.json());
+    saved = [question, answer("done", "approved"), report];
+    return new Response(
+      [
+        { type: "start", messageId: "report-1" },
+        { type: "start-step" },
+        { type: "text-start", id: "text" },
+        { type: "text-delta", id: "text", delta: report.text },
+        { type: "text-end", id: "text" },
+        { type: "finish-step" },
+        { type: "data-committed", data: { ...report, question: null } },
+        { type: "finish" },
+      ]
+        .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+        .join("") + "data: [DONE]\n\n",
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  mount("chat-1");
+  await chatLoaded();
+  const card = await screen.findByRole("article", {
+    name: "Add the block for Übungsblatt 4",
+  });
+  expect(screen.getByText("Außerhalb deines Lernfensters")).toBeTruthy();
+
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Approve this block" }));
+
+  expect(await screen.findByText("Erledigt, der Block steht.")).toBeTruthy();
+  expect(sent).toEqual([
+    {
+      approval: { id: "approval-1", fingerprint: "abcdef1234567890" },
+      model: "sonnet-5.5",
+    },
+  ]);
+  expect(await screen.findByText("Angelegt")).toBeTruthy();
+  expect(card.isConnected).toBe(false);
+  expect(
+    screen.queryAllByRole("article", {
+      name: "Add the block for Übungsblatt 4",
+    }),
+  ).toEqual([]);
+});
+
+test("a proposal streams as a line until its answer is saved, then asks once as a card", async () => {
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  const input = {
+    work: "O1",
+    start: "2026-11-20T10:00",
+    end: "2026-11-20T12:00",
+  };
+  let finish = () => {};
+  const encoder = new TextEncoder();
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    const { id } = (await request.json()) as { id: string };
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          const emit = (data: unknown) =>
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
+            );
+          emit({ type: "start", messageId: "answer-1" });
+          emit({ type: "start-step" });
+          emit({
+            type: "tool-input-available",
+            toolCallId: "call-1",
+            toolName: "proposeStudyBlock",
+            input,
+          });
+          emit({
+            type: "tool-approval-request",
+            approvalId: "approval-1",
+            toolCallId: "call-1",
+          });
+          emit({ type: "finish-step" });
+          finish = () => {
+            emit({
+              type: "data-committed",
+              data: {
+                id: "answer-1",
+                role: "assistant",
+                text: "",
+                parts: [
+                  {
+                    type: "tool-proposeStudyBlock",
+                    toolCallId: "call-1",
+                    input,
+                    approvalId: "approval-1",
+                    notes: [],
+                    action: {
+                      id: "action-1",
+                      fingerprint: "abcdef1234567890",
+                      expiresAt: "2099-01-01T00:00:00Z",
+                      status: "awaiting_approval",
+                      decision: null,
+                      shown: {
+                        kind: "studyBlock.create",
+                        work: { title: "Übungsblatt 4", course: "Analysis I" },
+                        from: null,
+                        to: {
+                          start: "2026-11-20T09:00:00Z",
+                          end: "2026-11-20T11:00:00Z",
+                        },
+                      },
+                    },
+                  },
+                ],
+                createdAt: "2026-11-10T09:48:00Z",
+                citations: [],
+                model: null,
+                question: {
+                  id,
+                  role: "student",
+                  text: "Plane Blatt 4 ein.",
+                  parts: [{ type: "text", text: "Plane Blatt 4 ein." }],
+                  createdAt: "2026-11-10T09:48:00Z",
+                  citations: [],
+                  model: null,
+                },
+              },
+            });
+            emit({ type: "finish" });
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          };
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  mount("chat-1");
+  await chatLoaded();
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Nachricht" }),
+    "Plane Blatt 4 ein.",
+  );
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  try {
+    expect(
+      await screen.findByText("Vorschlag wird gespeichert …"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Approve this block" }),
+    ).toBeNull();
+  } finally {
+    finish();
+  }
+  expect(
+    await screen.findByRole("button", { name: "Approve this block" }),
+  ).toBeTruthy();
+  expect(
+    screen.getAllByRole("article", { name: "Add the block for Übungsblatt 4" }),
+  ).toHaveLength(1);
+  expect(screen.queryByText("Vorschlag wird gespeichert …")).toBeNull();
+});
+
 test("the waiting status stays until the first word when nunio does not reason", async () => {
   api.route("GET", "/api/me/chats/chat-1", () =>
     Response.json({ id: "chat-1", courses: [], messages: [] }),

@@ -63,6 +63,8 @@ function describe(part: ToolPart) {
           ? count(part.output.facts, "Eintrag", "Einträge")
           : undefined,
       };
+    default:
+      return undefined;
   }
 }
 
@@ -72,6 +74,7 @@ export function ToolSteps({ parts }: { parts: ToolPart[] }) {
     <Trace>
       {parts.map((part) => {
         const step = describe(part);
+        if (!step) return null;
         const status =
           part.state === "output-available"
             ? undefined

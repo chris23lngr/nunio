@@ -1,3 +1,4 @@
+import type { BlockNote } from "@nunio/planning";
 import type { UIMessageChunk } from "ai";
 import { readUIMessageStream } from "ai";
 import type { AgendaOutput } from "./agenda.js";
@@ -25,7 +26,25 @@ export type ChatPart =
       toolCallId: string;
       input: { course: string };
       output: CourseFactsOutput;
-    };
+    }
+  | ProposalPart<"tool-proposeStudyBlock", { work: string }>
+  | ProposalPart<"tool-proposeStudyBlockMove", { block: string }>;
+
+/** A proposed Study Block, asked of the student as an Action under `key` once the answer is saved. */
+export type ProposalPart<Type extends string, Input> = {
+  type: Type;
+  toolCallId: string;
+  input: Input & { start: string; end: string };
+  approvalId: string;
+  key: string;
+  notes: BlockNote[];
+};
+
+export const isProposal = (
+  part: ChatPart,
+): part is Extract<ChatPart, { approvalId: string }> =>
+  part.type === "tool-proposeStudyBlock" ||
+  part.type === "tool-proposeStudyBlockMove";
 
 /** Removes Citation tags that no search returned, so they never show as Citations. */
 export const withoutUnknownTags = (text: string, tags: ReadonlySet<string>) =>
@@ -37,6 +56,10 @@ export const withoutUnknownTags = (text: string, tags: ReadonlySet<string>) =>
 export async function partsFrom(
   chunks: readonly UIMessageChunk[],
   tags: ReadonlySet<string>,
+  /** What a proposal waiting for the student is asked as, by its tool call. */
+  asked: (
+    toolCallId: string,
+  ) => { key: string; notes: BlockNote[] } | undefined,
 ): Promise<ChatPart[]> {
   let message: { parts: unknown[] } | undefined;
   for await (const snapshot of readUIMessageStream({
@@ -70,6 +93,21 @@ export async function partsFrom(
           output: p.output,
         } as ChatPart,
       ];
+    // A proposal waits for the student; it shows as the Action it is asked as.
+    if (p.state === "approval-requested") {
+      const proposal = asked(p.toolCallId as string);
+      return proposal
+        ? [
+            {
+              type: p.type,
+              toolCallId: p.toolCallId,
+              input: p.input,
+              approvalId: (p.approval as { id: string }).id,
+              ...proposal,
+            } as ChatPart,
+          ]
+        : [];
+    }
     return [];
   });
 }

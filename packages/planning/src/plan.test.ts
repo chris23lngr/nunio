@@ -766,3 +766,91 @@ it("leaves an Archived Course's work out of the Plan, and brings it back when un
     expect.objectContaining({ id: sheet }),
   ]);
 });
+
+it("refuses a proposed Study Block in the past, in Protected Time, over a Fixed Event or another block, and a move of a Locked one", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const work = {
+    kind: "obligation",
+    id: await obligation(p, "Blatt 3", "2026-11-13", "12:00"),
+  } as const;
+  await plan.addProtectedTime(p, {
+    weekday: 1,
+    fromMinute: 12 * 60,
+    toMinute: 13 * 60,
+  });
+  await plan.addFixedEvent(p, {
+    title: "Vorlesung",
+    start: at("2026-11-10 10:00"),
+    end: at("2026-11-10 12:00"),
+  });
+  const placed = await plan.placeBlock(p, {
+    work,
+    start: at("2026-11-11 09:00"),
+    end: at("2026-11-11 10:00"),
+  });
+  if (placed.status !== "ok") throw new Error(placed.status);
+  await plan.lockBlock(p, placed.id, true);
+  const create = (start: string, end: string) =>
+    plan.check(p, { kind: "create", work, start: at(start), end: at(end) });
+
+  expect(await create("2026-11-09 07:00", "2026-11-09 09:00")).toEqual({
+    status: "refused",
+    reasons: ["past"],
+  });
+  expect(await create("2026-11-09 11:30", "2026-11-09 12:30")).toEqual({
+    status: "refused",
+    reasons: ["protected_time"],
+  });
+  expect(await create("2026-11-10 11:00", "2026-11-10 13:00")).toEqual({
+    status: "refused",
+    reasons: ["fixed_event"],
+  });
+  expect(await create("2026-11-11 09:30", "2026-11-11 10:30")).toEqual({
+    status: "refused",
+    reasons: ["study_block"],
+  });
+  expect(
+    await plan.check(p, {
+      kind: "move",
+      blockId: placed.id,
+      start: at("2026-11-12 09:00"),
+      end: at("2026-11-12 10:00"),
+    }),
+  ).toEqual({ status: "refused", reasons: ["locked"] });
+  expect(await create("2026-11-12 10:00", "2026-11-12 11:00")).toEqual({
+    status: "ok",
+    notes: [],
+  });
+});
+
+it("notes a proposed Study Block outside the study window or over a daily limit, without refusing it", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const id = await obligation(p, "Blatt 3", "2026-11-20", "12:00");
+  const work = { kind: "obligation", id } as const;
+  const { courseId } = await admin.obligation.findUniqueOrThrow({
+    where: { id },
+  });
+  await plan.placeBlock(p, {
+    work,
+    start: at("2026-11-12 09:00"),
+    end: at("2026-11-12 13:00"),
+  });
+  const create = (start: string, end: string) =>
+    plan.check(p, { kind: "create", work, start: at(start), end: at(end) });
+
+  expect(await create("2026-11-11 18:00", "2026-11-11 19:00")).toEqual({
+    status: "ok",
+    notes: ["outside_study_window"],
+  });
+  expect(await create("2026-11-12 14:00", "2026-11-12 15:00")).toEqual({
+    status: "ok",
+    notes: ["daily_limit"],
+  });
+  await plan.setCourseLimit(p, courseId, 60);
+  expect(await create("2026-11-13 09:00", "2026-11-13 11:00")).toEqual({
+    status: "ok",
+    notes: ["work_limit"],
+  });
+});

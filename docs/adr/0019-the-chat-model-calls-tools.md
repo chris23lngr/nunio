@@ -15,6 +15,15 @@ A Chat answer used to be a fixed sequence: one retrieval with the question's tex
 
 Instructions hidden in a Source can steer tool calls. A proposal does nothing without the student's click, but an Artifact Run started this way spends Allowance. The one-Run-per-turn limit bounds that, and an injection eval must show zero Runs started by injected instructions before release.
 
+**Amendment (2026-11-12, stage 4):** proposals are asked as follows.
+- **When the Action is recorded.** The gate's `perform` opens its own transaction, so a proposal's Action is recorded right _after_ the answer is saved, not in the same transaction. A failed turn still leaves no card. If the gate refuses in that moment, say for a block Locked meanwhile, the card shows that the proposal could not be asked.
+- **Checking a proposal.** The tool's approval check runs `plan.check` and refuses a proposal with its reason if it is in the past, in Protected Time, or overlaps a Fixed Event or another Study Block, or if it moves a Locked block. A broken Preference (study window, daily or work limit) is only noted on the card.
+- **Naming work and blocks.** The model names them by the handles the Plan tool gave out this turn (`O1`, `T1`, `B1`).
+- **Performing.** The API performs a Chat Action as soon as the student approves it, on Home or in the Chat, since it has no Run to do so.
+- **The Chat card.** Approving there sends `{ approval: { id, fingerprint } }` on the stream route, and the model reports the outcome in a new answer. Denying uses the plain Approval route and continues nothing.
+- **Expiry.** An expired Chat Approval drops out of the Approvals list and Home, since no timer closes it.
+- **History.** Each earlier proposal follows its answer as one line with its current status.
+
 ## Considered Options
 
 - **Retrieval before the first step, plus a search tool:** every answer is grounded, but follow-up questions are searched with weak terms, and even "thanks" costs a retrieval.
