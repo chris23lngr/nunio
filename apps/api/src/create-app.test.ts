@@ -359,7 +359,10 @@ beforeAll(async () => {
     plan,
     clock: { now: () => new Date() },
     // Created further down; read when a Chat starts an Artifact.
-    artifacts: { request: (...args) => artifacts.request(...args) },
+    artifacts: {
+      request: (...args) => artifacts.request(...args),
+      list: (...args) => artifacts.list(...args),
+    },
     startArtifactRun: (runId) => artifactWorkflows.start(runId),
   });
   responsibilities = createResponsibilities({
@@ -3700,6 +3703,28 @@ describe("Chat", () => {
 
     expect(JSON.stringify(prompts[2])).toContain("selected Courses");
     expect(artifactRuns).toEqual([]);
+  });
+
+  it("tells the model in later turns where an Artifact it started stands", async () => {
+    const { headers, chatId } = await topicChat("chat-practice-history");
+    steps.push(
+      calls("courseFacts", { course: "K1" }),
+      startsOnTopic("startPracticeSet"),
+      says("Ich erstelle dir ein Practice Set."),
+    );
+    await askInChat(headers, chatId, "Gib mir Übungsaufgaben.");
+    reply = "Gern.";
+    prompts.length = 0;
+
+    await askInChat(headers, chatId, "Danke!");
+
+    const answer = conversation(prompts[0]).find(
+      ([role]) => role === "assistant",
+    )?.[1];
+    expect(answer).toContain("Ich erstelle dir ein Practice Set.");
+    expect(answer).toMatch(
+      /started a practice set on 1 Topic: still being made/,
+    );
   });
 
   it("offers no search in a Chat with nothing selected, but still the Plan", async () => {

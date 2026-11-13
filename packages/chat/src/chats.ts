@@ -81,7 +81,7 @@ export function createChats({
   delegation: Delegation;
   plan: Pick<Plan, "timeZone" | "view" | "check">;
   clock: { now(): Date };
-  artifacts: Pick<Artifacts, "request">;
+  artifacts: Pick<Artifacts, "request" | "list">;
   /** Starts an Artifact's Run, which then makes it; an API adapter over Temporal. */
   startArtifactRun: (runId: string) => Promise<void>;
 }) {
@@ -130,6 +130,14 @@ export function createChats({
             proposals: parts
               ? (JSON.parse(parts) as ChatPart[]).filter(isProposal)
               : [],
+            starts: parts
+              ? (JSON.parse(parts) as ChatPart[]).flatMap((part) =>
+                  part.type === "tool-startPracticeSet" ||
+                  part.type === "tool-startFlashcards"
+                    ? [part.output]
+                    : [],
+                )
+              : [],
           };
         }),
       );
@@ -146,19 +154,40 @@ export function createChats({
       };
     });
     if (!recent) return null;
-    const lines = await proposalLines(
-      p,
-      recent.messages.flatMap((message) => message.proposals),
-    );
+    const [lines, made] = await Promise.all([
+      proposalLines(
+        p,
+        recent.messages.flatMap((message) => message.proposals),
+      ),
+      recent.messages.some((message) => message.starts.length)
+        ? artifacts.list(p, {})
+        : [],
+    ]);
+    const states = {
+      making: "still being made",
+      ready: "ready",
+      failed: "failed",
+    } as const;
+    const startLine = (
+      start: (typeof recent.messages)[number]["starts"][number],
+    ) =>
+      `(You started ${start.kind === "practice_set" ? "a practice set" : "flashcards"} on ${start.topics} Topic${start.topics === 1 ? "" : "s"}: ${(() => {
+        const status = made.find((a) => a.id === start.artifactId)?.status;
+        return status ? states[status] : "it could not be started";
+      })()}.)`;
     return {
       // Each earlier proposal follows its answer as a line, with what became of it (ADR-0019, "History").
       ...historyFrom(
-        recent.messages.map(({ proposals, ...message }) => ({
+        recent.messages.map(({ proposals, starts, ...message }) => ({
           ...message,
           text:
-            message.text === null || !proposals.length
+            message.text === null || !(proposals.length || starts.length)
               ? message.text
-              : [message.text, ...proposals.map((part) => lines.get(part.key)!)]
+              : [
+                  message.text,
+                  ...proposals.map((part) => lines.get(part.key)!),
+                  ...starts.map(startLine),
+                ]
                   .filter(Boolean)
                   .join("\n\n"),
         })),
