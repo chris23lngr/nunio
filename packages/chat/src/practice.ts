@@ -40,8 +40,8 @@ export function startArtifactTool(
     reader: KnowledgeReader;
     p: Principal;
     chatId: string;
-    /** The turn's one Artifact, once a tool call chose it. */
-    started: { current?: ArtifactStart };
+    /** The turn's one Artifact, once a tool call chose it; `claimed` while one is checking. */
+    started: { current?: ArtifactStart; claimed?: boolean };
   },
 ): Tool<{ topics: string[] }, ArtifactOutput> {
   return tool({
@@ -60,48 +60,58 @@ export function startArtifactTool(
       additionalProperties: false,
     }),
     execute: async ({ topics }, { toolCallId }) => {
-      if (started.current)
+      // Claimed before the first await: calls in one step run at once, and only one may start.
+      if (started.current || started.claimed)
         throw new Error(
           "Not started: one practice set or set of flashcards already starts with this answer, and only one may.",
         );
-      const retrieval = await reader.retrieve(
-        p,
-        { chatId },
-        { kind: "facts", types: ["topic"] },
-      );
-      if (retrieval.status === "refused")
-        throw turn.refuse(
-          retrieval.reason === "not_owner" ? "gone" : retrieval.reason,
-        );
-      // A Chat's scope serves Facts of its selected Courses only, so this also keeps Topics within the selection.
-      const inChat = new Map<CitationRef, string>(
-        retrieval.items.flatMap((item) =>
-          item.kind === "fact" ? [[item.cite, item.factId] as const] : [],
-        ),
-      );
-      const topicIds = topics.map((tag) => {
-        const cite = turn.citations.find((c) => c.tag === tag)?.cite;
-        return cite && inChat.get(cite);
-      });
-      if (topicIds.some((id) => !id))
-        throw new Error(
-          "Not started: name only Topics of this Chat's selected Courses, by the tags courseFacts gave them.",
-        );
-      started.current = {
-        kind,
-        topicIds: topicIds as string[],
-        artifactId: randomUUID(),
-      };
-      turn.give(
-        toolCallId,
-        `It starts once your answer is saved. Tell the student ${named[kind]} is being made and will be under Study.`,
-      );
-      return {
-        kind,
-        topics: topicIds.length,
-        artifactId: started.current.artifactId,
-      };
+      started.claimed = true;
+      try {
+        return await choose(topics, toolCallId);
+      } catch (error) {
+        started.claimed = false;
+        throw error;
+      }
     },
     toModelOutput: turn.modelOutput,
   });
+  async function choose(topics: string[], toolCallId: string) {
+    const retrieval = await reader.retrieve(
+      p,
+      { chatId },
+      { kind: "facts", types: ["topic"] },
+    );
+    if (retrieval.status === "refused")
+      throw turn.refuse(
+        retrieval.reason === "not_owner" ? "gone" : retrieval.reason,
+      );
+    // A Chat's scope serves Facts of its selected Courses only, so this also keeps Topics within the selection.
+    const inChat = new Map<CitationRef, string>(
+      retrieval.items.flatMap((item) =>
+        item.kind === "fact" ? [[item.cite, item.factId] as const] : [],
+      ),
+    );
+    const topicIds = topics.map((tag) => {
+      const cite = turn.citations.find((c) => c.tag === tag)?.cite;
+      return cite && inChat.get(cite);
+    });
+    if (topicIds.some((id) => !id))
+      throw new Error(
+        "Not started: name only Topics of this Chat's selected Courses, by the tags courseFacts gave them.",
+      );
+    started.current = {
+      kind,
+      topicIds: topicIds as string[],
+      artifactId: randomUUID(),
+    };
+    turn.give(
+      toolCallId,
+      `It starts once your answer is saved. Tell the student ${named[kind]} is being made and will be under Study.`,
+    );
+    return {
+      kind,
+      topics: topicIds.length,
+      artifactId: started.current.artifactId,
+    };
+  }
 }

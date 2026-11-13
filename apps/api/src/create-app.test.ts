@@ -3624,6 +3624,84 @@ describe("Chat", () => {
     ).toEqual({ kind: "practice_set", runId: artifactRuns[0] });
   });
 
+  it("starts at most one Artifact per answer, telling the model why a second does not start", async () => {
+    const { headers, chatId } = await topicChat("chat-practice-once");
+    steps.push(
+      calls("courseFacts", { course: "K1" }),
+      (prompt) => [
+        ...startsOnTopic("startPracticeSet")(prompt),
+        ...startsOnTopic("startFlashcards")(prompt),
+      ],
+      says("Ich erstelle dir ein Practice Set."),
+    );
+    artifactRuns.length = 0;
+    prompts.length = 0;
+
+    expect(
+      (await askInChat(headers, chatId, "Alles zum Üben, bitte.")).status,
+    ).toBe(200);
+
+    expect(artifactRuns).toHaveLength(1);
+    expect(JSON.stringify(prompts[2])).toContain("only one may");
+  });
+
+  it("starts no Artifact when its turn fails", async () => {
+    const { cookie, headers, chatId } = await topicChat("chat-practice-failed");
+    const used = (
+      (await (
+        await app.request(`${apiOrigin}/api/me/allowance`, {
+          headers: { cookie },
+        })
+      ).json()) as { usedMicroUsd: number }
+    ).usedMicroUsd;
+    // Enough for the first two steps, not the third.
+    await admin.allowance.update({
+      where: { studentId: await studentId(cookie) },
+      data: { limitMicroUsd: used + 2 },
+    });
+    steps.push(
+      calls("courseFacts", { course: "K1" }),
+      startsOnTopic("startPracticeSet"),
+    );
+    artifactRuns.length = 0;
+
+    const asked = await askInChat(headers, chatId, "Gib mir Übungsaufgaben.");
+
+    expect(asked.body).toEqual({ error: "allowance_exhausted" });
+    expect(artifactRuns).toEqual([]);
+    expect(
+      await admin.artifact.count({
+        where: { studentId: await studentId(cookie) },
+      }),
+    ).toBe(0);
+  });
+
+  it("starts no Artifact on Topics outside the Chat's selected Courses", async () => {
+    const { cookie, headers } = await topicChat("chat-practice-outside");
+    const { id: sourceId } = await admin.source.findFirstOrThrow({
+      where: { studentId: await studentId(cookie) },
+    });
+    const { id: chatId } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [sourceId] }),
+      })
+    ).json()) as { id: string };
+    steps.push(
+      calls("courseFacts", { course: "K1" }),
+      startsOnTopic("startPracticeSet"),
+      says("Das geht in diesem Chat nicht."),
+    );
+    artifactRuns.length = 0;
+    prompts.length = 0;
+
+    await askInChat(headers, chatId, "Gib mir Übungsaufgaben.");
+
+    expect(JSON.stringify(prompts[2])).toContain("selected Courses");
+    expect(artifactRuns).toEqual([]);
+  });
+
   it("offers no search in a Chat with nothing selected, but still the Plan", async () => {
     const { headers, id } = await emptyChat("chat-no-search");
     reply = "Für diesen Chat ist kein Material ausgewählt.";

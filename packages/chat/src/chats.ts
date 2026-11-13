@@ -225,7 +225,7 @@ export function createChats({
     if (!history) return null;
     const context = chatContext(clock.now(), timeZone, history.courses);
     const turn = createTurn();
-    const started: { current?: ArtifactStart } = {};
+    const started: { current?: ArtifactStart; claimed?: boolean } = {};
     const tools = {
       // A Chat with nothing selected has nothing to search, nor Topics to practise.
       ...(history.selected
