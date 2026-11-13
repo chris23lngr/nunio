@@ -3562,6 +3562,157 @@ describe("Chat", () => {
     ).toEqual([{ start: at(next, "14:00"), end: at(next, "16:00") }]);
   });
 
+  describe("proposing to remove a Study Block (ADR-0021)", () => {
+    /** A planning Chat whose Obligation has a block in eight days, 10:00–12:00, read by the model as B1. */
+    async function blockChat(name: string, { locked = false } = {}) {
+      const fixture = await planningChat(name);
+      const day = berlinDay(8);
+      const at = (time: string) => deadline(day, time, "Europe/Berlin");
+      const placed = (await (
+        await app.request(`${apiOrigin}/api/me/study-blocks`, {
+          method: "POST",
+          headers: fixture.headers,
+          body: JSON.stringify({
+            work: { kind: "obligation", id: fixture.obligationId },
+            start: at("10:00"),
+            end: at("12:00"),
+          }),
+        })
+      ).json()) as { id: string };
+      if (locked)
+        await app.request(
+          `${apiOrigin}/api/me/study-blocks/${placed.id}/lock`,
+          {
+            method: "POST",
+            headers: fixture.headers,
+            body: JSON.stringify({ locked: true }),
+          },
+        );
+      steps.push(
+        calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+        calls("proposeStudyBlockRemove", { block: "B1" }),
+      );
+      return { ...fixture, at };
+    }
+
+    it("removes the block once the student approves it on Home", async () => {
+      const { headers, chatId, obligationId, at } = await blockChat(
+        "chat-propose-remove",
+      );
+
+      const asked = await askInChat(headers, chatId, "Lösch den Block.");
+      const card = asked.body.parts.find(
+        (part: { type: string }) =>
+          part.type === "tool-proposeStudyBlockRemove",
+      );
+      expect(card.action.shown).toEqual({
+        kind: "studyBlock.remove",
+        work: { title: "Übungsblatt 4", course: "Analysis I" },
+        from: {
+          start: at("10:00").toISOString(),
+          end: at("12:00").toISOString(),
+        },
+        to: null,
+      });
+      await app.request(`${apiOrigin}/api/me/approvals/${card.action.id}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          decision: "approve",
+          fingerprint: card.action.fingerprint,
+        }),
+      });
+
+      expect(
+        await admin.studyBlock.findMany({ where: { obligationId } }),
+      ).toEqual([]);
+    });
+
+    it("returns a Locked block to the model with the reason, without asking the student", async () => {
+      const { headers, chatId, obligationId } = await blockChat(
+        "chat-propose-remove-locked",
+        { locked: true },
+      );
+      steps.push(says("Der Block ist gesperrt."));
+      prompts.length = 0;
+
+      expect(
+        (await askInChat(headers, chatId, "Lösch den Block.")).status,
+      ).toBe(200);
+
+      expect(JSON.stringify(prompts[2])).toContain("the block is Locked");
+      expect(
+        await (
+          await app.request(`${apiOrigin}/api/me/approvals`, {
+            headers: { cookie: headers.cookie },
+          })
+        ).json(),
+      ).toEqual([]);
+      expect(await admin.studyBlock.count({ where: { obligationId } })).toBe(1);
+    });
+
+    it("tells the model the block is gone once the student approves in the Chat", async () => {
+      const { headers, chatId } = await blockChat("chat-propose-remove-report");
+      const asked = await askInChat(headers, chatId, "Lösch den Block.");
+      const card = asked.body.parts.find(
+        (part: { type: string }) =>
+          part.type === "tool-proposeStudyBlockRemove",
+      );
+      reply = "Erledigt, der Block ist weg.";
+      prompts.length = 0;
+
+      await sseChunks(
+        await app.request(
+          `${apiOrigin}/api/me/chats/${chatId}/messages/stream`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              approval: {
+                id: card.approvalId,
+                fingerprint: card.action.fingerprint,
+              },
+            }),
+          },
+        ),
+      );
+
+      expect(JSON.stringify(prompts[0])).toContain(
+        "the Study Block is removed from their Plan",
+      );
+    });
+
+    it("tells the model in later turns which block it removed, by its work and time", async () => {
+      const { headers, chatId } = await blockChat(
+        "chat-propose-remove-history",
+      );
+      const asked = await askInChat(headers, chatId, "Lösch den Block.");
+      const card = asked.body.parts.find(
+        (part: { type: string }) =>
+          part.type === "tool-proposeStudyBlockRemove",
+      );
+      await app.request(`${apiOrigin}/api/me/approvals/${card.action.id}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          decision: "approve",
+          fingerprint: card.action.fingerprint,
+        }),
+      });
+      reply = "Gern.";
+      prompts.length = 0;
+
+      await askInChat(headers, chatId, "Danke!");
+
+      const answer = conversation(prompts[0]).find(
+        ([role]) => role === "assistant",
+      )?.[1];
+      expect(answer).toContain(
+        `(You proposed to remove the Study Block for "Übungsblatt 4" at ${berlinDay(8)}T10:00–12:00: approved and done.)`,
+      );
+    });
+  });
+
   it("tells the model in later turns what became of an earlier proposal", async () => {
     const { headers, chatId } = await planningChat("chat-propose-history");
     const day = berlinDay(8);
@@ -3983,7 +4134,12 @@ describe("Chat", () => {
     );
 
     expect(offeredTools).toEqual([
-      ["agenda", "proposeStudyBlock", "proposeStudyBlockMove"],
+      [
+        "agenda",
+        "proposeStudyBlock",
+        "proposeStudyBlockMove",
+        "proposeStudyBlockRemove",
+      ],
     ]);
     expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
   });

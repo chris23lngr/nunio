@@ -23,6 +23,15 @@ const schemas = {
       end: z.date(),
     })
     .refine(ordered, message),
+  // The block as the student was shown it, so a removed one can still be named (ADR-0021).
+  "studyBlock.remove": z
+    .strictObject({
+      studyBlockId: z.string().min(1),
+      workId: z.string().min(1),
+      start: z.date(),
+      end: z.date(),
+    })
+    .refine(ordered, message),
 };
 
 /** What the gate re-reads at dispatch about the work an Action is for. */
@@ -41,6 +50,7 @@ export interface BlockSubject extends WorkSubject {
 type Subjects = {
   "studyBlock.create": WorkSubject;
   "studyBlock.move": BlockSubject;
+  "studyBlock.remove": BlockSubject;
 };
 
 /** Where a Grant applies: one Course, or one Obligation. */
@@ -56,13 +66,20 @@ const covers = {
   // A Rebalance moves a block the student placed or moved only with their Approval.
   "studyBlock.move": (scope: GrantScope, _: unknown, block: BlockSubject) =>
     inScope(scope, block) && block.placedBy === "nunio",
+  // Only the student removes a block: no Grant covers it (ADR-0021).
+  "studyBlock.remove": () => false,
 };
 
-const versions = { "studyBlock.create": 1, "studyBlock.move": 1 };
+const versions = {
+  "studyBlock.create": 1,
+  "studyBlock.move": 1,
+  "studyBlock.remove": 1,
+};
 /** What the student is shown beyond the arguments: for a move, where the block is now. */
 const shown = {
   "studyBlock.create": () => null,
   "studyBlock.move": ({ start, end }: BlockSubject) => ({ start, end }),
+  "studyBlock.remove": ({ start, end }: BlockSubject) => ({ start, end }),
 };
 
 /** JSON with sorted keys and ISO dates, so equal Actions always hash alike. */
@@ -121,6 +138,7 @@ function definition<K extends keyof typeof schemas>(kind: K) {
 export const definitions = {
   "studyBlock.create": definition("studyBlock.create"),
   "studyBlock.move": definition("studyBlock.move"),
+  "studyBlock.remove": definition("studyBlock.remove"),
 };
 
 export type Kind = keyof typeof definitions;

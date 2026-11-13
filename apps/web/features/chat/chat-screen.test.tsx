@@ -1051,6 +1051,55 @@ test("shows a saved proposal as a card, and approving it there streams nunio's r
   ).toEqual([]);
 });
 
+test("shows a removal the student approved as removed (ADR-0021)", async () => {
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({
+      id: "chat-1",
+      courses: [],
+      messages: [
+        {
+          id: "answer-1",
+          role: "assistant",
+          text: "Soll ich ihn entfernen?",
+          parts: [
+            { type: "text", text: "Soll ich ihn entfernen?" },
+            {
+              type: "tool-proposeStudyBlockRemove",
+              toolCallId: "call-1",
+              input: { block: "B1" },
+              approvalId: "approval-1",
+              notes: [],
+              action: {
+                id: "action-1",
+                fingerprint: null,
+                expiresAt: null,
+                status: "done",
+                decision: "approved",
+                shown: {
+                  kind: "studyBlock.remove",
+                  work: { title: "Übungsblatt 4", course: "Analysis I" },
+                  from: {
+                    start: "2026-11-20T09:00:00Z",
+                    end: "2026-11-20T11:00:00Z",
+                  },
+                  to: null,
+                },
+              },
+            },
+          ],
+          createdAt: "2026-11-10T09:48:00Z",
+          citations: [],
+          model: null,
+        },
+      ],
+    }),
+  );
+  mount("chat-1");
+  await chatLoaded();
+
+  expect(await screen.findByText("Entfernt")).toBeTruthy();
+});
+
 test("a proposal streams as a line until its answer is saved, then asks once as a card", async () => {
   api.route("GET", "/api/me/chats/chat-1", () =>
     Response.json({ id: "chat-1", courses: [], messages: [] }),
