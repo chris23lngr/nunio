@@ -698,8 +698,7 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 
 1. **Tasks in a Course.**
    - `task.courseId`: set only on a Task without an Obligation.
-   - A Task's Course is its Obligation's Course, else its own. The gate's Course, Course limits, Priority and Archiving use it.
-   - The Plan screen can add a Task in a Course or with no Course.
+   - A Task's Course is its Obligation's Course, else its own. The gate's Course, Course limits, Archiving, deleting and merging use it.
    - `agenda` shows open Tasks without an Obligation. This fixes the Chat refusing a Study Block for such a Task.
 2. **Event Series and identity.**
    - Fixed Events from a calendar keep their UID and recurrence ID.
@@ -717,6 +716,8 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
    - Moved and cancelled Course Events, Routine changes, and lapsed Follow-ups behave as in ADR-0021.
    - A Shortfall offers skipping a Routine for a period.
    - Archiving a Course stops its Routines, and its future Study Blocks go as before.
+   - A Task in a Course gets its Course's Priority. Before this stage such a Task has no deadline, so Priority would change nothing.
+   - The Plan screen lists open Tasks and lets the student add one in a Course or with no Course. It waits for this stage because, before it, a Task without Study Blocks would show nowhere on the Plan.
 5. **Chat.**
    - `agenda` shows Course Events with their Preparation and Follow-up handles, plus Tasks in a Course.
    - `proposeTask` and `proposeTaskReopen` add the Action kinds `task.create` and `task.reopen`, asked for Approval like Study Block proposals (ADR-0019). No Grant covers them.
@@ -724,7 +725,7 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 **Documentation references.** ADR-0001, 0010, 0019, 0020, 0021; GLOSSARY ("Planning"); Phase 8 decisions; [delegation-gate.md](design/delegation-gate.md) "Interface"; [extraction.md](design/extraction.md) for metered reading and Reject.
 
 **Verification checklist.**
-- [ ] A Task without an Obligation but in a Course is covered by that Course's Grant and limit, and goes when the Course is deleted.
+- [x] A Task without an Obligation but in a Course is covered by that Course's Grant and limit, and goes when the Course is deleted (`packages/planning/src/plan.test.ts`, "keeps a Task in a Course…"; `packages/delegation/src/gate.test.ts`, "creates a block for a Task in the Grant's Course…").
 - [ ] Adding the same `.ics` file twice leaves the same Fixed Events. A moved occurrence keeps its ID and its Tasks, and a removed occurrence cancels its open Tasks.
 - [ ] The assignment call receives no event description, location or attendee, and is metered. A rejected proposal stays rejected after re-reading.
 - [ ] An unconfirmed series produces no Tasks. A confirmed one with a Routine produces exactly one Preparation and one Follow-up per Course Event in the next 14 days, also after repeated runs.
@@ -732,6 +733,12 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 - [ ] Changing a Routine updates only open Tasks with no past Study Block, and never an Estimate the student set.
 - [ ] A lapsed Follow-up stays open and is not planned again by Rebalance.
 - [ ] The Chat proposes a Study Block for a Follow-up the student names, and reopening or adding a Task needs an Approval of the exact Action.
+
+**Progress (2026-11-13).** Stage 1 is implemented.
+- `task.courseId` is set only on a Task toward no Obligation, which a check constraint enforces. Deleting the Course deletes such Tasks, and merging moves them.
+- Tasks in a rejected, merged or Archived Course drop out of the Plan, like their Obligations.
+- `agenda` lists open Tasks toward no Obligation whatever the range, since they have no deadline. A Chat can therefore propose a Study Block for one (`apps/api/src/create-app.test.ts`, "proposes a Study Block for a Task in a Course…").
+- Study Blocks of such a Task take its Course's color on the Plan.
 
 **Anti-pattern guards.**
 - Never change a Fixed Event, and never let a Routine create a Study Block outside Rebalance or a proposal.

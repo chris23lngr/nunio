@@ -1938,6 +1938,20 @@
                     "null"
                   ]
                 },
+                "courseId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The Task's own Course; null for one toward an Obligation, which is in the Obligation's Course."
+                },
+                "course": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The title of the Task's own Course."
+                },
                 "estimate": {
                   "type": [
                     "object",
@@ -1982,6 +1996,8 @@
                 "id",
                 "title",
                 "obligationId",
+                "courseId",
+                "course",
                 "estimate",
                 "maxMinutesPerDay",
                 "done"
@@ -7502,6 +7518,14 @@
                       "null"
                     ],
                     "format": "uuid"
+                  },
+                  "courseId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid",
+                    "description": "The Course of a Task toward no Obligation; a Task toward one is in the Obligation's Course."
                   }
                 },
                 "required": [

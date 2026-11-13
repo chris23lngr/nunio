@@ -27,7 +27,8 @@ const nextDay = (day: string) =>
 
 /**
  * Reads the student's Plan for a range of days (ADR-0020): Obligations due in it, with their Tasks and the tag to
- * cite each by, then Study Blocks and Fixed Events. Titles may come from a Source, so they are fenced as data.
+ * cite each by, open Tasks toward no Obligation (ADR-0021), then Study Blocks and Fixed Events. Titles may come from a
+ * Source, so they are fenced as data.
  */
 export function agendaTool(
   turn: Turn,
@@ -61,7 +62,7 @@ export function agendaTool(
   const at = (instant: Date) => local.format(instant).replace(",", "");
   const time = (instant: Date) => at(instant).slice(11);
   return tool({
-    description: `Reads the student's Plan for a range of days: the Obligations due in it, each with its Tasks and the tag to cite it by, then Study Blocks and Fixed Events. Obligations, Tasks and Study Blocks carry a handle such as O1, T1 or B1, which proposals name them by. Dates are YYYY-MM-DD in the student's time zone, at most ${maxDays} days apart, both included.`,
+    description: `Reads the student's Plan for a range of days: the Obligations due in it, each with its Tasks and the tag to cite it by, the open Tasks toward no Obligation, then Study Blocks and Fixed Events. Obligations, Tasks and Study Blocks carry a handle such as O1, T1 or B1, which proposals name them by. Dates are YYYY-MM-DD in the student's time zone, at most ${maxDays} days apart, both included.`,
     inputSchema: jsonSchema<{ from: string; to: string }>({
       type: "object",
       properties: { from: date, to: date },
@@ -97,6 +98,7 @@ export function agendaTool(
       const obligations = view.obligations
         .filter((o) => o.due && within(o.due))
         .sort((a, b) => a.due!.getTime() - b.due!.getTime());
+      const loose = view.tasks.filter((t) => !t.obligationId && !t.done);
       const blocks = view.studyBlocks.filter(overlaps);
       const events = view.fixedEvents.filter(overlaps);
       const titleOf = (work: { kind: string; id: string }) =>
@@ -124,6 +126,13 @@ export function agendaTool(
                   `  Task ${turn.handleFor("task", t.id)}: ${t.title}${t.done ? " (done)" : ""}`,
               ),
           ];
+        }),
+        // They have no deadline, so they show whatever the range.
+        "Open Tasks toward no Obligation:",
+        ...(loose.length ? [] : ["none"]),
+        ...loose.map((t) => {
+          const course = t.courseId ? handleOf.get(t.courseId) : undefined;
+          return `${turn.handleFor("task", t.id)} · ${t.title} · ${t.course ?? "no Course"}${course ? ` (${course})` : ""}`;
         }),
         "Study Blocks:",
         ...(blocks.length ? [] : ["none"]),

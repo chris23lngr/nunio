@@ -3316,6 +3316,67 @@ describe("Chat", () => {
     expect(reopened[1]!.parts).toContainEqual(card);
   });
 
+  it("proposes a Study Block for a Task in a Course that is toward no Obligation", async () => {
+    const { headers, chatId, obligationId } = await planningChat(
+      "chat-propose-course-task",
+    );
+    const { courseId } = await admin.obligation.findUniqueOrThrow({
+      where: { id: obligationId },
+    });
+    expect(
+      (
+        await app.request(`${apiOrigin}/api/me/tasks`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            title: "Vorlesung 3 nacharbeiten",
+            obligationId: null,
+            courseId,
+          }),
+        })
+      ).status,
+    ).toBe(201);
+    const day = berlinDay(8);
+    steps.push(calls("agenda", { from: berlinDay(7), to: berlinDay(13) }), [
+      ...says("Ich schlage dir einen Lernblock vor."),
+      ...calls("proposeStudyBlock", {
+        work: "T1",
+        start: `${day}T13:00`,
+        end: `${day}T14:00`,
+      }),
+    ]);
+    prompts.length = 0;
+
+    const chunks = await sseChunks(
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          id: randomUUID(),
+          text: "Plane heute 13–14 Uhr zum Nacharbeiten der Vorlesung ein.",
+        }),
+      }),
+    );
+
+    expect(JSON.stringify(prompts[1])).toMatch(
+      /T1\W+[^"]*Vorlesung 3 nacharbeiten[^"]*K1/,
+    );
+    const committed = chunks.find((chunk) => chunk.type === "data-committed");
+    expect(
+      committed.data.parts.find(
+        (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+      ),
+    ).toMatchObject({
+      action: {
+        status: "awaiting_approval",
+        shown: {
+          kind: "studyBlock.create",
+          work: { title: "Vorlesung 3 nacharbeiten", course: "Analysis I" },
+        },
+      },
+    });
+  });
+
   it("leaves an expired Chat proposal out of the Approvals, and shows it as expired in the Chat", async () => {
     const { headers, chatId } = await planningChat("chat-propose-expired");
     const day = berlinDay(8);

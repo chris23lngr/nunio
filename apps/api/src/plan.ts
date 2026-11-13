@@ -106,6 +106,16 @@ const PlanView = z
         id: z.string(),
         title: z.string(),
         obligationId: z.string().nullable(),
+        courseId: z
+          .string()
+          .nullable()
+          .describe(
+            "The Task's own Course; null for one toward an Obligation, which is in the Obligation's Course.",
+          ),
+        course: z
+          .string()
+          .nullable()
+          .describe("The title of the Task's own Course."),
         estimate: Estimate.nullable(),
         maxMinutesPerDay: z
           .number()
@@ -289,6 +299,14 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
           .object({
             title: z.string(),
             obligationId: z.string().uuid().nullable(),
+            courseId: z
+              .string()
+              .uuid()
+              .nullable()
+              .optional()
+              .describe(
+                "The Course of a Task toward no Obligation; a Task toward one is in the Obligation's Course.",
+              ),
           })
           .strict(),
       ),

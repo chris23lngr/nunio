@@ -61,15 +61,27 @@ export type PlanEntry = {
 /** Each Course's color by id, from the course list. */
 export type CourseColors = Record<string, CourseColor>;
 
-/** An Obligation or Task by id, with the Obligation it belongs to (itself for an Obligation). */
+/** An Obligation or Task by id, with the Obligation it belongs to (itself for an Obligation) and its Course. */
 function findWork(plan: Plan, id: string) {
   const own = plan.obligations.find((o) => o.id === id);
-  if (own) return { title: own.title, obligation: own, estimate: own.estimate };
+  if (own)
+    return {
+      title: own.title,
+      obligation: own,
+      course: { id: own.courseId, title: own.course },
+      estimate: own.estimate,
+    };
   const task = plan.tasks.find((t) => t.id === id);
   if (!task) return null;
   const obligation =
     plan.obligations.find((o) => o.id === task.obligationId) ?? null;
-  return { title: task.title, obligation, estimate: task.estimate };
+  // A Task toward no Obligation may be in a Course of its own.
+  const course = obligation
+    ? { id: obligation.courseId, title: obligation.course }
+    : task.courseId && task.course
+      ? { id: task.courseId, title: task.course }
+      : null;
+  return { title: task.title, obligation, course, estimate: task.estimate };
 }
 
 /** What a Fixed Event's popover shows: nunio knows no more than what, when and where from. */
@@ -123,9 +135,9 @@ export function blockDetails(
 
 /** The Course of a piece of work, when it has one with a known color. */
 function courseOf(work: ReturnType<typeof findWork>, colors: CourseColors) {
-  const obligation = work?.obligation;
-  const color = obligation ? colors[obligation.courseId] : undefined;
-  return obligation && color ? { title: obligation.course, color } : null;
+  const course = work?.course;
+  const color = course ? colors[course.id] : undefined;
+  return course && color ? { title: course.title, color } : null;
 }
 
 /** What the week grid shows of the Plan. */

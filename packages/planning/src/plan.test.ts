@@ -164,6 +164,8 @@ it("plans an Obligation through its open Tasks, which the student adds, estimate
       id: first.id,
       title: "Aufgaben 1–4",
       obligationId: sheet,
+      courseId: null,
+      course: null,
       estimate: { minutes: 60, estimatedBy: "student", rationale: null },
       maxMinutesPerDay: null,
       done: true,
@@ -172,6 +174,8 @@ it("plans an Obligation through its open Tasks, which the student adds, estimate
       id: second.id,
       title: "Aufgaben 5–8",
       obligationId: sheet,
+      courseId: null,
+      course: null,
       estimate: { minutes: 90, estimatedBy: "student", rationale: null },
       maxMinutesPerDay: null,
       done: false,
@@ -764,6 +768,120 @@ it("leaves an Archived Course's work out of the Plan, and brings it back when un
   await courses.unarchive(p, course!.id);
   expect((await plan.view(p)).obligations).toEqual([
     expect.objectContaining({ id: sheet }),
+  ]);
+});
+
+it("keeps a Task in a Course, which the Course's daily limit, Archiving and deletion reach", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-20", "12:00");
+  const { courseId } = await admin.obligation.findUniqueOrThrow({
+    where: { id: sheet },
+  });
+  const courses = createCourses({
+    db: runtime,
+    clock,
+    facts,
+    responsibilities: {
+      pauseForCourse: async () => {},
+      endForCourse: async () => {},
+    },
+  });
+
+  expect(
+    await plan.addTask(p, {
+      title: "VL 3 nacharbeiten",
+      obligationId: sheet,
+      courseId,
+    }),
+  ).toEqual({ status: "invalid" });
+  expect(
+    await plan.addTask(p, {
+      title: "VL 3 nacharbeiten",
+      obligationId: null,
+      courseId: randomUUID(),
+    }),
+  ).toEqual({ status: "gone" });
+  const task = await plan.addTask(p, {
+    title: "VL 3 nacharbeiten",
+    obligationId: null,
+    courseId,
+  });
+  if (task.status !== "ok") throw new Error(task.status);
+  expect((await plan.view(p)).tasks).toEqual([
+    expect.objectContaining({
+      id: task.id,
+      obligationId: null,
+      courseId,
+      course: "Analysis I",
+    }),
+  ]);
+
+  const work = { kind: "task", id: task.id } as const;
+  await plan.placeBlock(p, {
+    work,
+    start: at("2026-11-12 09:00"),
+    end: at("2026-11-12 10:00"),
+  });
+  await plan.setCourseLimit(p, courseId, 60);
+  expect(
+    await plan.check(p, {
+      kind: "create",
+      work,
+      start: at("2026-11-12 11:00"),
+      end: at("2026-11-12 12:00"),
+    }),
+  ).toEqual({ status: "ok", notes: ["work_limit"] });
+
+  expect(await courses.impact(p, courseId)).toMatchObject({
+    tasks: 1,
+    studyBlocks: 1,
+    futureStudyBlocks: 1,
+  });
+  await courses.archive(p, courseId);
+  expect((await plan.view(p)).tasks).toEqual([]);
+  expect(await admin.studyBlock.count({ where: { taskId: task.id } })).toBe(0);
+  await courses.unarchive(p, courseId);
+  expect((await plan.view(p)).tasks).toEqual([
+    expect.objectContaining({ id: task.id }),
+  ]);
+
+  await courses.delete(p, courseId);
+  expect(await admin.task.findUnique({ where: { id: task.id } })).toBeNull();
+});
+
+it("proposes, for one Course, moving the block of a Task in that Course as an Action for the gate", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-20", "12:00");
+  const { courseId } = await admin.obligation.findUniqueOrThrow({
+    where: { id: sheet },
+  });
+  const task = await plan.addTask(p, {
+    title: "VL 3 nacharbeiten",
+    obligationId: null,
+    courseId,
+  });
+  if (task.status !== "ok") throw new Error(task.status);
+  const placed = await plan.placeBlock(p, {
+    work: { kind: "task", id: task.id },
+    start: at("2026-11-10 09:00"),
+    end: at("2026-11-10 10:00"),
+  });
+  if (placed.status !== "ok") throw new Error(placed.status);
+  await plan.addFixedEvent(p, {
+    title: "Sprechstunde",
+    start: at("2026-11-10 09:00"),
+    end: at("2026-11-10 10:00"),
+  });
+
+  expect(await plan.intentsFor(p, { courseId })).toEqual([
+    {
+      kind: "studyBlock.move",
+      studyBlockId: placed.id,
+      start: expect.any(Date),
+      end: expect.any(Date),
+    },
   ]);
 });
 

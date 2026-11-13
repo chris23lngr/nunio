@@ -1338,6 +1338,15 @@ it("merges a Course into another, combining items with the same key, and sends l
     await courseNamed(p, "Analysis I"),
     await courseNamed(p, "Analysis 1"),
   ];
+  const taskId = randomUUID();
+  await admin.task.create({
+    data: {
+      id: taskId,
+      studentId: p.studentId,
+      courseId: from.id,
+      title: "VL 3 nacharbeiten",
+    },
+  });
 
   expect(await facts.mergeCourses(p, from.id, into.id)).toEqual({
     status: "ok",
@@ -1345,6 +1354,9 @@ it("merges a Course into another, combining items with the same key, and sends l
 
   const { courses } = await facts.review(p);
   expect(courses.map((c) => [c.id, c.status])).toEqual([[into.id, "accepted"]]);
+  expect(
+    await admin.task.findUniqueOrThrow({ where: { id: taskId } }),
+  ).toMatchObject({ courseId: into.id });
   expect(
     courses[0]!.obligations.map((o) => [
       o.title,

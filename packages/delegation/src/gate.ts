@@ -309,7 +309,11 @@ async function subjectOf(
     const obligation = obligationId
       ? await tx.obligation.findUnique({ where: { id: obligationId } })
       : null;
-    return { courseId: obligation?.courseId ?? null, obligationId };
+    // A Task toward no Obligation may still be in a Course of its own (ADR-0021).
+    return {
+      courseId: obligation?.courseId ?? task?.courseId ?? null,
+      obligationId,
+    };
   };
   if (intent.kind === "studyBlock.create") {
     if (await tx.obligation.findUnique({ where: { id: intent.workId } }))

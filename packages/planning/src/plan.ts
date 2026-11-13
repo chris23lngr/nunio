@@ -118,23 +118,41 @@ export function createPlan({
           }),
       );
   }
+  /** Courses nunio plans for: not rejected, merged or Archived. */
+  const activeCourses = (tx: Transaction) =>
+    tx.course.findMany({
+      where: { status: { in: ["proposed", "accepted"] }, archivedAt: null },
+      select: { id: true, title: true },
+    });
+  /** The student's Tasks, leaving out those in a Course nunio no longer plans for. */
   async function tasksOf(tx: Transaction) {
-    return (await tx.task.findMany({ orderBy: { createdAt: "asc" } })).map(
-      (task) => ({
-        id: task.id,
-        title: task.title,
-        obligationId: task.obligationId,
-        estimate: task.estimateMinutes
-          ? {
-              minutes: task.estimateMinutes,
-              estimatedBy: task.estimatedBy as Actor,
-              rationale: task.estimateRationale,
-            }
-          : null,
-        maxMinutesPerDay: task.maxMinutesPerDay,
-        done: Boolean(task.doneAt),
-      }),
-    );
+    const courses = await activeCourses(tx);
+    const rows = await tx.task.findMany({ orderBy: { createdAt: "asc" } });
+    return rows.flatMap((task) => {
+      const course = task.courseId
+        ? courses.find((c) => c.id === task.courseId)
+        : null;
+      if (course === undefined) return [];
+      return [
+        {
+          id: task.id,
+          title: task.title,
+          obligationId: task.obligationId,
+          /** The Task's own Course, which only a Task toward no Obligation has. */
+          courseId: task.courseId,
+          course: course?.title ?? null,
+          estimate: task.estimateMinutes
+            ? {
+                minutes: task.estimateMinutes,
+                estimatedBy: task.estimatedBy as Actor,
+                rationale: task.estimateRationale,
+              }
+            : null,
+          maxMinutesPerDay: task.maxMinutesPerDay,
+          done: Boolean(task.doneAt),
+        },
+      ];
+    });
   }
   /** The Plan as stored, and the Rebalance proposal over it, gathered in one transaction. */
   async function planView(p: Principal, tx: Transaction) {
@@ -256,7 +274,8 @@ export function createPlan({
           dailyLimitMinutes:
             task.maxMinutesPerDay ??
             courseLimit(
-              items.find((o) => o.id === task.obligationId)?.courseId,
+              task.courseId ??
+                items.find((o) => o.id === task.obligationId)?.courseId,
             ),
         })),
       fixedEvents: fixedEvents.map(({ start, end }) => ({ start, end })),
@@ -313,13 +332,11 @@ export function createPlan({
     const obligation = obligationId
       ? await tx.obligation.findUnique({ where: { id: obligationId } })
       : null;
-    if (!obligation) return null;
+    const courseId = obligation?.courseId ?? task?.courseId;
+    if (!courseId) return null;
     return (
-      (
-        await tx.coursePreference.findUnique({
-          where: { courseId: obligation.courseId },
-        })
-      )?.maxMinutesPerDay ?? null
+      (await tx.coursePreference.findUnique({ where: { courseId } }))
+        ?.maxMinutesPerDay ?? null
     );
   }
   const workExists = async (tx: Transaction, work: WorkRef) =>
@@ -492,7 +509,10 @@ export function createPlan({
           .map((o) => o.id),
       );
       for (const task of tasks)
-        if (task.obligationId && inScope.has(task.obligationId))
+        if (
+          (task.obligationId && inScope.has(task.obligationId)) ||
+          ("courseId" in scope && task.courseId === scope.courseId)
+        )
           inScope.add(task.id);
       return proposal.moves
         .filter((move) => inScope.has(move.workId))
@@ -547,13 +567,20 @@ export function createPlan({
         return { status: "ok" } as const;
       });
     },
-    /** A Task toward one of the student's Obligations, or toward none. */
+    /** A Task toward one of the student's Obligations, or toward none, then optionally in one of their Courses. */
     async addTask(
       p: Principal,
-      input: { title: string; obligationId: string | null },
+      input: {
+        title: string;
+        obligationId: string | null;
+        courseId?: string | null;
+      },
     ) {
       const title = titleOf(input.title);
-      if (!title) return { status: "invalid" } as const;
+      const courseId = input.courseId ?? null;
+      // A Task toward an Obligation is in the Obligation's Course.
+      if (!title || (input.obligationId && courseId))
+        return { status: "invalid" } as const;
       return withOwner(db, p, async (tx, studentId) => {
         if (
           input.obligationId &&
@@ -563,12 +590,18 @@ export function createPlan({
           }))
         )
           return { status: "gone" } as const;
+        if (
+          courseId &&
+          !(await activeCourses(tx)).some((course) => course.id === courseId)
+        )
+          return { status: "gone" } as const;
         const task = await tx.task.create({
           data: {
             id: randomUUID(),
             studentId,
             title,
             obligationId: input.obligationId,
+            courseId,
           },
         });
         return { status: "ok", id: task.id } as const;
@@ -857,7 +890,8 @@ export function createPlan({
               kind: "task" as const,
               title: task.title,
               course:
-                items.find((o) => o.id === task.obligationId)?.course ?? null,
+                items.find((o) => o.id === task.obligationId)?.course ??
+                task.course,
             },
           })),
       ];

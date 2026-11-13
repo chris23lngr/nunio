@@ -6,13 +6,16 @@ enum PlanActor {
   @@map("plan_actor")
 }
 
-/// A visible, completable step, optionally toward one Obligation.
+/// A visible, completable step, optionally toward one Obligation or in one Course.
 model Task {
   id              String     @id
   studentId       String
   student         User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
   obligationId    String?
   obligation      Obligation? @relation(fields: [obligationId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// The Course of a Task toward no Obligation; one toward an Obligation is in its Obligation's Course and has none.
+  courseId        String?
+  course          Course?     @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
   title           String
   estimateMinutes Int?
   estimatedBy     PlanActor?

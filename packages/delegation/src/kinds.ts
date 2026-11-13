@@ -26,7 +26,7 @@ const schemas = {
 };
 
 /** What the gate re-reads at dispatch about the work an Action is for. */
-/** A Task toward no Obligation has no Course. */
+/** A Task toward no Obligation has its own Course, or none. */
 export interface WorkSubject {
   courseId: string | null;
   obligationId: string | null;

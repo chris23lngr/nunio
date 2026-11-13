@@ -81,11 +81,17 @@ test("a Study Block for an Obligation is titled by it and colored by its Course"
   ]);
 });
 
-test("a Study Block for a Task is titled by it and colored by its Obligation's Course", () => {
-  const task = (id: string, obligationId: string | null) => ({
+test("a Study Block for a Task is titled by it and colored by its Obligation's Course or its own", () => {
+  const task = (
+    id: string,
+    obligationId: string | null,
+    course: { courseId: string; course: string } | null = null,
+  ) => ({
     id,
-    title: id === "t-1" ? "Altklausur 2024" : "Kapitel 6 lesen",
+    title: { "t-1": "Altklausur 2024", "t-2": "Kapitel 6 lesen" }[id] ?? id,
     obligationId,
+    courseId: course?.courseId ?? null,
+    course: course?.course ?? null,
     estimate: null,
     maxMinutesPerDay: null,
     done: false,
@@ -99,11 +105,22 @@ test("a Study Block for a Task is titled by it and colored by its Obligation's C
     locked: true,
   });
 
-  const [ofExam, loose] = planEntries(
+  const [ofExam, loose, inCourse] = planEntries(
     plan({
       obligations: [exam],
-      tasks: [task("t-1", "ob-1"), task("t-2", null)],
-      studyBlocks: [block("b-1", "t-1"), block("b-2", "t-2")],
+      tasks: [
+        task("t-1", "ob-1"),
+        task("t-2", null),
+        task("VL 3 nacharbeiten", null, {
+          courseId: "c-stats",
+          course: "Statistics II",
+        }),
+      ],
+      studyBlocks: [
+        block("b-1", "t-1"),
+        block("b-2", "t-2"),
+        block("b-3", "VL 3 nacharbeiten"),
+      ],
     }),
     colors,
   );
@@ -115,6 +132,10 @@ test("a Study Block for a Task is titled by it and colored by its Obligation's C
     locked: true,
   });
   expect(loose).toMatchObject({ title: "Kapitel 6 lesen", course: null });
+  expect(inCourse).toMatchObject({
+    title: "VL 3 nacharbeiten",
+    course: { title: "Statistics II", color: "fuchsia" },
+  });
 });
 
 test("a Fixed Event is shown without a Course, since the API links none", () => {

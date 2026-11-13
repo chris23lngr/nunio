@@ -44,7 +44,7 @@ export function describeAction(
     kind,
     work: {
       title: task?.title ?? obligation?.title ?? "Work that is gone",
-      course: obligation?.course ?? null,
+      course: obligation?.course ?? task?.course ?? null,
     },
     from: block ? { start: block.start, end: block.end } : null,
     to: { start: new Date(start), end: new Date(end) },
