@@ -340,13 +340,18 @@ export function createFacts({
                 : [],
           ),
         };
-        let dropped =
-          all.courses.length -
-          kept.courses.length +
-          all.obligations.length -
-          kept.obligations.length +
-          all.facts.length -
-          kept.facts.length;
+        // Counts only, never content: why items were dropped shows in the worker log and the eval report.
+        const dropped = {
+          ungrounded:
+            all.courses.length -
+            kept.courses.length +
+            all.obligations.length -
+            kept.obligations.length +
+            all.facts.length -
+            kept.facts.length,
+          noCourse: 0,
+          aiUseRule: 0,
+        };
         const stored = await withOwner(db, p, async (tx, studentId) => {
           await tx.$queryRaw`SELECT "id" FROM "source" WHERE "id" = ${sourceId} FOR UPDATE`;
           if (
@@ -444,7 +449,7 @@ export function createFacts({
             }
             // An unknown or no-longer-eligible ID is only a proposal, requiring page grounding.
             if (!grounded(course)) {
-              dropped++;
+              dropped.ungrounded++;
               continue;
             }
             const matchCode = course.code ? normalize(course.code) : null,
@@ -502,7 +507,7 @@ export function createFacts({
           for (const item of kept.obligations) {
             const courseId = courseOf(item.course);
             if (!courseId) {
-              dropped++;
+              dropped.noCourse++;
               continue;
             }
             const timeZone = item.due.date
@@ -596,7 +601,7 @@ export function createFacts({
           for (const item of kept.facts) {
             const courseId = courseOf(item.course);
             if (!courseId) {
-              dropped++;
+              dropped.noCourse++;
               continue;
             }
             let matchKey = normalize(item.key),
@@ -605,7 +610,7 @@ export function createFacts({
               const ruled = await aiUseKey(tx, courseId, item.key);
               value = normalize(item.value);
               if (!ruled || !isAiUseClass(value)) {
-                dropped++;
+                dropped.aiUseRule++;
                 continue;
               }
               matchKey = ruled;

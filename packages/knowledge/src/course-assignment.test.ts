@@ -191,7 +191,10 @@ it("puts everything a bound Source holds under its Course, proposing none and dr
 
   const result = await extract(p, source.id, fromSlides);
 
-  expect(result).toMatchObject({ status: "done", dropped: 0 });
+  expect(result).toMatchObject({
+    status: "done",
+    dropped: { ungrounded: 0, noCourse: 0, aiUseRule: 0 },
+  });
   expect(await reviewed(p)).toEqual([
     expect.objectContaining({
       id: analysis,
