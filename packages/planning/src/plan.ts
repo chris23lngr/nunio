@@ -412,6 +412,111 @@ export function createPlan({
         ? await tx.obligation.findUnique({ where: { id: work.id } })
         : await tx.task.findUnique({ where: { id: work.id } }),
     );
+  /** `applyRoutines`, as a local function so the methods that call it do not depend on `this`. */
+  async function applyRoutines(p: Principal) {
+    return withOwner(db, p, async (tx, studentId) => {
+      const now = clock.now();
+      const horizon = now.getTime() + 14 * dayMs;
+      const active = new Set((await activeCourses(tx)).map((c) => c.id));
+      const routines = await tx.routine.findMany({
+        include: { series: true },
+      });
+      const events = await tx.fixedEvent.findMany({
+        where: { seriesId: { in: routines.map((r) => r.seriesId) } },
+        orderBy: [{ start: "asc" }, { end: "asc" }],
+      });
+      // A Task whose event is no longer a Course Event goes if nothing happened to it; otherwise it stays, without it.
+      /** A Course Event whose Routine is not skipped at the time it begins. */
+      const due = (event: (typeof events)[number]) => {
+        const routine = routines.find((r) => r.seriesId === event.seriesId);
+        const series = routine?.series;
+        return Boolean(
+          !event.detachedAt &&
+            series?.confirmedAt &&
+            series.courseId &&
+            active.has(series.courseId) &&
+            !(routine?.skippedUntil && event.start < routine.skippedUntil),
+        );
+      };
+      const courseEvents = new Set(events.filter(due).map((event) => event.id));
+      const stale = await tx.task.findMany({
+        where: {
+          role: { not: null },
+          OR: [
+            { fixedEventId: null },
+            { fixedEventId: { notIn: [...courseEvents] } },
+          ],
+        },
+        include: { studyBlocks: true },
+      });
+      const touched = (task: (typeof stale)[number]) =>
+        task.doneAt ||
+        task.studyBlocks.some((b) => b.start < now || b.lockedAt);
+      for (const task of stale) {
+        if (touched(task))
+          await tx.task.update({
+            where: { id: task.id },
+            data: { fixedEventId: null, role: null },
+          });
+        else await tx.task.delete({ where: { id: task.id } });
+      }
+      // Preparing once the lecture has begun is pointless, so an untouched Preparation goes then; a Follow-up stays.
+      const begun = events
+        .filter((event) => event.start <= now)
+        .map((event) => event.id);
+      for (const task of await tx.task.findMany({
+        where: { role: "preparation", fixedEventId: { in: begun } },
+        include: { studyBlocks: true },
+      }))
+        if (!touched(task)) await tx.task.delete({ where: { id: task.id } });
+      const existing = new Set(
+        (
+          await tx.task.findMany({
+            where: { fixedEventId: { in: events.map((e) => e.id) } },
+          })
+        ).map((t) => `${t.fixedEventId} ${t.role}`),
+      );
+      const added = [];
+      for (const { series, preparationMinutes, followUpMinutes } of routines) {
+        const courseId = series.courseId;
+        if (!series.confirmedAt || !courseId || !active.has(courseId)) continue;
+        for (const event of events) {
+          if (event.seriesId !== series.id || !courseEvents.has(event.id))
+            continue;
+          if (event.start.getTime() > horizon) continue;
+          const wanted = [
+            {
+              role: "preparation" as const,
+              label: "Vorbereitung",
+              minutes: preparationMinutes,
+            },
+            {
+              role: "follow_up" as const,
+              label: "Nachbereitung",
+              minutes: followUpMinutes,
+            },
+          ];
+          for (const { role, label, minutes } of wanted) {
+            if (!minutes || existing.has(`${event.id} ${role}`)) continue;
+            const window = windowOf({ fixedEventId: event.id, role }, events);
+            if (!window || window.end <= now) continue;
+            added.push({
+              id: randomUUID(),
+              studentId,
+              courseId,
+              fixedEventId: event.id,
+              role,
+              title: `${label}: ${series.title}`,
+              estimateMinutes: minutes,
+              estimatedBy: "student" as const,
+            });
+          }
+        }
+      }
+      await tx.task.createMany({ data: added });
+      return { status: "ok", added: added.length } as const;
+    });
+  }
 
   return {
     /** The Plan as it stands, and what a Rebalance would change now. */
@@ -772,7 +877,7 @@ export function createPlan({
         return { status: count ? "ok" : "gone" } as const;
       });
       // It is no Course Event any more, so its Routine's Tasks follow.
-      if (detached.status === "ok") await this.applyRoutines(p);
+      if (detached.status === "ok") await applyRoutines(p);
       return detached;
     },
     async removeFixedEvent(p: Principal, id: string) {
@@ -880,7 +985,7 @@ export function createPlan({
         } as const;
       });
       // Moved, new and cancelled Course Events change what the Routines call for.
-      if (added.status === "ok") await this.applyRoutines(p);
+      if (added.status === "ok") await applyRoutines(p);
       return added;
     },
     /** Deletes a calendar Source and, immediately, every Fixed Event read from it. */
@@ -1128,7 +1233,7 @@ export function createPlan({
         return { status: count ? "ok" : "gone" } as const;
       });
       // Its events become, or stop being, Course Events, which its Routine follows.
-      if (decided.status === "ok") await this.applyRoutines(p);
+      if (decided.status === "ok") await applyRoutines(p);
       return decided;
     },
     /** The student's Routine for an Event Series: minutes to prepare for and to follow up on each of its Course Events. */
@@ -1178,7 +1283,7 @@ export function createPlan({
         }
         return "ok" as const;
       });
-      if (status === "ok") await this.applyRoutines(p);
+      if (status === "ok") await applyRoutines(p);
       return { status } as const;
     },
     /**
@@ -1187,115 +1292,7 @@ export function createPlan({
      * them is the student's own planning, not an Action; running it again adds nothing twice.
      */
     async applyRoutines(p: Principal) {
-      return withOwner(db, p, async (tx, studentId) => {
-        const now = clock.now();
-        const horizon = now.getTime() + 14 * dayMs;
-        const active = new Set((await activeCourses(tx)).map((c) => c.id));
-        const routines = await tx.routine.findMany({
-          include: { series: true },
-        });
-        const events = await tx.fixedEvent.findMany({
-          where: { seriesId: { in: routines.map((r) => r.seriesId) } },
-          orderBy: [{ start: "asc" }, { end: "asc" }],
-        });
-        // A Task whose event is no longer a Course Event goes if nothing happened to it; otherwise it stays, without it.
-        /** A Course Event whose Routine is not skipped at the time it begins. */
-        const due = (event: (typeof events)[number]) => {
-          const routine = routines.find((r) => r.seriesId === event.seriesId);
-          const series = routine?.series;
-          return Boolean(
-            !event.detachedAt &&
-              series?.confirmedAt &&
-              series.courseId &&
-              active.has(series.courseId) &&
-              !(routine?.skippedUntil && event.start < routine.skippedUntil),
-          );
-        };
-        const courseEvents = new Set(
-          events.filter(due).map((event) => event.id),
-        );
-        const stale = await tx.task.findMany({
-          where: {
-            role: { not: null },
-            OR: [
-              { fixedEventId: null },
-              { fixedEventId: { notIn: [...courseEvents] } },
-            ],
-          },
-          include: { studyBlocks: true },
-        });
-        const touched = (task: (typeof stale)[number]) =>
-          task.doneAt ||
-          task.studyBlocks.some((b) => b.start < now || b.lockedAt);
-        for (const task of stale) {
-          if (touched(task))
-            await tx.task.update({
-              where: { id: task.id },
-              data: { fixedEventId: null, role: null },
-            });
-          else await tx.task.delete({ where: { id: task.id } });
-        }
-        // Preparing once the lecture has begun is pointless, so an untouched Preparation goes then; a Follow-up stays.
-        const begun = events
-          .filter((event) => event.start <= now)
-          .map((event) => event.id);
-        for (const task of await tx.task.findMany({
-          where: { role: "preparation", fixedEventId: { in: begun } },
-          include: { studyBlocks: true },
-        }))
-          if (!touched(task)) await tx.task.delete({ where: { id: task.id } });
-        const existing = new Set(
-          (
-            await tx.task.findMany({
-              where: { fixedEventId: { in: events.map((e) => e.id) } },
-            })
-          ).map((t) => `${t.fixedEventId} ${t.role}`),
-        );
-        const added = [];
-        for (const {
-          series,
-          preparationMinutes,
-          followUpMinutes,
-        } of routines) {
-          const courseId = series.courseId;
-          if (!series.confirmedAt || !courseId || !active.has(courseId))
-            continue;
-          for (const event of events) {
-            if (event.seriesId !== series.id || !courseEvents.has(event.id))
-              continue;
-            if (event.start.getTime() > horizon) continue;
-            const wanted = [
-              {
-                role: "preparation" as const,
-                label: "Vorbereitung",
-                minutes: preparationMinutes,
-              },
-              {
-                role: "follow_up" as const,
-                label: "Nachbereitung",
-                minutes: followUpMinutes,
-              },
-            ];
-            for (const { role, label, minutes } of wanted) {
-              if (!minutes || existing.has(`${event.id} ${role}`)) continue;
-              const window = windowOf({ fixedEventId: event.id, role }, events);
-              if (!window || window.end <= now) continue;
-              added.push({
-                id: randomUUID(),
-                studentId,
-                courseId,
-                fixedEventId: event.id,
-                role,
-                title: `${label}: ${series.title}`,
-                estimateMinutes: minutes,
-                estimatedBy: "student" as const,
-              });
-            }
-          }
-        }
-        await tx.task.createMany({ data: added });
-        return { status: "ok", added: added.length } as const;
-      });
+      return applyRoutines(p);
     },
     /**
      * Skips a Routine until an instant, as a Shortfall's tradeoff offers: Course Events that begin before then get no
@@ -1310,7 +1307,7 @@ export function createPlan({
         });
         return { status: count ? "ok" : "gone" } as const;
       });
-      if (skipped.status === "ok") await this.applyRoutines(p);
+      if (skipped.status === "ok") await applyRoutines(p);
       return skipped;
     },
     /** Started daily by the worker: applies the Routines of every student who has one, so the 14 days roll on. */
@@ -1321,7 +1318,7 @@ export function createPlan({
       for (const { studentId } of students) {
         // One student's failure leaves their Routines to the next tick, not the others'.
         try {
-          await this.applyRoutines(principal.fromSession({ studentId }));
+          await applyRoutines(principal.fromSession({ studentId }));
         } catch (error) {
           console.error("Routine tick failed for a student", error);
         }
