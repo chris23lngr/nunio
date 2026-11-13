@@ -298,6 +298,15 @@ export function createPlan({
     async view(p: Principal) {
       return withOwner(db, p, (tx) => planView(p, tx));
     },
+    /** The time zone the student's days, deadlines and Study Blocks are read in. */
+    async timeZone(p: Principal) {
+      return withOwner(
+        db,
+        p,
+        async (tx) =>
+          (await tx.planPreference.findFirst())?.timeZone ?? defaults.timeZone,
+      );
+    },
     /**
      * The Rebalance moves for one Course's Obligations, or one exam, and their Tasks, as Actions for the
      * gate, which decides which of them need the student's Approval.

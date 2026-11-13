@@ -8,7 +8,8 @@ import { writeFile } from "node:fs/promises";
 import { createAnswerer, createModels } from "@nunio/ai";
 import { createChats } from "@nunio/chat";
 import type { KnowledgeReader } from "@nunio/knowledge";
-import { createKnowledgeReader } from "@nunio/knowledge";
+import { createFacts, createKnowledgeReader } from "@nunio/knowledge";
+import { createPlan } from "@nunio/planning";
 import type { EvalDocument } from "./retrieval/documents.ts";
 import { startRetrievalEval } from "./retrieval/documents.ts";
 
@@ -45,7 +46,16 @@ const watched: KnowledgeReader = {
     return retrieval;
   },
 };
-const chats = createChats({ db, keys, reader: watched, delegation });
+const clock = { now: () => new Date() };
+const plan = createPlan({ db, facts: createFacts({ db, keys, clock }), clock });
+const chats = createChats({
+  db,
+  keys,
+  reader: watched,
+  delegation,
+  plan,
+  clock,
+});
 const answerer = createAnswerer(
   createModels({ ...provider, catalog }).fromConfig(
     catalog.find((row) => row.key === chatModel.key)!,

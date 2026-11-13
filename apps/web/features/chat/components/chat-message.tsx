@@ -14,7 +14,8 @@ import { sourceReferences } from "@/features/shared/components/source-citations"
 import type { ChatUIMessage } from "../api/chat-queries";
 import { messageText } from "../api/chat-queries";
 import { MessageActions } from "./message-actions";
-import { SearchSteps } from "./search-steps";
+import type { ToolPart } from "./tool-steps";
+import { ToolSteps } from "./tool-steps";
 
 function renderReference(reference: MdxReference) {
   return (
@@ -41,8 +42,8 @@ export const ChatMessage = memo(function ChatMessage({
   // Each step may reason; the trace shows it as one.
   const thoughts = message.parts.filter((part) => part.type === "reasoning");
   const reasoning = thoughts.map((part) => part.text).join("\n\n");
-  const searches = message.parts.filter(
-    (part) => part.type === "tool-searchMaterial",
+  const steps = message.parts.filter((part): part is ToolPart =>
+    part.type.startsWith("tool-"),
   );
   // An answer with nothing streamed yet shows the waiting line.
   const waiting = !student && !saved && !text && !reasoning;
@@ -80,8 +81,8 @@ export const ChatMessage = memo(function ChatMessage({
             {reasoning}
           </Reasoning>
         )}
-        {!student && !withdrawn && searches.length > 0 && (
-          <SearchSteps searches={searches} />
+        {!student && !withdrawn && steps.length > 0 && (
+          <ToolSteps parts={steps} />
         )}
         {withdrawn ? (
           <p className="max-w-[647px] text-sm text-base-500">

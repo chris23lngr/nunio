@@ -174,11 +174,12 @@ async function acceptedCourse(
   sourceId: string,
   course: { code: string; title: string; quote: string },
   obligations: Extracted["obligations"] = [],
+  extractedFacts: Extracted["facts"] = [],
 ) {
   const extracted: Extracted = {
     courses: [{ ...course, page: 1 }],
     obligations,
-    facts: [],
+    facts: extractedFacts,
   };
   const extractor: Extractor = {
     model: "test-extractor",
@@ -600,6 +601,56 @@ it("reads Obligations across every Course for planning, but never passages", asy
       { kind: "passages", text: "Klausur" },
     ),
   ).rejects.toThrow(InvalidQueryError);
+});
+
+it("reads a Course's exam logistics and AI-use Rule for planning", async () => {
+  const p = await student();
+  const analysis = await readySource(p, "Analysis.pdf", [
+    "MA-101 Analysis I",
+    "Klausur im Hörsaal H1. KI-Werkzeuge sind nicht erlaubt.",
+  ]);
+  const course = await acceptedCourse(
+    p,
+    analysis,
+    { code: "MA-101", title: "Analysis I", quote: "MA-101 Analysis I" },
+    [],
+    [
+      {
+        course: "MA-101",
+        type: "exam_logistics",
+        key: "exam.room",
+        value: "Hörsaal H1",
+        page: 2,
+        quote: "Klausur im Hörsaal H1.",
+        uncertainty: null,
+      },
+      {
+        course: "MA-101",
+        type: "ai_use_rule",
+        key: "course",
+        value: "forbidden",
+        page: 2,
+        quote: "KI-Werkzeuge sind nicht erlaubt.",
+        uncertainty: null,
+      },
+    ],
+  );
+
+  const result = await reader.retrieve(
+    p,
+    { planning: true },
+    {
+      kind: "facts",
+      types: ["exam_logistics", "ai_use_rule"],
+      narrow: { courseIds: [course] },
+    },
+  );
+
+  if (result.status !== "ok") throw new Error(result.status);
+  expect(result.items.map((i) => i.label)).toEqual([
+    "Analysis I, Exam logistics from Analysis.pdf, page 2",
+    "Analysis I, AI-use rule from Analysis.pdf, page 2",
+  ]);
 });
 
 it("throws a scope mismatch when a Run reads a Chat's scope, without embedding", async () => {

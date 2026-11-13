@@ -242,7 +242,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     sources,
     facts,
     sourceWorkflows: sourceWorkflowsFromEnv(env),
-    chats: createChats({ db: prisma, keys, reader, delegation }),
+    chats: createChats({ db: prisma, keys, reader, delegation, plan, clock }),
     chatModels: createChatModels({
       catalog,
       answererFor: (model) => createAnswerer(models.fromConfig(model)),

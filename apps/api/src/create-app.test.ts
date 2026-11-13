@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import type { Embedder, Estimator, Grader, Maker } from "@nunio/ai";
+import type { Embedder, Estimator, Extracted, Grader, Maker } from "@nunio/ai";
 import { createAnswerer, createModels } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
@@ -154,6 +154,15 @@ const searches = (query: string) => [
     toolCallId: `call-${randomUUID()}`,
     toolName: "searchMaterial",
     input: JSON.stringify({ query }),
+  },
+];
+/** The Chat model calls `toolName` with `input`. */
+const calls = (toolName: string, input: unknown) => [
+  {
+    type: "tool-call",
+    toolCallId: `call-${randomUUID()}`,
+    toolName,
+    input: JSON.stringify(input),
   },
 ];
 const says = (text: string) => [
@@ -328,10 +337,17 @@ beforeAll(async () => {
     delegation,
     clock: { now: () => new Date() },
   });
-  const chats = createChats({ db: prisma, keys, reader, delegation });
   const plan = createPlan({
     db: prisma,
     facts,
+    clock: { now: () => new Date() },
+  });
+  const chats = createChats({
+    db: prisma,
+    keys,
+    reader,
+    delegation,
+    plan,
     clock: { now: () => new Date() },
   });
   responsibilities = createResponsibilities({
@@ -1232,7 +1248,7 @@ it("uploads and deletes an owned PDF through authenticated, origin-protected rou
 });
 
 /** A student with one extracted Source: Analysis I and its Blatt 3. */
-async function reviewFixture(name: string) {
+async function reviewFixture(name: string, extracted: Extracted["facts"] = []) {
   const cookie = await signUp(name);
   const p = principal.fromSession({ studentId: await studentId(cookie) });
   const upload = await sources.upload(p, {
@@ -1296,7 +1312,7 @@ async function reviewFixture(name: string) {
               uncertainty: null,
             },
           ],
-          facts: [],
+          facts: extracted,
         },
       }),
     },
@@ -2794,9 +2810,11 @@ describe("Chat", () => {
     expect((await ask("Und um wie viel Uhr?")).status).toBe(200);
 
     expect(prompts).toHaveLength(1);
+    const context = ["user", expect.stringContaining("Europe/Berlin")];
     expect(conversation(prompts[0])).toEqual([
       ["user", "Wann ist die Klausur?"],
       ["assistant", "Am 10. Februar."],
+      context,
       ["user", "Und um wie viel Uhr?"],
     ]);
     await app.request(`${apiOrigin}/api/me/sources/${handbook}`, {
@@ -2816,7 +2834,7 @@ describe("Chat", () => {
     ]);
     prompts.length = 0;
     await ask("Und wo?");
-    expect(conversation(prompts[0])).toEqual([["user", "Und wo?"]]);
+    expect(conversation(prompts[0])).toEqual([context, ["user", "Und wo?"]]);
   });
 
   it("refuses a selection with another student's or a deleted Source or Course", async () => {
@@ -2920,7 +2938,197 @@ describe("Chat", () => {
     ).toEqual([]);
   });
 
-  it("offers no search in a Chat with nothing selected", async () => {
+  it("tells the model today's date, the student's time zone and their Courses by handle", async () => {
+    const { headers } = await reviewFixture("chat-context");
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+      })
+    ).json()) as { id: string };
+    reply = "Du hast einen Kurs.";
+    prompts.length = 0;
+
+    await askInChat(headers, id, "Welche Kurse habe ich?");
+
+    const today = new Date().toLocaleDateString("en-CA", {
+      timeZone: "Europe/Berlin",
+    });
+    const context = conversation(prompts[0])
+      .map(([, text]) => text)
+      .find((text) => text?.includes("Europe/Berlin"));
+    expect(context).toContain(today);
+    expect(context).toMatch(/K1\W+Analysis I/);
+  });
+
+  it("reads the Plan for a week: Obligations with their Citations, Study Blocks and Fixed Events, showing the student only counts", async () => {
+    const { cookie, headers } = await reviewFixture("chat-agenda");
+    const student = await studentId(cookie);
+    const { id: sourceId } = await admin.source.findFirstOrThrow({
+      where: { studentId: student },
+    });
+    const obligation = await admin.obligation.findFirstOrThrow({
+      where: { studentId: student },
+    });
+    const post = (path: string, body: unknown) =>
+      app.request(`${apiOrigin}${path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+    expect(
+      (
+        await post("/api/me/study-blocks", {
+          work: { kind: "obligation", id: obligation.id },
+          start: "2026-11-18T09:00:00Z",
+          end: "2026-11-18T11:00:00Z",
+        })
+      ).ok,
+    ).toBe(true);
+    for (const [title, start, end] of [
+      ["Vorlesung Analysis", "2026-11-19T13:00:00Z", "2026-11-19T15:00:00Z"],
+      ["Weihnachtsfeier", "2026-12-18T17:00:00Z", "2026-12-18T22:00:00Z"],
+    ])
+      expect(
+        (await post("/api/me/fixed-events", { title, start, end })).ok,
+      ).toBe(true);
+    const { id } = (await (
+      await post("/api/me/chats", { courseIds: [], sourceIds: [] })
+    ).json()) as { id: string };
+    steps.push(
+      calls("agenda", { from: "2026-11-16", to: "2026-11-22" }),
+      says("Übungsblatt 3 ist am 20. November fällig [S1]."),
+    );
+    prompts.length = 0;
+
+    const chunks = await sseChunks(
+      await post(`/api/me/chats/${id}/messages/stream`, {
+        id: randomUUID(),
+        text: "Was steht nächste Woche an?",
+      }),
+    );
+
+    expect(chunks).toContainEqual(
+      expect.objectContaining({
+        type: "tool-output-available",
+        output: {
+          from: "2026-11-16",
+          to: "2026-11-22",
+          obligations: 1,
+          studyBlocks: 1,
+          fixedEvents: 1,
+        },
+      }),
+    );
+    const answering = JSON.stringify(prompts[1]);
+    for (const shown of ["Übungsblatt 3", "Vorlesung Analysis", "10:00"])
+      expect(answering).toContain(shown);
+    expect(answering).not.toContain("Weihnachtsfeier");
+    const committed = chunks.find((chunk) => chunk.type === "data-committed");
+    expect(committed.data.citations).toEqual([
+      {
+        tag: "S1",
+        provenance: {
+          kind: "source",
+          sourceId,
+          title: "Analysis.pdf",
+          location: { page: 1 },
+        },
+      },
+    ]);
+  });
+
+  it("reads a Course's Facts by its handle, with their Citations, showing the student only the Course and a count", async () => {
+    const { cookie, headers } = await reviewFixture("chat-course-facts", [
+      {
+        course: "MA-101",
+        type: "exam_logistics",
+        key: "exam.room",
+        value: "Hörsaal H1",
+        page: 1,
+        quote: "MA-101 Analysis I",
+        uncertainty: null,
+      },
+    ]);
+    const { id: sourceId } = await admin.source.findFirstOrThrow({
+      where: { studentId: await studentId(cookie) },
+    });
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+      })
+    ).json()) as { id: string };
+    steps.push(
+      calls("courseFacts", { course: "K1" }),
+      says("Die Klausur ist im Hörsaal H1 [S1][S2]."),
+    );
+    prompts.length = 0;
+
+    const chunks = await sseChunks(
+      await app.request(`${apiOrigin}/api/me/chats/${id}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: randomUUID(), text: "Wo ist die Klausur?" }),
+      }),
+    );
+
+    expect(chunks).toContainEqual(
+      expect.objectContaining({
+        type: "tool-output-available",
+        output: { course: "Analysis I", facts: 2 },
+      }),
+    );
+    expect(JSON.stringify(prompts[1])).toContain("Hörsaal H1");
+    const committed = chunks.find((chunk) => chunk.type === "data-committed");
+    expect(committed.data.citations).toContainEqual({
+      tag: expect.any(String),
+      provenance: {
+        kind: "source",
+        sourceId,
+        title: "Analysis.pdf",
+        location: { page: 1 },
+      },
+    });
+  });
+
+  it("withdraws an answer built on the Plan once the Source of an Obligation it read is deleted", async () => {
+    const { cookie, headers } = await reviewFixture("chat-agenda-withdrawn");
+    const { id: sourceId } = await admin.source.findFirstOrThrow({
+      where: { studentId: await studentId(cookie) },
+    });
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+      })
+    ).json()) as { id: string };
+    steps.push(
+      calls("agenda", { from: "2026-11-16", to: "2026-11-22" }),
+      says("Nächste Woche ist Übungsblatt 3 fällig."),
+    );
+    expect((await askInChat(headers, id, "Was steht an?")).status).toBe(200);
+
+    await app.request(`${apiOrigin}/api/me/sources/${sourceId}`, {
+      method: "DELETE",
+      headers,
+    });
+
+    const messages = (await (
+      await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+        headers: { cookie },
+      })
+    ).json()) as { role: string; text: string | null }[];
+    expect(messages.map((message) => message.text)).toEqual([
+      "Was steht an?",
+      null,
+    ]);
+  });
+
+  it("offers no search in a Chat with nothing selected, but still the Plan", async () => {
     const { headers, id } = await emptyChat("chat-no-search");
     reply = "Für diesen Chat ist kein Material ausgewählt.";
     offeredTools.length = 0;
@@ -2936,7 +3144,7 @@ describe("Chat", () => {
       }),
     );
 
-    expect(offeredTools).toEqual([[]]);
+    expect(offeredTools).toEqual([["agenda", "courseFacts"]]);
     expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
   });
 

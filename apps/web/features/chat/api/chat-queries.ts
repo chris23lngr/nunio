@@ -7,10 +7,13 @@ import { createApiClient } from "@/lib/api-client";
 export type Chat =
   paths["/api/me/chats/{id}"]["get"]["responses"][200]["content"]["application/json"];
 export type Message = Chat["messages"][number];
-type SearchPart = Extract<
-  Message["parts"][number],
-  { type: "tool-searchMaterial" }
->;
+/** A saved tool call: what nunio read for an answer, as the student was shown it. */
+type ToolPart = Extract<Message["parts"][number], { toolCallId: string }>;
+type ChatTools = {
+  [Part in ToolPart as Part["type"] extends `tool-${infer Name}`
+    ? Name
+    : never]: { input: Part["input"]; output: Part["output"] };
+};
 export type Course = Chat["courses"][number];
 /** A Course the student can chat about, with its color. */
 export type CourseOption = Course & { color: CourseColor };
@@ -28,12 +31,7 @@ export type ChatUIMessage = UIMessage<
     model?: string;
   },
   { committed: Turn; refused: { error: string } },
-  {
-    searchMaterial: {
-      input: SearchPart["input"];
-      output: SearchPart["output"];
-    };
-  }
+  ChatTools
 >;
 
 export function toUIMessage(message: Message): ChatUIMessage {
@@ -47,14 +45,11 @@ export function toUIMessage(message: Message): ChatUIMessage {
       ...(message.model ? { model: message.model.name } : {}),
     },
     parts: message.parts.map((part): ChatUIMessage["parts"][number] => {
-      if (part.type === "tool-searchMaterial")
+      if ("toolCallId" in part)
         return {
-          type: "tool-searchMaterial",
-          toolCallId: part.toolCallId,
+          ...part,
           state: "output-available",
-          input: part.input,
-          output: part.output,
-        };
+        } as ChatUIMessage["parts"][number];
       return part.type === "reasoning"
         ? { type: "reasoning", text: part.text, state: "done" }
         : { type: "text", text: part.text, state: "done" };

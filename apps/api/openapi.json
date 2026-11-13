@@ -1230,6 +1230,114 @@
               "input",
               "output"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-agenda"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ]
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  },
+                  "obligations": {
+                    "type": "integer"
+                  },
+                  "studyBlocks": {
+                    "type": "integer"
+                  },
+                  "fixedEvents": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to",
+                  "obligations",
+                  "studyBlocks",
+                  "fixedEvents"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "output"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-courseFacts"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "course": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "course"
+                ]
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "course": {
+                    "type": "string"
+                  },
+                  "facts": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "course",
+                  "facts"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "output"
+            ]
           }
         ]
       },

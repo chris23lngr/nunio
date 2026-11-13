@@ -6,11 +6,16 @@ import { withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type { Citation, KnowledgeReader, Provenance } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
+import type { Plan } from "@nunio/planning";
 import type { ModelMessage, UIMessageChunk } from "ai";
+import { agendaTool } from "./agenda.js";
+import { chatContext } from "./context.js";
+import { courseFactsTool } from "./course-facts.js";
 import { historyFrom, historyTurns } from "./history.js";
 import type { ChatPart } from "./parts.js";
 import { partsFrom } from "./parts.js";
-import { createSearch } from "./search.js";
+import { searchTool } from "./search.js";
+import { createTurn } from "./turn.js";
 
 /** At most this many model steps answer one question; the last one must answer (ADR-0019). */
 const maxSteps = 6;
@@ -38,11 +43,15 @@ export function createChats({
   keys,
   reader,
   delegation,
+  plan,
+  clock,
 }: {
   db: PrismaClient;
   keys: SourceKeys;
   reader: KnowledgeReader;
   delegation: Delegation;
+  plan: Pick<Plan, "timeZone" | "view">;
+  clock: { now(): Date };
 }) {
   const derived = createDerivedText(keys);
   async function resolve(p: Principal, citations: Citation[]) {
@@ -78,13 +87,24 @@ export function createChats({
           derivedFrom: row.derivedFrom,
         })),
       );
+      // The Courses a Plan includes: not rejected, merged or Archived.
+      const courses = await tx.course.findMany({
+        where: { status: { in: ["proposed", "accepted"] }, archivedAt: null },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, title: true, code: true, semester: true },
+      });
       return {
         messages,
+        courses,
         selected: chat._count.courses + chat._count.sources > 0,
       };
     });
     return (
-      recent && { ...historyFrom(recent.messages), selected: recent.selected }
+      recent && {
+        ...historyFrom(recent.messages),
+        courses: recent.courses,
+        selected: recent.selected,
+      }
     );
   }
   return {
@@ -175,15 +195,38 @@ export function createChats({
         options.onStep?.(name, now - started);
         started = now;
       };
-      const history = await earlier(p, chatId);
+      const [history, timeZone] = await Promise.all([
+        earlier(p, chatId),
+        plan.timeZone(p),
+      ]);
       step("history");
       if (!history) return { status: "gone" } as const;
-      const search = createSearch(reader, p, chatId);
+      const context = chatContext(clock.now(), timeZone, history.courses);
+      const turn = createTurn();
+      const tools = {
+        // A Chat with nothing selected has nothing to search.
+        ...(history.selected
+          ? { searchMaterial: searchTool(turn, reader, p, chatId) }
+          : {}),
+        agenda: agendaTool(turn, {
+          reader,
+          plan,
+          p,
+          timeZone,
+          courses: context.courses,
+        }),
+        courseFacts: courseFactsTool(turn, {
+          reader,
+          p,
+          courses: context.courses,
+        }),
+      };
       const messages: ModelMessage[] = [
         ...history.turns.flatMap((turn): ModelMessage[] => [
           { role: "user", content: turn.question },
           { role: "assistant", content: turn.answer },
         ]),
+        { role: "user", content: context.text },
         { role: "user", content: question },
       ];
       const chunks: UIMessageChunk[] = [];
@@ -195,8 +238,7 @@ export function createChats({
         options.signal?.throwIfAborted();
         const input = {
           messages,
-          // A Chat with nothing selected has nothing to search.
-          tools: history.selected ? search.tools : {},
+          tools,
           last: n === maxSteps,
         };
         const stepped = await delegation.meter(
@@ -212,7 +254,7 @@ export function createChats({
               }),
             ),
         );
-        const refusal = search.refusal();
+        const refusal = turn.refusal();
         if (refusal === "gone") return { status: "gone" } as const;
         if (refusal) return { status: "refused", reason: refusal } as const;
         if (stepped.status === "refused") return stepped;
@@ -223,7 +265,7 @@ export function createChats({
       options.signal?.throwIfAborted();
       const parts = await partsFrom(
         chunks,
-        new Set(search.citations.map((citation) => citation.tag)),
+        new Set(turn.citations.map((citation) => citation.tag)),
       );
       const text = parts
         .flatMap((part) => (part.type === "text" ? [part.text] : []))
@@ -234,11 +276,11 @@ export function createChats({
       const cited = [
         ...new Set([...text.matchAll(/\[(S\d+)\]/g)].map((match) => match[1])),
       ].flatMap((tag) =>
-        search.citations.filter((citation) => citation.tag === tag),
+        turn.citations.filter((citation) => citation.tag === tag),
       );
       // The answer may restate earlier answers, so it is withdrawn with their Sources too.
       const derivedFrom = [
-        ...new Set([...search.sources, ...history.derivedFrom]),
+        ...new Set([...turn.sources, ...history.derivedFrom]),
       ];
       const id = options.ids?.answer ?? randomUUID();
       const questionId = options.ids?.question ?? randomUUID();

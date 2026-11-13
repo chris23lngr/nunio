@@ -625,7 +625,7 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 - [x] Every step is metered on its own, and a turn refused at any step records nothing (`apps/api/src/create-app.test.ts`, "refuses a turn when the Allowance no longer covers a later step…").
 - [x] The last step has no tools, and no request forces a tool (`create-app.test.ts`, "lets the model search at most five times…"; `packages/ai/src/answer.test.ts`, "offers the tools without forcing one…").
 - [x] Neither the stream nor the stored message contains a full tool result (`create-app.test.ts`, "gives the model the passages a search found…").
-- [ ] Deleting a Source withdraws every answer whose tool results held its passages or extracted wording.
+- [x] Deleting a Source withdraws every answer whose tool results held its passages or extracted wording (`apps/api/src/create-app.test.ts`, "lists earlier messages… withdrawing an answer…" and "withdraws an answer built on the Plan…").
 - [ ] A Chat proposal is performed only after the student approves the fingerprint shown. A changed proposal needs a new Approval, and repeated clicks perform once.
 - [x] A Model without a tool-capable zero-retention endpoint is not offered (`packages/delegation/src/model-catalog.test.ts`; `packages/ai/src/prices.test.ts`).
 - [x] Retrieval eval with model-driven search, including the share of questions about the material answered without a search, is recorded: [phase-14-chat-search-eval.json](operations/phase-14-chat-search-eval.json). The founder sets thresholds; labels are still pending the founder's spot-check.
@@ -649,6 +649,13 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
   - every answer cited the expected page.
 
   Of the unanswerable questions, 9 got no Citation. A read of the other 3 shows each also says the material does not answer the question and cites only related passages, so all 12 were declined. The run cost $2.63, about $0.075 per question. This is one run, and ingestion is not deterministic. Figure readings (#66) and the two embedding providers vary, so two runs of the unchanged Phase 7 retrieval eval on 2026-11-12 gave recall@1 0.348 and 0.391, against 0.435 recorded on 2026-11-08. Thresholds should allow for that spread.
+
+**Progress (2026-11-12).** Stage 3 is implemented.
+- Each turn's context message gives the date in the student's time zone (`plan.timeZone`) and their Courses (not rejected, merged or Archived) under handles such as `K1`, fenced as data. Tools take handles, so the model never handles IDs and Course titles stay out of tool schemas (ADR-0011).
+- `agenda({ from, to })` reads `plan.view` for up to 31 days: Obligations due in the range, with their Tasks, unreviewed or reported-submitted state and a tag from the planning scope's Facts, then Study Blocks and Fixed Events. All of it is fenced as data. The student sees counts only.
+- `courseFacts({ course })` reads a Course's Obligations, exam logistics, course rules, AI-use Rule and Topics through the planning scope, which now also serves `exam_logistics` and `ai_use_rule`. The student sees the Course and a count.
+- Both tools are offered in every Chat, and a Chat with nothing selected still has no search. The model's instructions bind dates and the Plan to these tools' results.
+- The web shows them as steps (`Plan gelesen: 16.11.–22.11.`, `Kursinfos gelesen: Analysis I`).
 
 **Anti-pattern guards.**
 - `toolChoice` is only `auto` or `none`.

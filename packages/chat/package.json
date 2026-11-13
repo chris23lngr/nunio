@@ -28,6 +28,7 @@
     "@nunio/delegation": "workspace:*",
     "@nunio/keys": "workspace:*",
     "@nunio/knowledge": "workspace:*",
+    "@nunio/planning": "workspace:*",
     "ai": "7.0.157"
   }
 }
