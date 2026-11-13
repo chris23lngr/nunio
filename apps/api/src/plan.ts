@@ -60,6 +60,17 @@ export const Tradeoff = z
       workId: z.string(),
       byMinutes: z.number().int(),
     }),
+    z
+      .object({
+        kind: z.literal("skip_routine"),
+        routine: z.string().describe("The Event Series whose Routine to skip."),
+        title: z.string().describe("That Event Series' title."),
+        until: z.date(),
+        gainedMinutes: z.number().int(),
+      })
+      .describe(
+        "Skip a Routine until the deadline; the student's own choice (ADR-0022).",
+      ),
   ])
   .openapi("Tradeoff");
 const PriorityRef = z.object({
@@ -106,6 +117,16 @@ const PlanView = z
         id: z.string(),
         title: z.string(),
         obligationId: z.string().nullable(),
+        courseId: z
+          .string()
+          .nullable()
+          .describe(
+            "The Task's own Course; null for one toward an Obligation, which is in the Obligation's Course.",
+          ),
+        course: z
+          .string()
+          .nullable()
+          .describe("The title of the Task's own Course."),
         estimate: Estimate.nullable(),
         maxMinutesPerDay: z
           .number()
@@ -115,6 +136,22 @@ const PlanView = z
             "The Task's own daily limit, which wins over its Course's.",
           ),
         done: z.boolean(),
+        fixedEventId: z
+          .string()
+          .nullable()
+          .describe("The Course Event a Routine's Task is for."),
+        role: z
+          .enum(["preparation", "follow_up"])
+          .nullable()
+          .describe(
+            "Whether a Routine's Task prepares for its Course Event or follows up on it.",
+          ),
+        window: z
+          .object({ start: z.date(), end: z.date() })
+          .nullable()
+          .describe(
+            "When a Routine's Task is to be done: between the Course Events of its series around it (ADR-0022).",
+          ),
       }),
     ),
     studyBlocks: z.array(
@@ -139,8 +176,46 @@ const PlanView = z
           .describe(
             "The calendar Source it was read from; null when entered by hand.",
           ),
+        seriesId: z
+          .string()
+          .nullable()
+          .describe("Its Event Series; null when entered by hand."),
+        courseId: z
+          .string()
+          .nullable()
+          .describe(
+            "Its Course when it is a Course Event: one of a confirmed series the student did not take out.",
+          ),
       }),
     ),
+    eventSeries: z
+      .array(
+        z.object({
+          id: z.string(),
+          calendarId: z.string(),
+          title: z.string(),
+          courseId: z
+            .string()
+            .nullable()
+            .describe("The Course nunio proposed or the student chose."),
+          state: z
+            .enum(["undecided", "proposed", "confirmed", "rejected"])
+            .describe(
+              "Only a confirmed series' events are Course Events; a rejected one belongs to no Course.",
+            ),
+          routine: z
+            .object({
+              preparationMinutes: z.number().int(),
+              followUpMinutes: z.number().int(),
+              skippedUntil: z.date().nullable(),
+            })
+            .nullable()
+            .describe("The student's Routine for the series, if any."),
+        }),
+      )
+      .describe(
+        "The Fixed Events of one calendar that share a title (ADR-0022).",
+      ),
     calendars: z.array(
       z.object({ id: z.string(), name: z.string(), events: z.number().int() }),
     ),
@@ -289,6 +364,14 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
           .object({
             title: z.string(),
             obligationId: z.string().uuid().nullable(),
+            courseId: z
+              .string()
+              .uuid()
+              .nullable()
+              .optional()
+              .describe(
+                "The Course of a Task toward no Obligation; a Task toward one is in the Obligation's Course.",
+              ),
           })
           .strict(),
       ),
@@ -509,8 +592,15 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
               outsideWindow: z.number().int(),
               truncated: z.boolean(),
             }),
+            proposedCourses: z
+              .number()
+              .int()
+              .nullable()
+              .describe(
+                "How many Event Series nunio proposed a Course for; null when it could not ask, such as with the Allowance used up.",
+              ),
           }),
-          "The calendar Source, with its timed events of the coming year and what was skipped.",
+          "The calendar Source, with its timed events of the coming year and what was skipped. A file sharing event UIDs with a calendar added before updates that one, whose ID it returns.",
         ),
         ...outcomes,
       },
@@ -518,11 +608,126 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
-      const result = await c.get("plan").addCalendar(p, c.req.valid("json"));
+      const plan = c.get("plan");
+      const result = await plan.addCalendar(p, c.req.valid("json"));
       if (result.status === "invalid") return failed(c, "invalid");
+      // The calendar is added either way; without proposals the student assigns its series in Review (ADR-0022).
+      const proposed = await plan
+        .proposeSeriesCourses(p, {
+          assigner: c.get("seriesAssigner"),
+          delegation: c.get("delegation"),
+        })
+        .catch((error: unknown) => {
+          console.error(
+            JSON.stringify({
+              msg: "series course proposal failed",
+              error: String(error),
+            }),
+          );
+          return null;
+        });
       return c.json(
-        { id: result.id, events: result.events, skipped: result.skipped },
+        {
+          id: result.id,
+          events: result.events,
+          skipped: result.skipped,
+          proposedCourses: proposed?.status === "ok" ? proposed.proposed : null,
+        },
         201,
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/event-series/{id}/decision",
+      request: {
+        params: id,
+        ...body(
+          z.union([
+            z.object({ courseId: z.string() }).strict(),
+            z.object({ reject: z.literal(true) }).strict(),
+          ]),
+        ),
+      },
+      responses: { 200: Done, ...outcomes },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(
+        c,
+        await c
+          .get("plan")
+          .decideSeries(p, c.req.valid("param").id, c.req.valid("json")),
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "put",
+      path: "/api/me/event-series/{id}/routine",
+      request: {
+        params: id,
+        ...body(
+          z
+            .object({
+              preparationMinutes: z.number().int(),
+              followUpMinutes: z.number().int(),
+            })
+            .strict()
+            .describe(
+              "Minutes to prepare for and follow up on each Course Event of the series; 0 for none (ADR-0022).",
+            ),
+        ),
+      },
+      responses: { 200: Done, ...outcomes },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(
+        c,
+        await c
+          .get("plan")
+          .setRoutine(p, c.req.valid("param").id, c.req.valid("json")),
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/event-series/{id}/routine/skip",
+      request: {
+        params: id,
+        ...body(z.object({ until: z.coerce.date() }).strict()),
+      },
+      responses: { 200: Done, ...outcomes },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(
+        c,
+        await c
+          .get("plan")
+          .skipRoutine(p, c.req.valid("param").id, c.req.valid("json").until),
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/fixed-events/{id}/detach",
+      request: { params: id },
+      responses: { 200: Done, ...outcomes },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(
+        c,
+        await c.get("plan").detachEvent(p, c.req.valid("param").id),
       );
     },
   );

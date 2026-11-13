@@ -455,4 +455,143 @@ describe("rebalance", () => {
       ["reading", at("2026-11-10 10:00"), at("2026-11-10 11:00")],
     ]);
   });
+
+  it("places a Task with a window, such as a lecture's Follow-up, only between its earliest start and its deadline", () => {
+    const followUp = {
+      id: "follow-up",
+      obligationId: null,
+      estimateMinutes: 60,
+      done: false,
+      // The lecture ends Tuesday 12:00; the next one starts Thursday 10:00.
+      earliest: at("2026-11-10 12:00"),
+      due: at("2026-11-12 10:00"),
+    };
+
+    expect(creates({ ...base, tasks: [followUp] })).toEqual([
+      {
+        workId: "follow-up",
+        ...span("2026-11-10 12:00", "2026-11-10 13:00"),
+        needsApproval: false,
+      },
+    ]);
+    expect(
+      rebalance({ ...base, tasks: [{ ...followUp, estimateMinutes: 900 }] })
+        .shortfalls,
+    ).toEqual([
+      expect.objectContaining({
+        workId: "follow-up",
+        due: at("2026-11-12 10:00"),
+        // Tuesday 12:00–16:00, Wednesday 09:00–13:00 (both days at the 4-hour limit) and Thursday 09:00–10:00.
+        shortMinutes: 900 - 9 * 60,
+      }),
+    ]);
+  });
+
+  it("offers skipping a Routine until the deadline in a Shortfall, whatever its Priority", () => {
+    const followUp = {
+      id: "follow-up",
+      obligationId: null,
+      estimateMinutes: 60,
+      done: false,
+      earliest: at("2026-11-09 08:00"),
+      due: at("2026-11-12 10:00"),
+      // Its Course matters more than the sheet, so its time is no free_time_from tradeoff.
+      priority: 1,
+      routine: "s-analysis",
+    };
+    const block = {
+      id: "b1",
+      workId: "follow-up",
+      placedBy: "student" as const,
+      locked: false,
+      ...span("2026-11-10 09:00", "2026-11-10 10:00"),
+    };
+
+    const [shortfall] = rebalance({
+      ...base,
+      obligations: [{ ...sheet, estimateMinutes: 20 * 60, priority: 2 }],
+      tasks: [followUp],
+      studyBlocks: [block],
+    }).shortfalls;
+
+    expect(shortfall!.tradeoffs).toContainEqual({
+      kind: "skip_routine",
+      routine: "s-analysis",
+      until: sheet.due,
+      gainedMinutes: 60,
+    });
+    expect(shortfall!.tradeoffs.some((t) => t.kind === "free_time_from")).toBe(
+      false,
+    );
+  });
+
+  it("never offers skipping the Routine whose own Task is short, only other Routines", () => {
+    const task = (id: string, routine: string) => ({
+      id,
+      obligationId: null,
+      estimateMinutes: 60,
+      done: false,
+      earliest: at("2026-11-09 08:00"),
+      due: at("2026-11-12 10:00"),
+      routine,
+    });
+    const block = (id: string, workId: string, from: string, to: string) => ({
+      id,
+      workId,
+      placedBy: "student" as const,
+      locked: false,
+      ...span(from, to),
+    });
+
+    const shortfall = rebalance({
+      ...base,
+      tasks: [
+        { ...task("short", "s-analysis"), estimateMinutes: 20 * 60 },
+        task("sibling", "s-analysis"),
+        task("other", "s-physik"),
+      ],
+      studyBlocks: [
+        block("b1", "sibling", "2026-11-10 09:00", "2026-11-10 10:00"),
+        block("b2", "other", "2026-11-10 10:00", "2026-11-10 11:00"),
+      ],
+    }).shortfalls.find((s) => s.workId === "short");
+
+    expect(
+      shortfall!.tradeoffs.flatMap((t) =>
+        t.kind === "skip_routine" ? [t.routine] : [],
+      ),
+    ).toEqual(["s-physik"]);
+  });
+
+  it("moves a block out of its Task's window, as when the lecture moved, into the window", () => {
+    const followUp = {
+      id: "follow-up",
+      obligationId: null,
+      estimateMinutes: 60,
+      done: false,
+      // The lecture moved from Monday to Tuesday, ending 12:00.
+      earliest: at("2026-11-10 12:00"),
+      due: at("2026-11-12 10:00"),
+    };
+    const block = {
+      id: "b1",
+      workId: "follow-up",
+      placedBy: "nunio" as const,
+      locked: false,
+      ...span("2026-11-09 14:00", "2026-11-09 15:00"),
+    };
+
+    expect(
+      rebalance({ ...base, tasks: [followUp], studyBlocks: [block] }).moves,
+    ).toEqual([
+      {
+        kind: "move",
+        blockId: "b1",
+        workId: "follow-up",
+        from: span("2026-11-09 14:00", "2026-11-09 15:00"),
+        to: span("2026-11-10 12:00", "2026-11-10 13:00"),
+        needsApproval: false,
+      },
+    ]);
+  });
 });

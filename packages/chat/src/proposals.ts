@@ -40,15 +40,65 @@ export type Proposal = {
       kind: "studyBlock.remove";
       args: { studyBlockId: string; workId: string; start: Date; end: Date };
     }
+  | {
+      kind: "task.create";
+      args: {
+        title: string;
+        courseId: string | null;
+        fixedEventId: string | null;
+        role: "preparation" | "follow_up" | null;
+        estimateMinutes: number | null;
+      };
+    }
+  | { kind: "task.reopen"; args: { taskId: string } }
 );
 
 /** The Action a proposal is asked as. */
 export const intentOf = (proposal: Proposal): ActionIntent =>
-  proposal.kind === "studyBlock.create"
-    ? { kind: proposal.kind, ...proposal.args }
-    : proposal.kind === "studyBlock.move"
-      ? { kind: proposal.kind, ...proposal.args }
-      : { kind: proposal.kind, ...proposal.args };
+  ({ kind: proposal.kind, ...proposal.args }) as ActionIntent;
+
+/**
+ * Proposes a Task for the student to approve (ADR-0022): a Course Event's Preparation or Follow-up, or a Task in a
+ * Course or none. Like a Study Block, it never runs; the student's Approval adds it.
+ */
+export function proposeTaskTool(): Tool<{
+  title: string;
+  course?: string;
+  event?: string;
+  role?: "preparation" | "follow_up";
+  minutes?: number;
+}> {
+  return tool({
+    description:
+      "Proposes a Task for the student to approve. For a Course Event the Plan showed, name it by its handle, such as E1, with role preparation or follow_up, but only if it has no Task in that role yet; otherwise name a Course by its handle, such as K1, or none. Give a short title and, if the student said, the minutes it needs.",
+    inputSchema: jsonSchema({
+      type: "object",
+      properties: {
+        title: { type: "string", minLength: 1, maxLength: 200 },
+        course: { type: "string", pattern: "^K\\d+$" },
+        event: { type: "string", pattern: "^E\\d+$" },
+        role: { type: "string", enum: ["preparation", "follow_up"] },
+        minutes: { type: "integer", minimum: 15, maximum: 1440 },
+      },
+      required: ["title"],
+      additionalProperties: false,
+    }),
+  });
+}
+
+/** Proposes reopening a done Task the Plan showed, such as a Follow-up the student needs more time for. */
+export function proposeTaskReopenTool(): Tool<{ task: string }> {
+  return tool({
+    description:
+      "Proposes reopening a done Task the Plan showed, for the student to approve. Name it by its handle, such as T1.",
+    inputSchema: jsonSchema<{ task: string }>({
+      type: "object",
+      properties: { task: { type: "string", pattern: "^T\\d+$" } },
+      required: ["task"],
+      additionalProperties: false,
+    }),
+  });
+}
 
 const times = {
   start: localTime,
@@ -117,11 +167,14 @@ export function approveProposal(
     p,
     timeZone,
     proposals,
+    courses,
   }: {
     plan: Pick<Plan, "check" | "view">;
     p: Principal;
     timeZone: string;
     proposals: Map<string, Proposal>;
+    /** The student's Courses by handle, as the context message lists them. */
+    courses: ReadonlyMap<string, { id: string }>;
   },
 ) {
   const denied = (reason: string) => ({ type: "denied" as const, reason });
@@ -143,7 +196,7 @@ export function approveProposal(
       { toolCallId }: { toolCallId: string },
     ) => {
       const work = turn.lookup(input.work);
-      if (!work || work.kind === "block")
+      if (!work || (work.kind !== "obligation" && work.kind !== "task"))
         return denied(
           `Not proposed: no Obligation or Task has the handle ${input.work}. Read the Plan with agenda first.`,
         );
@@ -187,6 +240,88 @@ export function approveProposal(
           end: args.end,
         }),
       );
+    },
+    task: async (
+      input: {
+        title: string;
+        course?: string;
+        event?: string;
+        role?: "preparation" | "follow_up";
+        minutes?: number;
+      },
+      { toolCallId }: { toolCallId: string },
+    ) => {
+      let courseId: string | null = null;
+      let fixedEventId: string | null = null;
+      if (input.event) {
+        const handled = turn.lookup(input.event);
+        const view = await plan.view(p);
+        const event =
+          handled?.kind === "event"
+            ? view.fixedEvents.find((e) => e.id === handled.id)
+            : undefined;
+        if (!event?.courseId)
+          return denied(
+            `Not proposed: no Course Event has the handle ${input.event}. Read the Plan with agenda first.`,
+          );
+        if (!input.role)
+          return denied(
+            "Not proposed: say whether the Task prepares for the Course Event or follows up on it.",
+          );
+        if (
+          view.tasks.some(
+            (t) => t.fixedEventId === event.id && t.role === input.role,
+          )
+        )
+          return denied(
+            `Not proposed: ${input.event} already has a ${input.role === "preparation" ? "Preparation" : "Follow-up"}. Propose a Study Block for it, or reopen it if it is done.`,
+          );
+        courseId = event.courseId;
+        fixedEventId = event.id;
+      } else if (input.course) {
+        const course = courses.get(input.course);
+        if (!course)
+          return denied(
+            `Not proposed: no Course has the handle ${input.course}.`,
+          );
+        courseId = course.id;
+      }
+      proposals.set(toolCallId, {
+        kind: "task.create",
+        args: {
+          title: input.title.trim(),
+          courseId,
+          fixedEventId,
+          role: fixedEventId ? (input.role ?? null) : null,
+          estimateMinutes: input.minutes ?? null,
+        },
+        notes: [],
+      });
+      return { type: "user-approval" as const };
+    },
+    reopen: async (
+      input: { task: string },
+      { toolCallId }: { toolCallId: string },
+    ) => {
+      const handled = turn.lookup(input.task);
+      const task =
+        handled?.kind === "task"
+          ? (await plan.view(p)).tasks.find((t) => t.id === handled.id)
+          : undefined;
+      if (!task)
+        return denied(
+          `Not proposed: no Task has the handle ${input.task}. Read the Plan with agenda first.`,
+        );
+      if (!task.done)
+        return denied(
+          `Not proposed: ${input.task} is not done, so it is open already.`,
+        );
+      proposals.set(toolCallId, {
+        kind: "task.reopen",
+        args: { taskId: task.id },
+        notes: [],
+      });
+      return { type: "user-approval" as const };
     },
     remove: async (
       input: { block: string },

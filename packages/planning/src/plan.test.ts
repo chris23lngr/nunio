@@ -1,5 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import type { EstimateRequest, Estimator } from "@nunio/ai";
+import type {
+  EstimateRequest,
+  Estimator,
+  SeriesAssigner,
+  SeriesAssignmentInput,
+} from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -15,6 +20,7 @@ import {
   createProjects,
 } from "@nunio/knowledge";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { createPlanExecutor } from "./executor.js";
 import type { Plan } from "./plan.js";
 import { createPlan } from "./plan.js";
 
@@ -26,6 +32,7 @@ let plan: Plan;
 let delegation: Delegation;
 /** A Berlin wall-clock time in November (CET, UTC+1). */
 const at = (local: string) => new Date(`${local.replace(" ", "T")}:00+01:00`);
+const span = (from: string, to: string) => ({ start: at(from), end: at(to) });
 let now = at("2026-11-09 08:00");
 const clock = { now: () => now };
 
@@ -164,17 +171,27 @@ it("plans an Obligation through its open Tasks, which the student adds, estimate
       id: first.id,
       title: "Aufgaben 1–4",
       obligationId: sheet,
+      courseId: null,
+      course: null,
       estimate: { minutes: 60, estimatedBy: "student", rationale: null },
       maxMinutesPerDay: null,
       done: true,
+      fixedEventId: null,
+      role: null,
+      window: null,
     },
     {
       id: second.id,
       title: "Aufgaben 5–8",
       obligationId: sheet,
+      courseId: null,
+      course: null,
       estimate: { minutes: 90, estimatedBy: "student", rationale: null },
       maxMinutesPerDay: null,
       done: false,
+      fixedEventId: null,
+      role: null,
+      window: null,
     },
   ]);
   expect(view.proposal.moves).toEqual([
@@ -458,6 +475,8 @@ it("plans around Fixed Events entered by hand or imported from a calendar file, 
       start: at("2026-11-09 09:00"),
       end: at("2026-11-09 11:00"),
       calendarId: imported.id,
+      seriesId: expect.any(String),
+      courseId: null,
     },
     {
       id: entered.id,
@@ -465,6 +484,8 @@ it("plans around Fixed Events entered by hand or imported from a calendar file, 
       start: at("2026-11-09 11:00"),
       end: at("2026-11-09 12:00"),
       calendarId: null,
+      seriesId: null,
+      courseId: null,
     },
   ]);
   expect(view.calendars).toEqual([
@@ -484,6 +505,900 @@ it("plans around Fixed Events entered by hand or imported from a calendar file, 
   expect(
     await plan.addCalendar(p, { name: "kaputt.ics", ics: "not a calendar" }),
   ).toEqual({ status: "invalid" });
+});
+
+/** A calendar file holding the given VEVENT lines, each event's lines in its own array. */
+const icsOf = (...events: string[][]) =>
+  [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//test//EN",
+    ...events.flatMap((lines) => [
+      "BEGIN:VEVENT",
+      "DTSTAMP:20261101T000000Z",
+      ...lines,
+      "END:VEVENT",
+    ]),
+    "END:VCALENDAR",
+  ].join("\r\n");
+const weeklyLecture = [
+  "UID:analysis@uni",
+  "SUMMARY:Analysis I",
+  "DTSTART:20261102T090000Z",
+  "DTEND:20261102T110000Z",
+  "RRULE:FREQ=WEEKLY;COUNT=4",
+];
+
+it("updates a calendar added again, keeping its Fixed Events and their IDs", async () => {
+  now = at("2026-11-01 08:00");
+  const p = await student();
+  const first = await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(weeklyLecture),
+  });
+  if (first.status !== "ok") throw new Error(first.status);
+  const before = (await plan.view(p)).fixedEvents;
+
+  expect(
+    await plan.addCalendar(p, {
+      name: "Stundenplan (1).ics",
+      ics: icsOf(weeklyLecture),
+    }),
+  ).toMatchObject({ status: "ok", id: first.id, events: 4 });
+  const view = await plan.view(p);
+  expect(view.calendars).toEqual([
+    { id: first.id, name: "Stundenplan.ics", events: 4 },
+  ]);
+  expect(view.fixedEvents).toEqual(before);
+});
+
+it("moves a Fixed Event the calendar moved, keeping its ID, and drops one it no longer has, while past ones stay", async () => {
+  now = at("2026-11-01 08:00");
+  const p = await student();
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(weeklyLecture),
+  });
+  const [, past, moved] = (await plan.view(p)).fixedEvents;
+
+  now = at("2026-11-10 08:00");
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(
+      [...weeklyLecture, "EXDATE:20261123T090000Z", "EXDATE:20261109T090000Z"],
+      [
+        "UID:analysis@uni",
+        "RECURRENCE-ID:20261116T090000Z",
+        "SUMMARY:Analysis I",
+        "DTSTART:20261117T130000Z",
+        "DTEND:20261117T150000Z",
+      ],
+    ),
+  });
+
+  expect((await plan.view(p)).fixedEvents.map((e) => [e.id, e.start])).toEqual([
+    [expect.any(String), at("2026-11-02 10:00")],
+    [past!.id, at("2026-11-09 10:00")],
+    [moved!.id, at("2026-11-17 14:00")],
+  ]);
+});
+
+it("groups a calendar's Fixed Events into Event Series by title, whether repeated or listed one by one", async () => {
+  now = at("2026-11-01 08:00");
+  const p = await student();
+  const tutorial = (day: string) => [
+    `UID:tutorium-${day}@uni`,
+    "SUMMARY:Tutorium Analysis",
+    `DTSTART:202611${day}T130000Z`,
+    `DTEND:202611${day}T150000Z`,
+  ];
+  const ics = icsOf(weeklyLecture, tutorial("04"), tutorial("11"));
+  const added = await plan.addCalendar(p, { name: "Stundenplan.ics", ics });
+  if (added.status !== "ok") throw new Error(added.status);
+  const entered = await plan.addFixedEvent(p, {
+    title: "Analysis I",
+    start: at("2026-11-05 10:00"),
+    end: at("2026-11-05 11:00"),
+  });
+  if (entered.status !== "ok") throw new Error(entered.status);
+
+  const view = await plan.view(p);
+  expect(view.eventSeries).toEqual([
+    {
+      id: expect.any(String),
+      calendarId: added.id,
+      title: "Analysis I",
+      courseId: null,
+      state: "undecided",
+      routine: null,
+    },
+    {
+      id: expect.any(String),
+      calendarId: added.id,
+      title: "Tutorium Analysis",
+      courseId: null,
+      state: "undecided",
+      routine: null,
+    },
+  ]);
+  const [lecture, tutorium] = view.eventSeries;
+  const seriesOf = (title: string, calendarId: string | null) =>
+    view.fixedEvents
+      .filter((e) => e.title === title && e.calendarId === calendarId)
+      .map((e) => e.seriesId);
+  expect(seriesOf("Analysis I", added.id)).toEqual(Array(4).fill(lecture!.id));
+  expect(seriesOf("Tutorium Analysis", added.id)).toEqual(
+    Array(2).fill(tutorium!.id),
+  );
+  expect(seriesOf("Analysis I", null)).toEqual([null]);
+
+  await plan.addCalendar(p, { name: "Stundenplan.ics", ics });
+  expect((await plan.view(p)).eventSeries).toEqual(view.eventSeries);
+});
+
+it("drops an Event Series once the calendar lists none of its events", async () => {
+  now = at("2026-11-01 08:00");
+  const p = await student();
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(weeklyLecture),
+  });
+
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(
+      weeklyLecture.map((line) =>
+        line.startsWith("SUMMARY:") ? "SUMMARY:Analysis I (Mathematik)" : line,
+      ),
+    ),
+  });
+
+  expect((await plan.view(p)).eventSeries).toEqual([
+    expect.objectContaining({ title: "Analysis I (Mathematik)" }),
+  ]);
+});
+
+const cafeShift = [
+  "UID:cafe@uni",
+  "SUMMARY:Schicht Café",
+  "DTSTART:20261107T080000Z",
+  "DTEND:20261107T120000Z",
+];
+/** A student with Analysis I and Physik I, and a calendar with the Analysis lecture and a café shift. */
+async function studentWithCalendar(limitMicroUsd?: number) {
+  const p = await student(limitMicroUsd);
+  const analysis = await obligation(p, "Blatt 3", "2026-11-20", "12:00");
+  const physik = await facts.enterObligation(p, {
+    course: { title: "Physik I", code: "PH-101" },
+    kind: "assignment",
+    title: "Übung 2",
+    due: { date: "2026-11-20", time: "12:00", timeZone: null },
+    destination: null,
+  });
+  if (physik.status !== "ok") throw new Error(physik.status);
+  const courseOf = async (id: string) =>
+    (await admin.obligation.findUniqueOrThrow({ where: { id } })).courseId;
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(weeklyLecture, cafeShift),
+  });
+  const [lecture, cafe] = (await plan.view(p)).eventSeries;
+  return {
+    p,
+    analysisId: await courseOf(analysis),
+    physikId: await courseOf(physik.id),
+    lecture: lecture!,
+    cafe: cafe!,
+  };
+}
+/** An assigner that puts the Analysis lecture in K1 and knows nothing else, recording what it was asked. */
+function fakeAssigner() {
+  const asked: SeriesAssignmentInput[] = [];
+  const assigner: SeriesAssigner = {
+    assignMicroUsd: () => 10,
+    async assign(input) {
+      asked.push(input);
+      return {
+        value: input.series.map((s) =>
+          s.title === "Analysis I" ? "K1" : null,
+        ),
+        usage: { microUsd: 5 },
+      };
+    },
+  };
+  return { asked, assigner };
+}
+
+it("proposes a Course for each undecided Event Series in one metered call, which the student confirms or changes", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, physikId, lecture, cafe } =
+    await studentWithCalendar();
+  const { asked, assigner } = fakeAssigner();
+
+  expect(await plan.proposeSeriesCourses(p, { assigner, delegation })).toEqual({
+    status: "ok",
+    proposed: 1,
+  });
+  expect(asked).toEqual([
+    {
+      series: [
+        { title: "Analysis I", times: ["Mon 10:00–12:00"], events: 4 },
+        { title: "Schicht Café", times: ["Sat 09:00–13:00"], events: 1 },
+      ],
+      courses: [
+        { handle: "K1", title: "Analysis I", code: "MA-101" },
+        { handle: "K2", title: "Physik I", code: "PH-101" },
+      ],
+    },
+  ]);
+  expect((await plan.view(p)).eventSeries).toEqual([
+    expect.objectContaining({
+      id: lecture.id,
+      courseId: analysisId,
+      state: "proposed",
+    }),
+    expect.objectContaining({
+      id: cafe.id,
+      courseId: null,
+      state: "undecided",
+    }),
+  ]);
+
+  expect(
+    await plan.decideSeries(p, lecture.id, { courseId: analysisId }),
+  ).toEqual({ status: "ok" });
+  expect(await plan.decideSeries(p, cafe.id, { courseId: physikId })).toEqual({
+    status: "ok",
+  });
+  expect((await plan.view(p)).eventSeries).toEqual([
+    expect.objectContaining({ courseId: analysisId, state: "confirmed" }),
+    expect.objectContaining({ courseId: physikId, state: "confirmed" }),
+  ]);
+  expect(await plan.proposeSeriesCourses(p, { assigner, delegation })).toEqual({
+    status: "ok",
+    proposed: 0,
+  });
+  expect(asked).toHaveLength(1);
+});
+
+it("refuses to propose Courses for Event Series once the Allowance is exhausted, without asking the model", async () => {
+  now = at("2026-11-01 08:00");
+  const { p } = await studentWithCalendar(0);
+  const { asked, assigner } = fakeAssigner();
+
+  expect(await plan.proposeSeriesCourses(p, { assigner, delegation })).toEqual({
+    status: "refused",
+    reason: "allowance_exhausted",
+  });
+  expect(asked).toEqual([]);
+  expect((await plan.view(p)).eventSeries.map((s) => s.state)).toEqual([
+    "undecided",
+    "undecided",
+  ]);
+});
+
+it("keeps an Event Series the student said belongs to no Course that way, never proposing one for it again", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, physikId, cafe } = await studentWithCalendar();
+  const { asked, assigner } = fakeAssigner();
+
+  expect(await plan.decideSeries(p, cafe.id, { reject: true })).toEqual({
+    status: "ok",
+  });
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(weeklyLecture, cafeShift),
+  });
+  await plan.proposeSeriesCourses(p, { assigner, delegation });
+
+  expect(asked.flatMap((input) => input.series.map((s) => s.title))).toEqual([
+    "Analysis I",
+  ]);
+  expect((await plan.view(p)).eventSeries).toEqual([
+    expect.objectContaining({ title: "Analysis I", state: "proposed" }),
+    expect.objectContaining({
+      id: cafe.id,
+      courseId: null,
+      state: "rejected",
+    }),
+  ]);
+  // The student may still put it in a Course themselves.
+  expect(await plan.decideSeries(p, cafe.id, { courseId: physikId })).toEqual({
+    status: "ok",
+  });
+});
+
+it("makes a confirmed Event Series' events Course Events, except one the student took out of it", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture } = await studentWithCalendar();
+  const { assigner } = fakeAssigner();
+  const coursesOf = async () =>
+    (await plan.view(p)).fixedEvents.map((e) => [e.title, e.courseId]);
+
+  await plan.proposeSeriesCourses(p, { assigner, delegation });
+  expect(new Set((await coursesOf()).map(([, courseId]) => courseId))).toEqual(
+    new Set([null]),
+  );
+
+  await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+  const second = (await plan.view(p)).fixedEvents.filter(
+    (e) => e.seriesId === lecture.id,
+  )[1]!;
+  expect(await plan.detachEvent(p, second.id)).toEqual({ status: "ok" });
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(weeklyLecture, cafeShift),
+  });
+
+  expect(await coursesOf()).toEqual([
+    ["Analysis I", analysisId],
+    ["Schicht Café", null],
+    ["Analysis I", null],
+    ["Analysis I", analysisId],
+    ["Analysis I", analysisId],
+  ]);
+});
+
+it("leaves an Event Series undecided once its Course is deleted, keeping its events", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture } = await studentWithCalendar();
+  await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+  const courses = createCourses({
+    db: runtime,
+    clock,
+    facts,
+    responsibilities: {
+      pauseForCourse: async () => {},
+      endForCourse: async () => {},
+    },
+  });
+
+  await courses.delete(p, analysisId);
+
+  const view = await plan.view(p);
+  expect(view.eventSeries[0]).toMatchObject({
+    id: lecture.id,
+    courseId: null,
+    state: "undecided",
+  });
+  expect(
+    view.fixedEvents.filter((e) => e.seriesId === lecture.id),
+  ).toHaveLength(4);
+});
+
+it("adds a Preparation and a Follow-up for each Course Event in the next 14 days, each with its window, once", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture } = await studentWithCalendar();
+  await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+  const [first, second] = (await plan.view(p)).fixedEvents.filter(
+    (e) => e.seriesId === lecture.id,
+  );
+
+  expect(
+    await plan.setRoutine(p, lecture.id, {
+      preparationMinutes: 30,
+      followUpMinutes: 60,
+    }),
+  ).toEqual({ status: "ok" });
+  await plan.applyRoutines(p);
+
+  const view = await plan.view(p);
+  const task = (event: string, role: "preparation" | "follow_up") =>
+    view.tasks.find((t) => t.fixedEventId === event && t.role === role);
+  const routine = { obligationId: null, courseId: analysisId };
+  const minutes = (n: number) => ({
+    minutes: n,
+    estimatedBy: "student",
+    rationale: null,
+  });
+  // The lectures on 2 and 9 November, each Monday 10:00–12:00; the one on 16 November lies beyond 14 days.
+  expect(view.tasks).toHaveLength(4);
+  expect(task(first!.id, "preparation")).toMatchObject({
+    ...routine,
+    title: "Vorbereitung: Analysis I",
+    estimate: minutes(30),
+    // The first lecture has none before it.
+    window: span("2026-10-26 10:00", "2026-11-02 10:00"),
+  });
+  expect(task(first!.id, "follow_up")).toMatchObject({
+    ...routine,
+    title: "Nachbereitung: Analysis I",
+    estimate: minutes(60),
+    window: span("2026-11-02 12:00", "2026-11-09 10:00"),
+  });
+  expect(task(second!.id, "preparation")).toMatchObject({
+    window: span("2026-11-02 12:00", "2026-11-09 10:00"),
+  });
+  expect(task(second!.id, "follow_up")).toMatchObject({
+    window: span("2026-11-09 12:00", "2026-11-16 10:00"),
+  });
+  expect(view.proposal.moves).toContainEqual(
+    expect.objectContaining({
+      kind: "create",
+      workId: task(first!.id, "preparation")!.id,
+      ...span("2026-11-01 09:00", "2026-11-01 09:30"),
+    }),
+  );
+
+  await plan.applyRoutines(p);
+  expect((await plan.view(p)).tasks).toHaveLength(4);
+});
+
+it("adds only a Follow-up for a past Course Event whose window is open, and rolls on with the days", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture } = await studentWithCalendar();
+  await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+  const lectures = (await plan.view(p)).fixedEvents.filter(
+    (e) => e.seriesId === lecture.id,
+  );
+  const roles = async () =>
+    (await plan.view(p)).tasks
+      .map(
+        (t) =>
+          `${lectures.findIndex((e) => e.id === t.fixedEventId) + 1} ${t.role}`,
+      )
+      .sort();
+
+  // The first lecture was yesterday.
+  now = at("2026-11-03 08:00");
+  await plan.setRoutine(p, lecture.id, {
+    preparationMinutes: 30,
+    followUpMinutes: 60,
+  });
+  expect(await roles()).toEqual([
+    "1 follow_up",
+    "2 follow_up",
+    "2 preparation",
+    "3 follow_up",
+    "3 preparation",
+  ]);
+
+  now = at("2026-11-10 08:00");
+  await plan.applyRoutines(p);
+  // The second lecture began yesterday, so its untouched Preparation is gone.
+  expect(await roles()).toEqual([
+    "1 follow_up",
+    "2 follow_up",
+    "3 follow_up",
+    "3 preparation",
+    "4 follow_up",
+    "4 preparation",
+  ]);
+});
+
+it("adds no Tasks for a series only proposed for a Course, until the student confirms it", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture } = await studentWithCalendar();
+  await plan.proposeSeriesCourses(p, {
+    assigner: fakeAssigner().assigner,
+    delegation,
+  });
+  await plan.setRoutine(p, lecture.id, {
+    preparationMinutes: 30,
+    followUpMinutes: 60,
+  });
+  expect((await plan.view(p)).tasks).toEqual([]);
+
+  await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+  await plan.applyRoutines(p);
+  expect((await plan.view(p)).tasks).toHaveLength(4);
+});
+
+it("applies every student's Routines in one tick, as the daily schedule does", async () => {
+  now = at("2026-11-01 08:00");
+  const students = await Promise.all([
+    studentWithCalendar(),
+    studentWithCalendar(),
+  ]);
+  for (const { p, analysisId, lecture } of students) {
+    await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+    await plan.setRoutine(p, lecture.id, {
+      preparationMinutes: 0,
+      followUpMinutes: 60,
+    });
+  }
+
+  now = at("2026-11-10 08:00");
+  await plan.tickRoutines();
+
+  // Follow-ups for the lectures on 2, 9, 16 and 23 November.
+  for (const { p } of students)
+    expect((await plan.view(p)).tasks).toHaveLength(4);
+});
+
+/** A student whose Analysis lecture is confirmed, with a Routine of 30 minutes before and 60 after each lecture. */
+async function studentWithRoutine() {
+  const s = await studentWithCalendar();
+  await plan.decideSeries(s.p, s.lecture.id, { courseId: s.analysisId });
+  await plan.setRoutine(s.p, s.lecture.id, {
+    preparationMinutes: 30,
+    followUpMinutes: 60,
+  });
+  const lectures = (await plan.view(s.p)).fixedEvents.filter(
+    (e) => e.seriesId === s.lecture.id,
+  );
+  /** The Routine's Tasks as "lecture role minutes", lectures numbered from 1. */
+  const tasks = async () =>
+    (await plan.view(s.p)).tasks
+      .map(
+        (t) =>
+          `${lectures.findIndex((e) => e.id === t.fixedEventId) + 1} ${t.role} ${t.estimate?.minutes}`,
+      )
+      .sort();
+  const taskOf = async (lecture: number, role: "preparation" | "follow_up") =>
+    (await plan.view(s.p)).tasks.find(
+      (t) => t.fixedEventId === lectures[lecture - 1]!.id && t.role === role,
+    )!;
+  return { ...s, lectures, tasks, taskOf };
+}
+/** Adds a Course Event's Preparation or Follow-up as a Chat's `task.create` Action does, returning its id. */
+async function chatTask(
+  courseId: string,
+  fixedEventId: string,
+  role: "preparation" | "follow_up",
+) {
+  const { studentId } = await admin.fixedEvent.findUniqueOrThrow({
+    where: { id: fixedEventId },
+  });
+  const done = await createPlanExecutor({ db: runtime }).execute(
+    {
+      studentId,
+      actionId: randomUUID(),
+      intent: {
+        kind: "task.create",
+        title: "VL nacharbeiten",
+        courseId,
+        fixedEventId,
+        role,
+        estimateMinutes: 45,
+      },
+    },
+    { idempotencyKey: randomUUID(), signal: new AbortController().signal },
+  );
+  if (done.status !== "done") throw new Error(done.status);
+  return (done.effect as { taskId: string }).taskId;
+}
+
+it("changes a Routine's open, untouched Tasks with it, never an Estimate the student set on one", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, lecture, tasks, taskOf } = await studentWithRoutine();
+  await plan.estimate(
+    p,
+    { kind: "task", id: (await taskOf(2, "follow_up")).id },
+    120,
+  );
+  await plan.placeBlock(p, {
+    work: { kind: "task", id: (await taskOf(1, "follow_up")).id },
+    ...span("2026-11-02 13:00", "2026-11-02 14:00"),
+  });
+
+  now = at("2026-11-03 08:00");
+  await plan.setRoutine(p, lecture.id, {
+    preparationMinutes: 0,
+    followUpMinutes: 90,
+  });
+
+  expect(await tasks()).toEqual([
+    // Its follow-up already had time in the Plan, so it stays as it was.
+    "1 follow_up 60",
+    "2 follow_up 120",
+    "3 follow_up 90",
+  ]);
+});
+
+it("follows the student taking an event out of its Course, or the series out of every Course, at once", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture, lectures, tasks } =
+    await studentWithRoutine();
+
+  await plan.detachEvent(p, lectures[0]!.id);
+  expect(await tasks()).toEqual(["2 follow_up 60", "2 preparation 30"]);
+
+  await plan.decideSeries(p, lecture.id, { reject: true });
+  expect(await tasks()).toEqual([]);
+
+  await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+  expect(await tasks()).toEqual(["2 follow_up 60", "2 preparation 30"]);
+});
+
+it("keeps a Follow-up a Chat added for a Course Event of a series without a Routine", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture } = await studentWithCalendar();
+  await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+  const second = (await plan.view(p)).fixedEvents.filter(
+    (e) => e.seriesId === lecture.id,
+  )[1]!;
+  const followUp = await chatTask(analysisId, second.id, "follow_up");
+  const block = await plan.placeBlock(p, {
+    work: { kind: "task", id: followUp },
+    ...span("2026-11-09 13:00", "2026-11-09 14:00"),
+  });
+  if (block.status !== "ok") throw new Error(block.status);
+
+  await plan.applyRoutines(p);
+
+  const view = await plan.view(p);
+  expect(view.tasks).toEqual([
+    expect.objectContaining({
+      id: followUp,
+      fixedEventId: second.id,
+      role: "follow_up",
+    }),
+  ]);
+  expect(view.studyBlocks.map((b) => b.id)).toEqual([block.id]);
+});
+
+it("drops a Preparation whose lecture began with nothing done for it, and keeps a lapsed Follow-up as backlog", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, tasks, taskOf } = await studentWithRoutine();
+  const prepared = await taskOf(2, "preparation");
+  await plan.placeBlock(p, {
+    work: { kind: "task", id: prepared.id },
+    ...span("2026-11-08 09:00", "2026-11-08 09:30"),
+  });
+
+  now = at("2026-11-10 08:00");
+  await plan.applyRoutines(p);
+
+  expect(await tasks()).toEqual([
+    "1 follow_up 60",
+    "2 follow_up 60",
+    "2 preparation 30",
+    "3 follow_up 60",
+    "3 preparation 30",
+    "4 follow_up 60",
+    "4 preparation 30",
+  ]);
+  const lapsed = (await taskOf(1, "follow_up")).id;
+  const { proposal } = await plan.view(p);
+  expect(proposal.unplanned).toEqual(
+    expect.arrayContaining([
+      { workId: lapsed, reason: "past_due" },
+      { workId: prepared.id, reason: "past_due" },
+    ]),
+  );
+  expect(proposal.moves.some((m) => m.workId === lapsed)).toBe(false);
+});
+
+it("moves a Routine's Task window with its Course Event, and the Task's block back into it", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, taskOf } = await studentWithRoutine();
+  const followUp = await taskOf(1, "follow_up");
+  const block = await plan.placeBlock(p, {
+    work: { kind: "task", id: followUp.id },
+    ...span("2026-11-03 09:00", "2026-11-03 10:00"),
+  });
+  if (block.status !== "ok") throw new Error(block.status);
+
+  // The first lecture moves from Monday 10:00–12:00 to Wednesday 14:00–16:00.
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(
+      weeklyLecture,
+      [
+        "UID:analysis@uni",
+        "RECURRENCE-ID:20261102T090000Z",
+        "SUMMARY:Analysis I",
+        "DTSTART:20261104T130000Z",
+        "DTEND:20261104T150000Z",
+      ],
+      cafeShift,
+    ),
+  });
+
+  expect(await taskOf(1, "follow_up")).toMatchObject({
+    id: followUp.id,
+    window: span("2026-11-04 16:00", "2026-11-09 10:00"),
+  });
+  expect((await plan.view(p)).proposal.moves).toContainEqual(
+    expect.objectContaining({
+      kind: "move",
+      blockId: block.id,
+      to: span("2026-11-04 16:00", "2026-11-04 17:00"),
+    }),
+  );
+});
+
+it("removes a cancelled Course Event's untouched Tasks, keeping one with a Locked block or done, without the event", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, tasks, taskOf } = await studentWithRoutine();
+  const followUp = await taskOf(2, "follow_up");
+  const block = await plan.placeBlock(p, {
+    work: { kind: "task", id: followUp.id },
+    ...span("2026-11-09 13:00", "2026-11-09 14:00"),
+  });
+  if (block.status !== "ok") throw new Error(block.status);
+  await plan.lockBlock(p, block.id, true);
+  await plan.completeTask(p, (await taskOf(2, "preparation")).id, true);
+
+  // The lecture on 9 November is cancelled.
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf([...weeklyLecture, "EXDATE:20261109T090000Z"], cafeShift),
+  });
+
+  expect(await tasks()).toEqual([
+    "0 null 30",
+    "0 null 60",
+    "1 follow_up 60",
+    "1 preparation 30",
+  ]);
+  const kept = (await plan.view(p)).tasks.filter((t) => !t.role);
+  expect(kept).toHaveLength(2);
+  expect(kept).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        title: "Vorbereitung: Analysis I",
+        courseId: analysisId,
+        done: true,
+        fixedEventId: null,
+      }),
+      expect.objectContaining({
+        id: followUp.id,
+        courseId: analysisId,
+        done: false,
+        fixedEventId: null,
+        window: null,
+      }),
+    ]),
+  );
+});
+
+it("removes a cancelled Course Event's future Study Blocks from a Task it keeps, but not its past or Locked ones", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, taskOf } = await studentWithRoutine();
+  const prepared = await taskOf(2, "preparation");
+  const place = async (from: string, to: string) => {
+    const block = await plan.placeBlock(p, {
+      work: { kind: "task", id: prepared.id },
+      ...span(from, to),
+    });
+    if (block.status !== "ok") throw new Error(block.status);
+    return block.id;
+  };
+  const past = await place("2026-11-03 09:00", "2026-11-03 09:30");
+  await place("2026-11-05 09:00", "2026-11-05 09:30");
+  const locked = await place("2026-11-06 09:00", "2026-11-06 09:30");
+  await plan.lockBlock(p, locked, true);
+
+  // The lecture on 9 November is cancelled after the first block took place.
+  now = at("2026-11-04 08:00");
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf([...weeklyLecture, "EXDATE:20261109T090000Z"], cafeShift),
+  });
+
+  const view = await plan.view(p);
+  expect(view.tasks).toContainEqual(
+    expect.objectContaining({ id: prepared.id, fixedEventId: null }),
+  );
+  expect(
+    view.studyBlocks
+      .filter((b) => b.work.id === prepared.id)
+      .map((b) => b.id)
+      .sort(),
+  ).toEqual([past, locked].sort());
+});
+
+it("gives a Task in a Course that Course's Priority, so its time is offered only to work that matters more", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, taskOf } = await studentWithRoutine();
+  const followUp = await taskOf(1, "follow_up");
+  await plan.placeBlock(p, {
+    work: { kind: "task", id: followUp.id },
+    ...span("2026-11-03 09:00", "2026-11-03 10:00"),
+  });
+  const exam = await facts.enterObligation(p, {
+    course: { title: "Physik I", code: "PH-101" },
+    kind: "exam",
+    title: "Zwischentest",
+    due: { date: "2026-11-04", time: "18:00", timeZone: null },
+    destination: null,
+  });
+  if (exam.status !== "ok") throw new Error(exam.status);
+  await plan.estimate(p, { kind: "obligation", id: exam.id }, 30 * 60);
+  const offered = async () =>
+    (await plan.view(p)).proposal.shortfalls
+      .find((s) => s.workId === exam.id)!
+      .tradeoffs.some(
+        (t) => t.kind === "free_time_from" && t.workId === followUp.id,
+      );
+
+  await plan.setPriorities(p, [
+    { kind: "course", id: analysisId },
+    { kind: "obligation", id: exam.id },
+  ]);
+  expect(await offered()).toBe(false);
+
+  await plan.setPriorities(p, [
+    { kind: "obligation", id: exam.id },
+    { kind: "course", id: analysisId },
+  ]);
+  expect(await offered()).toBe(true);
+});
+
+it("skips a Routine until a Shortfall's deadline when the student chooses it, then carries on", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, lecture, tasks } = await studentWithRoutine();
+  const exam = await facts.enterObligation(p, {
+    course: { title: "Physik I", code: "PH-101" },
+    kind: "exam",
+    title: "Zwischentest",
+    due: { date: "2026-11-10", time: "18:00", timeZone: null },
+    destination: null,
+  });
+  if (exam.status !== "ok") throw new Error(exam.status);
+  await plan.estimate(p, { kind: "obligation", id: exam.id }, 40 * 60);
+  const skip = (await plan.view(p)).proposal.shortfalls
+    .find((s) => s.workId === exam.id)!
+    .tradeoffs.find((t) => t.kind === "skip_routine");
+  expect(skip).toEqual({
+    kind: "skip_routine",
+    routine: lecture.id,
+    // Named by its series, so two such tradeoffs can be told apart.
+    title: "Analysis I",
+    until: at("2026-11-10 18:00"),
+    gainedMinutes: expect.any(Number),
+  });
+
+  expect(await plan.skipRoutine(p, lecture.id, at("2026-11-10 18:00"))).toEqual(
+    { status: "ok" },
+  );
+  expect(
+    (await plan.view(p)).eventSeries.find((s) => s.id === lecture.id),
+  ).toMatchObject({
+    routine: {
+      preparationMinutes: 30,
+      followUpMinutes: 60,
+      skippedUntil: at("2026-11-10 18:00"),
+    },
+  });
+  // The lectures on 2 and 9 November begin before the skip ends, so they get nothing.
+  expect(await tasks()).toEqual([]);
+
+  now = at("2026-11-11 08:00");
+  await plan.applyRoutines(p);
+  expect(await tasks()).toEqual([
+    "3 follow_up 60",
+    "3 preparation 30",
+    "4 follow_up 60",
+    "4 preparation 30",
+  ]);
+});
+
+it("skips a Routine only for Course Events still to come, keeping lapsed Follow-ups and one a Chat adds", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture, lectures, tasks } =
+    await studentWithRoutine();
+  now = at("2026-11-10 08:00");
+  await plan.applyRoutines(p);
+  expect(await tasks()).toEqual([
+    "1 follow_up 60",
+    "2 follow_up 60",
+    "3 follow_up 60",
+    "3 preparation 30",
+    "4 follow_up 60",
+    "4 preparation 30",
+  ]);
+
+  await plan.skipRoutine(p, lecture.id, at("2026-11-17 18:00"));
+  // The lecture on 16 November begins before the skip ends; the Follow-ups of 2 and 9 November stay as backlog.
+  expect(await tasks()).toEqual([
+    "1 follow_up 60",
+    "2 follow_up 60",
+    "4 follow_up 60",
+    "4 preparation 30",
+  ]);
+
+  await chatTask(analysisId, lectures[2]!.id, "follow_up");
+  await plan.applyRoutines(p);
+  expect(await tasks()).toEqual([
+    "1 follow_up 60",
+    "2 follow_up 60",
+    "3 follow_up 45",
+    "4 follow_up 60",
+    "4 preparation 30",
+  ]);
 });
 
 it("ranks Courses, Projects and Obligations in one list, an Obligation's own rank winning over its Project's and Course's", async () => {
@@ -764,6 +1679,120 @@ it("leaves an Archived Course's work out of the Plan, and brings it back when un
   await courses.unarchive(p, course!.id);
   expect((await plan.view(p)).obligations).toEqual([
     expect.objectContaining({ id: sheet }),
+  ]);
+});
+
+it("keeps a Task in a Course, which the Course's daily limit, Archiving and deletion reach", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-20", "12:00");
+  const { courseId } = await admin.obligation.findUniqueOrThrow({
+    where: { id: sheet },
+  });
+  const courses = createCourses({
+    db: runtime,
+    clock,
+    facts,
+    responsibilities: {
+      pauseForCourse: async () => {},
+      endForCourse: async () => {},
+    },
+  });
+
+  expect(
+    await plan.addTask(p, {
+      title: "VL 3 nacharbeiten",
+      obligationId: sheet,
+      courseId,
+    }),
+  ).toEqual({ status: "invalid" });
+  expect(
+    await plan.addTask(p, {
+      title: "VL 3 nacharbeiten",
+      obligationId: null,
+      courseId: randomUUID(),
+    }),
+  ).toEqual({ status: "gone" });
+  const task = await plan.addTask(p, {
+    title: "VL 3 nacharbeiten",
+    obligationId: null,
+    courseId,
+  });
+  if (task.status !== "ok") throw new Error(task.status);
+  expect((await plan.view(p)).tasks).toEqual([
+    expect.objectContaining({
+      id: task.id,
+      obligationId: null,
+      courseId,
+      course: "Analysis I",
+    }),
+  ]);
+
+  const work = { kind: "task", id: task.id } as const;
+  await plan.placeBlock(p, {
+    work,
+    start: at("2026-11-12 09:00"),
+    end: at("2026-11-12 10:00"),
+  });
+  await plan.setCourseLimit(p, courseId, 60);
+  expect(
+    await plan.check(p, {
+      kind: "create",
+      work,
+      start: at("2026-11-12 11:00"),
+      end: at("2026-11-12 12:00"),
+    }),
+  ).toEqual({ status: "ok", notes: ["work_limit"] });
+
+  expect(await courses.impact(p, courseId)).toMatchObject({
+    tasks: 1,
+    studyBlocks: 1,
+    futureStudyBlocks: 1,
+  });
+  await courses.archive(p, courseId);
+  expect((await plan.view(p)).tasks).toEqual([]);
+  expect(await admin.studyBlock.count({ where: { taskId: task.id } })).toBe(0);
+  await courses.unarchive(p, courseId);
+  expect((await plan.view(p)).tasks).toEqual([
+    expect.objectContaining({ id: task.id }),
+  ]);
+
+  await courses.delete(p, courseId);
+  expect(await admin.task.findUnique({ where: { id: task.id } })).toBeNull();
+});
+
+it("proposes, for one Course, moving the block of a Task in that Course as an Action for the gate", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const sheet = await obligation(p, "Blatt 3", "2026-11-20", "12:00");
+  const { courseId } = await admin.obligation.findUniqueOrThrow({
+    where: { id: sheet },
+  });
+  const task = await plan.addTask(p, {
+    title: "VL 3 nacharbeiten",
+    obligationId: null,
+    courseId,
+  });
+  if (task.status !== "ok") throw new Error(task.status);
+  const placed = await plan.placeBlock(p, {
+    work: { kind: "task", id: task.id },
+    start: at("2026-11-10 09:00"),
+    end: at("2026-11-10 10:00"),
+  });
+  if (placed.status !== "ok") throw new Error(placed.status);
+  await plan.addFixedEvent(p, {
+    title: "Sprechstunde",
+    start: at("2026-11-10 09:00"),
+    end: at("2026-11-10 10:00"),
+  });
+
+  expect(await plan.intentsFor(p, { courseId })).toEqual([
+    {
+      kind: "studyBlock.move",
+      studyBlockId: placed.id,
+      start: expect.any(Date),
+      end: expect.any(Date),
+    },
   ]);
 });
 

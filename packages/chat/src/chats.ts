@@ -25,6 +25,8 @@ import {
   proposeStudyBlockMoveTool,
   proposeStudyBlockRemoveTool,
   proposeStudyBlockTool,
+  proposeTaskReopenTool,
+  proposeTaskTool,
 } from "./proposals.js";
 import { retryRateLimited } from "./retry.js";
 import { searchTool } from "./search.js";
@@ -232,22 +234,27 @@ export function createChats({
         const args = (record?.args ?? {}) as {
           workId?: string;
           studyBlockId?: string;
+          taskId?: string;
+          title?: string;
           start?: string;
           end?: string;
         };
         const workId =
           args.workId ??
+          args.taskId ??
           view.studyBlocks.find((b) => b.id === args.studyBlockId)?.work.id;
         const title =
+          args.title ??
           view.tasks.find((t) => t.id === workId)?.title ??
           view.obligations.find((o) => o.id === workId)?.title ??
           "work that is gone";
-        const what =
-          part.type === "tool-proposeStudyBlock"
-            ? "add a Study Block"
-            : part.type === "tool-proposeStudyBlockMove"
-              ? "move the Study Block"
-              : "remove the Study Block";
+        const what = {
+          "tool-proposeStudyBlock": "add a Study Block",
+          "tool-proposeStudyBlockMove": "move the Study Block",
+          "tool-proposeStudyBlockRemove": "remove the Study Block",
+          "tool-proposeTask": "add the Task",
+          "tool-proposeTaskReopen": "reopen the Task",
+        }[part.type];
         // A removal names the block where it was, from the Action, since the model gave no time (ADR-0021).
         const when =
           "start" in part.input
@@ -327,14 +334,24 @@ export function createChats({
       proposeStudyBlock: proposeStudyBlockTool(),
       proposeStudyBlockMove: proposeStudyBlockMoveTool(),
       proposeStudyBlockRemove: proposeStudyBlockRemoveTool(),
+      proposeTask: proposeTaskTool(),
+      proposeTaskReopen: proposeTaskReopenTool(),
     };
     /** Proposals that passed the Plan's rules, by tool call, waiting for the student once the answer is saved. */
     const proposals = new Map<string, Proposal>();
-    const approve = approveProposal(turn, { plan, p, timeZone, proposals });
+    const approve = approveProposal(turn, {
+      plan,
+      p,
+      timeZone,
+      proposals,
+      courses: context.courses,
+    });
     const toolApproval = {
       proposeStudyBlock: approve.create,
       proposeStudyBlockMove: approve.move,
       proposeStudyBlockRemove: approve.remove,
+      proposeTask: approve.task,
+      proposeTaskReopen: approve.reopen,
     };
     return { history, context, turn, tools, proposals, toolApproval, started };
   }

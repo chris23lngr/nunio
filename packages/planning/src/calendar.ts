@@ -1,7 +1,17 @@
 import ICAL from "ical.js";
 import { deadline, hhmm } from "./time.js";
 
-export type CalendarEvent = { title: string; start: Date; end: Date };
+/**
+ * One occurrence, identified within its file by the event's UID and, for a repeated event, the start it was scheduled
+ * for, which stays the same when that occurrence is moved.
+ */
+export type CalendarEvent = {
+  uid: string | null;
+  recurrenceId: Date | null;
+  title: string;
+  start: Date;
+  end: Date;
+};
 export type CalendarReading =
   | {
       status: "ok";
@@ -108,16 +118,25 @@ export function readCalendar(
           return { status: "invalid" };
         if (start >= until) break;
         if (end <= from) continue;
+        found++;
+        // A cancelled occurrence is not taking place, whether the event or only this occurrence says so.
+        if (
+          details.item.component.getFirstPropertyValue("status") === "CANCELLED"
+        )
+          continue;
         if (events.length === maxEvents) {
           skipped.truncated = true;
           break;
         }
         events.push({
+          uid: typeof uid === "string" ? uid : null,
+          recurrenceId: event.isRecurring()
+            ? instant(details.recurrenceId, zone)
+            : null,
           title: details.item.summary?.trim().slice(0, 500) || title,
           start,
           end,
         });
-        found++;
       }
       if (steps === maxSteps) skipped.truncated = true;
       if (!found && !skipped.truncated) skipped.outsideWindow++;

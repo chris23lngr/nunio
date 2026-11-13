@@ -1854,6 +1854,236 @@
               "notes",
               "action"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-proposeTask"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "course": {
+                    "type": "string"
+                  },
+                  "event": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "preparation",
+                      "follow_up"
+                    ]
+                  },
+                  "minutes": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "title"
+                ]
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "outside_study_window",
+                    "daily_limit",
+                    "work_limit"
+                  ]
+                },
+                "description": "Preferences the block would break, shown before approving."
+              },
+              "action": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "expiresAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "awaiting_approval",
+                      "expired",
+                      "dispatching",
+                      "done",
+                      "failed",
+                      "refused",
+                      "unconfirmed"
+                    ]
+                  },
+                  "decision": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "approved",
+                      "denied",
+                      null
+                    ]
+                  },
+                  "shown": {
+                    "$ref": "#/components/schemas/ActionShown"
+                  }
+                },
+                "required": [
+                  "id",
+                  "fingerprint",
+                  "expiresAt",
+                  "status",
+                  "decision",
+                  "shown"
+                ],
+                "description": "The Action the student is asked to approve; null if it could not be asked."
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "approvalId",
+              "notes",
+              "action"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-proposeTaskReopen"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "task": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "task"
+                ]
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "outside_study_window",
+                    "daily_limit",
+                    "work_limit"
+                  ]
+                },
+                "description": "Preferences the block would break, shown before approving."
+              },
+              "action": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "expiresAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "awaiting_approval",
+                      "expired",
+                      "dispatching",
+                      "done",
+                      "failed",
+                      "refused",
+                      "unconfirmed"
+                    ]
+                  },
+                  "decision": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "approved",
+                      "denied",
+                      null
+                    ]
+                  },
+                  "shown": {
+                    "$ref": "#/components/schemas/ActionShown"
+                  }
+                },
+                "required": [
+                  "id",
+                  "fingerprint",
+                  "expiresAt",
+                  "status",
+                  "decision",
+                  "shown"
+                ],
+                "description": "The Action the student is asked to approve; null if it could not be asked."
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "approvalId",
+              "notes",
+              "action"
+            ]
           }
         ]
       },
@@ -1865,7 +2095,9 @@
             "enum": [
               "studyBlock.create",
               "studyBlock.move",
-              "studyBlock.remove"
+              "studyBlock.remove",
+              "task.create",
+              "task.reopen"
             ]
           },
           "work": {
@@ -1905,7 +2137,7 @@
               "start",
               "end"
             ],
-            "description": "Where the block is now; null for a new block."
+            "description": "Where the block is now; null for a new block or a Task Action."
           },
           "to": {
             "type": [
@@ -1926,7 +2158,7 @@
               "start",
               "end"
             ],
-            "description": "Where the block would go; null for a removal."
+            "description": "Where the block would go; null for a removal or a Task Action."
           }
         },
         "required": [
@@ -2050,6 +2282,20 @@
                     "null"
                   ]
                 },
+                "courseId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The Task's own Course; null for one toward an Obligation, which is in the Obligation's Course."
+                },
+                "course": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The title of the Task's own Course."
+                },
                 "estimate": {
                   "type": [
                     "object",
@@ -2088,15 +2334,60 @@
                 },
                 "done": {
                   "type": "boolean"
+                },
+                "fixedEventId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The Course Event a Routine's Task is for."
+                },
+                "role": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "preparation",
+                    "follow_up",
+                    null
+                  ],
+                  "description": "Whether a Routine's Task prepares for its Course Event or follows up on it."
+                },
+                "window": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "start": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "end": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "description": "When a Routine's Task is to be done: between the Course Events of its series around it (ADR-0022)."
                 }
               },
               "required": [
                 "id",
                 "title",
                 "obligationId",
+                "courseId",
+                "course",
                 "estimate",
                 "maxMinutesPerDay",
-                "done"
+                "done",
+                "fixedEventId",
+                "role",
+                "window"
               ]
             }
           },
@@ -2182,6 +2473,20 @@
                     "null"
                   ],
                   "description": "The calendar Source it was read from; null when entered by hand."
+                },
+                "seriesId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Its Event Series; null when entered by hand."
+                },
+                "courseId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Its Course when it is a Course Event: one of a confirmed series the student did not take out."
                 }
               },
               "required": [
@@ -2189,9 +2494,81 @@
                 "title",
                 "start",
                 "end",
-                "calendarId"
+                "calendarId",
+                "seriesId",
+                "courseId"
               ]
             }
+          },
+          "eventSeries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "calendarId": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "courseId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The Course nunio proposed or the student chose."
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "undecided",
+                    "proposed",
+                    "confirmed",
+                    "rejected"
+                  ],
+                  "description": "Only a confirmed series' events are Course Events; a rejected one belongs to no Course."
+                },
+                "routine": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "preparationMinutes": {
+                      "type": "integer"
+                    },
+                    "followUpMinutes": {
+                      "type": "integer"
+                    },
+                    "skippedUntil": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "preparationMinutes",
+                    "followUpMinutes",
+                    "skippedUntil"
+                  ],
+                  "description": "The student's Routine for the series, if any."
+                }
+              },
+              "required": [
+                "id",
+                "calendarId",
+                "title",
+                "courseId",
+                "state",
+                "routine"
+              ]
+            },
+            "description": "The Fixed Events of one calendar that share a title (ADR-0022)."
           },
           "calendars": {
             "type": "array",
@@ -2442,6 +2819,7 @@
           "tasks",
           "studyBlocks",
           "fixedEvents",
+          "eventSeries",
           "calendars",
           "priorities",
           "limits",
@@ -2645,6 +3023,40 @@
               "workId",
               "byMinutes"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "skip_routine"
+                ]
+              },
+              "routine": {
+                "type": "string",
+                "description": "The Event Series whose Routine to skip."
+              },
+              "title": {
+                "type": "string",
+                "description": "That Event Series' title."
+              },
+              "until": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "gainedMinutes": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "routine",
+              "title",
+              "until",
+              "gainedMinutes"
+            ],
+            "description": "Skip a Routine until the deadline; the student's own choice (ADR-0022)."
           }
         ]
       },
@@ -7623,6 +8035,14 @@
                       "null"
                     ],
                     "format": "uuid"
+                  },
+                  "courseId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid",
+                    "description": "The Course of a Task toward no Obligation; a Task toward one is in the Obligation's Course."
                   }
                 },
                 "required": [
@@ -9040,7 +9460,7 @@
         },
         "responses": {
           "201": {
-            "description": "The calendar Source, with its timed events of the coming year and what was skipped.",
+            "description": "The calendar Source, with its timed events of the coming year and what was skipped. A file sharing event UIDs with a calendar added before updates that one, whose ID it returns.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9070,12 +9490,545 @@
                         "outsideWindow",
                         "truncated"
                       ]
+                    },
+                    "proposedCourses": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "How many Event Series nunio proposed a Course for; null when it could not ask, such as with the Allowance used up."
                     }
                   },
                   "required": [
                     "id",
                     "events",
-                    "skipped"
+                    "skipped",
+                    "proposedCourses"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/event-series/{id}/decision": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "courseId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "courseId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "reject": {
+                        "type": "boolean",
+                        "enum": [
+                          true
+                        ]
+                      }
+                    },
+                    "required": [
+                      "reject"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/event-series/{id}/routine": {
+      "put": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "preparationMinutes": {
+                    "type": "integer"
+                  },
+                  "followUpMinutes": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "preparationMinutes",
+                  "followUpMinutes"
+                ],
+                "additionalProperties": false,
+                "description": "Minutes to prepare for and follow up on each Course Event of the series; 0 for none (ADR-0022)."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/event-series/{id}/routine/skip": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "until": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "until"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/fixed-events/{id}/detach": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
                   ]
                 }
               }

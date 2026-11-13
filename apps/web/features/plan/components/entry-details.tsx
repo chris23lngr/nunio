@@ -83,11 +83,16 @@ export function FixedEventDetails({
   start,
   end,
   calendar,
+  course,
+  onDetach,
 }: {
   title: string;
   start: Date;
   end: Date;
   calendar: string | null;
+  /** The Course of a Course Event; null or absent for any other Fixed Event. */
+  course?: string | null;
+  onDetach?: () => void;
 }) {
   return (
     <div className="flex flex-col overflow-hidden rounded-[inherit]">
@@ -101,6 +106,14 @@ export function FixedEventDetails({
       </div>
       <div className="flex flex-col gap-4 border-t border-base-200 px-3.5 py-3">
         <When start={start} end={end} />
+        {course && (
+          <div className="flex flex-col items-start gap-1.5">
+            <p className="text-xs text-base-500">Termin in {course}</p>
+            <Button variant="outline" size="sm" onClick={onDetach}>
+              Gehört nicht zu {course}
+            </Button>
+          </div>
+        )}
       </div>
       <p className="border-t border-base-200 bg-base-50 px-3.5 py-2.5 text-xs text-base-500">
         Mehr weiß nunio über diesen Termin nicht. nunio plant um ihn herum.

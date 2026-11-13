@@ -13,6 +13,14 @@ const samples = {
     start: new Date("2026-11-11T09:00:00Z"),
     end: new Date("2026-11-11T10:00:00Z"),
   },
+  "task.create": {
+    title: "Nachbereitung: Analysis I",
+    courseId: "course-1",
+    fixedEventId: "event-1",
+    role: "follow_up",
+    estimateMinutes: 60,
+  },
+  "task.reopen": { taskId: "task-1" },
   "studyBlock.remove": {
     studyBlockId: "block-1",
     workId: "obligation-1",
@@ -21,6 +29,12 @@ const samples = {
   },
 } as const;
 const subjects = {
+  "task.create": { courseId: "course-1", obligationId: null },
+  "task.reopen": {
+    courseId: "course-1",
+    obligationId: null,
+    title: "Nachbereitung: Analysis I",
+  },
   "studyBlock.create": { courseId: "course-1", obligationId: "obligation-1" },
   "studyBlock.move": {
     courseId: "course-1",
@@ -45,18 +59,16 @@ describe.each(Object.keys(definitions) as (keyof typeof definitions)[])(
   "the %s contract",
   (kind) => {
     const definition = definitions[kind];
+    // Kinds without a time span have no start or end, which only makes these arguments junk in another way.
+    const timed = samples[kind] as { start?: Date; end?: Date };
 
     it.each([
       ["no arguments", undefined],
       ["a string", "junk"],
-      ["a missing field", { start: samples[kind].start }],
+      ["a missing field", { start: timed.start }],
       [
         "an end before its start",
-        {
-          ...samples[kind],
-          start: samples[kind].end,
-          end: samples[kind].start,
-        },
+        { ...samples[kind], start: timed.end, end: timed.start },
       ],
       ["an unparseable date", { ...samples[kind], start: "tomorrow" }],
       ["an unknown field", { ...samples[kind], studentId: "someone-else" }],
@@ -155,6 +167,19 @@ describe("Grant coverage", () => {
       ),
     ).toBe(covered);
   });
+
+  it.each(["task.create", "task.reopen"] as const)(
+    "never covers %s: a Task is asked from a Chat only (ADR-0022)",
+    (kind) => {
+      expect(
+        definitions[kind].grantCovers(
+          { courseId: "course-1" },
+          samples[kind] as never,
+          subjects[kind] as never,
+        ),
+      ).toBe(false);
+    },
+  );
 
   it("never covers moving a block the student placed or moved: that needs their Approval", () => {
     const theirs = {

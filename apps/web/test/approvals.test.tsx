@@ -123,6 +123,82 @@ test("an Action nunio could not confirm waits for the student to say whether it 
   expect(resolutions).toEqual([{ resolution: "did_not_happen" }]);
 });
 
+test("a Task Action nunio could not confirm names the Task, not a block", async () => {
+  api.route("GET", "/api/me/approvals", () => Response.json([]));
+  api.route("GET", "/api/me/actions/unconfirmed", () =>
+    Response.json([
+      {
+        actionId: approval.actionId,
+        action: {
+          kind: "task.reopen",
+          work: { title: "Blatt 3 nacharbeiten", course: "Analysis I" },
+          from: null,
+          to: null,
+        },
+      },
+    ]),
+  );
+  render(
+    <TestProviders>
+      <ApprovalsPanel apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  expect(
+    await screen.findByRole("article", {
+      name: "nunio could not confirm: reopen the Task Blatt 3 nacharbeiten",
+    }),
+  ).toBeTruthy();
+});
+
+test("an Approval card names the Task a Chat proposes to add or reopen, with no time", async () => {
+  const task = (id: string, kind: string, title: string) => ({
+    ...approval,
+    actionId: id,
+    action: {
+      kind,
+      work: { title, course: "Analysis I" },
+      from: null,
+      to: null,
+    },
+    responsibility: null,
+  });
+  api.route("GET", "/api/me/approvals", () =>
+    Response.json([
+      task(
+        "7b0c3c3e-0000-4000-8000-000000000002",
+        "task.create",
+        "Vorlesung nacharbeiten",
+      ),
+      task(
+        "7b0c3c3e-0000-4000-8000-000000000003",
+        "task.reopen",
+        "Blatt 3 nacharbeiten",
+      ),
+    ]),
+  );
+  api.route("GET", "/api/me/actions/unconfirmed", () => Response.json([]));
+  render(
+    <TestProviders>
+      <ApprovalsPanel apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  const add = await screen.findByRole("article", {
+    name: "Add the Task Vorlesung nacharbeiten",
+  });
+  expect(within(add).getByText(/nunio asks for Analysis I\./)).toBeTruthy();
+  expect(
+    within(add).getByRole("button", { name: "Approve this Task" }),
+  ).toBeTruthy();
+  const reopen = screen.getByRole("article", {
+    name: "Reopen the Task Blatt 3 nacharbeiten",
+  });
+  expect(
+    within(reopen).getByRole("button", { name: "Approve reopening it" }),
+  ).toBeTruthy();
+});
+
 test("an Approval to remove a block names the block and asks to approve the removal (ADR-0021)", async () => {
   const removal = {
     ...approval,
