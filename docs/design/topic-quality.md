@@ -1,6 +1,6 @@
 # Topic quality
 
-Status: accepted design, 2026-11-12. Phase A (measurement) is in progress on `feat/topic-quality`. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md); the extraction pipeline is described in [extraction.md](extraction.md).
+Status: accepted design, 2026-11-12; Phase B ended 2026-11-13 with recall below target (see Result). Domain terms follow [GLOSSARY.md](../../GLOSSARY.md); the extraction pipeline is described in [extraction.md](extraction.md).
 
 ## Goal
 
@@ -144,6 +144,26 @@ with figure lines were checked against the rendered page.
   ("Backpropagation", "RS-FLIP-FLOP"): a 20-character minimum would drop 24 Topics, 21 of them correct.
 - `facts.extract` counts dropped items per reason (`ungrounded`, `noCourse`, `aiUseRule`) for the worker log and
   the eval report, never their content. Step 4 dropped 16 items in 24 runs.
+
+## Result
+
+Final state: the step-4 instructions (#92) with per-reason drop counts (#102). Bound runs, strict judge, 3 runs per deck.
+
+| Decks                                                                    | Topic precision | Topic recall |
+| ------------------------------------------------------------------------ | --------------- | ------------ |
+| Dev set (8 decks), step 4                                                | 88.2 %          | 62.0 %       |
+| Held out (2 decks), report `docs/operations/topic-quality-held-out.json` | 90.4 %          | 70.7 %       |
+| Target                                                                   | ≥ 85 %          | ≥ 80 %       |
+- Held out per deck: `dhbw-signale-systeme-signale` precision 95 %, recall 88 %; `dhbw-signale-systeme-frequenzanalyse`
+  precision 84 %, recall 55 %. No failures; 0–3 items dropped per run, all ungrounded. The run cost USD 0.28.
+- Precision meets the target; recall does not. The founder ended Phase B here rather than at a formal stop criterion:
+  every recall variant tried (#97) reached 83–85 % recall but only 63–65 % precision. A second pass that filters
+  generous candidates against the Topic definition is left for a follow-up feature.
+- Step 3 (scan prompt) stays deferred: lines that claim no figure or describe a logo are 3 % of figure lines. Step 6 was dropped after
+  the figure diagnosis.
+- OpenRouter usage on the eval key was USD 9.24 at the end, including some spend from before this feature.
+- `main` now carries the parser fix (#87); MCT1 (`dhbw-stuttgart-mct1-datenpfad`) stayed excluded and was not
+  re-checked.
 
 ## Out of scope
 
