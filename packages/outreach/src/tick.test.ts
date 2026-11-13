@@ -36,6 +36,13 @@ let sender: OutreachSender;
 const at = (local: string) => new Date(`${local.replace(" ", "T")}:00+01:00`);
 let now = at("2026-11-09 08:00");
 const clock = { now: () => now };
+/** Arguments as the gate stores them, so an Action seeded here reads back like one it performed. */
+const span = {
+  start: "2026-11-10T09:00:00.000Z",
+  end: "2026-11-10T10:00:00.000Z",
+};
+const createArgs = { workId: "obligation-1", ...span };
+const moveArgs = { studyBlockId: "block-1", ...span };
 /** Records every email, and fails each send while `failing` is set. */
 type Message = {
   subject: string;
@@ -236,7 +243,7 @@ describe("raising Interventions from their causes", () => {
         studentId: p.kind === "student" ? p.studentId : "",
         key: `chat:${actionId}`,
         kind: "studyBlock.create",
-        args: {},
+        args: createArgs,
         status: "unconfirmed",
       },
     });
@@ -270,7 +277,7 @@ describe("raising Interventions from their causes", () => {
         studentId: p.studentId,
         key: `chat:${actionId}`,
         kind: "studyBlock.create",
-        args: {},
+        args: createArgs,
         status: "unconfirmed",
       },
     });
@@ -405,7 +412,7 @@ describe("the daily Briefing", () => {
         studentId,
         key: `chat:${actionId}`,
         kind: "studyBlock.move",
-        args: {},
+        args: moveArgs,
         status: "awaiting_approval",
       },
     });
