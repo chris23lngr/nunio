@@ -16,21 +16,36 @@ import {
   PopoverHeader,
   PopoverTitle,
 } from "@nunio/ui/components/popover/popover";
-import { Check, ChevronDown } from "lucide-react";
+import { Brain, Check, ChevronDown } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 import type { ChatModel } from "../api/model-queries";
 
-// All models are Anthropic's. The viewBox is 256×257, so 16px tall is ~16px wide.
-const logo = (
-  <Image
-    src="/icons/claude.svg"
-    width={16}
-    height={16}
-    alt=""
-    className="shrink-0"
-  />
-);
+function ModelLogo({
+  provider,
+  trigger = false,
+}: {
+  provider: string | undefined;
+  trigger?: boolean;
+}) {
+  const src =
+    provider === "Anthropic"
+      ? "/icons/claude.svg"
+      : provider === "OpenAI"
+        ? "/icons/openai.svg"
+        : undefined;
+  return src ? (
+    <Image
+      src={src}
+      width={16}
+      height={16}
+      alt=""
+      className={`w-auto shrink-0 ${trigger ? "h-5" : "h-4"}`}
+    />
+  ) : (
+    <Brain aria-hidden="true" className="size-4 shrink-0 text-primary-500" />
+  );
+}
 
 const tiers = { low: "niedrig", medium: "mittel", high: "hoch" };
 const multiplier = new Intl.NumberFormat("de-DE", {
@@ -71,7 +86,7 @@ export function ModelSelector({
           render={<Button variant="ghost" />}
           aria-label={`Modell: ${current?.name}`}
         >
-          {logo}
+          <ModelLogo provider={current?.provider} trigger />
           {current?.name}
           <ChevronDown />
         </DropdownMenuTrigger>
@@ -89,7 +104,7 @@ export function ModelSelector({
                   setOpen(true);
                 }}
               >
-                {logo}
+                <ModelLogo provider={model.provider} />
                 {model.name}
                 {model.key === value && (
                   <Check className="ml-auto text-base-600" />
@@ -112,7 +127,7 @@ export function ModelSelector({
         >
           <PopoverHeader>
             <PopoverTitle>
-              {logo}
+              {card && <ModelLogo provider={card.model.provider} />}
               <span>
                 <span className="font-normal text-base-500">
                   {card?.model.provider} /
