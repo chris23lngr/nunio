@@ -132,7 +132,9 @@ The Model Catalog (`catalog_model`, ADR-0018) holds every Model, which ones Chat
 
 The worker's `sync-model-prices` Temporal Schedule runs once a day and once when it is first created. It records OpenRouter's highest zero-retention prices and upstream providers, marks Models that have no zero-retention endpoint, and records whether one of those endpoints takes tools. Until a Model's first sync after that column was added, Chat keeps offering it. A failed sync shows as a failing Schedule in Temporal Cloud and a `model price sync failed` log line on Render. `list` shows each Model's `syncedAt`, so check it after a failure.
 
-Manage the catalog from the repo root after building. Every change is recorded in `model_catalog_change` along with `OPERATOR_ID`:
+Manage the catalog from the repo root after building. Every change is recorded in `model_catalog_change` along with `OPERATOR_ID`.
+
+The command accepts Anthropic (`anthropic/...`) and OpenAI (`openai/...`) model IDs. Both use the same `add`, `sync`, then `enable` sequence below:
 
 ```sh
 node --env-file=.env.operator packages/delegation/dist/model-catalog-cli.js list
