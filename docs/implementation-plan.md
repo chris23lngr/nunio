@@ -622,19 +622,33 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 
 **Verification checklist.**
 - [x] A follow-up question carries the history. The captured prompt holds the earlier questions and answers, without withdrawn answers or old tags (`packages/chat/src/history.test.ts`; `apps/api/src/create-app.test.ts`, "answers a follow-up with the earlier questions and answers…").
-- [ ] Every step is metered on its own, and a turn refused at any step records nothing.
-- [ ] The last step has no tools, and no request forces a tool.
-- [ ] Neither the stream nor the stored message contains a full tool result.
+- [x] Every step is metered on its own, and a turn refused at any step records nothing (`apps/api/src/create-app.test.ts`, "refuses a turn when the Allowance no longer covers a later step…").
+- [x] The last step has no tools, and no request forces a tool (`create-app.test.ts`, "lets the model search at most five times…"; `packages/ai/src/answer.test.ts`, "offers the tools without forcing one…").
+- [x] Neither the stream nor the stored message contains a full tool result (`create-app.test.ts`, "gives the model the passages a search found…").
 - [ ] Deleting a Source withdraws every answer whose tool results held its passages or extracted wording.
 - [ ] A Chat proposal is performed only after the student approves the fingerprint shown. A changed proposal needs a new Approval, and repeated clicks perform once.
-- [ ] A Model without a tool-capable zero-retention endpoint is not offered.
-- [ ] Retrieval eval with model-driven search, including the share of questions about the material answered without a search. The founder sets thresholds after the first measurement.
+- [x] A Model without a tool-capable zero-retention endpoint is not offered (`packages/delegation/src/model-catalog.test.ts`; `packages/ai/src/prices.test.ts`).
+- [x] Retrieval eval with model-driven search, including the share of questions about the material answered without a search, is recorded: [phase-14-chat-search-eval.json](operations/phase-14-chat-search-eval.json). The founder sets thresholds; labels are still pending the founder's spot-check.
 - [ ] Injection eval: Sources with embedded instructions start no Artifact Run, and any proposal they cause appears only as a card.
 
 **Progress (2026-11-12).** Stage 1 is implemented.
 - `createChats` and the ask flow live in `packages/chat`, unchanged apart from the history.
 - Each answer is given the last 10 questions and answers, oldest first, without withdrawn turns or Citation tags. It is withdrawn with the Sources of those earlier answers too.
 - Retrieval still searches with the question's text alone until stage 2, so a follow-up such as "and at what time?" finds no material and can only refer to the history.
+
+**Progress (2026-11-12).** Stage 2 is implemented.
+- The spike passed all three checks against `ai@7.0.157`: one `toUIMessageStream` per step renders as one message in `useChat`, a server-built approval response continues a turn as a new assistant message, and `require_parameters` reaches OpenRouter. It also found that an approved tool part shows twice on the client, once as answered and once with its output; stage 4 handles that.
+- `packages/ai` offers one answer step (`Answerer.step`). `packages/chat` runs the loop, at most 6 metered steps with the last one sent `toolChoice: "none"`, and `searchMaterial`, whose tags run on across a turn through `render({ tagFor })`. A Chat with nothing selected is offered no search.
+- Answers store their parts (`chat_message.partsContent`), and the API returns them for every message. Older answers get parts from their reasoning and text.
+- Searches show as one compact line each (`Durchsucht: „…“`, with what they found), live and after reopening. They are not collapsed after the answer, unlike the reasoning.
+- `catalog_model.toolsAvailable` defaults to true, so Models stay offered until the first sync after the migration records the real value. An operator login made before it needs the new column grant (environments runbook).
+- `POST /api/me/chats/{id}/messages` is removed.
+- The Chat search eval (`apps/worker/evals/chat-search.ts`) asks the Phase 7 questions, each in a fresh Chat, with `sonnet-5.5-reasoning-high`. On 23 answerable and 12 unanswerable questions:
+  - no question about the material was answered without a search;
+  - a search reached the expected page for all 23, against recall@8 0.74 for the single query in Phase 7, with 2.2 searches per question on average;
+  - every answer cited the expected page.
+
+  Of the unanswerable questions, 9 got no Citation. A read of the other 3 shows each also says the material does not answer the question and cites only related passages, so all 12 were declined. The run cost $2.63, about $0.075 per question. This is one run, and ingestion is not deterministic. Figure readings (#66) and the two embedding providers vary, so two runs of the unchanged Phase 7 retrieval eval on 2026-11-12 gave recall@1 0.348 and 0.391, against 0.435 recorded on 2026-11-08. Thresholds should allow for that spread.
 
 **Anti-pattern guards.**
 - `toolChoice` is only `auto` or `none`.

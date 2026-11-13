@@ -113,6 +113,8 @@ export function createModels({
   function modelFor(
     config: ModelConfig,
     outputTokens: number,
+    /** Chat calls tools, so it is routed only to endpoints that support them (ADR-0018 amendment). */
+    { chat = false } = {},
   ): RegisteredModel {
     refuseCoveredModel(config);
     const cost = (inputTokens: number, outputTokens: number) => {
@@ -132,7 +134,11 @@ export function createModels({
         zeroRetention: true,
       },
       model: openrouter.chat(config.providerModelId, {
-        provider: { zdr: true, data_collection: "deny" },
+        provider: {
+          zdr: true,
+          data_collection: "deny",
+          ...(chat ? { require_parameters: true } : {}),
+        },
         reasoning: { effort: config.reasoningEffort },
         usage: { include: true },
       }),
@@ -156,7 +162,8 @@ export function createModels({
     };
   }
   return {
-    fromConfig: (config) => modelFor(config, config.maxOutputTokens),
+    fromConfig: (config) =>
+      modelFor(config, config.maxOutputTokens, { chat: true }),
     forTask(task) {
       const config = catalog.find((c) => c.key === taskModels[task]);
       if (!config)

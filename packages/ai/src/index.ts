@@ -2,7 +2,7 @@
  * Model registry and bounded model calls (ADR-0011, ADR-0012).
  */
 
-export { type Answerer, type AnswerInput, createAnswerer } from "./answer.js";
+export { type Answerer, type AnswerStep, createAnswerer } from "./answer.js";
 export {
   createEstimator,
   type EstimateRequest,

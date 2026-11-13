@@ -55,10 +55,11 @@ export function createModelCatalog({
     row.syncedAt !== null &&
     clock.now().getTime() - row.syncedAt.getTime() <= freshFor &&
     !isCoveredModel(row.providerModelId);
+  /** Chat also needs tools, so only Models with an endpoint that takes them (ADR-0018 amendment). */
   const offeredInChat = async () =>
     (
       await db.catalogModel.findMany({
-        where: { chatEnabled: true },
+        where: { chatEnabled: true, toolsAvailable: true },
         orderBy: [{ position: "asc" }, { key: "asc" }],
       })
     ).filter(usable);
@@ -135,6 +136,7 @@ export function createModelCatalog({
                   prices: model.prices as unknown as object[],
                   upstream: model.upstream,
                   zeroRetentionAvailable: true,
+                  toolsAvailable: model.tools,
                   syncedAt,
                 }
               : { zeroRetentionAvailable: false, syncedAt },

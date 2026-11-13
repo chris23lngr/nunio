@@ -14,6 +14,7 @@ import { sourceReferences } from "@/features/shared/components/source-citations"
 import type { ChatUIMessage } from "../api/chat-queries";
 import { messageText } from "../api/chat-queries";
 import { MessageActions } from "./message-actions";
+import { SearchSteps } from "./search-steps";
 
 function renderReference(reference: MdxReference) {
   return (
@@ -37,9 +38,14 @@ export const ChatMessage = memo(function ChatMessage({
   const [entering] = useState(!saved);
   const withdrawn = !!saved?.withdrawn;
   const text = messageText(message);
-  const reasoning = message.parts.find((part) => part.type === "reasoning");
+  // Each step may reason; the trace shows it as one.
+  const thoughts = message.parts.filter((part) => part.type === "reasoning");
+  const reasoning = thoughts.map((part) => part.text).join("\n\n");
+  const searches = message.parts.filter(
+    (part) => part.type === "tool-searchMaterial",
+  );
   // An answer with nothing streamed yet shows the waiting line.
-  const waiting = !student && !saved && !text && !reasoning?.text;
+  const waiting = !student && !saved && !text && !reasoning;
   const citations = saved?.citations;
   const references = useMemo(
     () => sourceReferences(citations ?? []),
@@ -66,13 +72,16 @@ export const ChatMessage = memo(function ChatMessage({
       }
     >
       <MessageContent>
-        {!student && !withdrawn && (reasoning?.text || waiting) && (
+        {!student && !withdrawn && (reasoning || waiting) && (
           <Reasoning
-            streaming={waiting || reasoning?.state === "streaming"}
+            streaming={waiting || thoughts.at(-1)?.state === "streaming"}
             answering={!saved}
           >
-            {reasoning?.text ?? ""}
+            {reasoning}
           </Reasoning>
+        )}
+        {!student && !withdrawn && searches.length > 0 && (
+          <SearchSteps searches={searches} />
         )}
         {withdrawn ? (
           <p className="max-w-[647px] text-sm text-base-500">

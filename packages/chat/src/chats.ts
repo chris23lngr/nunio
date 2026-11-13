@@ -6,7 +6,14 @@ import { withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type { Citation, KnowledgeReader, Provenance } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
+import type { ModelMessage, UIMessageChunk } from "ai";
 import { historyFrom, historyTurns } from "./history.js";
+import type { ChatPart } from "./parts.js";
+import { partsFrom } from "./parts.js";
+import { createSearch } from "./search.js";
+
+/** At most this many model steps answer one question; the last one must answer (ADR-0019). */
+const maxSteps = 6;
 
 export type ChatMessage = {
   id: string;
@@ -14,6 +21,8 @@ export type ChatMessage = {
   /** Null once a Source the answer drew on is deleted: its wording is shredded with that Source. */
   text: string | null;
   reasoning?: string;
+  /** The answer's reasoning, tool calls and text in order; empty once withdrawn. */
+  parts: ChatPart[];
   citations: { tag: string; provenance: Provenance | "gone" }[];
   /** The Model Catalog entry that wrote an answer; null for questions and older answers. */
   model: { key: string; name: string } | null;
@@ -21,7 +30,7 @@ export type ChatMessage = {
 };
 
 /** A step of answering a question, timed by `ask`. */
-export type AskStep = "retrieval" | "generation" | "persistence";
+export type AskStep = "history" | "generation" | "persistence";
 
 /** Chats: an explicit selection of Courses and Sources, and questions answered only from it. */
 export function createChats({
@@ -46,23 +55,37 @@ export function createChats({
       provenance: provenance.get(cite) ?? ("gone" as const),
     }));
   }
-  /** The Chat's recent messages, decrypted, as the history the next answer is given. */
+  /**
+   * The Chat's recent messages, decrypted, as the history the next answer is given, and whether it selected
+   * anything to search; null when the Chat is gone.
+   */
   async function earlier(p: Principal, chatId: string) {
     const recent = await withOwner(db, p, async (tx) => {
+      const chat = await tx.chat.findUnique({
+        where: { id: chatId },
+        select: { _count: { select: { courses: true, sources: true } } },
+      });
+      if (!chat) return null;
       const rows = await tx.chatMessage.findMany({
         where: { chatId },
         orderBy: [{ createdAt: "desc" }, { role: "desc" }],
         take: historyTurns * 2,
       });
-      return Promise.all(
+      const messages = await Promise.all(
         rows.reverse().map(async (row) => ({
           role: row.role as ChatMessage["role"],
           text: await derived.open(tx, row.id, row),
           derivedFrom: row.derivedFrom,
         })),
       );
+      return {
+        messages,
+        selected: chat._count.courses + chat._count.sources > 0,
+      };
     });
-    return historyFrom(recent);
+    return (
+      recent && { ...historyFrom(recent.messages), selected: recent.selected }
+    );
   }
   return {
     async detail(p: Principal, id: string) {
@@ -127,7 +150,10 @@ export function createChats({
         tx.chatMessage.findUnique({ where: { id }, select: { id: true } }),
       ));
     },
-    /** Answers from the Chat's selection only, recording the question and the answer. */
+    /**
+     * Answers in model steps that may search the Chat's selection (ADR-0019), passing each step's UI message
+     * chunks to `write` while they stream, then records the question and the answer.
+     */
     async ask(
       p: Principal,
       chatId: string,
@@ -135,11 +161,7 @@ export function createChats({
       answerer: Answerer,
       options: {
         signal?: AbortSignal;
-        onReasoning?: (
-          text: string,
-          streaming: boolean,
-        ) => void | Promise<void>;
-        onText?: (text: string) => void | Promise<void>;
+        write?: (chunk: UIMessageChunk) => void;
         /** IDs for the recorded question and answer, when the caller already shows them. */
         ids?: { question: string; answer: string };
         /** Called with how long each step took, in milliseconds. */
@@ -153,52 +175,70 @@ export function createChats({
         options.onStep?.(name, now - started);
         started = now;
       };
-      const [retrieval, history] = await Promise.all([
-        reader.retrieve(p, { chatId }, { kind: "passages", text: question }),
-        earlier(p, chatId),
-      ]);
-      step("retrieval");
-      if (retrieval.status === "refused") {
-        return retrieval.reason === "not_owner"
-          ? ({ status: "gone" } as const)
-          : ({ status: "refused", reason: retrieval.reason } as const);
-      }
-      const { data, citations } = retrieval.render();
-      const input = {
-        question,
-        data,
-        tags: citations.map((citation) => citation.tag),
-        history: history.turns,
+      const history = await earlier(p, chatId);
+      step("history");
+      if (!history) return { status: "gone" } as const;
+      const search = createSearch(reader, p, chatId);
+      const messages: ModelMessage[] = [
+        ...history.turns.flatMap((turn): ModelMessage[] => [
+          { role: "user", content: turn.question },
+          { role: "assistant", content: turn.answer },
+        ]),
+        { role: "user", content: question },
+      ];
+      const chunks: UIMessageChunk[] = [];
+      const write = (chunk: UIMessageChunk) => {
+        chunks.push(chunk);
+        options.write?.(chunk);
       };
-      options.signal?.throwIfAborted();
-      const answered = await delegation.meter(
-        p,
-        { microUsd: answerer.estimateMicroUsd(input) },
-        (deadline) =>
-          definitely(() =>
-            answerer.answer(input, {
-              signal: options.signal
-                ? AbortSignal.any([deadline, options.signal])
-                : deadline,
-              onText: options.onText,
-              onReasoning: options.onReasoning,
-            }),
-          ),
-      );
+      for (let n = 1; ; n++) {
+        options.signal?.throwIfAborted();
+        const input = {
+          messages,
+          // A Chat with nothing selected has nothing to search.
+          tools: history.selected ? search.tools : {},
+          last: n === maxSteps,
+        };
+        const stepped = await delegation.meter(
+          p,
+          { microUsd: answerer.estimateMicroUsd(input) },
+          (deadline) =>
+            definitely(() =>
+              answerer.step(input, {
+                signal: options.signal
+                  ? AbortSignal.any([deadline, options.signal])
+                  : deadline,
+                write,
+              }),
+            ),
+        );
+        const refusal = search.refusal();
+        if (refusal === "gone") return { status: "gone" } as const;
+        if (refusal) return { status: "refused", reason: refusal } as const;
+        if (stepped.status === "refused") return stepped;
+        messages.push(...stepped.value.messages);
+        if (stepped.value.finishReason === "stop") break;
+      }
       step("generation");
-      if (answered.status === "refused") return answered;
       options.signal?.throwIfAborted();
-      const cited = answered.value.cited.flatMap((tag) =>
-        citations.filter((citation) => citation.tag === tag),
+      const parts = await partsFrom(
+        chunks,
+        new Set(search.citations.map((citation) => citation.tag)),
+      );
+      const text = parts
+        .flatMap((part) => (part.type === "text" ? [part.text] : []))
+        .join("\n\n");
+      const reasoning = parts
+        .flatMap((part) => (part.type === "reasoning" ? [part.text] : []))
+        .join("\n\n");
+      const cited = [
+        ...new Set([...text.matchAll(/\[(S\d+)\]/g)].map((match) => match[1])),
+      ].flatMap((tag) =>
+        search.citations.filter((citation) => citation.tag === tag),
       );
       // The answer may restate earlier answers, so it is withdrawn with their Sources too.
       const derivedFrom = [
-        ...new Set([
-          ...retrieval.items.flatMap((item) =>
-            item.provenance.kind === "source" ? [item.provenance.sourceId] : [],
-          ),
-          ...history.derivedFrom,
-        ]),
+        ...new Set([...search.sources, ...history.derivedFrom]),
       ];
       const id = options.ids?.answer ?? randomUUID();
       const questionId = options.ids?.question ?? randomUUID();
@@ -206,23 +246,15 @@ export function createChats({
       const recorded = await withOwner(db, p, async (tx, studentId) => {
         if (!(await tx.chat.findUnique({ where: { id: chatId } })))
           return false;
-        const sealed = await derived.seal(
+        const sealed = await derived.seal(tx, id, derivedFrom, text);
+        const sealedParts = await derived.seal(
           tx,
-          id,
+          `${id}:parts`,
           derivedFrom,
-          answered.value.text,
+          JSON.stringify(parts),
         );
-        const reasoning = answered.value.reasoning
-          ? await derived.seal(
-              tx,
-              `${id}:reasoning`,
-              derivedFrom,
-              answered.value.reasoning,
-            )
-          : null;
-        if (answered.value.reasoning && !reasoning) return false;
         // A Source deleted while answering takes the answer with it.
-        if (!sealed) return false;
+        if (!sealed || !sealedParts) return false;
         // One timestamp; the role's enum order keeps the question before its answer.
         await tx.chatMessage.create({
           data: {
@@ -234,22 +266,21 @@ export function createChats({
             createdAt,
           },
         });
-        const answer = await tx.chatMessage.create({
+        return tx.chatMessage.create({
           data: {
             id,
             chatId,
             studentId,
             role: "assistant",
             ...sealed,
-            reasoningContent: reasoning?.content,
-            reasoningKey: reasoning?.contentKey,
+            partsContent: sealedParts.content,
+            partsKey: sealedParts.contentKey,
             citations: cited,
             modelKey: answerer.modelKey,
             createdAt,
           },
           select: { model: { select: { key: true, name: true } } },
         });
-        return answer;
       }).catch((error: unknown) => {
         // A question ID already saved, here or by a concurrent request, fails the primary key.
         if ((error as { code?: unknown }).code === "P2002")
@@ -262,10 +293,9 @@ export function createChats({
       const message: ChatMessage = {
         id,
         role: "assistant",
-        text: answered.value.text,
-        ...(answered.value.reasoning
-          ? { reasoning: answered.value.reasoning }
-          : {}),
+        text,
+        ...(reasoning ? { reasoning } : {}),
+        parts,
         createdAt: createdAt.toISOString(),
         citations: await resolve(p, cited),
         model: recorded.model,
@@ -277,6 +307,7 @@ export function createChats({
           id: questionId,
           role: "student",
           text: question,
+          parts: [{ type: "text", text: question }],
           citations: [],
           model: null,
           createdAt: createdAt.toISOString(),
@@ -302,20 +333,50 @@ export function createChats({
         return Promise.all(
           chat.messages.map(async (message) => {
             const text = await derived.open(tx, message.id, message);
+            const open = (
+              suffix: string,
+              content: Uint8Array<ArrayBuffer>,
+              contentKey: Uint8Array<ArrayBuffer> | null,
+            ) =>
+              derived.open(tx, `${message.id}:${suffix}`, {
+                content,
+                contentKey,
+                derivedFrom: message.derivedFrom,
+              });
+            const stored =
+              text !== null && message.partsContent
+                ? await open("parts", message.partsContent, message.partsKey)
+                : null;
             const reasoning =
               text !== null && message.reasoningContent
-                ? await derived.open(tx, `${message.id}:reasoning`, {
-                    content: message.reasoningContent,
-                    contentKey: message.reasoningKey,
-                    derivedFrom: message.derivedFrom,
-                  })
+                ? await open(
+                    "reasoning",
+                    message.reasoningContent,
+                    message.reasoningKey,
+                  )
                 : null;
+            // Answers from before parts were stored show their reasoning, then their text.
+            const parts: ChatPart[] =
+              text === null
+                ? []
+                : stored
+                  ? JSON.parse(stored)
+                  : [
+                      ...(reasoning
+                        ? [{ type: "reasoning" as const, text: reasoning }]
+                        : []),
+                      { type: "text" as const, text },
+                    ];
+            const thought = parts
+              .flatMap((part) => (part.type === "reasoning" ? [part.text] : []))
+              .join("\n\n");
             return {
               id: message.id,
               createdAt: message.createdAt.toISOString(),
               role: message.role as ChatMessage["role"],
               text,
-              ...(reasoning ? { reasoning } : {}),
+              ...(thought ? { reasoning: thought } : {}),
+              parts,
               citations: message.citations as Citation[],
               model: message.model,
             };

@@ -27,7 +27,14 @@
       },
       "provider_name": "Amazon Bedrock",
       "tag": "amazon-bedrock",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Amazon Bedrock | anthropic/claude-haiku-5.5-20261007",
@@ -55,7 +62,14 @@
       },
       "provider_name": "Amazon Bedrock",
       "tag": "amazon-bedrock/eu-west-1",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Amazon Bedrock | anthropic/claude-haiku-5.5-20261007",
@@ -83,7 +97,14 @@
       },
       "provider_name": "Amazon Bedrock",
       "tag": "amazon-bedrock/us-east-1",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Google | anthropic/claude-haiku-5.5-20261007",
@@ -111,7 +132,14 @@
       },
       "provider_name": "Google",
       "tag": "google-vertex/europe",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Google | anthropic/claude-haiku-5.5-20261007",
@@ -139,7 +167,14 @@
       },
       "provider_name": "Google",
       "tag": "google-vertex/global",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Google | anthropic/claude-haiku-5.5-20261007",
@@ -167,7 +202,14 @@
       },
       "provider_name": "Google",
       "tag": "google-vertex/us",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Amazon Bedrock | anthropic/claude-opus-5.5-20260921",
@@ -185,7 +227,14 @@
       },
       "provider_name": "Amazon Bedrock",
       "tag": "amazon-bedrock",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Amazon Bedrock | anthropic/claude-opus-5.5-20260921",
@@ -203,7 +252,14 @@
       },
       "provider_name": "Amazon Bedrock",
       "tag": "amazon-bedrock/eu-west-1",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Amazon Bedrock | anthropic/claude-opus-5.5-20260921",
@@ -221,7 +277,14 @@
       },
       "provider_name": "Amazon Bedrock",
       "tag": "amazon-bedrock/us-east-1",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Google | anthropic/claude-opus-5.5-20260921",
@@ -239,7 +302,14 @@
       },
       "provider_name": "Google",
       "tag": "google-vertex/europe",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Google | anthropic/claude-opus-5.5-20260921",
@@ -257,7 +327,14 @@
       },
       "provider_name": "Google",
       "tag": "google-vertex/global",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Google | anthropic/claude-opus-5.5-20260921",
@@ -275,7 +352,14 @@
       },
       "provider_name": "Google",
       "tag": "google-vertex/us",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Amazon Bedrock | anthropic/claude-sonnet-5.5-20260928",
@@ -293,7 +377,14 @@
       },
       "provider_name": "Amazon Bedrock",
       "tag": "amazon-bedrock",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Amazon Bedrock | anthropic/claude-sonnet-5.5-20260928",
@@ -311,7 +402,14 @@
       },
       "provider_name": "Amazon Bedrock",
       "tag": "amazon-bedrock/eu-west-1",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Amazon Bedrock | anthropic/claude-sonnet-5.5-20260928",
@@ -329,7 +427,14 @@
       },
       "provider_name": "Amazon Bedrock",
       "tag": "amazon-bedrock/us-east-1",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Google | anthropic/claude-sonnet-5.5-20260928",
@@ -347,7 +452,14 @@
       },
       "provider_name": "Google",
       "tag": "google-vertex/europe",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Google | anthropic/claude-sonnet-5.5-20260928",
@@ -365,7 +477,14 @@
       },
       "provider_name": "Google",
       "tag": "google-vertex/global",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "name": "Google | anthropic/claude-sonnet-5.5-20260928",
@@ -383,7 +502,14 @@
       },
       "provider_name": "Google",
       "tag": "google-vertex/us",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     },
     {
       "_synthetic": "Not in the live response: a Covered Model entry, which the sync must drop.",
@@ -398,7 +524,14 @@
       },
       "provider_name": "Amazon Bedrock",
       "tag": "amazon-bedrock",
-      "max_completion_tokens": 128000
+      "max_completion_tokens": 128000,
+      "supported_parameters": [
+        "max_tokens",
+        "reasoning",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ]
     }
   ]
 }

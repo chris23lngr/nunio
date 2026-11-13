@@ -22,6 +22,21 @@ const Citation = z.object({
     .union([Provenance, z.literal("gone")])
     .describe('Resolved when shown; "gone" once its Source is deleted.'),
 });
+const Part = z
+  .discriminatedUnion("type", [
+    z.object({ type: z.literal("reasoning"), text: z.string() }),
+    z.object({ type: z.literal("text"), text: z.string() }),
+    z.object({
+      type: z.literal("tool-searchMaterial"),
+      toolCallId: z.string(),
+      input: z.object({ query: z.string() }),
+      output: z.object({
+        found: z.number().int(),
+        sources: z.array(z.string()),
+      }),
+    }),
+  ])
+  .openapi("ChatMessagePart");
 const Message = z
   .object({
     id: z.string(),
@@ -38,6 +53,11 @@ const Message = z
       .optional()
       .describe(
         "Model reasoning, absent for older messages or once a dependent Source is deleted.",
+      ),
+    parts: z
+      .array(Part)
+      .describe(
+        "The message's reasoning, searches and text in the order shown; empty once withdrawn.",
       ),
     citations: z.array(Citation),
     model: z
@@ -153,7 +173,7 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
       responses: {
         200: {
           description:
-            "AI SDK UI message SSE: a start chunk carrying the answer's ID, reasoning and provisional text parts, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
+            "AI SDK UI message SSE: a start chunk carrying the answer's ID, then each model step's reasoning, tool and provisional text chunks, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
           content: { "text/event-stream": { schema: z.string() } },
         },
         ...errors,
@@ -193,13 +213,6 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
         execute: async ({ writer }) => {
           const answerId = randomUUID();
           writer.write({ type: "start", messageId: answerId });
-          let reasoningOpen = false;
-          let textStarted = false;
-          const endReasoning = () => {
-            if (reasoningOpen)
-              writer.write({ type: "reasoning-end", id: "reasoning" });
-            reasoningOpen = false;
-          };
           let outcome = "interrupted";
           try {
             const result = await c
@@ -210,31 +223,12 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
                 onStep: (step, ms) => {
                   timing[step] = Math.round(ms);
                 },
-                onReasoning: (delta, streaming) => {
-                  mark("firstReasoning");
-                  if (delta && !reasoningOpen) {
-                    writer.write({ type: "reasoning-start", id: "reasoning" });
-                    reasoningOpen = true;
-                  }
-                  if (delta)
-                    writer.write({
-                      type: "reasoning-delta",
-                      id: "reasoning",
-                      delta,
-                    });
-                  if (!streaming) endReasoning();
-                },
-                onText: (delta) => {
-                  mark("firstText");
-                  endReasoning();
-                  if (!textStarted)
-                    writer.write({ type: "text-start", id: "answer" });
-                  textStarted = true;
-                  writer.write({ type: "text-delta", id: "answer", delta });
+                write: (chunk) => {
+                  if (chunk.type === "reasoning-delta") mark("firstReasoning");
+                  if (chunk.type === "text-delta") mark("firstText");
+                  writer.write(chunk);
                 },
               });
-            endReasoning();
-            if (textStarted) writer.write({ type: "text-end", id: "answer" });
             if (result.status !== "ok") {
               writer.write({
                 type: "data-refused",
@@ -356,59 +350,6 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
         .messages(principal.fromSession(actor), c.req.valid("param").id);
       if (!messages) return c.json({ error: "gone" }, 404);
       return c.json(messages, 200);
-    },
-  );
-  routes.openapi(
-    createRoute({
-      method: "post",
-      path: "/api/me/chats/{id}/messages",
-      request: {
-        params: chatParams,
-        body: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: z
-                .object({
-                  text: z.string().trim().min(1).max(4000),
-                  model: modelChoice,
-                })
-                .strict(),
-            },
-          },
-        },
-      },
-      responses: {
-        200: json(
-          Message.extend({ question: Message }),
-          "The answer and its persisted question.",
-        ),
-        403: json(
-          ErrorBody,
-          "Usage is refused, such as an exhausted Allowance.",
-        ),
-        422: json(
-          ErrorBody,
-          "model_unavailable: the chosen Model is not offered.",
-        ),
-        ...errors,
-      },
-    }),
-    async (c) => {
-      c.header("cache-control", "no-store");
-      const actor = await c.get("auth").authenticate(c.req.raw);
-      if (!actor) return c.json({ error: "unauthorized" }, 401);
-      const p = principal.fromSession(actor);
-      const body = c.req.valid("json");
-      const answerer = await c.get("chatModels").answererFor(p, body.model);
-      if (!answerer) return c.json({ error: "model_unavailable" }, 422);
-      const result = await c
-        .get("chats")
-        .ask(p, c.req.valid("param").id, body.text, answerer);
-      if (result.status === "gone") return c.json({ error: "gone" }, 404);
-      if (result.status === "refused")
-        return c.json({ error: result.reason }, 403);
-      return c.json({ ...result.message, question: result.question }, 200);
     },
   );
 }
