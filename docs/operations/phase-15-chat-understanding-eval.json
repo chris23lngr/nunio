@@ -1,0 +1,162 @@
+{
+  "checkedAt": "2026-11-13T16:23:52.100Z",
+  "chatModel": "sonnet-5.5-reasoning-high",
+  "embeddingModel": "baai/bge-m3",
+  "routing": "international",
+  "fixture": {
+    "levels": {
+      "Relationales Modell": "not_yet_practiced",
+      "SQL": "solid",
+      "Normalformen": "shaky",
+      "Transaktionen": "disputed"
+    },
+    "examNeedsMinutes": 2400,
+    "examInDays": 4
+  },
+  "summary": {
+    "questions": 10,
+    "failed": 0,
+    "read": {
+      "passed": 10,
+      "of": 10
+    },
+    "startsOnlyOnWeak": {
+      "passed": 1,
+      "of": 1
+    },
+    "startsNothing": {
+      "passed": 1,
+      "of": 1
+    },
+    "proposesRemoval": {
+      "passed": 1,
+      "of": 1
+    },
+    "costMicroUsd": 208368
+  },
+  "questions": [
+    {
+      "question": "Wo stehe ich in Datenbanksysteme?",
+      "read": ["courseFacts", "agenda"],
+      "startedOn": [],
+      "proposals": 0,
+      "removals": 0,
+      "passed": {
+        "read": true
+      },
+      "answer": "**Wo du stehst (Datenbanksysteme, Klausur am Dienstag, 17.11.2026, 14:00)** [S1]\n\n**Themenstand**\n- **SQL** [S4]: solide. Der letzte Nachweis ist von heute.\n- **Normalformen** [S2]: wackelig. Der Versuch war wackelig.\n- **Transaktionen** [S5]: umstritten. Der Versuch war wackelig, deine Selbsteinschätzung lautet „solide“. Hier solltest du genauer hinschauen.\n- **Relationales Modell** [S3]: noch nicht geübt. Das heißt nicht, dass du es schlecht kannst. Es gibt dazu nur noch keine Daten.\n\n**Übungsmaterial**\n- Für Normalformen [S2] gibt es ein fertiges Übungsset, das du noch nicht geöffnet hast.\n- Ein weiteres Set zu SQL, Normalformen und Transaktionen [S4] [S2] [S5] hast du bereits geöffnet.\n- Zum Relationalen Modell [S3] gibt es noch kein Set.\n\n**Zeitplan**\n- Für die Klausur ist ein Lernblock eingetragen: Sonntag, 15.11., 10:00–12:00 (B1).\n- Laut Plan fehlen für die Klausur noch **1410 Minuten** (etwa 23,5 Stunden). Die Klausur ist deshalb nach jetzigem Stand nicht abgedeckt. [S1]\n- Es gibt zwei Möglichkeiten:\n  - Du lernst über das tägliche Limit hinaus. Das bringt 960 Minuten und braucht deine Zustimmung.\n  - Du planst 1410 Minuten weniger dafür ein.\n- Die Klausur ist als „nicht reviewed“ markiert.\n\n**Mein Vorschlag**\n1. Mach zuerst das ungeöffnete Set zu Normalformen.\n2. Übe danach Transaktionen und das Relationale Modell.\n3. Wenn du möchtest, schlage ich dir zusätzliche Lernblöcke bis Dienstag vor. Sag mir dafür, wann du Zeit hast. Ich kann auch ein Übungsset oder Karteikarten zum Relationalen Modell erstellen.",
+      "costMicroUsd": 22504
+    },
+    {
+      "question": "Welche Themen beherrsche ich schon sicher?",
+      "read": ["courseFacts"],
+      "startedOn": [],
+      "proposals": 0,
+      "removals": 0,
+      "passed": {
+        "read": true
+      },
+      "answer": "Sicher beherrschst du nach den vorliegenden Daten bisher nur ein Thema:\n\n- **SQL** [S4]: Der Stand ist „solid“. Das beruht auf deinen Übungsversuchen vom 13.11.2026.\n\nBei den anderen Themen sieht es so aus:\n\n- **Normalformen** [S2]: Der Stand ist „shaky“, also noch wackelig.\n- **Transaktionen** [S5]: Der Stand ist „disputed“. Du schätzt dich selbst als „solid“ ein, deine Übungsversuche waren aber „shaky“. Ich würde dieses Thema noch nicht als sicher ansehen.\n- **Relationales Modell** [S3]: Es ist noch nicht geübt. Das heißt nicht, dass du es schlecht kannst. Es gibt dazu nur noch keine Daten.\n\nDie Klausur ist am 17.11.2026 um 14:00 Uhr [S1]. Zu Normalformen gibt es ein fertiges Übungsset, das du noch nicht geöffnet hast. Es ist ein guter nächster Schritt. Soll ich dazu ein neues Set oder Karteikarten erstellen, etwa für Relationales Modell oder Transaktionen?",
+      "costMicroUsd": 17262
+    },
+    {
+      "question": "Bin ich beim relationalen Modell schwach?",
+      "read": ["courseFacts"],
+      "startedOn": [],
+      "proposals": 0,
+      "removals": 0,
+      "passed": {
+        "read": true
+      },
+      "answer": "Das lässt sich noch nicht sagen. Beim Thema „Relationales Modell“ [S3] gibt es bisher keine Übungsergebnisse („not yet practiced“). Das heißt nicht, dass du dort schwach bist. Es gibt einfach noch keine Daten dazu. Auch ein Übungsset oder Karteikarten zu diesem Thema gibt es noch nicht.\n\nZum Vergleich, wie die anderen Themen stehen:\n- **Normalformen** [S2]: wackelig („shaky“). Dazu gibt es ein fertiges Übungsset, das du noch nicht geöffnet hast.\n- **SQL** [S4]: solide.\n- **Transaktionen** [S5]: umstritten („disputed“). Deine Übungsversuche waren wackelig, deine Selbsteinschätzung war solide.\n\nDie Klausur ist am 2026-11-17 um 14:00 Uhr [S1]. Wenn du willst, erstelle ich dir ein Übungsset zum Relationalen Modell. Dann siehst du, wo du stehst. Vorher lohnt sich vielleicht das ungeöffnete Übungsset zu Normalformen, weil dieses Thema schon als wackelig eingestuft ist.",
+      "costMicroUsd": 18272
+    },
+    {
+      "question": "Mach mir ein Practice Set zu meinen schwachen Themen.",
+      "read": ["courseFacts"],
+      "startedOn": ["Transaktionen"],
+      "proposals": 0,
+      "removals": 0,
+      "passed": {
+        "read": true,
+        "startsOnlyOnWeak": true
+      },
+      "answer": "Die Klausur ist am 2026-11-17 um 14:00 [S1]. Das sind deine schwächeren Themen:\n\n- **Normalformen** [S2]: Der Stand ist wackelig (shaky). Dafür gibt es schon ein fertiges Practice Set, das du noch nicht geöffnet hast. Öffne zuerst dieses, ich erstelle dazu kein neues.\n- **Transaktionen** [S5]: Der Stand ist umstritten. Deine Übungsversuche waren wackelig, deine Selbsteinschätzung war „solid“. Dazu erstelle ich jetzt ein neues Practice Set. Du findest es unter Study, sobald es fertig ist.\n\nDas **Relationale Modell** [S3] ist noch nicht geübt. Das heißt nicht, dass du es schlecht kannst. Wenn du willst, mache ich dazu auch ein Set. **SQL** [S4] ist solide.",
+      "costMicroUsd": 27308
+    },
+    {
+      "question": "Erstelle mir ein Practice Set zu Normalformen.",
+      "read": ["courseFacts"],
+      "startedOn": [],
+      "proposals": 0,
+      "removals": 0,
+      "passed": {
+        "read": true,
+        "startsNothing": true
+      },
+      "answer": "Zu **Normalformen** [S2] gibt es schon ein fertiges Practice Set, das du noch nicht geöffnet hast. Es wurde heute erstellt. Du findest es unter Study.\n\nAußerdem gibt es ein bereits geöffnetes Practice Set, das [S4], [S2] und [S5] abdeckt.\n\nNormalformen stehen bei dir auf „shaky“ [S2]. Die Klausur ist am 2026-11-17 um 14:00 [S1]. Ich würde zuerst das ungeöffnete Set bearbeiten.\n\nWenn du danach ein weiteres, neues Set möchtest, sag kurz Bescheid. Dann erstelle ich es.",
+      "costMicroUsd": 15842
+    },
+    {
+      "question": "Schaffe ich die Klausur?",
+      "read": ["courseFacts", "agenda"],
+      "startedOn": [],
+      "proposals": 0,
+      "removals": 0,
+      "passed": {
+        "read": true
+      },
+      "answer": "Ich kann dir nicht sagen, ob du die Klausur schaffst. Der Plan zeigt für sie eine Lücke, deshalb kann ich keine Zusage machen.\n\n**Stand des Plans**\n- Die Klausur in Datenbanksysteme ist am 17.11.2026 um 14:00 [S1].\n- Im Plan fehlen dafür noch 1410 Minuten Lernzeit. Eingeplant ist bisher nur ein Block am 15.11. von 10:00 bis 12:00.\n- Mit Lernen über das Tageslimit hinaus ließen sich 960 Minuten gewinnen. Dafür brauchst du eine Genehmigung. Auch dann blieben Minuten offen.\n\n**Wie gut du die Themen kannst**\n- **SQL** [S4]: solide.\n- **Normalformen** [S2]: wackelig.\n- **Transaktionen** [S5]: umstritten. Die Übungen waren wackelig, deine Selbsteinschätzung war solide.\n- **Relationales Modell** [S3]: noch nicht geübt. Das heißt nicht, dass du es schlecht kannst. Es gibt dazu aber noch keine Daten.\n\n**Was ich dir vorschlagen würde**\n1. Üb zuerst Normalformen. Dafür gibt es schon ein fertiges Übungsset, das du noch nicht geöffnet hast.\n2. Danach kommen Transaktionen. Das Set, das du schon geöffnet hast, deckt sie ab.\n3. Fang beim Relationalen Modell an, damit du siehst, wo du stehst.\n4. Mehr Lernzeit einzuplanen wäre sinnvoll, weil bis zur Klausur noch viel fehlt. Soll ich zusätzliche Lernblöcke vorschlagen? Dann sag mir, an welchen Tagen und zu welchen Zeiten du Zeit hast.\n\nSoll ich ein Übungsset zum Relationalen Modell erstellen?",
+      "costMicroUsd": 22606
+    },
+    {
+      "question": "Wie viel Zeit fehlt mir noch bis zur Klausur?",
+      "read": ["courseFacts", "agenda"],
+      "startedOn": [],
+      "proposals": 0,
+      "removals": 0,
+      "passed": {
+        "read": true
+      },
+      "answer": "Die Klausur in Datenbanksysteme ist am Dienstag, 17.11.2026 um 14:00 Uhr [S1]. Von heute (Freitag, 13.11.) sind das noch 4 Tage.\n\n**Lernzeit laut Plan:**\n- Im Plan steht bisher nur ein Lernblock: Sonntag, 15.11., 10:00–12:00 Uhr.\n- Für die Klausur fehlen noch **1410 Minuten (23,5 Stunden)** [S1]. Die Klausur ist im Plan als „not reviewed by the student“ markiert.\n- Ich kann deshalb nicht sagen, dass du es bis zur Klausur schaffst. Der Plan zeigt dafür einen Engpass.\n\n**Mögliche Auswege laut Plan:**\n- Du kannst über das tägliche Limit hinaus lernen. Das bringt 960 Minuten, braucht aber deine Zustimmung. Danach fehlen immer noch 450 Minuten.\n- Du kannst planen, 1410 Minuten weniger für die Klausur zu lernen.\n\n**Stand deiner Themen:**\n- SQL [S4]: solide.\n- Normalformen [S2]: wackelig.\n- Transaktionen [S5]: umstritten. Deine Übungsergebnisse sind wackelig, deine Selbsteinschätzung ist solide.\n- Relationales Modell [S3]: noch nicht geübt.\n\nFür Normalformen gibt es ein fertiges Übungsset, das du noch nicht geöffnet hast. Damit könntest du anfangen.\n\nSoll ich dir zusätzliche Lernblöcke vor der Klausur vorschlagen? Dann bräuchte ich von dir, wie viel du an den einzelnen Tagen ungefähr lernen kannst.",
+      "costMicroUsd": 22480
+    },
+    {
+      "question": "Was kann ich tun, damit ich die Klausur noch schaffe?",
+      "read": ["courseFacts", "agenda"],
+      "startedOn": [],
+      "proposals": 5,
+      "removals": 0,
+      "passed": {
+        "read": true
+      },
+      "answer": "",
+      "costMicroUsd": 25580
+    },
+    {
+      "question": "Plane mir Zeit für meine schwachen Themen ein.",
+      "read": ["courseFacts", "agenda"],
+      "startedOn": [],
+      "proposals": 4,
+      "removals": 0,
+      "passed": {
+        "read": true
+      },
+      "answer": "",
+      "costMicroUsd": 22862
+    },
+    {
+      "question": "Lösch meinen Lernblock übermorgen, den brauche ich nicht.",
+      "read": ["agenda"],
+      "startedOn": [],
+      "proposals": 1,
+      "removals": 1,
+      "passed": {
+        "read": true,
+        "proposesRemoval": true
+      },
+      "answer": "",
+      "costMicroUsd": 13652
+    }
+  ]
+}

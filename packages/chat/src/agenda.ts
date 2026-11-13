@@ -1,6 +1,6 @@
 import type { Principal } from "@nunio/delegation";
 import type { KnowledgeReader } from "@nunio/knowledge";
-import type { Plan } from "@nunio/planning";
+import type { Plan, Tradeoff, Unplanned } from "@nunio/planning";
 import { deadline } from "@nunio/planning";
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
@@ -21,13 +21,21 @@ const dayMs = 24 * 60 * 60_000;
 const maxDays = 31;
 const date = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" } as const;
 
+/** Why the Plan leaves an Obligation out, so none is dropped silently. */
+const unplannedReasons: Record<Unplanned["reason"], string> = {
+  no_estimate: "needs an Estimate",
+  no_deadline: "has no deadline",
+  past_due: "is past its deadline",
+};
+
 /** The day after a YYYY-MM-DD date. */
 const nextDay = (day: string) =>
   new Date(Date.parse(`${day}T00:00:00Z`) + dayMs).toISOString().slice(0, 10);
 
 /**
- * Reads the student's Plan for a range of days (ADR-0020): Obligations due in it, with their Tasks and the tag to
- * cite each by, then Study Blocks and Fixed Events. Titles may come from a Source, so they are fenced as data.
+ * Reads the student's Plan for a range of days (ADR-0020): Obligations due in it, with their Shortfalls (ADR-0021),
+ * Tasks and the tag to cite each by, then Study Blocks and Fixed Events, then every current Shortfall. Titles may come
+ * from a Source, so they are fenced as data.
  */
 export function agendaTool(
   turn: Turn,
@@ -61,7 +69,7 @@ export function agendaTool(
   const at = (instant: Date) => local.format(instant).replace(",", "");
   const time = (instant: Date) => at(instant).slice(11);
   return tool({
-    description: `Reads the student's Plan for a range of days: the Obligations due in it, each with its Tasks and the tag to cite it by, then Study Blocks and Fixed Events. Obligations, Tasks and Study Blocks carry a handle such as O1, T1 or B1, which proposals name them by. Dates are YYYY-MM-DD in the student's time zone, at most ${maxDays} days apart, both included.`,
+    description: `Reads the student's Plan for a range of days: the Obligations due in it, each with its Shortfall and tradeoffs or why it cannot be planned, its Tasks and the tag to cite it by, then Study Blocks and Fixed Events, and finally every current Shortfall, also beyond the range. Obligations, Tasks and Study Blocks carry a handle such as O1, T1 or B1, which proposals name them by. Dates are YYYY-MM-DD in the student's time zone, at most ${maxDays} days apart, both included.`,
     inputSchema: jsonSchema<{ from: string; to: string }>({
       type: "object",
       properties: { from: date, to: date },
@@ -99,6 +107,18 @@ export function agendaTool(
         .sort((a, b) => a.due!.getTime() - b.due!.getTime());
       const blocks = view.studyBlocks.filter(overlaps);
       const events = view.fixedEvents.filter(overlaps);
+      /** The handle of an Obligation or Task, which proposals name it by. */
+      const workHandle = (id: string) =>
+        view.obligations.some((o) => o.id === id)
+          ? turn.handleFor("obligation", id)
+          : turn.handleFor("task", id);
+      /** A tradeoff the student may choose, carried out only through Study Block proposals (ADR-0021). */
+      const tradeoffText = (tradeoff: Tradeoff) =>
+        tradeoff.kind === "exceed_daily_limit"
+          ? `study beyond the daily limit (gains ${tradeoff.gainedMinutes} min, needs Approval)`
+          : tradeoff.kind === "free_time_from"
+            ? `free time from ${workHandle(tradeoff.workId)}'s blocks ${tradeoff.blockIds.map((id) => turn.handleFor("block", id)).join(", ")} (gains ${tradeoff.gainedMinutes} min${tradeoff.needsApproval ? ", needs Approval" : ""})`
+            : `plan ${tradeoff.byMinutes} min less for it`;
       const titleOf = (work: { kind: string; id: string }) =>
         work.kind === "obligation"
           ? view.obligations.find((o) => o.id === work.id)?.title
@@ -115,8 +135,22 @@ export function agendaTool(
             o.reportedSubmittedAt ? "reported as submitted" : null,
           ].filter(Boolean);
           const course = handleOf.get(o.courseId);
+          const shortfall = view.proposal.shortfalls.find(
+            (s) => s.workId === o.id,
+          );
+          const unplanned = view.proposal.unplanned.find(
+            (u) => u.workId === o.id,
+          );
           return [
             `${fact ? `[${turn.tagFor(fact.cite)}] ` : ""}${turn.handleFor("obligation", o.id)} · ${at(o.due!)} · ${o.title} · ${o.kind} · ${o.course}${course ? ` (${course})` : ""}${notes.length ? ` · ${notes.join(", ")}` : ""}`,
+            ...(shortfall
+              ? [
+                  `  Shortfall: ${shortfall.shortMinutes} min missing; tradeoffs: ${shortfall.tradeoffs.map(tradeoffText).join("; ")}`,
+                ]
+              : []),
+            ...(unplanned
+              ? [`  cannot be planned: ${unplannedReasons[unplanned.reason]}`]
+              : []),
             ...view.tasks
               .filter((t) => t.obligationId === o.id)
               .map(
@@ -134,6 +168,15 @@ export function agendaTool(
         "Fixed Events:",
         ...(events.length ? [] : ["none"]),
         ...events.map((e) => `${at(e.start)}–${time(e.end)} · ${e.title}`),
+        // Every Shortfall, so a deadline beyond the range can be judged too (ADR-0021).
+        "Shortfalls until their deadlines:",
+        ...(view.proposal.shortfalls.length ? [] : ["none"]),
+        ...view.proposal.shortfalls.map((s) => {
+          const kind = view.obligations.some((o) => o.id === s.workId)
+            ? "obligation"
+            : "task";
+          return `${workHandle(s.workId)} · ${titleOf({ kind, id: s.workId }) ?? "work that is gone"} · due ${at(s.due)} · ${s.shortMinutes} min missing`;
+        }),
       ];
       turn.give(toolCallId, fenced("plan", lines));
       return {

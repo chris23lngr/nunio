@@ -26,7 +26,12 @@ export function ApprovalCard({
   onDecide: (decision: "approve" | "deny") => void;
 }) {
   const { action } = approval;
-  const verb = action.kind === "studyBlock.move" ? "Move" : "Add";
+  const verb =
+    action.kind === "studyBlock.move"
+      ? "Move"
+      : action.kind === "studyBlock.remove"
+        ? "Remove"
+        : "Add";
   const heading = `${verb} the block for ${action.work.title}`;
   return (
     <ApprovalPresentation
@@ -38,7 +43,9 @@ export function ApprovalCard({
       approveLabel={
         action.kind === "studyBlock.move"
           ? "Approve this move"
-          : "Approve this block"
+          : action.kind === "studyBlock.remove"
+            ? "Approve this removal"
+            : "Approve this block"
       }
       denyLabel="Don't"
       description={
@@ -47,9 +54,9 @@ export function ApprovalCard({
             ? `${presets[approval.responsibility.preset] ?? "A Responsibility"} asks`
             : "nunio asks"}
           {action.work.course && ` for ${action.work.course}`}:{" "}
-          {action.from
+          {action.from && action.to
             ? `from ${span(action.from)} to ${span(action.to)}`
-            : `on ${span(action.to)}`}
+            : `on ${span((action.to ?? action.from)!)}`}
           .
         </>
       }

@@ -122,3 +122,31 @@ test("an Action nunio could not confirm waits for the student to say whether it 
   await waitFor(() => expect(screen.queryByRole("article")).toBeNull());
   expect(resolutions).toEqual([{ resolution: "did_not_happen" }]);
 });
+
+test("an Approval to remove a block names the block and asks to approve the removal (ADR-0021)", async () => {
+  const removal = {
+    ...approval,
+    action: {
+      kind: "studyBlock.remove",
+      work: approval.action.work,
+      from: approval.action.from,
+      to: null,
+    },
+    responsibility: null,
+  };
+  api.route("GET", "/api/me/approvals", () => Response.json([removal]));
+  api.route("GET", "/api/me/actions/unconfirmed", () => Response.json([]));
+  render(
+    <TestProviders>
+      <ApprovalsPanel apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  const card = await screen.findByRole("article", {
+    name: "Remove the block for Problem sheet 1",
+  });
+  expect(within(card).getByText(/nunio asks for Analysis I/)).toBeTruthy();
+  expect(
+    within(card).getByRole("button", { name: "Approve this removal" }),
+  ).toBeTruthy();
+});

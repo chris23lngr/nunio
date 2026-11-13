@@ -27,6 +27,13 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
           if (!count)
             return { status: "rejected", detail: "the block is gone" };
           studyBlockId = intent.studyBlockId;
+        } else if (intent.kind === "studyBlock.remove") {
+          const { count } = await tx.studyBlock.deleteMany({
+            where: { id: intent.studyBlockId },
+          });
+          if (!count)
+            return { status: "rejected", detail: "the block is gone" };
+          studyBlockId = intent.studyBlockId;
         } else {
           const work = (await tx.obligation.findUnique({
             where: { id: intent.workId },

@@ -32,6 +32,8 @@ Instructions hidden in a Source can steer tool calls. A proposal does nothing wi
 - **What the student sees.** The card shows the Artifact's status as of when the Chat loaded, and the step line counts the Topics rather than naming them.
 - **History.** A started Artifact adds a line with its status to later turns.
 
+**Amendment (2026-11-13):** [ADR-0021](0021-a-chat-sees-understanding-shortfalls-and-artifacts.md) adds Understanding Levels, Shortfalls and Artifacts to the read tools, adds `studyBlock.remove` to the proposals, and lists further work a Chat does not offer.
+
 ## Considered Options
 
 - **Retrieval before the first step, plus a search tool:** every answer is grounded, but follow-up questions are searched with weak terms, and even "thanks" costs a retrieval.
