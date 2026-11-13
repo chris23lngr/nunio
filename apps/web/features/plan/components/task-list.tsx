@@ -28,14 +28,18 @@ export function TaskList({
   tasks,
   courses,
   error,
+  busy,
   onComplete,
   onAdd,
 }: {
   tasks: TaskItem[];
   courses: { id: string; title: string }[];
   error: string | null;
+  /** A Task change is on its way; the checkboxes wait for it. */
+  busy: boolean;
   onComplete: (id: string) => void;
-  onAdd: (task: { title: string; courseId: string | null }) => void;
+  /** Settles once the Task is saved, or rejects, keeping the typed title. */
+  onAdd: (task: { title: string; courseId: string | null }) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
   const [course, setCourse] = useState(noCourse);
@@ -43,14 +47,18 @@ export function TaskList({
     { value: noCourse, label: "Kein Kurs" },
     ...courses.map((c) => ({ value: c.id, label: c.title })),
   ];
-  const add = (event: FormEvent) => {
+  const add = async (event: FormEvent) => {
     event.preventDefault();
     if (!title.trim()) return;
-    onAdd({
-      title: title.trim(),
-      courseId: course === noCourse ? null : course,
-    });
-    setTitle("");
+    try {
+      await onAdd({
+        title: title.trim(),
+        courseId: course === noCourse ? null : course,
+      });
+      setTitle("");
+    } catch {
+      // The mutation's error is shown below the form.
+    }
   };
   return (
     <section
@@ -69,6 +77,9 @@ export function TaskList({
               <input
                 type="checkbox"
                 aria-label={`${task.title} erledigt`}
+                // Only open Tasks are listed; a completed one leaves the list.
+                checked={false}
+                disabled={busy}
                 onChange={() => onComplete(task.id)}
               />
               <span className="min-w-0 flex-1 truncate text-base-800">

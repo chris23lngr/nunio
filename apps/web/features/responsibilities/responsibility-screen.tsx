@@ -40,8 +40,6 @@ function describe(action: Shown, past: boolean) {
       : past
         ? "Added"
         : "add";
-  // A Responsibility only places blocks; a Task Action, which only a Chat asks, has no time.
-  if (!action.to) return action.work.title;
   return `${verb} a block for ${action.work.title} ${action.from ? `to ${when(action.to.start)}` : `on ${when(action.to.start)}`}`;
 }
 

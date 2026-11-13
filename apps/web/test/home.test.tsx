@@ -34,7 +34,7 @@ test("lists the Artifacts nunio made that the student has not opened yet", async
   ]);
 });
 
-test("a Shortfall offers skipping a Routine until its deadline, which the student chooses", async () => {
+test("a Shortfall offers skipping each Routine until its deadline by its series, which the student chooses", async () => {
   const until = "2026-11-20T17:00:00.000Z";
   let skipped: unknown;
   api.route(
@@ -59,7 +59,61 @@ test("a Shortfall offers skipping a Routine until its deadline, which the studen
           tradeoffs: [
             {
               kind: "skip_routine",
+              routine: "s-tut",
+              title: "OM Tutorium",
+              until,
+              gainedMinutes: 60,
+            },
+            {
+              kind: "skip_routine",
               routine: "s-om",
+              title: "OM Vorlesung",
+              until,
+              gainedMinutes: 180,
+            },
+          ],
+        },
+      ],
+      ongoing: [],
+      artifacts: [],
+      agentWork: [],
+    }),
+  );
+  render(<HomeView apiOrigin={api.origin} />);
+
+  expect(
+    await screen.findByText(/OM Tutorium until then \(1 h\)/),
+  ).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole("button", { name: "„OM Vorlesung“ aussetzen" }),
+  );
+
+  await waitFor(() => expect(skipped).toEqual({ until }));
+});
+
+test("a Routine that cannot be skipped says so and keeps the day in view", async () => {
+  const until = "2026-11-20T17:00:00.000Z";
+  api.route(
+    "POST",
+    "/api/me/event-series/s-om/routine/skip",
+    () => new Response(null, { status: 500 }),
+  );
+  api.route("GET", "/api/me/home", () =>
+    Response.json({
+      attention: [
+        {
+          kind: "shortfall",
+          workId: "exam",
+          title: "Klausur Statistik",
+          course: "Statistics II",
+          due: until,
+          shortMinutes: 240,
+          unreviewed: false,
+          tradeoffs: [
+            {
+              kind: "skip_routine",
+              routine: "s-om",
+              title: "OM Vorlesung",
               until,
               gainedMinutes: 180,
             },
@@ -74,10 +128,15 @@ test("a Shortfall offers skipping a Routine until its deadline, which the studen
   render(<HomeView apiOrigin={api.origin} />);
 
   await userEvent.click(
-    await screen.findByRole("button", { name: "Routine aussetzen" }),
+    await screen.findByRole("button", { name: "„OM Vorlesung“ aussetzen" }),
   );
 
-  await waitFor(() => expect(skipped).toEqual({ until }));
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Could not skip the Routine.",
+  );
+  expect(
+    screen.getByRole("heading", { name: "Needs your attention" }),
+  ).toBeTruthy();
 });
 
 test("says when nothing is ready", async () => {

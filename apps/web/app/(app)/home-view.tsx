@@ -45,7 +45,7 @@ function Item({
                     type="button"
                     onClick={() => onSkip(t.routine, String(t.until))}
                   >
-                    Routine aussetzen
+                    „{t.title}“ aussetzen
                   </button>
                 </>
               )}
@@ -89,8 +89,10 @@ const artifactNames = {
 export function HomeView({ apiOrigin }: { apiOrigin: string }) {
   const [home, setHome] = useState<Home | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [skipError, setSkipError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const skip = async (routine: string, until: string) => {
+    setSkipError(null);
     try {
       const { response } = await createApiClient(apiOrigin).POST(
         "/api/me/event-series/{id}/routine/skip",
@@ -98,7 +100,7 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
       );
       if (!response.ok) throw new Error();
     } catch {
-      setError("Could not skip the Routine.");
+      setSkipError("Could not skip the Routine.");
     } finally {
       setVersion((v) => v + 1);
     }
@@ -146,6 +148,7 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
         ) : (
           <p>Nothing needs you right now.</p>
         )}
+        {skipError && <p role="alert">{skipError}</p>}
       </section>
       <section aria-labelledby="ready-title">
         <h2 id="ready-title">Ready for you</h2>

@@ -494,7 +494,7 @@ test("the Plan lists open Tasks, which the student completes, and adds one in a 
   );
 });
 
-test("a Task that cannot be added tells the student in the Aufgaben section", async () => {
+test("a Task that cannot be added tells the student in the Aufgaben section and keeps its title", async () => {
   api.route("POST", "/api/me/tasks", () => new Response(null, { status: 500 }));
   mount();
   const user = userEvent.setup();
@@ -509,6 +509,55 @@ test("a Task that cannot be added tells the student in the Aufgaben section", as
   expect((await within(list).findByRole("alert")).textContent).toBe(
     "Die Aufgabe konnte nicht gespeichert werden.",
   );
+  expect(
+    within(list).getByRole<HTMLInputElement>("textbox", {
+      name: "Neue Aufgabe",
+    }).value,
+  ).toBe("Skript lesen");
+});
+
+test("a Task that cannot be completed stays open and unticked", async () => {
+  api.route(
+    "POST",
+    "/api/me/tasks/t-1/done",
+    () => new Response(null, { status: 500 }),
+  );
+  mount(
+    plan({
+      tasks: [
+        {
+          id: "t-1",
+          title: "Skript lesen",
+          done: false,
+          obligationId: null,
+          courseId: null,
+          course: null,
+          estimate: {
+            minutes: 60,
+            estimatedBy: "student",
+            rationale: null,
+          },
+          maxMinutesPerDay: null,
+          fixedEventId: null,
+          role: null,
+          window: null,
+        },
+      ],
+    }),
+  );
+  const user = userEvent.setup();
+
+  const list = await screen.findByRole("region", { name: "Aufgaben" });
+  const box = within(list).getByRole<HTMLInputElement>("checkbox", {
+    name: "Skript lesen erledigt",
+  });
+  await user.click(box);
+
+  expect((await within(list).findByRole("alert")).textContent).toBe(
+    "Die Aufgabe konnte nicht gespeichert werden.",
+  );
+  await waitFor(() => expect(box.disabled).toBe(false));
+  expect(box.checked).toBe(false);
 });
 
 test("a Course Event shows its Course, and the student can take it out of it", async () => {

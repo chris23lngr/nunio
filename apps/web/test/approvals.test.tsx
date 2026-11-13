@@ -123,6 +123,34 @@ test("an Action nunio could not confirm waits for the student to say whether it 
   expect(resolutions).toEqual([{ resolution: "did_not_happen" }]);
 });
 
+test("a Task Action nunio could not confirm names the Task, not a block", async () => {
+  api.route("GET", "/api/me/approvals", () => Response.json([]));
+  api.route("GET", "/api/me/actions/unconfirmed", () =>
+    Response.json([
+      {
+        actionId: approval.actionId,
+        action: {
+          kind: "task.reopen",
+          work: { title: "Blatt 3 nacharbeiten", course: "Analysis I" },
+          from: null,
+          to: null,
+        },
+      },
+    ]),
+  );
+  render(
+    <TestProviders>
+      <ApprovalsPanel apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  expect(
+    await screen.findByRole("article", {
+      name: "nunio could not confirm: reopen the Task Blatt 3 nacharbeiten",
+    }),
+  ).toBeTruthy();
+});
+
 test("an Approval card names the Task a Chat proposes to add or reopen, with no time", async () => {
   const task = (id: string, kind: string, title: string) => ({
     ...approval,

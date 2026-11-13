@@ -109,6 +109,52 @@ test("a Shortfall says how much time is missing before its work is due", async (
   ).toBeTruthy();
 });
 
+test("an Intervention about a Task Action names the Task, not a block", async () => {
+  const task = (id: string, kind: string, title: string) => ({
+    ...expired,
+    id,
+    title,
+    action: {
+      kind,
+      work: { title, course: "Analysis I" },
+      from: null,
+      to: null,
+    },
+  });
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [
+        task(
+          "5c1e0a4e-0000-4000-8000-000000000002",
+          "task.create",
+          "Vorlesung nacharbeiten",
+        ),
+        task(
+          "5c1e0a4e-0000-4000-8000-000000000003",
+          "task.reopen",
+          "Blatt 3 nacharbeiten",
+        ),
+      ],
+    }),
+  );
+  render(
+    <TestProviders>
+      <InboxScreen apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  expect(
+    await screen.findByRole("article", {
+      name: "An approval expired: add the Task Vorlesung nacharbeiten",
+    }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("article", {
+      name: "An approval expired: reopen the Task Blatt 3 nacharbeiten",
+    }),
+  ).toBeTruthy();
+});
+
 test("a lapsed Intervention says it no longer applies and cannot be closed", async () => {
   api.route("GET", "/api/me/inbox", () =>
     Response.json({

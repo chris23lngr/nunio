@@ -79,7 +79,9 @@ function SeriesRoutine({
       <legend className="text-sm text-base-800">{series.title}</legend>
       {skipped && skipped > new Date() && (
         <p className="text-xs text-base-500">
-          Ausgesetzt bis {skipped.toLocaleDateString("de-DE")}
+          {/* Skipped until the midnight after the last skipped day, which is the one to name. */}
+          Ausgesetzt bis{" "}
+          {new Date(skipped.getTime() - 1).toLocaleDateString("de-DE")}
         </p>
       )}
       <div className="flex flex-wrap items-center gap-3">

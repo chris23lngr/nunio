@@ -301,8 +301,9 @@ export function PlanScreen({
                 (c) => c.status === "accepted" && !c.archived,
               )}
               error={task.error?.message ?? null}
+              busy={task.isPending}
               onComplete={(id) => task.mutate({ complete: id })}
-              onAdd={(added) => task.mutate({ add: added })}
+              onAdd={(added) => task.mutateAsync({ add: added })}
             />
           </div>
         )}

@@ -667,3 +667,27 @@ test("a Routine change that fails tells the student on its Course card", async (
     "Das hat nicht geklappt. Versuche es noch einmal.",
   );
 });
+
+test("a skipped Routine names the last day it is skipped", async () => {
+  const om = course({ title: "Operations Management" });
+  serveCourses([om]);
+  servePlan([
+    {
+      id: "s-om",
+      calendarId: "cal-1",
+      title: "OM Vorlesung",
+      courseId: om.id,
+      state: "confirmed",
+      routine: {
+        preparationMinutes: 30,
+        followUpMinutes: 60,
+        // Skipped through 20 November: until the midnight starting the 21st.
+        skippedUntil: new Date(2099, 10, 21).toISOString(),
+      },
+    },
+  ]);
+  renderScreen();
+
+  const series = await screen.findByRole("group", { name: "OM Vorlesung" });
+  expect(within(series).getByText("Ausgesetzt bis 20.11.2099")).toBeTruthy();
+});
