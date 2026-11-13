@@ -3727,7 +3727,7 @@ describe("Chat", () => {
     );
   });
 
-  it("says nothing of Courses to the model when the student has none, so selected material still gets searched", async () => {
+  it("says nothing of Courses to the model when the student has none, nor offers to read one, so selected material still gets searched", async () => {
     const cookie = await signUp("chat-context-no-courses");
     const headers = {
       cookie,
@@ -3748,8 +3748,11 @@ describe("Chat", () => {
     ).json()) as { id: string };
     reply = "90 Minuten.";
     prompts.length = 0;
+    offeredTools.length = 0;
 
     await askInChat(headers, id, "Wie lange dauert die Klausur?");
+
+    expect(offeredTools[0]).not.toContain("courseFacts");
 
     const context = conversation(prompts[0])
       .map(([, text]) => text)
@@ -3775,7 +3778,7 @@ describe("Chat", () => {
     );
 
     expect(offeredTools).toEqual([
-      ["agenda", "courseFacts", "proposeStudyBlock", "proposeStudyBlockMove"],
+      ["agenda", "proposeStudyBlock", "proposeStudyBlockMove"],
     ]);
     expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
   });

@@ -281,11 +281,16 @@ export function createChats({
         timeZone,
         courses: context.courses,
       }),
-      courseFacts: courseFactsTool(turn, {
-        reader,
-        p,
-        courses: context.courses,
-      }),
+      // Without Courses there is none to read, and the model would only guess handles.
+      ...(context.courses.size
+        ? {
+            courseFacts: courseFactsTool(turn, {
+              reader,
+              p,
+              courses: context.courses,
+            }),
+          }
+        : {}),
       proposeStudyBlock: proposeStudyBlockTool(),
       proposeStudyBlockMove: proposeStudyBlockMoveTool(),
     };
