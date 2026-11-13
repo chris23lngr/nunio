@@ -192,10 +192,15 @@ test("accepting a suggestion applies that move and reloads the Plan", async () =
 
   expect(applied).toEqual([create]);
   expect(
-    await within(sheet).findByText(
-      "Alles eingeplant. nunio hat gerade keine Vorschläge.",
-    ),
+    await within(sheet).findByRole("heading", { name: "Keine Vorschläge" }),
   ).toBeTruthy();
+  expect(
+    (
+      within(sheet).getByRole("button", {
+        name: "Alle übernehmen",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });
 
 test("a Study Block opens its details, where the student can Lock it", async () => {

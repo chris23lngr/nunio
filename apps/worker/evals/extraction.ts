@@ -16,18 +16,24 @@ import {
   createExtractor,
   createModels,
   createScanReader,
+  createTopicJudge,
   fetchZeroRetentionPrices,
+  isDefiniteFailure,
 } from "@nunio/ai";
 import { createPool, createPrismaClient } from "@nunio/db";
 import { startTestDatabase } from "@nunio/db/testing";
-import { createDelegation, principal } from "@nunio/delegation";
-import { createSourceKeys, decryptSourceText } from "@nunio/keys";
+import {
+  createDelegation,
+  DefiniteFailure,
+  principal,
+} from "@nunio/delegation";
+import { createSourceKeys } from "@nunio/keys";
 import { createFacts, createSources } from "@nunio/knowledge";
 import { createParserServer } from "@nunio/parser/server";
 import { parseSource } from "../src/source-activities.ts";
 import { scoreBoundCourse } from "./extraction/assignment.js";
-import type { TopicLabel } from "./extraction/topics.js";
-import { scoreTopics, topicKey } from "./extraction/topics.js";
+import type { Judgement, TopicLabel } from "./extraction/topics.js";
+import { parseJudgement, scoreTopics } from "./extraction/topics.js";
 
 interface Label {
   course: string;
@@ -48,6 +54,7 @@ interface Document {
     | { url: string; sha256?: string; pages?: [number, number] };
   topics?: TopicLabel[];
   labelsStatus?: string;
+  heldOut?: boolean;
   courses: { code: string | null; title: string }[];
   obligations: Label[];
   logistics: { course: string; key: string; contains: string }[];
@@ -91,7 +98,16 @@ async function bytesOf(document: Document) {
   if (!document.source.pages) return downloaded;
   const [from, to] = document.source.pages,
     excerpt = join(cache, `${document.id}.pdf`);
-  await exec("qpdf", [whole, "--pages", whole, `${from}-${to}`, "--", excerpt]);
+  // Exit 3 means qpdf succeeded with warnings, e.g. duplicate annotations common in lecture PDFs.
+  await exec("qpdf", [
+    "--warning-exit-0",
+    whole,
+    "--pages",
+    whole,
+    `${from}-${to}`,
+    "--",
+    excerpt,
+  ]);
   return readFile(excerpt);
 }
 
@@ -101,10 +117,10 @@ const provider = {
 };
 if (!provider.apiKey || !provider.baseURL)
   throw new Error("OPENROUTER_API_KEY and OPENROUTER_BASE_URL are required");
-// The Model Catalog's Haiku, priced live from OpenRouter's zero-retention endpoints.
-const haiku = (
-  await fetchZeroRetentionPrices({ baseURL: provider.baseURL })
-).get("anthropic/claude-haiku-5.5")!;
+// The Model Catalog's Haiku, priced live from OpenRouter's zero-retention endpoints; Sonnet judges Topics.
+const prices = await fetchZeroRetentionPrices({ baseURL: provider.baseURL });
+const haiku = prices.get("anthropic/claude-haiku-5.5")!;
+const sonnet = prices.get("anthropic/claude-sonnet-5.5")!;
 const catalog = [
   {
     key: "haiku-5.5-reasoning-high",
@@ -116,6 +132,16 @@ const catalog = [
   },
 ];
 const models = createModels({ ...provider, catalog });
+const topicJudge = createTopicJudge(
+  models.fromConfig({
+    key: "sonnet-5.5-topic-judge",
+    providerModelId: sonnet.providerModelId,
+    reasoningEffort: "low",
+    maxOutputTokens: 8_000,
+    prices: sonnet.prices,
+    upstream: sonnet.upstream,
+  }),
+);
 const scans = createScanReader(models),
   embedder = createEmbedder(provider);
 // Records each window's pages and raw answer, so the report can say why an item failed grounding.
@@ -237,6 +263,10 @@ const code = (text: string | null) =>
 const ratio = (a: number, b: number) =>
   b ? Math.round((a / b) * 1000) / 1000 : null;
 
+// EVAL_BUDGET_USD caps the whole run's spend; each evaluation's student gets at most USD 0.50 of it.
+const budgetMicroUsd = Math.round(
+  Number(process.env.EVAL_BUDGET_USD ?? 3.9) * 1_000_000,
+);
 async function evaluate(
   document: Document,
   run: number,
@@ -245,10 +275,6 @@ async function evaluate(
 ) {
   const exists = await admin.user.findUnique({ where: { id: studentId } });
   if (!exists) {
-    if ((await admin.user.count()) >= 18)
-      throw new Error(
-        "Eval budget: at most 18 students with USD 0.50 allowances",
-      );
     await admin.user.create({
       data: { id: studentId, email: `${studentId}@eval.invalid`, name: "Eval" },
     });
@@ -257,7 +283,7 @@ async function evaluate(
       _sum: { usedMicroUsd: true, heldMicroUsd: true },
     });
     const remaining =
-      3_900_000 -
+      budgetMicroUsd -
       Number(spent._sum.usedMicroUsd ?? 0) -
       Number(spent._sum.heldMicroUsd ?? 0);
     if (remaining <= 0) throw new Error("Eval budget exhausted");
@@ -293,8 +319,19 @@ async function evaluate(
     ingestion.status === "ready"
       ? await facts.extract(p, upload.source.id, { extractor, delegation })
       : { status: "skipped" as const };
+  // EVAL_PAGES=<dir> keeps the pages each window showed the extractor, figure lines included, for offline
+  // diagnosis. Page text never goes into the report.
+  if (process.env.EVAL_PAGES) {
+    await mkdir(process.env.EVAL_PAGES, { recursive: true });
+    await writeFile(
+      join(
+        process.env.EVAL_PAGES,
+        `${document.id}-${run}-${upload.source.id}.json`,
+      ),
+      JSON.stringify(calls.map((call) => call.window)),
+    );
+  }
   const { courses } = await facts.review(p);
-  const usage = await delegation.allowance(p);
 
   // Courses: by normalized code or by title; PDF layout can split a code across lines ("BWL" / "1").
   const courseFor = (labelled: { code: string | null; title: string }) =>
@@ -356,27 +393,79 @@ async function evaluate(
             f.type === "exam_logistics" && norm(f.value).includes(l.contains),
         ) ?? false,
   }));
-  const sourceRow = await admin.source.findUniqueOrThrow({
-    where: { id: upload.source.id },
-  });
-  const sourceKey = keys.unwrap(sourceRow.id, {
-    version: sourceRow.keyVersion!,
-    ciphertext: sourceRow.keyCiphertext!,
-  });
-  const figureFacts = (
-    await admin.factExtraction.findMany({
-      where: { sourceId: sourceRow.id },
-      include: { fact: true },
-    })
-  ).filter((row) => {
-    const wording = JSON.parse(
-      decryptSourceText(sourceKey, sourceRow.id, row.ciphertext),
-    ) as { uncertainty: string | null };
-    return wording.uncertainty?.includes(
-      "aus einer Abbildungsbeschreibung abgeleitet",
-    );
-  });
-  sourceKey.fill(0);
+  // A Fact is figure-only when every citation this Source gives it is grounded in a figure description.
+  const figureFacts = courses.flatMap((c) =>
+    c.facts.filter((f) => {
+      const cited = f.values
+        .flatMap((v) => v.citations)
+        .filter((citation) => citation.sourceId === upload.source.id);
+      return (
+        cited.length > 0 &&
+        cited.every((citation) => citation.grounding === "figure")
+      );
+    }),
+  );
+  // Defaults keep the existing label set usable until the enriched labels land.
+  const topicLabels = (document.topics ?? []).map((label) => ({
+    ...label,
+    pages: label.pages ?? [],
+    optional: label.optional ?? false,
+    figureOnly: label.figureOnly ?? false,
+  }));
+  // Collected even without labels: the scenarios check that every Source yields Topics.
+  const extractedTopics = courses.flatMap((c) =>
+    c.facts
+      .filter(
+        (f) =>
+          f.type === "topic" &&
+          f.values.some((v) =>
+            v.citations.some(
+              (citation) => citation.sourceId === upload.source.id,
+            ),
+          ),
+      )
+      .map((f) => ({
+        // Topic labels name their Course by title (the label file's Kurs line), never by code.
+        course:
+          document.courses.find((label) => courseFor(label)?.id === c.id)
+            ?.title ?? c.title,
+        key: f.key,
+        value: f.value,
+      })),
+  );
+  // A failed judge leaves this deck unscored instead of losing the whole paid run.
+  let judgement: Judgement | null = document.topics
+    ? extractedTopics.map(() => null)
+    : null;
+  let judgeFailure: string | null = null;
+  let judgeCostMicroUsd = 0;
+  if (document.topics && extractedTopics.length) {
+    try {
+      const input = { labels: topicLabels, extracted: extractedTopics };
+      const judged = await delegation.meter(
+        p,
+        { microUsd: topicJudge.estimateMicroUsd(input) },
+        async (signal) => {
+          try {
+            const response = await topicJudge.judge(input, { signal });
+            judgeCostMicroUsd = response.usage.microUsd;
+            return response;
+          } catch (error) {
+            if (isDefiniteFailure(error))
+              throw new DefiniteFailure("Provider rejected Topic judge");
+            throw error;
+          }
+        },
+      );
+      if (judged.status === "refused")
+        throw new Error(`Topic judge: ${judged.reason}`);
+      judgement = parseJudgement(judged.value, topicLabels, extractedTopics);
+    } catch (error) {
+      judgement = null;
+      judgeFailure = error instanceof Error ? error.message : String(error);
+    }
+  }
+  const usage = await delegation.allowance(p);
   const result = {
     id: document.id,
     assignment: {
@@ -398,7 +487,7 @@ async function evaluate(
     },
     figureOnly: {
       facts: figureFacts.length,
-      topics: figureFacts.filter((f) => f.fact.type === "topic").length,
+      topics: figureFacts.filter((f) => f.type === "topic").length,
     },
     run,
     language: document.language,
@@ -417,54 +506,23 @@ async function evaluate(
       usage.heldMicroUsd -
       before.usedMicroUsd -
       before.heldMicroUsd,
-    topics: scoreTopics(
-      document.topics ?? [],
-      (document.topics ? courses : []).flatMap((c) =>
-        c.facts
-          .filter(
-            (f) =>
-              f.type === "topic" &&
-              f.values.some((v) =>
-                v.citations.some(
-                  (citation) => citation.sourceId === upload.source.id,
-                ),
-              ),
-          )
-          .map((f) => ({
-            course:
-              document.courses.find((label) => courseFor(label)?.id === c.id)
-                ?.code ??
-              document.courses.find((label) => courseFor(label)?.id === c.id)
-                ?.title ??
-              c.title,
-            key:
-              topicKey(
-                calls
-                  .flatMap((call) => call.value.facts)
-                  .filter((raw) => raw.type === "topic"),
-                f.value,
-                f.values
-                  .flatMap((v) => v.citations)
-                  .filter((citation) => citation.sourceId === upload.source.id),
-              ) ?? f.value,
-            value: f.value,
-          })),
-      ),
-    ),
+    topics: judgement
+      ? scoreTopics(topicLabels, extractedTopics, judgement)
+      : null,
+    topicJudgement: {
+      model: topicJudge.model,
+      labels: topicLabels,
+      extracted: extractedTopics,
+      decisions: judgement,
+      failure: judgeFailure,
+      costMicroUsd: judgeCostMicroUsd,
+    },
     topicItems: courses.flatMap((c) =>
       c.facts
         .filter((f) => f.type === "topic")
         .map((f) => ({
           course: c.code ?? c.title,
-          key: topicKey(
-            calls
-              .flatMap((call) => call.value.facts)
-              .filter((raw) => raw.type === "topic"),
-            f.value,
-            f.values
-              .flatMap((v) => v.citations)
-              .filter((citation) => citation.sourceId === upload.source.id),
-          ),
+          key: f.key,
           value: f.value,
           citations: f.values
             .flatMap((v) => v.citations)
@@ -543,12 +601,23 @@ const scenarios: {
 try {
   // EVAL_DOCUMENTS=id,id narrows a diagnostic run; the recorded report always covers the whole set.
   const only = process.env.EVAL_DOCUMENTS?.split(",");
+  // Held-out decks (docs/design/topic-quality.md) run only for the final measurement.
+  const heldOut = process.env.EVAL_HELD_OUT === "1";
+  // EVAL_BOUND=1 uploads each document into its labelled Course, so Topic scores don't depend on recognition.
+  const bound = process.env.EVAL_BOUND === "1";
   // One pass by default; EVAL_RUNS can repeat documents within the capped eval allowance.
   for (let run = 1; run <= runs; run++) {
     for (const document of set.documents.filter(
-      (d) => !only || only.includes(d.id),
+      (d) => (!only || only.includes(d.id)) && (heldOut || !d.heldOut),
     ))
-      results.push(await evaluate(document, run));
+      results.push(
+        await evaluate(
+          document,
+          run,
+          undefined,
+          bound ? document.courses[0] : undefined,
+        ),
+      );
   }
   for (const scenario of set.scenarios.filter(
     (s) => !only || s.documents.some((id) => only.includes(id)),
@@ -585,7 +654,8 @@ try {
       results.push({ ...result, id: `${scenario.id}/${id}` });
       actualCourses = result.courses.extracted;
       allSourcesAssigned &&=
-        result.extraction === "done" && result.topics.extracted > 0;
+        result.extraction === "done" &&
+        result.topicJudgement.extracted.length > 0;
     }
     scenarios.push({
       id: scenario.id,
@@ -634,12 +704,16 @@ const report = {
     documents: results.length,
     topics: {
       precision: ratio(
-        sum((r) => r.topics.matched),
-        sum((r) => r.topics.extracted),
+        sum((r) => r.topics?.matched ?? 0),
+        sum((r) => r.topics?.scored ?? 0),
       ),
       recall: ratio(
-        sum((r) => r.topics.matched),
-        sum((r) => r.topics.labelled),
+        sum((r) => r.topics?.matched ?? 0),
+        sum((r) => r.topics?.labelled ?? 0),
+      ),
+      figureOnlyRecall: ratio(
+        sum((r) => r.topics?.figureOnly.matched ?? 0),
+        sum((r) => r.topics?.figureOnly.labelled ?? 0),
       ),
     },
     obligations: {
@@ -681,6 +755,10 @@ const report = {
     },
     medianReviewableAfterMs: median,
     costMicroUsd: sum((r) => r.costMicroUsd),
+    judgeCostMicroUsd: sum((r) => r.topicJudgement.costMicroUsd),
+    judgeFailures: results
+      .filter((r) => r.topicJudgement.failure)
+      .map((r) => `${r.id} (run ${r.run})`),
     injectionPassed: results
       .filter((r) => r.injection)
       .every((r) => r.injection!.passed),
@@ -700,12 +778,14 @@ const report = {
   },
   documents: results,
 };
-if (!process.env.EVAL_DOCUMENTS) {
+// EVAL_REPORT writes a narrowed run's report too, e.g. for a calibration sample.
+if (!process.env.EVAL_DOCUMENTS || process.env.EVAL_REPORT) {
   await writeFile(
-    new URL(
-      "../../../docs/operations/course-recognition-extraction-eval.json",
-      import.meta.url,
-    ),
+    process.env.EVAL_REPORT ??
+      new URL(
+        "../../../docs/operations/course-recognition-extraction-eval.json",
+        import.meta.url,
+      ),
     `${JSON.stringify(report, null, 2)}\n`,
   );
 } else
