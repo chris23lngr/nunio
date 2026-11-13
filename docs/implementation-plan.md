@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 14 (Chat tools) planned, 2026-11-12; it precedes the Phase 12 gates. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 14 (Chat tools) planned, 2026-11-12; it precedes the Phase 12 gates. Phase 15 (Understanding, Shortfalls and Artifacts in the Chat) planned, 2026-11-13; it also precedes them. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -690,6 +690,61 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 - Never accept message history from the client.
 - No Drafts or Critiques from a Chat.
 - Never splice tool results into the system prompt.
+
+---
+
+## Phase 15: Understanding, Shortfalls and Artifacts in the Chat
+
+> **How this serves the primary goal:** the student asks where they are weak, whether they will make a deadline and what practice they already have, and then has nunio practise or plan in the same place. The reads stay within the student's own data, and removing a Study Block still needs their Approval through the gate.
+
+Phase 15 is built before the Phase 12 gates, and its evals join them. Work happens on the integration branch `feat/chat-tools-2`, with one PR per stage into it and a single PR to `main` at the end.
+
+**What to implement.**
+
+1. **Decisions:** [ADR-0021](adr/0021-a-chat-sees-understanding-shortfalls-and-artifacts.md) and this section.
+2. **`courseFacts` with Understanding Levels and Artifacts.**
+   - Each Topic line gives its Understanding Level, what the Attempts show, the latest Self-assessment and when Evidence last supported it (`understanding.levels`).
+   - Then the Course's practice sets and flashcards from `artifacts.list`: kind, status, Topic tags, when made, whether opened. No content and no withdrawn Artifacts.
+   - The instructions:
+     - Levels and Artifacts come only from this turn's results.
+     - "Not yet practiced" is not "weak".
+     - A ready, unopened Artifact on the same Topics is pointed out before another one starts.
+     - A weak Topic outside the selection needs its Course selected first.
+3. **`agenda` with Shortfalls.**
+   - Each Obligation in the range gets its Shortfall and tradeoffs, or why it cannot be planned, from `plan.view`'s `proposal`.
+   - Every result also lists all current Shortfalls in short: handle, deadline, missing minutes.
+   - The instructions: no "you will make it" without `agenda`, and a tradeoff is carried out only through Study Block proposals.
+4. **`studyBlock.remove`.**
+   - A gate kind no Grant covers. Its fingerprint covers the block's work, start and end.
+   - `plan.check` refuses a Locked block and one that has started.
+   - `proposeStudyBlockRemove` names the block by its handle and is asked like a move.
+   - Cards in the Chat and on Home, with the same states as a move.
+   - Later turns see its status.
+5. **Evals**, then the PR to `main`.
+
+**Documentation references.** ADR-0001, 0002, 0010, 0019, 0020, 0021; [delegation-gate.md](design/delegation-gate.md) "Chat origin"; [knowledge-retrieval.md](design/knowledge-retrieval.md) "Chat tools decisions"; [study-execution.md](design/study-execution.md); Phase 14 above.
+
+**Verification checklist.**
+- [ ] `courseFacts` gives each Topic's Understanding Level and the Course's Artifacts without their content. A withdrawn Artifact is left out, and an answer that read them is not withdrawn with any further Source.
+- [ ] A Chat that did not select a Course still reads that Course's Levels, and starting practice on its Topics goes back to the model with the reason.
+- [ ] `agenda` gives Shortfalls for the range and lists every current Shortfall, including one due beyond the range.
+- [ ] A proposal to remove a Locked block, or one that has started, goes back to the model with its reason, and no card is asked.
+- [ ] A removal is performed only after the student approves the fingerprint shown, in the Chat or on Home. A Responsibility's Grant never covers it.
+- [ ] The Chat search eval is rerun with the larger `courseFacts`.
+- [ ] Injection eval: a Source that also tells assistants to remove every Study Block causes no Action, and any proposal appears only as a card.
+- [ ] Understanding and Plan eval: a fixture student with known Levels, a Shortfall and a ready, unopened practice set, about 10 questions. It records whether answers state Levels and Shortfalls correctly and invent none, whether "practise my weak spots" picks shaky Topics, and whether the existing set is pointed out. The founder sets thresholds.
+
+**Deferred** to a later stage:
+- adding and completing Tasks from a Chat;
+- a Rebalance proposal of several moves;
+- entering Obligations, Corrections and Reported as Submitted from a Chat;
+- Preferences and Protected Time from a Chat.
+
+**Anti-pattern guards.**
+- No new read tool where an existing one can carry the data.
+- No Self-assessments, Attempts, Responsibilities or Dismissals from a Chat (ADR-0021).
+- Never remove a Locked block, not even with Approval.
+- No Source wording in the new data without adding its Source to `derivedFrom`.
 
 ---
 
