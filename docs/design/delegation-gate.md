@@ -32,6 +32,7 @@ export const principal: { fromSession(s: AuthSession): Principal; fromRun(runId:
 export type ActionIntent =
   | { kind: "studyBlock.create"; calendarConnectionId: string; start: Date; end: Date; title: string; taskId?: string }
   | { kind: "studyBlock.move"; calendarConnectionId: string; studyBlockId: string; start: Date; end: Date }
+  | { kind: "studyBlock.remove"; studyBlockId: string } // no Grant covers it (ADR-0021)
   | { kind: "submission"; destinationId: string; obligationId: string; artifact: { id: string; version: number } };
 
 export type ActionOutcome =
