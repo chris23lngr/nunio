@@ -3815,6 +3815,101 @@ describe("Chat", () => {
     });
   });
 
+  describe("agenda with Shortfalls", () => {
+    /** A student with an exam due in `days` at noon, needing `minutes` if given, and a Chat with nothing selected. */
+    async function examChat(name: string, days: number, minutes?: number) {
+      const { headers, p, chatId } = await planningChat(name);
+      const exam = await facts.enterObligation(p, {
+        course: { title: "Analysis I", code: "MA-101" },
+        kind: "exam",
+        title: "Klausur",
+        due: { date: berlinDay(days), time: "12:00", timeZone: null },
+        destination: null,
+      });
+      if (exam.status !== "ok") throw new Error(exam.status);
+      if (minutes)
+        await app.request(
+          `${apiOrigin}/api/me/estimates/obligation/${exam.id}`,
+          {
+            method: "PUT",
+            headers,
+            body: JSON.stringify({ minutes }),
+          },
+        );
+      return { headers, chatId };
+    }
+    /** The lines of the Plan the model was given after reading it from today to `to` days ahead. */
+    async function readAgenda(
+      headers: Record<string, string>,
+      chatId: string,
+      to: number,
+    ) {
+      steps.push(
+        calls("agenda", { from: berlinDay(0), to: berlinDay(to) }),
+        says("Gern."),
+      );
+      prompts.length = 0;
+      expect(
+        (await askInChat(headers, chatId, "Schaffe ich das?")).status,
+      ).toBe(200);
+      const given = JSON.stringify(prompts[1]).replaceAll("\\n", "\n");
+      return (
+        /<<<BEGIN plan \w+>>>\n([\s\S]*?)\n<<<END plan/.exec(given)?.[1] ?? ""
+      ).split("\n");
+    }
+
+    it("gives an Obligation due in the range its Shortfall and tradeoffs", async () => {
+      // An exam tomorrow at noon needing 20 hours cannot fit: at most 4 hours a day before it.
+      const { headers, chatId } = await examChat(
+        "chat-agenda-shortfall",
+        1,
+        1200,
+      );
+
+      const lines = await readAgenda(headers, chatId, 1);
+
+      const exam = lines.findIndex((line) => line.includes("· Klausur ·"));
+      expect(exam).toBeGreaterThanOrEqual(0);
+      expect(lines[exam + 1]).toMatch(
+        /^ {2}Shortfall: \d+ min missing; tradeoffs: .*plan \d+ min less for it/,
+      );
+    });
+
+    it("says why an Obligation due in the range cannot be planned", async () => {
+      const { headers, chatId } = await examChat("chat-agenda-unplanned", 1);
+
+      const lines = await readAgenda(headers, chatId, 1);
+
+      const exam = lines.findIndex((line) => line.includes("· Klausur ·"));
+      expect(lines[exam + 1]).toBe("  cannot be planned: needs an Estimate");
+    });
+
+    it("lists every current Shortfall, also of an Obligation due after the range", async () => {
+      // An exam in three days needing 30 hours cannot fit: at most 4 hours a day before it.
+      const { headers, chatId } = await examChat(
+        "chat-agenda-shortfall-later",
+        3,
+        1800,
+      );
+
+      const lines = await readAgenda(headers, chatId, 0);
+
+      expect(lines.slice(0, 2)).toEqual([
+        `Obligations due ${berlinDay(0)} to ${berlinDay(0)}:`,
+        "none",
+      ]);
+      const summary = lines.indexOf("Shortfalls until their deadlines:");
+      expect(summary).toBeGreaterThanOrEqual(0);
+      expect(lines.slice(summary + 1)).toContainEqual(
+        expect.stringMatching(
+          new RegExp(
+            `^O\\d+ · Klausur · due ${berlinDay(3)} 12:00 · \\d+ min missing$`,
+          ),
+        ),
+      );
+    });
+  });
+
   it("tells the model in later turns where an Artifact it started stands", async () => {
     const { headers, chatId } = await topicChat("chat-practice-history");
     steps.push(
