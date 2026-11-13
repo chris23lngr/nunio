@@ -513,3 +513,188 @@ it("deletes a Course with everything only in it, ending its Responsibilities; Pr
   ]);
   expect(await courses.delete(p, id)).toEqual({ status: "gone" });
 });
+
+const studentIdOf = (p: Principal) => (p as { studentId: string }).studentId;
+
+/** A Chat over the given Courses with one message per entry, arranged directly as the Chat would leave it. */
+async function chat(
+  p: Principal,
+  courseIds: string[],
+  messages: { role: "student" | "assistant"; at: string }[],
+) {
+  const studentId = studentIdOf(p);
+  const id = randomUUID();
+  await admin.chat.create({ data: { id, studentId } });
+  for (const courseId of courseIds)
+    await admin.chatCourse.create({
+      data: { chatId: id, courseId, studentId },
+    });
+  for (const message of messages)
+    await admin.chatMessage.create({
+      data: {
+        id: randomUUID(),
+        chatId: id,
+        studentId,
+        role: message.role,
+        content: Buffer.from("Wie läuft die Klausur ab?"),
+        createdAt: new Date(message.at),
+      },
+    });
+  return id;
+}
+
+const lastActivity = async (p: Principal) =>
+  Object.fromEntries(
+    (await courses.list(p)).courses.map((c) => [c.title, c.lastActivityAt]),
+  );
+
+it("dates a Course's last activity by the student's latest question in a Chat over it", async () => {
+  const p = await student();
+  const id = await created(p, { title: "Statistik II" });
+  await created(p, { title: "Analysis I" });
+  await chat(
+    p,
+    [id],
+    [
+      { role: "student", at: "2026-11-09T08:00:00Z" },
+      { role: "student", at: "2026-11-09T09:00:00Z" },
+      { role: "assistant", at: "2026-11-09T09:01:00Z" },
+    ],
+  );
+
+  expect(await lastActivity(p)).toEqual({
+    "Statistik II": new Date("2026-11-09T09:00:00Z"),
+    "Analysis I": null,
+  });
+});
+
+/** A Topic of the Course, arranged directly as extraction would leave it. */
+async function topic(p: Principal, courseId: string, name: string) {
+  const id = randomUUID();
+  await admin.fact.create({
+    data: {
+      id,
+      studentId: studentIdOf(p),
+      courseId,
+      type: "topic",
+      matchKey: name.toLocaleLowerCase("de"),
+    },
+  });
+  return id;
+}
+
+/** The student's answer to a Practice Item on the Topics, in a practice set of its own. */
+async function answered(
+  p: Principal,
+  topicIds: string[],
+  at: string,
+  gradedAt: string | null = null,
+) {
+  const studentId = studentIdOf(p);
+  const runId = randomUUID();
+  const artifactId = randomUUID();
+  await admin.run.create({ data: { id: runId, studentId } });
+  await admin.artifact.create({
+    data: {
+      id: artifactId,
+      studentId,
+      kind: "practice_set",
+      runId,
+      request: { topicIds },
+      status: "ready",
+    },
+  });
+  await admin.practiceAttempt.create({
+    data: {
+      id: randomUUID(),
+      studentId,
+      artifactId,
+      itemId: "item-1",
+      topicIds,
+      text: "Die Varianz ist das zweite zentrale Moment.",
+      verdict: gradedAt ? "correct" : null,
+      gradedAt: gradedAt ? new Date(gradedAt) : null,
+      createdAt: new Date(at),
+    },
+  });
+}
+
+it("dates a Course's last activity by the student's latest practice answer on its Topics, graded or not", async () => {
+  const p = await student();
+  const statistics = await created(p, { title: "Statistik II" });
+  const analysis = await created(p, { title: "Analysis I" });
+  const variance = await topic(p, statistics, "Varianz");
+  const integrals = await topic(p, analysis, "Integrale");
+  await answered(p, [variance], "2026-11-08T10:00:00Z", "2026-11-10T09:00:00Z");
+  await answered(p, [variance, integrals], "2026-11-09T07:30:00Z");
+
+  expect(await lastActivity(p)).toEqual({
+    "Statistik II": new Date("2026-11-09T07:30:00Z"),
+    "Analysis I": new Date("2026-11-09T07:30:00Z"),
+  });
+});
+
+it("dates a Course's last activity by the student's latest self-assessment of one of its Topics", async () => {
+  const p = await student();
+  const id = await created(p, { title: "Statistik II" });
+  const variance = await topic(p, id, "Varianz");
+  for (const [level, at] of [
+    ["shaky", "2026-11-07T18:00:00Z"],
+    ["solid", "2026-11-09T18:00:00Z"],
+  ] as const)
+    await admin.selfAssessment.create({
+      data: {
+        id: randomUUID(),
+        studentId: studentIdOf(p),
+        topicId: variance,
+        level,
+        createdAt: new Date(at),
+      },
+    });
+
+  expect(await lastActivity(p)).toEqual({
+    "Statistik II": new Date("2026-11-09T18:00:00Z"),
+  });
+});
+
+/** A Source the student uploaded, bound to the Course. */
+async function uploaded(
+  p: Principal,
+  courseId: string,
+  at: string,
+  deletedAt: string | null = null,
+) {
+  const id = randomUUID();
+  await admin.source.create({
+    data: {
+      id,
+      studentId: studentIdOf(p),
+      courseId,
+      title: "Skript.pdf",
+      bytes: 1024,
+      uploadExpiresAt: new Date(at),
+      createdAt: new Date(at),
+      deletedAt: deletedAt ? new Date(deletedAt) : null,
+    },
+  });
+  return id;
+}
+
+it("dates a Course's last activity by the latest Source uploaded to it, not by deleted ones or Chats that only cite it", async () => {
+  const p = await student();
+  const id = await created(p, { title: "Statistik II" });
+  const script = await uploaded(p, id, "2026-11-06T12:00:00Z");
+  await uploaded(p, id, "2026-11-08T12:00:00Z", "2026-11-09T12:00:00Z");
+  const citing = await chat(
+    p,
+    [],
+    [{ role: "student", at: "2026-11-09T15:00:00Z" }],
+  );
+  await admin.chatSource.create({
+    data: { chatId: citing, sourceId: script, studentId: studentIdOf(p) },
+  });
+
+  expect(await lastActivity(p)).toEqual({
+    "Statistik II": new Date("2026-11-06T12:00:00Z"),
+  });
+});

@@ -4767,6 +4767,7 @@ type CoursesBody = {
     entered: boolean;
     archived: boolean;
     next: unknown;
+    lastActivityAt: string | null;
   }[];
 };
 
@@ -4815,6 +4816,7 @@ it("creates, edits, archives and deletes Courses through origin-protected routes
       entered: true,
       archived: false,
       next: null,
+      lastActivityAt: null,
     },
   ]);
   expect(await (await call("GET", `/${id}/impact`)).json()).toEqual({

@@ -154,18 +154,48 @@ test("choosing a model reports its key and closes the card", async () => {
   expect(selected).toEqual(["opus"]);
 });
 
-test("trigger, rows and card show the decorative Claude logo at 16px", async () => {
-  const user = userEvent.setup();
-  const { container } = mount();
-  const logo = (element: Element) => {
-    const img = element.querySelector("img");
-    expect(img?.getAttribute("src")).toMatch(/\/icons\/claude\.svg$/);
-    expect(img?.getAttribute("height")).toBe("16");
-    expect(img?.getAttribute("alt")).toBe("");
-  };
-  logo(container);
-  await user.click(screen.getByRole("button", { name: "Modell: Sonnet 5" }));
-  for (const row of await screen.findAllByRole("menuitem")) logo(row);
-  await user.hover(screen.getByRole("menuitem", { name: "Opus 5.5" }));
-  logo(await screen.findByRole("dialog"));
-});
+test.each([
+  { provider: "Anthropic", src: "/icons/claude.svg" },
+  { provider: "OpenAI", src: "/icons/openai.svg" },
+  { provider: "Other", src: null },
+])(
+  "$provider branding appears in the trigger, row and card at the agreed sizes",
+  async ({ provider, src }) => {
+    const user = userEvent.setup();
+    mount({
+      models: [
+        ...models,
+        { ...models[0]!, key: "other", name: "Other model", provider },
+      ],
+      value: "other",
+    });
+    const logo = (element: Element, height: "h-4" | "h-5") => {
+      const img = element.querySelector("img");
+      if (src) {
+        expect(img?.getAttribute("src")).toBe(src);
+        expect(img?.getAttribute("alt")).toBe("");
+        expect(img?.classList.contains(height)).toBe(true);
+        expect(img?.classList.contains("w-auto")).toBe(true);
+      } else {
+        expect(img).toBe(null);
+        const brain = element.querySelector("svg.lucide-brain");
+        expect(brain?.getAttribute("aria-hidden")).toBe("true");
+        expect(brain?.classList.contains("size-4")).toBe(true);
+        expect(brain?.classList.contains("text-primary-500")).toBe(true);
+      }
+    };
+    const trigger = screen.getByRole("button", { name: "Modell: Other model" });
+    logo(trigger, "h-5");
+    await user.click(trigger);
+    const row = await screen.findByRole("menuitem", { name: "Other model" });
+    logo(row, "h-4");
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Opus 5.5" })
+        .querySelector("img")
+        ?.getAttribute("src"),
+    ).toBe("/icons/claude.svg");
+    await user.hover(row);
+    logo(await screen.findByRole("dialog"), "h-4");
+  },
+);

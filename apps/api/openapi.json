@@ -2787,6 +2787,14 @@
               "unreviewed"
             ],
             "description": "The earliest Obligation still ahead, unreviewed ones included and marked."
+          },
+          "lastActivityAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "The Course's Last Activity: when the student last asked about it in a Chat, practised or assessed one of its Topics, or uploaded a Source to it; null if never."
           }
         },
         "required": [
@@ -2798,7 +2806,8 @@
           "color",
           "entered",
           "archived",
-          "next"
+          "next",
+          "lastActivityAt"
         ]
       },
       "Home": {
