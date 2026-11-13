@@ -109,6 +109,7 @@ model Course {
   sources     SourceCourse[]
   obligations Obligation[]
   tasks       Task[]
+  eventSeries EventSeries[]
   facts       Fact[]
   chats       ChatCourse[]
   runPins     RunPinCourse[]

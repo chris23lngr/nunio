@@ -1,5 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import type { Estimator } from "@nunio/ai";
+import type { Estimator, SeriesAssigner } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { pilotStatus } from "@nunio/billing";
 import type { Chats } from "@nunio/chat";
@@ -43,6 +43,7 @@ export interface AppBindings {
     chatModels: ChatModels;
     plan: Plan;
     estimator: Estimator;
+    seriesAssigner: SeriesAssigner;
     projects: Projects;
     courses: Courses;
     responsibilities: Responsibilities;

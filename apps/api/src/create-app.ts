@@ -1,4 +1,4 @@
-import type { Estimator } from "@nunio/ai";
+import type { Estimator, SeriesAssigner } from "@nunio/ai";
 import {
   createAnswerer,
   createEmbedder,
@@ -6,6 +6,7 @@ import {
   createGrader,
   createMaker,
   createModels,
+  createSeriesAssigner,
 } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
@@ -65,6 +66,7 @@ export interface AppDeps {
   chatModels: ChatModels;
   plan: Plan;
   estimator: Estimator;
+  seriesAssigner: SeriesAssigner;
   projects: Projects;
   courses: Courses;
   responsibilities: Responsibilities;
@@ -92,6 +94,7 @@ export function createApp({
   chatModels,
   plan,
   estimator,
+  seriesAssigner,
   projects,
   courses,
   responsibilities,
@@ -126,6 +129,7 @@ export function createApp({
     c.set("chatModels", chatModels);
     c.set("plan", plan);
     c.set("estimator", estimator);
+    c.set("seriesAssigner", seriesAssigner);
     c.set("projects", projects);
     c.set("courses", courses);
     c.set("responsibilities", responsibilities);
@@ -266,6 +270,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     }),
     plan,
     estimator: createEstimator(models),
+    seriesAssigner: createSeriesAssigner(models),
     projects: createProjects({ db: prisma }),
     courses: createCourses({ db: prisma, clock, facts, responsibilities }),
     artifacts,

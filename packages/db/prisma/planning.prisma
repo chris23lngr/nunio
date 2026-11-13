@@ -150,6 +150,12 @@ model EventSeries {
   calendarId String
   calendar   CalendarSource @relation(fields: [calendarId, studentId], references: [id, studentId], onDelete: Cascade)
   title      String
+  /// The Course nunio proposed or the student chose; its events are Course Events only once confirmed.
+  courseId    String?
+  course      Course?   @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  confirmedAt DateTime?
+  /// Set when the student said it belongs to no Course; nunio then proposes none for it again.
+  rejectedAt  DateTime?
   createdAt  DateTime       @default(now())
 
   events FixedEvent[]
@@ -171,6 +177,8 @@ model FixedEvent {
   /// Null for an event the student entered by hand.
   seriesId   String?
   series     EventSeries?    @relation(fields: [seriesId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// Set when the student took it out of its series' Course, so it is no Course Event; reading the calendar again keeps it.
+  detachedAt DateTime?
   /// The calendar's UID for the event; null for one entered by hand or read before nunio kept it.
   uid          String?
   /// For an occurrence of a repeated event, the start it was scheduled for, which moving it does not change.

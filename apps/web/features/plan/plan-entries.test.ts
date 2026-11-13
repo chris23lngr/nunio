@@ -150,6 +150,7 @@ test("a Fixed Event is shown without a Course, since the API links none", () => 
           end: at(14, 14),
           calendarId: "cal-1",
           seriesId: null,
+          courseId: null,
         },
       ],
     }),
@@ -286,6 +287,7 @@ test("a day's planned minutes add up its Study Blocks only", () => {
         end: at(13, 13),
         calendarId: null,
         seriesId: null,
+        courseId: null,
       },
     ],
   });
@@ -385,6 +387,7 @@ test("a Fixed Event's details say what, when, and which calendar it came from", 
         end: at(9, 12),
         calendarId: "cal-1",
         seriesId: null,
+        courseId: null,
       },
       {
         id: "f-2",
@@ -393,6 +396,7 @@ test("a Fixed Event's details say what, when, and which calendar it came from", 
         end: at(10, 9),
         calendarId: null,
         seriesId: null,
+        courseId: null,
       },
     ],
   });
@@ -402,6 +406,7 @@ test("a Fixed Event's details say what, when, and which calendar it came from", 
     start: new Date(2026, 10, 9, 10),
     end: new Date(2026, 10, 9, 12),
     calendar: "Uni-Stundenplan",
+    courseId: null,
   });
   expect(fixedEventDetails(p, "f-2")).toMatchObject({ calendar: null });
   expect(fixedEventDetails(p, "missing")).toBeNull();

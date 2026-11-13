@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Estimator } from "@nunio/ai";
+import type { Estimator, SeriesAssigner } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
 import type {
   ActionIntent,
@@ -54,6 +54,8 @@ type ObligationKind =
   | "registration"
   | "other";
 type ReviewState = "unreviewed" | "confirmed" | "rejected";
+/** Where an Event Series stands with its Course; only a confirmed one's events are Course Events (ADR-0021). */
+export type SeriesState = "undecided" | "proposed" | "confirmed" | "rejected";
 
 const defaults = {
   timeZone: "Europe/Berlin",
@@ -122,7 +124,8 @@ export function createPlan({
   const activeCourses = (tx: Transaction) =>
     tx.course.findMany({
       where: { status: { in: ["proposed", "accepted"] }, archivedAt: null },
-      select: { id: true, title: true },
+      select: { id: true, title: true, code: true },
+      orderBy: [{ title: "asc" }, { id: "asc" }],
     });
   /** The student's Tasks, leaving out those in a Course nunio no longer plans for. */
   async function tasksOf(tx: Transaction) {
@@ -189,22 +192,44 @@ export function createPlan({
       where: { obligationId: { not: null } },
       select: { id: true, obligationId: true },
     });
-    const fixedEvents = (
-      await tx.fixedEvent.findMany({
-        orderBy: [{ start: "asc" }, { end: "asc" }],
-      })
-    ).map(({ id, title, start, end, calendarId, seriesId }) => ({
-      id,
-      title,
-      start,
-      end,
-      calendarId,
-      seriesId,
-    }));
-    const eventSeries = await tx.eventSeries.findMany({
-      orderBy: [{ title: "asc" }, { id: "asc" }],
-      select: { id: true, calendarId: true, title: true },
+    const eventRows = await tx.fixedEvent.findMany({
+      orderBy: [{ start: "asc" }, { end: "asc" }],
     });
+    const eventSeries = (
+      await tx.eventSeries.findMany({
+        orderBy: [{ title: "asc" }, { id: "asc" }],
+      })
+    ).map(({ id, calendarId, title, courseId, confirmedAt, rejectedAt }) => ({
+      id,
+      calendarId,
+      title,
+      courseId,
+      state: (rejectedAt
+        ? "rejected"
+        : !courseId
+          ? "undecided"
+          : confirmedAt
+            ? "confirmed"
+            : "proposed") as SeriesState,
+    }));
+    const fixedEvents = eventRows.map(
+      ({ id, title, start, end, calendarId, seriesId, detachedAt }) => {
+        const series = eventSeries.find((s) => s.id === seriesId);
+        return {
+          id,
+          title,
+          start,
+          end,
+          calendarId,
+          seriesId,
+          /** Its Course, which only a Course Event has: one of a confirmed series the student did not take out. */
+          courseId:
+            series?.state === "confirmed" && !detachedAt
+              ? series.courseId
+              : null,
+        };
+      },
+    );
     const calendars = (
       await tx.calendarSource.findMany({
         orderBy: { addedAt: "asc" },
@@ -687,6 +712,16 @@ export function createPlan({
         return { status: "ok", id: event.id } as const;
       });
     },
+    /** Takes one Fixed Event out of its series' Course, so it is no Course Event, as for a cancelled lecture slot. */
+    async detachEvent(p: Principal, id: string) {
+      return withOwner(db, p, async (tx) => {
+        const { count } = await tx.fixedEvent.updateMany({
+          where: { id, seriesId: { not: null } },
+          data: { detachedAt: clock.now() },
+        });
+        return { status: count ? "ok" : "gone" } as const;
+      });
+    },
     async removeFixedEvent(p: Principal, id: string) {
       return withOwner(db, p, async (tx) => {
         const { count } = await tx.fixedEvent.deleteMany({ where: { id } });
@@ -936,6 +971,107 @@ export function createPlan({
         return { status: "ok" } as const;
       });
     },
+    /**
+     * Asks the model, in one metered call, which of the student's Courses each undecided Event Series belongs to,
+     * sending only its title and times and the Courses under handles (ADR-0021). A proposal waits for the student.
+     */
+    async proposeSeriesCourses(
+      p: Principal,
+      {
+        assigner,
+        delegation,
+      }: { assigner: SeriesAssigner; delegation: Delegation },
+    ) {
+      const { series, courses } = await withOwner(db, p, async (tx) => {
+        const timeZone =
+          (await tx.planPreference.findFirst())?.timeZone ?? defaults.timeZone;
+        const undecided = await tx.eventSeries.findMany({
+          where: { courseId: null, rejectedAt: null },
+          orderBy: [{ title: "asc" }, { id: "asc" }],
+          include: { events: { orderBy: { start: "asc" } } },
+        });
+        return {
+          series: undecided.map((s) => ({
+            id: s.id,
+            request: {
+              title: s.title,
+              times: [
+                ...new Set(s.events.map((e) => slotOf(e, timeZone))),
+              ].slice(0, 5),
+              events: s.events.length,
+            },
+          })),
+          courses: (await activeCourses(tx)).map((course, i) => ({
+            id: course.id,
+            handle: `K${i + 1}`,
+            title: course.title,
+            code: course.code,
+          })),
+        };
+      });
+      if (!series.length || !courses.length)
+        return { status: "ok", proposed: 0 } as const;
+      const input = {
+        series: series.map((s) => s.request),
+        courses: courses.map(({ id: _, ...course }) => course),
+      };
+      const proposed = await delegation.meter(
+        p,
+        { microUsd: assigner.assignMicroUsd(input) },
+        (signal) => definitely(() => assigner.assign(input, { signal })),
+      );
+      if (proposed.status === "refused") return proposed;
+      const written = await withOwner(db, p, async (tx) => {
+        const active = new Set((await activeCourses(tx)).map((c) => c.id));
+        let count = 0;
+        for (const [i, handle] of proposed.value.entries()) {
+          const courseId = courses.find((c) => c.handle === handle)?.id;
+          if (!courseId || !active.has(courseId)) continue;
+          // The student may have decided meanwhile; that decision stands.
+          const { count: updated } = await tx.eventSeries.updateMany({
+            where: { id: series[i]!.id, courseId: null, rejectedAt: null },
+            data: { courseId, confirmedAt: null },
+          });
+          count += updated;
+        }
+        return count;
+      });
+      return { status: "ok", proposed: written } as const;
+    },
+    /**
+     * The student's decision on an Event Series' Course: a Course, which confirms it whoever proposed it, or none,
+     * after which nunio proposes none for it again.
+     */
+    async decideSeries(
+      p: Principal,
+      id: string,
+      decision: { courseId: string } | { reject: true },
+    ) {
+      return withOwner(db, p, async (tx) => {
+        if ("reject" in decision) {
+          const { count } = await tx.eventSeries.updateMany({
+            where: { id },
+            data: {
+              courseId: null,
+              confirmedAt: null,
+              rejectedAt: clock.now(),
+            },
+          });
+          return { status: count ? "ok" : "gone" } as const;
+        }
+        if (!(await activeCourses(tx)).some((c) => c.id === decision.courseId))
+          return { status: "gone" } as const;
+        const { count } = await tx.eventSeries.updateMany({
+          where: { id },
+          data: {
+            courseId: decision.courseId,
+            confirmedAt: clock.now(),
+            rejectedAt: null,
+          },
+        });
+        return { status: count ? "ok" : "gone" } as const;
+      });
+    },
     /** Asks the model for Estimates of Obligations and open Tasks that have none, in one metered call. */
     async proposeEstimates(
       p: Principal,
@@ -1050,6 +1186,17 @@ export function createPlan({
   };
 }
 export type Plan = ReturnType<typeof createPlan>;
+
+/** When an event takes place in the student's week, such as "Mon 10:00–12:00". */
+function slotOf({ start, end }: Interval, timeZone: string) {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+  }).format(start);
+  const time = (instant: Date) =>
+    hhmm(local(instant.getTime(), timeZone).minute);
+  return `${weekday} ${time(start)}–${time(end)}`;
+}
 
 /** The study-block column a piece of work is stored under. */
 const columnsOf = (work: WorkRef) =>

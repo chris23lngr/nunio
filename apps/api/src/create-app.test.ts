@@ -2,7 +2,14 @@ import { execFile } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import type { Embedder, Estimator, Extracted, Grader, Maker } from "@nunio/ai";
+import type {
+  Embedder,
+  Estimator,
+  Extracted,
+  Grader,
+  Maker,
+  SeriesAssigner,
+} from "@nunio/ai";
 import { createAnswerer, createModels } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
@@ -259,6 +266,16 @@ const estimator: Estimator = {
     };
   },
 };
+/** Puts every Event Series in the student's first Course. */
+const seriesAssigner: SeriesAssigner = {
+  assignMicroUsd: () => 1,
+  async assign(input) {
+    return {
+      value: input.series.map(() => input.courses[0]?.handle ?? null),
+      usage: { microUsd: 1 },
+    };
+  },
+};
 /** One dimension per keyword, so a question finds the passages that share its keywords. */
 const chatEmbedder: Embedder = {
   model: "test-embedding",
@@ -419,6 +436,7 @@ beforeAll(async () => {
     }),
     plan,
     estimator,
+    seriesAssigner,
     projects: createProjects({ db: prisma }),
     courses: createCourses({
       db: prisma,
@@ -4273,6 +4291,7 @@ describe("Plan", () => {
         id: expect.any(String),
         events: 1,
         skipped: { allDay: 0, outsideWindow: 0, truncated: false },
+        proposedCourses: 1,
       },
     ]);
     expect(
@@ -4297,6 +4316,108 @@ describe("Plan", () => {
       (await call("DELETE", `/calendar-sources/${view.calendars[0]!.id}`))
         .status,
     ).toBe(200);
+  });
+
+  it("proposes a Course for each Event Series of an added calendar, which the student confirms or rejects, and takes one event out", async () => {
+    const { cookie, headers } = await planFixture("plan-series");
+    const call = (method: string, path: string, body?: unknown) =>
+      app.request(`${apiOrigin}/api/me${path}`, {
+        method,
+        headers,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    const stamp = (days: number, hour: number) => {
+      const day = new Date(Date.now() + days * 24 * 60 * 60_000)
+        .toISOString()
+        .slice(0, 10)
+        .replace(/-/g, "");
+      return `${day}T${String(hour).padStart(2, "0")}0000Z`;
+    };
+    const event = (uid: string, title: string, days: number) => [
+      "BEGIN:VEVENT",
+      `UID:${uid}`,
+      `DTSTAMP:${stamp(0, 0)}`,
+      `SUMMARY:${title}`,
+      `DTSTART:${stamp(days, 9)}`,
+      `DTEND:${stamp(days, 11)}`,
+      "END:VEVENT",
+    ];
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//test//EN",
+      ...event("vl-1@uni", "Analysis Vorlesung", 1),
+      ...event("vl-2@uni", "Analysis Vorlesung", 8),
+      ...event("yoga@uni", "Yoga", 2),
+      "END:VCALENDAR",
+    ].join("\r\n");
+    type View = {
+      eventSeries: {
+        id: string;
+        title: string;
+        courseId: string | null;
+        state: string;
+      }[];
+      fixedEvents: { id: string; courseId: string | null }[];
+    };
+    const view = async () =>
+      (await (
+        await app.request(`${apiOrigin}/api/me/plan`, { headers: { cookie } })
+      ).json()) as View;
+
+    const added = await call("POST", "/calendar-sources", {
+      name: "Stundenplan.ics",
+      ics,
+    });
+    expect([added.status, await added.json()]).toEqual([
+      201,
+      expect.objectContaining({ events: 3, proposedCourses: 2 }),
+    ]);
+    const [lecture, yoga] = (await view()).eventSeries;
+    expect([lecture, yoga]).toEqual([
+      expect.objectContaining({
+        title: "Analysis Vorlesung",
+        state: "proposed",
+      }),
+      expect.objectContaining({ title: "Yoga", state: "proposed" }),
+    ]);
+
+    expect(
+      (
+        await call("POST", `/event-series/${lecture!.id}/decision`, {
+          courseId: lecture!.courseId,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("POST", `/event-series/${yoga!.id}/decision`, {
+          reject: true,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("POST", `/event-series/${randomUUID()}/decision`, {
+          reject: true,
+        })
+      ).status,
+    ).toBe(404);
+    const decided = await view();
+    expect(decided.eventSeries.map((s) => s.state)).toEqual([
+      "confirmed",
+      "rejected",
+    ]);
+    const courseEvents = decided.fixedEvents.filter((e) => e.courseId);
+    expect(courseEvents).toHaveLength(2);
+
+    expect(
+      (await call("POST", `/fixed-events/${courseEvents[0]!.id}/detach`))
+        .status,
+    ).toBe(200);
+    expect(
+      (await view()).fixedEvents.filter((e) => e.courseId).map((e) => e.id),
+    ).toEqual([courseEvents[1]!.id]);
   });
 });
 

@@ -94,6 +94,8 @@ export function fixedEventDetails(plan: Plan, eventId: string) {
     end: new Date(event.end),
     calendar:
       plan.calendars.find((c) => c.id === event.calendarId)?.name ?? null,
+    /** Set only for a Course Event. */
+    courseId: event.courseId,
   };
 }
 

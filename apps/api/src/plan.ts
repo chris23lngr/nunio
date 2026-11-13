@@ -153,11 +153,30 @@ const PlanView = z
           .string()
           .nullable()
           .describe("Its Event Series; null when entered by hand."),
+        courseId: z
+          .string()
+          .nullable()
+          .describe(
+            "Its Course when it is a Course Event: one of a confirmed series the student did not take out.",
+          ),
       }),
     ),
     eventSeries: z
       .array(
-        z.object({ id: z.string(), calendarId: z.string(), title: z.string() }),
+        z.object({
+          id: z.string(),
+          calendarId: z.string(),
+          title: z.string(),
+          courseId: z
+            .string()
+            .nullable()
+            .describe("The Course nunio proposed or the student chose."),
+          state: z
+            .enum(["undecided", "proposed", "confirmed", "rejected"])
+            .describe(
+              "Only a confirmed series' events are Course Events; a rejected one belongs to no Course.",
+            ),
+        }),
       )
       .describe(
         "The Fixed Events of one calendar that share a title (ADR-0021).",
@@ -538,6 +557,13 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
               outsideWindow: z.number().int(),
               truncated: z.boolean(),
             }),
+            proposedCourses: z
+              .number()
+              .int()
+              .nullable()
+              .describe(
+                "How many Event Series nunio proposed a Course for; null when it could not ask, such as with the Allowance used up.",
+              ),
           }),
           "The calendar Source, with its timed events of the coming year and what was skipped. A file sharing event UIDs with a calendar added before updates that one, whose ID it returns.",
         ),
@@ -547,11 +573,74 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
-      const result = await c.get("plan").addCalendar(p, c.req.valid("json"));
+      const plan = c.get("plan");
+      const result = await plan.addCalendar(p, c.req.valid("json"));
       if (result.status === "invalid") return failed(c, "invalid");
+      // The calendar is added either way; without proposals the student assigns its series in Review (ADR-0021).
+      const proposed = await plan
+        .proposeSeriesCourses(p, {
+          assigner: c.get("seriesAssigner"),
+          delegation: c.get("delegation"),
+        })
+        .catch((error: unknown) => {
+          console.error(
+            JSON.stringify({
+              msg: "series course proposal failed",
+              error: String(error),
+            }),
+          );
+          return null;
+        });
       return c.json(
-        { id: result.id, events: result.events, skipped: result.skipped },
+        {
+          id: result.id,
+          events: result.events,
+          skipped: result.skipped,
+          proposedCourses: proposed?.status === "ok" ? proposed.proposed : null,
+        },
         201,
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/event-series/{id}/decision",
+      request: {
+        params: id,
+        ...body(
+          z.union([
+            z.object({ courseId: z.string() }).strict(),
+            z.object({ reject: z.literal(true) }).strict(),
+          ]),
+        ),
+      },
+      responses: { 200: Done, ...outcomes },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(
+        c,
+        await c
+          .get("plan")
+          .decideSeries(p, c.req.valid("param").id, c.req.valid("json")),
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/fixed-events/{id}/detach",
+      request: { params: id },
+      responses: { 200: Done, ...outcomes },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(
+        c,
+        await c.get("plan").detachEvent(p, c.req.valid("param").id),
       );
     },
   );

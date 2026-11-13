@@ -1,5 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import type { EstimateRequest, Estimator } from "@nunio/ai";
+import type {
+  EstimateRequest,
+  Estimator,
+  SeriesAssigner,
+  SeriesAssignmentInput,
+} from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -463,6 +468,7 @@ it("plans around Fixed Events entered by hand or imported from a calendar file, 
       end: at("2026-11-09 11:00"),
       calendarId: imported.id,
       seriesId: expect.any(String),
+      courseId: null,
     },
     {
       id: entered.id,
@@ -471,6 +477,7 @@ it("plans around Fixed Events entered by hand or imported from a calendar file, 
       end: at("2026-11-09 12:00"),
       calendarId: null,
       seriesId: null,
+      courseId: null,
     },
   ]);
   expect(view.calendars).toEqual([
@@ -589,11 +596,19 @@ it("groups a calendar's Fixed Events into Event Series by title, whether repeate
 
   const view = await plan.view(p);
   expect(view.eventSeries).toEqual([
-    { id: expect.any(String), calendarId: added.id, title: "Analysis I" },
+    {
+      id: expect.any(String),
+      calendarId: added.id,
+      title: "Analysis I",
+      courseId: null,
+      state: "undecided",
+    },
     {
       id: expect.any(String),
       calendarId: added.id,
       title: "Tutorium Analysis",
+      courseId: null,
+      state: "undecided",
     },
   ]);
   const [lecture, tutorium] = view.eventSeries;
@@ -631,6 +646,214 @@ it("drops an Event Series once the calendar lists none of its events", async () 
   expect((await plan.view(p)).eventSeries).toEqual([
     expect.objectContaining({ title: "Analysis I (Mathematik)" }),
   ]);
+});
+
+const cafeShift = [
+  "UID:cafe@uni",
+  "SUMMARY:Schicht Café",
+  "DTSTART:20261107T080000Z",
+  "DTEND:20261107T120000Z",
+];
+/** A student with Analysis I and Physik I, and a calendar with the Analysis lecture and a café shift. */
+async function studentWithCalendar(limitMicroUsd?: number) {
+  const p = await student(limitMicroUsd);
+  const analysis = await obligation(p, "Blatt 3", "2026-11-20", "12:00");
+  const physik = await facts.enterObligation(p, {
+    course: { title: "Physik I", code: "PH-101" },
+    kind: "assignment",
+    title: "Übung 2",
+    due: { date: "2026-11-20", time: "12:00", timeZone: null },
+    destination: null,
+  });
+  if (physik.status !== "ok") throw new Error(physik.status);
+  const courseOf = async (id: string) =>
+    (await admin.obligation.findUniqueOrThrow({ where: { id } })).courseId;
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(weeklyLecture, cafeShift),
+  });
+  const [lecture, cafe] = (await plan.view(p)).eventSeries;
+  return {
+    p,
+    analysisId: await courseOf(analysis),
+    physikId: await courseOf(physik.id),
+    lecture: lecture!,
+    cafe: cafe!,
+  };
+}
+/** An assigner that puts the Analysis lecture in K1 and knows nothing else, recording what it was asked. */
+function fakeAssigner() {
+  const asked: SeriesAssignmentInput[] = [];
+  const assigner: SeriesAssigner = {
+    assignMicroUsd: () => 10,
+    async assign(input) {
+      asked.push(input);
+      return {
+        value: input.series.map((s) =>
+          s.title === "Analysis I" ? "K1" : null,
+        ),
+        usage: { microUsd: 5 },
+      };
+    },
+  };
+  return { asked, assigner };
+}
+
+it("proposes a Course for each undecided Event Series in one metered call, which the student confirms or changes", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, physikId, lecture, cafe } =
+    await studentWithCalendar();
+  const { asked, assigner } = fakeAssigner();
+
+  expect(await plan.proposeSeriesCourses(p, { assigner, delegation })).toEqual({
+    status: "ok",
+    proposed: 1,
+  });
+  expect(asked).toEqual([
+    {
+      series: [
+        { title: "Analysis I", times: ["Mon 10:00–12:00"], events: 4 },
+        { title: "Schicht Café", times: ["Sat 09:00–13:00"], events: 1 },
+      ],
+      courses: [
+        { handle: "K1", title: "Analysis I", code: "MA-101" },
+        { handle: "K2", title: "Physik I", code: "PH-101" },
+      ],
+    },
+  ]);
+  expect((await plan.view(p)).eventSeries).toEqual([
+    expect.objectContaining({
+      id: lecture.id,
+      courseId: analysisId,
+      state: "proposed",
+    }),
+    expect.objectContaining({
+      id: cafe.id,
+      courseId: null,
+      state: "undecided",
+    }),
+  ]);
+
+  expect(
+    await plan.decideSeries(p, lecture.id, { courseId: analysisId }),
+  ).toEqual({ status: "ok" });
+  expect(await plan.decideSeries(p, cafe.id, { courseId: physikId })).toEqual({
+    status: "ok",
+  });
+  expect((await plan.view(p)).eventSeries).toEqual([
+    expect.objectContaining({ courseId: analysisId, state: "confirmed" }),
+    expect.objectContaining({ courseId: physikId, state: "confirmed" }),
+  ]);
+  expect(await plan.proposeSeriesCourses(p, { assigner, delegation })).toEqual({
+    status: "ok",
+    proposed: 0,
+  });
+  expect(asked).toHaveLength(1);
+});
+
+it("refuses to propose Courses for Event Series once the Allowance is exhausted, without asking the model", async () => {
+  now = at("2026-11-01 08:00");
+  const { p } = await studentWithCalendar(0);
+  const { asked, assigner } = fakeAssigner();
+
+  expect(await plan.proposeSeriesCourses(p, { assigner, delegation })).toEqual({
+    status: "refused",
+    reason: "allowance_exhausted",
+  });
+  expect(asked).toEqual([]);
+  expect((await plan.view(p)).eventSeries.map((s) => s.state)).toEqual([
+    "undecided",
+    "undecided",
+  ]);
+});
+
+it("keeps an Event Series the student said belongs to no Course that way, never proposing one for it again", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, physikId, cafe } = await studentWithCalendar();
+  const { asked, assigner } = fakeAssigner();
+
+  expect(await plan.decideSeries(p, cafe.id, { reject: true })).toEqual({
+    status: "ok",
+  });
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(weeklyLecture, cafeShift),
+  });
+  await plan.proposeSeriesCourses(p, { assigner, delegation });
+
+  expect(asked.flatMap((input) => input.series.map((s) => s.title))).toEqual([
+    "Analysis I",
+  ]);
+  expect((await plan.view(p)).eventSeries).toEqual([
+    expect.objectContaining({ title: "Analysis I", state: "proposed" }),
+    expect.objectContaining({
+      id: cafe.id,
+      courseId: null,
+      state: "rejected",
+    }),
+  ]);
+  // The student may still put it in a Course themselves.
+  expect(await plan.decideSeries(p, cafe.id, { courseId: physikId })).toEqual({
+    status: "ok",
+  });
+});
+
+it("makes a confirmed Event Series' events Course Events, except one the student took out of it", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture } = await studentWithCalendar();
+  const { assigner } = fakeAssigner();
+  const coursesOf = async () =>
+    (await plan.view(p)).fixedEvents.map((e) => [e.title, e.courseId]);
+
+  await plan.proposeSeriesCourses(p, { assigner, delegation });
+  expect(new Set((await coursesOf()).map(([, courseId]) => courseId))).toEqual(
+    new Set([null]),
+  );
+
+  await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+  const second = (await plan.view(p)).fixedEvents.filter(
+    (e) => e.seriesId === lecture.id,
+  )[1]!;
+  expect(await plan.detachEvent(p, second.id)).toEqual({ status: "ok" });
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(weeklyLecture, cafeShift),
+  });
+
+  expect(await coursesOf()).toEqual([
+    ["Analysis I", analysisId],
+    ["Schicht Café", null],
+    ["Analysis I", null],
+    ["Analysis I", analysisId],
+    ["Analysis I", analysisId],
+  ]);
+});
+
+it("leaves an Event Series undecided once its Course is deleted, keeping its events", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture } = await studentWithCalendar();
+  await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+  const courses = createCourses({
+    db: runtime,
+    clock,
+    facts,
+    responsibilities: {
+      pauseForCourse: async () => {},
+      endForCourse: async () => {},
+    },
+  });
+
+  await courses.delete(p, analysisId);
+
+  const view = await plan.view(p);
+  expect(view.eventSeries[0]).toMatchObject({
+    id: lecture.id,
+    courseId: null,
+    state: "undecided",
+  });
+  expect(
+    view.fixedEvents.filter((e) => e.seriesId === lecture.id),
+  ).toHaveLength(4);
 });
 
 it("ranks Courses, Projects and Obligations in one list, an Obligation's own rank winning over its Project's and Course's", async () => {

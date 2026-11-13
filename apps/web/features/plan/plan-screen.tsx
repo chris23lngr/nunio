@@ -95,6 +95,24 @@ export function PlanScreen({
     plan.data && selected ? blockDetails(plan.data, selected, colors) : null;
   const event =
     plan.data && selected ? fixedEventDetails(plan.data, selected) : null;
+  const eventCourse = event?.courseId
+    ? (courses.data?.courses.find((c) => c.id === event.courseId)?.title ??
+      null)
+    : null;
+  const detach = useMutation({
+    mutationFn: async (id: string) => {
+      const { response } = await createApiClient(apiOrigin).POST(
+        "/api/me/fixed-events/{id}/detach",
+        { params: { path: { id } } },
+      );
+      if (!response.ok)
+        throw new Error("Der Termin konnte nicht geändert werden.");
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({
+        queryKey: planQuery(apiOrigin).queryKey,
+      }),
+  });
   const block = useMutation({
     mutationFn: async (
       action: { id: string; locked: boolean } | { id: string; delete: true },
@@ -261,7 +279,16 @@ export function PlanScreen({
               }}
             />
           )}
-          {event && <FixedEventDetails {...event} />}
+          {event && selected && (
+            <FixedEventDetails
+              {...event}
+              course={eventCourse}
+              onDetach={() => {
+                detach.mutate(selected);
+                setSelected(null);
+              }}
+            />
+          )}
         </PopoverContent>
       </Popover>
       <SuggestionsSheet

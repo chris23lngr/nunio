@@ -289,6 +289,7 @@ test("each display option hides what it names", async () => {
           end: at(9, 12),
           calendarId: null,
           seriesId: null,
+          courseId: null,
         },
       ],
       proposal: {
@@ -405,6 +406,7 @@ test("a Fixed Event opens what nunio knows about it", async () => {
           end: at(9, 12),
           calendarId: "cal-1",
           seriesId: null,
+          courseId: null,
         },
       ],
     }),
@@ -422,4 +424,53 @@ test("a Fixed Event opens what nunio knows about it", async () => {
     within(details).getByText("Fixtermin aus „Uni-Stundenplan“"),
   ).toBeTruthy();
   expect(within(details).queryByRole("button", { name: "Löschen" })).toBeNull();
+});
+
+test("a Course Event shows its Course, and the student can take it out of it", async () => {
+  let detached = false;
+  api.route("POST", "/api/me/fixed-events/f-1/detach", () => {
+    detached = true;
+    return Response.json({ status: "ok" });
+  });
+  mount(
+    plan({
+      calendars: [{ id: "cal-1", name: "Uni-Stundenplan", events: 1 }],
+      eventSeries: [
+        {
+          id: "s-1",
+          calendarId: "cal-1",
+          title: "Vorlesung Statistik",
+          courseId: "c-stats",
+          state: "confirmed",
+        },
+      ],
+      fixedEvents: [
+        {
+          id: "f-1",
+          title: "Vorlesung Statistik",
+          start: at(9, 10),
+          end: at(9, 12),
+          calendarId: "cal-1",
+          seriesId: "s-1",
+          courseId: "c-stats",
+        },
+      ],
+    }),
+  );
+  const user = userEvent.setup();
+
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Vorlesung Statistik, 10:00–12:00",
+    }),
+  );
+  const details = await screen.findByRole("dialog");
+  expect(within(details).getByText("Termin in Statistics II")).toBeTruthy();
+  await user.click(
+    within(details).getByRole("button", {
+      name: "Gehört nicht zu Statistics II",
+    }),
+  );
+
+  await waitFor(() => expect(detached).toBe(true));
 });

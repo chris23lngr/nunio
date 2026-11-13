@@ -706,9 +706,11 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
    - A file sharing event UIDs with a calendar added before updates that calendar, the one sharing most if several do. A moved event keeps its ID. An event no longer in the file, or cancelled in it, is deleted if it lies in the read window; past events stay.
    - Manual Fixed Events have no series. Events read before this stage have no UID, so a new reading cannot match them and adds a new calendar.
 3. **Assigning series to Courses.**
-   - When a calendar is read, one metered call proposes a Course for each series. It receives only the series title, weekday, time and rhythm, plus the Course handles.
-   - Review lists the proposals, and confirming one sets its Routine in the same step. The Course page has an "Events" section, where the student can unassign one Course Event.
-   - A rejected proposal is not proposed again.
+   - When a calendar is added, one metered call proposes a Course for each undecided series, within the same request. It receives only the series title, weekday, time and rhythm, plus the Course handles. A refused or failed call still adds the calendar.
+   - The assignment is stored on the series (`courseId`, `confirmedAt`, `rejectedAt`), not as a Fact: Event Series belong to planning.
+   - Review lists the series not yet confirmed, where the student confirms nunio's proposal, picks another Course, or says "no Course". "No Course" means nunio proposes none for that series again; the student may still pick one.
+   - The Plan's popover of a Course Event names its Course and lets the student take that one event out of it.
+   - Merging a Course moves its series along; deleting it leaves them undecided.
 4. **Routines.**
    - A Routine per Event Series with Preparation and Follow-up minutes, either of which may be zero.
    - A daily schedule per student, plus a run on every Routine or series change, adds Preparations and Follow-ups for the next 14 days. Re-runs are idempotent per Course Event and kind.
@@ -716,6 +718,7 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
    - Moved and cancelled Course Events, Routine changes, and lapsed Follow-ups behave as in ADR-0021.
    - A Shortfall offers skipping a Routine for a period.
    - Archiving a Course stops its Routines, and its future Study Blocks go as before.
+   - Confirming a series in Review also sets its Routine, and each Course card gets an "Events & Routines" section to change it. There is no single-Course page.
    - A Task in a Course gets its Course's Priority. Before this stage such a Task has no deadline, so Priority would change nothing.
    - The Plan screen lists open Tasks and lets the student add one in a Course or with no Course. It waits for this stage because, before it, a Task without Study Blocks would show nowhere on the Plan.
 5. **Chat.**
@@ -728,7 +731,7 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 - [x] A Task without an Obligation but in a Course is covered by that Course's Grant and limit, and goes when the Course is deleted (`packages/planning/src/plan.test.ts`, "keeps a Task in a Course…"; `packages/delegation/src/gate.test.ts`, "creates a block for a Task in the Grant's Course…").
 - [x] Adding the same `.ics` file twice leaves the same Fixed Events and Event Series. A moved occurrence keeps its ID, and a removed or cancelled one goes (`packages/planning/src/plan.test.ts`, "updates a calendar added again…", "moves a Fixed Event the calendar moved…", "groups a calendar's Fixed Events into Event Series…"; `calendar.test.ts`, "leaves out a cancelled occurrence…").
 - [ ] A moved occurrence keeps its Tasks, and a removed occurrence cancels its open Tasks.
-- [ ] The assignment call receives no event description, location or attendee, and is metered. A rejected proposal stays rejected after re-reading.
+- [x] The assignment call receives no event description, location or attendee, and is metered. A rejected proposal stays rejected after re-reading (`packages/ai/src/series-assignment.test.ts`; `packages/planning/src/plan.test.ts`, "refuses to propose Courses for Event Series…", "keeps an Event Series the student said belongs to no Course…").
 - [ ] An unconfirmed series produces no Tasks. A confirmed one with a Routine produces exactly one Preparation and one Follow-up per Course Event in the next 14 days, also after repeated runs.
 - [ ] `rebalance` never places a Follow-up before its Course Event ends, nor a Preparation after its Course Event starts (`rebalance.test.ts`).
 - [ ] Changing a Routine updates only open Tasks with no past Study Block, and never an Estimate the student set.
@@ -745,6 +748,12 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 - `readCalendar` gives each occurrence its UID and, for a repeated event, the start it was scheduled for. Cancelled occurrences and events are left out.
 - `event_series` holds one row per calendar and title. A series keeps its ID while the calendar lists any of its events, and goes once it lists none, so a renamed lecture becomes a new series.
 - `plan.view` returns `eventSeries` and each Fixed Event's `seriesId`. Adding a calendar again still answers 201, with the ID of the calendar it updated.
+
+**Progress (2026-11-13).** Stage 3 is implemented.
+- `createSeriesAssigner` (task `classification`) answers with a Course handle per series. A handle the student's Courses lack counts as no proposal.
+- `plan.proposeSeriesCourses` asks only about undecided series, and only with Courses that are neither rejected, merged nor Archived. A series the student decided meanwhile keeps that decision. `POST /api/me/calendar-sources` calls it after adding the calendar and answers `proposedCourses`, which is null when nunio could not ask.
+- `POST /api/me/event-series/{id}/decision` takes `{ courseId }` or `{ reject: true }`, and `POST /api/me/fixed-events/{id}/detach` takes one event out. `plan.view` gives each series its `courseId` and `state` (`undecided`, `proposed`, `confirmed`, `rejected`), and each Fixed Event its `courseId` when it is a Course Event.
+- Review shows a "Kalender-Serien" section below the Courses, and the Plan's event popover offers "Gehört nicht zu …".
 
 **Anti-pattern guards.**
 - Never change a Fixed Event, and never let a Routine create a Study Block outside Rebalance or a proposal.
