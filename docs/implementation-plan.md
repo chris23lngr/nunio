@@ -679,6 +679,11 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
   Now `courseFacts` is offered only with Courses, and the instructions forbid guessing handles. After the fixes: 0 questions about the material answered without a search, search and citation recall 1.0 on the 21 answered, and every answered unanswerable question declined. $1.57.
 - **Open before the pilot.** Two turns of that run failed on HTTP 429 from Amazon Bedrock's shared pool behind OpenRouter. Steps run with `maxRetries: 0`, since `meter` owns retrying, so one rate-limited step fails the whole turn. Retrying a step that was certainly rejected, with a new reservation, is the follow-up. The eval now runs two questions at a time and records a rejection's status and body.
 
+**Progress (2026-11-13).** A rate-limited Chat step is retried.
+- A step the provider rejects with 429, which certainly cost nothing, runs again up to twice, each time with a new reservation. It waits the provider's `Retry-After`, or 1 s and then 3 s.
+- A step never waits more than 10 s in all. One that would fails at once.
+- Provider errors (5xx) and lost connections are not retried, since they may have cost something.
+
 **Anti-pattern guards.**
 - `toolChoice` is only `auto` or `none`.
 - An AI SDK approval response never grants authority by itself; only `decide` does.

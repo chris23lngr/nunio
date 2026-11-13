@@ -24,6 +24,7 @@ import {
   proposeStudyBlockMoveTool,
   proposeStudyBlockTool,
 } from "./proposals.js";
+import { retryRateLimited } from "./retry.js";
 import { searchTool } from "./search.js";
 import { createTurn } from "./turn.js";
 
@@ -392,21 +393,25 @@ export function createChats({
       ];
       const chunks: UIMessageChunk[] = [];
       const input = { messages, tools, last: true };
-      const stepped = await delegation.meter(
-        p,
-        { microUsd: answerer.estimateMicroUsd(input) },
-        (deadline) =>
-          definitely(() =>
-            answerer.step(input, {
-              signal: options.signal
-                ? AbortSignal.any([deadline, options.signal])
-                : deadline,
-              write: (chunk) => {
-                chunks.push(chunk);
-                options.write?.(chunk);
-              },
-            }),
+      const stepped = await retryRateLimited(
+        () =>
+          delegation.meter(
+            p,
+            { microUsd: answerer.estimateMicroUsd(input) },
+            (deadline) =>
+              definitely(() =>
+                answerer.step(input, {
+                  signal: options.signal
+                    ? AbortSignal.any([deadline, options.signal])
+                    : deadline,
+                  write: (chunk) => {
+                    chunks.push(chunk);
+                    options.write?.(chunk);
+                  },
+                }),
+              ),
           ),
+        options.signal,
       );
       if (stepped.status === "refused") return stepped;
       const parts = await partsFrom(chunks, new Set(), () => undefined);
@@ -576,18 +581,22 @@ export function createChats({
           toolApproval,
           last: n === maxSteps,
         };
-        const stepped = await delegation.meter(
-          p,
-          { microUsd: answerer.estimateMicroUsd(input) },
-          (deadline) =>
-            definitely(() =>
-              answerer.step(input, {
-                signal: options.signal
-                  ? AbortSignal.any([deadline, options.signal])
-                  : deadline,
-                write,
-              }),
+        const stepped = await retryRateLimited(
+          () =>
+            delegation.meter(
+              p,
+              { microUsd: answerer.estimateMicroUsd(input) },
+              (deadline) =>
+                definitely(() =>
+                  answerer.step(input, {
+                    signal: options.signal
+                      ? AbortSignal.any([deadline, options.signal])
+                      : deadline,
+                    write,
+                  }),
+                ),
             ),
+          options.signal,
         );
         const refusal = turn.refusal();
         if (refusal === "gone") return { status: "gone" } as const;
