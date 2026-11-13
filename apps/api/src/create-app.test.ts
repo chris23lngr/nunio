@@ -37,6 +37,7 @@ import {
 import { createOutreach } from "@nunio/outreach";
 import { createPlan, createPlanExecutor, deadline } from "@nunio/planning";
 import { createUnderstanding } from "@nunio/understanding";
+import { APICallError } from "ai";
 import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
 import { hashPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -170,6 +171,18 @@ const says = (text: string) => [
   { type: "text-delta", id: "text", delta: text },
   { type: "text-end", id: "text" },
 ];
+/** The provider rejects the Chat model's step with HTTP `status`, before streaming anything. */
+const rejects =
+  (status: number, headers: Record<string, string> = {}) =>
+  () => {
+    throw new APICallError({
+      message: `HTTP ${status}`,
+      url: "https://provider.invalid",
+      requestBodyValues: {},
+      statusCode: status,
+      responseHeaders: headers,
+    });
+  };
 const thinks = (text: string) => [
   { type: "reasoning-start", id: "reasoning" },
   { type: "reasoning-delta", id: "reasoning", delta: text },
@@ -3934,6 +3947,95 @@ describe("Chat", () => {
     expect(await allowance()).toMatchObject({
       usedMicroUsd: before + 2,
       heldMicroUsd: 0,
+    });
+  });
+
+  describe("a step the provider rate-limits", () => {
+    async function rateLimitedChat(name: string) {
+      const { cookie, headers, id } = await emptyChat(name);
+      const allowance = async () =>
+        (await (
+          await app.request(`${apiOrigin}/api/me/allowance`, {
+            headers: { cookie },
+          })
+        ).json()) as { usedMicroUsd: number; heldMicroUsd: number };
+      const ask = async () =>
+        sseChunks(
+          await app.request(`${apiOrigin}/api/me/chats/${id}/messages/stream`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ id: randomUUID(), text: "Hallo?" }),
+          }),
+        );
+      const messages = async () =>
+        (await (
+          await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+            headers: { cookie },
+          })
+        ).json()) as { role: string; text: string }[];
+      return { allowance, ask, messages, before: await allowance() };
+    }
+
+    it("is tried again, charging only the attempt that answered", async () => {
+      const chat = await rateLimitedChat("chat-rate-limited-once");
+      steps.push(rejects(429), says("Hallo!"));
+      prompts.length = 0;
+
+      const chunks = await chat.ask();
+
+      expect(prompts).toHaveLength(2);
+      expect(chunks.filter((chunk) => chunk.type === "text-delta")).toEqual([
+        expect.objectContaining({ delta: "Hallo!" }),
+      ]);
+      expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
+      expect(await chat.messages()).toEqual([
+        expect.objectContaining({ role: "student", text: "Hallo?" }),
+        expect.objectContaining({ role: "assistant", text: "Hallo!" }),
+      ]);
+      expect(await chat.allowance()).toEqual({
+        ...chat.before,
+        usedMicroUsd: chat.before.usedMicroUsd + 1,
+        heldMicroUsd: 0,
+      });
+    });
+
+    it("fails the turn after two more attempts, recording and charging nothing", async () => {
+      const chat = await rateLimitedChat("chat-rate-limited-thrice");
+      const limited = rejects(429, { "retry-after": "0" });
+      steps.push(limited, limited, limited);
+      prompts.length = 0;
+
+      const chunks = await chat.ask();
+
+      expect(prompts).toHaveLength(3);
+      expect(chunks.map((chunk) => chunk.type)).toContain("error");
+      expect(chunks.map((chunk) => chunk.type)).not.toContain("data-committed");
+      expect(await chat.messages()).toEqual([]);
+      expect(await chat.allowance()).toEqual(chat.before);
+    });
+
+    it("is not tried again when the provider asks for a longer wait than 10 seconds", async () => {
+      const chat = await rateLimitedChat("chat-rate-limited-long");
+      steps.push(rejects(429, { "retry-after": "11" }));
+      prompts.length = 0;
+
+      const chunks = await chat.ask();
+
+      expect(prompts).toHaveLength(1);
+      expect(chunks.map((chunk) => chunk.type)).toContain("error");
+      expect(await chat.messages()).toEqual([]);
+    });
+
+    it("is not tried again after a provider error, which may have cost something", async () => {
+      const chat = await rateLimitedChat("chat-provider-error");
+      steps.push(rejects(500, { "retry-after": "0" }));
+      prompts.length = 0;
+
+      const chunks = await chat.ask();
+
+      expect(prompts).toHaveLength(1);
+      expect(chunks.map((chunk) => chunk.type)).toContain("error");
+      expect(await chat.messages()).toEqual([]);
     });
   });
 });

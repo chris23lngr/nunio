@@ -11,6 +11,7 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createModelCatalog } from "./model-catalog.js";
 
 const execute = promisify(execFile);
 
@@ -40,17 +41,26 @@ beforeAll(async () => {
   url.username = user;
   url.password = password;
   operatorURL = url.toString();
-  const fixture = readFileSync(
-    fileURLToPath(
-      new URL("../../ai/src/fixtures/zdr-endpoints.json", import.meta.url),
+  const fixture = JSON.parse(
+    readFileSync(
+      fileURLToPath(
+        new URL("../../ai/src/fixtures/zdr-endpoints.json", import.meta.url),
+      ),
+      "utf8",
     ),
   );
+  fixture.data.push({
+    model_id: "openai/test-chat-model",
+    provider_name: "OpenAI",
+    pricing: { prompt: "0.000001", completion: "0.000002" },
+    supported_parameters: ["tools", "tool_choice", "reasoning"],
+  });
   openrouter = createServer((request, response) => {
     if (request.url !== "/api/v1/endpoints/zdr")
       return void response.writeHead(404).end();
     response
       .writeHead(200, { "content-type": "application/json" })
-      .end(fixture);
+      .end(JSON.stringify(fixture));
   });
   await new Promise<void>((resolve) =>
     openrouter.listen(0, "127.0.0.1", resolve),
@@ -163,6 +173,53 @@ describe("the Model Catalog command", () => {
     });
     expect(await audit("sonnet-5.5-reasoning-medium")).toEqual([
       "add by founder",
+    ]);
+  });
+
+  it("adds, syncs and enables an OpenAI Model for Chat", async () => {
+    await models(
+      "add",
+      "openai-test-reasoning-medium",
+      "openai/test-chat-model",
+      "medium",
+      "8000",
+      "OpenAI Test",
+      "A synthetic OpenAI Model for the catalog test.",
+    );
+    expect(
+      await admin.catalogModel.findUnique({
+        where: { key: "openai-test-reasoning-medium" },
+      }),
+    ).toMatchObject({
+      provider: "OpenAI",
+      providerModelId: "openai/test-chat-model",
+      chatEnabled: false,
+      prices: null,
+    });
+    await models("sync");
+    await models("enable", "openai-test-reasoning-medium");
+    const catalog = createModelCatalog({
+      db: admin,
+      clock: { now: () => new Date() },
+    });
+    expect(await catalog.chatModels()).toContainEqual(
+      expect.objectContaining({
+        key: "openai-test-reasoning-medium",
+        provider: "OpenAI",
+        providerModelId: "openai/test-chat-model",
+        upstream: ["OpenAI"],
+        prices: [
+          {
+            minPromptTokens: 0,
+            inputMicroUsdPerMTok: 1_000_000,
+            outputMicroUsdPerMTok: 2_000_000,
+          },
+        ],
+      }),
+    );
+    expect(await audit("openai-test-reasoning-medium")).toEqual([
+      "add by founder",
+      "enable by founder",
     ]);
   });
 
