@@ -55,6 +55,12 @@ const Course = z
       .describe(
         "The earliest Obligation still ahead, unreviewed ones included and marked.",
       ),
+    lastActivityAt: z
+      .date()
+      .nullable()
+      .describe(
+        "The Course's Last Activity: when the student last asked about it in a Chat, practised or assessed one of its Topics, or uploaded a Source to it; null if never.",
+      ),
   })
   .openapi("CourseSummary");
 const Clash = ErrorBody.extend({

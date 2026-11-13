@@ -32,6 +32,7 @@ export const principal: { fromSession(s: AuthSession): Principal; fromRun(runId:
 export type ActionIntent =
   | { kind: "studyBlock.create"; calendarConnectionId: string; start: Date; end: Date; title: string; taskId?: string }
   | { kind: "studyBlock.move"; calendarConnectionId: string; studyBlockId: string; start: Date; end: Date }
+  | { kind: "studyBlock.remove"; studyBlockId: string; workId: string; start: Date; end: Date } // the block as shown; no Grant covers it (ADR-0021)
   | { kind: "submission"; destinationId: string; obligationId: string; artifact: { id: string; version: number } };
 
 export type ActionOutcome =
@@ -43,7 +44,7 @@ export type ActionOutcome =
 
 type Refusal = "not_owner" | "paused" | "ended" | "disconnected" | "no_authority" | "approval_denied"
   | "approval_expired" | "approval_mismatch" | "budget_exhausted" | "allowance_exhausted"
-  | "locked" | "protected_time" | "handoff_only" | "restricted";
+  | "locked" | "started" | "protected_time" | "handoff_only" | "restricted";
 
 type Approve = { kind: "approve"; actionId: string; fingerprint: string }; // the fingerprint the student was shown
 type Deny    = { kind: "deny"; actionId: string };

@@ -32,6 +32,15 @@ const schemas = {
     estimateMinutes: z.number().int().positive().max(60_000).nullable(),
   }),
   "task.reopen": z.strictObject({ taskId: z.string().min(1) }),
+  // The block as the student was shown it, so a removed one can still be named (ADR-0021).
+  "studyBlock.remove": z
+    .strictObject({
+      studyBlockId: z.string().min(1),
+      workId: z.string().min(1),
+      start: z.date(),
+      end: z.date(),
+    })
+    .refine(ordered, message),
 };
 
 /** What the gate re-reads at dispatch about the work an Action is for. */
@@ -56,6 +65,7 @@ type Subjects = {
   "studyBlock.move": BlockSubject;
   "task.create": WorkSubject;
   "task.reopen": TaskSubject;
+  "studyBlock.remove": BlockSubject;
 };
 
 /** Where a Grant applies: one Course, or one Obligation. */
@@ -74,18 +84,22 @@ const covers = {
   // No Responsibility adds or reopens Tasks: only the student, from a Chat, with their Approval (ADR-0022).
   "task.create": () => false,
   "task.reopen": () => false,
+  // Only the student removes a block: no Grant covers it (ADR-0021).
+  "studyBlock.remove": () => false,
 };
 
 const versions = {
   "studyBlock.create": 1,
   "studyBlock.move": 1,
+  "studyBlock.remove": 1,
   "task.create": 1,
   "task.reopen": 1,
 };
-/** What the student is shown beyond the arguments: for a move, where the block is now; for a reopening, which Task. */
+/** What the student is shown beyond the arguments: for a move or removal, where the block is now; for a reopening, which Task. */
 const shown = {
   "studyBlock.create": () => null,
   "studyBlock.move": ({ start, end }: BlockSubject) => ({ start, end }),
+  "studyBlock.remove": ({ start, end }: BlockSubject) => ({ start, end }),
   "task.create": () => null,
   "task.reopen": ({ title }: TaskSubject) => ({ title }),
 };
@@ -148,6 +162,7 @@ export const definitions = {
   "studyBlock.move": definition("studyBlock.move"),
   "task.create": definition("task.create"),
   "task.reopen": definition("task.reopen"),
+  "studyBlock.remove": definition("studyBlock.remove"),
 };
 
 export type Kind = keyof typeof definitions;

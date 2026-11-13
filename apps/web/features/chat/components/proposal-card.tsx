@@ -42,6 +42,7 @@ function outcome(action: NonNullable<SavedProposal["action"]>) {
     return {
       "studyBlock.create": "Angelegt",
       "studyBlock.move": "Verschoben",
+      "studyBlock.remove": "Entfernt",
       "task.create": "Angelegt",
       "task.reopen": "Wieder geöffnet",
     }[action.shown.kind];

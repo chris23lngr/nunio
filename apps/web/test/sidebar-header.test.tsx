@@ -40,6 +40,9 @@ beforeEach(() => {
       },
     }),
   );
+  api.route("GET", "/api/me/courses", () =>
+    Response.json({ current: "2026-ws", choices: ["2026-ws"], courses: [] }),
+  );
 });
 
 afterEach(() => vi.unstubAllGlobals());

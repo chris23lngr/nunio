@@ -22,10 +22,11 @@ export type PriorityRef = {
   kind: "course" | "project" | "obligation";
   id: string;
 };
-/** A Study Block nunio might propose: a new one for some work, or an existing one somewhere else. */
+/** A Study Block nunio might propose: a new one for some work, an existing one somewhere else, or removing one. */
 export type BlockProposal =
   | ({ kind: "create"; work: WorkRef } & Interval)
-  | ({ kind: "move"; blockId: string } & Interval);
+  | ({ kind: "move"; blockId: string } & Interval)
+  | { kind: "remove"; blockId: string };
 /** Why a proposed Study Block cannot be proposed at all. */
 export type BlockRefusal =
   | "invalid"
@@ -34,7 +35,8 @@ export type BlockRefusal =
   | "protected_time"
   | "fixed_event"
   | "study_block"
-  | "locked";
+  | "locked"
+  | "started";
 /** A Preference a proposed Study Block would break, which the student sees before approving it. */
 export type BlockNote = "outside_study_window" | "daily_limit" | "work_limit";
 export type ProtectedSpan =
@@ -427,6 +429,20 @@ export function createPlan({
       | { status: "refused"; reasons: BlockRefusal[] }
       | { status: "ok"; notes: BlockNote[] }
     > {
+      // Removing places nothing: only a Lock, or the block having started, refuses it (ADR-0021).
+      if (proposal.kind === "remove")
+        return withOwner(db, p, async (tx) => {
+          const block = await tx.studyBlock.findUnique({
+            where: { id: proposal.blockId },
+          });
+          if (!block) return { status: "refused", reasons: ["gone"] };
+          const reasons: BlockRefusal[] = [];
+          if (block.lockedAt) reasons.push("locked");
+          if (block.start <= clock.now()) reasons.push("started");
+          return reasons.length
+            ? { status: "refused", reasons }
+            : { status: "ok", notes: [] };
+        });
       if (!validInterval(proposal, maxBlockMs))
         return { status: "refused", reasons: ["invalid"] };
       return withOwner(db, p, async (tx) => {

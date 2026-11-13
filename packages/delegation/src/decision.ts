@@ -17,6 +17,7 @@ export type Refusal =
   | "approval_expired"
   | "approval_mismatch"
   | "locked"
+  | "started"
   | "protected_time"
   | "restricted";
 
@@ -62,6 +63,13 @@ export function decideAction<K extends Kind>(s: Snapshot<K>): Decision {
   if (responsibility?.state === "paused") return refuse("paused");
   // Neither a Lock nor Protected Time yields to asking.
   if ("locked" in subject && subject.locked) return refuse("locked");
+  // A block that has started is the student's past, even with an Approval given earlier (ADR-0021).
+  if (
+    intent.kind === "studyBlock.remove" &&
+    "start" in subject &&
+    subject.start <= s.now
+  )
+    return refuse("started");
   if (s.intoProtectedTime) return refuse("protected_time");
   const restrictions = responsibility?.restrictions ?? {};
   if (

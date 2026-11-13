@@ -1,4 +1,4 @@
-// Phase 14 Chat search eval (ADR-0019). Public handbook excerpts only.
+// Chat search eval (ADR-0019, rerun for Phase 15 with its longer instructions). Public handbook excerpts only.
 // Asks the retrieval eval's questions, each in a fresh Chat, through the real tool loop and the Chat default Model,
 // so the model chooses whether and what to search. Measures how often it answers a question about the material
 // without searching, whether its searches reach the expected page, and whether it cites it. Build the workspace
@@ -60,6 +60,7 @@ const chats = createChats({
     request: async () => ({ status: "refused", reason: "gone" }),
     list: async () => [],
   },
+  understanding: { levels: async () => [] },
   startArtifactRun: async () => {},
 });
 const answerer = createAnswerer(
@@ -232,7 +233,7 @@ const report = {
 };
 await writeFile(
   new URL(
-    "../../../docs/operations/phase-14-chat-search-eval.json",
+    "../../../docs/operations/phase-15-chat-search-eval.json",
     import.meta.url,
   ),
   `${JSON.stringify(report, null, 2)}\n`,

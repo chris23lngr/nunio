@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
-import type { Principal, Responsibilities } from "@nunio/delegation";
+import type {
+  Principal,
+  Responsibilities,
+  Transaction,
+} from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { Facts } from "./facts.js";
 import type { CourseColor } from "./new-course.js";
@@ -126,6 +130,64 @@ function cleaned(
 const dueOf = (next: ReturnType<typeof nextObligation>) =>
   next ? dueKey(next.due) : null;
 
+/** When the student last worked on each Course, by Course id. */
+async function lastActivityOf(tx: Transaction) {
+  const latest = new Map<string, Date>();
+  const saw = (courseId: string, at: Date) => {
+    const known = latest.get(courseId);
+    if (!known || at > known) latest.set(courseId, at);
+  };
+  const chats = await tx.chatCourse.findMany({
+    select: {
+      courseId: true,
+      chat: {
+        select: {
+          messages: {
+            where: { role: "student" },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: { createdAt: true },
+          },
+        },
+      },
+    },
+  });
+  for (const { courseId, chat } of chats)
+    for (const message of chat.messages) saw(courseId, message.createdAt);
+
+  const topicLatest = new Map<string, Date>();
+  const attempts = await tx.practiceAttempt.findMany({
+    select: { topicIds: true, createdAt: true },
+  });
+  const sawTopic = (topicId: string, at: Date) => {
+    const known = topicLatest.get(topicId);
+    if (!known || at > known) topicLatest.set(topicId, at);
+  };
+  for (const { topicIds, createdAt } of attempts)
+    for (const topicId of topicIds) sawTopic(topicId, createdAt);
+  const assessments = await tx.selfAssessment.groupBy({
+    by: ["topicId"],
+    _max: { createdAt: true },
+  });
+  for (const { topicId, _max } of assessments)
+    if (_max.createdAt) sawTopic(topicId, _max.createdAt);
+  const topics = await tx.fact.findMany({
+    where: { id: { in: [...topicLatest.keys()] } },
+    select: { id: true, courseId: true },
+  });
+  for (const { id, courseId } of topics)
+    saw(courseId, topicLatest.get(id) as Date);
+
+  const uploads = await tx.source.groupBy({
+    by: ["courseId"],
+    where: { courseId: { not: null }, deletedAt: null },
+    _max: { createdAt: true },
+  });
+  for (const { courseId, _max } of uploads)
+    if (courseId && _max.createdAt) saw(courseId, _max.createdAt);
+  return latest;
+}
+
 /** Soonest upcoming Obligation first, then those with nothing due by title; Archived Courses last. */
 function overviewOrder(
   a: {
@@ -184,6 +246,7 @@ export function createCourses({
           where: { status: { in: ["proposed", "accepted"] } },
           orderBy: { createdAt: "asc" },
         });
+        const lastActivity = await lastActivityOf(tx);
         return {
           current: semesterAt(now),
           choices: semesterChoices(now),
@@ -198,6 +261,7 @@ export function createCourses({
               entered: course.enteredAt !== null,
               archived: course.archivedAt !== null,
               next: nextObligation(reviewed.get(course.id) ?? [], now),
+              lastActivityAt: lastActivity.get(course.id) ?? null,
             }))
             .sort(overviewOrder),
         };

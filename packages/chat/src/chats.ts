@@ -8,6 +8,7 @@ import type { SourceKeys } from "@nunio/keys";
 import type { Citation, KnowledgeReader, Provenance } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
+import type { Understanding } from "@nunio/understanding";
 import type { ModelMessage, UIMessageChunk } from "ai";
 import { agendaTool } from "./agenda.js";
 import { chatContext } from "./context.js";
@@ -22,10 +23,12 @@ import {
   approveProposal,
   intentOf,
   proposeStudyBlockMoveTool,
+  proposeStudyBlockRemoveTool,
   proposeStudyBlockTool,
   proposeTaskReopenTool,
   proposeTaskTool,
 } from "./proposals.js";
+import { retryRateLimited } from "./retry.js";
 import { searchTool } from "./search.js";
 import { createTurn } from "./turn.js";
 
@@ -75,6 +78,7 @@ export function createChats({
   plan,
   clock,
   artifacts,
+  understanding,
   startArtifactRun,
 }: {
   db: PrismaClient;
@@ -84,6 +88,7 @@ export function createChats({
   plan: Pick<Plan, "timeZone" | "view" | "check">;
   clock: { now(): Date };
   artifacts: Pick<Artifacts, "request" | "list">;
+  understanding: Pick<Understanding, "levels">;
   /** Starts an Artifact's Run, which then makes it; an API adapter over Temporal. */
   startArtifactRun: (runId: string) => Promise<void>;
 }) {
@@ -204,11 +209,25 @@ export function createChats({
     proposals: Extract<ChatPart, { approvalId: string }>[],
   ) {
     if (!proposals.length) return new Map<string, string>();
-    const [records, view] = await Promise.all([
+    const [records, view, timeZone] = await Promise.all([
       delegation.history(p, { keys: proposals.map((part) => part.key) }),
       plan.view(p),
+      plan.timeZone(p),
     ]);
     const now = clock.now();
+    /** An instant as YYYY-MM-DDTHH:MM in the student's time zone, as the model gives times. */
+    const local = (instant: string | Date) =>
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      })
+        .format(new Date(instant))
+        .replace(", ", "T");
     return new Map(
       proposals.map((part) => {
         const record = records.find((r) => r.key === part.key);
@@ -217,6 +236,8 @@ export function createChats({
           studyBlockId?: string;
           taskId?: string;
           title?: string;
+          start?: string;
+          end?: string;
         };
         const workId =
           args.workId ??
@@ -230,13 +251,17 @@ export function createChats({
         const what = {
           "tool-proposeStudyBlock": "add a Study Block",
           "tool-proposeStudyBlockMove": "move the Study Block",
+          "tool-proposeStudyBlockRemove": "remove the Study Block",
           "tool-proposeTask": "add the Task",
           "tool-proposeTaskReopen": "reopen the Task",
         }[part.type];
+        // A removal names the block where it was, from the Action, since the model gave no time (ADR-0021).
         const when =
           "start" in part.input
             ? ` at ${part.input.start}–${part.input.end.slice(11)}`
-            : "";
+            : args.start && args.end
+              ? ` at ${local(args.start)}–${local(args.end).slice(11)}`
+              : "";
         const status = !record
           ? "it could not be asked"
           : record.approval?.decision === "denied"
@@ -298,13 +323,17 @@ export function createChats({
         ? {
             courseFacts: courseFactsTool(turn, {
               reader,
+              understanding,
+              artifacts,
               p,
+              timeZone,
               courses: context.courses,
             }),
           }
         : {}),
       proposeStudyBlock: proposeStudyBlockTool(),
       proposeStudyBlockMove: proposeStudyBlockMoveTool(),
+      proposeStudyBlockRemove: proposeStudyBlockRemoveTool(),
       proposeTask: proposeTaskTool(),
       proposeTaskReopen: proposeTaskReopenTool(),
     };
@@ -320,6 +349,7 @@ export function createChats({
     const toolApproval = {
       proposeStudyBlock: approve.create,
       proposeStudyBlockMove: approve.move,
+      proposeStudyBlockRemove: approve.remove,
       proposeTask: approve.task,
       proposeTaskReopen: approve.reopen,
     };
@@ -414,21 +444,25 @@ export function createChats({
       ];
       const chunks: UIMessageChunk[] = [];
       const input = { messages, tools, last: true };
-      const stepped = await delegation.meter(
-        p,
-        { microUsd: answerer.estimateMicroUsd(input) },
-        (deadline) =>
-          definitely(() =>
-            answerer.step(input, {
-              signal: options.signal
-                ? AbortSignal.any([deadline, options.signal])
-                : deadline,
-              write: (chunk) => {
-                chunks.push(chunk);
-                options.write?.(chunk);
-              },
-            }),
+      const stepped = await retryRateLimited(
+        () =>
+          delegation.meter(
+            p,
+            { microUsd: answerer.estimateMicroUsd(input) },
+            (deadline) =>
+              definitely(() =>
+                answerer.step(input, {
+                  signal: options.signal
+                    ? AbortSignal.any([deadline, options.signal])
+                    : deadline,
+                  write: (chunk) => {
+                    chunks.push(chunk);
+                    options.write?.(chunk);
+                  },
+                }),
+              ),
           ),
+        options.signal,
       );
       if (stepped.status === "refused") return stepped;
       const parts = await partsFrom(chunks, new Set(), () => undefined);
@@ -598,18 +632,22 @@ export function createChats({
           toolApproval,
           last: n === maxSteps,
         };
-        const stepped = await delegation.meter(
-          p,
-          { microUsd: answerer.estimateMicroUsd(input) },
-          (deadline) =>
-            definitely(() =>
-              answerer.step(input, {
-                signal: options.signal
-                  ? AbortSignal.any([deadline, options.signal])
-                  : deadline,
-                write,
-              }),
+        const stepped = await retryRateLimited(
+          () =>
+            delegation.meter(
+              p,
+              { microUsd: answerer.estimateMicroUsd(input) },
+              (deadline) =>
+                definitely(() =>
+                  answerer.step(input, {
+                    signal: options.signal
+                      ? AbortSignal.any([deadline, options.signal])
+                      : deadline,
+                    write,
+                  }),
+                ),
             ),
+          options.signal,
         );
         const refusal = turn.refusal();
         if (refusal === "gone") return { status: "gone" } as const;

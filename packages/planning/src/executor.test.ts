@@ -175,6 +175,37 @@ describe("the Plan executor", () => {
     ]);
   });
 
+  it("removes a block once per key", async () => {
+    const s = await student();
+    const placed = await plan.placeBlock(s.p, {
+      work: { kind: "obligation", id: s.obligationId },
+      ...span(9),
+    });
+    if (placed.status !== "ok") throw new Error(placed.status);
+    const intent = {
+      kind: "studyBlock.remove" as const,
+      studyBlockId: placed.id,
+      workId: s.obligationId,
+      ...span(9),
+    };
+
+    const removed = await executor.execute(
+      { studentId: s.studentId, actionId: "action-1", intent },
+      { idempotencyKey: "action-1:1", signal },
+    );
+    const again = await executor.execute(
+      { studentId: s.studentId, actionId: "action-1", intent },
+      { idempotencyKey: "action-1:1", signal },
+    );
+
+    expect(removed).toEqual({
+      status: "done",
+      effect: { studyBlockId: placed.id },
+    });
+    expect(again).toEqual(removed);
+    expect((await plan.view(s.p)).studyBlocks).toEqual([]);
+  });
+
   it("rejects moving a block that no longer exists", async () => {
     const s = await student();
     const intent = {

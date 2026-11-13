@@ -1725,6 +1725,44 @@ it("refuses a proposed Study Block in the past, in Protected Time, over a Fixed 
   });
 });
 
+it("refuses a proposed removal of a Locked block, one that has started, or one that is gone (ADR-0021)", async () => {
+  now = at("2026-11-09 08:00");
+  const p = await student();
+  const work = {
+    kind: "obligation",
+    id: await obligation(p, "Blatt 3", "2026-11-13", "12:00"),
+  } as const;
+  const place = async (start: string, end: string) => {
+    const placed = await plan.placeBlock(p, {
+      work,
+      start: at(start),
+      end: at(end),
+    });
+    if (placed.status !== "ok") throw new Error(placed.status);
+    return placed.id;
+  };
+  const started = await place("2026-11-09 07:30", "2026-11-09 08:30");
+  const locked = await place("2026-11-10 09:00", "2026-11-10 10:00");
+  await plan.lockBlock(p, locked, true);
+  const later = await place("2026-11-11 09:00", "2026-11-11 10:00");
+  const remove = (blockId: string) =>
+    plan.check(p, { kind: "remove", blockId });
+
+  expect(await remove(started)).toEqual({
+    status: "refused",
+    reasons: ["started"],
+  });
+  expect(await remove(locked)).toEqual({
+    status: "refused",
+    reasons: ["locked"],
+  });
+  expect(await remove(randomUUID())).toEqual({
+    status: "refused",
+    reasons: ["gone"],
+  });
+  expect(await remove(later)).toEqual({ status: "ok", notes: [] });
+});
+
 it("notes a proposed Study Block outside the study window or over a daily limit, without refusing it", async () => {
   now = at("2026-11-09 08:00");
   const p = await student();

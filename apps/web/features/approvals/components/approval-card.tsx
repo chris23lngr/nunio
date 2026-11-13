@@ -35,6 +35,10 @@ export function ApprovalCard({
       heading: `Move the block for ${action.work.title}`,
       approveLabel: "Approve this move",
     },
+    "studyBlock.remove": {
+      heading: `Remove the block for ${action.work.title}`,
+      approveLabel: "Approve this removal",
+    },
     "task.create": {
       heading: `Add the Task ${action.work.title}`,
       approveLabel: "Approve this Task",
@@ -44,6 +48,13 @@ export function ApprovalCard({
       approveLabel: "Approve reopening it",
     },
   }[action.kind];
+  // A removal has only where the block is now; a Task Action places nothing in time (ADR-0022).
+  const time =
+    action.from && action.to
+      ? `: from ${span(action.from)} to ${span(action.to)}`
+      : action.to || action.from
+        ? `: on ${span((action.to ?? action.from)!)}`
+        : "";
   return (
     <ApprovalPresentation
       role="article"
@@ -59,12 +70,7 @@ export function ApprovalCard({
             ? `${presets[approval.responsibility.preset] ?? "A Responsibility"} asks`
             : "nunio asks"}
           {action.work.course && ` for ${action.work.course}`}
-          {/* A Task Action places nothing in time (ADR-0022). */}
-          {action.to &&
-            (action.from
-              ? `: from ${span(action.from)} to ${span(action.to)}`
-              : `: on ${span(action.to)}`)}
-          .
+          {time}.
         </>
       }
     >

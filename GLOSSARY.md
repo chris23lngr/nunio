@@ -28,6 +28,10 @@ _Avoid_: Term, session, academic period
 The state of a Course the student is no longer studying, whether passed, dropped, or given up. Everything in it stays and the student can unarchive it, but nunio no longer plans or acts for it. Not to be confused with Ended, which applies only to Responsibilities.
 _Avoid_: Completed, finished, inactive, hidden
 
+**Last Activity**:
+When the student last worked on a Course themselves: asked about it in a Chat over it, answered a Practice Item or assessed themselves on one of its Topics, or uploaded a Source to it. Nothing nunio does on its own counts, such as grading or extraction. It orders the Recent Courses in the sidebar.
+_Avoid_: Last opened, last visited, last updated
+
 **Deleting a Course**:
 The student removing a Course for good, with everything that exists only within it. Its Sources stay, so a later reading may propose the Course again; Rejecting it, not Deleting it, is how the student keeps it away.
 _Avoid_: Removing, archiving, rejecting

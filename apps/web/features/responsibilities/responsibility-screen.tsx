@@ -30,6 +30,8 @@ const outcomes = {
 } as const;
 
 function describe(action: Shown, past: boolean) {
+  if (!action.to)
+    return `${past ? "Removed" : "remove"} the block for ${action.work.title}${action.from ? ` on ${when(action.from.start)}` : ""}`;
   const verb =
     action.kind === "studyBlock.move"
       ? past

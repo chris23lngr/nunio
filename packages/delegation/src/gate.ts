@@ -617,10 +617,10 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
           fingerprint,
           now,
           responsibility,
-          intoProtectedTime: await intoProtectedTime(
-            tx,
-            args as { start?: Date; end?: Date },
-          ),
+          // Removing a block places nothing, and a Task Action has no time, so neither enters Protected Time.
+          intoProtectedTime:
+            intent.kind !== "studyBlock.remove" &&
+            (await intoProtectedTime(tx, args as { start?: Date; end?: Date })),
           approval: existing?.approval
             ? {
                 id: existing.approval.id,

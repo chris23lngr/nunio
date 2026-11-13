@@ -34,14 +34,9 @@ export type ChatPart =
       input: { topics: string[] };
       output: ArtifactOutput;
     }
-  | ProposalPart<
-      "tool-proposeStudyBlock",
-      { work: string; start: string; end: string }
-    >
-  | ProposalPart<
-      "tool-proposeStudyBlockMove",
-      { block: string; start: string; end: string }
-    >
+  | ProposalPart<"tool-proposeStudyBlock", { work: string } & Times>
+  | ProposalPart<"tool-proposeStudyBlockMove", { block: string } & Times>
+  | ProposalPart<"tool-proposeStudyBlockRemove", { block: string }>
   | ProposalPart<
       "tool-proposeTask",
       {
@@ -54,7 +49,10 @@ export type ChatPart =
     >
   | ProposalPart<"tool-proposeTaskReopen", { task: string }>;
 
-/** A proposed Study Block or Task, asked of the student as an Action under `key` once the answer is saved. */
+/** Where a proposed block would be, in the student's time zone as the model gave it. */
+type Times = { start: string; end: string };
+
+/** A proposed Study Block or Task change, asked of the student as an Action under `key` once the answer is saved. */
 export type ProposalPart<Type extends string, Input> = {
   type: Type;
   toolCallId: string;
@@ -67,6 +65,7 @@ export type ProposalPart<Type extends string, Input> = {
 const proposalTypes = new Set([
   "tool-proposeStudyBlock",
   "tool-proposeStudyBlockMove",
+  "tool-proposeStudyBlockRemove",
   "tool-proposeTask",
   "tool-proposeTaskReopen",
 ]);

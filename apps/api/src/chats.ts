@@ -29,6 +29,8 @@ const Citation = z.object({
     .union([Provenance, z.literal("gone")])
     .describe('Resolved when shown; "gone" once its Source is deleted.'),
 });
+/** Where a proposed block would be, in the student's time zone as the model gave it. */
+const times = { start: z.string(), end: z.string() };
 /** A proposed Study Block or Task, with the Action the student is asked to approve. */
 const proposalPart = <Type extends string, Input extends z.ZodType>(
   type: Type,
@@ -116,11 +118,15 @@ const Part = z
     ),
     proposalPart(
       "tool-proposeStudyBlock",
-      z.object({ work: z.string(), start: z.string(), end: z.string() }),
+      z.object({ work: z.string(), ...times }),
     ),
     proposalPart(
       "tool-proposeStudyBlockMove",
-      z.object({ block: z.string(), start: z.string(), end: z.string() }),
+      z.object({ block: z.string(), ...times }),
+    ),
+    proposalPart(
+      "tool-proposeStudyBlockRemove",
+      z.object({ block: z.string() }),
     ),
     proposalPart(
       "tool-proposeTask",
@@ -289,7 +295,9 @@ async function withActions(
 /** What the model is told of an approved proposal, by what the gate made of it. */
 function outcomeOf(record: ActionRecord) {
   if (record.status === "done")
-    return "The student approved the proposal, and the Study Block is now in their Plan as proposed.";
+    return record.kind === "studyBlock.remove"
+      ? "The student approved the proposal, and the Study Block is removed from their Plan."
+      : "The student approved the proposal, and the Study Block is now in their Plan as proposed.";
   if (record.status === "refused")
     return `The student approved it, but nunio could not perform it (${record.refusal ?? "refused"}). Tell the student, and offer another time if one fits.`;
   return "The student approved it, but nunio could not confirm that it took effect. Ask the student to check their Plan.";

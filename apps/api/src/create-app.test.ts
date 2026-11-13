@@ -43,7 +43,9 @@ import {
 } from "@nunio/knowledge";
 import { createOutreach } from "@nunio/outreach";
 import { createPlan, createPlanExecutor, deadline } from "@nunio/planning";
+import type { Understanding } from "@nunio/understanding";
 import { createUnderstanding } from "@nunio/understanding";
+import { APICallError } from "ai";
 import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
 import { hashPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -77,6 +79,7 @@ let facts: Facts;
 let delegation: Delegation;
 let responsibilities: Responsibilities;
 let artifacts: Artifacts;
+let understanding: Understanding;
 /** The Artifact Runs the API asked to start, by run ID; the worker would then make each. */
 const artifactRuns: string[] = [];
 const artifactWorkflows: ArtifactWorkflows = {
@@ -177,6 +180,18 @@ const says = (text: string) => [
   { type: "text-delta", id: "text", delta: text },
   { type: "text-end", id: "text" },
 ];
+/** The provider rejects the Chat model's step with HTTP `status`, before streaming anything. */
+const rejects =
+  (status: number, headers: Record<string, string> = {}) =>
+  () => {
+    throw new APICallError({
+      message: `HTTP ${status}`,
+      url: "https://provider.invalid",
+      requestBodyValues: {},
+      statusCode: status,
+      responseHeaders: headers,
+    });
+  };
 const thinks = (text: string) => [
   { type: "reasoning-start", id: "reasoning" },
   { type: "reasoning-delta", id: "reasoning", delta: text },
@@ -380,6 +395,9 @@ beforeAll(async () => {
       request: (...args) => artifacts.request(...args),
       list: (...args) => artifacts.list(...args),
     },
+    understanding: {
+      levels: (...args) => understanding.levels(...args),
+    },
     startArtifactRun: (runId) => artifactWorkflows.start(runId),
   });
   responsibilities = createResponsibilities({
@@ -397,19 +415,20 @@ beforeAll(async () => {
     maker,
     clock: { now: () => new Date() },
   });
+  understanding = createUnderstanding({
+    db: prisma,
+    keys,
+    artifacts,
+    reader,
+    facts,
+    delegation,
+    grader,
+    clock: { now: () => new Date() },
+  });
   app = createApp({
     artifacts,
     artifactWorkflows,
-    understanding: createUnderstanding({
-      db: prisma,
-      keys,
-      artifacts,
-      reader,
-      facts,
-      delegation,
-      grader,
-      clock: { now: () => new Date() },
-    }),
+    understanding,
     responsibilities,
     runWorkflows,
     auth,
@@ -3754,6 +3773,157 @@ describe("Chat", () => {
     ).toEqual([{ start: at(next, "14:00"), end: at(next, "16:00") }]);
   });
 
+  describe("proposing to remove a Study Block (ADR-0021)", () => {
+    /** A planning Chat whose Obligation has a block in eight days, 10:00–12:00, read by the model as B1. */
+    async function blockChat(name: string, { locked = false } = {}) {
+      const fixture = await planningChat(name);
+      const day = berlinDay(8);
+      const at = (time: string) => deadline(day, time, "Europe/Berlin");
+      const placed = (await (
+        await app.request(`${apiOrigin}/api/me/study-blocks`, {
+          method: "POST",
+          headers: fixture.headers,
+          body: JSON.stringify({
+            work: { kind: "obligation", id: fixture.obligationId },
+            start: at("10:00"),
+            end: at("12:00"),
+          }),
+        })
+      ).json()) as { id: string };
+      if (locked)
+        await app.request(
+          `${apiOrigin}/api/me/study-blocks/${placed.id}/lock`,
+          {
+            method: "POST",
+            headers: fixture.headers,
+            body: JSON.stringify({ locked: true }),
+          },
+        );
+      steps.push(
+        calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+        calls("proposeStudyBlockRemove", { block: "B1" }),
+      );
+      return { ...fixture, at };
+    }
+
+    it("removes the block once the student approves it on Home", async () => {
+      const { headers, chatId, obligationId, at } = await blockChat(
+        "chat-propose-remove",
+      );
+
+      const asked = await askInChat(headers, chatId, "Lösch den Block.");
+      const card = asked.body.parts.find(
+        (part: { type: string }) =>
+          part.type === "tool-proposeStudyBlockRemove",
+      );
+      expect(card.action.shown).toEqual({
+        kind: "studyBlock.remove",
+        work: { title: "Übungsblatt 4", course: "Analysis I" },
+        from: {
+          start: at("10:00").toISOString(),
+          end: at("12:00").toISOString(),
+        },
+        to: null,
+      });
+      await app.request(`${apiOrigin}/api/me/approvals/${card.action.id}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          decision: "approve",
+          fingerprint: card.action.fingerprint,
+        }),
+      });
+
+      expect(
+        await admin.studyBlock.findMany({ where: { obligationId } }),
+      ).toEqual([]);
+    });
+
+    it("returns a Locked block to the model with the reason, without asking the student", async () => {
+      const { headers, chatId, obligationId } = await blockChat(
+        "chat-propose-remove-locked",
+        { locked: true },
+      );
+      steps.push(says("Der Block ist gesperrt."));
+      prompts.length = 0;
+
+      expect(
+        (await askInChat(headers, chatId, "Lösch den Block.")).status,
+      ).toBe(200);
+
+      expect(JSON.stringify(prompts[2])).toContain("the block is Locked");
+      expect(
+        await (
+          await app.request(`${apiOrigin}/api/me/approvals`, {
+            headers: { cookie: headers.cookie },
+          })
+        ).json(),
+      ).toEqual([]);
+      expect(await admin.studyBlock.count({ where: { obligationId } })).toBe(1);
+    });
+
+    it("tells the model the block is gone once the student approves in the Chat", async () => {
+      const { headers, chatId } = await blockChat("chat-propose-remove-report");
+      const asked = await askInChat(headers, chatId, "Lösch den Block.");
+      const card = asked.body.parts.find(
+        (part: { type: string }) =>
+          part.type === "tool-proposeStudyBlockRemove",
+      );
+      reply = "Erledigt, der Block ist weg.";
+      prompts.length = 0;
+
+      await sseChunks(
+        await app.request(
+          `${apiOrigin}/api/me/chats/${chatId}/messages/stream`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              approval: {
+                id: card.approvalId,
+                fingerprint: card.action.fingerprint,
+              },
+            }),
+          },
+        ),
+      );
+
+      expect(JSON.stringify(prompts[0])).toContain(
+        "the Study Block is removed from their Plan",
+      );
+    });
+
+    it("tells the model in later turns which block it removed, by its work and time", async () => {
+      const { headers, chatId } = await blockChat(
+        "chat-propose-remove-history",
+      );
+      const asked = await askInChat(headers, chatId, "Lösch den Block.");
+      const card = asked.body.parts.find(
+        (part: { type: string }) =>
+          part.type === "tool-proposeStudyBlockRemove",
+      );
+      await app.request(`${apiOrigin}/api/me/approvals/${card.action.id}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          decision: "approve",
+          fingerprint: card.action.fingerprint,
+        }),
+      });
+      reply = "Gern.";
+      prompts.length = 0;
+
+      await askInChat(headers, chatId, "Danke!");
+
+      const answer = conversation(prompts[0]).find(
+        ([role]) => role === "assistant",
+      )?.[1];
+      expect(answer).toContain(
+        `(You proposed to remove the Study Block for "Übungsblatt 4" at ${berlinDay(8)}T10:00–12:00: approved and done.)`,
+      );
+    });
+  });
+
   it("tells the model in later turns what became of an earlier proposal", async () => {
     const { headers, chatId } = await planningChat("chat-propose-history");
     const day = berlinDay(8);
@@ -3916,6 +4086,192 @@ describe("Chat", () => {
     expect(artifactRuns).toEqual([]);
   });
 
+  describe("courseFacts with Understanding Levels and Artifacts", () => {
+    /** What the model was given after reading K1's Facts, and the tag of its Topic. */
+    async function readCourseFacts(
+      headers: Record<string, string>,
+      chatId: string,
+    ) {
+      steps.push(calls("courseFacts", { course: "K1" }), says("Gern."));
+      prompts.length = 0;
+      expect((await askInChat(headers, chatId, "Wo stehe ich?")).status).toBe(
+        200,
+      );
+      const given = JSON.stringify(prompts[1]);
+      const tag = /\[(S\d+)\] Analysis I, Topic/.exec(given)?.[1];
+      return { given, tag };
+    }
+
+    it("gives a Topic without Evidence as not yet practiced", async () => {
+      const { headers, chatId } = await topicChat("chat-levels-none");
+
+      const { given, tag } = await readCourseFacts(headers, chatId);
+
+      expect(tag).toBeDefined();
+      expect(given).toContain(`[${tag}] not yet practiced`);
+    });
+
+    it("gives a Topic's Level with what the Attempts show, the Self-assessment and the day of the last Evidence, even to a Chat that selected nothing", async () => {
+      const s = await studyFixture("chat-levels-disputed");
+      const { artifactId, runId } = (await (
+        await s.send("/api/me/artifacts", {
+          kind: "practice_set",
+          topicIds: [s.topicId],
+          from: s.selection,
+        })
+      ).json()) as { artifactId: string; runId: string };
+      await artifacts.make(runId);
+      await s.send("/api/me/attempts", {
+        artifactId,
+        itemId: "1",
+        text: "Konvergenz.",
+      });
+      await s.send(`/api/me/topics/${s.topicId}/self-assessment`, {
+        level: "solid",
+      });
+      const { id: chatId } = (await (
+        await s.send("/api/me/chats", { courseIds: [], sourceIds: [] })
+      ).json()) as { id: string };
+
+      const { given, tag } = await readCourseFacts(
+        {
+          cookie: s.cookie,
+          origin: appOrigin,
+          "content-type": "application/json",
+        },
+        chatId,
+      );
+
+      expect(given).toContain(
+        `[${tag}] disputed (Attempts: shaky, Self-assessment: solid, last Evidence ${berlinDay(0)})`,
+      );
+    });
+
+    it("lists the Course's ready practice set by its Topics, without its content", async () => {
+      const s = await studyFixture("chat-course-artifacts");
+      const { runId } = (await (
+        await s.send("/api/me/artifacts", {
+          kind: "practice_set",
+          topicIds: [s.topicId],
+          from: s.selection,
+        })
+      ).json()) as { runId: string };
+      await artifacts.make(runId);
+      const { id: chatId } = (await (
+        await s.send("/api/me/chats", { courseIds: [], sourceIds: [] })
+      ).json()) as { id: string };
+
+      const { given, tag } = await readCourseFacts(
+        {
+          cookie: s.cookie,
+          origin: appOrigin,
+          "content-type": "application/json",
+        },
+        chatId,
+      );
+
+      expect(given).toContain(
+        `practice set, ready, not opened, made ${berlinDay(0)}, Topics [${tag}]`,
+      );
+      expect(given).not.toContain("Was kommt in der Klausur dran?");
+    });
+  });
+
+  describe("agenda with Shortfalls", () => {
+    /** A student with an exam due in `days` at noon, needing `minutes` if given, and a Chat with nothing selected. */
+    async function examChat(name: string, days: number, minutes?: number) {
+      const { headers, p, chatId } = await planningChat(name);
+      const exam = await facts.enterObligation(p, {
+        course: { title: "Analysis I", code: "MA-101" },
+        kind: "exam",
+        title: "Klausur",
+        due: { date: berlinDay(days), time: "12:00", timeZone: null },
+        destination: null,
+      });
+      if (exam.status !== "ok") throw new Error(exam.status);
+      if (minutes)
+        await app.request(
+          `${apiOrigin}/api/me/estimates/obligation/${exam.id}`,
+          {
+            method: "PUT",
+            headers,
+            body: JSON.stringify({ minutes }),
+          },
+        );
+      return { headers, chatId };
+    }
+    /** The lines of the Plan the model was given after reading it from today to `to` days ahead. */
+    async function readAgenda(
+      headers: Record<string, string>,
+      chatId: string,
+      to: number,
+    ) {
+      steps.push(
+        calls("agenda", { from: berlinDay(0), to: berlinDay(to) }),
+        says("Gern."),
+      );
+      prompts.length = 0;
+      expect(
+        (await askInChat(headers, chatId, "Schaffe ich das?")).status,
+      ).toBe(200);
+      const given = JSON.stringify(prompts[1]).replaceAll("\\n", "\n");
+      return (
+        /<<<BEGIN plan \w+>>>\n([\s\S]*?)\n<<<END plan/.exec(given)?.[1] ?? ""
+      ).split("\n");
+    }
+
+    it("gives an Obligation due in the range its Shortfall and tradeoffs", async () => {
+      // An exam tomorrow at noon needing 20 hours cannot fit: at most 4 hours a day before it.
+      const { headers, chatId } = await examChat(
+        "chat-agenda-shortfall",
+        1,
+        1200,
+      );
+
+      const lines = await readAgenda(headers, chatId, 1);
+
+      const exam = lines.findIndex((line) => line.includes("· Klausur ·"));
+      expect(exam).toBeGreaterThanOrEqual(0);
+      expect(lines[exam + 1]).toMatch(
+        /^ {2}Shortfall: \d+ min missing; tradeoffs: .*plan \d+ min less for it/,
+      );
+    });
+
+    it("says why an Obligation due in the range cannot be planned", async () => {
+      const { headers, chatId } = await examChat("chat-agenda-unplanned", 1);
+
+      const lines = await readAgenda(headers, chatId, 1);
+
+      const exam = lines.findIndex((line) => line.includes("· Klausur ·"));
+      expect(lines[exam + 1]).toBe("  cannot be planned: needs an Estimate");
+    });
+
+    it("lists every current Shortfall, also of an Obligation due after the range", async () => {
+      // An exam in three days needing 30 hours cannot fit: at most 4 hours a day before it.
+      const { headers, chatId } = await examChat(
+        "chat-agenda-shortfall-later",
+        3,
+        1800,
+      );
+
+      const lines = await readAgenda(headers, chatId, 0);
+
+      expect(lines.slice(0, 2)).toEqual([
+        `Obligations due ${berlinDay(0)} to ${berlinDay(0)}:`,
+        "none",
+      ]);
+      const summary = lines.indexOf("Shortfalls until their deadlines:");
+      expect(summary).toBeGreaterThanOrEqual(0);
+      expect(lines.slice(summary + 1)).toContainEqual(
+        expect.stringMatching(
+          new RegExp(
+            `^O\\d+ · Klausur · due ${berlinDay(3)} 12:00 · \\d+ min missing$`,
+          ),
+        ),
+      );
+    });
+  });
+
   it("tells the model in later turns where an Artifact it started stands", async () => {
     const { headers, chatId } = await topicChat("chat-practice-history");
     steps.push(
@@ -3993,6 +4349,7 @@ describe("Chat", () => {
         "agenda",
         "proposeStudyBlock",
         "proposeStudyBlockMove",
+        "proposeStudyBlockRemove",
         "proposeTask",
         "proposeTaskReopen",
       ],
@@ -4151,6 +4508,95 @@ describe("Chat", () => {
     expect(await allowance()).toMatchObject({
       usedMicroUsd: before + 2,
       heldMicroUsd: 0,
+    });
+  });
+
+  describe("a step the provider rate-limits", () => {
+    async function rateLimitedChat(name: string) {
+      const { cookie, headers, id } = await emptyChat(name);
+      const allowance = async () =>
+        (await (
+          await app.request(`${apiOrigin}/api/me/allowance`, {
+            headers: { cookie },
+          })
+        ).json()) as { usedMicroUsd: number; heldMicroUsd: number };
+      const ask = async () =>
+        sseChunks(
+          await app.request(`${apiOrigin}/api/me/chats/${id}/messages/stream`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ id: randomUUID(), text: "Hallo?" }),
+          }),
+        );
+      const messages = async () =>
+        (await (
+          await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+            headers: { cookie },
+          })
+        ).json()) as { role: string; text: string }[];
+      return { allowance, ask, messages, before: await allowance() };
+    }
+
+    it("is tried again, charging only the attempt that answered", async () => {
+      const chat = await rateLimitedChat("chat-rate-limited-once");
+      steps.push(rejects(429), says("Hallo!"));
+      prompts.length = 0;
+
+      const chunks = await chat.ask();
+
+      expect(prompts).toHaveLength(2);
+      expect(chunks.filter((chunk) => chunk.type === "text-delta")).toEqual([
+        expect.objectContaining({ delta: "Hallo!" }),
+      ]);
+      expect(chunks.map((chunk) => chunk.type)).toContain("data-committed");
+      expect(await chat.messages()).toEqual([
+        expect.objectContaining({ role: "student", text: "Hallo?" }),
+        expect.objectContaining({ role: "assistant", text: "Hallo!" }),
+      ]);
+      expect(await chat.allowance()).toEqual({
+        ...chat.before,
+        usedMicroUsd: chat.before.usedMicroUsd + 1,
+        heldMicroUsd: 0,
+      });
+    });
+
+    it("fails the turn after two more attempts, recording and charging nothing", async () => {
+      const chat = await rateLimitedChat("chat-rate-limited-thrice");
+      const limited = rejects(429, { "retry-after": "0" });
+      steps.push(limited, limited, limited);
+      prompts.length = 0;
+
+      const chunks = await chat.ask();
+
+      expect(prompts).toHaveLength(3);
+      expect(chunks.map((chunk) => chunk.type)).toContain("error");
+      expect(chunks.map((chunk) => chunk.type)).not.toContain("data-committed");
+      expect(await chat.messages()).toEqual([]);
+      expect(await chat.allowance()).toEqual(chat.before);
+    });
+
+    it("is not tried again when the provider asks for a longer wait than 10 seconds", async () => {
+      const chat = await rateLimitedChat("chat-rate-limited-long");
+      steps.push(rejects(429, { "retry-after": "11" }));
+      prompts.length = 0;
+
+      const chunks = await chat.ask();
+
+      expect(prompts).toHaveLength(1);
+      expect(chunks.map((chunk) => chunk.type)).toContain("error");
+      expect(await chat.messages()).toEqual([]);
+    });
+
+    it("is not tried again after a provider error, which may have cost something", async () => {
+      const chat = await rateLimitedChat("chat-provider-error");
+      steps.push(rejects(500, { "retry-after": "0" }));
+      prompts.length = 0;
+
+      const chunks = await chat.ask();
+
+      expect(prompts).toHaveLength(1);
+      expect(chunks.map((chunk) => chunk.type)).toContain("error");
+      expect(await chat.messages()).toEqual([]);
     });
   });
 });
@@ -4687,6 +5133,7 @@ type CoursesBody = {
     entered: boolean;
     archived: boolean;
     next: unknown;
+    lastActivityAt: string | null;
   }[];
 };
 
@@ -4735,6 +5182,7 @@ it("creates, edits, archives and deletes Courses through origin-protected routes
       entered: true,
       archived: false,
       next: null,
+      lastActivityAt: null,
     },
   ]);
   expect(await (await call("GET", `/${id}/impact`)).json()).toEqual({

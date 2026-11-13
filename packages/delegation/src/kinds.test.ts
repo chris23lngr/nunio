@@ -21,6 +21,12 @@ const samples = {
     estimateMinutes: 60,
   },
   "task.reopen": { taskId: "task-1" },
+  "studyBlock.remove": {
+    studyBlockId: "block-1",
+    workId: "obligation-1",
+    start: new Date("2026-11-10T09:00:00Z"),
+    end: new Date("2026-11-10T10:00:00Z"),
+  },
 } as const;
 const subjects = {
   "task.create": { courseId: "course-1", obligationId: null },
@@ -31,6 +37,14 @@ const subjects = {
   },
   "studyBlock.create": { courseId: "course-1", obligationId: "obligation-1" },
   "studyBlock.move": {
+    courseId: "course-1",
+    obligationId: "obligation-1",
+    placedBy: "nunio",
+    locked: false,
+    start: new Date("2026-11-10T09:00:00Z"),
+    end: new Date("2026-11-10T10:00:00Z"),
+  },
+  "studyBlock.remove": {
     courseId: "course-1",
     obligationId: "obligation-1",
     placedBy: "nunio",
@@ -180,6 +194,22 @@ describe("Grant coverage", () => {
       ),
     ).toBe(false);
   });
+
+  it.each([
+    ["its Course", { courseId: "course-1" }],
+    ["its Obligation", { obligationId: "obligation-1" }],
+  ])(
+    "never covers removing a block, not even within %s (ADR-0021)",
+    (_, scope) => {
+      expect(
+        definitions["studyBlock.remove"].grantCovers(
+          scope,
+          samples["studyBlock.remove"],
+          subjects["studyBlock.remove"],
+        ),
+      ).toBe(false);
+    },
+  );
 });
 
 describe("the studyBlock.move fingerprint", () => {

@@ -71,8 +71,17 @@ export function describeAction(
       title: task?.title ?? obligation?.title ?? "Work that is gone",
       course: obligation?.course ?? task?.course ?? null,
     },
-    from: block ? { start: block.start, end: block.end } : null,
-    to: { start: new Date(start), end: new Date(end) },
+    // A removal names the block as the student was shown it, which stays known once it is gone (ADR-0021).
+    from:
+      kind === "studyBlock.remove"
+        ? { start: new Date(start), end: new Date(end) }
+        : block
+          ? { start: block.start, end: block.end }
+          : null,
+    to:
+      kind === "studyBlock.remove"
+        ? null
+        : { start: new Date(start), end: new Date(end) },
   };
 }
 export const ActionShown = z
@@ -80,6 +89,7 @@ export const ActionShown = z
     kind: z.enum([
       "studyBlock.create",
       "studyBlock.move",
+      "studyBlock.remove",
       "task.create",
       "task.reopen",
     ]),
@@ -88,7 +98,7 @@ export const ActionShown = z
       "Where the block is now; null for a new block or a Task Action.",
     ),
     to: Span.nullable().describe(
-      "Where the block would go; null for a Task Action.",
+      "Where the block would go; null for a removal or a Task Action.",
     ),
   })
   .openapi("ActionShown");
