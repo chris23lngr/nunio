@@ -462,6 +462,7 @@ it("plans around Fixed Events entered by hand or imported from a calendar file, 
       start: at("2026-11-09 09:00"),
       end: at("2026-11-09 11:00"),
       calendarId: imported.id,
+      seriesId: expect.any(String),
     },
     {
       id: entered.id,
@@ -469,6 +470,7 @@ it("plans around Fixed Events entered by hand or imported from a calendar file, 
       start: at("2026-11-09 11:00"),
       end: at("2026-11-09 12:00"),
       calendarId: null,
+      seriesId: null,
     },
   ]);
   expect(view.calendars).toEqual([
@@ -488,6 +490,147 @@ it("plans around Fixed Events entered by hand or imported from a calendar file, 
   expect(
     await plan.addCalendar(p, { name: "kaputt.ics", ics: "not a calendar" }),
   ).toEqual({ status: "invalid" });
+});
+
+/** A calendar file holding the given VEVENT lines, each event's lines in its own array. */
+const icsOf = (...events: string[][]) =>
+  [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//test//EN",
+    ...events.flatMap((lines) => [
+      "BEGIN:VEVENT",
+      "DTSTAMP:20261101T000000Z",
+      ...lines,
+      "END:VEVENT",
+    ]),
+    "END:VCALENDAR",
+  ].join("\r\n");
+const weeklyLecture = [
+  "UID:analysis@uni",
+  "SUMMARY:Analysis I",
+  "DTSTART:20261102T090000Z",
+  "DTEND:20261102T110000Z",
+  "RRULE:FREQ=WEEKLY;COUNT=4",
+];
+
+it("updates a calendar added again, keeping its Fixed Events and their IDs", async () => {
+  now = at("2026-11-01 08:00");
+  const p = await student();
+  const first = await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(weeklyLecture),
+  });
+  if (first.status !== "ok") throw new Error(first.status);
+  const before = (await plan.view(p)).fixedEvents;
+
+  expect(
+    await plan.addCalendar(p, {
+      name: "Stundenplan (1).ics",
+      ics: icsOf(weeklyLecture),
+    }),
+  ).toMatchObject({ status: "ok", id: first.id, events: 4 });
+  const view = await plan.view(p);
+  expect(view.calendars).toEqual([
+    { id: first.id, name: "Stundenplan.ics", events: 4 },
+  ]);
+  expect(view.fixedEvents).toEqual(before);
+});
+
+it("moves a Fixed Event the calendar moved, keeping its ID, and drops one it no longer has, while past ones stay", async () => {
+  now = at("2026-11-01 08:00");
+  const p = await student();
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(weeklyLecture),
+  });
+  const [, past, moved] = (await plan.view(p)).fixedEvents;
+
+  now = at("2026-11-10 08:00");
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(
+      [...weeklyLecture, "EXDATE:20261123T090000Z", "EXDATE:20261109T090000Z"],
+      [
+        "UID:analysis@uni",
+        "RECURRENCE-ID:20261116T090000Z",
+        "SUMMARY:Analysis I",
+        "DTSTART:20261117T130000Z",
+        "DTEND:20261117T150000Z",
+      ],
+    ),
+  });
+
+  expect((await plan.view(p)).fixedEvents.map((e) => [e.id, e.start])).toEqual([
+    [expect.any(String), at("2026-11-02 10:00")],
+    [past!.id, at("2026-11-09 10:00")],
+    [moved!.id, at("2026-11-17 14:00")],
+  ]);
+});
+
+it("groups a calendar's Fixed Events into Event Series by title, whether repeated or listed one by one", async () => {
+  now = at("2026-11-01 08:00");
+  const p = await student();
+  const tutorial = (day: string) => [
+    `UID:tutorium-${day}@uni`,
+    "SUMMARY:Tutorium Analysis",
+    `DTSTART:202611${day}T130000Z`,
+    `DTEND:202611${day}T150000Z`,
+  ];
+  const ics = icsOf(weeklyLecture, tutorial("04"), tutorial("11"));
+  const added = await plan.addCalendar(p, { name: "Stundenplan.ics", ics });
+  if (added.status !== "ok") throw new Error(added.status);
+  const entered = await plan.addFixedEvent(p, {
+    title: "Analysis I",
+    start: at("2026-11-05 10:00"),
+    end: at("2026-11-05 11:00"),
+  });
+  if (entered.status !== "ok") throw new Error(entered.status);
+
+  const view = await plan.view(p);
+  expect(view.eventSeries).toEqual([
+    { id: expect.any(String), calendarId: added.id, title: "Analysis I" },
+    {
+      id: expect.any(String),
+      calendarId: added.id,
+      title: "Tutorium Analysis",
+    },
+  ]);
+  const [lecture, tutorium] = view.eventSeries;
+  const seriesOf = (title: string, calendarId: string | null) =>
+    view.fixedEvents
+      .filter((e) => e.title === title && e.calendarId === calendarId)
+      .map((e) => e.seriesId);
+  expect(seriesOf("Analysis I", added.id)).toEqual(Array(4).fill(lecture!.id));
+  expect(seriesOf("Tutorium Analysis", added.id)).toEqual(
+    Array(2).fill(tutorium!.id),
+  );
+  expect(seriesOf("Analysis I", null)).toEqual([null]);
+
+  await plan.addCalendar(p, { name: "Stundenplan.ics", ics });
+  expect((await plan.view(p)).eventSeries).toEqual(view.eventSeries);
+});
+
+it("drops an Event Series once the calendar lists none of its events", async () => {
+  now = at("2026-11-01 08:00");
+  const p = await student();
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(weeklyLecture),
+  });
+
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf(
+      weeklyLecture.map((line) =>
+        line.startsWith("SUMMARY:") ? "SUMMARY:Analysis I (Mathematik)" : line,
+      ),
+    ),
+  });
+
+  expect((await plan.view(p)).eventSeries).toEqual([
+    expect.objectContaining({ title: "Analysis I (Mathematik)" }),
+  ]);
 });
 
 it("ranks Courses, Projects and Obligations in one list, an Obligation's own rank winning over its Project's and Course's", async () => {

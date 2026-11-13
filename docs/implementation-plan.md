@@ -702,9 +702,9 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
    - `agenda` shows open Tasks without an Obligation. This fixes the Chat refusing a Study Block for such a Task.
 2. **Event Series and identity.**
    - Fixed Events from a calendar keep their UID and recurrence ID.
-   - Each Fixed Event belongs to an Event Series.
-   - Adding a calendar again updates its events by identity. A moved event keeps its ID. An event no longer in the file, within the read window, is cancelled.
-   - Manual Fixed Events have no series.
+   - Each Fixed Event from a calendar belongs to an Event Series: the calendar's events with the same title. Many university exports list each lecture as its own event without a recurrence rule, so a series cannot rest on one.
+   - A file sharing event UIDs with a calendar added before updates that calendar, the one sharing most if several do. A moved event keeps its ID. An event no longer in the file, or cancelled in it, is deleted if it lies in the read window; past events stay.
+   - Manual Fixed Events have no series. Events read before this stage have no UID, so a new reading cannot match them and adds a new calendar.
 3. **Assigning series to Courses.**
    - When a calendar is read, one metered call proposes a Course for each series. It receives only the series title, weekday, time and rhythm, plus the Course handles.
    - Review lists the proposals, and confirming one sets its Routine in the same step. The Course page has an "Events" section, where the student can unassign one Course Event.
@@ -726,7 +726,8 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 
 **Verification checklist.**
 - [x] A Task without an Obligation but in a Course is covered by that Course's Grant and limit, and goes when the Course is deleted (`packages/planning/src/plan.test.ts`, "keeps a Task in a Course…"; `packages/delegation/src/gate.test.ts`, "creates a block for a Task in the Grant's Course…").
-- [ ] Adding the same `.ics` file twice leaves the same Fixed Events. A moved occurrence keeps its ID and its Tasks, and a removed occurrence cancels its open Tasks.
+- [x] Adding the same `.ics` file twice leaves the same Fixed Events and Event Series. A moved occurrence keeps its ID, and a removed or cancelled one goes (`packages/planning/src/plan.test.ts`, "updates a calendar added again…", "moves a Fixed Event the calendar moved…", "groups a calendar's Fixed Events into Event Series…"; `calendar.test.ts`, "leaves out a cancelled occurrence…").
+- [ ] A moved occurrence keeps its Tasks, and a removed occurrence cancels its open Tasks.
 - [ ] The assignment call receives no event description, location or attendee, and is metered. A rejected proposal stays rejected after re-reading.
 - [ ] An unconfirmed series produces no Tasks. A confirmed one with a Routine produces exactly one Preparation and one Follow-up per Course Event in the next 14 days, also after repeated runs.
 - [ ] `rebalance` never places a Follow-up before its Course Event ends, nor a Preparation after its Course Event starts (`rebalance.test.ts`).
@@ -739,6 +740,11 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 - Tasks in a rejected, merged or Archived Course drop out of the Plan, like their Obligations.
 - `agenda` lists open Tasks toward no Obligation whatever the range, since they have no deadline. A Chat can therefore propose a Study Block for one (`apps/api/src/create-app.test.ts`, "proposes a Study Block for a Task in a Course…").
 - Study Blocks of such a Task take its Course's color on the Plan.
+
+**Progress (2026-11-13).** Stage 2 is implemented.
+- `readCalendar` gives each occurrence its UID and, for a repeated event, the start it was scheduled for. Cancelled occurrences and events are left out.
+- `event_series` holds one row per calendar and title. A series keeps its ID while the calendar lists any of its events, and goes once it lists none, so a renamed lecture becomes a new series.
+- `plan.view` returns `eventSeries` and each Fixed Event's `seriesId`. Adding a calendar again still answers 201, with the ID of the calendar it updated.
 
 **Anti-pattern guards.**
 - Never change a Fixed Event, and never let a Routine create a Study Block outside Rebalance or a proposal.

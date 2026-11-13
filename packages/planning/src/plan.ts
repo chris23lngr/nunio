@@ -193,13 +193,18 @@ export function createPlan({
       await tx.fixedEvent.findMany({
         orderBy: [{ start: "asc" }, { end: "asc" }],
       })
-    ).map(({ id, title, start, end, calendarId }) => ({
+    ).map(({ id, title, start, end, calendarId, seriesId }) => ({
       id,
       title,
       start,
       end,
       calendarId,
+      seriesId,
     }));
+    const eventSeries = await tx.eventSeries.findMany({
+      orderBy: [{ title: "asc" }, { id: "asc" }],
+      select: { id: true, calendarId: true, title: true },
+    });
     const calendars = (
       await tx.calendarSource.findMany({
         orderBy: { addedAt: "asc" },
@@ -307,6 +312,7 @@ export function createPlan({
       tasks,
       studyBlocks: blocks,
       fixedEvents,
+      eventSeries,
       calendars,
       priorities: ranking.map(({ kind, id }) => ({ kind, id })),
       limits: {
@@ -687,7 +693,10 @@ export function createPlan({
         return { status: count ? "ok" : "gone" } as const;
       });
     },
-    /** Adds a calendar file as a Source of Fixed Events for the coming year; recurrences are expanded, so adding it again extends them. */
+    /**
+     * Adds a calendar file as a Source of Fixed Events for the coming year, expanding recurrences. A file sharing event
+     * UIDs with a calendar the student added before updates that calendar instead, keeping its events' IDs (ADR-0021).
+     */
     async addCalendar(p: Principal, input: { name: string; ics: string }) {
       const name = titleOf(input.name, 255);
       if (!name) return { status: "invalid" } as const;
@@ -695,21 +704,85 @@ export function createPlan({
         const timeZone =
           (await tx.planPreference.findFirst())?.timeZone ?? defaults.timeZone;
         const now = clock.now();
-        const reading = readCalendar(input.ics, {
-          from: now,
-          until: new Date(now.getTime() + 365 * dayMs),
-          timeZone,
-        });
+        const until = new Date(now.getTime() + 365 * dayMs);
+        const reading = readCalendar(input.ics, { from: now, until, timeZone });
         if (reading.status === "invalid") return reading;
-        const id = randomUUID();
-        await tx.calendarSource.create({ data: { id, studentId, name } });
-        await tx.fixedEvent.createMany({
-          data: reading.events.map((event) => ({
+        const uids = [
+          ...new Set(reading.events.flatMap((e) => (e.uid ? [e.uid] : []))),
+        ];
+        // The calendar sharing the most UIDs with the file is the one added before.
+        const [match] = uids.length
+          ? await tx.fixedEvent.groupBy({
+              by: ["calendarId"],
+              where: { calendarId: { not: null }, uid: { in: uids } },
+              _count: { _all: true },
+              orderBy: { _count: { calendarId: "desc" } },
+              take: 1,
+            })
+          : [];
+        const id = match?.calendarId ?? randomUUID();
+        if (!match)
+          await tx.calendarSource.create({ data: { id, studentId, name } });
+        const keyOf = (event: {
+          uid: string | null;
+          recurrenceId: Date | null;
+        }) => `${event.uid} ${event.recurrenceId?.toISOString() ?? ""}`;
+        // Only events the file could still list: past ones stay as they were.
+        const existing = new Map(
+          (
+            await tx.fixedEvent.findMany({
+              where: { calendarId: id, start: { lt: until }, end: { gt: now } },
+            })
+          ).map((event) => [keyOf(event), event.id]),
+        );
+        // Each title is one Event Series, which keeps its ID while the calendar lists it.
+        const series = new Map(
+          (await tx.eventSeries.findMany({ where: { calendarId: id } })).map(
+            (s) => [s.title, s.id],
+          ),
+        );
+        const fresh = [...new Set(reading.events.map((e) => e.title))]
+          .filter((title) => !series.has(title))
+          .map((title) => ({
             id: randomUUID(),
             studentId,
             calendarId: id,
-            ...event,
-          })),
+            title,
+          }));
+        await tx.eventSeries.createMany({ data: fresh });
+        for (const s of fresh) series.set(s.title, s.id);
+        const added = [];
+        for (const event of reading.events) {
+          const known = event.uid ? existing.get(keyOf(event)) : undefined;
+          const seriesId = series.get(event.title)!;
+          if (known === undefined) {
+            added.push({
+              id: randomUUID(),
+              studentId,
+              calendarId: id,
+              seriesId,
+              ...event,
+            });
+            continue;
+          }
+          existing.delete(keyOf(event));
+          await tx.fixedEvent.update({
+            where: { id: known },
+            data: {
+              title: event.title,
+              start: event.start,
+              end: event.end,
+              seriesId,
+            },
+          });
+        }
+        // What the file no longer lists was cancelled or removed.
+        await tx.fixedEvent.deleteMany({
+          where: { id: { in: [...existing.values()] } },
+        });
+        await tx.fixedEvent.createMany({ data: added });
+        await tx.eventSeries.deleteMany({
+          where: { calendarId: id, events: { none: {} } },
         });
         return {
           status: "ok",

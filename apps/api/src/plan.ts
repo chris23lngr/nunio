@@ -149,8 +149,19 @@ const PlanView = z
           .describe(
             "The calendar Source it was read from; null when entered by hand.",
           ),
+        seriesId: z
+          .string()
+          .nullable()
+          .describe("Its Event Series; null when entered by hand."),
       }),
     ),
+    eventSeries: z
+      .array(
+        z.object({ id: z.string(), calendarId: z.string(), title: z.string() }),
+      )
+      .describe(
+        "The Fixed Events of one calendar that share a title (ADR-0021).",
+      ),
     calendars: z.array(
       z.object({ id: z.string(), name: z.string(), events: z.number().int() }),
     ),
@@ -528,7 +539,7 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
               truncated: z.boolean(),
             }),
           }),
-          "The calendar Source, with its timed events of the coming year and what was skipped.",
+          "The calendar Source, with its timed events of the coming year and what was skipped. A file sharing event UIDs with a calendar added before updates that one, whose ID it returns.",
         ),
         ...outcomes,
       },

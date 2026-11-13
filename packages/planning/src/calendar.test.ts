@@ -122,10 +122,93 @@ describe("readCalendar", () => {
       ],
     },
   ])("reads $name", ({ ics, events }) => {
-    expect(readCalendar(ics, window)).toEqual({
+    expect(readCalendar(ics, window)).toMatchObject({
       status: "ok",
       events,
       skipped: { allDay: 0, outsideWindow: 0, truncated: false },
+    });
+  });
+
+  it("gives each occurrence its identity: its UID and, when repeated, the start it was scheduled for", () => {
+    const ics = calendar(
+      berlin,
+      [
+        "BEGIN:VEVENT",
+        "UID:analysis@uni",
+        "DTSTAMP:20261101T000000Z",
+        "SUMMARY:Analysis I",
+        "DTSTART;TZID=Europe/Berlin:20261102T100000",
+        "DTEND;TZID=Europe/Berlin:20261102T120000",
+        "RRULE:FREQ=WEEKLY;COUNT=2",
+        "END:VEVENT",
+        "BEGIN:VEVENT",
+        "UID:analysis@uni",
+        "DTSTAMP:20261101T000000Z",
+        "RECURRENCE-ID;TZID=Europe/Berlin:20261109T100000",
+        "SUMMARY:Analysis I",
+        "DTSTART;TZID=Europe/Berlin:20261110T140000",
+        "DTEND;TZID=Europe/Berlin:20261110T160000",
+        "END:VEVENT",
+        "BEGIN:VEVENT",
+        "UID:sprechstunde@uni",
+        "DTSTAMP:20261101T000000Z",
+        "SUMMARY:Sprechstunde",
+        "DTSTART;TZID=Europe/Berlin:20261104T090000",
+        "DTEND;TZID=Europe/Berlin:20261104T100000",
+        "END:VEVENT",
+      ].join("\r\n"),
+    );
+
+    expect(readCalendar(ics, window)).toMatchObject({
+      status: "ok",
+      events: [
+        {
+          uid: "analysis@uni",
+          recurrenceId: at("2026-11-02 10:00"),
+          start: at("2026-11-02 10:00"),
+        },
+        { uid: "sprechstunde@uni", recurrenceId: null },
+        {
+          uid: "analysis@uni",
+          recurrenceId: at("2026-11-09 10:00"),
+          start: at("2026-11-10 14:00"),
+        },
+      ],
+    });
+  });
+
+  it("leaves out a cancelled occurrence of a repeated event, and a cancelled event", () => {
+    const ics = calendar(
+      [
+        "BEGIN:VEVENT",
+        "UID:analysis@uni",
+        "DTSTAMP:20261101T000000Z",
+        "SUMMARY:Analysis I",
+        "DTSTART:20261102T090000Z",
+        "DTEND:20261102T110000Z",
+        "RRULE:FREQ=WEEKLY;COUNT=2",
+        "END:VEVENT",
+        "BEGIN:VEVENT",
+        "UID:analysis@uni",
+        "DTSTAMP:20261101T000000Z",
+        "RECURRENCE-ID:20261109T090000Z",
+        "STATUS:CANCELLED",
+        "SUMMARY:Analysis I",
+        "DTSTART:20261109T090000Z",
+        "DTEND:20261109T110000Z",
+        "END:VEVENT",
+      ].join("\r\n"),
+      event([
+        "SUMMARY:Exkursion",
+        "STATUS:CANCELLED",
+        "DTSTART:20261105T090000Z",
+        "DTEND:20261105T110000Z",
+      ]),
+    );
+
+    expect(readCalendar(ics, window)).toMatchObject({
+      status: "ok",
+      events: [{ title: "Analysis I", start: at("2026-11-02 10:00") }],
     });
   });
 

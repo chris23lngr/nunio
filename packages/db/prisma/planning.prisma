@@ -135,10 +135,29 @@ model CalendarSource {
   addedAt    DateTime @default(now())
 
   events FixedEvent[]
+  series EventSeries[]
 
   @@unique([id, studentId])
   @@index([studentId])
   @@map("calendar_source")
+}
+
+/// The Fixed Events of one calendar that share a title.
+model EventSeries {
+  id         String         @id
+  studentId  String
+  student    User           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  calendarId String
+  calendar   CalendarSource @relation(fields: [calendarId, studentId], references: [id, studentId], onDelete: Cascade)
+  title      String
+  createdAt  DateTime       @default(now())
+
+  events FixedEvent[]
+
+  @@unique([id, studentId])
+  @@unique([calendarId, title])
+  @@index([studentId])
+  @@map("event_series")
 }
 
 /// A calendar event nunio did not create: an operational Fact it plans around and never changes.
@@ -149,11 +168,19 @@ model FixedEvent {
   /// Null for an event the student entered by hand.
   calendarId String?
   calendar   CalendarSource? @relation(fields: [calendarId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// Null for an event the student entered by hand.
+  seriesId   String?
+  series     EventSeries?    @relation(fields: [seriesId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// The calendar's UID for the event; null for one entered by hand or read before nunio kept it.
+  uid          String?
+  /// For an occurrence of a repeated event, the start it was scheduled for, which moving it does not change.
+  recurrenceId DateTime?
   title     String
   start     DateTime
   end       DateTime
 
   @@index([studentId, start])
+  @@index([calendarId, uid])
   @@map("fixed_event")
 }
 

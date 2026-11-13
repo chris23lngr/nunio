@@ -40,6 +40,7 @@ function plan(overrides: Partial<Plan> = {}): Plan {
       },
     ],
     fixedEvents: [],
+    eventSeries: [],
     calendars: [],
     priorities: [],
     limits: {
@@ -287,6 +288,7 @@ test("each display option hides what it names", async () => {
           start: at(9, 10),
           end: at(9, 12),
           calendarId: null,
+          seriesId: null,
         },
       ],
       proposal: {
@@ -402,6 +404,7 @@ test("a Fixed Event opens what nunio knows about it", async () => {
           start: at(9, 10),
           end: at(9, 12),
           calendarId: "cal-1",
+          seriesId: null,
         },
       ],
     }),

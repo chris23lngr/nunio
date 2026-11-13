@@ -2086,6 +2086,13 @@
                     "null"
                   ],
                   "description": "The calendar Source it was read from; null when entered by hand."
+                },
+                "seriesId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Its Event Series; null when entered by hand."
                 }
               },
               "required": [
@@ -2093,9 +2100,33 @@
                 "title",
                 "start",
                 "end",
-                "calendarId"
+                "calendarId",
+                "seriesId"
               ]
             }
+          },
+          "eventSeries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "calendarId": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "calendarId",
+                "title"
+              ]
+            },
+            "description": "The Fixed Events of one calendar that share a title (ADR-0021)."
           },
           "calendars": {
             "type": "array",
@@ -2346,6 +2377,7 @@
           "tasks",
           "studyBlocks",
           "fixedEvents",
+          "eventSeries",
           "calendars",
           "priorities",
           "limits",
@@ -8943,7 +8975,7 @@
         },
         "responses": {
           "201": {
-            "description": "The calendar Source, with its timed events of the coming year and what was skipped.",
+            "description": "The calendar Source, with its timed events of the coming year and what was skipped. A file sharing event UIDs with a calendar added before updates that one, whose ID it returns.",
             "content": {
               "application/json": {
                 "schema": {

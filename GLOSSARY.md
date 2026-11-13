@@ -121,7 +121,7 @@ A calendar event nunio did not create, such as a lecture or a job shift. nunio p
 _Avoid_: Commitment, appointment, external event
 
 **Event Series**:
-The Fixed Events of one recurring calendar event, such as every Monday lecture of a Semester.
+The Fixed Events of one calendar that share a title, such as every lecture of a Course in a Semester, whether the calendar repeats one event or lists each on its own.
 _Avoid_: Recurrence, recurring event
 
 **Course Event**:
