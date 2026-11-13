@@ -17,6 +17,8 @@ This amends ADR-0011's rule that "the model allowlist holds only EU-pinned Bedro
 
 **Not yet done.** Task Models are read only at start, so a long-running API instance or worker keeps estimating with the prices it started with. Unlike Chat, it does not yet stop using a Model whose prices go stale or that loses its zero-retention endpoint. Reading task Models per call is the follow-up.
 
+**Amendment (2026-11-12, Chat tools, [ADR-0019](0019-the-chat-model-calls-tools.md)):** Chat offers a Model only if a fifth thing holds: one of its zero-retention endpoints supports tools and tool choice. The daily sync records each endpoint's supported parameters, and Chat requests set `provider.require_parameters`, so OpenRouter routes only to such endpoints. Prices stay the highest across all zero-retention endpoints, so the estimate remains an upper bound. Not yet verified: that `@openrouter/ai-sdk-provider` passes `require_parameters` through.
+
 ## Considered Options
 
 - **Code allowlist, database switches**: keeps compliance under review, but every new Model and every price change still needs a deploy, and prices drift.

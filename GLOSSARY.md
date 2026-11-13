@@ -7,7 +7,7 @@ nunio is a proactive study platform for university students. It keeps an actiona
 ### Interaction
 
 **Chat**:
-A conversation between the student and nunio over an explicitly selected set of courses and materials. A Chat can start an Agent but is never itself an Agent.
+A conversation between the student and nunio that draws course material only from an explicitly selected set of Courses and Sources, and may read the student's whole Plan, Obligations and Facts. A Chat can propose Actions and start Runs but is never itself an Agent.
 _Avoid_: Assistant, conversation agent
 
 **Agent**:
@@ -275,7 +275,7 @@ A single, bounded execution of Agent work, started either by the student, such a
 _Avoid_: Job, task, session
 
 **Action**:
-One concrete effect a Run has on the student's plan or outside world, such as creating a study block or submitting an artifact. Messages nunio sends the student, such as Interventions and Briefings, are not Actions, and neither is making an Artifact.
+One concrete effect a Run, or the student's request in a Chat, has on the student's plan or outside world, such as creating a study block or submitting an artifact. Messages nunio sends the student, such as Interventions and Briefings, are not Actions, and neither is making an Artifact.
 _Avoid_: Operation, step, tool call
 
 **Approval**:
