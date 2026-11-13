@@ -228,6 +228,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     schedules,
     clock,
   });
+  const artifactWorkflows = artifactWorkflowsFromEnv(env);
   const artifacts = createArtifacts({
     db: prisma,
     keys,
@@ -249,7 +250,16 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     sources,
     facts,
     sourceWorkflows: sourceWorkflowsFromEnv(env),
-    chats: createChats({ db: prisma, keys, reader, delegation, plan, clock }),
+    chats: createChats({
+      db: prisma,
+      keys,
+      reader,
+      delegation,
+      plan,
+      clock,
+      artifacts,
+      startArtifactRun: (runId) => artifactWorkflows.start(runId),
+    }),
     chatModels: createChatModels({
       catalog,
       answererFor: (model) => createAnswerer(models.fromConfig(model)),
@@ -259,7 +269,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     projects: createProjects({ db: prisma }),
     courses: createCourses({ db: prisma, clock, facts, responsibilities }),
     artifacts,
-    artifactWorkflows: artifactWorkflowsFromEnv(env),
+    artifactWorkflows,
     understanding: createUnderstanding({
       db: prisma,
       keys,

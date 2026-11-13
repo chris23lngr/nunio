@@ -20,7 +20,17 @@ const reader = createKnowledgeReader({
 });
 const clock = { now: () => new Date() };
 const plan = createPlan({ db, facts: createFacts({ db, keys, clock }), clock });
-const chats = createChats({ db, keys, reader, delegation, plan, clock });
+const chats = createChats({
+  db,
+  keys,
+  reader,
+  delegation,
+  plan,
+  clock,
+  // The evals measure answers, so a Chat starts no Artifact here.
+  artifacts: { request: async () => ({ status: "refused", reason: "gone" }) },
+  startArtifactRun: async () => {},
+});
 const limit = 10,
   ks = [1, 3, 5, 8] as const,
   candidates = [0.3, 0.4, 0.45, 0.5, 0.55, 0.6];

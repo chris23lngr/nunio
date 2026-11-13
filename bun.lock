@@ -211,6 +211,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@nunio/ai": "workspace:*",
+        "@nunio/artifacts": "workspace:*",
         "@nunio/db": "workspace:*",
         "@nunio/delegation": "workspace:*",
         "@nunio/keys": "workspace:*",

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Answerer } from "@nunio/ai";
+import type { Artifacts } from "@nunio/artifacts";
 import type { PrismaClient } from "@nunio/db";
 import type { Delegation, Principal } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
@@ -14,6 +15,8 @@ import { courseFactsTool } from "./course-facts.js";
 import { historyFrom, historyTurns } from "./history.js";
 import type { ChatPart } from "./parts.js";
 import { isProposal, partsFrom } from "./parts.js";
+import type { ArtifactStart } from "./practice.js";
+import { startArtifactTool } from "./practice.js";
 import type { Proposal } from "./proposals.js";
 import {
   approveProposal,
@@ -69,6 +72,8 @@ export function createChats({
   delegation,
   plan,
   clock,
+  artifacts,
+  startArtifactRun,
 }: {
   db: PrismaClient;
   keys: SourceKeys;
@@ -76,6 +81,9 @@ export function createChats({
   delegation: Delegation;
   plan: Pick<Plan, "timeZone" | "view" | "check">;
   clock: { now(): Date };
+  artifacts: Pick<Artifacts, "request">;
+  /** Starts an Artifact's Run, which then makes it; an API adapter over Temporal. */
+  startArtifactRun: (runId: string) => Promise<void>;
 }) {
   const derived = createDerivedText(keys);
   async function resolve(p: Principal, citations: Citation[]) {
@@ -217,10 +225,25 @@ export function createChats({
     if (!history) return null;
     const context = chatContext(clock.now(), timeZone, history.courses);
     const turn = createTurn();
+    const started: { current?: ArtifactStart } = {};
     const tools = {
-      // A Chat with nothing selected has nothing to search.
+      // A Chat with nothing selected has nothing to search, nor Topics to practise.
       ...(history.selected
-        ? { searchMaterial: searchTool(turn, reader, p, chatId) }
+        ? {
+            searchMaterial: searchTool(turn, reader, p, chatId),
+            startPracticeSet: startArtifactTool("practice_set", turn, {
+              reader,
+              p,
+              chatId,
+              started,
+            }),
+            startFlashcards: startArtifactTool("flashcards", turn, {
+              reader,
+              p,
+              chatId,
+              started,
+            }),
+          }
         : {}),
       agenda: agendaTool(turn, {
         reader,
@@ -244,7 +267,7 @@ export function createChats({
       proposeStudyBlock: approve.create,
       proposeStudyBlockMove: approve.move,
     };
-    return { history, context, turn, tools, proposals, toolApproval };
+    return { history, context, turn, tools, proposals, toolApproval, started };
   }
   /** The saved answers of a Chat, newest first, with their parts opened. */
   async function answers(p: Principal, chatId: string) {
@@ -489,7 +512,15 @@ export function createChats({
       const setUp = await turnFor(p, chatId);
       step("history");
       if (!setUp) return { status: "gone" } as const;
-      const { history, context, turn, tools, proposals, toolApproval } = setUp;
+      const {
+        history,
+        context,
+        turn,
+        tools,
+        proposals,
+        toolApproval,
+        started: artifact,
+      } = setUp;
       const messages: ModelMessage[] = [
         ...history.turns.flatMap((turn): ModelMessage[] => [
           { role: "user", content: turn.question },
@@ -631,6 +662,23 @@ export function createChats({
               }),
             ),
           );
+      // Its Artifact starts only now, so a failed turn starts nothing; a failed start shows on its card.
+      if (artifact.current) {
+        const { kind, topicIds, artifactId } = artifact.current;
+        const requested = await artifacts
+          .request(p, { kind, topicIds, artifactId, from: { chatId } })
+          .catch((error: unknown) => ({ status: "failed", error }) as const);
+        if (requested.status === "started")
+          await startArtifactRun(requested.runId).catch((error: unknown) =>
+            console.error(
+              JSON.stringify({
+                msg: "chat artifact run not started",
+                artifactId,
+                error: String(error),
+              }),
+            ),
+          );
+      }
       const message: ChatMessage = {
         id,
         role: "assistant",

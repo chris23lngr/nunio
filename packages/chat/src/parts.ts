@@ -3,6 +3,7 @@ import type { UIMessageChunk } from "ai";
 import { readUIMessageStream } from "ai";
 import type { AgendaOutput } from "./agenda.js";
 import type { CourseFactsOutput } from "./course-facts.js";
+import type { ArtifactOutput } from "./practice.js";
 import type { SearchOutput } from "./search.js";
 
 /** One part of an answer, as the student saw it and as it is stored. */
@@ -26,6 +27,12 @@ export type ChatPart =
       toolCallId: string;
       input: { course: string };
       output: CourseFactsOutput;
+    }
+  | {
+      type: "tool-startPracticeSet" | "tool-startFlashcards";
+      toolCallId: string;
+      input: { topics: string[] };
+      output: ArtifactOutput;
     }
   | ProposalPart<"tool-proposeStudyBlock", { work: string }>
   | ProposalPart<"tool-proposeStudyBlockMove", { block: string }>;

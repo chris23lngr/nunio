@@ -95,6 +95,25 @@ const Part = z
       input: z.object({ course: z.string() }),
       output: z.object({ course: z.string(), facts: z.number().int() }),
     }),
+    ...(["tool-startPracticeSet", "tool-startFlashcards"] as const).map(
+      (type) =>
+        z.object({
+          type: z.literal(type),
+          toolCallId: z.string(),
+          input: z.object({ topics: z.array(z.string()) }),
+          output: z.object({
+            kind: z.enum(["practice_set", "flashcards"]),
+            topics: z.number().int(),
+            artifactId: z.string(),
+          }),
+          artifact: z
+            .object({ status: z.enum(["making", "ready", "failed"]) })
+            .nullable()
+            .describe(
+              "Where the Artifact stands; null if it could not be started.",
+            ),
+        }),
+    ),
     proposalPart("tool-proposeStudyBlock", { work: z.string() }),
     proposalPart("tool-proposeStudyBlockMove", { block: z.string() }),
   ])
@@ -204,10 +223,26 @@ async function withActions(
     ? await c.get("delegation").history(p, { keys })
     : [];
   const plan = records.length ? await c.get("plan").view(p) : null;
+  const started = messages.some((message) =>
+    message.parts.some(
+      (part) =>
+        part.type === "tool-startPracticeSet" ||
+        part.type === "tool-startFlashcards",
+    ),
+  )
+    ? await c.get("artifacts").list(p, {})
+    : [];
   const now = new Date();
   return messages.map((message) => ({
     ...message,
     parts: message.parts.map((part) => {
+      if (
+        part.type === "tool-startPracticeSet" ||
+        part.type === "tool-startFlashcards"
+      ) {
+        const made = started.find((a) => a.id === part.output.artifactId);
+        return { ...part, artifact: made ? { status: made.status } : null };
+      }
       if (!("approvalId" in part)) return part;
       const { key, ...shown } = part;
       const record = records.find((r) => r.key === key);

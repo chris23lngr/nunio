@@ -1345,6 +1345,162 @@
               "type": {
                 "type": "string",
                 "enum": [
+                  "tool-startPracticeSet"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "topics": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "topics"
+                ]
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "practice_set",
+                      "flashcards"
+                    ]
+                  },
+                  "topics": {
+                    "type": "integer"
+                  },
+                  "artifactId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "topics",
+                  "artifactId"
+                ]
+              },
+              "artifact": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "making",
+                      "ready",
+                      "failed"
+                    ]
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "description": "Where the Artifact stands; null if it could not be started."
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "output",
+              "artifact"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-startFlashcards"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "topics": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "topics"
+                ]
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "practice_set",
+                      "flashcards"
+                    ]
+                  },
+                  "topics": {
+                    "type": "integer"
+                  },
+                  "artifactId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "topics",
+                  "artifactId"
+                ]
+              },
+              "artifact": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "making",
+                      "ready",
+                      "failed"
+                    ]
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "description": "Where the Artifact stands; null if it could not be started."
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "output",
+              "artifact"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
                   "tool-proposeStudyBlock"
                 ]
               },
