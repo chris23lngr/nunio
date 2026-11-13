@@ -31,7 +31,10 @@ try {
       workflowsPath,
       activities: {
         processSource: async () => ({ status: "ready" }),
-        extractFacts: async () => ({ status: "done", dropped: 0 }),
+        extractFacts: async () => ({
+          status: "done",
+          dropped: { ungrounded: 0, noCourse: 0, aiUseRule: 0 },
+        }),
         // A Run that asks once, is approved, and acts.
         startRun: async () => "run",
         proposeActions: async () => [
