@@ -87,9 +87,9 @@ export function chatTransport(
           return response;
         },
         prepareSendMessagesRequest: ({ messages, body }) => {
-          // Approving a proposal from its card in the Chat; the API reports how it went as a new answer.
-          if (body?.approval)
-            return { body: { approval: body.approval, model: body.model } };
+          // Deciding an answer's proposals at the composer; the API reports how they went as a new answer.
+          if (body?.decisions)
+            return { body: { decisions: body.decisions, model: body.model } };
           const question = messages.at(-1)!;
           return {
             body: {
