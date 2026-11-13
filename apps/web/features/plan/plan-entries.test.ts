@@ -96,6 +96,9 @@ test("a Study Block for a Task is titled by it and colored by its Obligation's C
     estimate: null,
     maxMinutesPerDay: null,
     done: false,
+    fixedEventId: null,
+    role: null,
+    window: null,
   });
   const block = (id: string, taskId: string) => ({
     id,

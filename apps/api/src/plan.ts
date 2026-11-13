@@ -125,6 +125,22 @@ const PlanView = z
             "The Task's own daily limit, which wins over its Course's.",
           ),
         done: z.boolean(),
+        fixedEventId: z
+          .string()
+          .nullable()
+          .describe("The Course Event a Routine's Task is for."),
+        role: z
+          .enum(["preparation", "follow_up"])
+          .nullable()
+          .describe(
+            "Whether a Routine's Task prepares for its Course Event or follows up on it.",
+          ),
+        window: z
+          .object({ start: z.date(), end: z.date() })
+          .nullable()
+          .describe(
+            "When a Routine's Task is to be done: between the Course Events of its series around it (ADR-0021).",
+          ),
       }),
     ),
     studyBlocks: z.array(
@@ -625,6 +641,37 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
         await c
           .get("plan")
           .decideSeries(p, c.req.valid("param").id, c.req.valid("json")),
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "put",
+      path: "/api/me/event-series/{id}/routine",
+      request: {
+        params: id,
+        ...body(
+          z
+            .object({
+              preparationMinutes: z.number().int(),
+              followUpMinutes: z.number().int(),
+            })
+            .strict()
+            .describe(
+              "Minutes to prepare for and follow up on each Course Event of the series; 0 for none (ADR-0021).",
+            ),
+        ),
+      },
+      responses: { 200: Done, ...outcomes },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(
+        c,
+        await c
+          .get("plan")
+          .setRoutine(p, c.req.valid("param").id, c.req.valid("json")),
       );
     },
   );

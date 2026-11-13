@@ -16,6 +16,10 @@ model Task {
   /// The Course of a Task toward no Obligation; one toward an Obligation is in its Obligation's Course and has none.
   courseId        String?
   course          Course?     @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// The Course Event a Preparation or Follow-up is for (ADR-0021); its window follows from that event's series.
+  fixedEventId    String?
+  fixedEvent      FixedEvent? @relation(fields: [fixedEventId], references: [id], onDelete: SetNull)
+  role            TaskRole?
   title           String
   estimateMinutes Int?
   estimatedBy     PlanActor?
@@ -29,8 +33,34 @@ model Task {
   studyBlocks StudyBlock[]
 
   @@unique([id, studentId])
+  @@unique([fixedEventId, role])
   @@index([studentId])
   @@map("task")
+}
+
+/// What a Routine's Task does for its Course Event.
+enum TaskRole {
+  preparation
+  follow_up
+
+  @@map("task_role")
+}
+
+/// The student's standing instruction to prepare for, follow up on, or both, each Course Event of one Event Series.
+model Routine {
+  seriesId           String      @id
+  studentId          String
+  student            User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  series             EventSeries @relation(fields: [seriesId, studentId], references: [id, studentId], onDelete: Cascade)
+  preparationMinutes Int
+  followUpMinutes    Int
+  /// Set while the student skips the Routine, such as to free time in a Shortfall.
+  skippedUntil       DateTime?
+  updatedAt          DateTime    @updatedAt
+
+  @@unique([seriesId, studentId])
+  @@index([studentId])
+  @@map("routine")
 }
 
 /// An Obligation's Estimate: proposed by nunio, or the student's own, which a proposal never replaces.
@@ -158,7 +188,8 @@ model EventSeries {
   rejectedAt  DateTime?
   createdAt  DateTime       @default(now())
 
-  events FixedEvent[]
+  events  FixedEvent[]
+  routine Routine?
 
   @@unique([id, studentId])
   @@unique([calendarId, title])
@@ -179,6 +210,7 @@ model FixedEvent {
   series     EventSeries?    @relation(fields: [seriesId, studentId], references: [id, studentId], onDelete: Cascade)
   /// Set when the student took it out of its series' Course, so it is no Course Event; reading the calendar again keeps it.
   detachedAt DateTime?
+  tasks      Task[]
   /// The calendar's UID for the event; null for one entered by hand or read before nunio kept it.
   uid          String?
   /// For an occurrence of a repeated event, the start it was scheduled for, which moving it does not change.

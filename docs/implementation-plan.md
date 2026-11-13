@@ -732,8 +732,8 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 - [x] Adding the same `.ics` file twice leaves the same Fixed Events and Event Series. A moved occurrence keeps its ID, and a removed or cancelled one goes (`packages/planning/src/plan.test.ts`, "updates a calendar added again…", "moves a Fixed Event the calendar moved…", "groups a calendar's Fixed Events into Event Series…"; `calendar.test.ts`, "leaves out a cancelled occurrence…").
 - [ ] A moved occurrence keeps its Tasks, and a removed occurrence cancels its open Tasks.
 - [x] The assignment call receives no event description, location or attendee, and is metered. A rejected proposal stays rejected after re-reading (`packages/ai/src/series-assignment.test.ts`; `packages/planning/src/plan.test.ts`, "refuses to propose Courses for Event Series…", "keeps an Event Series the student said belongs to no Course…").
-- [ ] An unconfirmed series produces no Tasks. A confirmed one with a Routine produces exactly one Preparation and one Follow-up per Course Event in the next 14 days, also after repeated runs.
-- [ ] `rebalance` never places a Follow-up before its Course Event ends, nor a Preparation after its Course Event starts (`rebalance.test.ts`).
+- [x] An unconfirmed series produces no Tasks. A confirmed one with a Routine produces exactly one Preparation and one Follow-up per Course Event in the next 14 days, also after repeated runs (`packages/planning/src/plan.test.ts`, "adds no Tasks for a series only proposed…", "adds a Preparation and a Follow-up for each Course Event…").
+- [x] `rebalance` never places a Follow-up before its Course Event ends, nor a Preparation after its Course Event starts (`rebalance.test.ts`, "places a Task with a window…").
 - [ ] Changing a Routine updates only open Tasks with no past Study Block, and never an Estimate the student set.
 - [ ] A lapsed Follow-up stays open and is not planned again by Rebalance.
 - [ ] The Chat proposes a Study Block for a Follow-up the student names, and reopening or adding a Task needs an Approval of the exact Action.
@@ -754,6 +754,12 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
 - `plan.proposeSeriesCourses` asks only about undecided series, and only with Courses that are neither rejected, merged nor Archived. A series the student decided meanwhile keeps that decision. `POST /api/me/calendar-sources` calls it after adding the calendar and answers `proposedCourses`, which is null when nunio could not ask.
 - `POST /api/me/event-series/{id}/decision` takes `{ courseId }` or `{ reject: true }`, and `POST /api/me/fixed-events/{id}/detach` takes one event out. `plan.view` gives each series its `courseId` and `state` (`undecided`, `proposed`, `confirmed`, `rejected`), and each Fixed Event its `courseId` when it is a Course Event.
 - Review shows a "Kalender-Serien" section below the Courses, and the Plan's event popover offers "Gehört nicht zu …".
+
+**Progress (2026-11-13).** Stage 4 is built in four commits: 4a Routines and their Tasks, 4b changes, 4c the Shortfall and Priority, 4d the screens. 4a is implemented.
+- `routine` holds one row per Event Series. A Task names the Course Event it is for (`fixedEventId`, `role`) and is in the series' Course. Its title is "Vorbereitung: …" or "Nachbereitung: …", and the Routine's minutes are the student's own Estimate.
+- `plan.setRoutine` stores a Routine and applies it at once (`PUT /api/me/event-series/{id}/routine`). `plan.applyRoutines` adds what is missing for Course Events starting in the next 14 days, and a Follow-up for a past one whose window is still open.
+- The worker's daily `routine-tick` Schedule runs `plan.tickRoutines`, which lists students through `routine_students()`, a security-definer function like `outreach_students()`.
+- `plan.view` gives each Task its `window`, and `rebalance` places a Task with a window only within it.
 
 **Anti-pattern guards.**
 - Never change a Fixed Event, and never let a Routine create a Study Block outside Rebalance or a proposal.

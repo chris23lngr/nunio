@@ -21,6 +21,9 @@ export interface PlanState {
     estimateMinutes: number | null;
     done: boolean;
     dailyLimitMinutes?: number | null;
+    /** A window of a Task toward no Obligation, such as a Course Event's Follow-up (ADR-0021). */
+    earliest?: Date | null;
+    due?: Date | null;
   }[];
   studyBlocks: {
     id: string;
@@ -157,6 +160,7 @@ function workOf({ obligations, tasks }: PlanState) {
         return [
           {
             ...obligation,
+            earliest: null,
             dailyLimitMinutes: obligation.dailyLimitMinutes ?? null,
           },
         ];
@@ -167,6 +171,7 @@ function workOf({ obligations, tasks }: PlanState) {
           due: obligation.due,
           estimateMinutes: task.estimateMinutes,
           priority: obligation.priority,
+          earliest: null,
           dailyLimitMinutes: task.dailyLimitMinutes ?? null,
         }));
     }),
@@ -174,7 +179,8 @@ function workOf({ obligations, tasks }: PlanState) {
       .filter((task) => !task.obligationId && !task.done)
       .map((task) => ({
         id: task.id,
-        due: null,
+        due: task.due ?? null,
+        earliest: task.earliest ?? null,
         estimateMinutes: task.estimateMinutes,
         priority: Infinity,
         dailyLimitMinutes: task.dailyLimitMinutes ?? null,
@@ -296,6 +302,10 @@ export function rebalance(state: PlanState): Proposal {
     )
       continue;
     const due = work.due.getTime();
+    // Work with a window starts no earlier than its window does.
+    const start = work.earliest
+      ? Math.max(first, Math.ceil(work.earliest.getTime() / slotMs) * slotMs)
+      : first;
     // Time the Plan already holds for this work before its deadline counts towards the Estimate.
     const planned = [
       ...kept.filter((block) => block.workId === work.id),
@@ -305,7 +315,7 @@ export function rebalance(state: PlanState): Proposal {
       work.estimateMinutes -
       planned.reduce((sum, interval) => sum + minutes(interval), 0);
     for (
-      let slot = first;
+      let slot = start;
       slot + slotMs <= due && remaining > 0;
       slot += slotMs
     ) {
@@ -330,7 +340,7 @@ export function rebalance(state: PlanState): Proposal {
     }
     if (remaining > 0) {
       let beyondLimit = 0;
-      for (let slot = first; slot + slotMs <= due; slot += slotMs)
+      for (let slot = start; slot + slotMs <= due; slot += slotMs)
         if (open(slot, false)) beyondLimit += slotMinutes;
       const tradeoffs: Tradeoff[] = [];
       if (beyondLimit)

@@ -455,4 +455,35 @@ describe("rebalance", () => {
       ["reading", at("2026-11-10 10:00"), at("2026-11-10 11:00")],
     ]);
   });
+
+  it("places a Task with a window, such as a lecture's Follow-up, only between its earliest start and its deadline", () => {
+    const followUp = {
+      id: "follow-up",
+      obligationId: null,
+      estimateMinutes: 60,
+      done: false,
+      // The lecture ends Tuesday 12:00; the next one starts Thursday 10:00.
+      earliest: at("2026-11-10 12:00"),
+      due: at("2026-11-12 10:00"),
+    };
+
+    expect(creates({ ...base, tasks: [followUp] })).toEqual([
+      {
+        workId: "follow-up",
+        ...span("2026-11-10 12:00", "2026-11-10 13:00"),
+        needsApproval: false,
+      },
+    ]);
+    expect(
+      rebalance({ ...base, tasks: [{ ...followUp, estimateMinutes: 900 }] })
+        .shortfalls,
+    ).toEqual([
+      expect.objectContaining({
+        workId: "follow-up",
+        due: at("2026-11-12 10:00"),
+        // Tuesday 12:00–16:00, Wednesday 09:00–13:00 (both days at the 4-hour limit) and Thursday 09:00–10:00.
+        shortMinutes: 900 - 9 * 60,
+      }),
+    ]);
+  });
 });

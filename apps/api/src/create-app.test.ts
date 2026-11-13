@@ -4359,6 +4359,11 @@ describe("Plan", () => {
         state: string;
       }[];
       fixedEvents: { id: string; courseId: string | null }[];
+      tasks: {
+        fixedEventId: string | null;
+        role: string | null;
+        window: { start: string; end: string } | null;
+      }[];
     };
     const view = async () =>
       (await (
@@ -4410,6 +4415,33 @@ describe("Plan", () => {
     ]);
     const courseEvents = decided.fixedEvents.filter((e) => e.courseId);
     expect(courseEvents).toHaveLength(2);
+
+    expect(
+      (
+        await call("PUT", `/event-series/${lecture!.id}/routine`, {
+          preparationMinutes: 30,
+          followUpMinutes: 60,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("PUT", `/event-series/${lecture!.id}/routine`, {
+          preparationMinutes: -5,
+          followUpMinutes: 60,
+        })
+      ).status,
+    ).toBe(400);
+    const tasks = (await view()).tasks;
+    expect(tasks.map((t) => [t.fixedEventId, t.role]).sort()).toEqual(
+      [
+        [courseEvents[0]!.id, "follow_up"],
+        [courseEvents[0]!.id, "preparation"],
+        [courseEvents[1]!.id, "follow_up"],
+        [courseEvents[1]!.id, "preparation"],
+      ].sort(),
+    );
+    expect(tasks.every((t) => t.window !== null)).toBe(true);
 
     expect(
       (await call("POST", `/fixed-events/${courseEvents[0]!.id}/detach`))

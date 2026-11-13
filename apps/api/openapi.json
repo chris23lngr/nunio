@@ -1990,6 +1990,46 @@
                 },
                 "done": {
                   "type": "boolean"
+                },
+                "fixedEventId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The Course Event a Routine's Task is for."
+                },
+                "role": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "preparation",
+                    "follow_up",
+                    null
+                  ],
+                  "description": "Whether a Routine's Task prepares for its Course Event or follows up on it."
+                },
+                "window": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "start": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "end": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "description": "When a Routine's Task is to be done: between the Course Events of its series around it (ADR-0021)."
                 }
               },
               "required": [
@@ -2000,7 +2040,10 @@
                 "course",
                 "estimate",
                 "maxMinutesPerDay",
-                "done"
+                "done",
+                "fixedEventId",
+                "role",
+                "window"
               ]
             }
           },
@@ -9173,6 +9216,140 @@
                     "additionalProperties": false
                   }
                 ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/event-series/{id}/routine": {
+      "put": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "preparationMinutes": {
+                    "type": "integer"
+                  },
+                  "followUpMinutes": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "preparationMinutes",
+                  "followUpMinutes"
+                ],
+                "additionalProperties": false,
+                "description": "Minutes to prepare for and follow up on each Course Event of the series; 0 for none (ADR-0021)."
               }
             }
           }

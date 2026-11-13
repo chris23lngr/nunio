@@ -8,7 +8,7 @@ import type {
   ResponsibilityScope,
   Transaction,
 } from "@nunio/delegation";
-import { withOwner } from "@nunio/delegation";
+import { principal, withOwner } from "@nunio/delegation";
 import type { Facts } from "@nunio/knowledge";
 import { definitely } from "@nunio/knowledge";
 import { readCalendar } from "./calendar.js";
@@ -56,6 +56,8 @@ type ObligationKind =
 type ReviewState = "unreviewed" | "confirmed" | "rejected";
 /** Where an Event Series stands with its Course; only a confirmed one's events are Course Events (ADR-0021). */
 export type SeriesState = "undecided" | "proposed" | "confirmed" | "rejected";
+/** What a Routine's Task does for its Course Event. */
+export type TaskRole = "preparation" | "follow_up";
 
 const defaults = {
   timeZone: "Europe/Berlin",
@@ -153,6 +155,9 @@ export function createPlan({
             : null,
           maxMinutesPerDay: task.maxMinutesPerDay,
           done: Boolean(task.doneAt),
+          /** For a Routine's Task: the Course Event it is for, and whether it prepares for it or follows up on it. */
+          fixedEventId: task.fixedEventId,
+          role: task.role as TaskRole | null,
         },
       ];
     });
@@ -237,7 +242,11 @@ export function createPlan({
       })
     ).map(({ id, name, _count }) => ({ id, name, events: _count.events }));
     const items = await obligations(p, tx);
-    const tasks = await tasksOf(tx);
+    const tasks = (await tasksOf(tx)).map((task) => ({
+      ...task,
+      /** When a Routine's Task is to be done, from its Course Event and that event's neighbors (ADR-0021). */
+      window: windowOf(task, eventRows),
+    }));
     const blocks = (
       await tx.studyBlock.findMany({ orderBy: { start: "asc" } })
     ).map((block) => ({
@@ -307,6 +316,8 @@ export function createPlan({
               task.courseId ??
                 items.find((o) => o.id === task.obligationId)?.courseId,
             ),
+          earliest: task.window?.start ?? null,
+          due: task.window?.end ?? null,
         })),
       fixedEvents: fixedEvents.map(({ start, end }) => ({ start, end })),
       protectedTime: [
@@ -1072,6 +1083,115 @@ export function createPlan({
         return { status: count ? "ok" : "gone" } as const;
       });
     },
+    /** The student's Routine for an Event Series: minutes to prepare for and to follow up on each of its Course Events. */
+    async setRoutine(
+      p: Principal,
+      seriesId: string,
+      input: { preparationMinutes: number; followUpMinutes: number },
+    ) {
+      const { preparationMinutes, followUpMinutes } = input;
+      if (
+        ![preparationMinutes, followUpMinutes].every(
+          (m) => Number.isInteger(m) && m >= 0 && m <= 1440,
+        )
+      )
+        return { status: "invalid" } as const;
+      const status = await withOwner(db, p, async (tx, studentId) => {
+        if (!(await tx.eventSeries.findUnique({ where: { id: seriesId } })))
+          return "gone" as const;
+        await tx.routine.upsert({
+          where: { seriesId },
+          create: { seriesId, studentId, ...input },
+          update: input,
+        });
+        return "ok" as const;
+      });
+      if (status === "ok") await this.applyRoutines(p);
+      return { status } as const;
+    },
+    /**
+     * Adds the Preparations and Follow-ups the student's Routines call for (ADR-0021): for each Course Event of a
+     * confirmed series that starts in the next 14 days, and for a past one whose Follow-up window is still open. Adding
+     * them is the student's own planning, not an Action; running it again adds nothing twice.
+     */
+    async applyRoutines(p: Principal) {
+      return withOwner(db, p, async (tx, studentId) => {
+        const now = clock.now();
+        const horizon = now.getTime() + 14 * dayMs;
+        const active = new Set((await activeCourses(tx)).map((c) => c.id));
+        const routines = await tx.routine.findMany({
+          include: { series: true },
+        });
+        const events = await tx.fixedEvent.findMany({
+          where: { seriesId: { in: routines.map((r) => r.seriesId) } },
+          orderBy: [{ start: "asc" }, { end: "asc" }],
+        });
+        const existing = new Set(
+          (
+            await tx.task.findMany({
+              where: { fixedEventId: { in: events.map((e) => e.id) } },
+            })
+          ).map((t) => `${t.fixedEventId} ${t.role}`),
+        );
+        const added = [];
+        for (const {
+          series,
+          preparationMinutes,
+          followUpMinutes,
+        } of routines) {
+          const courseId = series.courseId;
+          if (!series.confirmedAt || !courseId || !active.has(courseId))
+            continue;
+          for (const event of events) {
+            if (event.seriesId !== series.id || event.detachedAt) continue;
+            if (event.start.getTime() > horizon) continue;
+            const wanted = [
+              {
+                role: "preparation" as const,
+                label: "Vorbereitung",
+                minutes: preparationMinutes,
+              },
+              {
+                role: "follow_up" as const,
+                label: "Nachbereitung",
+                minutes: followUpMinutes,
+              },
+            ];
+            for (const { role, label, minutes } of wanted) {
+              if (!minutes || existing.has(`${event.id} ${role}`)) continue;
+              const window = windowOf({ fixedEventId: event.id, role }, events);
+              if (!window || window.end <= now) continue;
+              added.push({
+                id: randomUUID(),
+                studentId,
+                courseId,
+                fixedEventId: event.id,
+                role,
+                title: `${label}: ${series.title}`,
+                estimateMinutes: minutes,
+                estimatedBy: "student" as const,
+              });
+            }
+          }
+        }
+        await tx.task.createMany({ data: added });
+        return { status: "ok", added: added.length } as const;
+      });
+    },
+    /** Started daily by the worker: applies the Routines of every student who has one, so the 14 days roll on. */
+    async tickRoutines() {
+      const students = await db.$queryRaw<
+        { studentId: string }[]
+      >`SELECT "studentId" FROM routine_students()`;
+      for (const { studentId } of students) {
+        // One student's failure leaves their Routines to the next tick, not the others'.
+        try {
+          await this.applyRoutines(principal.fromSession({ studentId }));
+        } catch (error) {
+          console.error("Routine tick failed for a student", error);
+        }
+      }
+    },
     /** Asks the model for Estimates of Obligations and open Tasks that have none, in one metered call. */
     async proposeEstimates(
       p: Principal,
@@ -1186,6 +1306,40 @@ export function createPlan({
   };
 }
 export type Plan = ReturnType<typeof createPlan>;
+
+/** How far before the first Course Event of a series it is prepared for, and after the last followed up on. */
+const openWindowMs = 7 * dayMs;
+type EventRow = {
+  id: string;
+  seriesId: string | null;
+  detachedAt: Date | null;
+} & Interval;
+/**
+ * The window of a Routine's Task: a Preparation from the end of the previous Course Event of its series to the start
+ * of its own; a Follow-up from its end to the start of the next. Without a neighbor, a week.
+ */
+function windowOf(
+  task: { fixedEventId: string | null; role: string | null },
+  events: readonly EventRow[],
+): Interval | null {
+  const event = events.find((e) => e.id === task.fixedEventId);
+  if (!event || !task.role) return null;
+  const series = events.filter(
+    (e) => e.seriesId === event.seriesId && !e.detachedAt && e.id !== event.id,
+  );
+  if (task.role === "preparation") {
+    const previous = series.filter((e) => e.start < event.start).at(-1);
+    return {
+      start: previous?.end ?? new Date(event.start.getTime() - openWindowMs),
+      end: event.start,
+    };
+  }
+  const next = series.find((e) => e.start > event.start);
+  return {
+    start: event.end,
+    end: next?.start ?? new Date(event.end.getTime() + openWindowMs),
+  };
+}
 
 /** When an event takes place in the student's week, such as "Mon 10:00–12:00". */
 function slotOf({ start, end }: Interval, timeZone: string) {
