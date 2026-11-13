@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Answerer } from "@nunio/ai";
+import type { Artifacts } from "@nunio/artifacts";
 import type { PrismaClient } from "@nunio/db";
 import type { Delegation, Principal } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
@@ -14,6 +15,8 @@ import { courseFactsTool } from "./course-facts.js";
 import { historyFrom, historyTurns } from "./history.js";
 import type { ChatPart } from "./parts.js";
 import { isProposal, partsFrom } from "./parts.js";
+import type { ArtifactStart } from "./practice.js";
+import { startArtifactTool } from "./practice.js";
 import type { Proposal } from "./proposals.js";
 import {
   approveProposal,
@@ -69,6 +72,8 @@ export function createChats({
   delegation,
   plan,
   clock,
+  artifacts,
+  startArtifactRun,
 }: {
   db: PrismaClient;
   keys: SourceKeys;
@@ -76,6 +81,9 @@ export function createChats({
   delegation: Delegation;
   plan: Pick<Plan, "timeZone" | "view" | "check">;
   clock: { now(): Date };
+  artifacts: Pick<Artifacts, "request" | "list">;
+  /** Starts an Artifact's Run, which then makes it; an API adapter over Temporal. */
+  startArtifactRun: (runId: string) => Promise<void>;
 }) {
   const derived = createDerivedText(keys);
   async function resolve(p: Principal, citations: Citation[]) {
@@ -122,6 +130,14 @@ export function createChats({
             proposals: parts
               ? (JSON.parse(parts) as ChatPart[]).filter(isProposal)
               : [],
+            starts: parts
+              ? (JSON.parse(parts) as ChatPart[]).flatMap((part) =>
+                  part.type === "tool-startPracticeSet" ||
+                  part.type === "tool-startFlashcards"
+                    ? [part.output]
+                    : [],
+                )
+              : [],
           };
         }),
       );
@@ -138,19 +154,40 @@ export function createChats({
       };
     });
     if (!recent) return null;
-    const lines = await proposalLines(
-      p,
-      recent.messages.flatMap((message) => message.proposals),
-    );
+    const [lines, made] = await Promise.all([
+      proposalLines(
+        p,
+        recent.messages.flatMap((message) => message.proposals),
+      ),
+      recent.messages.some((message) => message.starts.length)
+        ? artifacts.list(p, {})
+        : [],
+    ]);
+    const states = {
+      making: "still being made",
+      ready: "ready",
+      failed: "failed",
+    } as const;
+    const startLine = (
+      start: (typeof recent.messages)[number]["starts"][number],
+    ) =>
+      `(You started ${start.kind === "practice_set" ? "a practice set" : "flashcards"} on ${start.topics} Topic${start.topics === 1 ? "" : "s"}: ${(() => {
+        const status = made.find((a) => a.id === start.artifactId)?.status;
+        return status ? states[status] : "it could not be started";
+      })()}.)`;
     return {
       // Each earlier proposal follows its answer as a line, with what became of it (ADR-0019, "History").
       ...historyFrom(
-        recent.messages.map(({ proposals, ...message }) => ({
+        recent.messages.map(({ proposals, starts, ...message }) => ({
           ...message,
           text:
-            message.text === null || !proposals.length
+            message.text === null || !(proposals.length || starts.length)
               ? message.text
-              : [message.text, ...proposals.map((part) => lines.get(part.key)!)]
+              : [
+                  message.text,
+                  ...proposals.map((part) => lines.get(part.key)!),
+                  ...starts.map(startLine),
+                ]
                   .filter(Boolean)
                   .join("\n\n"),
         })),
@@ -217,10 +254,25 @@ export function createChats({
     if (!history) return null;
     const context = chatContext(clock.now(), timeZone, history.courses);
     const turn = createTurn();
+    const started: { current?: ArtifactStart; claimed?: boolean } = {};
     const tools = {
-      // A Chat with nothing selected has nothing to search.
+      // A Chat with nothing selected has nothing to search, nor Topics to practise.
       ...(history.selected
-        ? { searchMaterial: searchTool(turn, reader, p, chatId) }
+        ? {
+            searchMaterial: searchTool(turn, reader, p, chatId),
+            startPracticeSet: startArtifactTool("practice_set", turn, {
+              reader,
+              p,
+              chatId,
+              started,
+            }),
+            startFlashcards: startArtifactTool("flashcards", turn, {
+              reader,
+              p,
+              chatId,
+              started,
+            }),
+          }
         : {}),
       agenda: agendaTool(turn, {
         reader,
@@ -244,7 +296,7 @@ export function createChats({
       proposeStudyBlock: approve.create,
       proposeStudyBlockMove: approve.move,
     };
-    return { history, context, turn, tools, proposals, toolApproval };
+    return { history, context, turn, tools, proposals, toolApproval, started };
   }
   /** The saved answers of a Chat, newest first, with their parts opened. */
   async function answers(p: Principal, chatId: string) {
@@ -489,7 +541,15 @@ export function createChats({
       const setUp = await turnFor(p, chatId);
       step("history");
       if (!setUp) return { status: "gone" } as const;
-      const { history, context, turn, tools, proposals, toolApproval } = setUp;
+      const {
+        history,
+        context,
+        turn,
+        tools,
+        proposals,
+        toolApproval,
+        started: artifact,
+      } = setUp;
       const messages: ModelMessage[] = [
         ...history.turns.flatMap((turn): ModelMessage[] => [
           { role: "user", content: turn.question },
@@ -631,6 +691,23 @@ export function createChats({
               }),
             ),
           );
+      // Its Artifact starts only now, so a failed turn starts nothing; a failed start shows on its card.
+      if (artifact.current) {
+        const { kind, topicIds, artifactId } = artifact.current;
+        const requested = await artifacts
+          .request(p, { kind, topicIds, artifactId, from: { chatId } })
+          .catch((error: unknown) => ({ status: "failed", error }) as const);
+        if (requested.status === "started")
+          await startArtifactRun(requested.runId).catch((error: unknown) =>
+            console.error(
+              JSON.stringify({
+                msg: "chat artifact run not started",
+                artifactId,
+                error: String(error),
+              }),
+            ),
+          );
+      }
       const message: ChatMessage = {
         id,
         role: "assistant",

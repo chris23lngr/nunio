@@ -24,6 +24,14 @@ Instructions hidden in a Source can steer tool calls. A proposal does nothing wi
 - **Expiry.** An expired Chat Approval drops out of the Approvals list and Home, since no timer closes it.
 - **History.** Each earlier proposal follows its answer as one line with its current status.
 
+**Amendment (2026-11-13, stage 5):** Artifacts start as follows.
+- **Naming Topics.** The model names Topics by the Citation tags the Course tool gave them.
+- **Within the selection.** It may name only Topics the Chat's scope serves, that is, Topics of its selected Courses. A Chat that selected only Sources therefore starts no Artifact, and neither does a Chat with nothing selected, which isn't offered the tools.
+- **Linking the card.** The Artifact's ID is chosen when the tool runs and kept in the answer, so its card can point to it before the Run starts.
+- **One per turn.** The limit is claimed before the tool's first await, because tool calls in one step run at once.
+- **What the student sees.** The card shows the Artifact's status as of when the Chat loaded, and the step line counts the Topics rather than naming them.
+- **History.** A started Artifact adds a line with its status to later turns.
+
 ## Considered Options
 
 - **Retrieval before the first step, plus a search tool:** every answer is grounded, but follow-up questions are searched with weak terms, and even "thanks" costs a retrieval.

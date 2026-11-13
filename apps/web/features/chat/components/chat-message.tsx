@@ -13,6 +13,7 @@ import { memo, useMemo, useState } from "react";
 import { sourceReferences } from "@/features/shared/components/source-citations";
 import type { ChatUIMessage, SavedProposal } from "../api/chat-queries";
 import { messageText } from "../api/chat-queries";
+import { ArtifactCard } from "./artifact-card";
 import { MessageActions } from "./message-actions";
 import { ProposalCard } from "./proposal-card";
 import type { ToolPart } from "./tool-steps";
@@ -111,6 +112,22 @@ export const ChatMessage = memo(function ChatMessage({
             />
           )
         )}
+        {!student &&
+          !withdrawn &&
+          steps.map((part) =>
+            (part.type === "tool-startPracticeSet" ||
+              part.type === "tool-startFlashcards") &&
+            part.state === "output-available" &&
+            saved?.artifacts &&
+            part.toolCallId in saved.artifacts ? (
+              <ArtifactCard
+                key={part.toolCallId}
+                kind={part.output.kind}
+                artifactId={part.output.artifactId}
+                artifact={saved.artifacts[part.toolCallId] ?? null}
+              />
+            ) : null,
+          )}
         {!student &&
           !withdrawn &&
           proposals.map((part) => (

@@ -55,6 +55,12 @@ const chats = createChats({
   delegation,
   plan,
   clock,
+  // The evals measure answers, so a Chat starts no Artifact here.
+  artifacts: {
+    request: async () => ({ status: "refused", reason: "gone" }),
+    list: async () => [],
+  },
+  startArtifactRun: async () => {},
 });
 const answerer = createAnswerer(
   createModels({ ...provider, catalog }).fromConfig(

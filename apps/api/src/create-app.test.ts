@@ -142,7 +142,7 @@ const toolChoices: unknown[] = [];
 /** The tools each step offered the Chat model, by name, in order. */
 const offeredTools: string[][] = [];
 /** What the Chat model streams in its next steps; with none queued, one step of `reasoningText` and `reply`. */
-const steps: unknown[][] = [];
+const steps: (unknown[] | ((prompt: unknown) => unknown[]))[] = [];
 let reply = "";
 let reasoningText: string | undefined;
 let finishAnswer: Promise<void> | undefined;
@@ -189,7 +189,8 @@ const chatModel = new MockLanguageModelV4({
     prompts.push(prompt);
     toolChoices.push(toolChoice);
     offeredTools.push((tools ?? []).map((tool) => tool.name));
-    const parts = steps.shift() ?? [
+    const next = steps.shift();
+    const parts = (typeof next === "function" ? next(prompt) : next) ?? [
       ...(reasoningText ? thinks(reasoningText) : []),
       ...says(reply),
     ];
@@ -357,6 +358,12 @@ beforeAll(async () => {
     delegation,
     plan,
     clock: { now: () => new Date() },
+    // Created further down; read when a Chat starts an Artifact.
+    artifacts: {
+      request: (...args) => artifacts.request(...args),
+      list: (...args) => artifacts.list(...args),
+    },
+    startArtifactRun: (runId) => artifactWorkflows.start(runId),
   });
   responsibilities = createResponsibilities({
     db: prisma,
@@ -2016,6 +2023,41 @@ async function planningChat(name: string) {
   return { cookie, headers, p, chatId: id, obligationId: entered.id };
 }
 
+/** A student whose Chat selects their Course, which has a Topic, for starting Artifacts. */
+async function topicChat(name: string) {
+  const fixture = await reviewFixture(name, [
+    {
+      course: "MA-101",
+      type: "topic",
+      key: "Gleichmäßige Konvergenz",
+      value: "Gleichmäßige Konvergenz",
+      page: 1,
+      quote: "MA-101 Analysis I",
+      uncertainty: null,
+    },
+  ]);
+  const { id: courseId } = await admin.course.findFirstOrThrow({
+    where: { studentId: await studentId(fixture.cookie) },
+  });
+  const { id } = (await (
+    await app.request(`${apiOrigin}/api/me/chats`, {
+      method: "POST",
+      headers: fixture.headers,
+      body: JSON.stringify({ courseIds: [courseId], sourceIds: [] }),
+    })
+  ).json()) as { id: string };
+  return { ...fixture, chatId: id };
+}
+/** The model starts `tool` on the Topic `courseFacts` tagged in its prompt. */
+const startsOnTopic =
+  (tool: string) =>
+  (prompt: unknown): unknown[] => {
+    const tag = /\[(S\d+)\] Analysis I, Topic/.exec(
+      JSON.stringify(prompt),
+    )?.[1];
+    return calls(tool, { topics: [tag] });
+  };
+
 async function sseChunks(response: Response) {
   return (await response.text())
     .split("\n\n")
@@ -3535,6 +3577,153 @@ describe("Chat", () => {
     expect(answer).toContain("Hier ist mein Vorschlag.");
     expect(answer).toMatch(
       new RegExp(`Übungsblatt 4.*${day}T10:00.*approved and done`),
+    );
+  });
+
+  it("starts a practice set on a Topic once the answer is saved, and shows it as a card", async () => {
+    const { headers, chatId } = await topicChat("chat-practice");
+    steps.push(
+      calls("courseFacts", { course: "K1" }),
+      startsOnTopic("startPracticeSet"),
+      says("Ich erstelle dir ein Practice Set."),
+    );
+    artifactRuns.length = 0;
+
+    const chunks = await sseChunks(
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          id: randomUUID(),
+          text: "Gib mir Übungsaufgaben.",
+        }),
+      }),
+    );
+
+    expect(chunks).toContainEqual(
+      expect.objectContaining({
+        type: "tool-output-available",
+        output: expect.objectContaining({ kind: "practice_set", topics: 1 }),
+      }),
+    );
+    const committed = chunks.find((chunk) => chunk.type === "data-committed");
+    const card = committed.data.parts.find(
+      (part: { type: string }) => part.type === "tool-startPracticeSet",
+    );
+    expect(card).toMatchObject({
+      output: {
+        kind: "practice_set",
+        topics: 1,
+        artifactId: expect.any(String),
+      },
+      artifact: { status: "making" },
+    });
+    expect(artifactRuns).toHaveLength(1);
+    expect(
+      await admin.artifact.findUniqueOrThrow({
+        where: { id: card.output.artifactId },
+        select: { kind: true, runId: true },
+      }),
+    ).toEqual({ kind: "practice_set", runId: artifactRuns[0] });
+  });
+
+  it("starts at most one Artifact per answer, telling the model why a second does not start", async () => {
+    const { headers, chatId } = await topicChat("chat-practice-once");
+    steps.push(
+      calls("courseFacts", { course: "K1" }),
+      (prompt) => [
+        ...startsOnTopic("startPracticeSet")(prompt),
+        ...startsOnTopic("startFlashcards")(prompt),
+      ],
+      says("Ich erstelle dir ein Practice Set."),
+    );
+    artifactRuns.length = 0;
+    prompts.length = 0;
+
+    expect(
+      (await askInChat(headers, chatId, "Alles zum Üben, bitte.")).status,
+    ).toBe(200);
+
+    expect(artifactRuns).toHaveLength(1);
+    expect(JSON.stringify(prompts[2])).toContain("only one may");
+  });
+
+  it("starts no Artifact when its turn fails", async () => {
+    const { cookie, headers, chatId } = await topicChat("chat-practice-failed");
+    const used = (
+      (await (
+        await app.request(`${apiOrigin}/api/me/allowance`, {
+          headers: { cookie },
+        })
+      ).json()) as { usedMicroUsd: number }
+    ).usedMicroUsd;
+    // Enough for the first two steps, not the third.
+    await admin.allowance.update({
+      where: { studentId: await studentId(cookie) },
+      data: { limitMicroUsd: used + 2 },
+    });
+    steps.push(
+      calls("courseFacts", { course: "K1" }),
+      startsOnTopic("startPracticeSet"),
+    );
+    artifactRuns.length = 0;
+
+    const asked = await askInChat(headers, chatId, "Gib mir Übungsaufgaben.");
+
+    expect(asked.body).toEqual({ error: "allowance_exhausted" });
+    expect(artifactRuns).toEqual([]);
+    expect(
+      await admin.artifact.count({
+        where: { studentId: await studentId(cookie) },
+      }),
+    ).toBe(0);
+  });
+
+  it("starts no Artifact on Topics outside the Chat's selected Courses", async () => {
+    const { cookie, headers } = await topicChat("chat-practice-outside");
+    const { id: sourceId } = await admin.source.findFirstOrThrow({
+      where: { studentId: await studentId(cookie) },
+    });
+    const { id: chatId } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [sourceId] }),
+      })
+    ).json()) as { id: string };
+    steps.push(
+      calls("courseFacts", { course: "K1" }),
+      startsOnTopic("startPracticeSet"),
+      says("Das geht in diesem Chat nicht."),
+    );
+    artifactRuns.length = 0;
+    prompts.length = 0;
+
+    await askInChat(headers, chatId, "Gib mir Übungsaufgaben.");
+
+    expect(JSON.stringify(prompts[2])).toContain("selected Courses");
+    expect(artifactRuns).toEqual([]);
+  });
+
+  it("tells the model in later turns where an Artifact it started stands", async () => {
+    const { headers, chatId } = await topicChat("chat-practice-history");
+    steps.push(
+      calls("courseFacts", { course: "K1" }),
+      startsOnTopic("startPracticeSet"),
+      says("Ich erstelle dir ein Practice Set."),
+    );
+    await askInChat(headers, chatId, "Gib mir Übungsaufgaben.");
+    reply = "Gern.";
+    prompts.length = 0;
+
+    await askInChat(headers, chatId, "Danke!");
+
+    const answer = conversation(prompts[0]).find(
+      ([role]) => role === "assistant",
+    )?.[1];
+    expect(answer).toContain("Ich erstelle dir ein Practice Set.");
+    expect(answer).toMatch(
+      /started a practice set on 1 Topic: still being made/,
     );
   });
 

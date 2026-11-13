@@ -1167,6 +1167,54 @@ test("a proposal streams as a line until its answer is saved, then asks once as 
   expect(screen.queryByText("Vorschlag wird gespeichert …")).toBeNull();
 });
 
+test("shows a practice set started in an answer as a step and a card linking to it", async () => {
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({
+      id: "chat-1",
+      courses: [],
+      messages: [
+        {
+          id: "question-1",
+          role: "student",
+          text: "Gib mir Übungsaufgaben.",
+          parts: [{ type: "text", text: "Gib mir Übungsaufgaben." }],
+          createdAt: "2026-11-10T09:48:00Z",
+          citations: [],
+          model: null,
+        },
+        {
+          id: "answer-1",
+          role: "assistant",
+          text: "Ich erstelle dir ein Practice Set.",
+          parts: [
+            {
+              type: "tool-startPracticeSet",
+              toolCallId: "call-1",
+              input: { topics: ["S2", "S3"] },
+              output: { kind: "practice_set", topics: 2, artifactId: "art-1" },
+              artifact: { status: "ready" },
+            },
+            { type: "text", text: "Ich erstelle dir ein Practice Set." },
+          ],
+          createdAt: "2026-11-10T09:48:00Z",
+          citations: [],
+          model: null,
+        },
+      ],
+    }),
+  );
+  mount("chat-1");
+
+  expect(await screen.findByText("Practice Set gestartet")).toBeTruthy();
+  expect(screen.getByText("2 Topics")).toBeTruthy();
+  expect(screen.getByText("fertig")).toBeTruthy();
+  expect(
+    screen
+      .getByRole("link", { name: "Practice Set öffnen" })
+      .getAttribute("href"),
+  ).toBe("/study/artifacts/art-1");
+});
+
 test("the waiting status stays until the first word when nunio does not reason", async () => {
   api.route("GET", "/api/me/chats/chat-1", () =>
     Response.json({ id: "chat-1", courses: [], messages: [] }),

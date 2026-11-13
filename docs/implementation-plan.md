@@ -664,6 +664,12 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 - The API performs an approved Chat Action wherever it was approved. From the Chat card, the model then reports the outcome in a new answer, which the web reads apart from `useChat` so the card never shows twice.
 - Expired Chat Approvals drop out of Approvals and Home, and later turns see each earlier proposal's status.
 
+**Progress (2026-11-13).** Stage 5 is implemented; the ADR-0019 amendment records the details.
+- `startPracticeSet` and `startFlashcards` take Topic tags and check them against the Chat's scope. They claim the turn's one Artifact before awaiting, and the Artifact starts after the answer is saved, through `artifacts.request` with a chosen `artifactId` and the API's workflow port.
+- A failed turn starts nothing, and a Topic outside the selected Courses goes back to the model with the reason.
+- The web shows a step line and a card that opens the Artifact under Study.
+- Later turns see where each started Artifact stands.
+
 **Anti-pattern guards.**
 - `toolChoice` is only `auto` or `none`.
 - An AI SDK approval response never grants authority by itself; only `decide` does.
