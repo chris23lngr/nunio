@@ -26,6 +26,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserMenu } from "@/features/auth/user-menu";
+import { RecentCourses } from "@/features/shared/components/recent-courses";
 
 const menuItems = [
   { title: "Home", href: "/", icon: House },
@@ -71,6 +72,7 @@ export function AppSidebar({ apiOrigin }: { apiOrigin: string }) {
             );
           })}
         </SidebarMenu>
+        <RecentCourses apiOrigin={apiOrigin} />
       </SidebarContent>
       <SidebarFooter role="navigation" aria-label="Weitere Navigation">
         <SidebarMenu>
