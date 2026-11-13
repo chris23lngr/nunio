@@ -60,6 +60,16 @@ export const Tradeoff = z
       workId: z.string(),
       byMinutes: z.number().int(),
     }),
+    z
+      .object({
+        kind: z.literal("skip_routine"),
+        routine: z.string().describe("The Event Series whose Routine to skip."),
+        until: z.date(),
+        gainedMinutes: z.number().int(),
+      })
+      .describe(
+        "Skip a Routine until the deadline; the student's own choice (ADR-0021).",
+      ),
   ])
   .openapi("Tradeoff");
 const PriorityRef = z.object({
@@ -672,6 +682,27 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
         await c
           .get("plan")
           .setRoutine(p, c.req.valid("param").id, c.req.valid("json")),
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/event-series/{id}/routine/skip",
+      request: {
+        params: id,
+        ...body(z.object({ until: z.coerce.date() }).strict()),
+      },
+      responses: { 200: Done, ...outcomes },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(
+        c,
+        await c
+          .get("plan")
+          .skipRoutine(p, c.req.valid("param").id, c.req.valid("json").until),
       );
     },
   );

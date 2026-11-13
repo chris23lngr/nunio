@@ -24,6 +24,10 @@ export interface PlanState {
     /** A window of a Task toward no Obligation, such as a Course Event's Follow-up (ADR-0021). */
     earliest?: Date | null;
     due?: Date | null;
+    /** A Task toward no Obligation ranks as its Course does; one toward an Obligation as the Obligation. */
+    priority?: number;
+    /** The Routine, by its Event Series, that a Preparation or Follow-up comes from. */
+    routine?: string | null;
   }[];
   studyBlocks: {
     id: string;
@@ -71,7 +75,14 @@ export type Tradeoff =
       gainedMinutes: number;
       needsApproval: boolean;
     }
-  | { kind: "reduce_estimate"; workId: string; byMinutes: number };
+  | { kind: "reduce_estimate"; workId: string; byMinutes: number }
+  /** Skip a Routine until the deadline: its Preparations and Follow-ups give up their time (ADR-0021). */
+  | {
+      kind: "skip_routine";
+      routine: string;
+      until: Date;
+      gainedMinutes: number;
+    };
 
 export interface Shortfall {
   workId: string;
@@ -182,7 +193,7 @@ function workOf({ obligations, tasks }: PlanState) {
         due: task.due ?? null,
         earliest: task.earliest ?? null,
         estimateMinutes: task.estimateMinutes,
-        priority: Infinity,
+        priority: task.priority ?? Infinity,
         dailyLimitMinutes: task.dailyLimitMinutes ?? null,
       })),
   ];
@@ -392,6 +403,35 @@ export function rebalance(state: PlanState): Proposal {
           needsApproval: blocks.some((block) => block.placedBy === "student"),
         });
       }
+      // Skipping a Routine is the student's choice, so it is offered whatever the Routine's Priority.
+      const routines = new Map<string, number>();
+      for (const task of state.tasks) {
+        if (!task.routine || task.id === work.id) continue;
+        const time = [
+          ...kept.filter(
+            (b) => b.workId === task.id && !b.locked && b.start.getTime() < due,
+          ),
+          ...moves.filter(
+            (m) =>
+              m.kind === "create" &&
+              m.workId === task.id &&
+              m.start.getTime() < due,
+          ),
+        ] as Interval[];
+        const gained = time.reduce((sum, i) => sum + minutes(i), 0);
+        if (gained)
+          routines.set(
+            task.routine,
+            (routines.get(task.routine) ?? 0) + gained,
+          );
+      }
+      for (const [routine, gainedMinutes] of routines)
+        tradeoffs.push({
+          kind: "skip_routine",
+          routine,
+          until: work.due,
+          gainedMinutes,
+        });
       tradeoffs.push({
         kind: "reduce_estimate",
         workId: work.id,

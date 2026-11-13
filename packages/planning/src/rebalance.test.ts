@@ -487,6 +487,44 @@ describe("rebalance", () => {
     ]);
   });
 
+  it("offers skipping a Routine until the deadline in a Shortfall, whatever its Priority", () => {
+    const followUp = {
+      id: "follow-up",
+      obligationId: null,
+      estimateMinutes: 60,
+      done: false,
+      earliest: at("2026-11-09 08:00"),
+      due: at("2026-11-12 10:00"),
+      // Its Course matters more than the sheet, so its time is no free_time_from tradeoff.
+      priority: 1,
+      routine: "s-analysis",
+    };
+    const block = {
+      id: "b1",
+      workId: "follow-up",
+      placedBy: "student" as const,
+      locked: false,
+      ...span("2026-11-10 09:00", "2026-11-10 10:00"),
+    };
+
+    const [shortfall] = rebalance({
+      ...base,
+      obligations: [{ ...sheet, estimateMinutes: 20 * 60, priority: 2 }],
+      tasks: [followUp],
+      studyBlocks: [block],
+    }).shortfalls;
+
+    expect(shortfall!.tradeoffs).toContainEqual({
+      kind: "skip_routine",
+      routine: "s-analysis",
+      until: sheet.due,
+      gainedMinutes: 60,
+    });
+    expect(shortfall!.tradeoffs.some((t) => t.kind === "free_time_from")).toBe(
+      false,
+    );
+  });
+
   it("moves a block out of its Task's window, as when the lecture moved, into the window", () => {
     const followUp = {
       id: "follow-up",

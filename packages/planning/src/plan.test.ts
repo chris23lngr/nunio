@@ -1187,6 +1187,81 @@ it("removes a cancelled Course Event's untouched Tasks, keeping one with a Locke
   );
 });
 
+it("gives a Task in a Course that Course's Priority, so its time is offered only to work that matters more", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, taskOf } = await studentWithRoutine();
+  const followUp = await taskOf(1, "follow_up");
+  await plan.placeBlock(p, {
+    work: { kind: "task", id: followUp.id },
+    ...span("2026-11-03 09:00", "2026-11-03 10:00"),
+  });
+  const exam = await facts.enterObligation(p, {
+    course: { title: "Physik I", code: "PH-101" },
+    kind: "exam",
+    title: "Zwischentest",
+    due: { date: "2026-11-04", time: "18:00", timeZone: null },
+    destination: null,
+  });
+  if (exam.status !== "ok") throw new Error(exam.status);
+  await plan.estimate(p, { kind: "obligation", id: exam.id }, 30 * 60);
+  const offered = async () =>
+    (await plan.view(p)).proposal.shortfalls
+      .find((s) => s.workId === exam.id)!
+      .tradeoffs.some(
+        (t) => t.kind === "free_time_from" && t.workId === followUp.id,
+      );
+
+  await plan.setPriorities(p, [
+    { kind: "course", id: analysisId },
+    { kind: "obligation", id: exam.id },
+  ]);
+  expect(await offered()).toBe(false);
+
+  await plan.setPriorities(p, [
+    { kind: "obligation", id: exam.id },
+    { kind: "course", id: analysisId },
+  ]);
+  expect(await offered()).toBe(true);
+});
+
+it("skips a Routine until a Shortfall's deadline when the student chooses it, then carries on", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, lecture, tasks } = await studentWithRoutine();
+  const exam = await facts.enterObligation(p, {
+    course: { title: "Physik I", code: "PH-101" },
+    kind: "exam",
+    title: "Zwischentest",
+    due: { date: "2026-11-10", time: "18:00", timeZone: null },
+    destination: null,
+  });
+  if (exam.status !== "ok") throw new Error(exam.status);
+  await plan.estimate(p, { kind: "obligation", id: exam.id }, 40 * 60);
+  const skip = (await plan.view(p)).proposal.shortfalls
+    .find((s) => s.workId === exam.id)!
+    .tradeoffs.find((t) => t.kind === "skip_routine");
+  expect(skip).toEqual({
+    kind: "skip_routine",
+    routine: lecture.id,
+    until: at("2026-11-10 18:00"),
+    gainedMinutes: expect.any(Number),
+  });
+
+  expect(await plan.skipRoutine(p, lecture.id, at("2026-11-10 18:00"))).toEqual(
+    { status: "ok" },
+  );
+  // The lectures on 2 and 9 November begin before the skip ends, so they get nothing.
+  expect(await tasks()).toEqual([]);
+
+  now = at("2026-11-11 08:00");
+  await plan.applyRoutines(p);
+  expect(await tasks()).toEqual([
+    "3 follow_up 60",
+    "3 preparation 30",
+    "4 follow_up 60",
+    "4 preparation 30",
+  ]);
+});
+
 it("ranks Courses, Projects and Obligations in one list, an Obligation's own rank winning over its Project's and Course's", async () => {
   now = at("2026-11-09 08:00");
   const p = await student();

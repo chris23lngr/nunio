@@ -318,6 +318,13 @@ export function createPlan({
             ),
           earliest: task.window?.start ?? null,
           due: task.window?.end ?? null,
+          priority: task.courseId
+            ? (rankOf("course", task.courseId) ?? Infinity)
+            : Infinity,
+          routine: task.role
+            ? (eventRows.find((e) => e.id === task.fixedEventId)?.seriesId ??
+              null)
+            : null,
         })),
       fixedEvents: fixedEvents.map(({ start, end }) => ({ start, end })),
       protectedTime: [
@@ -1160,20 +1167,20 @@ export function createPlan({
           orderBy: [{ start: "asc" }, { end: "asc" }],
         });
         // A Task whose event is no longer a Course Event goes if nothing happened to it; otherwise it stays, without it.
+        /** A Course Event whose Routine is not skipped at the time it begins. */
+        const due = (event: (typeof events)[number]) => {
+          const routine = routines.find((r) => r.seriesId === event.seriesId);
+          const series = routine?.series;
+          return Boolean(
+            !event.detachedAt &&
+              series?.confirmedAt &&
+              series.courseId &&
+              active.has(series.courseId) &&
+              !(routine?.skippedUntil && event.start < routine.skippedUntil),
+          );
+        };
         const courseEvents = new Set(
-          events
-            .filter((event) => {
-              const series = routines.find(
-                (r) => r.seriesId === event.seriesId,
-              )?.series;
-              return (
-                !event.detachedAt &&
-                series?.confirmedAt &&
-                series.courseId &&
-                active.has(series.courseId)
-              );
-            })
-            .map((event) => event.id),
+          events.filter(due).map((event) => event.id),
         );
         const stale = await tx.task.findMany({
           where: {
@@ -1222,7 +1229,8 @@ export function createPlan({
           if (!series.confirmedAt || !courseId || !active.has(courseId))
             continue;
           for (const event of events) {
-            if (event.seriesId !== series.id || event.detachedAt) continue;
+            if (event.seriesId !== series.id || !courseEvents.has(event.id))
+              continue;
             if (event.start.getTime() > horizon) continue;
             const wanted = [
               {
@@ -1256,6 +1264,22 @@ export function createPlan({
         await tx.task.createMany({ data: added });
         return { status: "ok", added: added.length } as const;
       });
+    },
+    /**
+     * Skips a Routine until an instant, as a Shortfall's tradeoff offers: Course Events that begin before then get no
+     * Preparation or Follow-up, and their untouched ones go. The student's choice, so no Approval.
+     */
+    async skipRoutine(p: Principal, seriesId: string, until: Date) {
+      if (Number.isNaN(until.getTime())) return { status: "invalid" } as const;
+      const skipped = await withOwner(db, p, async (tx) => {
+        const { count } = await tx.routine.updateMany({
+          where: { seriesId },
+          data: { skippedUntil: until },
+        });
+        return { status: count ? "ok" : "gone" } as const;
+      });
+      if (skipped.status === "ok") await this.applyRoutines(p);
+      return skipped;
     },
     /** Started daily by the worker: applies the Routines of every student who has one, so the 14 days roll on. */
     async tickRoutines() {

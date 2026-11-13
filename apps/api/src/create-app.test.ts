@@ -4443,6 +4443,24 @@ describe("Plan", () => {
     );
     expect(tasks.every((t) => t.window !== null)).toBe(true);
 
+    // Skipping the Routine past both lectures leaves them without Preparations and Follow-ups.
+    const until = new Date(Date.now() + 10 * 24 * 60 * 60_000);
+    expect(
+      (
+        await call("POST", `/event-series/${lecture!.id}/routine/skip`, {
+          until,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("POST", `/event-series/${randomUUID()}/routine/skip`, {
+          until,
+        })
+      ).status,
+    ).toBe(404);
+    expect((await view()).tasks).toEqual([]);
+
     expect(
       (await call("POST", `/fixed-events/${courseEvents[0]!.id}/detach`))
         .status,
