@@ -23,6 +23,7 @@ import {
   approveProposal,
   intentOf,
   proposeStudyBlockMoveTool,
+  proposeStudyBlockRemoveTool,
   proposeStudyBlockTool,
 } from "./proposals.js";
 import { retryRateLimited } from "./retry.js";
@@ -206,17 +207,33 @@ export function createChats({
     proposals: Extract<ChatPart, { approvalId: string }>[],
   ) {
     if (!proposals.length) return new Map<string, string>();
-    const [records, view] = await Promise.all([
+    const [records, view, timeZone] = await Promise.all([
       delegation.history(p, { keys: proposals.map((part) => part.key) }),
       plan.view(p),
+      plan.timeZone(p),
     ]);
     const now = clock.now();
+    /** An instant as YYYY-MM-DDTHH:MM in the student's time zone, as the model gives times. */
+    const local = (instant: string | Date) =>
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      })
+        .format(new Date(instant))
+        .replace(", ", "T");
     return new Map(
       proposals.map((part) => {
         const record = records.find((r) => r.key === part.key);
         const args = (record?.args ?? {}) as {
           workId?: string;
           studyBlockId?: string;
+          start?: string;
+          end?: string;
         };
         const workId =
           args.workId ??
@@ -228,7 +245,16 @@ export function createChats({
         const what =
           part.type === "tool-proposeStudyBlock"
             ? "add a Study Block"
-            : "move the Study Block";
+            : part.type === "tool-proposeStudyBlockMove"
+              ? "move the Study Block"
+              : "remove the Study Block";
+        // A removal names the block where it was, from the Action, since the model gave no time (ADR-0021).
+        const when =
+          "start" in part.input
+            ? ` at ${part.input.start}–${part.input.end.slice(11)}`
+            : args.start && args.end
+              ? ` at ${local(args.start)}–${local(args.end).slice(11)}`
+              : "";
         const status = !record
           ? "it could not be asked"
           : record.approval?.decision === "denied"
@@ -244,7 +270,7 @@ export function createChats({
                   : "approved, but not confirmed to have taken effect";
         return [
           part.key,
-          `(You proposed to ${what} for "${title}" at ${part.input.start}–${part.input.end.slice(11)}: ${status}.)`,
+          `(You proposed to ${what} for "${title}"${when}: ${status}.)`,
         ] as const;
       }),
     );
@@ -300,6 +326,7 @@ export function createChats({
         : {}),
       proposeStudyBlock: proposeStudyBlockTool(),
       proposeStudyBlockMove: proposeStudyBlockMoveTool(),
+      proposeStudyBlockRemove: proposeStudyBlockRemoveTool(),
     };
     /** Proposals that passed the Plan's rules, by tool call, waiting for the student once the answer is saved. */
     const proposals = new Map<string, Proposal>();
@@ -307,6 +334,7 @@ export function createChats({
     const toolApproval = {
       proposeStudyBlock: approve.create,
       proposeStudyBlockMove: approve.move,
+      proposeStudyBlockRemove: approve.remove,
     };
     return { history, context, turn, tools, proposals, toolApproval, started };
   }

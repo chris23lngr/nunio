@@ -45,6 +45,20 @@ const approved = {
   fingerprint: "fp-1",
   expiresAt: new Date("2026-11-17T08:00:00Z"),
 };
+/** A Chat's removal of the block, approved by the student. */
+const removal: Partial<Snapshot> = {
+  intent: {
+    kind: "studyBlock.remove",
+    args: {
+      studyBlockId: "block-1",
+      workId: "obligation-1",
+      start: block.start,
+      end: block.end,
+    },
+  },
+  responsibility: null,
+  approval: approved,
+};
 const requested = {
   id: "approval-1",
   decision: null,
@@ -149,6 +163,16 @@ describe("decideAction", () => {
       "refuses an approved Action at its expiry",
       { responsibility: null, approval: { ...approved, expiresAt: now } },
       refuse("approval_expired"),
+    ],
+    [
+      "removes a block not yet started once the student approved it",
+      { ...removal, subject: block },
+      { outcome: "dispatch", authority: { approvalId: "approval-1" } },
+    ],
+    [
+      "refuses removing a block that has started, even when asked (ADR-0021)",
+      { ...removal, subject: { ...block, start: now } },
+      refuse("started"),
     ],
   ])("%s", (_, change, expected) => {
     expect(decideAction({ ...base, ...change })).toEqual(expected);

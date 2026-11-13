@@ -17,6 +17,7 @@ const why: Record<BlockRefusal, string> = {
   fixed_event: "it overlaps a Fixed Event",
   study_block: "it overlaps another Study Block",
   locked: "the block is Locked",
+  started: "the block has already started",
 };
 
 /** A wall-clock time in the student's time zone, as the model gives it. */
@@ -35,13 +36,19 @@ export type Proposal = {
       kind: "studyBlock.move";
       args: { studyBlockId: string; start: Date; end: Date };
     }
+  | {
+      kind: "studyBlock.remove";
+      args: { studyBlockId: string; workId: string; start: Date; end: Date };
+    }
 );
 
 /** The Action a proposal is asked as. */
 export const intentOf = (proposal: Proposal): ActionIntent =>
   proposal.kind === "studyBlock.create"
     ? { kind: proposal.kind, ...proposal.args }
-    : { kind: proposal.kind, ...proposal.args };
+    : proposal.kind === "studyBlock.move"
+      ? { kind: proposal.kind, ...proposal.args }
+      : { kind: proposal.kind, ...proposal.args };
 
 const times = {
   start: localTime,
@@ -88,6 +95,20 @@ export function proposeStudyBlockMoveTool(): Tool<{
   });
 }
 
+/** Proposes removing a Study Block the Plan showed (ADR-0021); like a move, it never runs and waits for the student. */
+export function proposeStudyBlockRemoveTool(): Tool<{ block: string }> {
+  return tool({
+    description:
+      "Proposes removing a Study Block the Plan showed, for the student to approve. Name it by its handle, such as B1. A Locked block, or one that has started, cannot be removed.",
+    inputSchema: jsonSchema<{ block: string }>({
+      type: "object",
+      properties: { block: { type: "string", pattern: "^B\\d+$" } },
+      required: ["block"],
+      additionalProperties: false,
+    }),
+  });
+}
+
 /** Checks a proposal against the Plan, holding a valid one in `proposals` under its tool call. */
 export function approveProposal(
   turn: Turn,
@@ -97,7 +118,7 @@ export function approveProposal(
     timeZone,
     proposals,
   }: {
-    plan: Pick<Plan, "check">;
+    plan: Pick<Plan, "check" | "view">;
     p: Principal;
     timeZone: string;
     proposals: Map<string, Proposal>;
@@ -111,7 +132,7 @@ export function approveProposal(
   ) => {
     if (checked.status === "refused")
       return denied(
-        `Not proposed: ${checked.reasons.map((reason) => why[reason]).join("; ")}. Choose another time.`,
+        `Not proposed: ${checked.reasons.map((reason) => why[reason]).join("; ")}.${proposal.kind === "studyBlock.remove" ? "" : " Choose another time."}`,
       );
     proposals.set(toolCallId, { ...proposal, notes: checked.notes });
     return { type: "user-approval" as const };
@@ -165,6 +186,32 @@ export function approveProposal(
           start: args.start,
           end: args.end,
         }),
+      );
+    },
+    remove: async (
+      input: { block: string },
+      { toolCallId }: { toolCallId: string },
+    ) => {
+      const handled = turn.lookup(input.block);
+      const block =
+        handled?.kind === "block"
+          ? (await plan.view(p)).studyBlocks.find((b) => b.id === handled.id)
+          : undefined;
+      if (!block)
+        return denied(
+          `Not proposed: no Study Block has the handle ${input.block}. Read the Plan with agenda first.`,
+        );
+      // The block as the student is shown it, so it can still be named once removed (ADR-0021).
+      const args = {
+        studyBlockId: block.id,
+        workId: block.work.id,
+        start: block.start,
+        end: block.end,
+      };
+      return check(
+        toolCallId,
+        { kind: "studyBlock.remove", args, notes: [] },
+        await plan.check(p, { kind: "remove", blockId: block.id }),
       );
     },
   };

@@ -39,7 +39,11 @@ export function approvalOf(saved: SavedProposal) {
 function outcome(action: NonNullable<SavedProposal["action"]>) {
   if (action.decision === "denied") return "Abgelehnt";
   if (action.status === "done")
-    return action.shown.kind === "studyBlock.move" ? "Verschoben" : "Angelegt";
+    return action.shown.kind === "studyBlock.move"
+      ? "Verschoben"
+      : action.shown.kind === "studyBlock.remove"
+        ? "Entfernt"
+        : "Angelegt";
   if (action.status === "expired") return "Abgelaufen";
   if (action.status === "refused") return "Nicht möglich";
   return "Nicht bestätigt";

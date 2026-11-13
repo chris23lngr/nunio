@@ -11,7 +11,13 @@ export function UnconfirmedCard({
   onResolve: (resolution: "happened" | "did_not_happen") => void;
 }) {
   const { action } = unconfirmed;
-  const heading = `nunio could not confirm: ${action.kind === "studyBlock.move" ? "move" : "add"} the block for ${action.work.title}`;
+  const verb =
+    action.kind === "studyBlock.move"
+      ? "move"
+      : action.kind === "studyBlock.remove"
+        ? "remove"
+        : "add";
+  const heading = `nunio could not confirm: ${verb} the block for ${action.work.title}`;
   return (
     <article aria-label={heading}>
       <h3>{heading}</h3>
