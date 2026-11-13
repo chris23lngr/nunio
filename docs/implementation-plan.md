@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 14 (Chat tools) planned, 2026-11-12; it precedes the Phase 12 gates. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 14 (Chat tools) planned, 2026-11-12; it precedes the Phase 12 gates. Phase 15 (Routines) planned, 2026-11-13. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -685,6 +685,59 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 - Never accept message history from the client.
 - No Drafts or Critiques from a Chat.
 - Never splice tool results into the system prompt.
+
+---
+
+## Phase 15: Routines
+
+> **How this serves the primary goal:** keeping the Plan organized includes the weekly work around lectures, not only what is due. Routines put preparation and follow-up into the Plan, with their Course, so nunio plans them, the Chat sees them, and missed follow-ups stay visible.
+
+The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-course-events.md). They change Phase 8's calendar rule: adding a calendar again updates its events instead of adding new ones. Calendar Connections still wait for the pilot tool inventory. The stages below are built in order on `feat/routines` and reach `main` in a single PR, together with this documentation.
+
+**What to implement.**
+
+1. **Tasks in a Course.**
+   - `task.courseId`: set only on a Task without an Obligation.
+   - A Task's Course is its Obligation's Course, else its own. The gate's Course, Course limits, Priority and Archiving use it.
+   - The Plan screen can add a Task in a Course or with no Course.
+   - `agenda` shows open Tasks without an Obligation. This fixes the Chat refusing a Study Block for such a Task.
+2. **Event Series and identity.**
+   - Fixed Events from a calendar keep their UID and recurrence ID.
+   - Each Fixed Event belongs to an Event Series.
+   - Adding a calendar again updates its events by identity. A moved event keeps its ID. An event no longer in the file, within the read window, is cancelled.
+   - Manual Fixed Events have no series.
+3. **Assigning series to Courses.**
+   - When a calendar is read, one metered call proposes a Course for each series. It receives only the series title, weekday, time and rhythm, plus the Course handles.
+   - Review lists the proposals, and confirming one sets its Routine in the same step. The Course page has an "Events" section, where the student can unassign one Course Event.
+   - A rejected proposal is not proposed again.
+4. **Routines.**
+   - A Routine per Event Series with Preparation and Follow-up minutes, either of which may be zero.
+   - A daily schedule per student, plus a run on every Routine or series change, adds Preparations and Follow-ups for the next 14 days. Re-runs are idempotent per Course Event and kind.
+   - Each Task gets a window from its series. `rebalance` gains an earliest start per Task, and the window's end is the Task's deadline.
+   - Moved and cancelled Course Events, Routine changes, and lapsed Follow-ups behave as in ADR-0021.
+   - A Shortfall offers skipping a Routine for a period.
+   - Archiving a Course stops its Routines, and its future Study Blocks go as before.
+5. **Chat.**
+   - `agenda` shows Course Events with their Preparation and Follow-up handles, plus Tasks in a Course.
+   - `proposeTask` and `proposeTaskReopen` add the Action kinds `task.create` and `task.reopen`, asked for Approval like Study Block proposals (ADR-0019). No Grant covers them.
+
+**Documentation references.** ADR-0001, 0010, 0019, 0020, 0021; GLOSSARY ("Planning"); Phase 8 decisions; [delegation-gate.md](design/delegation-gate.md) "Interface"; [extraction.md](design/extraction.md) for metered reading and Reject.
+
+**Verification checklist.**
+- [ ] A Task without an Obligation but in a Course is covered by that Course's Grant and limit, and goes when the Course is deleted.
+- [ ] Adding the same `.ics` file twice leaves the same Fixed Events. A moved occurrence keeps its ID and its Tasks, and a removed occurrence cancels its open Tasks.
+- [ ] The assignment call receives no event description, location or attendee, and is metered. A rejected proposal stays rejected after re-reading.
+- [ ] An unconfirmed series produces no Tasks. A confirmed one with a Routine produces exactly one Preparation and one Follow-up per Course Event in the next 14 days, also after repeated runs.
+- [ ] `rebalance` never places a Follow-up before its Course Event ends, nor a Preparation after its Course Event starts (`rebalance.test.ts`).
+- [ ] Changing a Routine updates only open Tasks with no past Study Block, and never an Estimate the student set.
+- [ ] A lapsed Follow-up stays open and is not planned again by Rebalance.
+- [ ] The Chat proposes a Study Block for a Follow-up the student names, and reopening or adding a Task needs an Approval of the exact Action.
+
+**Anti-pattern guards.**
+- Never change a Fixed Event, and never let a Routine create a Study Block outside Rebalance or a proposal.
+- Never send event descriptions, locations or attendees to a model.
+- Never produce Tasks from a series the student has not confirmed.
+- Never drop a Preparation or Follow-up silently in a Shortfall.
 
 ---
 
