@@ -80,6 +80,8 @@ export type Tradeoff =
   | {
       kind: "skip_routine";
       routine: string;
+      /** The Event Series' title, which the Plan adds, so two such tradeoffs can be told apart. */
+      title?: string;
       until: Date;
       gainedMinutes: number;
     };

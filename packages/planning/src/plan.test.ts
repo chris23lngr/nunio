@@ -20,6 +20,7 @@ import {
   createProjects,
 } from "@nunio/knowledge";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { createPlanExecutor } from "./executor.js";
 import type { Plan } from "./plan.js";
 import { createPlan } from "./plan.js";
 
@@ -1030,6 +1031,33 @@ async function studentWithRoutine() {
     )!;
   return { ...s, lectures, tasks, taskOf };
 }
+/** Adds a Course Event's Preparation or Follow-up as a Chat's `task.create` Action does, returning its id. */
+async function chatTask(
+  courseId: string,
+  fixedEventId: string,
+  role: "preparation" | "follow_up",
+) {
+  const { studentId } = await admin.fixedEvent.findUniqueOrThrow({
+    where: { id: fixedEventId },
+  });
+  const done = await createPlanExecutor({ db: runtime }).execute(
+    {
+      studentId,
+      actionId: randomUUID(),
+      intent: {
+        kind: "task.create",
+        title: "VL nacharbeiten",
+        courseId,
+        fixedEventId,
+        role,
+        estimateMinutes: 45,
+      },
+    },
+    { idempotencyKey: randomUUID(), signal: new AbortController().signal },
+  );
+  if (done.status !== "done") throw new Error(done.status);
+  return (done.effect as { taskId: string }).taskId;
+}
 
 it("changes a Routine's open, untouched Tasks with it, never an Estimate the student set on one", async () => {
   now = at("2026-11-01 08:00");
@@ -1071,6 +1099,33 @@ it("follows the student taking an event out of its Course, or the series out of 
 
   await plan.decideSeries(p, lecture.id, { courseId: analysisId });
   expect(await tasks()).toEqual(["2 follow_up 60", "2 preparation 30"]);
+});
+
+it("keeps a Follow-up a Chat added for a Course Event of a series without a Routine", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture } = await studentWithCalendar();
+  await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+  const second = (await plan.view(p)).fixedEvents.filter(
+    (e) => e.seriesId === lecture.id,
+  )[1]!;
+  const followUp = await chatTask(analysisId, second.id, "follow_up");
+  const block = await plan.placeBlock(p, {
+    work: { kind: "task", id: followUp },
+    ...span("2026-11-09 13:00", "2026-11-09 14:00"),
+  });
+  if (block.status !== "ok") throw new Error(block.status);
+
+  await plan.applyRoutines(p);
+
+  const view = await plan.view(p);
+  expect(view.tasks).toEqual([
+    expect.objectContaining({
+      id: followUp,
+      fixedEventId: second.id,
+      role: "follow_up",
+    }),
+  ]);
+  expect(view.studyBlocks.map((b) => b.id)).toEqual([block.id]);
 });
 
 it("drops a Preparation whose lecture began with nothing done for it, and keeps a lapsed Follow-up as backlog", async () => {
@@ -1189,6 +1244,42 @@ it("removes a cancelled Course Event's untouched Tasks, keeping one with a Locke
   );
 });
 
+it("removes a cancelled Course Event's future Study Blocks from a Task it keeps, but not its past or Locked ones", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, taskOf } = await studentWithRoutine();
+  const prepared = await taskOf(2, "preparation");
+  const place = async (from: string, to: string) => {
+    const block = await plan.placeBlock(p, {
+      work: { kind: "task", id: prepared.id },
+      ...span(from, to),
+    });
+    if (block.status !== "ok") throw new Error(block.status);
+    return block.id;
+  };
+  const past = await place("2026-11-03 09:00", "2026-11-03 09:30");
+  await place("2026-11-05 09:00", "2026-11-05 09:30");
+  const locked = await place("2026-11-06 09:00", "2026-11-06 09:30");
+  await plan.lockBlock(p, locked, true);
+
+  // The lecture on 9 November is cancelled after the first block took place.
+  now = at("2026-11-04 08:00");
+  await plan.addCalendar(p, {
+    name: "Stundenplan.ics",
+    ics: icsOf([...weeklyLecture, "EXDATE:20261109T090000Z"], cafeShift),
+  });
+
+  const view = await plan.view(p);
+  expect(view.tasks).toContainEqual(
+    expect.objectContaining({ id: prepared.id, fixedEventId: null }),
+  );
+  expect(
+    view.studyBlocks
+      .filter((b) => b.work.id === prepared.id)
+      .map((b) => b.id)
+      .sort(),
+  ).toEqual([past, locked].sort());
+});
+
 it("gives a Task in a Course that Course's Priority, so its time is offered only to work that matters more", async () => {
   now = at("2026-11-01 08:00");
   const { p, analysisId, taskOf } = await studentWithRoutine();
@@ -1244,6 +1335,8 @@ it("skips a Routine until a Shortfall's deadline when the student chooses it, th
   expect(skip).toEqual({
     kind: "skip_routine",
     routine: lecture.id,
+    // Named by its series, so two such tradeoffs can be told apart.
+    title: "Analysis I",
     until: at("2026-11-10 18:00"),
     gainedMinutes: expect.any(Number),
   });
@@ -1268,6 +1361,41 @@ it("skips a Routine until a Shortfall's deadline when the student chooses it, th
   expect(await tasks()).toEqual([
     "3 follow_up 60",
     "3 preparation 30",
+    "4 follow_up 60",
+    "4 preparation 30",
+  ]);
+});
+
+it("skips a Routine only for Course Events still to come, keeping lapsed Follow-ups and one a Chat adds", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture, lectures, tasks } =
+    await studentWithRoutine();
+  now = at("2026-11-10 08:00");
+  await plan.applyRoutines(p);
+  expect(await tasks()).toEqual([
+    "1 follow_up 60",
+    "2 follow_up 60",
+    "3 follow_up 60",
+    "3 preparation 30",
+    "4 follow_up 60",
+    "4 preparation 30",
+  ]);
+
+  await plan.skipRoutine(p, lecture.id, at("2026-11-17 18:00"));
+  // The lecture on 16 November begins before the skip ends; the Follow-ups of 2 and 9 November stay as backlog.
+  expect(await tasks()).toEqual([
+    "1 follow_up 60",
+    "2 follow_up 60",
+    "4 follow_up 60",
+    "4 preparation 30",
+  ]);
+
+  await chatTask(analysisId, lectures[2]!.id, "follow_up");
+  await plan.applyRoutines(p);
+  expect(await tasks()).toEqual([
+    "1 follow_up 60",
+    "2 follow_up 60",
+    "3 follow_up 45",
     "4 follow_up 60",
     "4 preparation 30",
   ]);

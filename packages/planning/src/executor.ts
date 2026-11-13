@@ -24,19 +24,35 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
         if (intent.kind === "task.create" || intent.kind === "task.reopen") {
           let taskId: string;
           if (intent.kind === "task.create") {
-            taskId = randomUUID();
-            await tx.task.create({
-              data: {
-                id: taskId,
-                studentId,
-                title: intent.title,
-                courseId: intent.courseId,
-                fixedEventId: intent.fixedEventId,
-                role: intent.role,
-                estimateMinutes: intent.estimateMinutes,
-                estimatedBy: intent.estimateMinutes ? "student" : null,
-              },
-            });
+            const { fixedEventId, role } = intent;
+            if (
+              fixedEventId &&
+              !(await tx.fixedEvent.findUnique({ where: { id: fixedEventId } }))
+            )
+              return { status: "rejected", detail: "the Course Event is gone" };
+            // The event has this Task already, so the student's wish is met.
+            const existing =
+              fixedEventId && role
+                ? await tx.task.findUnique({
+                    where: { fixedEventId_role: { fixedEventId, role } },
+                  })
+                : null;
+            if (existing) taskId = existing.id;
+            else {
+              taskId = randomUUID();
+              await tx.task.create({
+                data: {
+                  id: taskId,
+                  studentId,
+                  title: intent.title,
+                  courseId: intent.courseId,
+                  fixedEventId: intent.fixedEventId,
+                  role: intent.role,
+                  estimateMinutes: intent.estimateMinutes,
+                  estimatedBy: intent.estimateMinutes ? "student" : null,
+                },
+              });
+            }
           } else {
             const { count } = await tx.task.updateMany({
               where: { id: intent.taskId },

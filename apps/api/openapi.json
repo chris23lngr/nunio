@@ -3037,6 +3037,10 @@
                 "type": "string",
                 "description": "The Event Series whose Routine to skip."
               },
+              "title": {
+                "type": "string",
+                "description": "That Event Series' title."
+              },
               "until": {
                 "type": "string",
                 "format": "date-time"
@@ -3048,6 +3052,7 @@
             "required": [
               "kind",
               "routine",
+              "title",
               "until",
               "gainedMinutes"
             ],

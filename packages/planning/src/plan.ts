@@ -12,7 +12,7 @@ import { principal, withOwner } from "@nunio/delegation";
 import type { Facts } from "@nunio/knowledge";
 import { definitely } from "@nunio/knowledge";
 import { readCalendar } from "./calendar.js";
-import type { Interval, Move, PlanState } from "./rebalance.js";
+import type { Interval, Move, PlanState, Proposal } from "./rebalance.js";
 import { addMinutes, local, rebalance } from "./rebalance.js";
 import { deadline, hhmm } from "./time.js";
 
@@ -384,7 +384,7 @@ export function createPlan({
         })),
         protectedTime,
       },
-      proposal: rebalance(state),
+      proposal: named(rebalance(state), eventSeries),
     };
   }
   /** A work's own daily limit: a Task's, else its Course's; null when it has none. */
@@ -421,24 +421,16 @@ export function createPlan({
       const routines = await tx.routine.findMany({
         include: { series: true },
       });
+      // Every Course Event, with a Routine or not: a Chat may have added a Task for any of them.
       const events = await tx.fixedEvent.findMany({
-        where: { seriesId: { in: routines.map((r) => r.seriesId) } },
+        where: {
+          detachedAt: null,
+          series: { confirmedAt: { not: null }, courseId: { in: [...active] } },
+        },
         orderBy: [{ start: "asc" }, { end: "asc" }],
       });
       // A Task whose event is no longer a Course Event goes if nothing happened to it; otherwise it stays, without it.
-      /** A Course Event whose Routine is not skipped at the time it begins. */
-      const due = (event: (typeof events)[number]) => {
-        const routine = routines.find((r) => r.seriesId === event.seriesId);
-        const series = routine?.series;
-        return Boolean(
-          !event.detachedAt &&
-            series?.confirmedAt &&
-            series.courseId &&
-            active.has(series.courseId) &&
-            !(routine?.skippedUntil && event.start < routine.skippedUntil),
-        );
-      };
-      const courseEvents = new Set(events.filter(due).map((event) => event.id));
+      const courseEvents = new Set(events.map((event) => event.id));
       const stale = await tx.task.findMany({
         where: {
           role: { not: null },
@@ -453,12 +445,16 @@ export function createPlan({
         task.doneAt ||
         task.studyBlocks.some((b) => b.start < now || b.lockedAt);
       for (const task of stale) {
-        if (touched(task))
+        if (touched(task)) {
           await tx.task.update({
             where: { id: task.id },
             data: { fixedEventId: null, role: null },
           });
-        else await tx.task.delete({ where: { id: task.id } });
+          // Its future Study Blocks go with the event; Locked ones stay (ADR-0022).
+          await tx.studyBlock.deleteMany({
+            where: { taskId: task.id, start: { gte: now }, lockedAt: null },
+          });
+        } else await tx.task.delete({ where: { id: task.id } });
       }
       // Preparing once the lecture has begun is pointless, so an untouched Preparation goes then; a Follow-up stays.
       const begun = events
@@ -477,13 +473,19 @@ export function createPlan({
         ).map((t) => `${t.fixedEventId} ${t.role}`),
       );
       const added = [];
-      for (const { series, preparationMinutes, followUpMinutes } of routines) {
+      for (const {
+        series,
+        preparationMinutes,
+        followUpMinutes,
+        skippedUntil,
+      } of routines) {
         const courseId = series.courseId;
         if (!series.confirmedAt || !courseId || !active.has(courseId)) continue;
         for (const event of events) {
-          if (event.seriesId !== series.id || !courseEvents.has(event.id))
-            continue;
+          if (event.seriesId !== series.id) continue;
           if (event.start.getTime() > horizon) continue;
+          // A skip only holds back new Tasks; `skipRoutine` removed the untouched ones once.
+          if (skippedUntil && event.start < skippedUntil) continue;
           const wanted = [
             {
               role: "preparation" as const,
@@ -513,7 +515,8 @@ export function createPlan({
           }
         }
       }
-      await tx.task.createMany({ data: added });
+      // A concurrent run may have added the same Task first.
+      await tx.task.createMany({ data: added, skipDuplicates: true });
       return { status: "ok", added: added.length } as const;
     });
   }
@@ -1296,7 +1299,7 @@ export function createPlan({
     },
     /**
      * Skips a Routine until an instant, as a Shortfall's tradeoff offers: Course Events that begin before then get no
-     * Preparation or Follow-up, and their untouched ones go. The student's choice, so no Approval.
+     * Preparation or Follow-up, and the untouched ones of those still to come go. The student's choice, so no Approval.
      */
     async skipRoutine(p: Principal, seriesId: string, until: Date) {
       if (Number.isNaN(until.getTime())) return { status: "invalid" } as const;
@@ -1305,7 +1308,22 @@ export function createPlan({
           where: { seriesId },
           data: { skippedUntil: until },
         });
-        return { status: count ? "ok" : "gone" } as const;
+        if (!count) return { status: "gone" } as const;
+        // Once, and only for events still to come: a past one's open Follow-up stays as backlog.
+        const now = clock.now();
+        await tx.task.deleteMany({
+          where: {
+            role: { not: null },
+            fixedEvent: { seriesId, start: { gte: now, lt: until } },
+            doneAt: null,
+            studyBlocks: {
+              none: {
+                OR: [{ start: { lt: now } }, { lockedAt: { not: null } }],
+              },
+            },
+          },
+        });
+        return { status: "ok" } as const;
       });
       if (skipped.status === "ok") await applyRoutines(p);
       return skipped;
@@ -1438,6 +1456,29 @@ export function createPlan({
   };
 }
 export type Plan = ReturnType<typeof createPlan>;
+
+/** Names each skip_routine tradeoff by its Event Series, which rebalance knows only by id. */
+function named(
+  proposal: Proposal,
+  series: readonly { id: string; title: string }[],
+): Proposal {
+  return {
+    ...proposal,
+    shortfalls: proposal.shortfalls.map((shortfall) => ({
+      ...shortfall,
+      tradeoffs: shortfall.tradeoffs.map((tradeoff) =>
+        tradeoff.kind === "skip_routine"
+          ? {
+              ...tradeoff,
+              title:
+                series.find((s) => s.id === tradeoff.routine)?.title ??
+                "a series",
+            }
+          : tradeoff,
+      ),
+    })),
+  };
+}
 
 /** How far before the first Course Event of a series it is prepared for, and after the last followed up on. */
 const openWindowMs = 7 * dayMs;

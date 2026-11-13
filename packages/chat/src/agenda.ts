@@ -121,7 +121,7 @@ export function agendaTool(
             ? `free time from ${workHandle(tradeoff.workId)}'s blocks ${tradeoff.blockIds.map((id) => turn.handleFor("block", id)).join(", ")} (gains ${tradeoff.gainedMinutes} min${tradeoff.needsApproval ? ", needs Approval" : ""})`
             : tradeoff.kind === "skip_routine"
               ? // The student skips a Routine on Home or the Course page; a Chat has no tool for it (ADR-0022).
-                `skip preparing for and following up on ${view.eventSeries.find((s) => s.id === tradeoff.routine)?.title ?? "a series"} until ${at(tradeoff.until)} (gains ${tradeoff.gainedMinutes} min; the student does this on Home or the Course page)`
+                `skip preparing for and following up on ${tradeoff.title ?? "a series"} until ${at(tradeoff.until)} (gains ${tradeoff.gainedMinutes} min; the student does this on Home or the Course page)`
               : `plan ${tradeoff.byMinutes} min less for it`;
       const titleOf = (work: { kind: string; id: string }) =>
         work.kind === "obligation"

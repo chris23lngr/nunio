@@ -64,6 +64,7 @@ export const Tradeoff = z
       .object({
         kind: z.literal("skip_routine"),
         routine: z.string().describe("The Event Series whose Routine to skip."),
+        title: z.string().describe("That Event Series' title."),
         until: z.date(),
         gainedMinutes: z.number().int(),
       })

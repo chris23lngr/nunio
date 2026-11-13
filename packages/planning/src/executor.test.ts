@@ -312,4 +312,72 @@ describe("the Plan executor", () => {
       expect.objectContaining({ id: task!.id, done: false }),
     ]);
   });
+
+  /** A Fixed Event the student entered by hand, as the Course Event a Chat names. */
+  async function event(studentId: string) {
+    const id = randomUUID();
+    await admin.fixedEvent.create({
+      data: { id, studentId, title: "Analysis I", ...span(10) },
+    });
+    return id;
+  }
+  const followUp = (courseId: string, fixedEventId: string) => ({
+    kind: "task.create" as const,
+    title: "VL 3 nacharbeiten",
+    courseId,
+    fixedEventId,
+    role: "follow_up" as const,
+    estimateMinutes: 60,
+  });
+
+  it("adds no second Follow-up for a Course Event that has one, taking the existing Task as its effect", async () => {
+    const s = await student();
+    const { courseId } = await admin.obligation.findUniqueOrThrow({
+      where: { id: s.obligationId },
+    });
+    const fixedEventId = await event(s.studentId);
+    const first = await executor.execute(
+      {
+        studentId: s.studentId,
+        actionId: "action-1",
+        intent: followUp(courseId, fixedEventId),
+      },
+      { idempotencyKey: "action-1:1", signal },
+    );
+    if (first.status !== "done") throw new Error(first.status);
+
+    const second = await executor.execute(
+      {
+        studentId: s.studentId,
+        actionId: "action-2",
+        intent: followUp(courseId, fixedEventId),
+      },
+      { idempotencyKey: "action-2:1", signal },
+    );
+
+    expect(second).toEqual(first);
+    expect(
+      await executor.lookup("action-2:1", { studentId: s.studentId }),
+    ).toEqual({ status: "found", effect: first.effect });
+    expect((await plan.view(s.p)).tasks).toHaveLength(1);
+  });
+
+  it("rejects a Follow-up for a Course Event that is gone, taking no effect", async () => {
+    const s = await student();
+    const { courseId } = await admin.obligation.findUniqueOrThrow({
+      where: { id: s.obligationId },
+    });
+
+    expect(
+      await executor.execute(
+        {
+          studentId: s.studentId,
+          actionId: "action-1",
+          intent: followUp(courseId, randomUUID()),
+        },
+        { idempotencyKey: "action-1:1", signal },
+      ),
+    ).toEqual({ status: "rejected", detail: "the Course Event is gone" });
+    expect((await plan.view(s.p)).tasks).toEqual([]);
+  });
 });
