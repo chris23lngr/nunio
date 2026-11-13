@@ -21,6 +21,7 @@
     "openapi": "tsx scripts/write-openapi.ts"
   },
   "dependencies": {
+    "@nunio/chat": "workspace:*",
     "@nunio/billing": "workspace:*",
     "@hono/zod-openapi": "1.6.3",
     "@nunio/db": "workspace:*",

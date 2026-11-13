@@ -142,7 +142,7 @@ describe("the model registry", () => {
     expect(roomy.forTask("scan").callSettings.maxOutputTokens).toBe(8_000);
   });
 
-  it("sends a catalog row's exact configuration, to zero-retention endpoints only", async () => {
+  it("sends a catalog row's exact configuration, to zero-retention endpoints that support every parameter it sends", async () => {
     const bodies: Record<string, unknown>[] = [];
     const recording = createModels({
       apiKey: "test-key",
@@ -170,7 +170,11 @@ describe("the model registry", () => {
     expect(bodies).toEqual([
       expect.objectContaining({
         model: "anthropic/claude-sonnet-5.5",
-        provider: { zdr: true, data_collection: "deny" },
+        provider: {
+          zdr: true,
+          data_collection: "deny",
+          require_parameters: true,
+        },
         reasoning: { effort: "medium" },
         max_tokens: 4_000,
         usage: { include: true },

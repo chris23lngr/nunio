@@ -20,6 +20,8 @@ model CatalogModel {
   prices                 Json?
   upstream               String[]  @default([])
   zeroRetentionAvailable Boolean   @default(false)
+  /// Whether one of its zero-retention endpoints takes tools and a tool choice, which Chat needs; true until first synced.
+  toolsAvailable         Boolean   @default(true)
   syncedAt               DateTime?
   createdAt              DateTime  @default(now())
 

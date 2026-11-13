@@ -9,6 +9,8 @@ import {
 } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
+import type { Chats } from "@nunio/chat";
+import { createChats } from "@nunio/chat";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { Delegation, Responsibilities } from "@nunio/delegation";
@@ -16,19 +18,13 @@ import {
   createDelegation,
   createModelCatalog,
   createResponsibilities,
+  principal,
 } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 import { createAuth } from "@nunio/identity";
 import { sourceKeysFromEnv } from "@nunio/keys";
-import type {
-  Chats,
-  Courses,
-  Facts,
-  Projects,
-  Sources,
-} from "@nunio/knowledge";
+import type { Courses, Facts, Projects, Sources } from "@nunio/knowledge";
 import {
-  createChats,
   createCourses,
   createFacts,
   createKnowledgeReader,
@@ -39,7 +35,7 @@ import {
 import type { Outreach } from "@nunio/outreach";
 import { createOutreach, InvalidUnsubscribeError } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
-import { createPlan } from "@nunio/planning";
+import { createPlan, createPlanExecutor } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
 import { createUnderstanding } from "@nunio/understanding";
 import { attachDatabasePool } from "@vercel/functions";
@@ -193,6 +189,12 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
   const delegation = createDelegation({
     db: prisma,
     aiEnabled: () => env.AI_DISABLED !== "true",
+    // A Chat's Action has no Run, so the API performs it once the student approves (ADR-0019).
+    executors: { plan: createPlanExecutor({ db: prisma }) },
+    deadlineOf: async (studentId, obligationId) =>
+      (await plan.view(principal.fromSession({ studentId }))).obligations.find(
+        (o) => o.id === obligationId,
+      )?.due ?? null,
   });
   const keys = sourceKeysFromEnv(env);
   const sources = createSources({
@@ -226,6 +228,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     schedules,
     clock,
   });
+  const artifactWorkflows = artifactWorkflowsFromEnv(env);
   const artifacts = createArtifacts({
     db: prisma,
     keys,
@@ -247,7 +250,16 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     sources,
     facts,
     sourceWorkflows: sourceWorkflowsFromEnv(env),
-    chats: createChats({ db: prisma, keys, reader, delegation }),
+    chats: createChats({
+      db: prisma,
+      keys,
+      reader,
+      delegation,
+      plan,
+      clock,
+      artifacts,
+      startArtifactRun: (runId) => artifactWorkflows.start(runId),
+    }),
     chatModels: createChatModels({
       catalog,
       answererFor: (model) => createAnswerer(models.fromConfig(model)),
@@ -257,7 +269,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     projects: createProjects({ db: prisma }),
     courses: createCourses({ db: prisma, clock, facts, responsibilities }),
     artifacts,
-    artifactWorkflows: artifactWorkflowsFromEnv(env),
+    artifactWorkflows,
     understanding: createUnderstanding({
       db: prisma,
       keys,

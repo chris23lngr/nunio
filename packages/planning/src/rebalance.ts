@@ -99,7 +99,7 @@ const slotMs = slotMinutes * 60_000;
 const dayMs = 24 * 60 * 60_000;
 
 /** The local calendar date and minute of day of an instant. */
-function local(ms: number, timeZone: string) {
+export function local(ms: number, timeZone: string) {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", {
       timeZone,
@@ -126,7 +126,7 @@ const overlaps = (intervals: readonly Interval[], start: number, end: number) =>
   );
 
 /** Counts an interval's minutes towards the local days it falls on. */
-function addMinutes(
+export function addMinutes(
   perDay: Map<string, number>,
   { start, end }: Interval,
   timeZone: string,

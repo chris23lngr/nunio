@@ -19,6 +19,7 @@
         "@nunio/ai": "workspace:*",
         "@nunio/artifacts": "workspace:*",
         "@nunio/billing": "workspace:*",
+        "@nunio/chat": "workspace:*",
         "@nunio/db": "workspace:*",
         "@nunio/delegation": "workspace:*",
         "@nunio/identity": "workspace:*",
@@ -131,6 +132,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "2.6.3",
+        "@nunio/chat": "workspace:*",
         "@nunio/parser": "workspace:*",
         "@nunio/typescript-config": "workspace:*",
         "@temporalio/testing": "1.25.0",
@@ -195,6 +197,27 @@
       "dependencies": {
         "@nunio/db": "workspace:*",
         "@nunio/delegation": "workspace:*",
+      },
+      "devDependencies": {
+        "@biomejs/biome": "2.6.3",
+        "@nunio/typescript-config": "workspace:*",
+        "@types/node": "24.19.2",
+        "typescript": "5.9.3",
+        "vitest": "5.0.5",
+      },
+    },
+    "packages/chat": {
+      "name": "@nunio/chat",
+      "version": "0.0.0",
+      "dependencies": {
+        "@nunio/ai": "workspace:*",
+        "@nunio/artifacts": "workspace:*",
+        "@nunio/db": "workspace:*",
+        "@nunio/delegation": "workspace:*",
+        "@nunio/keys": "workspace:*",
+        "@nunio/knowledge": "workspace:*",
+        "@nunio/planning": "workspace:*",
+        "ai": "7.0.157",
       },
       "devDependencies": {
         "@biomejs/biome": "2.6.3",
@@ -863,6 +886,8 @@
     "@nunio/artifacts": ["@nunio/artifacts@workspace:packages/artifacts"],
 
     "@nunio/billing": ["@nunio/billing@workspace:packages/billing"],
+
+    "@nunio/chat": ["@nunio/chat@workspace:packages/chat"],
 
     "@nunio/commitlint-config": ["@nunio/commitlint-config@workspace:packages/commitlint-config"],
 

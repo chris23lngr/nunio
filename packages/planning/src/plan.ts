@@ -13,7 +13,7 @@ import type { Facts } from "@nunio/knowledge";
 import { definitely } from "@nunio/knowledge";
 import { readCalendar } from "./calendar.js";
 import type { Interval, Move, PlanState } from "./rebalance.js";
-import { rebalance } from "./rebalance.js";
+import { addMinutes, local, rebalance } from "./rebalance.js";
 import { deadline, hhmm } from "./time.js";
 
 export type WorkRef = { kind: "obligation" | "task"; id: string };
@@ -22,6 +22,21 @@ export type PriorityRef = {
   kind: "course" | "project" | "obligation";
   id: string;
 };
+/** A Study Block nunio might propose: a new one for some work, or an existing one somewhere else. */
+export type BlockProposal =
+  | ({ kind: "create"; work: WorkRef } & Interval)
+  | ({ kind: "move"; blockId: string } & Interval);
+/** Why a proposed Study Block cannot be proposed at all. */
+export type BlockRefusal =
+  | "invalid"
+  | "gone"
+  | "past"
+  | "protected_time"
+  | "fixed_event"
+  | "study_block"
+  | "locked";
+/** A Preference a proposed Study Block would break, which the student sees before approving it. */
+export type BlockNote = "outside_study_window" | "daily_limit" | "work_limit";
 export type ProtectedSpan =
   | { weekday: number; fromMinute: number; toMinute: number }
   | Interval;
@@ -286,6 +301,27 @@ export function createPlan({
       proposal: rebalance(state),
     };
   }
+  /** A work's own daily limit: a Task's, else its Course's; null when it has none. */
+  async function workLimit(tx: Transaction, work: WorkRef) {
+    const task =
+      work.kind === "task"
+        ? await tx.task.findUnique({ where: { id: work.id } })
+        : null;
+    if (task?.maxMinutesPerDay) return task.maxMinutesPerDay;
+    const obligationId =
+      work.kind === "obligation" ? work.id : task?.obligationId;
+    const obligation = obligationId
+      ? await tx.obligation.findUnique({ where: { id: obligationId } })
+      : null;
+    if (!obligation) return null;
+    return (
+      (
+        await tx.coursePreference.findUnique({
+          where: { courseId: obligation.courseId },
+        })
+      )?.maxMinutesPerDay ?? null
+    );
+  }
   const workExists = async (tx: Transaction, work: WorkRef) =>
     Boolean(
       work.kind === "obligation"
@@ -297,6 +333,141 @@ export function createPlan({
     /** The Plan as it stands, and what a Rebalance would change now. */
     async view(p: Principal) {
       return withOwner(db, p, (tx) => planView(p, tx));
+    },
+    /**
+     * Checks a Study Block nunio might propose (ADR-0019) against the Plan's hard rules, which refuse it, and its
+     * Preferences, which it may break only with the student's Approval and so only notes.
+     */
+    async check(
+      p: Principal,
+      proposal: BlockProposal,
+    ): Promise<
+      | { status: "refused"; reasons: BlockRefusal[] }
+      | { status: "ok"; notes: BlockNote[] }
+    > {
+      if (!validInterval(proposal, maxBlockMs))
+        return { status: "refused", reasons: ["invalid"] };
+      return withOwner(db, p, async (tx) => {
+        const block =
+          proposal.kind === "move"
+            ? await tx.studyBlock.findUnique({
+                where: { id: proposal.blockId },
+              })
+            : null;
+        if (
+          proposal.kind === "move"
+            ? !block
+            : !(await workExists(tx, proposal.work))
+        )
+          return { status: "refused", reasons: ["gone"] };
+        const stored = await tx.planPreference.findFirst();
+        const timeZone = stored?.timeZone ?? defaults.timeZone;
+        const during = {
+          start: { lt: proposal.end },
+          end: { gt: proposal.start },
+        };
+        const spans = await tx.protectedTime.findMany();
+        const protectedTime = [
+          ...weekly(
+            spans.flatMap((span) =>
+              span.weekday === null
+                ? []
+                : [
+                    {
+                      weekday: span.weekday,
+                      fromMinute: span.fromMinute!,
+                      toMinute: span.toMinute!,
+                    },
+                  ],
+            ),
+            proposal.start,
+            proposal.end,
+            timeZone,
+          ),
+          ...spans.flatMap((span) =>
+            span.start && span.end
+              ? [{ start: span.start, end: span.end }]
+              : [],
+          ),
+        ];
+        const reasons: BlockRefusal[] = [];
+        if (proposal.start < clock.now()) reasons.push("past");
+        if (
+          protectedTime.some(
+            (span) => span.start < proposal.end && span.end > proposal.start,
+          )
+        )
+          reasons.push("protected_time");
+        if (await tx.fixedEvent.count({ where: during }))
+          reasons.push("fixed_event");
+        if (
+          await tx.studyBlock.count({
+            where: { ...during, ...(block ? { id: { not: block.id } } : {}) },
+          })
+        )
+          reasons.push("study_block");
+        if (block?.lockedAt) reasons.push("locked");
+        if (reasons.length) return { status: "refused", reasons };
+
+        const notes: BlockNote[] = [];
+        const first = local(proposal.start.getTime(), timeZone);
+        const last = local(proposal.end.getTime() - 60_000, timeZone);
+        if (
+          first.date !== last.date ||
+          first.minute <
+            (stored?.studyFromMinute ?? defaults.studyFromMinute) ||
+          last.minute + 1 > (stored?.studyToMinute ?? defaults.studyToMinute)
+        )
+          notes.push("outside_study_window");
+        // Minutes per local day: the proposal's, and those already planned around it.
+        const proposed = new Map<string, number>();
+        addMinutes(proposed, proposal, timeZone);
+        const nearby = await tx.studyBlock.findMany({
+          where: {
+            start: { lt: new Date(proposal.end.getTime() + dayMs) },
+            end: { gt: new Date(proposal.start.getTime() - dayMs) },
+            ...(block ? { id: { not: block.id } } : {}),
+          },
+        });
+        const over = (blocks: Interval[], limit: number) => {
+          const used = new Map<string, number>();
+          for (const b of blocks) addMinutes(used, b, timeZone);
+          return [...proposed].some(
+            ([date, minutes]) => (used.get(date) ?? 0) + minutes > limit,
+          );
+        };
+        if (over(nearby, stored?.maxMinutesPerDay ?? defaults.maxMinutesPerDay))
+          notes.push("daily_limit");
+        const work: WorkRef =
+          proposal.kind === "create"
+            ? proposal.work
+            : block!.obligationId
+              ? { kind: "obligation", id: block!.obligationId }
+              : { kind: "task", id: block!.taskId! };
+        const limit = await workLimit(tx, work);
+        if (
+          limit !== null &&
+          over(
+            nearby.filter(
+              (b) =>
+                (work.kind === "obligation" ? b.obligationId : b.taskId) ===
+                work.id,
+            ),
+            limit,
+          )
+        )
+          notes.push("work_limit");
+        return { status: "ok", notes };
+      });
+    },
+    /** The time zone the student's days, deadlines and Study Blocks are read in. */
+    async timeZone(p: Principal) {
+      return withOwner(
+        db,
+        p,
+        async (tx) =>
+          (await tx.planPreference.findFirst())?.timeZone ?? defaults.timeZone,
+      );
     },
     /**
      * The Rebalance moves for one Course's Obligations, or one exam, and their Tasks, as Actions for the

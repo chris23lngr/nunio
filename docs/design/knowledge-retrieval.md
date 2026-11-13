@@ -213,3 +213,12 @@ All tests cross `pin`, `retrieve`, and `cite`. Scenarios:
 - An answer is withdrawn when any Source it was given is deleted, even one it did not cite.
 - Template-heavy documents such as module handbooks retrieve poorly when the module name is not in the chunk that holds the answer (Phase 7 eval). Prefixing chunks with their Source title and section, or a keyword strategy, are the candidates.
 - Deleted Sources remain recoverable from database backups only until Neon's point-in-time recovery window ends (see ADR-0007).
+
+## Chat tools decisions (2026-11-12)
+
+[ADR-0019](../adr/0019-the-chat-model-calls-tools.md) and [ADR-0020](../adr/0020-a-chat-reads-the-students-plan-and-facts.md) apply.
+
+- **Chats move to `packages/chat`.** This replaces "Chats live in `knowledge`" above. `createChats`, the ask flow, the tools and message persistence move. `knowledge` keeps the reader, `render()`, `cite()`, `Untrusted` and `createDerivedText`. `{ chatId }` stays a `ScopeRef`, so the reader keeps checking the selection and ownership in one transaction.
+- **Plan reads use `{ planning: true }`.** A Chat's tools read Obligations, Facts and Fixed Events through the planning scope, which only a student reads. It now also accepts `exam_logistics` and `ai_use_rule`, so a Course's Facts can be read whole. `{ chatId }` still refuses `fixed_event` and still serves course material only from the selection.
+- **One tag sequence per turn.** `chat` numbers the tags of every tool result in a turn as one `S1` … `Sn` sequence through `render({ tagFor })`, and the same item keeps its tag. Facts and passages are now combined, which replaces "combining them is deferred" above.
+- **`derivedFrom`** covers every Source whose passages or extracted wording appeared in any tool result of the turn, not only the Sources of passages. It also covers the Sources of the earlier answers sent as history, so deleting a Source withdraws the follow-up answers built on it.

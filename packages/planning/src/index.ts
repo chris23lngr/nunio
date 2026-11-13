@@ -9,6 +9,9 @@ export {
 } from "./calendar.js";
 export { createPlanExecutor } from "./executor.js";
 export {
+  type BlockNote,
+  type BlockProposal,
+  type BlockRefusal,
   createPlan,
   type Plan,
   type PriorityRef,

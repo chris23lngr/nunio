@@ -189,6 +189,7 @@ describe("the Model Catalog", () => {
             providerModelId: id as string,
             prices: prices as never,
             upstream: ["Amazon Bedrock"],
+            tools: true,
           },
         ]),
       ),
@@ -210,6 +211,41 @@ describe("the Model Catalog", () => {
     const offered = (await catalog.chatModels()).map((model) => model.key);
     expect(offered).toContain(synced);
     expect(offered).not.toContain(vanished);
+  });
+
+  it("offers a Model in Chat only while one of its zero-retention endpoints takes tools, but still gives it to tasks", async () => {
+    const withoutTools = await addModel({
+      providerModelId: "anthropic/claude-test-c",
+    });
+    now = new Date(now.getTime() + 60_000);
+    const prices = [
+      { minPromptTokens: 0, inputMicroUsdPerMTok: 1, outputMicroUsdPerMTok: 2 },
+    ];
+    await catalog.applySync(
+      new Map(
+        [
+          ["anthropic/claude-test-c", false],
+          ["anthropic/claude-haiku-5.5", true],
+          ["anthropic/claude-sonnet-5.5", true],
+          ["anthropic/claude-opus-5.5", true],
+        ].map(([id, tools]) => [
+          id as string,
+          {
+            providerModelId: id as string,
+            prices,
+            upstream: ["Amazon Bedrock"],
+            tools: tools as boolean,
+          },
+        ]),
+      ),
+    );
+
+    expect(
+      (await catalog.chatModels()).map((model) => model.key),
+    ).not.toContain(withoutTools);
+    expect((await catalog.taskModels()).map((model) => model.key)).toContain(
+      withoutTools,
+    );
   });
 
   it("leaves the founder's switches out of the runtime role's reach", async () => {

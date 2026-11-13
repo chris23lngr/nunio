@@ -13,8 +13,6 @@ import {
 import type { SourceKeys } from "@nunio/keys";
 import { createSourceKeys } from "@nunio/keys";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
-import type { Chats } from "./chats.js";
-import { createChats } from "./chats.js";
 import type { Facts } from "./facts.js";
 import { createFacts } from "./facts.js";
 import { createProjects } from "./projects.js";
@@ -32,7 +30,6 @@ let database: TestDatabase;
 let admin: PrismaClient;
 let runtime: PrismaClient;
 let sources: Sources;
-let chats: Chats;
 let facts: Facts;
 let reader: KnowledgeReader;
 let delegation: Delegation;
@@ -93,7 +90,6 @@ beforeAll(async () => {
     delegation,
     clock,
   });
-  chats = createChats({ db: runtime, keys, reader, delegation });
 }, 180_000);
 afterAll(async () => {
   await runtime?.$disconnect();
@@ -114,14 +110,30 @@ async function student(limitMicroUsd = 5_000_000): Promise<Principal> {
   return principal.fromSession({ studentId: id });
 }
 
-/** Creates a Chat over the given selection, failing if it is refused. */
+/** Records a Chat over the given selection, as `@nunio/chat` does once it has checked it. */
 async function createChat(
   p: Principal,
   selection: { courseIds: string[]; sourceIds: string[] },
 ) {
-  const created = await chats.create(p, selection);
-  if (created.status !== "ok") throw new Error(created.status);
-  return created;
+  if (p.kind !== "student") throw new Error(p.kind);
+  const { studentId } = p;
+  const id = randomUUID();
+  await admin.chat.create({ data: { id, studentId } });
+  await admin.chatCourse.createMany({
+    data: selection.courseIds.map((courseId) => ({
+      chatId: id,
+      courseId,
+      studentId,
+    })),
+  });
+  await admin.chatSource.createMany({
+    data: selection.sourceIds.map((sourceId) => ({
+      chatId: id,
+      sourceId,
+      studentId,
+    })),
+  });
+  return { id };
 }
 
 /** Narrows a retrieval's items to passages, failing on anything else. */
@@ -162,11 +174,12 @@ async function acceptedCourse(
   sourceId: string,
   course: { code: string; title: string; quote: string },
   obligations: Extracted["obligations"] = [],
+  extractedFacts: Extracted["facts"] = [],
 ) {
   const extracted: Extracted = {
     courses: [{ ...course, page: 1 }],
     obligations,
-    facts: [],
+    facts: extractedFacts,
   };
   const extractor: Extractor = {
     model: "test-extractor",
@@ -588,6 +601,56 @@ it("reads Obligations across every Course for planning, but never passages", asy
       { kind: "passages", text: "Klausur" },
     ),
   ).rejects.toThrow(InvalidQueryError);
+});
+
+it("reads a Course's exam logistics and AI-use Rule for planning", async () => {
+  const p = await student();
+  const analysis = await readySource(p, "Analysis.pdf", [
+    "MA-101 Analysis I",
+    "Klausur im Hörsaal H1. KI-Werkzeuge sind nicht erlaubt.",
+  ]);
+  const course = await acceptedCourse(
+    p,
+    analysis,
+    { code: "MA-101", title: "Analysis I", quote: "MA-101 Analysis I" },
+    [],
+    [
+      {
+        course: "MA-101",
+        type: "exam_logistics",
+        key: "exam.room",
+        value: "Hörsaal H1",
+        page: 2,
+        quote: "Klausur im Hörsaal H1.",
+        uncertainty: null,
+      },
+      {
+        course: "MA-101",
+        type: "ai_use_rule",
+        key: "course",
+        value: "forbidden",
+        page: 2,
+        quote: "KI-Werkzeuge sind nicht erlaubt.",
+        uncertainty: null,
+      },
+    ],
+  );
+
+  const result = await reader.retrieve(
+    p,
+    { planning: true },
+    {
+      kind: "facts",
+      types: ["exam_logistics", "ai_use_rule"],
+      narrow: { courseIds: [course] },
+    },
+  );
+
+  if (result.status !== "ok") throw new Error(result.status);
+  expect(result.items.map((i) => i.label)).toEqual([
+    "Analysis I, Exam logistics from Analysis.pdf, page 2",
+    "Analysis I, AI-use rule from Analysis.pdf, page 2",
+  ]);
 });
 
 it("throws a scope mismatch when a Run reads a Chat's scope, without embedding", async () => {

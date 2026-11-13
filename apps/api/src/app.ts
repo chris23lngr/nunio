@@ -2,17 +2,12 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { Estimator } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { pilotStatus } from "@nunio/billing";
+import type { Chats } from "@nunio/chat";
 import type { PrismaClient } from "@nunio/db";
 import type { Delegation, Responsibilities } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
-import type {
-  Chats,
-  Courses,
-  Facts,
-  Projects,
-  Sources,
-} from "@nunio/knowledge";
+import type { Courses, Facts, Projects, Sources } from "@nunio/knowledge";
 import type { Outreach } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";

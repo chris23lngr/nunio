@@ -31,11 +31,16 @@ export class KnowledgeUnavailable extends Error {
 export class ScopeMismatchError extends Error {
   override name = "ScopeMismatchError";
 }
-/** The Plan spans every Course, so planning sees their Facts; course content always stays under explicit selection. */
+/**
+ * The Plan spans every Course, so planning sees their Facts, and so does a Chat's reading of them (ADR-0020); course
+ * content always stays under explicit selection.
+ */
 const planningTypes: readonly FactType[] = [
   "obligation",
   "course_rule",
   "topic",
+  "exam_logistics",
+  "ai_use_rule",
   "fixed_event",
 ];
 /** Intersected with the selection, never unioned. A Project narrows to its Courses. */
@@ -138,7 +143,8 @@ export type Retrieval =
       items: Item[];
       /** The limit cut off further relevant passages. */
       truncated: boolean;
-      render(): PromptData;
+      /** Tags are `S1` … in item order, unless `tagFor` names them, so a caller can number several renders as one. */
+      render(options?: { tagFor?: (cite: CitationRef) => string }): PromptData;
     }
   | {
       status: "refused";
@@ -161,13 +167,16 @@ function ok(items: Item[], revision: string, truncated = false): Retrieval {
     revision,
     items,
     truncated,
-    render() {
+    render({ tagFor } = {}) {
       if (!items.length)
         return {
           data: "Nothing relevant was found in the selected material.",
           citations: [],
         };
-      const tagged = items.map((item, i) => ({ item, tag: `S${i + 1}` }));
+      const tagged = items.map((item, i) => ({
+        item,
+        tag: tagFor?.(item.cite) ?? `S${i + 1}`,
+      }));
       // Each channel gets its own fenced section, so operational items never appear among course material.
       const sections = channels.flatMap((channel) => {
         const entries = tagged.filter(({ item }) => item.channel === channel);

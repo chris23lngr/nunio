@@ -1042,6 +1042,13 @@
             "type": "string",
             "description": "Model reasoning, absent for older messages or once a dependent Source is deleted."
           },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatMessagePart"
+            },
+            "description": "The message's reasoning, searches and text in the order shown; empty once withdrawn."
+          },
           "citations": {
             "type": "array",
             "items": {
@@ -1155,8 +1162,666 @@
           "role",
           "createdAt",
           "text",
+          "parts",
           "citations",
           "model"
+        ]
+      },
+      "ChatMessagePart": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "reasoning"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-searchMaterial"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "query"
+                ]
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "found": {
+                    "type": "integer"
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "found",
+                  "sources"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "output"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-agenda"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ]
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  },
+                  "obligations": {
+                    "type": "integer"
+                  },
+                  "studyBlocks": {
+                    "type": "integer"
+                  },
+                  "fixedEvents": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to",
+                  "obligations",
+                  "studyBlocks",
+                  "fixedEvents"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "output"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-courseFacts"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "course": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "course"
+                ]
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "course": {
+                    "type": "string"
+                  },
+                  "facts": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "course",
+                  "facts"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "output"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-startPracticeSet"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "topics": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "topics"
+                ]
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "practice_set",
+                      "flashcards"
+                    ]
+                  },
+                  "topics": {
+                    "type": "integer"
+                  },
+                  "artifactId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "topics",
+                  "artifactId"
+                ]
+              },
+              "artifact": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "making",
+                      "ready",
+                      "failed"
+                    ]
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "description": "Where the Artifact stands; null if it could not be started."
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "output",
+              "artifact"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-startFlashcards"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "topics": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "topics"
+                ]
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "practice_set",
+                      "flashcards"
+                    ]
+                  },
+                  "topics": {
+                    "type": "integer"
+                  },
+                  "artifactId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "topics",
+                  "artifactId"
+                ]
+              },
+              "artifact": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "making",
+                      "ready",
+                      "failed"
+                    ]
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "description": "Where the Artifact stands; null if it could not be started."
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "output",
+              "artifact"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-proposeStudyBlock"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string"
+                  },
+                  "end": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "work",
+                  "start",
+                  "end"
+                ]
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "outside_study_window",
+                    "daily_limit",
+                    "work_limit"
+                  ]
+                },
+                "description": "Preferences the block would break, shown before approving."
+              },
+              "action": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "expiresAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "awaiting_approval",
+                      "expired",
+                      "dispatching",
+                      "done",
+                      "failed",
+                      "refused",
+                      "unconfirmed"
+                    ]
+                  },
+                  "decision": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "approved",
+                      "denied",
+                      null
+                    ]
+                  },
+                  "shown": {
+                    "$ref": "#/components/schemas/ActionShown"
+                  }
+                },
+                "required": [
+                  "id",
+                  "fingerprint",
+                  "expiresAt",
+                  "status",
+                  "decision",
+                  "shown"
+                ],
+                "description": "The Action the student is asked to approve; null if it could not be asked."
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "approvalId",
+              "notes",
+              "action"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-proposeStudyBlockMove"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {
+                  "block": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string"
+                  },
+                  "end": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "block",
+                  "start",
+                  "end"
+                ]
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "outside_study_window",
+                    "daily_limit",
+                    "work_limit"
+                  ]
+                },
+                "description": "Preferences the block would break, shown before approving."
+              },
+              "action": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "expiresAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "awaiting_approval",
+                      "expired",
+                      "dispatching",
+                      "done",
+                      "failed",
+                      "refused",
+                      "unconfirmed"
+                    ]
+                  },
+                  "decision": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "approved",
+                      "denied",
+                      null
+                    ]
+                  },
+                  "shown": {
+                    "$ref": "#/components/schemas/ActionShown"
+                  }
+                },
+                "required": [
+                  "id",
+                  "fingerprint",
+                  "expiresAt",
+                  "status",
+                  "decision",
+                  "shown"
+                ],
+                "description": "The Action the student is asked to approve; null if it could not be asked."
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "approvalId",
+              "notes",
+              "action"
+            ]
+          }
+        ]
+      },
+      "ActionShown": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "studyBlock.create",
+              "studyBlock.move"
+            ]
+          },
+          "work": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "course": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "title",
+              "course"
+            ]
+          },
+          "from": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "description": "Where the block is now; null for a new block."
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "work",
+          "from",
+          "to"
         ]
       },
       "Plan": {
@@ -2433,80 +3098,6 @@
           "fingerprint",
           "expiresAt",
           "responsibility"
-        ]
-      },
-      "ActionShown": {
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "studyBlock.create",
-              "studyBlock.move"
-            ]
-          },
-          "work": {
-            "type": "object",
-            "properties": {
-              "title": {
-                "type": "string"
-              },
-              "course": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            },
-            "required": [
-              "title",
-              "course"
-            ]
-          },
-          "from": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "start": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "end": {
-                "type": "string",
-                "format": "date-time"
-              }
-            },
-            "required": [
-              "start",
-              "end"
-            ],
-            "description": "Where the block is now; null for a new block."
-          },
-          "to": {
-            "type": "object",
-            "properties": {
-              "start": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "end": {
-                "type": "string",
-                "format": "date-time"
-              }
-            },
-            "required": [
-              "start",
-              "end"
-            ]
-          }
-        },
-        "required": [
-          "kind",
-          "work",
-          "from",
-          "to"
         ]
       },
       "Responsibility": {
@@ -6136,35 +6727,72 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4000
+                      },
+                      "model": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "description": "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers."
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "text"
+                    ],
+                    "additionalProperties": false
                   },
-                  "text": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4000
-                  },
-                  "model": {
-                    "type": "string",
-                    "maxLength": 100,
-                    "description": "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers."
+                  {
+                    "type": "object",
+                    "properties": {
+                      "approval": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "fingerprint": {
+                            "type": "string",
+                            "maxLength": 200
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "fingerprint"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Approves the proposal the answer asked under this approval ID, with the fingerprint its card showed (ADR-0010); the model then reports how it went in a new answer."
+                      },
+                      "model": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "description": "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers."
+                      }
+                    },
+                    "required": [
+                      "approval"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "id",
-                  "text"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "AI SDK UI message SSE: a start chunk carrying the answer's ID, reasoning and provisional text parts, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
+            "description": "AI SDK UI message SSE: a start chunk carrying the answer's ID, then each model step's reasoning, tool and provisional text chunks, followed by data-committed containing the persisted question and answer, or data-refused/error. EOF alone does not confirm persistence.",
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -6210,7 +6838,7 @@
             }
           },
           "409": {
-            "description": "The question ID is already used.",
+            "description": "The question ID is already used, or the approval is not the card's open request.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6493,144 +7121,6 @@
           },
           "404": {
             "description": "The Chat is gone.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "text": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4000
-                  },
-                  "model": {
-                    "type": "string",
-                    "maxLength": 100,
-                    "description": "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers."
-                  }
-                },
-                "required": [
-                  "text"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The answer and its persisted question.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ChatMessage"
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "question": {
-                          "$ref": "#/components/schemas/ChatMessage"
-                        }
-                      },
-                      "required": [
-                        "question"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Sign in required.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Usage is refused, such as an exhausted Allowance.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The Chat is gone.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "model_unavailable: the chosen Model is not offered.",
             "content": {
               "application/json": {
                 "schema": {

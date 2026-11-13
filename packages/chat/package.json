@@ -1,0 +1,35 @@
+{
+  "name": "@nunio/chat",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "test": "vitest run src"
+  },
+  "devDependencies": {
+    "@nunio/typescript-config": "workspace:*",
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5",
+    "@biomejs/biome": "2.6.3"
+  },
+  "dependencies": {
+    "@nunio/ai": "workspace:*",
+    "@nunio/artifacts": "workspace:*",
+    "@nunio/db": "workspace:*",
+    "@nunio/delegation": "workspace:*",
+    "@nunio/keys": "workspace:*",
+    "@nunio/knowledge": "workspace:*",
+    "@nunio/planning": "workspace:*",
+    "ai": "7.0.157"
+  }
+}

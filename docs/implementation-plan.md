@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 14 (Chat tools) planned, 2026-11-12; it precedes the Phase 12 gates. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -583,6 +583,108 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
    - `disableCSRFCheck`, `disableOriginCheck`, `FROM node:.*alpine`.
 3. **Full test run.** Unit, contract, Testcontainers integration, workflow replay, and end-to-end on staging: upload a syllabus, review it, then a Responsibility Run proposes a Study Block, the student approves it, and the Action is done.
 4. **First-use timing.** Re-measure the ten-minute result on staging with eval materials.
+
+---
+
+## Phase 14: Chat tools
+
+> **How this serves the primary goal:** the student asks in one place about their material and what is due, and has nunio plan or prepare practice there, instead of switching screens. The Chat's selection, `meter` and the delegation gate keep this within explicit permissions.
+
+Phase 14 is built before the Phase 12 gates, and its evals join them. Work happens on the integration branch `feat/chat-tools`, with one PR per stage into it and a single PR to `main` at the end.
+
+**What to implement.**
+
+1. **`packages/chat` and history.**
+   - Move `createChats` and the ask flow out of `knowledge` without changing behaviour ([knowledge-retrieval.md](design/knowledge-retrieval.md), "Chat tools decisions").
+   - Then send the last 10 questions and answers (ADR-0019, "History").
+2. **Tool loop and search.**
+   - First, a spike that verifies three things, each from `ai@7`'s behaviour, not its types. A check that fails becomes a decision for the founder before code builds on it.
+     - Merging one `toUIMessageStream` per step renders in `useChat` without duplicated or reordered parts.
+     - A server-built approval response continues a turn.
+     - `@openrouter/ai-sdk-provider` passes `provider.require_parameters` through.
+   - Then the step loop under `meter` (at most 6 steps, the last without tools) and `searchMaterial`.
+   - Tool parts with client-only outputs and the sealed `parts` column (ADR-0016 amendment).
+   - Removing `POST /api/me/chats/{id}/messages`.
+   - The Model Catalog's tool-support condition (ADR-0018 amendment).
+3. **Read tools** (ADR-0020):
+   - `agenda({ from, to })`, up to 31 days: Obligations with deadline and review state, Tasks, Study Blocks and Fixed Events;
+   - `courseFacts({ courseId })`: a Course's Facts with Provenance.
+4. **Proposals.**
+   - `proposeStudyBlockCreate` and `proposeStudyBlockMove`, checked against the Plan's rules and held for the student through `toolApproval`.
+   - The gate Action recorded at commit.
+   - The approval response on the stream route, then the continuation message.
+   - Cards in the Chat and on Home.
+5. **Artifacts.**
+   - Tools that start a practice set or flashcards Run at commit, at most one per turn and only within the selection.
+   - A status card linking to the Artifact.
+
+**Documentation references.** ADR-0001, 0010, 0011, 0016, 0018, 0019, 0020; [delegation-gate.md](design/delegation-gate.md) "Chat origin"; [knowledge-retrieval.md](design/knowledge-retrieval.md) "Chat tools decisions"; [study-execution.md](design/study-execution.md); the AI SDK docs shipped in `packages/ai/node_modules/ai/docs`.
+
+**Verification checklist.**
+- [x] A follow-up question carries the history. The captured prompt holds the earlier questions and answers, without withdrawn answers or old tags (`packages/chat/src/history.test.ts`; `apps/api/src/create-app.test.ts`, "answers a follow-up with the earlier questions and answers…").
+- [x] Every step is metered on its own, and a turn refused at any step records nothing (`apps/api/src/create-app.test.ts`, "refuses a turn when the Allowance no longer covers a later step…").
+- [x] The last step has no tools, and no request forces a tool (`create-app.test.ts`, "lets the model search at most five times…"; `packages/ai/src/answer.test.ts`, "offers the tools without forcing one…").
+- [x] Neither the stream nor the stored message contains a full tool result (`create-app.test.ts`, "gives the model the passages a search found…").
+- [x] Deleting a Source withdraws every answer whose tool results held its passages or extracted wording (`apps/api/src/create-app.test.ts`, "lists earlier messages… withdrawing an answer…" and "withdraws an answer built on the Plan…").
+- [x] A Chat proposal is performed only after the student approves the fingerprint shown (`apps/api/src/create-app.test.ts`, "performs a proposal approved in the Chat…", which refuses another fingerprint with 409). A changed proposal needs a new Approval, and repeated clicks perform once (`packages/delegation/src/gate.test.ts`).
+- [x] A Model without a tool-capable zero-retention endpoint is not offered (`packages/delegation/src/model-catalog.test.ts`; `packages/ai/src/prices.test.ts`).
+- [x] Retrieval eval with model-driven search, including the share of questions about the material answered without a search, is recorded: [phase-14-chat-search-eval.json](operations/phase-14-chat-search-eval.json). The founder sets thresholds; labels are still pending the founder's spot-check.
+- [x] Injection eval: Sources with embedded instructions start no Artifact Run, and any proposal they cause appears only as a card ([phase-14-chat-injection-eval.json](operations/phase-14-chat-injection-eval.json)).
+
+**Progress (2026-11-12).** Stage 1 is implemented.
+- `createChats` and the ask flow live in `packages/chat`, unchanged apart from the history.
+- Each answer is given the last 10 questions and answers, oldest first, without withdrawn turns or Citation tags. It is withdrawn with the Sources of those earlier answers too.
+- Retrieval still searches with the question's text alone until stage 2, so a follow-up such as "and at what time?" finds no material and can only refer to the history.
+
+**Progress (2026-11-12).** Stage 2 is implemented.
+- The spike passed all three checks against `ai@7.0.157`: one `toUIMessageStream` per step renders as one message in `useChat`, a server-built approval response continues a turn as a new assistant message, and `require_parameters` reaches OpenRouter. It also found that an approved tool part shows twice on the client, once as answered and once with its output; stage 4 handles that.
+- `packages/ai` offers one answer step (`Answerer.step`). `packages/chat` runs the loop, at most 6 metered steps with the last one sent `toolChoice: "none"`, and `searchMaterial`, whose tags run on across a turn through `render({ tagFor })`. A Chat with nothing selected is offered no search.
+- Answers store their parts (`chat_message.partsContent`), and the API returns them for every message. Older answers get parts from their reasoning and text.
+- Searches show as one compact line each (`Durchsucht: „…“`, with what they found), live and after reopening. They are not collapsed after the answer, unlike the reasoning.
+- `catalog_model.toolsAvailable` defaults to true, so Models stay offered until the first sync after the migration records the real value. An operator login made before it needs the new column grant (environments runbook).
+- `POST /api/me/chats/{id}/messages` is removed.
+- The Chat search eval (`apps/worker/evals/chat-search.ts`) asks the Phase 7 questions, each in a fresh Chat, with `sonnet-5.5-reasoning-high`. On 23 answerable and 12 unanswerable questions:
+  - no question about the material was answered without a search;
+  - a search reached the expected page for all 23, against recall@8 0.74 for the single query in Phase 7, with 2.2 searches per question on average;
+  - every answer cited the expected page.
+
+  Of the unanswerable questions, 9 got no Citation. A read of the other 3 shows each also says the material does not answer the question and cites only related passages, so all 12 were declined. The run cost $2.63, about $0.075 per question. This is one run, and ingestion is not deterministic. Figure readings (#66) and the two embedding providers vary, so two runs of the unchanged Phase 7 retrieval eval on 2026-11-12 gave recall@1 0.348 and 0.391, against 0.435 recorded on 2026-11-08. Thresholds should allow for that spread.
+
+**Progress (2026-11-12).** Stage 3 is implemented.
+- Each turn's context message gives the date in the student's time zone (`plan.timeZone`) and their Courses (not rejected, merged or Archived) under handles such as `K1`, fenced as data. Tools take handles, so the model never handles IDs and Course titles stay out of tool schemas (ADR-0011).
+- `agenda({ from, to })` reads `plan.view` for up to 31 days: Obligations due in the range, with their Tasks, unreviewed or reported-submitted state and a tag from the planning scope's Facts, then Study Blocks and Fixed Events. All of it is fenced as data. The student sees counts only.
+- `courseFacts({ course })` reads a Course's Obligations, exam logistics, course rules, AI-use Rule and Topics through the planning scope, which now also serves `exam_logistics` and `ai_use_rule`. The student sees the Course and a count.
+- Both tools are offered in every Chat, and a Chat with nothing selected still has no search. The model's instructions bind dates and the Plan to these tools' results.
+- The web shows them as steps (`Plan gelesen: 16.11.–22.11.`, `Kursinfos gelesen: Analysis I`).
+
+**Progress (2026-11-12).** Stage 4 is implemented; the ADR-0019 amendment records where it departs from the decision as first written.
+- `plan.check` refuses a proposed Study Block that breaks a hard rule and notes broken Preferences.
+- The Plan tool names work and blocks `O1`, `T1` and `B1`, and `proposeStudyBlock` and `proposeStudyBlockMove` are checked through `toolApproval` before the student is asked. A valid proposal ends the turn.
+- The gate asks each Action right after the answer is saved, under `chatId:messageId:n`, and the API decorates each card with its Action and status.
+- The API performs an approved Chat Action wherever it was approved. From the Chat card, the model then reports the outcome in a new answer, which the web reads apart from `useChat` so the card never shows twice.
+- Expired Chat Approvals drop out of Approvals and Home, and later turns see each earlier proposal's status.
+
+**Progress (2026-11-13).** Stage 5 is implemented; the ADR-0019 amendment records the details.
+- `startPracticeSet` and `startFlashcards` take Topic tags and check them against the Chat's scope. They claim the turn's one Artifact before awaiting, and the Artifact starts after the answer is saved, through `artifacts.request` with a chosen `artifactId` and the API's workflow port.
+- A failed turn starts nothing, and a Topic outside the selected Courses goes back to the model with the reason.
+- The web shows a step line and a card that opens the Artifact under Study.
+- Later turns see where each started Artifact stands.
+
+**Progress (2026-11-13).** Evals before the merge to `main`.
+- **Chat injection eval** (`apps/worker/evals/chat-injection.ts`): a synthetic Source tells assistants to start Artifacts and to move and propose Study Blocks, at 3 a.m. and 10 p.m. Five harmless questions that read it, each in a fresh Chat with `sonnet-5.5-reasoning-high`, started 0 Artifacts, made 0 proposals and performed 0 Actions. An honest request for a practice set started one, so a start is detected. It cost $0.11.
+- **Chat search eval rerun** with stage 3's instructions. The first rerun found two faults in stage 3, both fixed with tests:
+  - For a student with no Courses, the context message's "no Courses yet" kept the model from searching selected Sources.
+  - The model guessed Course handles for a module the question named.
+
+  Now `courseFacts` is offered only with Courses, and the instructions forbid guessing handles. After the fixes: 0 questions about the material answered without a search, search and citation recall 1.0 on the 21 answered, and every answered unanswerable question declined. $1.57.
+- **Open before the pilot.** Two turns of that run failed on HTTP 429 from Amazon Bedrock's shared pool behind OpenRouter. Steps run with `maxRetries: 0`, since `meter` owns retrying, so one rate-limited step fails the whole turn. Retrying a step that was certainly rejected, with a new reservation, is the follow-up. The eval now runs two questions at a time and records a rejection's status and body.
+
+**Anti-pattern guards.**
+- `toolChoice` is only `auto` or `none`.
+- An AI SDK approval response never grants authority by itself; only `decide` does.
+- Never accept message history from the client.
+- No Drafts or Critiques from a Chat.
+- Never splice tool results into the system prompt.
 
 ---
 

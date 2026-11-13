@@ -23,7 +23,10 @@ import { toAnkiTsv } from "./anki.js";
 type From =
   | { chatId: string }
   | { selection: { courseIds: string[]; sourceIds: string[] } };
-export type ArtifactRequest =
+export type ArtifactRequest = {
+  /** The Artifact's ID, when the caller must point to it before it is made, as a Chat answer does. */
+  artifactId?: string;
+} & (
   | { from: From; kind: "practice_set"; topicIds: string[] }
   | { from: From; kind: "flashcards"; topicIds: string[] }
   | {
@@ -41,7 +44,8 @@ export type ArtifactRequest =
       /** The student's Own Work, or a version of one of their drafts. */
       of: { ownWork: string } | { artifactId: string; version: number };
       conditionsConfirmed?: true;
-    };
+    }
+);
 /** Why nunio will not write: drafts and Critiques follow the Obligation's AI-use Rule, and exams get none. */
 export type Refusal =
   | "gone"
@@ -383,7 +387,7 @@ export function createArtifacts({
         };
       }
       const runId = randomUUID(),
-        artifactId = randomUUID();
+        artifactId = req.artifactId ?? randomUUID();
       const started = await responsibilities.startStudentRun(student, {
         runId,
         workflowId: `artifactRun/${runId}`,
