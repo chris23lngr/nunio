@@ -1,4 +1,4 @@
--- A Fixed Event read from a calendar keeps its identity there and belongs to an Event Series (ADR-0021), so adding the
+-- A Fixed Event read from a calendar keeps its identity there and belongs to an Event Series (ADR-0022), so adding the
 -- calendar again updates it. Events read before this stay without either; a new reading cannot match them.
 CREATE TABLE "event_series" (
   "id" TEXT PRIMARY KEY,

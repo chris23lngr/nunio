@@ -21,7 +21,7 @@ export interface PlanState {
     estimateMinutes: number | null;
     done: boolean;
     dailyLimitMinutes?: number | null;
-    /** A window of a Task toward no Obligation, such as a Course Event's Follow-up (ADR-0021). */
+    /** A window of a Task toward no Obligation, such as a Course Event's Follow-up (ADR-0022). */
     earliest?: Date | null;
     due?: Date | null;
     /** A Task toward no Obligation ranks as its Course does; one toward an Obligation as the Obligation. */
@@ -76,7 +76,7 @@ export type Tradeoff =
       needsApproval: boolean;
     }
   | { kind: "reduce_estimate"; workId: string; byMinutes: number }
-  /** Skip a Routine until the deadline: its Preparations and Follow-ups give up their time (ADR-0021). */
+  /** Skip a Routine until the deadline: its Preparations and Follow-ups give up their time (ADR-0022). */
   | {
       kind: "skip_routine";
       routine: string;

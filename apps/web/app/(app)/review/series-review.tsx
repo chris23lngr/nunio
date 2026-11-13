@@ -20,7 +20,7 @@ type Decision = { courseId: string } | { reject: true };
 type Minutes = { preparationMinutes: number; followUpMinutes: number };
 
 /**
- * The calendar's Event Series still to decide on (ADR-0021): nunio's proposed Course, another one, or none. Only a
+ * The calendar's Event Series still to decide on (ADR-0022): nunio's proposed Course, another one, or none. Only a
  * confirmed series' events become Course Events.
  */
 export function SeriesReview({ apiOrigin }: { apiOrigin: string }) {

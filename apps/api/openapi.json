@@ -2265,7 +2265,7 @@
                     "start",
                     "end"
                   ],
-                  "description": "When a Routine's Task is to be done: between the Course Events of its series around it (ADR-0021)."
+                  "description": "When a Routine's Task is to be done: between the Course Events of its series around it (ADR-0022)."
                 }
               },
               "required": [
@@ -2460,7 +2460,7 @@
                 "routine"
               ]
             },
-            "description": "The Fixed Events of one calendar that share a title (ADR-0021)."
+            "description": "The Fixed Events of one calendar that share a title (ADR-0022)."
           },
           "calendars": {
             "type": "array",
@@ -2943,7 +2943,7 @@
               "until",
               "gainedMinutes"
             ],
-            "description": "Skip a Routine until the deadline; the student's own choice (ADR-0021)."
+            "description": "Skip a Routine until the deadline; the student's own choice (ADR-0022)."
           }
         ]
       },
@@ -9642,7 +9642,7 @@
                   "followUpMinutes"
                 ],
                 "additionalProperties": false,
-                "description": "Minutes to prepare for and follow up on each Course Event of the series; 0 for none (ADR-0021)."
+                "description": "Minutes to prepare for and follow up on each Course Event of the series; 0 for none (ADR-0022)."
               }
             }
           }

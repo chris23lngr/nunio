@@ -54,7 +54,7 @@ type ObligationKind =
   | "registration"
   | "other";
 type ReviewState = "unreviewed" | "confirmed" | "rejected";
-/** Where an Event Series stands with its Course; only a confirmed one's events are Course Events (ADR-0021). */
+/** Where an Event Series stands with its Course; only a confirmed one's events are Course Events (ADR-0022). */
 export type SeriesState = "undecided" | "proposed" | "confirmed" | "rejected";
 /** What a Routine's Task does for its Course Event. */
 export type TaskRole = "preparation" | "follow_up";
@@ -260,7 +260,7 @@ export function createPlan({
     const items = await obligations(p, tx);
     const tasks = (await tasksOf(tx)).map((task) => ({
       ...task,
-      /** When a Routine's Task is to be done, from its Course Event and that event's neighbors (ADR-0021). */
+      /** When a Routine's Task is to be done, from its Course Event and that event's neighbors (ADR-0022). */
       window: windowOf(task, eventRows),
     }));
     const blocks = (
@@ -767,7 +767,7 @@ export function createPlan({
     },
     /**
      * Adds a calendar file as a Source of Fixed Events for the coming year, expanding recurrences. A file sharing event
-     * UIDs with a calendar the student added before updates that calendar instead, keeping its events' IDs (ADR-0021).
+     * UIDs with a calendar the student added before updates that calendar instead, keeping its events' IDs (ADR-0022).
      */
     async addCalendar(p: Principal, input: { name: string; ics: string }) {
       const name = titleOf(input.name, 255);
@@ -1013,7 +1013,7 @@ export function createPlan({
     },
     /**
      * Asks the model, in one metered call, which of the student's Courses each undecided Event Series belongs to,
-     * sending only its title and times and the Courses under handles (ADR-0021). A proposal waits for the student.
+     * sending only its title and times and the Courses under handles (ADR-0022). A proposal waits for the student.
      */
     async proposeSeriesCourses(
       p: Principal,
@@ -1166,7 +1166,7 @@ export function createPlan({
       return { status } as const;
     },
     /**
-     * Adds the Preparations and Follow-ups the student's Routines call for (ADR-0021): for each Course Event of a
+     * Adds the Preparations and Follow-ups the student's Routines call for (ADR-0022): for each Course Event of a
      * confirmed series that starts in the next 14 days, and for a past one whose Follow-up window is still open. Adding
      * them is the student's own planning, not an Action; running it again adds nothing twice.
      */

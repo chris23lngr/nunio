@@ -59,7 +59,7 @@ export function ApprovalCard({
             ? `${presets[approval.responsibility.preset] ?? "A Responsibility"} asks`
             : "nunio asks"}
           {action.work.course && ` for ${action.work.course}`}
-          {/* A Task Action places nothing in time (ADR-0021). */}
+          {/* A Task Action places nothing in time (ADR-0022). */}
           {action.to &&
             (action.from
               ? `: from ${span(action.from)} to ${span(action.to)}`

@@ -53,7 +53,7 @@ export const intentOf = (proposal: Proposal): ActionIntent =>
   ({ kind: proposal.kind, ...proposal.args }) as ActionIntent;
 
 /**
- * Proposes a Task for the student to approve (ADR-0021): a Course Event's Preparation or Follow-up, or a Task in a
+ * Proposes a Task for the student to approve (ADR-0022): a Course Event's Preparation or Follow-up, or a Task in a
  * Course or none. Like a Study Block, it never runs; the student's Approval adds it.
  */
 export function proposeTaskTool(): Tool<{

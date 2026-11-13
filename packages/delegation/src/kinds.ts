@@ -23,7 +23,7 @@ const schemas = {
       end: z.date(),
     })
     .refine(ordered, message),
-  /** A Task in a Course, or a Course Event's Preparation or Follow-up (ADR-0021). */
+  /** A Task in a Course, or a Course Event's Preparation or Follow-up (ADR-0022). */
   "task.create": z.strictObject({
     title: z.string().trim().min(1).max(500),
     courseId: z.string().min(1).nullable(),
@@ -71,7 +71,7 @@ const covers = {
   // A Rebalance moves a block the student placed or moved only with their Approval.
   "studyBlock.move": (scope: GrantScope, _: unknown, block: BlockSubject) =>
     inScope(scope, block) && block.placedBy === "nunio",
-  // No Responsibility adds or reopens Tasks: only the student, from a Chat, with their Approval (ADR-0021).
+  // No Responsibility adds or reopens Tasks: only the student, from a Chat, with their Approval (ADR-0022).
   "task.create": () => false,
   "task.reopen": () => false,
 };

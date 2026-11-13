@@ -1,4 +1,4 @@
--- An Event Series' Course (ADR-0021): proposed by nunio or chosen by the student, and only confirmed one makes its
+-- An Event Series' Course (ADR-0022): proposed by nunio or chosen by the student, and only confirmed one makes its
 -- events Course Events. Rejected means it belongs to no Course, so nunio proposes none again. Deleting the Course
 -- leaves the series undecided.
 ALTER TABLE "event_series" ADD COLUMN "courseId" TEXT REFERENCES "course"("id") ON DELETE SET NULL ON UPDATE CASCADE;

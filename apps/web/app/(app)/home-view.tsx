@@ -21,7 +21,7 @@ function Item({
   onSkip,
 }: {
   item: Attention;
-  /** Skips a Routine until a deadline, as a Shortfall's tradeoff offers (ADR-0021). */
+  /** Skips a Routine until a deadline, as a Shortfall's tradeoff offers (ADR-0022). */
   onSkip: (routine: string, until: string) => void;
 }) {
   if (item.kind === "shortfall")

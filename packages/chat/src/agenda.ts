@@ -27,7 +27,7 @@ const nextDay = (day: string) =>
 
 /**
  * Reads the student's Plan for a range of days (ADR-0020): Obligations due in it, with their Tasks and the tag to
- * cite each by, open Tasks toward no Obligation (ADR-0021), then Study Blocks and Fixed Events. Titles may come from a
+ * cite each by, open Tasks toward no Obligation (ADR-0022), then Study Blocks and Fixed Events. Titles may come from a
  * Source, so they are fenced as data.
  */
 export function agendaTool(
@@ -145,7 +145,7 @@ export function agendaTool(
         ...events.map((e) => {
           const line = `${at(e.start)}–${time(e.end)} · ${e.title}`;
           if (!e.courseId) return line;
-          // A Course Event, with the Preparation and Follow-up it has, done or not (ADR-0021).
+          // A Course Event, with the Preparation and Follow-up it has, done or not (ADR-0022).
           const course = handleOf.get(e.courseId);
           const title = course ? courses.get(course)?.title : undefined;
           const roles = view.tasks

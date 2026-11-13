@@ -16,7 +16,7 @@ model Task {
   /// The Course of a Task toward no Obligation; one toward an Obligation is in its Obligation's Course and has none.
   courseId        String?
   course          Course?     @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
-  /// The Course Event a Preparation or Follow-up is for (ADR-0021); its window follows from that event's series.
+  /// The Course Event a Preparation or Follow-up is for (ADR-0022); its window follows from that event's series.
   fixedEventId    String?
   fixedEvent      FixedEvent? @relation(fields: [fixedEventId], references: [id], onDelete: SetNull)
   role            TaskRole?

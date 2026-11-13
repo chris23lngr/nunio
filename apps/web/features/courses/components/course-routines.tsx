@@ -8,7 +8,7 @@ type Series = Plan["eventSeries"][number];
 type Minutes = { preparationMinutes: number; followUpMinutes: number };
 
 /**
- * A Course's calendar series and their Routines (ADR-0021): how long to prepare for and follow up on each lecture,
+ * A Course's calendar series and their Routines (ADR-0022): how long to prepare for and follow up on each lecture,
  * and skipping the Routine for a while.
  */
 export function CourseRoutines({

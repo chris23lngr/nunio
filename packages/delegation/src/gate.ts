@@ -172,7 +172,7 @@ function revive(kind: string, json: unknown): ActionIntent {
     kind,
     ...definitions[kind as Kind].parse({
       ...rest,
-      // Only Study Block Actions have a time span; a Task Action has none (ADR-0021).
+      // Only Study Block Actions have a time span; a Task Action has none (ADR-0022).
       ...(start === undefined ? {} : { start: new Date(start as string) }),
       ...(end === undefined ? {} : { end: new Date(end as string) }),
     }),
@@ -313,7 +313,7 @@ async function subjectOf(
     const obligation = obligationId
       ? await tx.obligation.findUnique({ where: { id: obligationId } })
       : null;
-    // A Task toward no Obligation may still be in a Course of its own (ADR-0021).
+    // A Task toward no Obligation may still be in a Course of its own (ADR-0022).
     return {
       courseId: obligation?.courseId ?? task?.courseId ?? null,
       obligationId,

@@ -1,4 +1,4 @@
--- Routines (ADR-0021): per Event Series, how long to prepare for and follow up on each Course Event. Their Tasks
+-- Routines (ADR-0022): per Event Series, how long to prepare for and follow up on each Course Event. Their Tasks
 -- name the Course Event they are for; one that goes keeps its Task, without the event, if nunio did not remove it.
 CREATE TYPE "task_role" AS ENUM ('preparation', 'follow_up');
 

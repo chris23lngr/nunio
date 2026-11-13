@@ -3,7 +3,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import type { Models } from "./models.js";
 
-/** An Event Series as the model sees it: its title and when its events take place, nothing else (ADR-0021). */
+/** An Event Series as the model sees it: its title and when its events take place, nothing else (ADR-0022). */
 export interface SeriesRequest {
   title: string;
   /** Distinct local slots, such as "Mon 10:00–12:00". */

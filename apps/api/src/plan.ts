@@ -68,7 +68,7 @@ export const Tradeoff = z
         gainedMinutes: z.number().int(),
       })
       .describe(
-        "Skip a Routine until the deadline; the student's own choice (ADR-0021).",
+        "Skip a Routine until the deadline; the student's own choice (ADR-0022).",
       ),
   ])
   .openapi("Tradeoff");
@@ -149,7 +149,7 @@ const PlanView = z
           .object({ start: z.date(), end: z.date() })
           .nullable()
           .describe(
-            "When a Routine's Task is to be done: between the Course Events of its series around it (ADR-0021).",
+            "When a Routine's Task is to be done: between the Course Events of its series around it (ADR-0022).",
           ),
       }),
     ),
@@ -213,7 +213,7 @@ const PlanView = z
         }),
       )
       .describe(
-        "The Fixed Events of one calendar that share a title (ADR-0021).",
+        "The Fixed Events of one calendar that share a title (ADR-0022).",
       ),
     calendars: z.array(
       z.object({ id: z.string(), name: z.string(), events: z.number().int() }),
@@ -610,7 +610,7 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
       const plan = c.get("plan");
       const result = await plan.addCalendar(p, c.req.valid("json"));
       if (result.status === "invalid") return failed(c, "invalid");
-      // The calendar is added either way; without proposals the student assigns its series in Review (ADR-0021).
+      // The calendar is added either way; without proposals the student assigns its series in Review (ADR-0022).
       const proposed = await plan
         .proposeSeriesCourses(p, {
           assigner: c.get("seriesAssigner"),
@@ -676,7 +676,7 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
             })
             .strict()
             .describe(
-              "Minutes to prepare for and follow up on each Course Event of the series; 0 for none (ADR-0021).",
+              "Minutes to prepare for and follow up on each Course Event of the series; 0 for none (ADR-0022).",
             ),
         ),
       },

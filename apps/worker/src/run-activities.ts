@@ -187,7 +187,7 @@ export function runActivitiesFromEnv(
       }),
       /** Interventions are not Actions: raised and lapsed from their causes, outside the gate. */
       tickOutreach: () => outreach.tick(),
-      /** A Routine's Tasks are the student's own planning, not Actions, so they are added outside the gate (ADR-0021). */
+      /** A Routine's Tasks are the student's own planning, not Actions, so they are added outside the gate (ADR-0022). */
       tickRoutines: () => plan.tickRoutines(),
     },
     close: () => db.$disconnect(),

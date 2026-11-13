@@ -155,7 +155,7 @@ describe("Grant coverage", () => {
   });
 
   it.each(["task.create", "task.reopen"] as const)(
-    "never covers %s: a Task is asked from a Chat only (ADR-0021)",
+    "never covers %s: a Task is asked from a Chat only (ADR-0022)",
     (kind) => {
       expect(
         definitions[kind].grantCovers(

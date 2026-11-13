@@ -1,6 +1,6 @@
 # nunio pilot implementation plan
 
-Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 14 (Chat tools) planned, 2026-11-12; it precedes the Phase 12 gates. Phase 15 (Routines) planned, 2026-11-13. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
+Status: Phase 6 verified, 2026-11-08; Phase 7 implemented, pending founder review of the retrieval eval, 2026-11-08; Phase 8 implemented, pending the Estimate eval, 2026-11-09; Phase 10 implemented, pending push checks on real devices, 2026-11-09; Phase 11 implemented, pending an import into the supported Anki version, 2026-11-10. Phase 14 (Chat tools) planned, 2026-11-12; it precedes the Phase 12 gates. Phase 16 (Routines) planned, 2026-11-13. Phase 5 is complete apart from its staging checks: deletion during processing, and retrieval and citation deletion against staging. Domain terms follow [GLOSSARY.md](../GLOSSARY.md). Decisions follow [ADRs 0001–0014](adr/). Module interfaces follow [delegation-gate.md](design/delegation-gate.md), [knowledge-retrieval.md](design/knowledge-retrieval.md), [extraction.md](design/extraction.md), and [outreach.md](design/outreach.md). Each phase is meant to be executable in a fresh session: read the phase's documentation references before writing code.
 
 ## Primary goal
 
@@ -688,11 +688,11 @@ Phase 14 is built before the Phase 12 gates, and its evals join them. Work happe
 
 ---
 
-## Phase 15: Routines
+## Phase 16: Routines
 
 > **How this serves the primary goal:** keeping the Plan organized includes the weekly work around lectures, not only what is due. Routines put preparation and follow-up into the Plan, with their Course, so nunio plans them, the Chat sees them, and missed follow-ups stay visible.
 
-The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-course-events.md). They change Phase 8's calendar rule: adding a calendar again updates its events instead of adding new ones. Calendar Connections still wait for the pilot tool inventory. The stages below are built in order on `feat/routines` and reach `main` in a single PR, together with this documentation.
+The decisions are in [ADR-0022](adr/0022-routines-prepare-for-and-follow-up-on-course-events.md). They change Phase 8's calendar rule: adding a calendar again updates its events instead of adding new ones. Calendar Connections still wait for the pilot tool inventory. The stages below are built in order on `feat/routines` and reach `main` in a single PR, together with this documentation.
 
 **What to implement.**
 
@@ -715,7 +715,7 @@ The decisions are in [ADR-0021](adr/0021-routines-prepare-for-and-follow-up-on-c
    - A Routine per Event Series with Preparation and Follow-up minutes, either of which may be zero.
    - A daily schedule per student, plus a run on every Routine or series change, adds Preparations and Follow-ups for the next 14 days. Re-runs are idempotent per Course Event and kind.
    - Each Task gets a window from its series. `rebalance` gains an earliest start per Task, and the window's end is the Task's deadline.
-   - Moved and cancelled Course Events, Routine changes, and lapsed Follow-ups behave as in ADR-0021.
+   - Moved and cancelled Course Events, Routine changes, and lapsed Follow-ups behave as in ADR-0022.
    - A Shortfall offers skipping a Routine for a period.
    - Archiving a Course stops its Routines, and its future Study Blocks go as before.
    - Confirming a series in Review also sets its Routine, and each Course card gets an "Events & Routines" section to change it. There is no single-Course page.

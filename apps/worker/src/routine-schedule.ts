@@ -4,7 +4,7 @@ import {
   ScheduleOverlapPolicy,
 } from "@temporalio/client";
 
-/** Daily, add the Tasks every student's Routines call for (ADR-0021); the first run starts at once. Safe on every start. */
+/** Daily, add the Tasks every student's Routines call for (ADR-0022); the first run starts at once. Safe on every start. */
 export async function ensureRoutineSchedule(client: Client, taskQueue: string) {
   await client.schedule
     .create({

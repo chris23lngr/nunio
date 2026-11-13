@@ -36,7 +36,7 @@ export function describeAction(
   kind: ActionRecord["kind"],
   args: unknown,
 ) {
-  // A Task Action places nothing in time: it names the Task it adds or reopens (ADR-0021).
+  // A Task Action places nothing in time: it names the Task it adds or reopens (ADR-0022).
   if (kind === "task.create" || kind === "task.reopen") {
     const { title, courseId, taskId } = args as {
       title?: string;
