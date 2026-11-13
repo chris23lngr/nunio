@@ -128,6 +128,7 @@ const chats = createChats({
     },
     list: async () => [],
   },
+  understanding: { levels: async () => [] },
   startArtifactRun: async () => {},
 });
 

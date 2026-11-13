@@ -239,6 +239,16 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     maker: createMaker(models),
     clock,
   });
+  const understanding = createUnderstanding({
+    db: prisma,
+    keys,
+    artifacts,
+    reader,
+    facts,
+    delegation,
+    grader: createGrader(models),
+    clock,
+  });
   return createApp({
     auth,
     prisma,
@@ -258,6 +268,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
       plan,
       clock,
       artifacts,
+      understanding,
       startArtifactRun: (runId) => artifactWorkflows.start(runId),
     }),
     chatModels: createChatModels({
@@ -270,16 +281,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     courses: createCourses({ db: prisma, clock, facts, responsibilities }),
     artifacts,
     artifactWorkflows,
-    understanding: createUnderstanding({
-      db: prisma,
-      keys,
-      artifacts,
-      reader,
-      facts,
-      delegation,
-      grader: createGrader(models),
-      clock,
-    }),
+    understanding,
     // Only the worker sends; the API reads the Inbox and settings, and holds no notification key.
     outreach: createOutreach({
       db: prisma,

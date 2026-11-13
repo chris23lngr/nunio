@@ -217,6 +217,7 @@
         "@nunio/keys": "workspace:*",
         "@nunio/knowledge": "workspace:*",
         "@nunio/planning": "workspace:*",
+        "@nunio/understanding": "workspace:*",
         "ai": "7.0.157",
       },
       "devDependencies": {
