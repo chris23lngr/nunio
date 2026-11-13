@@ -116,16 +116,23 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
           id: sent.id,
           role: "student",
           text: sent.text,
+          parts: [{ type: "text", text: sent.text }],
           createdAt: new Date().toISOString(),
           citations: [],
           model: null,
         };
+        const text = `## Antwort aus Kursmaterial\n\n${"Ein Absatz zum aktiven Lernen.\n\n".repeat(25)}| Methode | Beschreibung | Minuten |\n| --- | --- | ---: |\n| Abrufen | Eine ausführliche Beschreibung der Lernmethode | 15 |\n\nQuelle [S1].`;
         const response = {
           id: answerId,
           role: "assistant",
           reasoning: "Ich prüfe deine Materialien.",
           model: { key: "opus-5.5-reasoning-high", name: "Opus 5.5" },
-          text: `## Antwort aus Kursmaterial\n\n${"Ein Absatz zum aktiven Lernen.\n\n".repeat(25)}| Methode | Beschreibung | Minuten |\n| --- | --- | ---: |\n| Abrufen | Eine ausführliche Beschreibung der Lernmethode | 15 |\n\nQuelle [S1].`,
+          text,
+          // Saved messages render from their parts (ADR-0019).
+          parts: [
+            { type: "reasoning", text: "Ich prüfe deine Materialien." },
+            { type: "text", text },
+          ],
           createdAt: new Date().toISOString(),
           citations: [
             {
