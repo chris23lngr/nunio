@@ -138,6 +138,13 @@ with figure lines were checked against the rendered page.
 - Figure-only concepts are 7 of 165 required labels, so the figure path can add at most about 4 points of recall.
   The missed basic terms weigh far more.
 
+### Step 5
+
+- No minimum quote length. In step 4, short quotes were mostly correct Topics named by a slide heading
+  ("Backpropagation", "RS-FLIP-FLOP"): a 20-character minimum would drop 24 Topics, 21 of them correct.
+- `facts.extract` counts dropped items per reason (`ungrounded`, `noCourse`, `aiUseRule`) for the worker log and
+  the eval report, never their content. Step 4 dropped 16 items in 24 runs.
+
 ## Out of scope
 
 Course assignment when there is no confident match (ADR-0017 stays unchanged), model choice, retrieval, adversarial tests, refactoring Course resolution, page images for the extractor, re-ingesting old Sources, and the language of UI copy.
