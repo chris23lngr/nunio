@@ -38,12 +38,17 @@ export function describeAction(
 ) {
   // A Task Action places nothing in time: it names the Task it adds or reopens (ADR-0022).
   if (kind === "task.create" || kind === "task.reopen") {
-    const { title, courseId, taskId } = args as {
-      title?: string;
-      courseId?: string | null;
-      taskId?: string;
-    };
+    const { title, courseId, taskId, fixedEventId, role, estimateMinutes } =
+      args as {
+        title?: string;
+        courseId?: string | null;
+        taskId?: string;
+        fixedEventId?: string | null;
+        role?: "preparation" | "follow_up" | null;
+        estimateMinutes?: number | null;
+      };
     const task = plan.tasks.find((t) => t.id === taskId);
+    const event = plan.fixedEvents.find((e) => e.id === fixedEventId);
     return {
       kind,
       work: {
@@ -52,6 +57,14 @@ export function describeAction(
       },
       from: null,
       to: null,
+      task:
+        kind === "task.create"
+          ? {
+              role: role ?? null,
+              minutes: estimateMinutes ?? null,
+              event: event ? { title: event.title, start: event.start } : null,
+            }
+          : null,
     };
   }
   const { workId, studyBlockId, start, end } = args as {
@@ -82,6 +95,7 @@ export function describeAction(
       kind === "studyBlock.remove"
         ? null
         : { start: new Date(start), end: new Date(end) },
+    task: null,
   };
 }
 export const ActionShown = z
@@ -100,6 +114,16 @@ export const ActionShown = z
     to: Span.nullable().describe(
       "Where the block would go; null for a removal or a Task Action.",
     ),
+    task: z
+      .object({
+        role: z.enum(["preparation", "follow_up"]).nullable(),
+        minutes: z.number().int().nullable(),
+        event: z.object({ title: z.string(), start: z.date() }).nullable(),
+      })
+      .nullable()
+      .describe(
+        "What a new Task is for: its Course Event and role, and the minutes it needs; null for any other Action.",
+      ),
   })
   .openapi("ActionShown");
 

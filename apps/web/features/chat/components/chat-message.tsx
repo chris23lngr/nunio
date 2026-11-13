@@ -11,11 +11,11 @@ import {
 import { Reasoning } from "@nunio/ui/components/reasoning/reasoning";
 import { memo, useMemo, useState } from "react";
 import { sourceReferences } from "@/features/shared/components/source-citations";
-import type { ChatUIMessage, SavedProposal } from "../api/chat-queries";
+import type { ChatUIMessage } from "../api/chat-queries";
 import { messageText } from "../api/chat-queries";
 import { ArtifactCard } from "./artifact-card";
 import { MessageActions } from "./message-actions";
-import { ProposalCard } from "./proposal-card";
+import { ProposalOutcome } from "./proposal-outcome";
 import type { ToolPart } from "./tool-steps";
 import { ToolSteps } from "./tool-steps";
 
@@ -32,13 +32,11 @@ function renderReference(reference: MdxReference) {
 /** One message, from its first streamed part to its saved form, in the same element. */
 export const ChatMessage = memo(function ChatMessage({
   message,
-  deciding = false,
-  onDecide = () => {},
+  sending = false,
 }: {
   message: ChatUIMessage;
-  /** A decision on one of the message's proposals is being recorded. */
-  deciding?: boolean;
-  onDecide?: (saved: SavedProposal, decision: "approve" | "deny") => void;
+  /** The student's decisions on this answer's proposals are being sent. */
+  sending?: boolean;
 }) {
   const student = message.role === "user";
   const saved = message.metadata;
@@ -131,11 +129,10 @@ export const ChatMessage = memo(function ChatMessage({
         {!student &&
           !withdrawn &&
           proposals.map((part) => (
-            <ProposalCard
+            <ProposalOutcome
               key={part.toolCallId}
               saved={saved?.proposals?.[part.toolCallId]}
-              busy={deciding}
-              onDecide={onDecide}
+              sending={sending}
             />
           ))}
         {saved && (

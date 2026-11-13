@@ -1,5 +1,5 @@
 import { SidebarProvider } from "@nunio/ui/components/sidebar/sidebar";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { SourcesScreen } from "@/features/sources/sources-screen";
@@ -85,6 +85,59 @@ function mount(chatId: string | null = null) {
         <ChatScreen apiOrigin={api.origin} userName="Justus Schuhmacher" />
       </SidebarProvider>
     </TestProviders>,
+  );
+}
+/** An instant at `hour` o'clock on `day` November 2026, in whatever zone the tests run. */
+const at = (day: number, hour: number) =>
+  new Date(2026, 10, day, hour).toISOString();
+/** A saved proposal of a new block for Übungsblatt 4 on Friday 20 Nov, 10 to 12, numbered `n`. */
+function blockProposal(n: string, status: string, decision: string | null) {
+  return {
+    type: "tool-proposeStudyBlock",
+    toolCallId: `call-${n}`,
+    input: { work: "O1", start: "2026-11-20T10:00", end: "2026-11-20T12:00" },
+    approvalId: `approval-${n}`,
+    notes: [],
+    action: {
+      id: `action-${n}`,
+      fingerprint: `fingerprint-${n}`,
+      expiresAt: "2099-01-01T00:00:00Z",
+      status,
+      decision,
+      shown: {
+        kind: "studyBlock.create",
+        work: { title: "Übungsblatt 4", course: "Analysis I" },
+        from: null,
+        to: { start: at(20, 10), end: at(20, 12) },
+        task: null,
+      },
+    },
+  };
+}
+/** The stream of nunio's report on the student's decisions, saved as `saved`. */
+function reportStream(saved: { id: string; text: string }) {
+  const report = {
+    role: "assistant",
+    parts: [{ type: "text", text: saved.text }],
+    createdAt: "2026-11-10T09:50:00Z",
+    citations: [],
+    model: null,
+    ...saved,
+  };
+  return new Response(
+    [
+      { type: "start", messageId: report.id },
+      { type: "start-step" },
+      { type: "text-start", id: "text" },
+      { type: "text-delta", id: "text", delta: report.text },
+      { type: "text-end", id: "text" },
+      { type: "finish-step" },
+      { type: "data-committed", data: { ...report, question: null } },
+      { type: "finish" },
+    ]
+      .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+      .join("") + "data: [DONE]\n\n",
+    { headers: { "content-type": "text/event-stream" } },
   );
 }
 /** Waits until the reopened Chat has loaded, so it can be sent to. */
@@ -949,7 +1002,7 @@ test("shows reading the Plan and a Course's Facts as steps, while answering and 
   expect(screen.getByText("Kursinfos gelesen: Analysis I")).toBeTruthy();
 });
 
-test("shows a saved proposal as a card, and approving it there streams nunio's report", async () => {
+test("a saved proposal asks at the composer, and approving it there streams nunio's report", async () => {
   const question = {
     id: "question-1",
     role: "student",
@@ -959,33 +1012,13 @@ test("shows a saved proposal as a card, and approving it there streams nunio's r
     citations: [],
     model: null,
   };
-  const proposal = (status: string, decision: string | null) => ({
-    type: "tool-proposeStudyBlock",
-    toolCallId: "call-1",
-    input: { work: "O1", start: "2026-11-20T10:00", end: "2026-11-20T12:00" },
-    approvalId: "approval-1",
-    notes: ["outside_study_window"],
-    action: {
-      id: "action-1",
-      fingerprint: "abcdef1234567890",
-      expiresAt: "2099-01-01T00:00:00Z",
-      status,
-      decision,
-      shown: {
-        kind: "studyBlock.create",
-        work: { title: "Übungsblatt 4", course: "Analysis I" },
-        from: null,
-        to: { start: "2026-11-20T09:00:00Z", end: "2026-11-20T11:00:00Z" },
-      },
-    },
-  });
   const answer = (status: string, decision: string | null) => ({
     id: "answer-1",
     role: "assistant",
     text: "Hier ist mein Vorschlag.",
     parts: [
       { type: "text", text: "Hier ist mein Vorschlag." },
-      proposal(status, decision),
+      blockProposal("1", status, decision),
     ],
     createdAt: "2026-11-10T09:48:00Z",
     citations: [],
@@ -1008,47 +1041,378 @@ test("shows a saved proposal as a card, and approving it there streams nunio's r
   api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
     sent.push(await request.json());
     saved = [question, answer("done", "approved"), report];
+    return reportStream(report);
+  });
+  mount("chat-1");
+  await chatLoaded();
+  const tray = await screen.findByRole("region", { name: "Vorschlag prüfen" });
+  expect(
+    within(tray).getByRole("heading", {
+      name: "Neuen Lernblock am Freitag von 10 bis 12 Uhr hinzufügen?",
+    }),
+  ).toBeTruthy();
+  expect(within(tray).getByText("1 / 1")).toBeTruthy();
+  expect(screen.getByText("Wartet auf dich")).toBeTruthy();
+
+  await userEvent
+    .setup()
+    .click(within(tray).getByRole("button", { name: "Annehmen" }));
+
+  expect(await screen.findByText("Erledigt, der Block steht.")).toBeTruthy();
+  expect(sent).toEqual([
+    {
+      decisions: [
+        {
+          approvalId: "approval-1",
+          decision: "approve",
+          fingerprint: "fingerprint-1",
+        },
+      ],
+      model: "sonnet-5.5",
+    },
+  ]);
+  expect(await screen.findByText("Angelegt")).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Vorschlag prüfen" })).toBeNull();
+});
+
+test("an answer's proposals are decided one by one, and only the last decision sends them all", async () => {
+  const answer = {
+    id: "answer-1",
+    role: "assistant",
+    text: "Zwei Vorschläge.",
+    parts: [
+      { type: "text", text: "Zwei Vorschläge." },
+      blockProposal("1", "awaiting_approval", null),
+      blockProposal("2", "awaiting_approval", null),
+    ],
+    createdAt: "2026-11-10T09:48:00Z",
+    citations: [],
+    model: null,
+  };
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [answer] }),
+  );
+  const sent: unknown[] = [];
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    sent.push(await request.json());
+    return reportStream({
+      id: "report-1",
+      text: "Einen habe ich eingetragen.",
+    });
+  });
+  mount("chat-1");
+  await chatLoaded();
+  const user = userEvent.setup();
+  const tray = () => screen.getByRole("region", { name: "Vorschläge prüfen" });
+  await screen.findByRole("region", { name: "Vorschläge prüfen" });
+  expect(within(tray()).getByText("1 / 2")).toBeTruthy();
+  expect(within(tray()).queryByRole("button", { name: "Zurück" })).toBeNull();
+
+  await user.click(within(tray()).getByRole("button", { name: "Annehmen" }));
+  expect(within(tray()).getByText("2 / 2")).toBeTruthy();
+  expect(sent).toEqual([]);
+  await user.click(within(tray()).getByRole("button", { name: "Zurück" }));
+  expect(within(tray()).getByText("1 / 2")).toBeTruthy();
+  await user.click(within(tray()).getByRole("button", { name: "Ablehnen" }));
+  await user.click(within(tray()).getByRole("button", { name: "Annehmen" }));
+
+  expect(await screen.findByText("Einen habe ich eingetragen.")).toBeTruthy();
+  expect(sent).toEqual([
+    {
+      decisions: [
+        { approvalId: "approval-1", decision: "deny" },
+        {
+          approvalId: "approval-2",
+          decision: "approve",
+          fingerprint: "fingerprint-2",
+        },
+      ],
+      model: "sonnet-5.5",
+    },
+  ]);
+});
+
+test("when sending the decisions fails, they stay noted and the last card sends them again", async () => {
+  const answer = {
+    id: "answer-1",
+    role: "assistant",
+    text: "Zwei Vorschläge.",
+    parts: [
+      { type: "text", text: "Zwei Vorschläge." },
+      blockProposal("1", "awaiting_approval", null),
+      blockProposal("2", "awaiting_approval", null),
+    ],
+    createdAt: "2026-11-10T09:48:00Z",
+    citations: [],
+    model: null,
+  };
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [answer] }),
+  );
+  const sent: unknown[] = [];
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    sent.push(await request.json());
+    return sent.length === 1
+      ? Response.json({ error: "unavailable" }, { status: 503 })
+      : reportStream({ id: "report-1", text: "Beide eingetragen." });
+  });
+  mount("chat-1");
+  await chatLoaded();
+  const user = userEvent.setup();
+  const tray = () => screen.getByRole("region", { name: "Vorschläge prüfen" });
+  await screen.findByRole("region", { name: "Vorschläge prüfen" });
+  await user.click(within(tray()).getByRole("button", { name: "Annehmen" }));
+  await user.click(within(tray()).getByRole("button", { name: "Annehmen" }));
+
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect(within(tray()).getByText("2 / 2")).toBeTruthy();
+  await user.click(within(tray()).getByRole("button", { name: "Annehmen" }));
+
+  expect(await screen.findByText("Beide eingetragen.")).toBeTruthy();
+  expect(sent).toHaveLength(2);
+  expect(sent[1]).toEqual(sent[0]);
+  expect((sent[1] as { decisions: unknown[] }).decisions).toHaveLength(2);
+});
+
+test("an Action nunio could not confirm is asked about first, and the answer is saved at once", async () => {
+  const answer = (id: string, proposal: unknown) => ({
+    id,
+    role: "assistant",
+    text: "Vorschlag.",
+    parts: [{ type: "text", text: "Vorschlag." }, proposal],
+    createdAt: "2026-11-10T09:48:00Z",
+    citations: [],
+    model: null,
+  });
+  let unconfirmed = "unconfirmed";
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({
+      id: "chat-1",
+      courses: [],
+      messages: [
+        answer("answer-1", blockProposal("1", unconfirmed, "approved")),
+        answer("answer-2", blockProposal("2", "awaiting_approval", null)),
+      ],
+    }),
+  );
+  const resolved: unknown[] = [];
+  api.route("POST", "/api/me/actions/action-1/resolve", async (request) => {
+    resolved.push(await request.json());
+    unconfirmed = "done";
+    return Response.json({});
+  });
+  const streamed: unknown[] = [];
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    streamed.push(await request.json());
+    return Response.json({ error: "unexpected" }, { status: 500 });
+  });
+  mount("chat-1");
+  await chatLoaded();
+  const asked = await screen.findByRole("region", { name: "Nicht bestätigt" });
+  expect(
+    within(asked).getByRole("heading", {
+      name: "Wurde dein Lernblock am Freitag angelegt?",
+    }),
+  ).toBeTruthy();
+  expect(within(asked).getByText("1 / 1")).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Vorschlag prüfen" })).toBeNull();
+
+  await userEvent
+    .setup()
+    .click(within(asked).getByRole("button", { name: "Ist passiert" }));
+
+  expect(
+    await screen.findByRole("region", { name: "Vorschlag prüfen" }),
+  ).toBeTruthy();
+  expect(resolved).toEqual([{ resolution: "happened" }]);
+  expect(streamed).toEqual([]);
+  expect(screen.queryByRole("region", { name: "Nicht bestätigt" })).toBeNull();
+});
+
+test("the keyboard follows the cards: each new card focuses its first button, and sending returns to the composer", async () => {
+  const answer = {
+    id: "answer-1",
+    role: "assistant",
+    text: "Zwei Vorschläge.",
+    parts: [
+      { type: "text", text: "Zwei Vorschläge." },
+      blockProposal("1", "awaiting_approval", null),
+      blockProposal("2", "awaiting_approval", null),
+    ],
+    createdAt: "2026-11-10T09:48:00Z",
+    citations: [],
+    model: null,
+  };
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [answer] }),
+  );
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", () =>
+    reportStream({ id: "report-1", text: "Erledigt." }),
+  );
+  mount("chat-1");
+  await chatLoaded();
+  const user = userEvent.setup();
+  const tray = await screen.findByRole("region", { name: "Vorschläge prüfen" });
+
+  await user.click(within(tray).getByRole("button", { name: "Annehmen" }));
+  expect(document.activeElement).toBe(
+    within(screen.getByRole("region", { name: "Vorschläge prüfen" })).getByRole(
+      "button",
+      { name: "Ablehnen" },
+    ),
+  );
+  await user.keyboard("{Enter}");
+
+  expect(await screen.findByText("Erledigt.")).toBeTruthy();
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Nachricht" }),
+    ),
+  );
+});
+
+test("with two answers' proposals waiting, the older answer's are asked first and counted alone", async () => {
+  const later = {
+    ...blockProposal("2", "awaiting_approval", null),
+  };
+  later.action.shown = {
+    ...later.action.shown,
+    to: { start: at(23, 10), end: at(23, 12) },
+  };
+  const answer = (id: string, proposal: unknown) => ({
+    id,
+    role: "assistant",
+    text: "Vorschlag.",
+    parts: [{ type: "text", text: "Vorschlag." }, proposal],
+    createdAt: "2026-11-10T09:48:00Z",
+    citations: [],
+    model: null,
+  });
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({
+      id: "chat-1",
+      courses: [],
+      messages: [
+        answer("answer-1", blockProposal("1", "awaiting_approval", null)),
+        answer("answer-2", later),
+      ],
+    }),
+  );
+  mount("chat-1");
+  await chatLoaded();
+
+  const tray = await screen.findByRole("region", { name: "Vorschlag prüfen" });
+
+  expect(within(tray).getByText("1 / 1")).toBeTruthy();
+  expect(
+    within(tray).getByRole("heading", {
+      name: "Neuen Lernblock am Freitag von 10 bis 12 Uhr hinzufügen?",
+    }),
+  ).toBeTruthy();
+});
+
+test("once the decisions arrive the card goes, and the rows read as being saved until nunio has answered", async () => {
+  const answer = {
+    id: "answer-1",
+    role: "assistant",
+    text: "Zwei Vorschläge.",
+    parts: [
+      { type: "text", text: "Zwei Vorschläge." },
+      blockProposal("1", "awaiting_approval", null),
+      blockProposal("2", "awaiting_approval", null),
+    ],
+    createdAt: "2026-11-10T09:48:00Z",
+    citations: [],
+    model: null,
+  };
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [answer] }),
+  );
+  let finish = () => {};
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", () => {
+    const report = reportStream({ id: "report-1", text: "Fertig." }).body!;
     return new Response(
-      [
-        { type: "start", messageId: "report-1" },
-        { type: "start-step" },
-        { type: "text-start", id: "text" },
-        { type: "text-delta", id: "text", delta: report.text },
-        { type: "text-end", id: "text" },
-        { type: "finish-step" },
-        { type: "data-committed", data: { ...report, question: null } },
-        { type: "finish" },
-      ]
-        .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
-        .join("") + "data: [DONE]\n\n",
+      new ReadableStream({
+        async start(controller) {
+          const reader = report.getReader();
+          const first = await reader.read();
+          controller.enqueue(first.value);
+          finish = async () => {
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              controller.enqueue(value);
+            }
+            controller.close();
+          };
+        },
+      }),
       { headers: { "content-type": "text/event-stream" } },
     );
   });
   mount("chat-1");
   await chatLoaded();
-  const card = await screen.findByRole("article", {
-    name: "Add the block for Übungsblatt 4",
+  const user = userEvent.setup();
+  const tray = await screen.findByRole("region", { name: "Vorschläge prüfen" });
+  await user.click(within(tray).getByRole("button", { name: "Annehmen" }));
+  await user.click(
+    within(screen.getByRole("region", { name: "Vorschläge prüfen" })).getByRole(
+      "button",
+      { name: "Ablehnen" },
+    ),
+  );
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("region", { name: "Vorschläge prüfen" }),
+    ).toBeNull(),
+  );
+  expect(screen.getAllByText("Wird gespeichert")).toHaveLength(2);
+  expect(screen.queryByText("Wartet auf dich")).toBeNull();
+  finish();
+  expect(await screen.findByText("Fertig.")).toBeTruthy();
+});
+
+test("after the student says whether an unconfirmed Action happened, the next card takes focus", async () => {
+  let unconfirmed = "unconfirmed";
+  const answer = (id: string, proposal: unknown) => ({
+    id,
+    role: "assistant",
+    text: "Vorschlag.",
+    parts: [{ type: "text", text: "Vorschlag." }, proposal],
+    createdAt: "2026-11-10T09:48:00Z",
+    citations: [],
+    model: null,
   });
-  expect(screen.getByText("Außerhalb deines Lernfensters")).toBeTruthy();
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({
+      id: "chat-1",
+      courses: [],
+      messages: [
+        answer("answer-1", blockProposal("1", unconfirmed, "approved")),
+        answer("answer-2", blockProposal("2", "awaiting_approval", null)),
+      ],
+    }),
+  );
+  api.route("POST", "/api/me/actions/action-1/resolve", () => {
+    unconfirmed = "failed";
+    return Response.json({});
+  });
+  mount("chat-1");
+  await chatLoaded();
+  const asked = await screen.findByRole("region", { name: "Nicht bestätigt" });
 
   await userEvent
     .setup()
-    .click(screen.getByRole("button", { name: "Approve this block" }));
+    .click(within(asked).getByRole("button", { name: "Ist nicht passiert" }));
 
-  expect(await screen.findByText("Erledigt, der Block steht.")).toBeTruthy();
-  expect(sent).toEqual([
-    {
-      approval: { id: "approval-1", fingerprint: "abcdef1234567890" },
-      model: "sonnet-5.5",
-    },
-  ]);
-  expect(await screen.findByText("Angelegt")).toBeTruthy();
-  expect(card.isConnected).toBe(false);
-  expect(
-    screen.queryAllByRole("article", {
-      name: "Add the block for Übungsblatt 4",
-    }),
-  ).toEqual([]);
+  const tray = await screen.findByRole("region", { name: "Vorschlag prüfen" });
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      within(tray).getByRole("button", { name: "Ablehnen" }),
+    ),
+  );
+  expect(screen.getByText("Nicht passiert")).toBeTruthy();
 });
 
 test("shows a removal the student approved as removed (ADR-0021)", async () => {
@@ -1100,7 +1464,7 @@ test("shows a removal the student approved as removed (ADR-0021)", async () => {
   expect(await screen.findByText("Entfernt")).toBeTruthy();
 });
 
-test("a proposal streams as a line until its answer is saved, then asks once as a card", async () => {
+test("a proposal streams as a line until its answer is saved, then asks once at the composer", async () => {
   api.route("GET", "/api/me/chats/chat-1", () =>
     Response.json({ id: "chat-1", courses: [], messages: [] }),
   );
@@ -1141,31 +1505,7 @@ test("a proposal streams as a line until its answer is saved, then asks once as 
                 id: "answer-1",
                 role: "assistant",
                 text: "",
-                parts: [
-                  {
-                    type: "tool-proposeStudyBlock",
-                    toolCallId: "call-1",
-                    input,
-                    approvalId: "approval-1",
-                    notes: [],
-                    action: {
-                      id: "action-1",
-                      fingerprint: "abcdef1234567890",
-                      expiresAt: "2099-01-01T00:00:00Z",
-                      status: "awaiting_approval",
-                      decision: null,
-                      shown: {
-                        kind: "studyBlock.create",
-                        work: { title: "Übungsblatt 4", course: "Analysis I" },
-                        from: null,
-                        to: {
-                          start: "2026-11-20T09:00:00Z",
-                          end: "2026-11-20T11:00:00Z",
-                        },
-                      },
-                    },
-                  },
-                ],
+                parts: [blockProposal("1", "awaiting_approval", null)],
                 createdAt: "2026-11-10T09:48:00Z",
                 citations: [],
                 model: null,
@@ -1202,17 +1542,16 @@ test("a proposal streams as a line until its answer is saved, then asks once as 
       await screen.findByText("Vorschlag wird gespeichert …"),
     ).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: "Approve this block" }),
+      screen.queryByRole("region", { name: "Vorschlag prüfen" }),
     ).toBeNull();
   } finally {
     finish();
   }
   expect(
-    await screen.findByRole("button", { name: "Approve this block" }),
+    await screen.findByRole("region", { name: "Vorschlag prüfen" }),
   ).toBeTruthy();
-  expect(
-    screen.getAllByRole("article", { name: "Add the block for Übungsblatt 4" }),
-  ).toHaveLength(1);
+  expect(screen.getAllByRole("button", { name: "Annehmen" })).toHaveLength(1);
+  expect(screen.getByText("Wartet auf dich")).toBeTruthy();
   expect(screen.queryByText("Vorschlag wird gespeichert …")).toBeNull();
 });
 

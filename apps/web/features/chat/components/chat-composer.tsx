@@ -22,6 +22,7 @@ export function ChatComposer({
   onStop,
   textareaRef,
   knowledge,
+  tray,
   alert,
   className,
   "aria-describedby": describedBy,
@@ -39,6 +40,8 @@ export function ChatComposer({
   textareaRef?: Ref<HTMLTextAreaElement>;
   /** Shown in the bar after the "+" menu. */
   knowledge?: ReactNode;
+  /** A question waiting for the student, tucked behind the box's top edge. */
+  tray?: ReactNode;
   alert?: string;
   className?: string;
   "aria-describedby"?: string;
@@ -73,7 +76,8 @@ export function ChatComposer({
             {alert}
           </p>
         )}
-        <InputGroup className="rounded-lg">
+        {tray}
+        <InputGroup className="relative z-10 rounded-lg bg-white">
           <InputGroupTextarea
             ref={textareaRef}
             aria-label="Nachricht"

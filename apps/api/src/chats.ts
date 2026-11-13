@@ -277,12 +277,7 @@ async function withActions(
                 id: record.id,
                 fingerprint: record.approval?.fingerprint ?? null,
                 expiresAt: record.approval?.expiresAt ?? null,
-                status:
-                  record.status === "awaiting_approval" &&
-                  record.approval &&
-                  record.approval.expiresAt <= now
-                    ? ("expired" as const)
-                    : record.status,
+                status: shownStatus(record, now),
                 decision: record.approval?.decision ?? null,
                 shown: describeAction(plan, record.kind, record.args),
               }
@@ -292,8 +287,32 @@ async function withActions(
   }));
 }
 
+/**
+ * Where a proposal's Action stands, as its card says it. Approving after expiry leaves it refused for that reason, which
+ * the student knows as expired; and only the student's own report makes it failed, so a failed attempt reads as refused.
+ */
+function shownStatus(record: ActionRecord, now: Date) {
+  if (
+    (record.status === "awaiting_approval" &&
+      record.approval &&
+      record.approval.expiresAt <= now) ||
+    record.refusal === "approval_expired"
+  )
+    return "expired" as const;
+  if (
+    record.status === "failed" &&
+    !record.events.some((event) => event.type === "resolved")
+  )
+    return "refused" as const;
+  return record.status;
+}
+
+const stale =
+  "The proposal expired or changed before the student decided, so nothing changed. Offer it again if it still fits.";
+
 /** What the model is told of an approved proposal, by what the gate made of it. */
 function outcomeOf(record: ActionRecord) {
+  if (record.refusal === "approval_expired") return stale;
   if (record.status === "done")
     return record.kind === "studyBlock.remove"
       ? "The student approved the proposal, and the Study Block is removed from their Plan."
@@ -303,36 +322,82 @@ function outcomeOf(record: ActionRecord) {
   return "The student approved it, but nunio could not confirm that it took effect. Ask the student to check their Plan.";
 }
 
-/** Approves a proposal from its card in the Chat, performs it, and streams the model's report as a new answer. */
-async function reportApproval(
+/** The student's decision on one proposal's card; approving sends the fingerprint the card showed (ADR-0010). */
+const Decision = z.discriminatedUnion("decision", [
+  z
+    .object({
+      approvalId: z.string().max(200),
+      decision: z.literal("approve"),
+      fingerprint: z.string().max(200),
+    })
+    .strict(),
+  z
+    .object({ approvalId: z.string().max(200), decision: z.literal("deny") })
+    .strict(),
+]);
+type Decision = z.infer<typeof Decision>;
+
+/** Applies one decision from a card in the Chat, and says what the model is told of it. */
+async function decideOne(
+  c: Context<AppBindings>,
+  p: Principal,
+  actionId: string,
+  d: Decision,
+) {
+  try {
+    const decided = await c
+      .get("delegation")
+      .decide(
+        p,
+        d.decision === "approve"
+          ? { kind: "approve", actionId, fingerprint: d.fingerprint }
+          : { kind: "deny", actionId },
+      );
+    if (d.decision === "deny")
+      return "The student declined the proposal, so nothing changed.";
+    return outcomeOf(await performApproved(c, p, decided));
+  } catch (error) {
+    if (
+      error instanceof StaleApprovalError ||
+      error instanceof UnknownActionError
+    )
+      return stale;
+    throw error;
+  }
+}
+
+/**
+ * Decides one answer's proposals from their cards in the Chat, each on its own, and streams the model's report on all
+ * of them as a new answer. One decision going stale leaves the others standing.
+ */
+async function reportDecisions(
   c: Context<AppBindings>,
   p: Principal,
   chatId: string,
-  body: { approval: { id: string; fingerprint: string }; model?: string },
+  body: { decisions: Decision[]; model?: string },
 ) {
   const delegation = c.get("delegation");
-  const proposal = await c.get("chats").proposal(p, chatId, body.approval.id);
-  const asked = proposal
-    ? (await delegation.history(p, { keys: [proposal.key] }))[0]
-    : undefined;
-  if (!asked) return c.json({ error: "gone" }, 404);
+  const proposals = await Promise.all(
+    body.decisions.map((d) => c.get("chats").proposal(p, chatId, d.approvalId)),
+  );
+  const keys = proposals.flatMap((proposal) =>
+    proposal ? [proposal.key] : [],
+  );
+  if (keys.length < body.decisions.length)
+    return c.json({ error: "gone" }, 404);
+  if (new Set(proposals.map((proposal) => proposal!.answerId)).size > 1)
+    return c.json({ error: "conflict" }, 409);
+  const asked = await delegation.history(p, { keys });
+  const actionIds = keys.map((key) => asked.find((a) => a.key === key)?.id);
+  if (actionIds.some((id) => !id)) return c.json({ error: "gone" }, 404);
   const answerer = await c.get("chatModels").answererFor(p, body.model);
   if (!answerer) return c.json({ error: "model_unavailable" }, 422);
-  let decided: ActionRecord;
-  try {
-    decided = await delegation.decide(p, {
-      kind: "approve",
-      actionId: asked.id,
-      fingerprint: body.approval.fingerprint,
+  const outcomes: { approvalId: string; outcome: string }[] = [];
+  for (const [n, d] of body.decisions.entries())
+    outcomes.push({
+      approvalId: d.approvalId,
+      outcome: await decideOne(c, p, actionIds[n]!, d),
     });
-  } catch (error) {
-    if (error instanceof UnknownActionError)
-      return c.json({ error: "gone" }, 404);
-    if (error instanceof StaleApprovalError)
-      return c.json({ error: "stale" }, 409);
-    throw error;
-  }
-  const record = await performApproved(c, p, decided);
   const stream = createUIMessageStream({
     onError: () => "Die Antwort wurde unterbrochen. Bitte versuche es erneut.",
     execute: async ({ writer }) => {
@@ -340,7 +405,7 @@ async function reportApproval(
       writer.write({ type: "start", messageId: answerId });
       const result = await c
         .get("chats")
-        .report(p, chatId, body.approval.id, outcomeOf(record), answerer, {
+        .report(p, chatId, outcomes, answerer, {
           signal: c.req.raw.signal,
           write: (chunk) => writer.write(chunk),
           id: answerId,
@@ -416,14 +481,18 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
                   .strict(),
                 z
                   .object({
-                    approval: z
-                      .object({
-                        id: z.string().max(200),
-                        fingerprint: z.string().max(200),
-                      })
-                      .strict()
+                    decisions: z
+                      .array(Decision)
+                      .min(1)
+                      .max(20)
+                      .refine(
+                        (decisions) =>
+                          new Set(decisions.map((d) => d.approvalId)).size ===
+                          decisions.length,
+                        "Each proposal is decided once.",
+                      )
                       .describe(
-                        "Approves the proposal the answer asked under this approval ID, with the fingerprint its card showed (ADR-0010); the model then reports how it went in a new answer.",
+                        "The student's decisions on one answer's proposals, each applied on its own; the model then reports how they went in one new answer.",
                       ),
                     model: modelChoice,
                   })
@@ -442,7 +511,7 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
         ...errors,
         409: json(
           ErrorBody,
-          "The question ID is already used, or the approval is not the card's open request.",
+          "The question ID is already used, or the decided proposals belong to different answers.",
         ),
         422: json(
           ErrorBody,
@@ -457,7 +526,7 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
       const p = principal.fromSession(actor);
       const id = c.req.valid("param").id;
       const body = c.req.valid("json");
-      if ("approval" in body) return reportApproval(c, p, id, body);
+      if ("decisions" in body) return reportDecisions(c, p, id, body);
       const started = performance.now();
       const timing: Partial<
         Record<AskStep | "detail" | "firstReasoning" | "firstText", number>

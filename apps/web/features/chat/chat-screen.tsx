@@ -12,8 +12,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { readUIMessageStream } from "ai";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { decideApproval } from "@/features/approvals/api/approval-mutations";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { resolveUnconfirmed } from "@/features/approvals/api/approval-mutations";
 import { PageHeader } from "@/features/shared/components/page-header";
 import { useAppForm } from "@/lib/form";
 import { randomId } from "@/lib/random-id";
@@ -24,7 +24,7 @@ import {
   createChat,
   failureMessage,
 } from "./api/chat-mutations";
-import type { ChatUIMessage, SavedProposal, Turn } from "./api/chat-queries";
+import type { ChatUIMessage, Turn } from "./api/chat-queries";
 import {
   chatCourseQueries,
   chatQueries,
@@ -37,7 +37,13 @@ import { ChatEmptyState } from "./components/chat-empty-state";
 import { ChatMessage } from "./components/chat-message";
 import { KnowledgeSelector } from "./components/knowledge-selector";
 import { ModelSelector } from "./components/model-selector";
-import { approvalOf } from "./components/proposal-card";
+import {
+  ProposalCard,
+  UnconfirmedActionCard,
+} from "./components/proposal-card";
+import type { Batch, Decision } from "./proposal-queue";
+import { oldestBatch, oldestUnconfirmed } from "./proposal-queue";
+import { happenedQuestion, question } from "./proposal-wording";
 
 /** The messages before the question `questionId`, or all of them when it isn't there. */
 function beforeQuestion(messages: ChatUIMessage[], questionId: string) {
@@ -206,37 +212,77 @@ export function ChatScreen({
       },
     });
 
-  // Deciding on a proposal's card in the Chat (ADR-0019). Denying is the plain Approval route; approving also streams
-  // nunio's report on it as a new answer, read here rather than through useChat, which would continue the answer the
-  // card belongs to and show the card twice.
-  const denial = useMutation(decideApproval(apiOrigin, client));
-  const [reporting, setReporting] = useState(false);
-  const decide = async (saved: SavedProposal, decision: "approve" | "deny") => {
-    const approval = approvalOf(saved);
-    if (!approval) return;
+  // Deciding on an answer's proposals at the composer (ADR-0019). Each decision before the last is only noted; the last
+  // sends them all, and nunio's report on them streams as a new answer, read here rather than through useChat, which
+  // would continue the answer the proposals belong to.
+  // The answer whose batch is being sent: once the API has it, its card goes and its rows say so until the Chat reloads.
+  const [sending, setSending] = useState<{
+    answerId: string;
+    arrived: boolean;
+  } | null>(null);
+  const batch = oldestBatch(
+    sending?.arrived
+      ? messages.filter((message) => message.id !== sending.answerId)
+      : messages,
+  );
+  const [progressed, setProgressed] = useState<{
+    answerId: string;
+    index: number;
+    decisions: Record<string, Decision>;
+  } | null>(null);
+  const progress =
+    batch && progressed?.answerId === batch.answerId
+      ? progressed
+      : batch && { answerId: batch.answerId, index: 0, decisions: {} };
+  // Once the student acts on a card, each card that follows takes focus, so the keyboard follows them through.
+  const [stepping, setStepping] = useState(false);
+  // An Action nunio could not confirm comes first, and the student's answer is saved at once: it decides nothing new.
+  const unconfirmed = oldestUnconfirmed(messages);
+  const resolution = useMutation(resolveUnconfirmed(apiOrigin, client));
+  const resolve = (resolved: "happened" | "did_not_happen") => {
+    if (!unconfirmed?.action) return;
     setError(null);
-    if (decision === "deny")
-      return denial.mutate(
-        { approval, decision },
-        {
-          onError: (cause) => setError(cause.message),
-          onSettled: refresh,
-        },
-      );
-    setReporting(true);
+    setStepping(true);
+    resolution.mutate(
+      { actionId: unconfirmed.action.id, resolution: resolved },
+      {
+        onError: () =>
+          setError("Deine Antwort konnte nicht gespeichert werden."),
+        onSettled: refresh,
+      },
+    );
+  };
+  // The Chat open now; a report still streaming when the student opens another one is left to that Chat's reload.
+  const openKey = useRef(openChat.key);
+  openKey.current = openChat.key;
+  const send = async (decided: Batch, decisions: Record<string, Decision>) => {
+    const from = openChat.key;
+    const here = () => openKey.current === from;
+    setError(null);
+    setSending({ answerId: decided.answerId, arrived: false });
     let reported: string | undefined;
     try {
       const chunks = await transport.sendMessages({
-        chatId: openChat.key,
+        chatId: from,
         messages: [],
         abortSignal: undefined,
         trigger: "submit-message",
         messageId: undefined,
         body: {
           model,
-          approval: { id: saved.approvalId, fingerprint: approval.fingerprint },
+          decisions: decided.proposals.map((proposal) =>
+            decisions[proposal.approvalId] === "approve"
+              ? {
+                  approvalId: proposal.approvalId,
+                  decision: "approve",
+                  fingerprint: proposal.action!.fingerprint,
+                }
+              : { approvalId: proposal.approvalId, decision: "deny" },
+          ),
         },
       });
+      // The API decides before it answers, so the decisions have arrived.
+      if (here()) setSending({ answerId: decided.answerId, arrived: true });
       const [shown, watched] = chunks.tee();
       let committed: Turn | undefined;
       let refused: string | undefined;
@@ -253,31 +299,50 @@ export function ChatScreen({
       for await (const message of readUIMessageStream<ChatUIMessage>({
         stream: shown,
       })) {
+        if (!here()) continue;
         reported = message.id;
         setMessages((current) => upsert(current, message));
       }
       await watching;
+      if (!here()) return;
       if (!committed) throw answerError(refused);
       const { question: _, ...answer } = committed;
       setMessages((current) => upsert(current, toUIMessage(answer)));
+      setStepping(false);
+      textarea.current?.focus();
     } catch (cause) {
+      if (!here()) return;
       if (reported)
         setMessages((current) => current.filter((m) => m.id !== reported));
       setError(failureMessage(cause));
+      // Nothing arrived, so the batch is asked again where it stood.
+      setSending((current) => (current?.arrived ? current : null));
     } finally {
-      setReporting(false);
-      refresh();
+      if (here()) refresh();
     }
   };
-  // Stable for the memoized messages, while always deciding with the current Chat and Model.
-  const decideRef = useRef(decide);
-  decideRef.current = decide;
-  const onDecide = useCallback(
-    (saved: SavedProposal, decision: "approve" | "deny") =>
-      void decideRef.current(saved, decision),
-    [],
-  );
-  const deciding = reporting || denial.isPending;
+  const decide = (decision: Decision) => {
+    if (!batch || !progress) return;
+    const decisions = {
+      ...progress.decisions,
+      [batch.proposals[progress.index]!.approvalId]: decision,
+    };
+    const last = progress.index === batch.proposals.length - 1;
+    setStepping(true);
+    setProgressed({
+      ...progress,
+      index: last ? progress.index : progress.index + 1,
+      decisions,
+    });
+    if (last) void send(batch, decisions);
+  };
+  const reporting = !!sending && !sending.arrived;
+  // What the student is asked now, read out as each card comes while they step through.
+  const asking = unconfirmed
+    ? happenedQuestion(unconfirmed.action!.shown)
+    : batch && progress
+      ? question(batch.proposals[progress.index]!.action!.shown)
+      : "";
 
   const form = useAppForm({
     defaultValues: { text: "", courseIds: [] as string[] },
@@ -319,6 +384,12 @@ export function ChatScreen({
     }
   }, [chat.data, setMessages, form]);
 
+  // The reload after sending shows the batch's new standing, so the sent answer needs no stand-in any more.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Runs when the Chat reloads.
+  useEffect(() => {
+    setSending((current) => (current?.arrived ? null : current));
+  }, [chat.data]);
+
   useEffect(() => {
     if (shownRouteId.current === routeId) return;
     shownRouteId.current = routeId;
@@ -326,6 +397,10 @@ export function ChatScreen({
     restored.current = null;
     setOpenChat({ key: routeId ?? randomId(), id: routeId });
     setError(null);
+    // Noted decisions stay with the Chat they were made in.
+    setProgressed(null);
+    setSending(null);
+    setStepping(false);
     form.reset();
     create.reset();
   }, [routeId, form, create.reset]);
@@ -389,8 +464,7 @@ export function ChatScreen({
                     >
                       <ChatMessage
                         message={message}
-                        deciding={deciding}
-                        onDecide={onDecide}
+                        sending={message.id === sending?.answerId}
                       />
                     </MessageScrollerItem>
                   );
@@ -405,7 +479,11 @@ export function ChatScreen({
         </MessageScroller>
       </MessageScrollerProvider>
       <p role="status" className="sr-only">
-        {writing ? "Antwort wird geschrieben …" : ""}
+        {writing
+          ? "Antwort wird geschrieben …"
+          : stepping && !sending
+            ? asking
+            : ""}
       </p>
       <p id="chat-scope-description" className="sr-only">
         Nur ausgewählte Kursmaterialien werden gelesen. Die Kursauswahl bleibt
@@ -438,6 +516,41 @@ export function ChatScreen({
               textareaRef={textarea}
               alert={alertMessage}
               aria-describedby="chat-scope-description"
+              tray={
+                unconfirmed ? (
+                  <UnconfirmedActionCard
+                    key={unconfirmed.approvalId}
+                    proposal={unconfirmed}
+                    busy={resolution.isPending}
+                    focus={stepping}
+                    onResolve={resolve}
+                  />
+                ) : (
+                  batch &&
+                  progress && (
+                    <ProposalCard
+                      key={batch.proposals[progress.index]!.approvalId}
+                      proposal={batch.proposals[progress.index]!}
+                      position={{
+                        index: progress.index,
+                        total: batch.proposals.length,
+                      }}
+                      busy={reporting}
+                      focus={stepping}
+                      onBack={
+                        progress.index > 0
+                          ? () =>
+                              setProgressed({
+                                ...progress,
+                                index: progress.index - 1,
+                              })
+                          : undefined
+                      }
+                      onDecide={decide}
+                    />
+                  )
+                )
+              }
               knowledge={
                 <KnowledgeSelector
                   courses={courses.data ?? []}
