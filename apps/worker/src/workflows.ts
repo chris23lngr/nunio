@@ -181,6 +181,17 @@ export async function outreachTick() {
   await tickOutreach();
 }
 
+// Routines look 14 days ahead, so a failed day is caught up by the next tick.
+const { tickRoutines } = proxyActivities<{ tickRoutines(): Promise<void> }>({
+  startToCloseTimeout: "10 minutes",
+  retry: { maximumAttempts: 1 },
+});
+
+/** Started by the Routine Schedule: adds the Preparations and Follow-ups every student's Routines call for. */
+export async function routineTick() {
+  await tickRoutines();
+}
+
 // Prices stay usable for 7 days, so a failed day is retried by the next tick rather than here.
 const { syncModelPrices: syncPrices } = proxyActivities<{
   syncModelPrices(): Promise<void>;

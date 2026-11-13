@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Estimator } from "@nunio/ai";
+import type { Estimator, SeriesAssigner } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
 import type {
   ActionIntent,
@@ -8,11 +8,11 @@ import type {
   ResponsibilityScope,
   Transaction,
 } from "@nunio/delegation";
-import { withOwner } from "@nunio/delegation";
+import { principal, withOwner } from "@nunio/delegation";
 import type { Facts } from "@nunio/knowledge";
 import { definitely } from "@nunio/knowledge";
 import { readCalendar } from "./calendar.js";
-import type { Interval, Move, PlanState } from "./rebalance.js";
+import type { Interval, Move, PlanState, Proposal } from "./rebalance.js";
 import { addMinutes, local, rebalance } from "./rebalance.js";
 import { deadline, hhmm } from "./time.js";
 
@@ -56,6 +56,10 @@ type ObligationKind =
   | "registration"
   | "other";
 type ReviewState = "unreviewed" | "confirmed" | "rejected";
+/** Where an Event Series stands with its Course; only a confirmed one's events are Course Events (ADR-0022). */
+export type SeriesState = "undecided" | "proposed" | "confirmed" | "rejected";
+/** What a Routine's Task does for its Course Event. */
+export type TaskRole = "preparation" | "follow_up";
 
 const defaults = {
   timeZone: "Europe/Berlin",
@@ -120,23 +124,45 @@ export function createPlan({
           }),
       );
   }
+  /** Courses nunio plans for: not rejected, merged or Archived. */
+  const activeCourses = (tx: Transaction) =>
+    tx.course.findMany({
+      where: { status: { in: ["proposed", "accepted"] }, archivedAt: null },
+      select: { id: true, title: true, code: true },
+      orderBy: [{ title: "asc" }, { id: "asc" }],
+    });
+  /** The student's Tasks, leaving out those in a Course nunio no longer plans for. */
   async function tasksOf(tx: Transaction) {
-    return (await tx.task.findMany({ orderBy: { createdAt: "asc" } })).map(
-      (task) => ({
-        id: task.id,
-        title: task.title,
-        obligationId: task.obligationId,
-        estimate: task.estimateMinutes
-          ? {
-              minutes: task.estimateMinutes,
-              estimatedBy: task.estimatedBy as Actor,
-              rationale: task.estimateRationale,
-            }
-          : null,
-        maxMinutesPerDay: task.maxMinutesPerDay,
-        done: Boolean(task.doneAt),
-      }),
-    );
+    const courses = await activeCourses(tx);
+    const rows = await tx.task.findMany({ orderBy: { createdAt: "asc" } });
+    return rows.flatMap((task) => {
+      const course = task.courseId
+        ? courses.find((c) => c.id === task.courseId)
+        : null;
+      if (course === undefined) return [];
+      return [
+        {
+          id: task.id,
+          title: task.title,
+          obligationId: task.obligationId,
+          /** The Task's own Course, which only a Task toward no Obligation has. */
+          courseId: task.courseId,
+          course: course?.title ?? null,
+          estimate: task.estimateMinutes
+            ? {
+                minutes: task.estimateMinutes,
+                estimatedBy: task.estimatedBy as Actor,
+                rationale: task.estimateRationale,
+              }
+            : null,
+          maxMinutesPerDay: task.maxMinutesPerDay,
+          done: Boolean(task.doneAt),
+          /** For a Routine's Task: the Course Event it is for, and whether it prepares for it or follows up on it. */
+          fixedEventId: task.fixedEventId,
+          role: task.role as TaskRole | null,
+        },
+      ];
+    });
   }
   /** The Plan as stored, and the Rebalance proposal over it, gathered in one transaction. */
   async function planView(p: Principal, tx: Transaction) {
@@ -173,17 +199,60 @@ export function createPlan({
       where: { obligationId: { not: null } },
       select: { id: true, obligationId: true },
     });
-    const fixedEvents = (
-      await tx.fixedEvent.findMany({
-        orderBy: [{ start: "asc" }, { end: "asc" }],
+    const eventRows = await tx.fixedEvent.findMany({
+      orderBy: [{ start: "asc" }, { end: "asc" }],
+    });
+    const eventSeries = (
+      await tx.eventSeries.findMany({
+        orderBy: [{ title: "asc" }, { id: "asc" }],
+        include: { routine: true },
       })
-    ).map(({ id, title, start, end, calendarId }) => ({
-      id,
-      title,
-      start,
-      end,
-      calendarId,
-    }));
+    ).map(
+      ({
+        id,
+        calendarId,
+        title,
+        courseId,
+        confirmedAt,
+        rejectedAt,
+        routine,
+      }) => ({
+        id,
+        calendarId,
+        title,
+        courseId,
+        state: (rejectedAt
+          ? "rejected"
+          : !courseId
+            ? "undecided"
+            : confirmedAt
+              ? "confirmed"
+              : "proposed") as SeriesState,
+        routine: routine && {
+          preparationMinutes: routine.preparationMinutes,
+          followUpMinutes: routine.followUpMinutes,
+          skippedUntil: routine.skippedUntil,
+        },
+      }),
+    );
+    const fixedEvents = eventRows.map(
+      ({ id, title, start, end, calendarId, seriesId, detachedAt }) => {
+        const series = eventSeries.find((s) => s.id === seriesId);
+        return {
+          id,
+          title,
+          start,
+          end,
+          calendarId,
+          seriesId,
+          /** Its Course, which only a Course Event has: one of a confirmed series the student did not take out. */
+          courseId:
+            series?.state === "confirmed" && !detachedAt
+              ? series.courseId
+              : null,
+        };
+      },
+    );
     const calendars = (
       await tx.calendarSource.findMany({
         orderBy: { addedAt: "asc" },
@@ -191,7 +260,11 @@ export function createPlan({
       })
     ).map(({ id, name, _count }) => ({ id, name, events: _count.events }));
     const items = await obligations(p, tx);
-    const tasks = await tasksOf(tx);
+    const tasks = (await tasksOf(tx)).map((task) => ({
+      ...task,
+      /** When a Routine's Task is to be done, from its Course Event and that event's neighbors (ADR-0022). */
+      window: windowOf(task, eventRows),
+    }));
     const blocks = (
       await tx.studyBlock.findMany({ orderBy: { start: "asc" } })
     ).map((block) => ({
@@ -258,8 +331,18 @@ export function createPlan({
           dailyLimitMinutes:
             task.maxMinutesPerDay ??
             courseLimit(
-              items.find((o) => o.id === task.obligationId)?.courseId,
+              task.courseId ??
+                items.find((o) => o.id === task.obligationId)?.courseId,
             ),
+          earliest: task.window?.start ?? null,
+          due: task.window?.end ?? null,
+          priority: task.courseId
+            ? (rankOf("course", task.courseId) ?? Infinity)
+            : Infinity,
+          routine: task.role
+            ? (eventRows.find((e) => e.id === task.fixedEventId)?.seriesId ??
+              null)
+            : null,
         })),
       fixedEvents: fixedEvents.map(({ start, end }) => ({ start, end })),
       protectedTime: [
@@ -290,6 +373,7 @@ export function createPlan({
       tasks,
       studyBlocks: blocks,
       fixedEvents,
+      eventSeries,
       calendars,
       priorities: ranking.map(({ kind, id }) => ({ kind, id })),
       limits: {
@@ -300,7 +384,7 @@ export function createPlan({
         })),
         protectedTime,
       },
-      proposal: rebalance(state),
+      proposal: named(rebalance(state), eventSeries),
     };
   }
   /** A work's own daily limit: a Task's, else its Course's; null when it has none. */
@@ -315,13 +399,11 @@ export function createPlan({
     const obligation = obligationId
       ? await tx.obligation.findUnique({ where: { id: obligationId } })
       : null;
-    if (!obligation) return null;
+    const courseId = obligation?.courseId ?? task?.courseId;
+    if (!courseId) return null;
     return (
-      (
-        await tx.coursePreference.findUnique({
-          where: { courseId: obligation.courseId },
-        })
-      )?.maxMinutesPerDay ?? null
+      (await tx.coursePreference.findUnique({ where: { courseId } }))
+        ?.maxMinutesPerDay ?? null
     );
   }
   const workExists = async (tx: Transaction, work: WorkRef) =>
@@ -330,6 +412,114 @@ export function createPlan({
         ? await tx.obligation.findUnique({ where: { id: work.id } })
         : await tx.task.findUnique({ where: { id: work.id } }),
     );
+  /** `applyRoutines`, as a local function so the methods that call it do not depend on `this`. */
+  async function applyRoutines(p: Principal) {
+    return withOwner(db, p, async (tx, studentId) => {
+      const now = clock.now();
+      const horizon = now.getTime() + 14 * dayMs;
+      const active = new Set((await activeCourses(tx)).map((c) => c.id));
+      const routines = await tx.routine.findMany({
+        include: { series: true },
+      });
+      // Every Course Event, with a Routine or not: a Chat may have added a Task for any of them.
+      const events = await tx.fixedEvent.findMany({
+        where: {
+          detachedAt: null,
+          series: { confirmedAt: { not: null }, courseId: { in: [...active] } },
+        },
+        orderBy: [{ start: "asc" }, { end: "asc" }],
+      });
+      // A Task whose event is no longer a Course Event goes if nothing happened to it; otherwise it stays, without it.
+      const courseEvents = new Set(events.map((event) => event.id));
+      const stale = await tx.task.findMany({
+        where: {
+          role: { not: null },
+          OR: [
+            { fixedEventId: null },
+            { fixedEventId: { notIn: [...courseEvents] } },
+          ],
+        },
+        include: { studyBlocks: true },
+      });
+      const touched = (task: (typeof stale)[number]) =>
+        task.doneAt ||
+        task.studyBlocks.some((b) => b.start < now || b.lockedAt);
+      for (const task of stale) {
+        if (touched(task)) {
+          await tx.task.update({
+            where: { id: task.id },
+            data: { fixedEventId: null, role: null },
+          });
+          // Its future Study Blocks go with the event; Locked ones stay (ADR-0022).
+          await tx.studyBlock.deleteMany({
+            where: { taskId: task.id, start: { gte: now }, lockedAt: null },
+          });
+        } else await tx.task.delete({ where: { id: task.id } });
+      }
+      // Preparing once the lecture has begun is pointless, so an untouched Preparation goes then; a Follow-up stays.
+      const begun = events
+        .filter((event) => event.start <= now)
+        .map((event) => event.id);
+      for (const task of await tx.task.findMany({
+        where: { role: "preparation", fixedEventId: { in: begun } },
+        include: { studyBlocks: true },
+      }))
+        if (!touched(task)) await tx.task.delete({ where: { id: task.id } });
+      const existing = new Set(
+        (
+          await tx.task.findMany({
+            where: { fixedEventId: { in: events.map((e) => e.id) } },
+          })
+        ).map((t) => `${t.fixedEventId} ${t.role}`),
+      );
+      const added = [];
+      for (const {
+        series,
+        preparationMinutes,
+        followUpMinutes,
+        skippedUntil,
+      } of routines) {
+        const courseId = series.courseId;
+        if (!series.confirmedAt || !courseId || !active.has(courseId)) continue;
+        for (const event of events) {
+          if (event.seriesId !== series.id) continue;
+          if (event.start.getTime() > horizon) continue;
+          // A skip only holds back new Tasks; `skipRoutine` removed the untouched ones once.
+          if (skippedUntil && event.start < skippedUntil) continue;
+          const wanted = [
+            {
+              role: "preparation" as const,
+              label: "Vorbereitung",
+              minutes: preparationMinutes,
+            },
+            {
+              role: "follow_up" as const,
+              label: "Nachbereitung",
+              minutes: followUpMinutes,
+            },
+          ];
+          for (const { role, label, minutes } of wanted) {
+            if (!minutes || existing.has(`${event.id} ${role}`)) continue;
+            const window = windowOf({ fixedEventId: event.id, role }, events);
+            if (!window || window.end <= now) continue;
+            added.push({
+              id: randomUUID(),
+              studentId,
+              courseId,
+              fixedEventId: event.id,
+              role,
+              title: `${label}: ${series.title}`,
+              estimateMinutes: minutes,
+              estimatedBy: "student" as const,
+            });
+          }
+        }
+      }
+      // A concurrent run may have added the same Task first.
+      await tx.task.createMany({ data: added, skipDuplicates: true });
+      return { status: "ok", added: added.length } as const;
+    });
+  }
 
   return {
     /** The Plan as it stands, and what a Rebalance would change now. */
@@ -508,7 +698,10 @@ export function createPlan({
           .map((o) => o.id),
       );
       for (const task of tasks)
-        if (task.obligationId && inScope.has(task.obligationId))
+        if (
+          (task.obligationId && inScope.has(task.obligationId)) ||
+          ("courseId" in scope && task.courseId === scope.courseId)
+        )
           inScope.add(task.id);
       return proposal.moves
         .filter((move) => inScope.has(move.workId))
@@ -563,13 +756,20 @@ export function createPlan({
         return { status: "ok" } as const;
       });
     },
-    /** A Task toward one of the student's Obligations, or toward none. */
+    /** A Task toward one of the student's Obligations, or toward none, then optionally in one of their Courses. */
     async addTask(
       p: Principal,
-      input: { title: string; obligationId: string | null },
+      input: {
+        title: string;
+        obligationId: string | null;
+        courseId?: string | null;
+      },
     ) {
       const title = titleOf(input.title);
-      if (!title) return { status: "invalid" } as const;
+      const courseId = input.courseId ?? null;
+      // A Task toward an Obligation is in the Obligation's Course.
+      if (!title || (input.obligationId && courseId))
+        return { status: "invalid" } as const;
       return withOwner(db, p, async (tx, studentId) => {
         if (
           input.obligationId &&
@@ -579,12 +779,18 @@ export function createPlan({
           }))
         )
           return { status: "gone" } as const;
+        if (
+          courseId &&
+          !(await activeCourses(tx)).some((course) => course.id === courseId)
+        )
+          return { status: "gone" } as const;
         const task = await tx.task.create({
           data: {
             id: randomUUID(),
             studentId,
             title,
             obligationId: input.obligationId,
+            courseId,
           },
         });
         return { status: "ok", id: task.id } as const;
@@ -664,35 +870,115 @@ export function createPlan({
         return { status: "ok", id: event.id } as const;
       });
     },
+    /** Takes one Fixed Event out of its series' Course, so it is no Course Event, as for a cancelled lecture slot. */
+    async detachEvent(p: Principal, id: string) {
+      const detached = await withOwner(db, p, async (tx) => {
+        const { count } = await tx.fixedEvent.updateMany({
+          where: { id, seriesId: { not: null } },
+          data: { detachedAt: clock.now() },
+        });
+        return { status: count ? "ok" : "gone" } as const;
+      });
+      // It is no Course Event any more, so its Routine's Tasks follow.
+      if (detached.status === "ok") await applyRoutines(p);
+      return detached;
+    },
     async removeFixedEvent(p: Principal, id: string) {
       return withOwner(db, p, async (tx) => {
         const { count } = await tx.fixedEvent.deleteMany({ where: { id } });
         return { status: count ? "ok" : "gone" } as const;
       });
     },
-    /** Adds a calendar file as a Source of Fixed Events for the coming year; recurrences are expanded, so adding it again extends them. */
+    /**
+     * Adds a calendar file as a Source of Fixed Events for the coming year, expanding recurrences. A file sharing event
+     * UIDs with a calendar the student added before updates that calendar instead, keeping its events' IDs (ADR-0022).
+     */
     async addCalendar(p: Principal, input: { name: string; ics: string }) {
       const name = titleOf(input.name, 255);
       if (!name) return { status: "invalid" } as const;
-      return withOwner(db, p, async (tx, studentId) => {
+      const added = await withOwner(db, p, async (tx, studentId) => {
         const timeZone =
           (await tx.planPreference.findFirst())?.timeZone ?? defaults.timeZone;
         const now = clock.now();
-        const reading = readCalendar(input.ics, {
-          from: now,
-          until: new Date(now.getTime() + 365 * dayMs),
-          timeZone,
-        });
+        const until = new Date(now.getTime() + 365 * dayMs);
+        const reading = readCalendar(input.ics, { from: now, until, timeZone });
         if (reading.status === "invalid") return reading;
-        const id = randomUUID();
-        await tx.calendarSource.create({ data: { id, studentId, name } });
-        await tx.fixedEvent.createMany({
-          data: reading.events.map((event) => ({
+        const uids = [
+          ...new Set(reading.events.flatMap((e) => (e.uid ? [e.uid] : []))),
+        ];
+        // The calendar sharing the most UIDs with the file is the one added before.
+        const [match] = uids.length
+          ? await tx.fixedEvent.groupBy({
+              by: ["calendarId"],
+              where: { calendarId: { not: null }, uid: { in: uids } },
+              _count: { _all: true },
+              orderBy: { _count: { calendarId: "desc" } },
+              take: 1,
+            })
+          : [];
+        const id = match?.calendarId ?? randomUUID();
+        if (!match)
+          await tx.calendarSource.create({ data: { id, studentId, name } });
+        const keyOf = (event: {
+          uid: string | null;
+          recurrenceId: Date | null;
+        }) => `${event.uid} ${event.recurrenceId?.toISOString() ?? ""}`;
+        // Only events the file could still list: past ones stay as they were.
+        const existing = new Map(
+          (
+            await tx.fixedEvent.findMany({
+              where: { calendarId: id, start: { lt: until }, end: { gt: now } },
+            })
+          ).map((event) => [keyOf(event), event.id]),
+        );
+        // Each title is one Event Series, which keeps its ID while the calendar lists it.
+        const series = new Map(
+          (await tx.eventSeries.findMany({ where: { calendarId: id } })).map(
+            (s) => [s.title, s.id],
+          ),
+        );
+        const fresh = [...new Set(reading.events.map((e) => e.title))]
+          .filter((title) => !series.has(title))
+          .map((title) => ({
             id: randomUUID(),
             studentId,
             calendarId: id,
-            ...event,
-          })),
+            title,
+          }));
+        await tx.eventSeries.createMany({ data: fresh });
+        for (const s of fresh) series.set(s.title, s.id);
+        const added = [];
+        for (const event of reading.events) {
+          const known = event.uid ? existing.get(keyOf(event)) : undefined;
+          const seriesId = series.get(event.title)!;
+          if (known === undefined) {
+            added.push({
+              id: randomUUID(),
+              studentId,
+              calendarId: id,
+              seriesId,
+              ...event,
+            });
+            continue;
+          }
+          existing.delete(keyOf(event));
+          await tx.fixedEvent.update({
+            where: { id: known },
+            data: {
+              title: event.title,
+              start: event.start,
+              end: event.end,
+              seriesId,
+            },
+          });
+        }
+        // What the file no longer lists was cancelled or removed.
+        await tx.fixedEvent.deleteMany({
+          where: { id: { in: [...existing.values()] } },
+        });
+        await tx.fixedEvent.createMany({ data: added });
+        await tx.eventSeries.deleteMany({
+          where: { calendarId: id, events: { none: {} } },
         });
         return {
           status: "ok",
@@ -701,6 +987,9 @@ export function createPlan({
           skipped: reading.skipped,
         } as const;
       });
+      // Moved, new and cancelled Course Events change what the Routines call for.
+      if (added.status === "ok") await applyRoutines(p);
+      return added;
     },
     /** Deletes a calendar Source and, immediately, every Fixed Event read from it. */
     async removeCalendar(p: Principal, id: string) {
@@ -846,6 +1135,213 @@ export function createPlan({
         return { status: "ok" } as const;
       });
     },
+    /**
+     * Asks the model, in one metered call, which of the student's Courses each undecided Event Series belongs to,
+     * sending only its title and times and the Courses under handles (ADR-0022). A proposal waits for the student.
+     */
+    async proposeSeriesCourses(
+      p: Principal,
+      {
+        assigner,
+        delegation,
+      }: { assigner: SeriesAssigner; delegation: Delegation },
+    ) {
+      const { series, courses } = await withOwner(db, p, async (tx) => {
+        const timeZone =
+          (await tx.planPreference.findFirst())?.timeZone ?? defaults.timeZone;
+        const undecided = await tx.eventSeries.findMany({
+          where: { courseId: null, rejectedAt: null },
+          orderBy: [{ title: "asc" }, { id: "asc" }],
+          include: { events: { orderBy: { start: "asc" } } },
+        });
+        return {
+          series: undecided.map((s) => ({
+            id: s.id,
+            request: {
+              title: s.title,
+              times: [
+                ...new Set(s.events.map((e) => slotOf(e, timeZone))),
+              ].slice(0, 5),
+              events: s.events.length,
+            },
+          })),
+          courses: (await activeCourses(tx)).map((course, i) => ({
+            id: course.id,
+            handle: `K${i + 1}`,
+            title: course.title,
+            code: course.code,
+          })),
+        };
+      });
+      if (!series.length || !courses.length)
+        return { status: "ok", proposed: 0 } as const;
+      const input = {
+        series: series.map((s) => s.request),
+        courses: courses.map(({ id: _, ...course }) => course),
+      };
+      const proposed = await delegation.meter(
+        p,
+        { microUsd: assigner.assignMicroUsd(input) },
+        (signal) => definitely(() => assigner.assign(input, { signal })),
+      );
+      if (proposed.status === "refused") return proposed;
+      const written = await withOwner(db, p, async (tx) => {
+        const active = new Set((await activeCourses(tx)).map((c) => c.id));
+        let count = 0;
+        for (const [i, handle] of proposed.value.entries()) {
+          const courseId = courses.find((c) => c.handle === handle)?.id;
+          if (!courseId || !active.has(courseId)) continue;
+          // The student may have decided meanwhile; that decision stands.
+          const { count: updated } = await tx.eventSeries.updateMany({
+            where: { id: series[i]!.id, courseId: null, rejectedAt: null },
+            data: { courseId, confirmedAt: null },
+          });
+          count += updated;
+        }
+        return count;
+      });
+      return { status: "ok", proposed: written } as const;
+    },
+    /**
+     * The student's decision on an Event Series' Course: a Course, which confirms it whoever proposed it, or none,
+     * after which nunio proposes none for it again.
+     */
+    async decideSeries(
+      p: Principal,
+      id: string,
+      decision: { courseId: string } | { reject: true },
+    ) {
+      const decided = await withOwner(db, p, async (tx) => {
+        if ("reject" in decision) {
+          const { count } = await tx.eventSeries.updateMany({
+            where: { id },
+            data: {
+              courseId: null,
+              confirmedAt: null,
+              rejectedAt: clock.now(),
+            },
+          });
+          return { status: count ? "ok" : "gone" } as const;
+        }
+        if (!(await activeCourses(tx)).some((c) => c.id === decision.courseId))
+          return { status: "gone" } as const;
+        const { count } = await tx.eventSeries.updateMany({
+          where: { id },
+          data: {
+            courseId: decision.courseId,
+            confirmedAt: clock.now(),
+            rejectedAt: null,
+          },
+        });
+        return { status: count ? "ok" : "gone" } as const;
+      });
+      // Its events become, or stop being, Course Events, which its Routine follows.
+      if (decided.status === "ok") await applyRoutines(p);
+      return decided;
+    },
+    /** The student's Routine for an Event Series: minutes to prepare for and to follow up on each of its Course Events. */
+    async setRoutine(
+      p: Principal,
+      seriesId: string,
+      input: { preparationMinutes: number; followUpMinutes: number },
+    ) {
+      const { preparationMinutes, followUpMinutes } = input;
+      if (
+        ![preparationMinutes, followUpMinutes].every(
+          (m) => Number.isInteger(m) && m >= 0 && m <= 1440,
+        )
+      )
+        return { status: "invalid" } as const;
+      const status = await withOwner(db, p, async (tx, studentId) => {
+        if (!(await tx.eventSeries.findUnique({ where: { id: seriesId } })))
+          return "gone" as const;
+        const before = await tx.routine.findUnique({ where: { seriesId } });
+        await tx.routine.upsert({
+          where: { seriesId },
+          create: { seriesId, studentId, ...input },
+          update: input,
+        });
+        if (!before) return "ok" as const;
+        // Only open Tasks nothing has happened to follow the change, and never an Estimate the student changed on one.
+        const minutes = {
+          preparation: [before.preparationMinutes, preparationMinutes],
+          follow_up: [before.followUpMinutes, followUpMinutes],
+        } as const;
+        const tasks = await tx.task.findMany({
+          where: {
+            fixedEvent: { seriesId },
+            doneAt: null,
+            studyBlocks: { none: { start: { lt: clock.now() } } },
+          },
+        });
+        for (const task of tasks) {
+          const [old, now] = minutes[task.role!];
+          if (task.estimateMinutes !== old || old === now) continue;
+          if (now === 0) await tx.task.delete({ where: { id: task.id } });
+          else
+            await tx.task.update({
+              where: { id: task.id },
+              data: { estimateMinutes: now },
+            });
+        }
+        return "ok" as const;
+      });
+      if (status === "ok") await applyRoutines(p);
+      return { status } as const;
+    },
+    /**
+     * Adds the Preparations and Follow-ups the student's Routines call for (ADR-0022): for each Course Event of a
+     * confirmed series that starts in the next 14 days, and for a past one whose Follow-up window is still open. Adding
+     * them is the student's own planning, not an Action; running it again adds nothing twice.
+     */
+    async applyRoutines(p: Principal) {
+      return applyRoutines(p);
+    },
+    /**
+     * Skips a Routine until an instant, as a Shortfall's tradeoff offers: Course Events that begin before then get no
+     * Preparation or Follow-up, and the untouched ones of those still to come go. The student's choice, so no Approval.
+     */
+    async skipRoutine(p: Principal, seriesId: string, until: Date) {
+      if (Number.isNaN(until.getTime())) return { status: "invalid" } as const;
+      const skipped = await withOwner(db, p, async (tx) => {
+        const { count } = await tx.routine.updateMany({
+          where: { seriesId },
+          data: { skippedUntil: until },
+        });
+        if (!count) return { status: "gone" } as const;
+        // Once, and only for events still to come: a past one's open Follow-up stays as backlog.
+        const now = clock.now();
+        await tx.task.deleteMany({
+          where: {
+            role: { not: null },
+            fixedEvent: { seriesId, start: { gte: now, lt: until } },
+            doneAt: null,
+            studyBlocks: {
+              none: {
+                OR: [{ start: { lt: now } }, { lockedAt: { not: null } }],
+              },
+            },
+          },
+        });
+        return { status: "ok" } as const;
+      });
+      if (skipped.status === "ok") await applyRoutines(p);
+      return skipped;
+    },
+    /** Started daily by the worker: applies the Routines of every student who has one, so the 14 days roll on. */
+    async tickRoutines() {
+      const students = await db.$queryRaw<
+        { studentId: string }[]
+      >`SELECT "studentId" FROM routine_students()`;
+      for (const { studentId } of students) {
+        // One student's failure leaves their Routines to the next tick, not the others'.
+        try {
+          await applyRoutines(principal.fromSession({ studentId }));
+        } catch (error) {
+          console.error("Routine tick failed for a student", error);
+        }
+      }
+    },
     /** Asks the model for Estimates of Obligations and open Tasks that have none, in one metered call. */
     async proposeEstimates(
       p: Principal,
@@ -873,7 +1369,8 @@ export function createPlan({
               kind: "task" as const,
               title: task.title,
               course:
-                items.find((o) => o.id === task.obligationId)?.course ?? null,
+                items.find((o) => o.id === task.obligationId)?.course ??
+                task.course,
             },
           })),
       ];
@@ -959,6 +1456,74 @@ export function createPlan({
   };
 }
 export type Plan = ReturnType<typeof createPlan>;
+
+/** Names each skip_routine tradeoff by its Event Series, which rebalance knows only by id. */
+function named(
+  proposal: Proposal,
+  series: readonly { id: string; title: string }[],
+): Proposal {
+  return {
+    ...proposal,
+    shortfalls: proposal.shortfalls.map((shortfall) => ({
+      ...shortfall,
+      tradeoffs: shortfall.tradeoffs.map((tradeoff) =>
+        tradeoff.kind === "skip_routine"
+          ? {
+              ...tradeoff,
+              title:
+                series.find((s) => s.id === tradeoff.routine)?.title ??
+                "a series",
+            }
+          : tradeoff,
+      ),
+    })),
+  };
+}
+
+/** How far before the first Course Event of a series it is prepared for, and after the last followed up on. */
+const openWindowMs = 7 * dayMs;
+type EventRow = {
+  id: string;
+  seriesId: string | null;
+  detachedAt: Date | null;
+} & Interval;
+/**
+ * The window of a Routine's Task: a Preparation from the end of the previous Course Event of its series to the start
+ * of its own; a Follow-up from its end to the start of the next. Without a neighbor, a week.
+ */
+function windowOf(
+  task: { fixedEventId: string | null; role: string | null },
+  events: readonly EventRow[],
+): Interval | null {
+  const event = events.find((e) => e.id === task.fixedEventId);
+  if (!event || !task.role) return null;
+  const series = events.filter(
+    (e) => e.seriesId === event.seriesId && !e.detachedAt && e.id !== event.id,
+  );
+  if (task.role === "preparation") {
+    const previous = series.filter((e) => e.start < event.start).at(-1);
+    return {
+      start: previous?.end ?? new Date(event.start.getTime() - openWindowMs),
+      end: event.start,
+    };
+  }
+  const next = series.find((e) => e.start > event.start);
+  return {
+    start: event.end,
+    end: next?.start ?? new Date(event.end.getTime() + openWindowMs),
+  };
+}
+
+/** When an event takes place in the student's week, such as "Mon 10:00–12:00". */
+function slotOf({ start, end }: Interval, timeZone: string) {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+  }).format(start);
+  const time = (instant: Date) =>
+    hhmm(local(instant.getTime(), timeZone).minute);
+  return `${weekday} ${time(start)}–${time(end)}`;
+}
 
 /** The study-block column a piece of work is stored under. */
 const columnsOf = (work: WorkRef) =>

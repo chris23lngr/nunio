@@ -6,6 +6,7 @@ import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PageHeading } from "@/components/headings";
+import { planQuery } from "@/features/plan/api/plan-queries";
 import { createApiClient } from "@/lib/api-client";
 import type { CourseImpact, CourseSummary } from "./api/course-queries";
 import { courseImpactQuery, courseListQuery } from "./api/course-queries";
@@ -15,6 +16,7 @@ import type { CourseFields } from "./components/course-dialog";
 import { CourseDialog } from "./components/course-dialog";
 import type { CourseAction } from "./components/course-menu";
 import { CourseMenu } from "./components/course-menu";
+import { CourseRoutines } from "./components/course-routines";
 import { EmptyState } from "./components/empty-state";
 import { ProposalStrip } from "./components/proposal-strip";
 import { SemesterFilter } from "./components/semester-filter";
@@ -86,7 +88,37 @@ export function CoursesScreen({
 }) {
   const router = useRouter();
   const list = useQuery(courseListQuery(apiOrigin));
+  const plan = useQuery(planQuery(apiOrigin));
   const queryClient = useQueryClient();
+  /** A Routine change or skip: the Plan's Tasks follow it, so the Plan is read again. */
+  const routine = useMutation({
+    mutationFn: async (
+      change:
+        | {
+            seriesId: string;
+            minutes: { preparationMinutes: number; followUpMinutes: number };
+          }
+        | { seriesId: string; until: Date },
+    ) => {
+      const client = createApiClient(apiOrigin);
+      const params = { path: { id: change.seriesId } };
+      const { response } =
+        "until" in change
+          ? await client.POST("/api/me/event-series/{id}/routine/skip", {
+              params,
+              body: { until: change.until.toISOString() },
+            })
+          : await client.PUT("/api/me/event-series/{id}/routine", {
+              params,
+              body: change.minutes,
+            });
+      if (!response.ok) throw new Error(failed);
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({
+        queryKey: planQuery(apiOrigin).queryKey,
+      }),
+  });
   const [creating, setCreating] = useState(false);
   const [acting, setActing] = useState<{
     action: Exclude<CourseAction, "unarchive">;
@@ -276,18 +308,39 @@ export function CoursesScreen({
           }
           className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-3"
         >
-          {shown.map((course) => (
-            <CourseCard
-              key={course.id}
-              course={course}
-              menu={
-                <CourseMenu
-                  course={course}
-                  onAction={(action) => startAction(course, action)}
+          {shown.map((course) => {
+            const series = (plan.data?.eventSeries ?? []).filter(
+              (s) => s.state === "confirmed" && s.courseId === course.id,
+            );
+            return (
+              <CourseCard
+                key={course.id}
+                course={course}
+                menu={
+                  <CourseMenu
+                    course={course}
+                    onAction={(action) => startAction(course, action)}
+                  />
+                }
+              >
+                <CourseRoutines
+                  series={series}
+                  // The failed change shows on the card of the series it was for.
+                  error={
+                    series.some((s) => s.id === routine.variables?.seriesId)
+                      ? (routine.error?.message ?? null)
+                      : null
+                  }
+                  onSave={(seriesId, minutes) =>
+                    routine.mutate({ seriesId, minutes })
+                  }
+                  onSkip={(seriesId, until) =>
+                    routine.mutate({ seriesId, until })
+                  }
                 />
-              }
-            />
-          ))}
+              </CourseCard>
+            );
+          })}
         </ul>
       )}
       {list.data && creating && (

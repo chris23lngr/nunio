@@ -3,7 +3,14 @@ import type { PrismaClient } from "@nunio/db";
 import type { Executor } from "@nunio/delegation";
 import { principal, withOwner } from "@nunio/delegation";
 
-/** The gate's executor for Study Blocks within nunio's Plan: each key takes its effect at most once. */
+/** What an Action took effect on: the block it placed or moved, or the Task it added or reopened. */
+const effectOf = (done: {
+  studyBlockId: string | null;
+  taskId: string | null;
+}) =>
+  done.taskId ? { taskId: done.taskId } : { studyBlockId: done.studyBlockId! };
+
+/** The gate's executor for Study Blocks and Tasks within nunio's Plan: each key takes its effect at most once. */
 export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
   return {
     async execute({ studentId, intent }, { idempotencyKey }) {
@@ -13,11 +20,53 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
         const done = await tx.planEffect.findUnique({
           where: { studentId_idempotencyKey: { studentId, idempotencyKey } },
         });
-        if (done)
-          return {
-            status: "done",
-            effect: { studyBlockId: done.studyBlockId },
-          };
+        if (done) return { status: "done", effect: effectOf(done) };
+        if (intent.kind === "task.create" || intent.kind === "task.reopen") {
+          let taskId: string;
+          if (intent.kind === "task.create") {
+            const { fixedEventId, role } = intent;
+            if (
+              fixedEventId &&
+              !(await tx.fixedEvent.findUnique({ where: { id: fixedEventId } }))
+            )
+              return { status: "rejected", detail: "the Course Event is gone" };
+            // The event has this Task already, so the student's wish is met.
+            const existing =
+              fixedEventId && role
+                ? await tx.task.findUnique({
+                    where: { fixedEventId_role: { fixedEventId, role } },
+                  })
+                : null;
+            if (existing) taskId = existing.id;
+            else {
+              taskId = randomUUID();
+              await tx.task.create({
+                data: {
+                  id: taskId,
+                  studentId,
+                  title: intent.title,
+                  courseId: intent.courseId,
+                  fixedEventId: intent.fixedEventId,
+                  role: intent.role,
+                  estimateMinutes: intent.estimateMinutes,
+                  estimatedBy: intent.estimateMinutes ? "student" : null,
+                },
+              });
+            }
+          } else {
+            const { count } = await tx.task.updateMany({
+              where: { id: intent.taskId },
+              data: { doneAt: null },
+            });
+            if (!count)
+              return { status: "rejected", detail: "the Task is gone" };
+            taskId = intent.taskId;
+          }
+          await tx.planEffect.create({
+            data: { idempotencyKey, studentId, taskId },
+          });
+          return { status: "done", effect: { taskId } };
+        }
         let studyBlockId: string = randomUUID();
         if (intent.kind === "studyBlock.move") {
           const { count } = await tx.studyBlock.updateMany({
@@ -71,7 +120,7 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
           }),
       );
       return done
-        ? { status: "found", effect: { studyBlockId: done.studyBlockId } }
+        ? { status: "found", effect: effectOf(done) }
         : { status: "absent" };
     },
   };

@@ -28,5 +28,7 @@ export function tradeoffText(tradeoff: Tradeoff) {
     return `Study beyond your daily limit (gains ${hours(tradeoff.gainedMinutes)}, needs your Approval)`;
   if (tradeoff.kind === "free_time_from")
     return `Use time planned for lower-priority work (${hours(tradeoff.gainedMinutes)})`;
+  if (tradeoff.kind === "skip_routine")
+    return `Skip preparing for and following up on ${tradeoff.title} until then (${hours(tradeoff.gainedMinutes)})`;
   return `Plan ${hours(tradeoff.byMinutes)} less for it`;
 }

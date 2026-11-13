@@ -26,13 +26,35 @@ export function ApprovalCard({
   onDecide: (decision: "approve" | "deny") => void;
 }) {
   const { action } = approval;
-  const verb =
-    action.kind === "studyBlock.move"
-      ? "Move"
-      : action.kind === "studyBlock.remove"
-        ? "Remove"
-        : "Add";
-  const heading = `${verb} the block for ${action.work.title}`;
+  const { heading, approveLabel } = {
+    "studyBlock.create": {
+      heading: `Add the block for ${action.work.title}`,
+      approveLabel: "Approve this block",
+    },
+    "studyBlock.move": {
+      heading: `Move the block for ${action.work.title}`,
+      approveLabel: "Approve this move",
+    },
+    "studyBlock.remove": {
+      heading: `Remove the block for ${action.work.title}`,
+      approveLabel: "Approve this removal",
+    },
+    "task.create": {
+      heading: `Add the Task ${action.work.title}`,
+      approveLabel: "Approve this Task",
+    },
+    "task.reopen": {
+      heading: `Reopen the Task ${action.work.title}`,
+      approveLabel: "Approve reopening it",
+    },
+  }[action.kind];
+  // A removal has only where the block is now; a Task Action places nothing in time (ADR-0022).
+  const time =
+    action.from && action.to
+      ? `: from ${span(action.from)} to ${span(action.to)}`
+      : action.to || action.from
+        ? `: on ${span((action.to ?? action.from)!)}`
+        : "";
   return (
     <ApprovalPresentation
       role="article"
@@ -40,24 +62,15 @@ export function ApprovalCard({
       title={heading}
       busy={busy}
       onDecide={onDecide}
-      approveLabel={
-        action.kind === "studyBlock.move"
-          ? "Approve this move"
-          : action.kind === "studyBlock.remove"
-            ? "Approve this removal"
-            : "Approve this block"
-      }
+      approveLabel={approveLabel}
       denyLabel="Don't"
       description={
         <>
           {approval.responsibility
             ? `${presets[approval.responsibility.preset] ?? "A Responsibility"} asks`
             : "nunio asks"}
-          {action.work.course && ` for ${action.work.course}`}:{" "}
-          {action.from && action.to
-            ? `from ${span(action.from)} to ${span(action.to)}`
-            : `on ${span((action.to ?? action.from)!)}`}
-          .
+          {action.work.course && ` for ${action.work.course}`}
+          {time}.
         </>
       }
     >

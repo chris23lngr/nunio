@@ -21,6 +21,13 @@ export interface PlanState {
     estimateMinutes: number | null;
     done: boolean;
     dailyLimitMinutes?: number | null;
+    /** A window of a Task toward no Obligation, such as a Course Event's Follow-up (ADR-0022). */
+    earliest?: Date | null;
+    due?: Date | null;
+    /** A Task toward no Obligation ranks as its Course does; one toward an Obligation as the Obligation. */
+    priority?: number;
+    /** The Routine, by its Event Series, that a Preparation or Follow-up comes from. */
+    routine?: string | null;
   }[];
   studyBlocks: {
     id: string;
@@ -68,7 +75,16 @@ export type Tradeoff =
       gainedMinutes: number;
       needsApproval: boolean;
     }
-  | { kind: "reduce_estimate"; workId: string; byMinutes: number };
+  | { kind: "reduce_estimate"; workId: string; byMinutes: number }
+  /** Skip a Routine until the deadline: its Preparations and Follow-ups give up their time (ADR-0022). */
+  | {
+      kind: "skip_routine";
+      routine: string;
+      /** The Event Series' title, which the Plan adds, so two such tradeoffs can be told apart. */
+      title?: string;
+      until: Date;
+      gainedMinutes: number;
+    };
 
 export interface Shortfall {
   workId: string;
@@ -157,6 +173,7 @@ function workOf({ obligations, tasks }: PlanState) {
         return [
           {
             ...obligation,
+            earliest: null,
             dailyLimitMinutes: obligation.dailyLimitMinutes ?? null,
           },
         ];
@@ -167,6 +184,7 @@ function workOf({ obligations, tasks }: PlanState) {
           due: obligation.due,
           estimateMinutes: task.estimateMinutes,
           priority: obligation.priority,
+          earliest: null,
           dailyLimitMinutes: task.dailyLimitMinutes ?? null,
         }));
     }),
@@ -174,9 +192,10 @@ function workOf({ obligations, tasks }: PlanState) {
       .filter((task) => !task.obligationId && !task.done)
       .map((task) => ({
         id: task.id,
-        due: null,
+        due: task.due ?? null,
+        earliest: task.earliest ?? null,
         estimateMinutes: task.estimateMinutes,
-        priority: Infinity,
+        priority: task.priority ?? Infinity,
         dailyLimitMinutes: task.dailyLimitMinutes ?? null,
       })),
   ];
@@ -189,14 +208,27 @@ export function rebalance(state: PlanState): Proposal {
     preferences: { studyWindow, maxMinutesPerDay },
   } = state;
   const calendar = [...state.fixedEvents, ...state.protectedTime];
+  const works = workOf(state);
   const conflicting = state.studyBlocks.filter((block) =>
     overlaps(calendar, block.start.getTime(), block.end.getTime()),
   );
   const overlapping: Overlap[] = conflicting
     .filter((block) => block.locked)
     .map((block) => ({ blockId: block.id, reason: "locked" }));
-  // A block the calendar now overlaps leaves the Plan to be placed again, unless it is Locked.
-  const displaced = conflicting.filter((block) => !block.locked);
+  /** A block still ahead that lies outside its work's window, as when its Course Event moved. */
+  const outsideWindow = (block: PlanState["studyBlocks"][number]) => {
+    const work = works.find((w) => w.id === block.workId);
+    return (
+      block.start >= state.now &&
+      Boolean(work?.earliest && work.due) &&
+      (block.start < work!.earliest! || block.end > work!.due!)
+    );
+  };
+  // A block the calendar now overlaps, or outside its window, leaves the Plan to be placed again, unless it is Locked.
+  const displaced = state.studyBlocks.filter(
+    (block) =>
+      !block.locked && (conflicting.includes(block) || outsideWindow(block)),
+  );
   const kept = state.studyBlocks.filter((block) => !displaced.includes(block));
   const usedPerDay = new Map<string, number>();
   for (const block of kept) addMinutes(usedPerDay, block, timeZone);
@@ -205,7 +237,11 @@ export function rebalance(state: PlanState): Proposal {
   const moves: Move[] = [];
   const shortfalls: Shortfall[] = [];
   const first = Math.ceil(state.now.getTime() / slotMs) * slotMs;
-  const works = workOf(state);
+  /** The first slot a work may take: now, or its window's start. */
+  const startOf = (work: { earliest: Date | null } | undefined) =>
+    work?.earliest
+      ? Math.max(first, Math.ceil(work.earliest.getTime() / slotMs) * slotMs)
+      : first;
   const dueOf = (workId: string) =>
     works.find((work) => work.id === workId)?.due?.getTime() ??
     first + horizonMs;
@@ -248,7 +284,7 @@ export function rebalance(state: PlanState): Proposal {
       due = dueOf(block.workId);
     let placed = false;
     for (
-      let start = first;
+      let start = startOf(works.find((w) => w.id === block.workId));
       start + slots * slotMs <= due && !placed;
       start += slotMs
     ) {
@@ -296,6 +332,8 @@ export function rebalance(state: PlanState): Proposal {
     )
       continue;
     const due = work.due.getTime();
+    // Work with a window starts no earlier than its window does.
+    const start = startOf(work);
     // Time the Plan already holds for this work before its deadline counts towards the Estimate.
     const planned = [
       ...kept.filter((block) => block.workId === work.id),
@@ -305,7 +343,7 @@ export function rebalance(state: PlanState): Proposal {
       work.estimateMinutes -
       planned.reduce((sum, interval) => sum + minutes(interval), 0);
     for (
-      let slot = first;
+      let slot = start;
       slot + slotMs <= due && remaining > 0;
       slot += slotMs
     ) {
@@ -330,7 +368,7 @@ export function rebalance(state: PlanState): Proposal {
     }
     if (remaining > 0) {
       let beyondLimit = 0;
-      for (let slot = first; slot + slotMs <= due; slot += slotMs)
+      for (let slot = start; slot + slotMs <= due; slot += slotMs)
         if (open(slot, false)) beyondLimit += slotMinutes;
       const tradeoffs: Tradeoff[] = [];
       if (beyondLimit)
@@ -367,6 +405,37 @@ export function rebalance(state: PlanState): Proposal {
           needsApproval: blocks.some((block) => block.placedBy === "student"),
         });
       }
+      // Skipping a Routine is the student's choice, so it is offered whatever the Routine's Priority.
+      const routines = new Map<string, number>();
+      // Skipping the Routine the short work comes from would only take time from it.
+      const own = state.tasks.find((task) => task.id === work.id)?.routine;
+      for (const task of state.tasks) {
+        if (!task.routine || task.routine === own) continue;
+        const time = [
+          ...kept.filter(
+            (b) => b.workId === task.id && !b.locked && b.start.getTime() < due,
+          ),
+          ...moves.filter(
+            (m) =>
+              m.kind === "create" &&
+              m.workId === task.id &&
+              m.start.getTime() < due,
+          ),
+        ] as Interval[];
+        const gained = time.reduce((sum, i) => sum + minutes(i), 0);
+        if (gained)
+          routines.set(
+            task.routine,
+            (routines.get(task.routine) ?? 0) + gained,
+          );
+      }
+      for (const [routine, gainedMinutes] of routines)
+        tradeoffs.push({
+          kind: "skip_routine",
+          routine,
+          until: work.due,
+          gainedMinutes,
+        });
       tradeoffs.push({
         kind: "reduce_estimate",
         workId: work.id,

@@ -687,6 +687,68 @@ describe("rechecks at dispatch", () => {
     ).toMatchObject({ status: "done" });
   });
 
+  it("creates a block for a Task in the Grant's Course without asking, though it is toward no Obligation", async () => {
+    const s = await student();
+    const r = await run(s);
+    const taskId = randomUUID();
+    await admin.task.create({
+      data: {
+        id: taskId,
+        studentId: s.studentId,
+        courseId: s.courseId,
+        title: "VL 3 nacharbeiten",
+      },
+    });
+
+    expect(
+      await gate(fakeExecutor().executor).perform(r.p, {
+        key: `${r.runId}:1`,
+        intent: {
+          kind: "studyBlock.create",
+          workId: taskId,
+          start: new Date("2026-11-11T09:00:00Z"),
+          end: new Date("2026-11-11T10:00:00Z"),
+        },
+      }),
+    ).toMatchObject({ status: "done" });
+  });
+
+  it("asks before adding or reopening a Task, even in a Run whose Grant covers its Course", async () => {
+    const s = await student();
+    const r = await run(s);
+    const taskId = randomUUID();
+    await admin.task.create({
+      data: {
+        id: taskId,
+        studentId: s.studentId,
+        courseId: s.courseId,
+        title: "VL 3 nacharbeiten",
+        doneAt: now,
+      },
+    });
+    const g = gate(fakeExecutor().executor);
+
+    expect(
+      await g.perform(r.p, {
+        key: `${r.runId}:1`,
+        intent: {
+          kind: "task.create",
+          title: "VL 4 vorbereiten",
+          courseId: s.courseId,
+          fixedEventId: null,
+          role: null,
+          estimateMinutes: 30,
+        },
+      }),
+    ).toMatchObject({ status: "awaiting_approval" });
+    expect(
+      await g.perform(r.p, {
+        key: `${r.runId}:2`,
+        intent: { kind: "task.reopen", taskId },
+      }),
+    ).toMatchObject({ status: "awaiting_approval" });
+  });
+
   it("asks before moving a block the student placed, even with a Grant", async () => {
     const s = await student();
     await admin.studyBlock.update({

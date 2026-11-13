@@ -36,12 +36,23 @@ export type ChatPart =
     }
   | ProposalPart<"tool-proposeStudyBlock", { work: string } & Times>
   | ProposalPart<"tool-proposeStudyBlockMove", { block: string } & Times>
-  | ProposalPart<"tool-proposeStudyBlockRemove", { block: string }>;
+  | ProposalPart<"tool-proposeStudyBlockRemove", { block: string }>
+  | ProposalPart<
+      "tool-proposeTask",
+      {
+        title: string;
+        course?: string;
+        event?: string;
+        role?: "preparation" | "follow_up";
+        minutes?: number;
+      }
+    >
+  | ProposalPart<"tool-proposeTaskReopen", { task: string }>;
 
 /** Where a proposed block would be, in the student's time zone as the model gave it. */
 type Times = { start: string; end: string };
 
-/** A proposed Study Block change, asked of the student as an Action under `key` once the answer is saved. */
+/** A proposed Study Block or Task change, asked of the student as an Action under `key` once the answer is saved. */
 export type ProposalPart<Type extends string, Input> = {
   type: Type;
   toolCallId: string;
@@ -51,12 +62,17 @@ export type ProposalPart<Type extends string, Input> = {
   notes: BlockNote[];
 };
 
+const proposalTypes = new Set([
+  "tool-proposeStudyBlock",
+  "tool-proposeStudyBlockMove",
+  "tool-proposeStudyBlockRemove",
+  "tool-proposeTask",
+  "tool-proposeTaskReopen",
+]);
 export const isProposal = (
   part: ChatPart,
 ): part is Extract<ChatPart, { approvalId: string }> =>
-  part.type === "tool-proposeStudyBlock" ||
-  part.type === "tool-proposeStudyBlockMove" ||
-  part.type === "tool-proposeStudyBlockRemove";
+  proposalTypes.has(part.type);
 
 /** Removes Citation tags that no search returned, so they never show as Citations. */
 export const withoutUnknownTags = (text: string, tags: ReadonlySet<string>) =>

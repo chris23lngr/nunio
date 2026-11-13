@@ -91,7 +91,7 @@ Something the student owes outside nunio by a deadline, such as a problem set, a
 _Avoid_: Assignment, deadline, due item, commitment
 
 **Task**:
-A visible, completable step the student or nunio takes toward an Obligation or goal, such as "do questions 1–4".
+A visible, completable step the student or nunio takes toward an Obligation or goal, such as "do questions 1–4". It belongs to its Obligation's Course, or to a Course the student set it in, or to none.
 _Avoid_: To-do, step, job
 
 **Study Block**:
@@ -123,6 +123,26 @@ _Avoid_: Schedule, timetable, calendar, roadmap
 **Fixed Event**:
 A calendar event nunio did not create, such as a lecture or a job shift. nunio plans around Fixed Events and never changes them on its own.
 _Avoid_: Commitment, appointment, external event
+
+**Event Series**:
+The Fixed Events of one calendar that share a title, such as every lecture of a Course in a Semester, whether the calendar repeats one event or lists each on its own.
+_Avoid_: Recurrence, recurring event
+
+**Course Event**:
+A Fixed Event whose Event Series the student confirmed as part of a Course, such as a lecture or tutorial. It stays a Fixed Event; until the student confirms, nunio's guess at its Course is only a proposal.
+_Avoid_: Session, lecture, class, meeting
+
+**Routine**:
+The student's standing instruction to prepare for, follow up on, or both, each Course Event of one Event Series for a set time. A Routine is the student's own planning, not a Responsibility.
+_Avoid_: Rule, template, habit, recurring task
+
+**Preparation**:
+A Task for one Course Event, done after the previous Course Event of its Event Series and before this one starts.
+_Avoid_: Prep, pre-reading
+
+**Follow-up**:
+A Task for one Course Event, done after it ends and before the next Course Event of its Event Series. Once that time passes undone, it stays open as a backlog that nunio no longer plans by itself.
+_Avoid_: Review, recap, revision
 
 **Estimate**:
 The expected effort for a Task or Obligation, proposed by nunio and correctable by the student.

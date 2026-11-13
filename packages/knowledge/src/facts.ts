@@ -1121,6 +1121,14 @@ export function createFacts({
           where: { courseId: fromId },
           data: { courseId: intoId },
         });
+        await tx.task.updateMany({
+          where: { courseId: fromId },
+          data: { courseId: intoId },
+        });
+        await tx.eventSeries.updateMany({
+          where: { courseId: fromId },
+          data: { courseId: intoId },
+        });
         await tx.course.updateMany({
           where: { mergedIntoId: fromId },
           data: { mergedIntoId: intoId },

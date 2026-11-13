@@ -25,6 +25,8 @@ model User {
   calendarSources  CalendarSource[]
   priorities       Priority[]
   fixedEvents      FixedEvent[]
+  eventSeries      EventSeries[]
+  routines         Routine[]
   projects         Project[]
   responsibilities Responsibility[]
   runs             Run[]

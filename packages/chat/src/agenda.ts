@@ -34,8 +34,8 @@ const nextDay = (day: string) =>
 
 /**
  * Reads the student's Plan for a range of days (ADR-0020): Obligations due in it, with their Shortfalls (ADR-0021),
- * Tasks and the tag to cite each by, then Study Blocks and Fixed Events, then every current Shortfall. Titles may come
- * from a Source, so they are fenced as data.
+ * Tasks and the tag to cite each by, open Tasks toward no Obligation (ADR-0022), then Study Blocks and Fixed Events
+ * with any Course Event marked, then every current Shortfall. Titles may come from a Source, so they are fenced as data.
  */
 export function agendaTool(
   turn: Turn,
@@ -69,7 +69,7 @@ export function agendaTool(
   const at = (instant: Date) => local.format(instant).replace(",", "");
   const time = (instant: Date) => at(instant).slice(11);
   return tool({
-    description: `Reads the student's Plan for a range of days: the Obligations due in it, each with its Shortfall and tradeoffs or why it cannot be planned, its Tasks and the tag to cite it by, then Study Blocks and Fixed Events, and finally every current Shortfall, also beyond the range. Obligations, Tasks and Study Blocks carry a handle such as O1, T1 or B1, which proposals name them by. Dates are YYYY-MM-DD in the student's time zone, at most ${maxDays} days apart, both included.`,
+    description: `Reads the student's Plan for a range of days: the Obligations due in it, each with its Shortfall and tradeoffs or why it cannot be planned, its Tasks and the tag to cite it by, the open Tasks toward no Obligation, then Study Blocks and Fixed Events, and finally every current Shortfall, also beyond the range. A Fixed Event that is a Course Event names its Course and its Preparation and Follow-up, if any. Obligations, Tasks, Study Blocks and Course Events carry a handle such as O1, T1, B1 or E1, which proposals name them by. Dates are YYYY-MM-DD in the student's time zone, at most ${maxDays} days apart, both included.`,
     inputSchema: jsonSchema<{ from: string; to: string }>({
       type: "object",
       properties: { from: date, to: date },
@@ -105,6 +105,7 @@ export function agendaTool(
       const obligations = view.obligations
         .filter((o) => o.due && within(o.due))
         .sort((a, b) => a.due!.getTime() - b.due!.getTime());
+      const loose = view.tasks.filter((t) => !t.obligationId && !t.done);
       const blocks = view.studyBlocks.filter(overlaps);
       const events = view.fixedEvents.filter(overlaps);
       /** The handle of an Obligation or Task, which proposals name it by. */
@@ -118,7 +119,10 @@ export function agendaTool(
           ? `study beyond the daily limit (gains ${tradeoff.gainedMinutes} min, needs Approval)`
           : tradeoff.kind === "free_time_from"
             ? `free time from ${workHandle(tradeoff.workId)}'s blocks ${tradeoff.blockIds.map((id) => turn.handleFor("block", id)).join(", ")} (gains ${tradeoff.gainedMinutes} min${tradeoff.needsApproval ? ", needs Approval" : ""})`
-            : `plan ${tradeoff.byMinutes} min less for it`;
+            : tradeoff.kind === "skip_routine"
+              ? // The student skips a Routine on Home or the Course page; a Chat has no tool for it (ADR-0022).
+                `skip preparing for and following up on ${tradeoff.title ?? "a series"} until ${at(tradeoff.until)} (gains ${tradeoff.gainedMinutes} min; the student does this on Home or the Course page)`
+              : `plan ${tradeoff.byMinutes} min less for it`;
       const titleOf = (work: { kind: string; id: string }) =>
         work.kind === "obligation"
           ? view.obligations.find((o) => o.id === work.id)?.title
@@ -159,6 +163,13 @@ export function agendaTool(
               ),
           ];
         }),
+        // They have no deadline, so they show whatever the range.
+        "Open Tasks toward no Obligation:",
+        ...(loose.length ? [] : ["none"]),
+        ...loose.map((t) => {
+          const course = t.courseId ? handleOf.get(t.courseId) : undefined;
+          return `${turn.handleFor("task", t.id)} · ${t.title} · ${t.course ?? "no Course"}${course ? ` (${course})` : ""}`;
+        }),
         "Study Blocks:",
         ...(blocks.length ? [] : ["none"]),
         ...blocks.map(
@@ -167,7 +178,23 @@ export function agendaTool(
         ),
         "Fixed Events:",
         ...(events.length ? [] : ["none"]),
-        ...events.map((e) => `${at(e.start)}–${time(e.end)} · ${e.title}`),
+        ...events.map((e) => {
+          const line = `${at(e.start)}–${time(e.end)} · ${e.title}`;
+          if (!e.courseId) return line;
+          // A Course Event, with the Preparation and Follow-up it has, done or not (ADR-0022).
+          const course = handleOf.get(e.courseId);
+          const title = course ? courses.get(course)?.title : undefined;
+          const roles = view.tasks
+            .filter((t) => t.fixedEventId === e.id && t.role)
+            .map(
+              (t) =>
+                `${t.role === "preparation" ? "Preparation" : "Follow-up"} ${turn.handleFor("task", t.id)} (${t.done ? "done" : "open"})`,
+            );
+          return [
+            `${turn.handleFor("event", e.id)} · ${line} · Course Event of ${title ?? "a Course"}${course ? ` (${course})` : ""}`,
+            ...roles,
+          ].join(" · ");
+        }),
         // Every Shortfall, so a deadline beyond the range can be judged too (ADR-0021).
         "Shortfalls until their deadlines:",
         ...(view.proposal.shortfalls.length ? [] : ["none"]),

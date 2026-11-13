@@ -25,6 +25,7 @@ import { PlanLegend } from "./components/plan-legend";
 import { ProtectedTimeBlock } from "./components/protected-time-block";
 import { SuggestionsButton } from "./components/suggestions-button";
 import { SuggestionsSheet } from "./components/suggestions-sheet";
+import { TaskList } from "./components/task-list";
 import { WeekGrid } from "./components/week-grid";
 import type { DisplayOptions } from "./components/week-toolbar";
 import { WeekToolbar } from "./components/week-toolbar";
@@ -95,6 +96,48 @@ export function PlanScreen({
     plan.data && selected ? blockDetails(plan.data, selected, colors) : null;
   const event =
     plan.data && selected ? fixedEventDetails(plan.data, selected) : null;
+  const eventCourse = event?.courseId
+    ? (courses.data?.courses.find((c) => c.id === event.courseId)?.title ??
+      null)
+    : null;
+  const task = useMutation({
+    mutationFn: async (
+      change:
+        | { complete: string }
+        | { add: { title: string; courseId: string | null } },
+    ) => {
+      const client = createApiClient(apiOrigin);
+      const { response } =
+        "complete" in change
+          ? await client.POST("/api/me/tasks/{id}/done", {
+              params: { path: { id: change.complete } },
+              body: { done: true },
+            })
+          : await client.POST("/api/me/tasks", {
+              body: { ...change.add, obligationId: null },
+            });
+      if (!response.ok)
+        throw new Error("Die Aufgabe konnte nicht gespeichert werden.");
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({
+        queryKey: planQuery(apiOrigin).queryKey,
+      }),
+  });
+  const detach = useMutation({
+    mutationFn: async (id: string) => {
+      const { response } = await createApiClient(apiOrigin).POST(
+        "/api/me/fixed-events/{id}/detach",
+        { params: { path: { id } } },
+      );
+      if (!response.ok)
+        throw new Error("Der Termin konnte nicht geändert werden.");
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({
+        queryKey: planQuery(apiOrigin).queryKey,
+      }),
+  });
   const block = useMutation({
     mutationFn: async (
       action: { id: string; locked: boolean } | { id: string; delete: true },
@@ -237,6 +280,33 @@ export function PlanScreen({
             <PlanLegend />
           </div>
         )}
+        {plan.data && (
+          <div className="mt-10 w-full max-w-[calc(64rem+4rem)] px-8">
+            <TaskList
+              tasks={plan.data.tasks
+                .filter((t) => !t.done)
+                .map((t) => {
+                  const obligation = plan.data.obligations.find(
+                    (o) => o.id === t.obligationId,
+                  );
+                  const due = t.window?.end ?? obligation?.due ?? null;
+                  return {
+                    id: t.id,
+                    title: t.title,
+                    course: t.course ?? obligation?.course ?? null,
+                    due: due ? new Date(due) : null,
+                  };
+                })}
+              courses={(courses.data?.courses ?? []).filter(
+                (c) => c.status === "accepted" && !c.archived,
+              )}
+              error={task.error?.message ?? null}
+              busy={task.isPending}
+              onComplete={(id) => task.mutate({ complete: id })}
+              onAdd={(added) => task.mutateAsync({ add: added })}
+            />
+          </div>
+        )}
       </div>
       <Popover
         open={details !== null || event !== null}
@@ -261,7 +331,16 @@ export function PlanScreen({
               }}
             />
           )}
-          {event && <FixedEventDetails {...event} />}
+          {event && selected && (
+            <FixedEventDetails
+              {...event}
+              course={eventCourse}
+              onDetach={() => {
+                detach.mutate(selected);
+                setSelected(null);
+              }}
+            />
+          )}
         </PopoverContent>
       </Popover>
       <SuggestionsSheet

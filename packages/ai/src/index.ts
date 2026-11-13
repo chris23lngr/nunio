@@ -50,6 +50,13 @@ export {
   type SyncedModel,
 } from "./prices.js";
 export {
+  createSeriesAssigner,
+  type SeriesAssigner,
+  type SeriesAssignmentInput,
+  type SeriesCourse,
+  type SeriesRequest,
+} from "./series-assignment.js";
+export {
   createEmbedder,
   createScanReader,
   type Embedder,
