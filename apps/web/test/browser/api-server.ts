@@ -2,16 +2,20 @@ import type { ServerResponse } from "node:http";
 import { createServer } from "node:http";
 
 const chatId = "00000000-0000-4000-8000-000000000001";
-const history = Array.from({ length: 12 }, (_, index) => ({
-  id: `00000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
-  role: index % 2 ? "assistant" : "student",
-  text:
+const history = Array.from({ length: 12 }, (_, index) => {
+  const text =
     index % 2
       ? "Eine ausführliche Antwort mit mehreren Absätzen.\n\n".repeat(4)
-      : `Frage ${index / 2 + 1}`,
-  citations: [],
-  createdAt: "2026-11-10T09:48:00Z",
-}));
+      : `Frage ${index / 2 + 1}`;
+  return {
+    id: `00000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
+    role: index % 2 ? "assistant" : "student",
+    text,
+    parts: [{ type: "text", text }],
+    citations: [],
+    createdAt: "2026-11-10T09:48:00Z",
+  };
+});
 // The open answer stream, finished by GET /release-stream.
 let release: (() => void) | undefined;
 
