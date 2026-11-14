@@ -132,6 +132,26 @@ test("signing out clears private cached data and returns the student to sign-in"
   expect(router.refresh).toHaveBeenCalled();
 });
 
+test("signing out forgets the Chat open on this device", async () => {
+  const user = userEvent.setup();
+  api.route("POST", "/api/auth/sign-out", () =>
+    Response.json({ success: true }),
+  );
+  // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API.
+  document.cookie = "nunio_open_chat=student-1%3Achat-1; path=/";
+  renderSidebar(createQueryClient(() => {}));
+  await user.click(
+    await screen.findByRole("button", { name: "Justus Schuhmacher" }),
+  );
+
+  await user.click(await screen.findByRole("menuitem", { name: "Abmelden" }));
+
+  await vi.waitFor(() =>
+    expect(router.replace).toHaveBeenCalledWith("/sign-in"),
+  );
+  expect(document.cookie).toBe("");
+});
+
 test("a failed sign-out stays visible and can be retried", async () => {
   const user = userEvent.setup();
   let fail = true;
