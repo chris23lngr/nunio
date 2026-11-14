@@ -3,6 +3,7 @@
 export type { AgendaOutput } from "./agenda.js";
 export {
   type AskStep,
+  type ChatCursor,
   type ChatMessage,
   type Chats,
   createChats,
