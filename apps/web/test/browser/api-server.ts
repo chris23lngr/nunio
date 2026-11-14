@@ -2,15 +2,30 @@ import type { ServerResponse } from "node:http";
 import { createServer } from "node:http";
 
 const chatId = "00000000-0000-4000-8000-000000000001";
-const history = Array.from({ length: 12 }, (_, index) => ({
-  id: `00000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
-  role: index % 2 ? "assistant" : "student",
-  text:
+const history = Array.from({ length: 12 }, (_, index) => {
+  const text =
     index % 2
       ? "Eine ausführliche Antwort mit mehreren Absätzen.\n\n".repeat(4)
-      : `Frage ${index / 2 + 1}`,
-  citations: [],
-  createdAt: "2026-11-10T09:48:00Z",
+      : `Frage ${index / 2 + 1}`;
+  return {
+    id: `00000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
+    role: index % 2 ? "assistant" : "student",
+    text,
+    parts: [{ type: "text", text }],
+    citations: [],
+    createdAt: "2026-11-10T09:48:00Z",
+  };
+});
+// The student's Chats, most recent first: the one with `history`, then enough to need a second page of 30.
+const chats = Array.from({ length: 35 }, (_, index) => ({
+  id: index
+    ? `00000000-0000-4000-8000-${String(index + 500).padStart(12, "0")}`
+    : chatId,
+  title: index ? `Älterer Chat ${index}` : "Frage 1",
+  // Four and a half days ago, then a day earlier each.
+  lastActivityAt: new Date(
+    Date.now() - (index + 4.5) * 86_400_000,
+  ).toISOString(),
 }));
 // The open answer stream, finished by GET /release-stream.
 let release: (() => void) | undefined;
@@ -103,6 +118,17 @@ createServer((request, response) => {
     );
   } else if (request.url === "/api/auth/list-sessions") {
     response.end("[]");
+  } else if (request.url?.startsWith("/api/me/chats?")) {
+    // The cursor is the index to continue from.
+    const query = new URL(request.url, "http://localhost").searchParams;
+    const from = Number(query.get("cursor") ?? 0);
+    const to = from + Number(query.get("limit"));
+    response.end(
+      JSON.stringify({
+        chats: chats.slice(from, to),
+        nextCursor: to < chats.length ? String(to) : null,
+      }),
+    );
   } else if (request.url === `/api/me/chats/${chatId}`) {
     response.end(
       JSON.stringify({ id: chatId, courses: [], messages: history }),
