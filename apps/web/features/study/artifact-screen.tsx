@@ -16,9 +16,11 @@ import Link from "next/link";
 import { useState } from "react";
 import { PageHeader } from "@/features/shared/components/page-header";
 import { SourceCitations } from "@/features/shared/components/source-citations";
+import { timeAgo } from "@/features/shared/time-ago";
 import { createApiClient } from "@/lib/api-client";
+import { answersMutation } from "./api/answers-mutation";
 import { attemptsQueries, coursesQueries } from "./api/study-queries";
-import { PracticeSet } from "./practice-set";
+import { PracticeSet } from "./components/practice-set";
 
 type Artifact =
   paths["/api/me/artifacts/{id}"]["get"]["responses"][200]["content"]["application/json"];
@@ -38,23 +40,6 @@ const kinds = {
   draft: "Entwurf",
   critique: "Kritik",
 };
-
-/** When the student last practised, in words such as "vor 3 Tagen". */
-function ago(date: Date, now = new Date()) {
-  const format = new Intl.RelativeTimeFormat("de", { numeric: "auto" });
-  const seconds = (date.getTime() - now.getTime()) / 1000;
-  const units = [
-    ["year", 31_536_000],
-    ["month", 2_592_000],
-    ["day", 86_400],
-    ["hour", 3_600],
-    ["minute", 60],
-  ] as const;
-  for (const [unit, size] of units)
-    if (Math.abs(seconds) >= size)
-      return format.format(Math.round(seconds / size), unit);
-  return "gerade eben";
-}
 
 type Edited = { id?: string; front: string; back: string }[];
 const saveErrors: Record<string, string> = {
@@ -241,9 +226,17 @@ export function ArtifactScreen({
     ...coursesQueries(apiOrigin),
     enabled: !!artifact && !practice?.title,
   });
-  const attempts = useQuery({
-    ...attemptsQueries(apiOrigin, id),
-    enabled: !!practice,
+  const queryClient = useQueryClient();
+  const attemptsQuery = attemptsQueries(apiOrigin, id);
+  const attempts = useQuery({ ...attemptsQuery, enabled: !!practice });
+  const check = useMutation({
+    ...answersMutation(apiOrigin, id),
+    // The new Attempts replace the latest ones on their items.
+    onSuccess: (answered) =>
+      queryClient.setQueryData(attemptsQuery.queryKey, (old = []) => [
+        ...old.filter((a) => !answered.some((n) => n.itemId === a.itemId)),
+        ...answered,
+      ]),
   });
   const topics = (courses.data ?? [])
     .flatMap((course) => course.facts)
@@ -253,12 +246,14 @@ export function ArtifactScreen({
     practice?.title ??
     (topics.length
       ? new Intl.ListFormat("de", { type: "conjunction" }).format(topics)
-      : artifact
+      : // Named by its kind only once its Topics are known to be none.
+        artifact && courses.status !== "pending"
         ? kinds[artifact.kind]
         : "");
   const practised = (attempts.data ?? [])
     .map((attempt) => new Date(attempt.createdAt))
     .sort((a, b) => b.getTime() - a.getTime())[0];
+  const since = practised && timeAgo(practised, new Date(), "long");
   return (
     <main className="relative min-h-dvh bg-white font-sans text-base-800">
       <PageHeader>
@@ -291,9 +286,9 @@ export function ArtifactScreen({
         <h1 className="mt-4 text-2xl leading-8 font-medium text-base-800">
           {title}
         </h1>
-        {practised && (
+        {since && (
           <p className="mt-2 text-base leading-6 text-base-500">
-            Zuletzt gelernt {ago(practised)}
+            Zuletzt gelernt {since.charAt(0).toLowerCase() + since.slice(1)}
           </p>
         )}
         <div className="mt-16 flex flex-col gap-4">
@@ -312,9 +307,11 @@ export function ArtifactScreen({
           )}
           {practice && (
             <PracticeSet
-              apiOrigin={apiOrigin}
-              artifactId={id}
               items={practice.items}
+              attempts={attempts.data ?? []}
+              checking={check.isPending}
+              error={check.error?.message ?? null}
+              onCheck={(answers) => check.mutate(answers)}
             />
           )}
           {artifact?.content && "text" in artifact.content && (

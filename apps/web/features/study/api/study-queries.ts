@@ -8,14 +8,14 @@ export type Level =
   paths["/api/me/courses/{id}/levels"]["get"]["responses"][200]["content"]["application/json"][number];
 export type ArtifactRequest =
   paths["/api/me/artifacts"]["post"]["requestBody"]["content"]["application/json"];
-export type Answered =
+export type Attempt =
   paths["/api/me/artifacts/{id}/attempts"]["get"]["responses"][200]["content"]["application/json"][number];
 
 /** The latest Attempt on each Practice Item of a practice set the student answered. */
 export function attemptsQueries(apiOrigin: string, artifactId: string) {
   return queryOptions({
     queryKey: [apiOrigin, "attempts", artifactId],
-    queryFn: async ({ signal }): Promise<Answered[]> => {
+    queryFn: async ({ signal }): Promise<Attempt[]> => {
       const result = await createApiClient(apiOrigin).GET(
         "/api/me/artifacts/{id}/attempts",
         { params: { path: { id: artifactId } }, signal },

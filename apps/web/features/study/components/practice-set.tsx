@@ -4,13 +4,10 @@ import { cn } from "@nunio/ui";
 import { Button } from "@nunio/ui/components/button/button";
 import { Citation } from "@nunio/ui/components/citation/citation";
 import { Textarea } from "@nunio/ui/components/textarea/textarea";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BadgeCheck, CircleAlert, OctagonX, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { sourceReferences } from "@/features/shared/components/source-citations";
-import { createApiClient } from "@/lib/api-client";
-import type { Answered } from "./api/study-queries";
-import { attemptsQueries } from "./api/study-queries";
+import type { Attempt } from "../api/study-queries";
 
 type Item = {
   id: string;
@@ -79,7 +76,7 @@ function Cited({
   });
 }
 
-function Feedback({ attempt }: { attempt: Answered }) {
+function Feedback({ attempt }: { attempt: Attempt }) {
   const verdict = verdicts[attempt.verdict ?? "ungraded"];
   return (
     <section
@@ -100,7 +97,7 @@ function Feedback({ attempt }: { attempt: Answered }) {
       </p>
       <p className={cn("text-sm leading-6", verdict.text)}>
         {attempt.verdict === null ? (
-          attempt.reason === "allowance_exhausted" ? (
+          attempt.ungradedReason === "allowance_exhausted" ? (
             "Dein KI-Kontingent ist aufgebraucht."
           ) : (
             "Versuch es noch einmal."
@@ -118,12 +115,15 @@ function Feedback({ attempt }: { attempt: Answered }) {
   );
 }
 
+/** Where a jump to a question puts its top (`scroll-mt-8`), with some room for rounding. */
+const jumpedTo = 40;
+
 /** The list of questions beside them; the one in view is marked. */
 function Questions({ items }: { items: Item[] }) {
   const [active, setActive] = useState(items[0]?.id);
   const clicked = useRef<string | null>(null);
   useEffect(() => {
-    // The question in view is the last one whose top passed below the header. At the end of the page the last
+    // The question in view is the last one whose top reached where a jump puts it. At the end of the page the last
     // questions cannot get there, so the one the student jumped to, or else the last, is in view.
     const mark = () => {
       const end =
@@ -140,7 +140,7 @@ function Questions({ items }: { items: Item[] }) {
         const top = document
           .getElementById(`frage-${item.id}`)
           ?.getBoundingClientRect().top;
-        if (top !== undefined && top <= 96) passed = item.id;
+        if (top !== undefined && top <= jumpedTo) passed = item.id;
       }
       setActive(passed);
     };
@@ -177,21 +177,22 @@ function Questions({ items }: { items: Item[] }) {
   );
 }
 
-/** A practice set to answer: every answer stays editable, and one button checks the new and changed ones. */
+/** A practice set to answer: every answer stays editable, and one button checks the new, changed and ungraded ones. */
 export function PracticeSet({
-  apiOrigin,
-  artifactId,
   items,
+  attempts,
+  checking,
+  error,
+  onCheck,
 }: {
-  apiOrigin: string;
-  artifactId: string;
   items: Item[];
+  /** The latest Attempt on each answered item. */
+  attempts: Attempt[];
+  checking: boolean;
+  error: string | null;
+  onCheck: (answers: { itemId: string; text: string }[]) => void;
 }) {
-  const queryClient = useQueryClient();
-  const attempts = attemptsQueries(apiOrigin, artifactId);
-  const latest = new Map(
-    (useQuery(attempts).data ?? []).map((attempt) => [attempt.itemId, attempt]),
-  );
+  const latest = new Map(attempts.map((attempt) => [attempt.itemId, attempt]));
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   // Until the student edits an answer, it is their latest one.
   const textOf = (id: string) => drafts[id] ?? latest.get(id)?.text ?? "";
@@ -199,26 +200,6 @@ export function PracticeSet({
     const text = textOf(item.id);
     const last = latest.get(item.id);
     return text.trim() && (!last || last.text !== text || !last.verdict);
-  });
-  const check = useMutation({
-    mutationFn: async (answers: { itemId: string; text: string }[]) => {
-      const result = await createApiClient(apiOrigin).POST(
-        "/api/me/artifacts/{id}/attempts",
-        { params: { path: { id: artifactId } }, body: { answers } },
-      );
-      if (!result.data)
-        throw new Error(
-          "Deine Antworten konnten nicht geprüft werden. Versuch es noch einmal.",
-        );
-      return result.data;
-    },
-    onSuccess: (answered) =>
-      queryClient.setQueryData(attempts.queryKey, (old = []) =>
-        [
-          ...old.filter((a) => !answered.some((n) => n.itemId === a.itemId)),
-          ...answered,
-        ].sort((a, b) => Number(a.itemId) - Number(b.itemId)),
-      ),
   });
   return (
     <div className="flex items-start gap-16">
@@ -233,7 +214,6 @@ export function PracticeSet({
               <article
                 key={item.id}
                 id={`frage-${item.id}`}
-                data-item={item.id}
                 aria-labelledby={`frage-${item.id}-titel`}
                 className="flex scroll-mt-8 flex-col gap-3"
               >
@@ -247,7 +227,7 @@ export function PracticeSet({
                   aria-label="Deine Antwort"
                   placeholder="Deine Antwort"
                   value={textOf(item.id)}
-                  disabled={check.isPending}
+                  disabled={checking}
                   onChange={(event) =>
                     setDrafts((all) => ({
                       ...all,
@@ -273,22 +253,22 @@ export function PracticeSet({
           <Button
             type="button"
             variant="primary"
-            disabled={check.isPending || !due.length}
+            disabled={checking || !due.length}
             onClick={() =>
-              check.mutate(
+              onCheck(
                 due.map((item) => ({ itemId: item.id, text: textOf(item.id) })),
               )
             }
           >
-            {check.isPending ? (
+            {checking ? (
               <span className="shimmer">Wird geprüft…</span>
             ) : (
               "Antworten prüfen"
             )}
           </Button>
-          {check.error && (
+          {error && (
             <p role="alert" className="text-sm text-destructive-700">
-              {check.error.message}
+              {error}
             </p>
           )}
         </div>

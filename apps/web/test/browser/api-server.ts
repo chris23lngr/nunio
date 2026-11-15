@@ -90,7 +90,7 @@ const graded = [
   text,
   verdict,
   feedback: { text: feedback, citations: [{ tag: "S1", provenance: source }] },
-  reason: null,
+  ungradedReason: null,
   createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
 }));
 // The open answer stream, finished by GET /release-stream.

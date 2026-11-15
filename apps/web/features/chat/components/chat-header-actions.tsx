@@ -16,8 +16,8 @@ import {
 } from "@nunio/ui/components/tooltip/tooltip";
 import { ChevronDown, History, Plus } from "lucide-react";
 import Link from "next/link";
+import { timeAgo } from "@/features/shared/time-ago";
 import type { ChatSummary } from "../api/chat-list-queries";
-import { chatAge } from "../chat-age";
 import { chatHref } from "../chat-routes";
 
 /**
@@ -58,7 +58,7 @@ export function ChatHeaderActions({
               >
                 <span className="min-w-0 flex-1 truncate">{chat.title}</span>
                 <span className="shrink-0 font-normal text-base-500">
-                  {chatAge(new Date(chat.lastActivityAt), now, "short")}
+                  {timeAgo(new Date(chat.lastActivityAt), now, "short")}
                 </span>
               </DropdownMenuLinkItem>
             ))}

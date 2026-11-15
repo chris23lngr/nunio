@@ -84,7 +84,7 @@ const attempt = (
     text: "Punktweise reicht nicht [S1].",
     citations: [{ tag: "S1", provenance: source }],
   },
-  reason: null,
+  ungradedReason: null,
   createdAt: daysAgo(3),
   ...extra,
 });
@@ -261,7 +261,11 @@ test("says why an answer could not be graded, that Feedback went with its Source
     fail
       ? Response.json({ error: "internal" }, { status: 500 })
       : Response.json(
-          [attempt("2", "Abstand.", null, { reason: "allowance_exhausted" })],
+          [
+            attempt("2", "Abstand.", null, {
+              ungradedReason: "allowance_exhausted",
+            }),
+          ],
           { status: 201 },
         ),
   );
@@ -302,6 +306,22 @@ test("says why an answer could not be graded, that Feedback went with its Source
   expect(
     (within(open).getByLabelText("Deine Antwort") as HTMLTextAreaElement).value,
   ).toBe("Abstand.");
+});
+
+test("says on return why an answer is still ungraded", async () => {
+  serveArtifact(practiceSet, {
+    attempts: [
+      attempt("1", "Punktweise.", null, {
+        ungradedReason: "allowance_exhausted",
+      }),
+    ],
+  });
+
+  const answered = await screen.findByRole("article", { name: `1. ${first}` });
+  await within(answered).findByText("Konnte nicht bewertet werden");
+  expect(
+    within(answered).getByText("Dein KI-Kontingent ist aufgebraucht."),
+  ).toBeTruthy();
 });
 
 test("names a practice set made before titles by its Topics", async () => {
