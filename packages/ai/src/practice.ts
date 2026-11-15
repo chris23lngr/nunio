@@ -66,7 +66,7 @@ export interface Maker {
     input: PracticeInput,
     options: { signal: AbortSignal },
   ): Promise<{
-    value: { cards: Flashcard[] };
+    value: { title: string; cards: Flashcard[] };
     usage: { microUsd: number };
   }>;
   draft(
@@ -94,6 +94,9 @@ const schema = z.object({
   ),
 });
 const cardSchema = z.object({
+  title: z
+    .string()
+    .describe("A short title naming what the cards cover, without tags"),
   cards: z.array(
     z.object({
       topicIds: z
@@ -291,7 +294,7 @@ export function createMaker(models: Models): Maker {
         front: known(card.front),
         back: known(card.back),
       }));
-      return { value: { cards }, usage };
+      return { value: { title: output.title, cards }, usage };
     },
   };
 }

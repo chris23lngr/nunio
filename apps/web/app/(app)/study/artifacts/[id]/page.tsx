@@ -1,15 +1,11 @@
-import { redirect } from "next/navigation";
-import { ArtifactScreen } from "@/features/study/artifact-screen";
-import { apiOrigin, getSession } from "@/lib/session";
+import { permanentRedirect } from "next/navigation";
 
-export default async function ArtifactPage({
+/** Artifacts moved to /artifacts; old links and bookmarks still arrive. */
+export default async function MovedArtifactPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
   const { id } = await params;
-
-  return <ArtifactScreen apiOrigin={apiOrigin()} id={id} />;
+  permanentRedirect(`/artifacts/${encodeURIComponent(id)}`);
 }

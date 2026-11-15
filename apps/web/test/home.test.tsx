@@ -29,8 +29,8 @@ test("lists the Artifacts nunio made that the student has not opened yet", async
   const section = await screen.findByRole("region", { name: "Ready for you" });
   const links = within(section).getAllByRole("link");
   expect(links.map((l) => [l.textContent, l.getAttribute("href")])).toEqual([
-    ["Practice set", "/study/artifacts/a1"],
-    ["Flashcards", "/study/artifacts/a2"],
+    ["Practice set", "/artifacts/a1"],
+    ["Flashcards", "/artifacts/a2"],
   ]);
 });
 

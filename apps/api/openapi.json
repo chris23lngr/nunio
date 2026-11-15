@@ -3625,6 +3625,53 @@
           "withdrawn": {
             "type": "boolean",
             "description": "A Source it was drawn from is deleted, so its content is gone."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Its own title, else its Obligation's or its Topics' names; null when none is known."
+          },
+          "courseId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Its items or cards; null for a text, and until made or once withdrawn."
+          },
+          "version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Its latest version; null until made."
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When its latest version was made."
+          },
+          "lastPractisedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the student last answered one of its Practice Items."
+          },
+          "shaky": {
+            "type": "boolean",
+            "description": "One of its Topics is shaky or disputed for the student."
           }
         },
         "required": [
@@ -3636,7 +3683,14 @@
           "obligationId",
           "createdAt",
           "openedAt",
-          "withdrawn"
+          "withdrawn",
+          "title",
+          "courseId",
+          "count",
+          "version",
+          "updatedAt",
+          "lastPractisedAt",
+          "shaky"
         ]
       },
       "Approval": {
@@ -4424,393 +4478,456 @@
         ]
       },
       "Artifact": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ArtifactSummary"
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
           },
-          {
-            "type": "object",
-            "properties": {
-              "version": {
-                "type": [
-                  "integer",
-                  "null"
+          "kind": {
+            "type": "string",
+            "enum": [
+              "practice_set",
+              "flashcards",
+              "draft",
+              "critique"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "making",
+              "ready",
+              "failed"
+            ]
+          },
+          "failure": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "topicIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "obligationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "openedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "description": "A Source it was drawn from is deleted, so its content is gone."
+          },
+          "version": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Null for a practice set made before titles."
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "topicIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "question": {
+                          "type": "string"
+                        },
+                        "answer": {
+                          "type": "string"
+                        },
+                        "citations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "tag": {
+                                "type": "string"
+                              },
+                              "provenance": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "correction"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "kind"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "entry"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "kind"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "source"
+                                        ]
+                                      },
+                                      "sourceId": {
+                                        "type": "string"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "location": {
+                                        "type": "object",
+                                        "properties": {
+                                          "page": {
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "required": [
+                                          "page"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "sourceId",
+                                      "title",
+                                      "location"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "gone"
+                                    ]
+                                  }
+                                ],
+                                "description": "Resolved when shown; \"gone\" once its Source is deleted."
+                              }
+                            },
+                            "required": [
+                              "tag",
+                              "provenance"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "topicIds",
+                        "question",
+                        "answer",
+                        "citations"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "title",
+                  "items"
                 ]
               },
-              "content": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "title": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "description": "Null for a practice set made before titles."
-                      },
-                      "items": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "topicIds": {
-                              "type": "array",
-                              "items": {
+              {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Null for flashcards made before titles."
+                  },
+                  "cards": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "topicIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "front": {
+                          "type": "string"
+                        },
+                        "back": {
+                          "type": "string"
+                        },
+                        "citations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "tag": {
                                 "type": "string"
-                              }
-                            },
-                            "question": {
-                              "type": "string"
-                            },
-                            "answer": {
-                              "type": "string"
-                            },
-                            "citations": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "tag": {
-                                    "type": "string"
-                                  },
-                                  "provenance": {
-                                    "anyOf": [
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "kind": {
-                                            "type": "string",
-                                            "enum": [
-                                              "correction"
-                                            ]
-                                          }
-                                        },
-                                        "required": [
-                                          "kind"
-                                        ]
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "kind": {
-                                            "type": "string",
-                                            "enum": [
-                                              "entry"
-                                            ]
-                                          }
-                                        },
-                                        "required": [
-                                          "kind"
-                                        ]
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "kind": {
-                                            "type": "string",
-                                            "enum": [
-                                              "source"
-                                            ]
-                                          },
-                                          "sourceId": {
-                                            "type": "string"
-                                          },
-                                          "title": {
-                                            "type": "string"
-                                          },
-                                          "location": {
-                                            "type": "object",
-                                            "properties": {
-                                              "page": {
-                                                "type": "integer"
-                                              }
-                                            },
-                                            "required": [
-                                              "page"
-                                            ]
-                                          }
-                                        },
-                                        "required": [
-                                          "kind",
-                                          "sourceId",
-                                          "title",
-                                          "location"
-                                        ]
-                                      },
-                                      {
+                              },
+                              "provenance": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
                                         "type": "string",
                                         "enum": [
-                                          "gone"
+                                          "correction"
                                         ]
                                       }
-                                    ],
-                                    "description": "Resolved when shown; \"gone\" once its Source is deleted."
-                                  }
-                                },
-                                "required": [
-                                  "tag",
-                                  "provenance"
-                                ]
-                              }
-                            }
-                          },
-                          "required": [
-                            "id",
-                            "topicIds",
-                            "question",
-                            "answer",
-                            "citations"
-                          ]
-                        }
-                      }
-                    },
-                    "required": [
-                      "title",
-                      "items"
-                    ]
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "cards": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "topicIds": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "front": {
-                              "type": "string"
-                            },
-                            "back": {
-                              "type": "string"
-                            },
-                            "citations": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "tag": {
-                                    "type": "string"
+                                    },
+                                    "required": [
+                                      "kind"
+                                    ]
                                   },
-                                  "provenance": {
-                                    "anyOf": [
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "kind": {
-                                            "type": "string",
-                                            "enum": [
-                                              "correction"
-                                            ]
-                                          }
-                                        },
-                                        "required": [
-                                          "kind"
-                                        ]
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "kind": {
-                                            "type": "string",
-                                            "enum": [
-                                              "entry"
-                                            ]
-                                          }
-                                        },
-                                        "required": [
-                                          "kind"
-                                        ]
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "kind": {
-                                            "type": "string",
-                                            "enum": [
-                                              "source"
-                                            ]
-                                          },
-                                          "sourceId": {
-                                            "type": "string"
-                                          },
-                                          "title": {
-                                            "type": "string"
-                                          },
-                                          "location": {
-                                            "type": "object",
-                                            "properties": {
-                                              "page": {
-                                                "type": "integer"
-                                              }
-                                            },
-                                            "required": [
-                                              "page"
-                                            ]
-                                          }
-                                        },
-                                        "required": [
-                                          "kind",
-                                          "sourceId",
-                                          "title",
-                                          "location"
-                                        ]
-                                      },
-                                      {
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
                                         "type": "string",
                                         "enum": [
-                                          "gone"
+                                          "entry"
                                         ]
                                       }
-                                    ],
-                                    "description": "Resolved when shown; \"gone\" once its Source is deleted."
-                                  }
-                                },
-                                "required": [
-                                  "tag",
-                                  "provenance"
-                                ]
-                              }
-                            }
-                          },
-                          "required": [
-                            "id",
-                            "topicIds",
-                            "front",
-                            "back",
-                            "citations"
-                          ]
-                        }
-                      }
-                    },
-                    "required": [
-                      "cards"
-                    ]
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "text": {
-                        "type": "string"
-                      },
-                      "citations": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "tag": {
-                              "type": "string"
-                            },
-                            "provenance": {
-                              "anyOf": [
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "kind": {
-                                      "type": "string",
-                                      "enum": [
-                                        "correction"
-                                      ]
-                                    }
+                                    },
+                                    "required": [
+                                      "kind"
+                                    ]
                                   },
-                                  "required": [
-                                    "kind"
-                                  ]
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "kind": {
-                                      "type": "string",
-                                      "enum": [
-                                        "entry"
-                                      ]
-                                    }
-                                  },
-                                  "required": [
-                                    "kind"
-                                  ]
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "kind": {
-                                      "type": "string",
-                                      "enum": [
-                                        "source"
-                                      ]
-                                    },
-                                    "sourceId": {
-                                      "type": "string"
-                                    },
-                                    "title": {
-                                      "type": "string"
-                                    },
-                                    "location": {
-                                      "type": "object",
-                                      "properties": {
-                                        "page": {
-                                          "type": "integer"
-                                        }
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "source"
+                                        ]
                                       },
-                                      "required": [
-                                        "page"
-                                      ]
-                                    }
+                                      "sourceId": {
+                                        "type": "string"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "location": {
+                                        "type": "object",
+                                        "properties": {
+                                          "page": {
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "required": [
+                                          "page"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "sourceId",
+                                      "title",
+                                      "location"
+                                    ]
                                   },
-                                  "required": [
-                                    "kind",
-                                    "sourceId",
-                                    "title",
-                                    "location"
-                                  ]
-                                },
-                                {
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "gone"
+                                    ]
+                                  }
+                                ],
+                                "description": "Resolved when shown; \"gone\" once its Source is deleted."
+                              }
+                            },
+                            "required": [
+                              "tag",
+                              "provenance"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "topicIds",
+                        "front",
+                        "back",
+                        "citations"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "title",
+                  "cards"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "citations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tag": {
+                          "type": "string"
+                        },
+                        "provenance": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
                                   "type": "string",
                                   "enum": [
-                                    "gone"
+                                    "correction"
                                   ]
                                 }
-                              ],
-                              "description": "Resolved when shown; \"gone\" once its Source is deleted."
+                              },
+                              "required": [
+                                "kind"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "entry"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "source"
+                                  ]
+                                },
+                                "sourceId": {
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "location": {
+                                  "type": "object",
+                                  "properties": {
+                                    "page": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "page"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "sourceId",
+                                "title",
+                                "location"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "gone"
+                              ]
                             }
-                          },
-                          "required": [
-                            "tag",
-                            "provenance"
-                          ]
+                          ],
+                          "description": "Resolved when shown; \"gone\" once its Source is deleted."
                         }
-                      }
-                    },
-                    "required": [
-                      "text",
-                      "citations"
-                    ]
-                  },
-                  {
-                    "type": "null"
+                      },
+                      "required": [
+                        "tag",
+                        "provenance"
+                      ]
+                    }
                   }
-                ],
-                "description": "Null until made, and once withdrawn."
+                },
+                "required": [
+                  "text",
+                  "citations"
+                ]
+              },
+              {
+                "type": "null"
               }
-            },
-            "required": [
-              "version",
-              "content"
-            ]
+            ],
+            "description": "Null until made, and once withdrawn."
           }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "failure",
+          "topicIds",
+          "obligationId",
+          "createdAt",
+          "openedAt",
+          "withdrawn",
+          "version",
+          "content"
         ]
       },
       "Attempt": {
@@ -5038,6 +5155,104 @@
           "fromAttempts",
           "selfAssessment",
           "lastEvidenceAt"
+        ]
+      },
+      "ArtifactOptions": {
+        "type": "object",
+        "properties": {
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "level": {
+                  "type": "string",
+                  "enum": [
+                    "not_yet_practiced",
+                    "shaky",
+                    "solid",
+                    "disputed"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "level"
+              ]
+            }
+          },
+          "obligations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "assignment",
+                    "presentation",
+                    "thesis",
+                    "other"
+                  ]
+                },
+                "due": {
+                  "type": "object",
+                  "properties": {
+                    "date": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "time": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "timeZone": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "date",
+                    "time",
+                    "timeZone"
+                  ]
+                },
+                "aiUse": {
+                  "$ref": "#/components/schemas/AiUse"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "kind",
+                "due",
+                "aiUse"
+              ]
+            }
+          }
+        },
+        "required": [
+          "topics",
+          "obligations"
         ]
       },
       "Evidence": {
@@ -14731,6 +14946,70 @@
                   "items": {
                     "$ref": "#/components/schemas/UnderstandingLevel"
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not the student's, or gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/courses/{id}/artifact-options": {
+      "get": {
+        "description": "What the student can ask an Artifact on in a Course: its Topics with their Understanding Level, and the Obligations nunio may draft or critique for, soonest first, each with its AI-use Rule.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Course's options.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactOptions"
                 }
               }
             }

@@ -47,7 +47,7 @@ export function ArtifactCard({
             )}
           </TraceIcon>
           {artifact ? (
-            <Link href={`/study/artifacts/${encodeURIComponent(artifactId)}`}>
+            <Link href={`/artifacts/${encodeURIComponent(artifactId)}`}>
               <TraceTitle>{names[kind]} öffnen</TraceTitle>
             </Link>
           ) : (

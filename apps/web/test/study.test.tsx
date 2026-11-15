@@ -113,7 +113,7 @@ test("shows a disputed Topic with both sides, and asks for practice on it", asyn
   const link = await within(topic).findByRole("link", {
     name: "Open the practice set",
   });
-  expect(link.getAttribute("href")).toBe(`/study/artifacts/${artifactId}`);
+  expect(link.getAttribute("href")).toBe(`/artifacts/${artifactId}`);
   expect(sent).toEqual([
     {
       path: "/api/me/artifacts",
@@ -344,7 +344,7 @@ test("prepares a Handoff with where to hand it in, the rule's conditions and the
     within(handoff)
       .getByRole("link", { name: "Draft, version 2" })
       .getAttribute("href"),
-  ).toBe(`/study/artifacts/${artifactId}`);
+  ).toBe(`/artifacts/${artifactId}`);
   await userEvent.click(
     within(handoff).getByRole("button", { name: "I handed it in" }),
   );

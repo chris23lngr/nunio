@@ -156,7 +156,7 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
           <ul>
             {home.artifacts.map((artifact) => (
               <li key={artifact.id}>
-                <Link href={`/study/artifacts/${artifact.id}`}>
+                <Link href={`/artifacts/${artifact.id}`}>
                   {artifactNames[artifact.kind]}
                 </Link>
               </li>

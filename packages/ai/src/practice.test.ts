@@ -131,6 +131,7 @@ it("makes flashcards from fenced material, keeping only the Topics and tags it w
   const maker = makerReplying(
     bodies,
     JSON.stringify({
+      title: "Konvergenz auf einen Blick",
       cards: [
         {
           topicIds: ["topic-1"],
@@ -148,6 +149,7 @@ it("makes flashcards from fenced material, keeping only the Topics and tags it w
 
   expect(made).toEqual({
     value: {
+      title: "Konvergenz auf einen Blick",
       cards: [
         {
           id: "1",
@@ -169,7 +171,11 @@ it("makes flashcards from fenced material, keeping only the Topics and tags it w
 });
 
 it("refuses flashcards the model did not finish", async () => {
-  const maker = makerReplying([], JSON.stringify({ cards: [] }), "length");
+  const maker = makerReplying(
+    [],
+    JSON.stringify({ title: "Konvergenz", cards: [] }),
+    "length",
+  );
 
   await expect(
     maker.flashcards(input, { signal: new AbortController().signal }),

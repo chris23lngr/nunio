@@ -260,12 +260,10 @@ export function ArtifactScreen({
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink render={<Link href="/study" />}>
-                Lernen
+              <BreadcrumbLink render={<Link href="/artifacts" />}>
+                Artefakte
               </BreadcrumbLink>
             </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>Artefakte</BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               <BreadcrumbPage className="block max-w-60 truncate">
@@ -277,7 +275,7 @@ export function ArtifactScreen({
       </PageHeader>
       <div className="mx-auto flex w-full max-w-5xl flex-col px-6 pt-22 pb-16">
         <Link
-          href="/study"
+          href="/artifacts"
           className="flex items-center gap-2 self-start text-sm leading-5 font-medium text-primary-600 hover:text-primary-700"
         >
           <ChevronLeft aria-hidden className="size-4 text-primary-500" />

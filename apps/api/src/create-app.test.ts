@@ -104,6 +104,7 @@ const maker: Maker = {
   }),
   flashcards: async (input) => ({
     value: {
+      title: "Klausurbegriffe",
       cards: [
         {
           id: "1",
@@ -6769,6 +6770,103 @@ describe("study execution", () => {
     const other = await studyFixture("study-anki-other");
     expect(
       (await other.get(`/api/me/artifacts/${artifactId}/anki.tsv`)).status,
+    ).toBe(404);
+  });
+
+  it("lists an Artifact as shaky once Attempts on its Topics show it, with when the student last practised it", async () => {
+    const s = await studyFixture("study-list");
+    const requested = await s.send("/api/me/artifacts", {
+      kind: "practice_set",
+      topicIds: [s.topicId],
+      from: s.selection,
+    });
+    const { artifactId, runId } = (await requested.json()) as {
+      artifactId: string;
+      runId: string;
+    };
+    await artifacts.make(runId);
+    const listed = async () => (await s.get("/api/me/artifacts")).json();
+
+    expect(await listed()).toEqual([
+      expect.objectContaining({
+        id: artifactId,
+        title: "Klausurthemen",
+        courseId: s.courseId,
+        count: 1,
+        version: 1,
+        updatedAt: expect.any(String),
+        lastPractisedAt: null,
+        shaky: false,
+      }),
+    ]);
+    await s.send(`/api/me/artifacts/${artifactId}/attempts`, {
+      answers: [{ itemId: "1", text: "Konvergenz." }],
+    });
+
+    expect(await listed()).toEqual([
+      expect.objectContaining({
+        id: artifactId,
+        lastPractisedAt: expect.any(String),
+        shaky: true,
+      }),
+    ]);
+  });
+
+  it("offers a Course's Topics with their Levels, and the Obligations nunio may write for, soonest first with their AI-use Rule", async () => {
+    const s = await studyFixture("study-options");
+    const enter = async (kind: string, title: string, date: string) => {
+      const entered = await s.send("/api/me/obligations", {
+        course: { id: s.courseId },
+        kind,
+        title,
+        due: { date, time: null, timeZone: null },
+        destination: null,
+      });
+      return ((await entered.json()) as { id: string }).id;
+    };
+    await enter("exam", "Klausur", "2026-11-05");
+    const paper = await enter("thesis", "Seminararbeit", "2026-11-10");
+    const handedIn = await enter("assignment", "Blatt 2", "2026-11-01");
+    await s.send(`/api/me/obligations/${handedIn}/reported-submitted`, {
+      reported: true,
+    });
+    await s.send(`/api/me/obligations/${paper}/ai-use`, {
+      level: "obligation",
+      value: "forbidden",
+    });
+
+    const options = await s.get(
+      `/api/me/courses/${s.courseId}/artifact-options`,
+    );
+
+    expect([options.status, await options.json()]).toEqual([
+      200,
+      {
+        topics: [
+          { id: s.topicId, title: "Klausur", level: "not_yet_practiced" },
+        ],
+        obligations: [
+          {
+            id: paper,
+            title: "Seminararbeit",
+            kind: "thesis",
+            due: expect.objectContaining({ date: "2026-11-10" }),
+            aiUse: expect.objectContaining({ status: "forbidden" }),
+          },
+          {
+            id: s.sheetId,
+            title: "Blatt 3 zur Klausur",
+            kind: "assignment",
+            due: expect.objectContaining({ date: "2026-11-20" }),
+            aiUse: expect.objectContaining({ status: "unknown" }),
+          },
+        ],
+      },
+    ]);
+    const other = await studyFixture("study-options-other");
+    expect(
+      (await other.get(`/api/me/courses/${s.courseId}/artifact-options`))
+        .status,
     ).toBe(404);
   });
 
