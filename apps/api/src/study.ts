@@ -1,6 +1,8 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
+import type { Principal } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
+import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
 import { AiUse } from "./review.js";
 
@@ -21,8 +23,7 @@ const Citation = z.object({
     .describe('Resolved when shown; "gone" once its Source is deleted.'),
 });
 const Kind = z.enum(["practice_set", "flashcards", "draft", "critique"]);
-export const ArtifactSummary = z
-  .object({
+const ArtifactBase = z.object({
     id: z.string(),
     kind: Kind,
     status: z.enum(["making", "ready", "failed"]),
@@ -36,8 +37,36 @@ export const ArtifactSummary = z
       .describe(
         "A Source it was drawn from is deleted, so its content is gone.",
       ),
-  })
-  .openapi("ArtifactSummary");
+  });
+export const ArtifactSummary = ArtifactBase.extend({
+  title: z
+    .string()
+    .nullable()
+    .describe(
+      "Its own title, else its Obligation's or its Topics' names; null when none is known.",
+    ),
+  courseId: z.string().nullable(),
+  count: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "Its items or cards; null for a text, and until made or once withdrawn.",
+    ),
+  version: z
+    .number()
+    .int()
+    .nullable()
+    .describe("Its latest version; null until made."),
+  updatedAt: z.date().nullable().describe("When its latest version was made."),
+  lastPractisedAt: z
+    .date()
+    .nullable()
+    .describe("When the student last answered one of its Practice Items."),
+  shaky: z
+    .boolean()
+    .describe("One of its Topics is shaky or disputed for the student."),
+}).openapi("ArtifactSummary");
 const Content = z.union([
   z.object({
     title: z
@@ -55,6 +84,10 @@ const Content = z.union([
     ),
   }),
   z.object({
+    title: z
+      .string()
+      .nullable()
+      .describe("Null for flashcards made before titles."),
     cards: z.array(
       z.object({
         id: z.string(),
@@ -67,7 +100,7 @@ const Content = z.union([
   }),
   z.object({ text: z.string(), citations: z.array(Citation) }),
 ]);
-const ArtifactView = ArtifactSummary.extend({
+const ArtifactView = ArtifactBase.extend({
   version: z.number().int().nullable(),
   content: Content.nullable().describe("Null until made, and once withdrawn."),
 }).openapi("Artifact");
@@ -178,6 +211,28 @@ const Evidence = z
     }),
   ])
   .openapi("Evidence");
+/** The student's Artifacts as listed, each marked shaky when one of its Topics is shaky or disputed. */
+export async function listArtifacts(
+  c: Context<AppBindings>,
+  p: Principal,
+  q: { ready?: true; derivedFrom?: string },
+) {
+  const listed = await c.get("artifacts").list(p, q);
+  const levels = await c
+    .get("understanding")
+    .levelsOfTopics(p, [...new Set(listed.flatMap((a) => a.topicIds))]);
+  const shaky = new Set(
+    levels
+      .filter((l) => l.level === "shaky" || l.level === "disputed")
+      .map((l) => l.topicId),
+  );
+  return listed.map((a) => ({
+    ...a,
+    shaky: a.topicIds.some((id) => shaky.has(id)),
+  }));
+}
+/** Assessed work nunio may draft or critique: exams and registrations are not handed in. */
+const handedIn = ["assignment", "presentation", "thesis", "other"] as const;
 const ErrorBody = z.object({ error: z.string() });
 const json = (schema: z.ZodType, description: string) => ({
   description,
@@ -259,7 +314,7 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
       if (!actor) return c.json({ error: "unauthorized" }, 401);
       const { ready, derivedFrom } = c.req.valid("query");
       return c.json(
-        await c.get("artifacts").list(principal.fromSession(actor), {
+        await listArtifacts(c, principal.fromSession(actor), {
           ...(ready ? { ready: true as const } : {}),
           ...(derivedFrom ? { derivedFrom } : {}),
         }),
@@ -521,6 +576,107 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
         await c.get("understanding").levels(principal.fromSession(actor), {
           courseId: c.req.valid("param").id,
         }),
+        200,
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/courses/{id}/artifact-options",
+      description:
+        "What the student can ask an Artifact on in a Course: its Topics with their Understanding Level, and the Obligations nunio may draft or critique for, soonest first, each with its AI-use Rule.",
+      request: { params: z.object({ id: z.string().uuid() }) },
+      responses: {
+        200: json(
+          z
+            .object({
+              topics: z.array(
+                z.object({
+                  id: z.string(),
+                  title: z.string(),
+                  level: Level.shape.level,
+                }),
+              ),
+              obligations: z.array(
+                z.object({
+                  id: z.string(),
+                  title: z.string(),
+                  kind: z.enum(handedIn),
+                  due: z.object({
+                    date: z.string().nullable(),
+                    time: z.string().nullable(),
+                    timeZone: z.string().nullable(),
+                  }),
+                  aiUse: AiUse,
+                }),
+              ),
+            })
+            .openapi("ArtifactOptions"),
+          "The Course's options.",
+        ),
+        ...errors,
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const p = principal.fromSession(actor);
+      const course = (await c.get("facts").review(p)).courses.find(
+        (found) =>
+          found.id === c.req.valid("param").id &&
+          found.status !== "rejected" &&
+          found.status !== "merged",
+      );
+      if (!course) return c.json({ error: "gone" }, 404);
+      const topics = course.facts.filter(
+        (fact) => fact.type === "topic" && fact.state !== "rejected",
+      );
+      const levels = await c.get("understanding").levelsOfTopics(
+        p,
+        topics.map((topic) => topic.id),
+      );
+      const obligations = course.obligations
+        .filter(
+          (o): o is typeof o & { kind: (typeof handedIn)[number] } =>
+            o.state !== "rejected" &&
+            !o.reportedSubmittedAt &&
+            (handedIn as readonly string[]).includes(o.kind),
+        )
+        // Undated ones last.
+        .sort((a, b) =>
+          (a.due.date ?? "9999").localeCompare(b.due.date ?? "9999"),
+        );
+      return c.json(
+        {
+          topics: topics.map((topic) => ({
+            id: topic.id,
+            title: topic.value,
+            level:
+              levels.find((l) => l.topicId === topic.id)?.level ??
+              "not_yet_practiced",
+          })),
+          obligations: await Promise.all(
+            obligations.map(async (o) => {
+              const aiUse = await c.get("facts").aiUse(p, o.id);
+              return {
+                id: o.id,
+                title: o.title,
+                kind: o.kind,
+                due: {
+                  date: o.due.date,
+                  time: o.due.time,
+                  timeZone: o.due.timeZone,
+                },
+                aiUse:
+                  aiUse === "gone"
+                    ? { status: "unknown" as const, reason: "none" as const }
+                    : aiUse,
+              };
+            }),
+          ),
+        },
         200,
       );
     },

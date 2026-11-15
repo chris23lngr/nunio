@@ -5,7 +5,7 @@ import { describeAction } from "./approvals.js";
 import { errors, json, student } from "./outcomes.js";
 import { Tradeoff } from "./plan.js";
 import { scopeNames } from "./responsibilities.js";
-import { ArtifactSummary } from "./study.js";
+import { ArtifactSummary, listArtifacts } from "./study.js";
 
 const Attention = z.discriminatedUnion("kind", [
   z.object({
@@ -217,7 +217,7 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
             ]
           : [];
       });
-      const artifacts = await c.get("artifacts").list(p, { ready: true });
+      const artifacts = await listArtifacts(c, p, { ready: true });
       return c.json({ attention, ongoing, artifacts, agentWork }, 200);
     },
   );

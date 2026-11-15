@@ -74,6 +74,35 @@ export function createUnderstanding({
           .map((fact) => ({ id: fact.id, courseId: course.id })),
       );
   }
+  /** The Understanding Level of each of the given Topics, from the student's Evidence. */
+  async function levelsOfTopics(
+    student: Principal,
+    topicIds: string[],
+  ): Promise<TopicLevel[]> {
+    const [attempts, selfAssessments] = await withOwner(db, student, (tx) =>
+      Promise.all([
+        tx.practiceAttempt.findMany({
+          where: { topicIds: { hasSome: topicIds } },
+        }),
+        tx.selfAssessment.findMany({ where: { topicId: { in: topicIds } } }),
+      ]),
+    );
+    return topicIds.map((topicId) =>
+      levelOf(
+        topicId,
+        attempts.map((a) => ({
+          at: a.createdAt,
+          verdict: a.verdict as LevelAttempt["verdict"],
+          topicIds: a.topicIds,
+        })),
+        selfAssessments.map((s) => ({
+          at: s.createdAt,
+          level: s.level as "shaky" | "solid",
+          topicId: s.topicId,
+        })),
+      ),
+    );
+  }
   /** The student's Attempts, newest first; Feedback whose practice set lost a Source shows as gone. */
   async function attemptsWhere(
     student: Principal,
@@ -279,33 +308,14 @@ export function createUnderstanding({
       student: Principal,
       q: { courseId: string },
     ): Promise<TopicLevel[]> {
-      const topicIds = (await topicsOf(student))
-        .filter((topic) => topic.courseId === q.courseId)
-        .map((topic) => topic.id);
-      const [attempts, selfAssessments] = await withOwner(db, student, (tx) =>
-        Promise.all([
-          tx.practiceAttempt.findMany({
-            where: { topicIds: { hasSome: topicIds } },
-          }),
-          tx.selfAssessment.findMany({ where: { topicId: { in: topicIds } } }),
-        ]),
-      );
-      return topicIds.map((topicId) =>
-        levelOf(
-          topicId,
-          attempts.map((a) => ({
-            at: a.createdAt,
-            verdict: a.verdict as LevelAttempt["verdict"],
-            topicIds: a.topicIds,
-          })),
-          selfAssessments.map((s) => ({
-            at: s.createdAt,
-            level: s.level as "shaky" | "solid",
-            topicId: s.topicId,
-          })),
-        ),
+      return levelsOfTopics(
+        student,
+        (await topicsOf(student))
+          .filter((topic) => topic.courseId === q.courseId)
+          .map((topic) => topic.id),
       );
     },
+    levelsOfTopics,
     /** The latest Attempt on each Practice Item of a practice set that the student answered. */
     async latestAttempts(
       student: Principal,
