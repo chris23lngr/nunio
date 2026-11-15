@@ -80,9 +80,9 @@ type Item = {
   answer: string;
 };
 type Card = { id: string; topicIds: string[]; front: string; back: string };
-/** A practice set's items, a set of flashcards, or a draft's or Critique's text, with citations as `C`. */
+/** A practice set's title and items, a set of flashcards, or a draft's or Critique's text, with citations as `C`. */
 type Content<C> =
-  | { items: (Item & { citations: C[] })[] }
+  | { title: string | null; items: (Item & { citations: C[] })[] }
   | { cards: (Card & { citations: C[] })[] }
   | { text: string; citations: C[] };
 /** What the student needs to hand an Obligation in themselves: nothing here is sent anywhere. */
@@ -115,7 +115,7 @@ const citationsOf = <C>(content: Content<C>) =>
     : rowsOf(content).flatMap((row) => row.citations);
 /** What the Maker returns for each kind. */
 type Made =
-  | { items: PracticeItem[] }
+  | { title: string; items: PracticeItem[] }
   | { cards: Flashcard[] }
   | { written: Written };
 const notHandedIn = ["exam", "registration"];
@@ -226,7 +226,10 @@ export function createArtifacts({
               const { value, usage } = await maker.practiceSet(input, {
                 signal,
               });
-              return { value: { items: value.items }, usage };
+              return {
+                value: { title: value.title, items: value.items },
+                usage,
+              };
             },
           };
         },
@@ -468,7 +471,10 @@ export function createArtifacts({
         "cards" in made.value
           ? { cards: made.value.cards.map(cite) }
           : "items" in made.value
-            ? { items: made.value.items.map(cite) }
+            ? {
+                title: made.value.title,
+                items: made.value.items.map(cite),
+              }
             : cite(made.value.written);
       const derivedFrom = [
         ...new Set([
@@ -677,6 +683,16 @@ export function createArtifacts({
         ),
       };
     },
+    /** For `understanding` only: whether the Artifact is the student's, without marking it opened. */
+    async owns(student: Principal, artifactId: string): Promise<boolean> {
+      const found = await withOwner(db, student, (tx) =>
+        tx.artifact.findUnique({
+          where: { id: artifactId },
+          select: { id: true },
+        }),
+      );
+      return found !== null;
+    },
     /**
      * For `understanding` only: one Practice Item with what grading needs, without marking the Artifact opened.
      * "gone" for another student's, a withdrawn set, flashcards, or an unknown item.
@@ -769,7 +785,11 @@ export function createArtifacts({
         content:
           stored &&
           ("items" in stored
-            ? { items: stored.items.map(resolve) }
+            ? {
+                // Practice sets made before titles have none.
+                title: stored.title ?? null,
+                items: stored.items.map(resolve),
+              }
             : "cards" in stored
               ? { cards: stored.cards.map(resolve) }
               : resolve(stored)),

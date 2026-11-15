@@ -40,6 +40,10 @@ export const ArtifactSummary = z
   .openapi("ArtifactSummary");
 const Content = z.union([
   z.object({
+    title: z
+      .string()
+      .nullable()
+      .describe("Null for a practice set made before titles."),
     items: z.array(
       z.object({
         id: z.string(),
@@ -134,6 +138,19 @@ const Attempt = z
       .describe(
         "Null while ungraded, and once a Source of its practice set is deleted.",
       ),
+    ungradedReason: z
+      .enum([
+        "grader_failed",
+        "allowance_exhausted",
+        "ai_disabled",
+        "not_entitled",
+        "deletion_pending",
+        "budget_exhausted",
+        "paused",
+        "ended",
+      ])
+      .nullable()
+      .describe("Why grading failed; null once graded."),
     createdAt: z.date(),
   })
   .openapi("Attempt");
@@ -378,38 +395,13 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
   );
   routes.openapi(
     createRoute({
-      method: "post",
-      path: "/api/me/attempts",
+      method: "get",
+      path: "/api/me/artifacts/{id}/attempts",
       description:
-        "The student's answer to a Practice Item, recorded and then graded. A failed grading keeps it, ungraded.",
-      request: {
-        body: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: z
-                .object({
-                  artifactId: z.string().uuid(),
-                  itemId: z.string().max(20),
-                  text: z.string().min(1).max(20_000),
-                })
-                .strict(),
-            },
-          },
-        },
-      },
+        "The latest Attempt on each Practice Item of a practice set that the student answered.",
+      request: { params: z.object({ id: z.string().uuid() }) },
       responses: {
-        201: json(
-          z.discriminatedUnion("status", [
-            z.object({ status: z.literal("graded"), attempt: Attempt }),
-            z.object({
-              status: z.literal("ungraded"),
-              attemptId: z.string(),
-              reason: z.enum(["grader_failed", "allowance_exhausted", "gone"]),
-            }),
-          ]),
-          "Recorded.",
-        ),
+        200: json(z.array(Attempt), "One per answered item."),
         ...errors,
       },
     }),
@@ -417,32 +409,62 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
       c.header("cache-control", "no-store");
       const actor = await c.get("auth").authenticate(c.req.raw);
       if (!actor) return c.json({ error: "unauthorized" }, 401);
-      const { artifactId, itemId, text } = c.req.valid("json");
-      const result = await c
+      const latest = await c
         .get("understanding")
-        .attempt(principal.fromSession(actor), { artifactId, itemId }, text);
-      if (result.status === "refused") return c.json({ error: "gone" }, 404);
-      return c.json(result, 201);
+        .latestAttempts(principal.fromSession(actor), c.req.valid("param").id);
+      if (latest === "gone") return c.json({ error: "gone" }, 404);
+      return c.json(latest, 200);
     },
   );
   routes.openapi(
     createRoute({
       method: "post",
-      path: "/api/me/attempts/{id}/grade",
+      path: "/api/me/artifacts/{id}/attempts",
       description:
-        "Grades an Attempt again, such as an ungraded one; metered again.",
-      request: { params: z.object({ id: z.string().uuid() }) },
-      responses: { 200: json(Attempt, "The Attempt as it stands."), ...errors },
+        "The student's answers to Practice Items of a practice set, recorded and then graded together. An item not in the set refuses them all; a failed grading keeps that Attempt, ungraded.",
+      request: {
+        params: z.object({ id: z.string().uuid() }),
+        body: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: z
+                .object({
+                  answers: z
+                    .array(
+                      z
+                        .object({
+                          itemId: z.string().max(20),
+                          text: z.string().min(1).max(20_000),
+                        })
+                        .strict(),
+                    )
+                    .min(1)
+                    .max(50),
+                })
+                .strict(),
+            },
+          },
+        },
+      },
+      responses: {
+        201: json(z.array(Attempt), "Recorded, one per answer."),
+        ...errors,
+      },
     }),
     async (c) => {
       c.header("cache-control", "no-store");
       const actor = await c.get("auth").authenticate(c.req.raw);
       if (!actor) return c.json({ error: "unauthorized" }, 401);
-      const attempt = await c
+      const result = await c
         .get("understanding")
-        .grade(principal.fromSession(actor), c.req.valid("param").id);
-      if (attempt === "gone") return c.json({ error: "gone" }, 404);
-      return c.json(attempt, 200);
+        .answer(
+          principal.fromSession(actor),
+          c.req.valid("param").id,
+          c.req.valid("json").answers,
+        );
+      if (result.status === "refused") return c.json({ error: "gone" }, 404);
+      return c.json(result.attempts, 201);
     },
   );
   routes.openapi(

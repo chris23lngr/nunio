@@ -224,6 +224,7 @@ function fakeMaker() {
       inputs.push(input);
       return {
         value: {
+          title: "Gleichmäßige Konvergenz von Funktionenfolgen",
           items: [
             {
               id: "1",
@@ -307,6 +308,7 @@ it("makes a practice set on a Topic from the student's material, ready until the
   expect(await artifacts.open(p, started.artifactId)).toMatchObject({
     id: started.artifactId,
     content: {
+      title: "Gleichmäßige Konvergenz von Funktionenfolgen",
       items: [
         {
           id: "1",

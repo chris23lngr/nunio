@@ -1,6 +1,6 @@
 import Link from "next/link";
+import { timeAgo } from "@/features/shared/time-ago";
 import type { ChatSummary } from "../api/chat-list-queries";
-import { chatAge } from "../chat-age";
 import { chatHref } from "../chat-routes";
 
 /** Chats as rows linking to each, under the heading `labelledBy`, with how long ago each was active when `now` is given. */
@@ -26,7 +26,7 @@ export function ChatList({
             </span>
             {now && (
               <span className="shrink-0 text-base-500">
-                {chatAge(new Date(chat.lastActivityAt), now, "long")}
+                {timeAgo(new Date(chat.lastActivityAt), now, "long")}
               </span>
             )}
           </Link>

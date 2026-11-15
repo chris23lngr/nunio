@@ -59,7 +59,7 @@ export interface Maker {
     input: PracticeInput,
     options: { signal: AbortSignal },
   ): Promise<{
-    value: { items: PracticeItem[] };
+    value: { title: string; items: PracticeItem[] };
     usage: { microUsd: number };
   }>;
   flashcards(
@@ -80,6 +80,9 @@ export interface Maker {
 }
 
 const schema = z.object({
+  title: z
+    .string()
+    .describe("A short title naming what the questions cover, without tags"),
   items: z.array(
     z.object({
       topicIds: z
@@ -109,6 +112,7 @@ const shared = [
 const instructions = [
   "You write practice questions that help a university student check their understanding of their own course material.",
   "Write questions about the given topics only, each with a model answer, using only the course material in the data message.",
+  'Address the student informally as "du", never as "Sie", when you write in German.',
   ...shared,
 ].join("\n");
 const draftInstructions = [
@@ -273,7 +277,7 @@ export function createMaker(models: Models): Maker {
         question: known(item.question),
         answer: known(item.answer),
       }));
-      return { value: { items }, usage };
+      return { value: { title: output.title, items }, usage };
     },
     async flashcards(input, { signal }) {
       const { output, usage } = await generate(

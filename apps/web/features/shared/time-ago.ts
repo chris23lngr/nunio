@@ -26,8 +26,8 @@ function elapsed(at: Date, now: Date): [Unit, number] | null {
   return minutes > 0 ? ["minute", minutes] : null;
 }
 
-/** How long ago a Chat was last active: "3 Tage" in the menu, "Vor 3 Tagen" in the full list. */
-export function chatAge(at: Date, now: Date, style: "short" | "long") {
+/** How long ago something happened, such as a Chat's Last Activity: "3 Tage" short, "Vor 3 Tagen" long. */
+export function timeAgo(at: Date, now: Date, style: "short" | "long") {
   const since = elapsed(at, now);
   if (!since) return style === "short" ? "Jetzt" : "Gerade eben";
   const [unit, count] = since;

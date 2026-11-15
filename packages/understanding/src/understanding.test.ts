@@ -173,7 +173,7 @@ async function courseWithTopic(p: Principal) {
   return { sourceId, courseId: course.id, topicId: course.facts[0]!.id };
 }
 
-/** A Maker that records what it was given and answers with one item citing the first tag. */
+/** A Maker that records what it was given and answers with two items citing the first tag. */
 function fakeMaker() {
   const inputs: PracticeInput[] = [];
   const maker: Maker = {
@@ -182,6 +182,7 @@ function fakeMaker() {
       inputs.push(input);
       return {
         value: {
+          title: "Gleichmäßige Konvergenz",
           items: [
             {
               id: "1",
@@ -189,6 +190,13 @@ function fakeMaker() {
               question:
                 "Wann konvergiert eine Funktionenfolge gleichmäßig? [S1]",
               answer: "Wenn der Abstand überall klein wird [S1].",
+              cited: ["S1"],
+            },
+            {
+              id: "2",
+              topicIds: [input.topics[0]!.id],
+              question: "Was misst der Abstand? [S1]",
+              answer: "Wie weit die Folge von der Grenzfunktion liegt [S1].",
               cited: ["S1"],
             },
           ],
@@ -277,52 +285,115 @@ function understandingWith(
   });
 }
 
-it("records the student's Attempt on a Practice Item and grades it, with Feedback citing the item's material", async () => {
+it("records the student's Attempts on several Practice Items at once and grades each, with Feedback citing the item's material", async () => {
   const p = await student();
   const { artifacts, artifactId, topicId, sourceId } = await practiceSet(p);
-  const { grader, inputs } = scriptedGrader("partial");
+  const { grader, inputs } = scriptedGrader("partial", "correct");
   const understanding = understandingWith(artifacts, grader);
 
-  const result = await understanding.attempt(
-    p,
-    { artifactId, itemId: "1" },
-    "Wenn sie punktweise konvergiert.",
-  );
-
-  expect(inputs).toEqual([
-    {
-      question: "Wann konvergiert eine Funktionenfolge gleichmäßig? [S1]",
-      answer: "Wenn der Abstand überall klein wird [S1].",
-      attempt: "Wenn sie punktweise konvergiert.",
-      tags: ["S1"],
-    },
+  const result = await understanding.answer(p, artifactId, [
+    { itemId: "1", text: "Wenn sie punktweise konvergiert." },
+    { itemId: "2", text: "Den Abstand zur Grenzfunktion." },
   ]);
-  expect(result).toEqual({
-    status: "graded",
-    attempt: {
-      id: expect.any(String),
-      artifactId,
-      itemId: "1",
-      topicIds: [topicId],
-      text: "Wenn sie punktweise konvergiert.",
-      verdict: "partial",
-      feedback: {
-        text: "Das ist partial [S1].",
-        citations: [
-          {
-            tag: "S1",
-            provenance: {
-              kind: "source",
-              sourceId,
-              title: "Skript",
-              location: { page: 2 },
-            },
-          },
-        ],
+
+  expect(inputs).toEqual(
+    expect.arrayContaining([
+      {
+        question: "Wann konvergiert eine Funktionenfolge gleichmäßig? [S1]",
+        answer: "Wenn der Abstand überall klein wird [S1].",
+        attempt: "Wenn sie punktweise konvergiert.",
+        tags: ["S1"],
       },
-      createdAt: expect.any(Date),
+      {
+        question: "Was misst der Abstand? [S1]",
+        answer: "Wie weit die Folge von der Grenzfunktion liegt [S1].",
+        attempt: "Den Abstand zur Grenzfunktion.",
+        tags: ["S1"],
+      },
+    ]),
+  );
+  const cited = {
+    tag: "S1",
+    provenance: {
+      kind: "source",
+      sourceId,
+      title: "Skript",
+      location: { page: 2 },
     },
+  };
+  expect(result).toEqual({
+    status: "answered",
+    attempts: [
+      {
+        id: expect.any(String),
+        artifactId,
+        itemId: "1",
+        topicIds: [topicId],
+        text: "Wenn sie punktweise konvergiert.",
+        verdict: expect.any(String),
+        feedback: { text: expect.any(String), citations: [cited] },
+        ungradedReason: null,
+        createdAt: expect.any(Date),
+      },
+      {
+        id: expect.any(String),
+        artifactId,
+        itemId: "2",
+        topicIds: [topicId],
+        text: "Den Abstand zur Grenzfunktion.",
+        verdict: expect.any(String),
+        feedback: { text: expect.any(String), citations: [cited] },
+        ungradedReason: null,
+        createdAt: expect.any(Date),
+      },
+    ],
   });
+});
+
+it("shows the latest Attempt on each answered Practice Item of a practice set, graded or not, to its student only", async () => {
+  const p = await student();
+  const { artifacts, artifactId } = await practiceSet(p);
+  const understanding = understandingWith(
+    artifacts,
+    scriptedGrader("incorrect", "correct", new Error("provider timed out"))
+      .grader,
+  );
+  expect(await understanding.latestAttempts(p, artifactId)).toEqual([]);
+
+  await understanding.answer(p, artifactId, [
+    { itemId: "1", text: "Erster Versuch." },
+  ]);
+  await understanding.answer(p, artifactId, [
+    { itemId: "1", text: "Zweiter Versuch." },
+  ]);
+  await understanding.answer(p, artifactId, [
+    { itemId: "2", text: "Ohne Bewertung." },
+  ]);
+
+  const latest = await understanding.latestAttempts(p, artifactId);
+  expect(latest).toHaveLength(2);
+  expect(latest).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        itemId: "1",
+        text: "Zweiter Versuch.",
+        verdict: "correct",
+        feedback: expect.objectContaining({ text: "Das ist correct [S1]." }),
+        ungradedReason: null,
+      }),
+      // Why it is ungraded is kept, so the student still learns it on return.
+      expect.objectContaining({
+        itemId: "2",
+        text: "Ohne Bewertung.",
+        verdict: null,
+        feedback: null,
+        ungradedReason: "grader_failed",
+      }),
+    ]),
+  );
+  expect(await understanding.latestAttempts(await student(), artifactId)).toBe(
+    "gone",
+  );
 });
 
 it("moves a Topic's Level only through graded Attempts, never through Artifacts, and shows a differing Self-assessment as disputed", async () => {
@@ -333,7 +404,8 @@ it("moves a Topic's Level only through graded Attempts, never through Artifacts,
     scriptedGrader("correct", "correct").grader,
   );
   const level = async () => (await understanding.levels(p, { courseId }))[0];
-  const item = { artifactId, itemId: "1" };
+  const answer = (text: string) =>
+    understanding.answer(p, artifactId, [{ itemId: "1", text }]);
 
   expect(await understanding.levels(p, { courseId })).toEqual([
     {
@@ -346,9 +418,9 @@ it("moves a Topic's Level only through graded Attempts, never through Artifacts,
   ]);
   await artifacts.open(p, artifactId);
   expect(await level()).toMatchObject({ level: "not_yet_practiced" });
-  await understanding.attempt(p, item, "Erster Versuch.");
+  await answer("Erster Versuch.");
   expect(await level()).toMatchObject({ level: "shaky" });
-  await understanding.attempt(p, item, "Zweiter Versuch.");
+  await answer("Zweiter Versuch.");
   expect(await level()).toMatchObject({ level: "solid" });
 
   expect(await understanding.selfAssess(p, topicId, "shaky")).toEqual({
@@ -364,46 +436,79 @@ it("moves a Topic's Level only through graded Attempts, never through Artifacts,
   ).toEqual({ status: "gone" });
 });
 
-it("keeps an Attempt ungraded when grading fails or the Allowance is spent, and grades it when asked again", async () => {
+it("keeps an Attempt ungraded when grading fails or the Allowance is spent, grades the others, and grades it when answered again", async () => {
   const p = await student();
   const { artifacts, artifactId, courseId } = await practiceSet(p);
-  const { grader, inputs } = scriptedGrader(
-    new Error("provider timed out"),
-    "correct",
-  );
-  const understanding = understandingWith(artifacts, grader);
-  const item = { artifactId, itemId: "1" };
+  const { grader, inputs } = scriptedGrader();
+  const understanding = understandingWith(artifacts, {
+    ...grader,
+    async grade(input, options) {
+      if (input.attempt === "Erster Versuch.") {
+        inputs.push(input);
+        throw new Error("provider timed out");
+      }
+      return grader.grade(input, options);
+    },
+  });
   const level = async () => (await understanding.levels(p, { courseId }))[0];
 
-  const failed = await understanding.attempt(p, item, "Erster Versuch.");
-  expect(failed).toEqual({
-    status: "ungraded",
-    attemptId: expect.any(String),
-    reason: "grader_failed",
-  });
-  if (failed.status !== "ungraded") throw new Error(failed.status);
-  expect(await level()).toMatchObject({ level: "not_yet_practiced" });
-  expect(await understanding.grade(p, failed.attemptId)).toMatchObject({
-    id: failed.attemptId,
-    text: "Erster Versuch.",
-    verdict: "correct",
-    feedback: { text: "Das ist correct [S1]." },
+  expect(
+    await understanding.answer(p, artifactId, [
+      { itemId: "1", text: "Erster Versuch." },
+      { itemId: "2", text: "Daneben." },
+    ]),
+  ).toEqual({
+    status: "answered",
+    attempts: [
+      expect.objectContaining({
+        itemId: "1",
+        verdict: null,
+        feedback: null,
+        ungradedReason: "grader_failed",
+      }),
+      expect.objectContaining({
+        itemId: "2",
+        verdict: "correct",
+        ungradedReason: null,
+      }),
+    ],
   });
   expect(await level()).toMatchObject({ level: "shaky" });
-  expect(await understanding.grade(await student(), failed.attemptId)).toBe(
-    "gone",
-  );
+  expect(
+    await understanding.answer(p, artifactId, [
+      { itemId: "1", text: "Zweiter Versuch." },
+    ]),
+  ).toEqual({
+    status: "answered",
+    attempts: [
+      expect.objectContaining({
+        itemId: "1",
+        verdict: "correct",
+        feedback: expect.objectContaining({ text: "Das ist correct [S1]." }),
+        ungradedReason: null,
+      }),
+    ],
+  });
+  expect(await level()).toMatchObject({ level: "solid" });
 
   await delegation.meter(p, { microUsd: 1 }, async () => ({
     value: null,
     usage: { microUsd: 5_000_000 },
   }));
-  expect(await understanding.attempt(p, item, "Dritter Versuch.")).toEqual({
-    status: "ungraded",
-    attemptId: expect.any(String),
-    reason: "allowance_exhausted",
+  expect(
+    await understanding.answer(p, artifactId, [
+      { itemId: "1", text: "Dritter Versuch." },
+    ]),
+  ).toEqual({
+    status: "answered",
+    attempts: [
+      expect.objectContaining({
+        verdict: null,
+        ungradedReason: "allowance_exhausted",
+      }),
+    ],
   });
-  expect(inputs).toHaveLength(2);
+  expect(inputs).toHaveLength(3);
 });
 
 it("withdraws Feedback with its practice set's Source while its verdicts keep counting, and takes no new Attempt on it", async () => {
@@ -414,11 +519,12 @@ it("withdraws Feedback with its practice set's Source while its verdicts keep co
     artifacts,
     scriptedGrader("correct", "correct").grader,
   );
-  const item = { artifactId, itemId: "1" };
-  const first = await understanding.attempt(p, item, "Erster Versuch.");
-  await understanding.attempt(p, item, "Zweiter Versuch.");
+  const answer = (text: string) =>
+    understanding.answer(p, artifactId, [{ itemId: "1", text }]);
+  const first = await answer("Erster Versuch.");
+  await answer("Zweiter Versuch.");
   await understanding.selfAssess(p, topicId, "solid");
-  if (first.status !== "graded") throw new Error(first.status);
+  if (first.status !== "answered") throw new Error(first.status);
   // A corrected Topic outlives its last Source; an uncorrected one would go, with its Evidence (an accepted limit).
   await facts.correct(
     p,
@@ -441,7 +547,7 @@ it("withdraws Feedback with its practice set's Source while its verdicts keep co
     {
       kind: "attempt",
       attempt: expect.objectContaining({
-        id: first.attempt.id,
+        id: first.attempts[0]!.id,
         text: "Erster Versuch.",
         verdict: "correct",
         feedback: null,
@@ -451,11 +557,10 @@ it("withdraws Feedback with its practice set's Source while its verdicts keep co
   expect((await understanding.levels(p, { courseId }))[0]).toMatchObject({
     level: "solid",
   });
-  expect(await understanding.attempt(p, item, "Dritter Versuch.")).toEqual({
+  expect(await answer("Dritter Versuch.")).toEqual({
     status: "refused",
     reason: "gone",
   });
-  expect(await understanding.grade(p, first.attempt.id)).toBe("gone");
 });
 
 it("keeps the verdict but no Feedback when a Source is deleted while grading", async () => {
@@ -475,15 +580,13 @@ it("keeps the verdict but no Feedback when a Source is deleted while grading", a
     },
   });
 
-  const result = await understanding.attempt(
-    p,
-    { artifactId, itemId: "1" },
-    "Versuch.",
-  );
+  const result = await understanding.answer(p, artifactId, [
+    { itemId: "1", text: "Versuch." },
+  ]);
 
   expect(result).toMatchObject({
-    status: "graded",
-    attempt: { verdict: "correct", feedback: null },
+    status: "answered",
+    attempts: [{ verdict: "correct", feedback: null }],
   });
   expect(await understanding.history(p, topicId)).toEqual([
     {
@@ -497,14 +600,25 @@ it("never takes an Attempt on another student's practice set, or shows them anot
   const owner = await student();
   const { artifacts, artifactId, topicId } = await practiceSet(owner);
   const understanding = understandingWith(artifacts, scriptedGrader().grader);
-  await understanding.attempt(owner, { artifactId, itemId: "1" }, "Meins.");
+  await understanding.answer(owner, artifactId, [
+    { itemId: "1", text: "Meins." },
+  ]);
   const other = await student();
 
   expect(
-    await understanding.attempt(other, { artifactId, itemId: "1" }, "Fremd."),
+    await understanding.answer(other, artifactId, [
+      { itemId: "1", text: "Fremd." },
+    ]),
   ).toEqual({ status: "refused", reason: "gone" });
+  // One item not in the set refuses them all, recording nothing.
   expect(
-    await understanding.attempt(owner, { artifactId, itemId: "9" }, "?"),
+    await understanding.answer(owner, artifactId, [
+      { itemId: "2", text: "Gültig." },
+      { itemId: "9", text: "?" },
+    ]),
   ).toEqual({ status: "refused", reason: "gone" });
+  expect(await understanding.latestAttempts(owner, artifactId)).toEqual([
+    expect.objectContaining({ itemId: "1", text: "Meins." }),
+  ]);
   expect(await understanding.history(other, topicId)).toEqual([]);
 });

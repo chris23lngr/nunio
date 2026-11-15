@@ -5,4 +5,5 @@ export {
   type AttemptView,
   createUnderstanding,
   type Understanding,
+  type UngradedReason,
 } from "./understanding.js";

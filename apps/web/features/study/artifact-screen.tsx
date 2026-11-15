@@ -1,16 +1,29 @@
 "use client";
 
 import type { paths } from "@nunio/api-client";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@nunio/ui/components/breadcrumb/breadcrumb";
 import { Button } from "@nunio/ui/components/button/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronLeft } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
+import { PageHeader } from "@/features/shared/components/page-header";
 import { SourceCitations } from "@/features/shared/components/source-citations";
+import { timeAgo } from "@/features/shared/time-ago";
 import { createApiClient } from "@/lib/api-client";
+import { answersMutation } from "./api/answers-mutation";
+import { attemptsQueries, coursesQueries } from "./api/study-queries";
+import { PracticeSet } from "./components/practice-set";
 
 type Artifact =
   paths["/api/me/artifacts/{id}"]["get"]["responses"][200]["content"]["application/json"];
-type Attempt =
-  paths["/api/me/attempts/{id}/grade"]["post"]["responses"][200]["content"]["application/json"];
 
 const failures: Record<string, string> = {
   no_material: "nothing in your material matched.",
@@ -21,99 +34,12 @@ const failures: Record<string, string> = {
   ai_use_unknown: "your course's rule on AI is no longer known.",
   ai_use_conditions: "your course's rule on AI changed.",
 };
-const verdicts = {
-  correct: "Correct",
-  partial: "Partly correct",
-  incorrect: "Not yet correct",
+const kinds = {
+  practice_set: "Übungsset",
+  flashcards: "Karteikarten",
+  draft: "Entwurf",
+  critique: "Kritik",
 };
-
-type Item = Extract<
-  NonNullable<Artifact["content"]>,
-  { items: unknown }
->["items"][number];
-
-function PracticeItem({
-  apiOrigin,
-  artifactId,
-  item,
-}: {
-  apiOrigin: string;
-  artifactId: string;
-  item: Item;
-}) {
-  const [text, setText] = useState("");
-  const [attempt, setAttempt] = useState<
-    Attempt | { id: string; verdict: null } | null
-  >(null);
-  const check = useMutation({
-    mutationFn: async () => {
-      const result = await createApiClient(apiOrigin).POST("/api/me/attempts", {
-        body: { artifactId, itemId: item.id, text },
-      });
-      if (!result.data) throw new Error("Could not save your answer.");
-      setAttempt(
-        result.data.status === "graded"
-          ? result.data.attempt
-          : { id: result.data.attemptId, verdict: null },
-      );
-    },
-  });
-  const grade = useMutation({
-    mutationFn: async (id: string) => {
-      const result = await createApiClient(apiOrigin).POST(
-        "/api/me/attempts/{id}/grade",
-        { params: { path: { id } } },
-      );
-      if (!result.data) throw new Error("Could not grade your answer.");
-      setAttempt(result.data);
-    },
-  });
-  return (
-    <article aria-label={item.question}>
-      <h2>{item.question}</h2>
-      <SourceCitations citations={item.citations} />
-      <label>
-        Your answer
-        <textarea value={text} onChange={(e) => setText(e.target.value)} />
-      </label>
-      <Button
-        type="button"
-        variant="primary"
-        disabled={check.isPending || !text.trim()}
-        onClick={() => check.mutate()}
-      >
-        Check my answer
-      </Button>
-      {attempt && attempt.verdict === null && (
-        <p>
-          Your answer is saved, but could not be graded yet.{" "}
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={grade.isPending}
-            onClick={() => grade.mutate(attempt.id)}
-          >
-            Grade again
-          </Button>
-        </p>
-      )}
-      {attempt && "feedback" in attempt && attempt.verdict && (
-        <section aria-label="Feedback">
-          <p>{verdicts[attempt.verdict]}</p>
-          {attempt.feedback && (
-            <>
-              <p>{attempt.feedback.text}</p>
-              <SourceCitations citations={attempt.feedback.citations} />
-            </>
-          )}
-        </section>
-      )}
-      {(check.error ?? grade.error) && (
-        <p role="alert">{(check.error ?? grade.error)!.message}</p>
-      )}
-    </article>
-  );
-}
 
 type Edited = { id?: string; front: string; back: string }[];
 const saveErrors: Record<string, string> = {
@@ -269,7 +195,7 @@ function DraftEditor({
   );
 }
 
-/** One Artifact: polled while it is made, then a practice set to answer, flashcards or a draft. */
+/** One Artifact under its title: polled while it is made, then a practice set to answer, flashcards or a draft. */
 export function ArtifactScreen({
   apiOrigin,
   id,
@@ -293,50 +219,124 @@ export function ArtifactScreen({
       q.state.data?.status === "making" ? pollMs : false,
   });
   const artifact = query.data;
+  const practice =
+    artifact?.content && "items" in artifact.content ? artifact.content : null;
+  // Without a title of its own, an Artifact is named by its Topics.
+  const courses = useQuery({
+    ...coursesQueries(apiOrigin),
+    enabled: !!artifact && !practice?.title,
+  });
+  const queryClient = useQueryClient();
+  const attemptsQuery = attemptsQueries(apiOrigin, id);
+  const attempts = useQuery({ ...attemptsQuery, enabled: !!practice });
+  const check = useMutation({
+    ...answersMutation(apiOrigin, id),
+    // The new Attempts replace the latest ones on their items.
+    onSuccess: (answered) =>
+      queryClient.setQueryData(attemptsQuery.queryKey, (old = []) => [
+        ...old.filter((a) => !answered.some((n) => n.itemId === a.itemId)),
+        ...answered,
+      ]),
+  });
+  const topics = (courses.data ?? [])
+    .flatMap((course) => course.facts)
+    .filter((fact) => artifact?.topicIds.includes(fact.id))
+    .map((fact) => fact.value);
+  const title =
+    practice?.title ??
+    (topics.length
+      ? new Intl.ListFormat("de", { type: "conjunction" }).format(topics)
+      : // Named by its kind only once its Topics are known to be none.
+        artifact && courses.status !== "pending"
+        ? kinds[artifact.kind]
+        : "");
+  const practised = (attempts.data ?? [])
+    .map((attempt) => new Date(attempt.createdAt))
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+  const since = practised && timeAgo(practised, new Date(), "long");
   return (
-    <>
-      {query.error && <p role="alert">{query.error.message}</p>}
-      {artifact?.status === "making" && <p>Being made…</p>}
-      {artifact?.status === "failed" && (
-        <p role="alert">
-          This could not be made:{" "}
-          {failures[artifact.failure ?? ""] ?? artifact.failure}
-        </p>
-      )}
-      {artifact?.withdrawn && (
-        <p>A Source it was made from was deleted, so its content is gone.</p>
-      )}
-      {artifact?.content &&
-        "items" in artifact.content &&
-        artifact.content.items.map((item) => (
-          <PracticeItem
-            key={item.id}
-            apiOrigin={apiOrigin}
-            artifactId={artifact.id}
-            item={item}
-          />
-        ))}
-      {artifact?.content && "text" in artifact.content && (
-        <>
-          {artifact.kind === "draft" ? (
-            <DraftEditor
+    <main className="relative min-h-dvh bg-white font-sans text-base-800">
+      <PageHeader>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href="/study" />}>
+                Lernen
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>Artefakte</BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage className="block max-w-60 truncate">
+                {title}
+              </BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      </PageHeader>
+      <div className="mx-auto flex w-full max-w-5xl flex-col px-6 pt-22 pb-16">
+        <Link
+          href="/study"
+          className="flex items-center gap-2 self-start text-sm leading-5 font-medium text-primary-600 hover:text-primary-700"
+        >
+          <ChevronLeft aria-hidden className="size-4 text-primary-500" />
+          Zurück
+        </Link>
+        <h1 className="mt-4 text-2xl leading-8 font-medium text-base-800">
+          {title}
+        </h1>
+        {since && (
+          <p className="mt-2 text-base leading-6 text-base-500">
+            Zuletzt gelernt {since.charAt(0).toLowerCase() + since.slice(1)}
+          </p>
+        )}
+        <div className="mt-16 flex flex-col gap-4">
+          {query.error && <p role="alert">{query.error.message}</p>}
+          {artifact?.status === "making" && <p>Being made…</p>}
+          {artifact?.status === "failed" && (
+            <p role="alert">
+              This could not be made:{" "}
+              {failures[artifact.failure ?? ""] ?? artifact.failure}
+            </p>
+          )}
+          {artifact?.withdrawn && (
+            <p>
+              A Source it was made from was deleted, so its content is gone.
+            </p>
+          )}
+          {practice && (
+            <PracticeSet
+              items={practice.items}
+              attempts={attempts.data ?? []}
+              checking={check.isPending}
+              error={check.error?.message ?? null}
+              onCheck={(answers) => check.mutate(answers)}
+            />
+          )}
+          {artifact?.content && "text" in artifact.content && (
+            <>
+              {artifact.kind === "draft" ? (
+                <DraftEditor
+                  apiOrigin={apiOrigin}
+                  artifact={artifact}
+                  text={artifact.content.text}
+                />
+              ) : (
+                <p>{artifact.content.text}</p>
+              )}
+              <SourceCitations citations={artifact.content.citations} />
+            </>
+          )}
+          {artifact?.content && "cards" in artifact.content && (
+            <FlashcardsEditor
               apiOrigin={apiOrigin}
               artifact={artifact}
-              text={artifact.content.text}
+              cards={artifact.content.cards}
             />
-          ) : (
-            <p>{artifact.content.text}</p>
           )}
-          <SourceCitations citations={artifact.content.citations} />
-        </>
-      )}
-      {artifact?.content && "cards" in artifact.content && (
-        <FlashcardsEditor
-          apiOrigin={apiOrigin}
-          artifact={artifact}
-          cards={artifact.content.cards}
-        />
-      )}
-    </>
+        </div>
+      </div>
+    </main>
   );
 }
