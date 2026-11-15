@@ -240,12 +240,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
       name: "Nachricht",
       exact: true,
     });
-    await page
-      .getByRole("button", { name: "Wie sieht mein Lernplan für heute aus?" })
-      .click();
-    await expect(textarea).toHaveValue(
-      "Wie sieht mein Lernplan für heute aus?",
-    );
+    await textarea.fill("Wie sieht mein Lernplan für heute aus?");
     await textarea.press("Enter");
     await expect(
       page

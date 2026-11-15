@@ -29,7 +29,7 @@ The state of a Course the student is no longer studying, whether passed, dropped
 _Avoid_: Completed, finished, inactive, hidden
 
 **Last Activity**:
-When the student last worked on a Course themselves: asked about it in a Chat over it, answered a Practice Item or assessed themselves on one of its Topics, or uploaded a Source to it. Nothing nunio does on its own counts, such as grading or extraction. It orders the Recent Courses in the sidebar.
+When the student last worked on a Course themselves: asked about it in a Chat over it, answered a Practice Item or assessed themselves on one of its Topics, or uploaded a Source to it. For a Chat, when the student last asked in it or decided its proposals there. Nothing nunio does on its own counts, such as grading, extraction or a Chat answer. It orders the Recent Courses in the sidebar and the student's Chats.
 _Avoid_: Last opened, last visited, last updated
 
 **Deleting a Course**:

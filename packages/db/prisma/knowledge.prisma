@@ -311,6 +311,8 @@ model Chat {
   studentId String
   student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+  /// When the student last asked or decided proposals in it (Last Activity); null until the first question is saved.
+  lastActivityAt DateTime?
 
   courses  ChatCourse[]
   sources  ChatSource[]
@@ -319,6 +321,7 @@ model Chat {
 
   @@unique([id, studentId])
   @@index([studentId])
+  @@index([studentId, lastActivityAt(sort: Desc), id(sort: Desc)])
   @@map("chat")
 }
 

@@ -86,12 +86,12 @@ test("Review lets the student pick another Course for a series, or say it belong
   await user.click(within(yoga).getByRole("combobox", { name: "Kurs" }));
   await user.click(await screen.findByRole("option", { name: "Analysis I" }));
   await user.click(within(yoga).getByRole("button", { name: "Bestätigen" }));
-  await user.click(
-    within(screen.getByRole("group", { name: "OM Vorlesung" })).getByRole(
-      "button",
-      { name: "Kein Kurs" },
-    ),
-  );
+  const none = within(
+    screen.getByRole("group", { name: "OM Vorlesung" }),
+  ).getByRole("button", { name: "Kein Kurs" });
+  // Decisions wait for the one being saved.
+  await waitFor(() => expect(none).toHaveProperty("disabled", false));
+  await user.click(none);
 
   await waitFor(() =>
     expect(decisions).toEqual([

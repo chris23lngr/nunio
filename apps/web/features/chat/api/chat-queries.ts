@@ -2,7 +2,7 @@ import type { paths } from "@nunio/api-client";
 import { queryOptions } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
 import type { CourseColor } from "@/features/courses/api/course-queries";
-import { createApiClient } from "@/lib/api-client";
+import { ApiError, createApiClient } from "@/lib/api-client";
 
 export type Chat =
   paths["/api/me/chats/{id}"]["get"]["responses"][200]["content"]["application/json"];
@@ -114,7 +114,8 @@ export function chatQueries(apiOrigin: string, id: string | null) {
         { params: { path: { id: id! } }, signal },
       );
       if (!result.data)
-        throw new Error(
+        throw new ApiError(
+          result.response.status,
           result.response.status === 404
             ? "Dieser Chat ist nicht mehr verfügbar."
             : "Der Chat konnte nicht geladen werden.",

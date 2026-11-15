@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { mutationOptions } from "@tanstack/react-query";
+import { forgetOpenChat } from "@/features/chat/open-chat-cookie";
 import { ApiError } from "@/lib/api-client";
 import { authClient } from "@/lib/auth-client";
 import { sessionQueries } from "./session-queries";
@@ -33,6 +34,8 @@ export function signOutMutation(apiOrigin: string) {
           result.error.status,
           "Die Abmeldung ist fehlgeschlagen. Bitte versuche es erneut.",
         );
+      // The next student on this device must not reopen this one's Chat.
+      forgetOpenChat();
     },
   });
 }

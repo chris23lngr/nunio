@@ -2264,6 +2264,159 @@ describe("Chat models", () => {
   });
 });
 
+describe("Chat list", () => {
+  async function student(name: string) {
+    const cookie = await signUp(name);
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const newChat = async () => {
+      const created = await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+      });
+      return ((await created.json()) as { id: string }).id;
+    };
+    const list = async (query = "?limit=30") => {
+      const response = await app.request(`${apiOrigin}/api/me/chats${query}`, {
+        headers: { cookie },
+      });
+      return {
+        status: response.status,
+        body: (await response.json()) as {
+          chats: { id: string; title: string; lastActivityAt: string }[];
+          nextCursor: string | null;
+        },
+      };
+    };
+    return { headers, newChat, list };
+  }
+
+  it("lists the student's Chats by when they last asked, each titled by its first question", async () => {
+    const { headers, newChat, list } = await student("chat-list-order");
+    reply = "Eine Antwort.";
+    const older = await newChat();
+    await askInChat(headers, older, "Wann ist die Klausur?");
+    const newer = await newChat();
+    await askInChat(headers, newer, "Erkläre mir Elastizität");
+    await askInChat(headers, older, "Und welche Hilfsmittel sind erlaubt?");
+
+    const { status, body } = await list();
+
+    expect(status).toBe(200);
+    expect(body.chats.map(({ id, title }) => ({ id, title }))).toEqual([
+      { id: older, title: "Wann ist die Klausur?" },
+      { id: newer, title: "Erkläre mir Elastizität" },
+    ]);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it("moves a Chat up when the student decides its proposals there", async () => {
+    const { headers, chatId } = await planningChat("chat-list-approve");
+    const day = berlinDay(8);
+    steps.push(
+      calls("agenda", { from: berlinDay(7), to: berlinDay(13) }),
+      calls("proposeStudyBlock", {
+        work: "O1",
+        start: `${day}T10:00`,
+        end: `${day}T12:00`,
+      }),
+    );
+    const asked = await askInChat(headers, chatId, "Plane Blatt 4 ein.");
+    const card = asked.body.parts.find(
+      (part: { type: string }) => part.type === "tool-proposeStudyBlock",
+    );
+    const { id: later } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+      })
+    ).json()) as { id: string };
+    reply = "Eine Antwort.";
+    await askInChat(headers, later, "Eine spätere Frage");
+    reply = "Erledigt.";
+
+    await sseChunks(
+      await app.request(`${apiOrigin}/api/me/chats/${chatId}/messages/stream`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          decisions: [
+            {
+              approvalId: card.approvalId,
+              decision: "approve",
+              fingerprint: card.action.fingerprint,
+            },
+          ],
+        }),
+      }),
+    );
+
+    const listed = (await (
+      await app.request(`${apiOrigin}/api/me/chats?limit=30`, {
+        headers: { cookie: headers.cookie },
+      })
+    ).json()) as { chats: { id: string }[] };
+    expect(listed.chats.map(({ id }) => id)).toEqual([chatId, later]);
+  });
+
+  it("titles a Chat by the first line of its first question", async () => {
+    const { headers, newChat, list } = await student("chat-list-lines");
+    reply = "Eine Antwort.";
+    const id = await newChat();
+    await askInChat(headers, id, "Fasse Kapitel 3 zusammen:\n\n- Angebot");
+
+    const { body } = await list();
+
+    expect(body.chats[0]?.title).toBe("Fasse Kapitel 3 zusammen:");
+  });
+
+  it("leaves out a Chat nothing was asked in yet", async () => {
+    const { headers, newChat, list } = await student("chat-list-unasked");
+    reply = "Eine Antwort.";
+    const asked = await newChat();
+    await askInChat(headers, asked, "Was steht diese Woche an?");
+    await newChat();
+
+    const { body } = await list();
+
+    expect(body.chats.map(({ id }) => id)).toEqual([asked]);
+  });
+
+  it("pages through the Chats, continuing after the last one shown", async () => {
+    const { headers, newChat, list } = await student("chat-list-pages");
+    reply = "Eine Antwort.";
+    const ids: string[] = [];
+    for (const question of ["Erste", "Zweite", "Dritte"]) {
+      const id = await newChat();
+      await askInChat(headers, id, question);
+      ids.unshift(id);
+    }
+
+    const first = await list("?limit=2");
+    const second = await list(`?limit=2&cursor=${first.body.nextCursor}`);
+
+    expect(first.body.chats.map(({ id }) => id)).toEqual(ids.slice(0, 2));
+    expect(second.body.chats.map(({ id }) => id)).toEqual(ids.slice(2));
+    expect(second.body.nextCursor).toBeNull();
+  });
+
+  it("never lists another student's Chats", async () => {
+    const other = await student("chat-list-other");
+    reply = "Eine Antwort.";
+    await askInChat(other.headers, await other.newChat(), "Meine Frage");
+    const { list } = await student("chat-list-self");
+
+    const { body } = await list();
+
+    expect(body.chats).toEqual([]);
+  });
+});
+
 describe("Chat", () => {
   it("answers from a search the model chose, streams the search as a step, and shows the same steps when reopened", async () => {
     const cookie = await signUp("chat-search");

@@ -3,6 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { forgetOpenChat } from "@/features/chat/open-chat-cookie";
 import { authClient } from "@/lib/auth-client";
 
 export function SignOutButton({ apiOrigin }: { apiOrigin: string }) {
@@ -17,6 +18,7 @@ export function SignOutButton({ apiOrigin }: { apiOrigin: string }) {
           const result = await authClient(apiOrigin).signOut();
           if (result.error)
             return setError("Could not sign out. Please try again.");
+          forgetOpenChat();
           queryClient.clear();
           router.replace("/sign-in");
           router.refresh();

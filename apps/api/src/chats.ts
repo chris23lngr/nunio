@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
-import type { AskStep, ChatMessage } from "@nunio/chat";
+import type { AskStep, ChatCursor, ChatMessage } from "@nunio/chat";
 import type { ActionRecord, Principal } from "@nunio/delegation";
 import {
   principal,
@@ -230,6 +230,25 @@ const errors = {
 };
 const chatParams = z.object({ id: z.string().uuid() });
 
+/** A `list` cursor in the URL: the last Chat's Last Activity and ID. */
+const encodeCursor = ({ lastActivityAt, id }: ChatCursor) =>
+  Buffer.from(`${lastActivityAt.toISOString()}|${id}`).toString("base64url");
+const Cursor = z.string().transform((cursor, ctx): ChatCursor => {
+  const [at = "", id = ""] = Buffer.from(cursor, "base64url")
+    .toString()
+    .split("|");
+  const lastActivityAt = new Date(at);
+  if (Number.isNaN(lastActivityAt.getTime()) || !id) {
+    ctx.addIssue({ code: "custom", message: "Not a cursor." });
+    return z.NEVER;
+  }
+  return { lastActivityAt, id };
+});
+const listQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(50),
+  cursor: Cursor.optional(),
+});
+
 /**
  * Each proposal as the Action the gate asked it as: the exact Action, its fingerprint, and where it stands now. The key
  * linking them stays on the server.
@@ -398,6 +417,7 @@ async function reportDecisions(
       approvalId: d.approvalId,
       outcome: await decideOne(c, p, actionIds[n]!, d),
     });
+  await c.get("chats").decided(p, chatId);
   const stream = createUIMessageStream({
     onError: () => "Die Antwort wurde unterbrochen. Bitte versuche es erneut.",
     execute: async ({ writer }) => {
@@ -607,6 +627,48 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
     },
   );
 
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/chats",
+      request: { query: listQuery },
+      responses: {
+        200: json(
+          z.object({
+            chats: z.array(
+              z.object({
+                id: z.string(),
+                title: z.string().describe("The Chat's first question."),
+                lastActivityAt: z.string(),
+              }),
+            ),
+            nextCursor: z.string().nullable(),
+          }),
+          "The student's Chats with a question, by Last Activity.",
+        ),
+        400: json(ErrorBody, "Not a valid page."),
+        401: errors[401],
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const { chats, nextCursor } = await c
+        .get("chats")
+        .list(principal.fromSession(actor), c.req.valid("query"));
+      return c.json(
+        {
+          chats: chats.map((chat) => ({
+            ...chat,
+            lastActivityAt: chat.lastActivityAt.toISOString(),
+          })),
+          nextCursor: nextCursor && encodeCursor(nextCursor),
+        },
+        200,
+      );
+    },
+  );
   routes.openapi(
     createRoute({
       method: "get",

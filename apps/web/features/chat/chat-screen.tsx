@@ -11,12 +11,14 @@ import {
 } from "@nunio/ui/components/message-scroller/message-scroller";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { readUIMessageStream } from "ai";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { resolveUnconfirmed } from "@/features/approvals/api/approval-mutations";
 import { PageHeader } from "@/features/shared/components/page-header";
+import { ApiError } from "@/lib/api-client";
 import { useAppForm } from "@/lib/form";
 import { randomId } from "@/lib/random-id";
+import { chatListKey, recentChatQueries } from "./api/chat-list-queries";
 import {
   answerError,
   ChatError,
@@ -32,8 +34,10 @@ import {
   toUIMessage,
 } from "./api/chat-queries";
 import { modelQueries } from "./api/model-queries";
+import { chatHistoryHref } from "./chat-routes";
 import { ChatComposer } from "./components/chat-composer";
 import { ChatEmptyState } from "./components/chat-empty-state";
+import { ChatHeaderActions } from "./components/chat-header-actions";
 import { ChatMessage } from "./components/chat-message";
 import { KnowledgeSelector } from "./components/knowledge-selector";
 import { ModelSelector } from "./components/model-selector";
@@ -41,9 +45,15 @@ import {
   ProposalCard,
   UnconfirmedActionCard,
 } from "./components/proposal-card";
+import {
+  forgetOpenChat,
+  rememberedChat,
+  rememberOpenChat,
+} from "./open-chat-cookie";
 import type { Batch, Decision } from "./proposal-queue";
 import { oldestBatch, oldestUnconfirmed } from "./proposal-queue";
 import { happenedQuestion, question } from "./proposal-wording";
+import { useNewChat } from "./use-new-chat";
 
 /** The messages before the question `questionId`, or all of them when it isn't there. */
 function beforeQuestion(messages: ChatUIMessage[], questionId: string) {
@@ -65,6 +75,9 @@ const waitingAnswer: ChatUIMessage = {
   parts: [],
 };
 
+/** How many of the recent Chats a new Chat lists. */
+const emptyStateChatCount = 4;
+
 /** An answer is keyed by its question, so it keeps one element from waiting to saved. */
 function itemKey(messages: ChatUIMessage[], index: number) {
   const message = messages[index]!;
@@ -74,21 +87,17 @@ function itemKey(messages: ChatUIMessage[], index: number) {
     : message.id;
 }
 
-const prompts = [
-  "Was habe ich heute noch in BWL1 zu tun?",
-  "Erstelle mir Flashcards für FOF1",
-  "Wie sieht mein Lernplan für heute aus?",
-  "Welche Abgaben habe ich diese Woche?",
-];
-
 export function ChatScreen({
   apiOrigin,
+  userId,
   userName,
 }: {
   apiOrigin: string;
+  userId: string;
   userName: string;
 }) {
   const routeId = useSearchParams().get("id");
+  const router = useRouter();
   const client = useQueryClient();
   // The open Chat; `key` stays the same when a new Chat is created on its first send.
   const [openChat, setOpenChat] = useState(() => ({
@@ -99,6 +108,24 @@ export function ChatScreen({
   const id = openChat.id;
   const chat = useQuery(chatQueries(apiOrigin, id));
   const courses = useQuery({ ...chatCourseQueries(apiOrigin), enabled: !id });
+  // A remembered Chat deleted since is forgotten quietly, and the student gets an empty Chat.
+  const rememberedChatGone =
+    !!id &&
+    chat.error instanceof ApiError &&
+    chat.error.status === 404 &&
+    rememberedChat(userId) === id;
+  useEffect(() => {
+    if (!rememberedChatGone) return;
+    forgetOpenChat();
+    router.replace("/chat");
+  }, [rememberedChatGone, router]);
+  // Opening a Chat keeps it open on this device; a saved turn does too (`refresh`), but reloading it doesn't.
+  const loaded = !!chat.data;
+  useEffect(() => {
+    if (id && loaded) rememberOpenChat(userId, id);
+  }, [id, loaded, userId]);
+  const recent = useQuery(recentChatQueries(apiOrigin));
+  const startNewChat = useNewChat();
   const create = useMutation(createChat(apiOrigin));
   const models = useQuery(modelQueries(apiOrigin));
   // The student's pick in this visit; the server remembers it once a question is sent.
@@ -147,7 +174,12 @@ export function ChatScreen({
 
   const refresh = () => {
     const { id } = sendContext.current.openChat;
-    if (id) void client.invalidateQueries(chatQueries(apiOrigin, id));
+    if (id) {
+      void client.invalidateQueries(chatQueries(apiOrigin, id));
+      rememberOpenChat(userId, id);
+    }
+    // A saved turn changes the Chat's Last Activity.
+    void client.invalidateQueries({ queryKey: chatListKey(apiOrigin) });
   };
 
   // An unavailable model: reload the offered ones and switch to the remembered or default one.
@@ -407,7 +439,8 @@ export function ChatScreen({
 
   const busy = status === "submitted" || status === "streaming";
   const last = messages.at(-1);
-  const alertMessage = error ?? chat.error?.message;
+  const alertMessage =
+    error ?? (rememberedChatGone ? undefined : chat.error?.message);
   const started = !!id || messages.length > 0;
   // Until the stream starts the answer, a waiting answer stands in under the same key.
   const shown =
@@ -430,6 +463,12 @@ export function ChatScreen({
             onValueChange={setPicked}
           />
         )}
+        <ChatHeaderActions
+          recent={recent.data}
+          openId={id}
+          allHref={chatHistoryHref(id)}
+          onNewChat={startNewChat}
+        />
       </PageHeader>
       <MessageScrollerProvider
         key={openChat.key}
@@ -444,11 +483,12 @@ export function ChatScreen({
             {!started ? (
               <ChatEmptyState
                 firstName={userName.split(" ")[0] ?? ""}
-                prompts={prompts}
-                onPrompt={(prompt) => {
-                  form.setFieldValue("text", prompt);
-                  textarea.current?.focus();
-                }}
+                recent={recent.data?.chats.slice(0, emptyStateChatCount)}
+                more={
+                  !!recent.data &&
+                  (recent.data.more ||
+                    recent.data.chats.length > emptyStateChatCount)
+                }
               />
             ) : (
               // The bottom space keeps the last message clear of the composer that overlaps the list.

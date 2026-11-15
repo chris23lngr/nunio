@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Answerer } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import type { PrismaClient } from "@nunio/db";
-import type { Delegation, Principal } from "@nunio/delegation";
+import type { Delegation, Principal, Transaction } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type { Citation, KnowledgeReader, Provenance } from "@nunio/knowledge";
@@ -68,6 +68,17 @@ export type ChatMessage = {
 
 /** A step of answering a question, timed by `ask`. */
 export type AskStep = "history" | "generation" | "persistence";
+
+/** The student worked in the Chat at `at` themselves (GLOSSARY: Last Activity). */
+function recordLastActivity(tx: Transaction, chatId: string, at: Date) {
+  return tx.chat.update({
+    where: { id: chatId },
+    data: { lastActivityAt: at },
+  });
+}
+
+/** Where a page of `list` continues: after this Chat. */
+export type ChatCursor = { lastActivityAt: Date; id: string };
 
 /** Chats: an explicit selection of Courses and Sources, and questions answered only from it. */
 export function createChats({
@@ -511,6 +522,69 @@ export function createChats({
       };
       return { status: "ok", message } as const;
     },
+    /**
+     * The student's Chats with a question, by Last Activity, each titled by the first line of its first question,
+     * `limit` at a time. `nextCursor` continues after the last Chat returned and is null on the last page.
+     */
+    async list(p: Principal, page: { limit: number; cursor?: ChatCursor }) {
+      const after = page.cursor;
+      return withOwner(db, p, async (tx) => {
+        const chats = await tx.chat.findMany({
+          where: after
+            ? {
+                OR: [
+                  { lastActivityAt: { lt: after.lastActivityAt } },
+                  {
+                    lastActivityAt: after.lastActivityAt,
+                    id: { lt: after.id },
+                  },
+                ],
+              }
+            : { lastActivityAt: { not: null } },
+          orderBy: [{ lastActivityAt: "desc" }, { id: "desc" }],
+          take: page.limit + 1,
+          select: {
+            id: true,
+            lastActivityAt: true,
+            messages: {
+              where: { role: "student" },
+              orderBy: { createdAt: "asc" },
+              take: 1,
+              select: {
+                id: true,
+                content: true,
+                contentKey: true,
+                derivedFrom: true,
+              },
+            },
+          },
+        });
+        const listed = await Promise.all(
+          chats.slice(0, page.limit).map(async (chat) => {
+            const question = chat.messages[0];
+            const text = question
+              ? await derived.open(tx, question.id, question)
+              : null;
+            return {
+              id: chat.id,
+              title: (text ?? "").trim().split("\n")[0]!,
+              lastActivityAt: chat.lastActivityAt!,
+            };
+          }),
+        );
+        const last = listed.at(-1);
+        return {
+          chats: listed,
+          nextCursor: chats.length > page.limit && last ? last : null,
+        };
+      });
+    },
+    /** Records the student deciding proposals in the Chat as its Last Activity, before nunio reports on them. */
+    async decided(p: Principal, chatId: string) {
+      await withOwner(db, p, (tx) =>
+        recordLastActivity(tx, chatId, new Date()),
+      );
+    },
     async detail(p: Principal, id: string) {
       const chat = await withOwner(db, p, (tx) =>
         tx.chat.findUnique({
@@ -714,6 +788,7 @@ export function createChats({
             createdAt,
           },
         });
+        await recordLastActivity(tx, chatId, createdAt);
         return tx.chatMessage.create({
           data: {
             id,

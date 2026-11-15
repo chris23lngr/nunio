@@ -1,4 +1,5 @@
 import { SidebarProvider } from "@nunio/ui/components/sidebar/sidebar";
+import { focusManager } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -7,10 +8,17 @@ import { api } from "@/test/api";
 import { TestProviders } from "@/test/providers";
 import { ChatScreen } from "./chat-screen";
 
-const navigation = vi.hoisted(() => ({ params: new URLSearchParams() }));
+const navigation = vi.hoisted(() => ({
+  params: new URLSearchParams(),
+  pushed: [] as string[],
+}));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => navigation.params,
   usePathname: () => "/chat",
+  useRouter: () => ({
+    push: (href: string) => navigation.pushed.push(href),
+    replace: (href: string) => navigation.pushed.push(href),
+  }),
 }));
 const course = {
   id: "course-1",
@@ -55,7 +63,10 @@ const catalog = {
   selected: "sonnet-5.5",
 };
 beforeEach(() => {
+  // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API.
+  document.cookie = "nunio_open_chat=; path=/; max-age=0";
   navigation.params = new URLSearchParams();
+  navigation.pushed = [];
   window.history.replaceState(null, "", "/chat");
   vi.stubGlobal(
     "matchMedia",
@@ -69,8 +80,30 @@ beforeEach(() => {
     Response.json({ courses: [course] }),
   );
   api.route("GET", "/api/me/models", () => Response.json(catalog));
+  api.route("GET", "/api/me/chats", () =>
+    Response.json({ chats: [], nextCursor: null }),
+  );
 });
 afterEach(() => vi.unstubAllGlobals());
+
+/** The student's Chats `chat-1` to `chat-<count>`, most recent first. */
+function recentChats(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `chat-${i + 1}`,
+    title: `Frage ${i + 1}`,
+    lastActivityAt: new Date(Date.now() - (i + 1) * 86_400_000).toISOString(),
+  }));
+}
+/** Answers the Chat list with `chats`, `limit` at a time. */
+function listChats(chats: ReturnType<typeof recentChats>) {
+  api.route("GET", "/api/me/chats", (request) => {
+    const limit = Number(new URL(request.url).searchParams.get("limit"));
+    return Response.json({
+      chats: chats.slice(0, limit),
+      nextCursor: chats.length > limit ? "next" : null,
+    });
+  });
+}
 function committedResponse(data: unknown) {
   return new Response(
     `data: ${JSON.stringify({ type: "data-committed", data })}\n\ndata: [DONE]\n\n`,
@@ -82,7 +115,11 @@ function mount(chatId: string | null = null) {
   return render(
     <TestProviders>
       <SidebarProvider>
-        <ChatScreen apiOrigin={api.origin} userName="Justus Schuhmacher" />
+        <ChatScreen
+          apiOrigin={api.origin}
+          userId="student-1"
+          userName="Justus Schuhmacher"
+        />
       </SidebarProvider>
     </TestProviders>,
   );
@@ -145,22 +182,306 @@ async function chatLoaded() {
   await screen.findByRole("textbox", { name: "Nachricht" });
   await waitFor(() => expect(screen.queryByText("Chat laden …")).toBeNull());
 }
-test("a suggested prompt populates the composer without sending", async () => {
+test("a new Chat lists the student's recent Chats, each linking to it", async () => {
+  listChats(recentChats(2));
   mount();
-  expect(
-    await screen.findByRole("button", { name: "Modell: Sonnet 5.5" }),
-  ).toBeTruthy();
-  const user = userEvent.setup();
-  const prompt = screen.getByRole("button", {
-    name: "Wie sieht mein Lernplan für heute aus?",
+
+  const recent = await screen.findByRole("list", {
+    name: "Deine letzten Chats",
   });
-  await user.click(prompt);
+
   expect(
-    (screen.getByRole("textbox", { name: "Nachricht" }) as HTMLTextAreaElement)
-      .value,
-  ).toBe("Wie sieht mein Lernplan für heute aus?");
-  expect(window.location.search).toBe("");
-  expect(screen.getByRole("heading", { name: /Justus/ })).toBeTruthy();
+    within(recent)
+      .getAllByRole("link")
+      .map((link) => [link.textContent, link.getAttribute("href")]),
+  ).toEqual([
+    ["Frage 1", "/chat?id=chat-1"],
+    ["Frage 2", "/chat?id=chat-2"],
+  ]);
+});
+
+test("a new Chat lists four recent Chats and links to all of them only when there are more", async () => {
+  listChats(recentChats(4));
+  const { unmount } = mount();
+  await screen.findByRole("list", { name: "Deine letzten Chats" });
+  expect(screen.queryByRole("link", { name: "Alle anzeigen" })).toBeNull();
+  unmount();
+
+  listChats(recentChats(5));
+  mount();
+  const recent = await screen.findByRole("list", {
+    name: "Deine letzten Chats",
+  });
+
+  expect(within(recent).getAllByRole("link")).toHaveLength(4);
+  expect(
+    screen.getByRole("link", { name: "Alle anzeigen" }).getAttribute("href"),
+  ).toBe("/chat/history");
+});
+
+test("the recent-Chats menu lists eight Chats with how long ago each was active, marking the open one", async () => {
+  listChats(recentChats(9));
+  api.route("GET", "/api/me/chats/chat-2", () =>
+    Response.json({ id: "chat-2", courses: [], messages: [] }),
+  );
+  mount("chat-2");
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole("button", { name: "Letzte Chats" }));
+  const chats = within(
+    await screen.findByRole("group", { name: "Letzte Chats" }),
+  ).getAllByRole("menuitem");
+  // A row reads as the title followed by how long ago.
+  const row = (title: string, age: string) => title + age;
+
+  expect(
+    chats.map((item) => [
+      item.textContent,
+      item.getAttribute("href"),
+      item.getAttribute("aria-current"),
+    ]),
+  ).toEqual([
+    [row("Frage 1", "1 Tag"), "/chat?id=chat-1", null],
+    [row("Frage 2", "2 Tage"), "/chat?id=chat-2", "page"],
+    [row("Frage 3", "3 Tage"), "/chat?id=chat-3", null],
+    [row("Frage 4", "4 Tage"), "/chat?id=chat-4", null],
+    [row("Frage 5", "5 Tage"), "/chat?id=chat-5", null],
+    [row("Frage 6", "6 Tage"), "/chat?id=chat-6", null],
+    [row("Frage 7", "1 Woche"), "/chat?id=chat-7", null],
+    [row("Frage 8", "1 Woche"), "/chat?id=chat-8", null],
+  ]);
+});
+
+test("the recent-Chats menu links to all Chats only when there are more than it lists", async () => {
+  listChats(recentChats(8));
+  const { unmount } = mount();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Letzte Chats" }));
+  await screen.findByRole("group", { name: "Letzte Chats" });
+  expect(screen.queryByRole("menuitem", { name: "Alle anzeigen" })).toBeNull();
+  unmount();
+
+  listChats(recentChats(9));
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  mount("chat-1");
+  await user.click(await screen.findByRole("button", { name: "Letzte Chats" }));
+
+  // "Zurück" there leads back to the open Chat.
+  expect(
+    (
+      await screen.findByRole("menuitem", { name: "Alle anzeigen" })
+    ).getAttribute("href"),
+  ).toBe("/chat/history?from=chat-1");
+});
+
+test("an opened Chat is remembered on this device for thirty minutes", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-14T12:00:00Z") });
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  mount("chat-1");
+  await chatLoaded();
+
+  expect(document.cookie).toBe("nunio_open_chat=student-1%3Achat-1");
+  vi.setSystemTime(new Date("2026-11-14T12:31:00Z"));
+  expect(document.cookie).toBe("");
+});
+
+test("reloading the open Chat doesn't keep it remembered for longer", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-14T12:00:00Z") });
+  let loads = 0;
+  api.route("GET", "/api/me/chats/chat-1", () => {
+    loads += 1;
+    return Response.json({ id: "chat-1", courses: [], messages: [] });
+  });
+  mount("chat-1");
+  await chatLoaded();
+  vi.setSystemTime(new Date("2026-11-14T12:20:00Z"));
+
+  // Returning to the tab reloads the stale Chat.
+  focusManager.setFocused(false);
+  focusManager.setFocused(true);
+  await waitFor(() => expect(loads).toBe(2));
+  focusManager.setFocused(undefined);
+
+  vi.setSystemTime(new Date("2026-11-14T12:31:00Z"));
+  expect(document.cookie).toBe("");
+});
+
+test("a saved answer keeps the Chat remembered for another thirty minutes", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-14T12:00:00Z") });
+  let loads = 0;
+  api.route("GET", "/api/me/chats/chat-1", () => {
+    loads += 1;
+    return Response.json({ id: "chat-1", courses: [], messages: [] });
+  });
+  const question = {
+    id: "question-1",
+    role: "student",
+    text: "Noch eine Frage",
+    parts: [{ type: "text", text: "Noch eine Frage" }],
+    citations: [],
+    createdAt: "2026-11-14T12:20:00Z",
+  };
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", () =>
+    committedResponse({
+      ...question,
+      id: "answer-1",
+      role: "assistant",
+      text: "Eine Antwort.",
+      parts: [{ type: "text", text: "Eine Antwort." }],
+      question,
+    }),
+  );
+  mount("chat-1");
+  await chatLoaded();
+  vi.setSystemTime(new Date("2026-11-14T12:20:00Z"));
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Nachricht" }),
+    "Noch eine Frage",
+  );
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  // The saved turn reloads the Chat.
+  await waitFor(() => expect(loads).toBe(2));
+
+  // Past the thirty minutes from opening it. Read once: jsdom counts the cookie's age from its last read.
+  vi.setSystemTime(new Date("2026-11-14T12:31:00Z"));
+  expect(document.cookie).toBe("nunio_open_chat=student-1%3Achat-1");
+});
+
+test("a remembered Chat that is gone is forgotten quietly for an empty one", async () => {
+  // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API.
+  document.cookie = "nunio_open_chat=student-1%3Achat-1; path=/";
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ error: "gone" }, { status: 404 }),
+  );
+  mount("chat-1");
+
+  // A failed load is retried once after a second.
+  await waitFor(() => expect(navigation.pushed).toEqual(["/chat"]), {
+    timeout: 3000,
+  });
+  expect(document.cookie).toBe("");
+  expect(
+    screen.queryByText("Dieser Chat ist nicht mehr verfügbar."),
+  ).toBeNull();
+});
+
+test("a gone Chat remembered for another student shows that it is gone", async () => {
+  // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API.
+  document.cookie = "nunio_open_chat=someone-else%3Achat-1; path=/";
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ error: "gone" }, { status: 404 }),
+  );
+  mount("chat-1");
+
+  // A failed load is retried once after a second.
+  expect(
+    await screen.findByText(
+      "Dieser Chat ist nicht mehr verfügbar.",
+      {},
+      { timeout: 3000 },
+    ),
+  ).toBeTruthy();
+  expect(navigation.pushed).toEqual([]);
+});
+
+test("Neuer Chat forgets the open Chat and goes to an empty one", async () => {
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  mount("chat-1");
+  await chatLoaded();
+
+  await userEvent.click(screen.getByRole("button", { name: "Neuer Chat" }));
+
+  expect(navigation.pushed).toEqual(["/chat"]);
+  expect(document.cookie).toBe("");
+});
+
+test("⌘⇧O or Ctrl+Shift+O starts an empty Chat like Neuer Chat", async () => {
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({ id: "chat-1", courses: [], messages: [] }),
+  );
+  mount("chat-1");
+  await chatLoaded();
+  const user = userEvent.setup();
+
+  await user.keyboard("{Meta>}{Shift>}o{/Shift}{/Meta}");
+  await user.keyboard("{Control>}{Shift>}O{/Shift}{/Control}");
+
+  expect(navigation.pushed).toEqual(["/chat", "/chat"]);
+  expect(document.cookie).toBe("");
+});
+
+test("a saved answer puts its Chat at the top of the recent-Chats menu", async () => {
+  const listed = [] as ReturnType<typeof recentChats>;
+  api.route("GET", "/api/me/chats", () =>
+    Response.json({ chats: listed, nextCursor: null }),
+  );
+  api.route("POST", "/api/me/chats", () =>
+    Response.json({ id: "chat-new" }, { status: 201 }),
+  );
+  const question = {
+    id: "question-1",
+    role: "student",
+    text: "Was ist Elastizität?",
+    parts: [{ type: "text", text: "Was ist Elastizität?" }],
+    citations: [],
+    createdAt: "2026-11-14T09:48:00Z",
+  };
+  const answer = {
+    ...question,
+    id: "answer-1",
+    role: "assistant",
+    text: "Eine Antwort.",
+    parts: [{ type: "text", text: "Eine Antwort." }],
+  };
+  api.route("GET", "/api/me/chats/chat-new", () =>
+    Response.json({
+      id: "chat-new",
+      courses: [],
+      messages: [question, answer],
+    }),
+  );
+  api.route("POST", "/api/me/chats/chat-new/messages/stream", () => {
+    listed.unshift({
+      id: "chat-new",
+      title: "Was ist Elastizität?",
+      lastActivityAt: new Date().toISOString(),
+    });
+    return committedResponse({ ...answer, question });
+  });
+  mount();
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Nachricht" }),
+    "Was ist Elastizität?",
+  );
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  await screen.findByText("Eine Antwort.");
+
+  await user.click(screen.getByRole("button", { name: "Letzte Chats" }));
+
+  expect(
+    (
+      await screen.findByRole("menuitem", { name: /Was ist Elastizität/ })
+    ).getAttribute("aria-current"),
+  ).toBe("page");
+});
+
+test("a student with no Chats yet sees only the greeting", async () => {
+  mount();
+
+  expect(await screen.findByRole("heading", { name: /Justus/ })).toBeTruthy();
+  await screen.findByRole("button", { name: "Modell: Sonnet 5.5" });
+  expect(
+    screen.queryByRole("list", { name: "Deine letzten Chats" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: /Lernplan/ })).toBeNull();
 });
 
 test("sending clears the composer before the response and restores a failed draft", async () => {
@@ -618,7 +939,11 @@ test("deleting a Source clears cached Chat answers and reloads their withdrawn s
     <TestProviders>
       <SourcesScreen apiOrigin={api.origin} />
       <SidebarProvider>
-        <ChatScreen apiOrigin={api.origin} userName="Justus" />
+        <ChatScreen
+          apiOrigin={api.origin}
+          userId="student-1"
+          userName="Justus"
+        />
       </SidebarProvider>
     </TestProviders>,
   );
@@ -2060,7 +2385,11 @@ test("deleting a Source while an answer streams withdraws earlier answers and ke
     <TestProviders>
       <SourcesScreen apiOrigin={api.origin} />
       <SidebarProvider>
-        <ChatScreen apiOrigin={api.origin} userName="Justus" />
+        <ChatScreen
+          apiOrigin={api.origin}
+          userId="student-1"
+          userName="Justus"
+        />
       </SidebarProvider>
     </TestProviders>,
   );
