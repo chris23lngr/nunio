@@ -138,17 +138,22 @@ const Attempt = z
       .describe(
         "Null while ungraded, and once a Source of its practice set is deleted.",
       ),
+    ungradedReason: z
+      .enum([
+        "grader_failed",
+        "allowance_exhausted",
+        "ai_disabled",
+        "not_entitled",
+        "deletion_pending",
+        "budget_exhausted",
+        "paused",
+        "ended",
+      ])
+      .nullable()
+      .describe("Why grading failed; null once graded."),
     createdAt: z.date(),
   })
   .openapi("Attempt");
-const Answered = Attempt.extend({
-  reason: z
-    .string()
-    .nullable()
-    .describe(
-      "Why it is ungraded, such as allowance_exhausted or grader_failed; known only right after grading failed.",
-    ),
-}).openapi("AnsweredAttempt");
 const Level = z
   .object({
     topicId: z.string(),
@@ -393,10 +398,10 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
       method: "get",
       path: "/api/me/artifacts/{id}/attempts",
       description:
-        "The latest Attempt on each Practice Item of a practice set the student answered, in the set's order.",
+        "The latest Attempt on each Practice Item of a practice set that the student answered.",
       request: { params: z.object({ id: z.string().uuid() }) },
       responses: {
-        200: json(z.array(Answered), "One per answered item."),
+        200: json(z.array(Attempt), "One per answered item."),
         ...errors,
       },
     }),
@@ -406,7 +411,7 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
       if (!actor) return c.json({ error: "unauthorized" }, 401);
       const latest = await c
         .get("understanding")
-        .latest(principal.fromSession(actor), c.req.valid("param").id);
+        .latestAttempts(principal.fromSession(actor), c.req.valid("param").id);
       if (latest === "gone") return c.json({ error: "gone" }, 404);
       return c.json(latest, 200);
     },
@@ -443,7 +448,7 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
         },
       },
       responses: {
-        201: json(z.array(Answered), "Recorded, one per answer."),
+        201: json(z.array(Attempt), "Recorded, one per answer."),
         ...errors,
       },
     }),

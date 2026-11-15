@@ -7,7 +7,7 @@ Status: proposed design, 2026-11-10, for Phase 11 of the [implementation plan](.
 Phase 11 adds two modules and extends two existing ones. Each piece of behaviour lives where its knowledge already is:
 
 - A new **`packages/artifacts`** is the single module that makes, stores, shows and exports Artifacts, and prepares Handoffs. It is the only module that turns course material into nunio's own work.
-- **`packages/understanding`**, today an empty package, is the single module that records Attempts, Feedback and Self-assessments and works out Understanding Levels. It reads a Practice Item from `artifacts` through one method and writes nothing there.
+- **`packages/understanding`**, today an empty package, is the single module that records Attempts, Feedback and Self-assessments and works out Understanding Levels. It reads a Practice Item, and whether an Artifact is the student's, from `artifacts` through two methods and writes nothing there.
 - **`facts`** (`packages/knowledge`) resolves AI-use Rules and records Reported as Submitted, because Correction precedence, Disagreements and Obligations already live there.
 - **`responsibilities`** (`packages/delegation`) starts Runs the student starts, because every Run row is already created there.
 
@@ -78,6 +78,8 @@ export interface Artifacts {
     student: Principal,
     obligationId: string,
   ): Promise<HandoffView | "gone" | "not_handed_in">;
+  /** For `understanding` only: whether the Artifact is the student's. Does not mark it opened. */
+  owns(student: Principal, artifactId: string): Promise<boolean>;
   /** For `understanding` only: one item with what grading needs. Does not mark the Artifact opened. */
   practiceItem(
     student: Principal,
@@ -129,7 +131,7 @@ export type PracticeItem = {
 export function createUnderstanding(deps: {
   db: PrismaClient;
   keys: SourceKeys; // seals Feedback through DerivedText
-  artifacts: Artifacts; // practiceItem() only
+  artifacts: Artifacts; // owns() and practiceItem() only
   reader: KnowledgeReader; // cite() only, to show Feedback citations
   facts: Facts; // the student's Topics
   delegation: Delegation; // meter() only
@@ -138,22 +140,23 @@ export function createUnderstanding(deps: {
 }): Understanding;
 
 export interface Understanding {
-  /** Records the Attempt whenever its item exists, then grades it. A failed grading keeps it, ungraded. */
-  attempt(
+  /**
+   * Records the student's Attempts on several items of one practice set, then grades them together. An item not in
+   * the set refuses them all. A failed grading keeps that Attempt, ungraded, with its `ungradedReason`.
+   */
+  answer(
     student: Principal,
-    item: { artifactId: string; itemId: string },
-    text: string,
+    artifactId: string,
+    answers: { itemId: string; text: string }[],
   ): Promise<
-    | { status: "graded"; attempt: AttemptView }
-    | {
-        status: "ungraded";
-        attemptId: string;
-        reason: "grader_failed" | "allowance_exhausted" | "gone";
-      }
+    | { status: "answered"; attempts: AttemptView[] }
     | { status: "refused"; reason: "gone" }
   >;
-  /** Grades an ungraded Attempt again, or regrades one the student doubts; metered again. */
-  grade(student: Principal, attemptId: string): Promise<AttemptView | "gone">;
+  /** The latest Attempt on each item of a practice set the student answered. */
+  latestAttempts(
+    student: Principal,
+    artifactId: string,
+  ): Promise<AttemptView[] | "gone">;
   selfAssess(
     student: Principal,
     topicId: string,
@@ -228,7 +231,10 @@ export interface Maker {
   practiceSet(
     input: PracticeInput, // { topics: { id, name }[]; data; tags }
     options: { signal: AbortSignal },
-  ): Promise<{ value: { items: PracticeItem[] }; usage: { microUsd: number } }>;
+  ): Promise<{
+    value: { title: string; items: PracticeItem[] }; // the title names what the questions cover
+    usage: { microUsd: number };
+  }>;
   flashcards(
     input: PracticeInput,
     options: { signal: AbortSignal },
@@ -287,7 +293,7 @@ export interface Grader {
 - Domain outcomes are values (`refused`, `gone`, `stale`, `withdrawn`). A thrown `ArtifactsUnavailable` or `UnderstandingUnavailable` is an infrastructure fault and safe to retry.
 - `make` makes a single attempt, like extraction: a model call that crashed may already have cost money. A failed Artifact shows as failed, and asking again starts a new Run.
 - An Artifact still `making` 15 minutes after its Run started is listed as failed. That covers a workflow the API failed to start after `request`.
-- A grading failure leaves the Attempt `ungraded`, and `grade` asks again.
+- A grading failure leaves the Attempt `ungraded` with why, kept so the student still sees it on return. Answering the item again, even with the same text, records a new Attempt and grades that.
 - If `meter` cannot tell whether a model call finished, the reservation stays held, as `delegation` defines.
 
 ## What the implementation hides
@@ -305,7 +311,7 @@ export interface Grader {
   - for quoted items, the quote's Provenance.
 
   Flashcards follow the same path. A draft gets the Obligation's passages and the student's instructions, and a Critique gets the work and the rule text. The Own Work in a Critique request is stored with the request, as plain text under row-level security, like a Chat question. Citation tags the model was not given are removed, as in Chat answers.
-- **Grading.** `attempt` gives the `Grader` (task `feedback`) the item's fenced prompt and the student's text. Feedback keeps only citations the item had and is sealed under the item's `derivedFrom`.
+- **Grading.** `answer` gives the `Grader` (task `feedback`) the item's fenced prompt and the student's text. Feedback keeps only citations the item had and is sealed under the item's `derivedFrom`.
 - **Rule resolution** (in `facts`). AI-use Rules are a new Fact type, `ai_use_rule`, extracted with the other course rules:
   - the value is the class, and the verbatim quote is the rule text;
   - the match key is `course` for a Course's rule, or `obligation:<the Obligation's matchKey>` for an Obligation's, since Facts belong to a Course;
@@ -324,7 +330,7 @@ export interface Grader {
 - `run`: gains `chatId` (nullable). Pinned selections are stored as knowledge-retrieval.md describes.
 - `artifact`: student, `kind` (`practice_set` | `flashcards` | `draft` | `critique`), `runId`, Course or Obligation, the request as JSON (Topic IDs, instructions, Own Work), `status` (`making` | `ready` | `failed`) with a failure reason, `openedAt`, `createdAt`.
 - `artifact_version`: Artifact, `version`, the sealed content with its `derivedFrom` Sources (as on a Chat message), `createdAt`. `list` tells what's withdrawn by checking `derivedFrom` against live Sources, without decrypting.
-- `practice_attempt` (`attempt` already names an Action's dispatch attempt): student, Artifact and `itemId`, the item's Topic IDs (copied, so Levels need no decryption), text, `verdict` (null while ungraded), sealed Feedback with its citations, `gradedAt`, `createdAt`.
+- `practice_attempt` (`attempt` already names an Action's dispatch attempt): student, Artifact and `itemId`, the item's Topic IDs (copied, so Levels need no decryption), text, `verdict` (null while ungraded), `ungradedReason`, sealed Feedback with its citations, `gradedAt`, `createdAt`.
 - `self_assessment`: student, Topic, `level`, `createdAt`; a history, never updated in place.
 - `obligation`: gains `reportedSubmittedAt`. `fact_type` gains `ai_use_rule`.
 
@@ -347,7 +353,7 @@ All tables are owned by the student under the same row-level security policy as 
 
 ### Rejected alternatives
 
-- **One `study` module** for Artifacts and Levels. It would be one interface of a dozen methods, Level tests would carry Artifact setup, and the by-construction guarantee that Artifacts never reach Evidence would be lost. The two share only `practiceItem`.
+- **One `study` module** for Artifacts and Levels. It would be one interface of a dozen methods, Level tests would carry Artifact setup, and the by-construction guarantee that Artifacts never reach Evidence would be lost. The two share only `owns` and `practiceItem`.
 - **Grading in `artifacts`,** with `understanding` only storing verdicts. That would put Evidence writes in `artifacts`, for the same loss.
 - **AI-use Rule resolution in `artifacts`.** It would re-implement Correction precedence and Disagreement detection, which already live in `facts`.
 - **Own Work as its own store.** Only a Critique reads it, and a Handoff needs nothing from nunio but the student's word, so it stays in the Critique's request.
@@ -358,7 +364,7 @@ All tables are owned by the student under the same row-level security policy as 
 
 - `POST /api/me/artifacts` (a request: 202 once its `artifactRun/{runId}` workflow is started; 409 with the AI-use refusal or `not_handed_in`), `GET /api/me/artifacts` (with `?ready=true`, and `?derivedFrom=` for the Source deletion dialog), `GET /api/me/artifacts/{id}` (`?version=`), `POST /api/me/artifacts/{id}/versions` (409 `stale`, `withdrawn` or `not_editable`), `GET /api/me/artifacts/{id}/anki.tsv` (a `text/tab-separated-values` download).
 - `GET /api/me/obligations/{id}/ai-use`, `POST /api/me/obligations/{id}/ai-use` (the student's entry), `GET /api/me/obligations/{id}/handoff`, `POST /api/me/obligations/{id}/reported-submitted`.
-- `POST /api/me/attempts`, `POST /api/me/attempts/{id}/grade`, `POST /api/me/topics/{id}/self-assessment`, `GET /api/me/courses/{id}/levels`, `GET /api/me/topics/{id}/evidence`.
+- `GET` and `POST /api/me/artifacts/{id}/attempts` (the latest Attempts, and answers to check together), `POST /api/me/topics/{id}/self-assessment`, `GET /api/me/courses/{id}/levels`, `GET /api/me/topics/{id}/evidence`.
 - Home's `artifacts` lists ready Artifacts. Briefings do not bundle them yet.
 
 All are authenticated and CSRF-protected like the existing student routes.
@@ -392,6 +398,6 @@ Through the `Artifacts`, `Understanding` and `Facts` interfaces over real Postgr
 - nunio cannot tell an old exam from a problem sheet still to be handed in. A practice set quoting from a graded sheet whose AI-use Rule forbids AI gets no check; the request UI says so.
 - The exam preset (Phase 9) still proposes only the Rebalance. Practice sets inside a Responsibility's Runs, and Topic coverage, are left for later.
 - External grades are Evidence for a Course (GLOSSARY.md) but are not recorded yet.
-- Feedback is a model's judgment. The student can ask for a regrade, but can't set a verdict aside.
+- Feedback is a model's judgment. The student can answer the item again, but can't set a verdict aside.
 - _Solid_ needs two correct Attempts in a row, so one good answer still shows _shaky_.
 - Deleting the only Source behind a Topic deletes the Topic with its Evidence, unless the student had corrected it.

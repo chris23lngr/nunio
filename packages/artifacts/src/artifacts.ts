@@ -683,6 +683,16 @@ export function createArtifacts({
         ),
       };
     },
+    /** For `understanding` only: whether the Artifact is the student's, without marking it opened. */
+    async owns(student: Principal, artifactId: string): Promise<boolean> {
+      const found = await withOwner(db, student, (tx) =>
+        tx.artifact.findUnique({
+          where: { id: artifactId },
+          select: { id: true },
+        }),
+      );
+      return found !== null;
+    },
     /**
      * For `understanding` only: one Practice Item with what grading needs, without marking the Artifact opened.
      * "gone" for another student's, a withdrawn set, flashcards, or an unknown item.

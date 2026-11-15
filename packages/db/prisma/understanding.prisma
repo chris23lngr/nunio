@@ -17,6 +17,8 @@ model PracticeAttempt {
   feedbackKey Bytes?
   derivedFrom String[]
   citations   Json      @default("[]")
+  /// Why it is ungraded, such as allowance_exhausted or grader_failed; null once graded.
+  ungradedReason String?
   gradedAt    DateTime?
   createdAt   DateTime  @default(now())
 

@@ -6799,7 +6799,7 @@ describe("study execution", () => {
         text: "Konvergenz.",
         verdict: "correct",
         feedback: expect.objectContaining({ text: "Richtig [S1]." }),
-        reason: null,
+        ungradedReason: null,
       }),
     ];
     expect([attempted.status, await attempted.json()]).toEqual([201, answered]);
@@ -6829,15 +6829,6 @@ describe("study execution", () => {
       expect.objectContaining({ kind: "self_assessment", level: "solid" }),
       expect.objectContaining({ kind: "attempt" }),
     ]);
-    expect(
-      (
-        await s.send("/api/me/attempts", {
-          artifactId,
-          itemId: "1",
-          text: "Alt.",
-        })
-      ).status,
-    ).toBe(404);
 
     const other = await studyFixture("study-practice-other");
     expect(

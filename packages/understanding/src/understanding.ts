@@ -27,17 +27,15 @@ export type AttemptView = {
     text: string;
     citations: { tag: string; provenance: Provenance | "gone" }[];
   } | null;
+  /** Why it is ungraded, such as a spent Allowance; null once graded. */
+  ungradedReason: UngradedReason | null;
   createdAt: Date;
 };
 
-/** An Attempt with why it is ungraded, known only right after grading failed. */
-export type AnsweredView = AttemptView & {
-  reason:
-    | "grader_failed"
-    | "gone"
-    | Extract<Metered<unknown>, { status: "refused" }>["reason"]
-    | null;
-};
+/** Why grading an Attempt failed: the grader failed, or the metering refused it. */
+export type UngradedReason =
+  | "grader_failed"
+  | Extract<Metered<unknown>, { status: "refused" }>["reason"];
 
 /** One piece of Evidence about a Topic. */
 export type EvidenceView =
@@ -121,26 +119,34 @@ export function createUnderstanding({
             })),
           }
         : null,
+      ungradedReason: row.ungradedReason as UngradedReason | null,
       createdAt: row.createdAt,
     }));
   }
-  /** Grades a recorded Attempt against its Practice Item and seals the Feedback under the item's Sources. */
-  async function gradeAttempt(student: Principal, attemptId: string) {
-    const row = await withOwner(db, student, (tx) =>
-      tx.practiceAttempt.findUnique({ where: { id: attemptId } }),
-    );
-    if (!row) return "gone" as const;
-    const item = await artifacts.practiceItem(student, row);
-    if (item === "gone") return "gone" as const;
+  /**
+   * Grades a recorded Attempt against its Practice Item and seals the Feedback under the item's Sources. A failed
+   * grading keeps the Attempt, ungraded and not counting, with why.
+   */
+  async function gradeAttempt(
+    student: Principal,
+    row: Omit<AttemptView, "verdict" | "feedback" | "ungradedReason">,
+    item: Exclude<Awaited<ReturnType<Artifacts["practiceItem"]>>, "gone">,
+  ): Promise<AttemptView> {
+    const attemptId = row.id;
     const view: AttemptView = {
-      id: row.id,
-      artifactId: row.artifactId,
-      itemId: row.itemId,
-      topicIds: row.topicIds,
-      text: row.text,
+      ...row,
       verdict: null,
       feedback: null,
-      createdAt: row.createdAt,
+      ungradedReason: null,
+    };
+    const ungraded = async (reason: UngradedReason) => {
+      await withOwner(db, student, (tx) =>
+        tx.practiceAttempt.update({
+          where: { id: attemptId },
+          data: { ungradedReason: reason },
+        }),
+      );
+      return { ...view, ungradedReason: reason };
     };
     const input = {
       question: item.question,
@@ -152,10 +158,9 @@ export function createUnderstanding({
     try {
       graded = await meterGrading(student, input);
     } catch {
-      return { status: "ungraded", reason: "grader_failed", view } as const;
+      return ungraded("grader_failed");
     }
-    if (graded.status !== "ok")
-      return { status: "ungraded", reason: graded.reason, view } as const;
+    if (graded.status !== "ok") return ungraded(graded.reason);
     const citations: Citation[] = graded.value.cited.flatMap((tag) =>
       item.citations.filter((citation) => citation.tag === tag),
     );
@@ -189,19 +194,16 @@ export function createUnderstanding({
       citations.map((citation) => citation.cite),
     );
     return {
-      status: "graded",
-      attempt: {
-        ...view,
-        verdict: graded.value.verdict,
-        feedback: sealed && {
-          text: graded.value.text,
-          citations: citations.map(({ tag, cite }) => ({
-            tag,
-            provenance: provenance.get(cite) ?? "gone",
-          })),
-        },
+      ...view,
+      verdict: graded.value.verdict,
+      feedback: sealed && {
+        text: graded.value.text,
+        citations: citations.map(({ tag, cite }) => ({
+          tag,
+          provenance: provenance.get(cite) ?? "gone",
+        })),
       },
-    } as const;
+    };
   }
   const meterGrading = (
     student: Principal,
@@ -222,7 +224,7 @@ export function createUnderstanding({
       artifactId: string,
       answers: { itemId: string; text: string }[],
     ): Promise<
-      | { status: "answered"; attempts: AnsweredView[] }
+      | { status: "answered"; attempts: AttemptView[] }
       | { status: "refused"; reason: "gone" }
     > {
       const found = await Promise.all(
@@ -247,14 +249,7 @@ export function createUnderstanding({
         }),
       );
       const attempts = await Promise.all(
-        rows.map(async (row): Promise<AnsweredView> => {
-          const graded = await gradeAttempt(student, row.id);
-          if (graded === "gone")
-            return { ...row, verdict: null, feedback: null, reason: "gone" };
-          return graded.status === "graded"
-            ? { ...graded.attempt, reason: null }
-            : { ...graded.view, reason: graded.reason };
-        }),
+        rows.map((row, i) => gradeAttempt(student, row, items[i]!)),
       );
       return { status: "answered", attempts };
     },
@@ -311,21 +306,16 @@ export function createUnderstanding({
         ),
       );
     },
-    /** The latest Attempt on each Practice Item of a practice set the student answered, in the set's order. */
-    async latest(
+    /** The latest Attempt on each Practice Item of a practice set that the student answered. */
+    async latestAttempts(
       student: Principal,
       artifactId: string,
-    ): Promise<AnsweredView[] | "gone"> {
-      const artifact = await withOwner(db, student, (tx) =>
-        tx.artifact.findUnique({ where: { id: artifactId } }),
-      );
-      if (!artifact) return "gone";
+    ): Promise<AttemptView[] | "gone"> {
+      if (!(await artifacts.owns(student, artifactId))) return "gone";
       const latest = new Map<string, AttemptView>();
       for (const attempt of await attemptsWhere(student, { artifactId }))
         if (!latest.has(attempt.itemId)) latest.set(attempt.itemId, attempt);
-      return [...latest.values()]
-        .sort((a, b) => Number(a.itemId) - Number(b.itemId))
-        .map((attempt) => ({ ...attempt, reason: null }));
+      return [...latest.values()];
     },
     /** A Topic's Evidence, newest first; Feedback whose practice set lost a Source shows as gone. */
     async history(

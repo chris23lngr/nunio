@@ -4813,28 +4813,6 @@
           }
         ]
       },
-      "AnsweredAttempt": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Attempt"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "reason": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "Why it is ungraded, such as allowance_exhausted or grader_failed; known only right after grading failed."
-              }
-            },
-            "required": [
-              "reason"
-            ]
-          }
-        ]
-      },
       "Attempt": {
         "type": "object",
         "properties": {
@@ -4973,6 +4951,24 @@
             ],
             "description": "Null while ungraded, and once a Source of its practice set is deleted."
           },
+          "ungradedReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "grader_failed",
+              "allowance_exhausted",
+              "ai_disabled",
+              "not_entitled",
+              "deletion_pending",
+              "budget_exhausted",
+              "paused",
+              "ended",
+              null
+            ],
+            "description": "Why grading failed; null once graded."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -4986,6 +4982,7 @@
           "text",
           "verdict",
           "feedback",
+          "ungradedReason",
           "createdAt"
         ]
       },
@@ -14442,7 +14439,7 @@
     },
     "/api/me/artifacts/{id}/attempts": {
       "get": {
-        "description": "The latest Attempt on each Practice Item of a practice set the student answered, in the set's order.",
+        "description": "The latest Attempt on each Practice Item of a practice set that the student answered.",
         "parameters": [
           {
             "schema": {
@@ -14462,7 +14459,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/AnsweredAttempt"
+                    "$ref": "#/components/schemas/Attempt"
                   }
                 }
               }
@@ -14567,7 +14564,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/AnsweredAttempt"
+                    "$ref": "#/components/schemas/Attempt"
                   }
                 }
               }

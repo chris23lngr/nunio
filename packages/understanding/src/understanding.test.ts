@@ -332,7 +332,7 @@ it("records the student's Attempts on several Practice Items at once and grades 
         text: "Wenn sie punktweise konvergiert.",
         verdict: expect.any(String),
         feedback: { text: expect.any(String), citations: [cited] },
-        reason: null,
+        ungradedReason: null,
         createdAt: expect.any(Date),
       },
       {
@@ -343,7 +343,7 @@ it("records the student's Attempts on several Practice Items at once and grades 
         text: "Den Abstand zur Grenzfunktion.",
         verdict: expect.any(String),
         feedback: { text: expect.any(String), citations: [cited] },
-        reason: null,
+        ungradedReason: null,
         createdAt: expect.any(Date),
       },
     ],
@@ -358,7 +358,7 @@ it("shows the latest Attempt on each answered Practice Item of a practice set, g
     scriptedGrader("incorrect", "correct", new Error("provider timed out"))
       .grader,
   );
-  expect(await understanding.latest(p, artifactId)).toEqual([]);
+  expect(await understanding.latestAttempts(p, artifactId)).toEqual([]);
 
   await understanding.answer(p, artifactId, [
     { itemId: "1", text: "Erster Versuch." },
@@ -370,23 +370,30 @@ it("shows the latest Attempt on each answered Practice Item of a practice set, g
     { itemId: "2", text: "Ohne Bewertung." },
   ]);
 
-  expect(await understanding.latest(p, artifactId)).toEqual([
-    expect.objectContaining({
-      itemId: "1",
-      text: "Zweiter Versuch.",
-      verdict: "correct",
-      feedback: expect.objectContaining({ text: "Das ist correct [S1]." }),
-      reason: null,
-    }),
-    expect.objectContaining({
-      itemId: "2",
-      text: "Ohne Bewertung.",
-      verdict: null,
-      feedback: null,
-      reason: null,
-    }),
-  ]);
-  expect(await understanding.latest(await student(), artifactId)).toBe("gone");
+  const latest = await understanding.latestAttempts(p, artifactId);
+  expect(latest).toHaveLength(2);
+  expect(latest).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        itemId: "1",
+        text: "Zweiter Versuch.",
+        verdict: "correct",
+        feedback: expect.objectContaining({ text: "Das ist correct [S1]." }),
+        ungradedReason: null,
+      }),
+      // Why it is ungraded is kept, so the student still learns it on return.
+      expect.objectContaining({
+        itemId: "2",
+        text: "Ohne Bewertung.",
+        verdict: null,
+        feedback: null,
+        ungradedReason: "grader_failed",
+      }),
+    ]),
+  );
+  expect(await understanding.latestAttempts(await student(), artifactId)).toBe(
+    "gone",
+  );
 });
 
 it("moves a Topic's Level only through graded Attempts, never through Artifacts, and shows a differing Self-assessment as disputed", async () => {
@@ -457,12 +464,12 @@ it("keeps an Attempt ungraded when grading fails or the Allowance is spent, grad
         itemId: "1",
         verdict: null,
         feedback: null,
-        reason: "grader_failed",
+        ungradedReason: "grader_failed",
       }),
       expect.objectContaining({
         itemId: "2",
         verdict: "correct",
-        reason: null,
+        ungradedReason: null,
       }),
     ],
   });
@@ -478,7 +485,7 @@ it("keeps an Attempt ungraded when grading fails or the Allowance is spent, grad
         itemId: "1",
         verdict: "correct",
         feedback: expect.objectContaining({ text: "Das ist correct [S1]." }),
-        reason: null,
+        ungradedReason: null,
       }),
     ],
   });
@@ -497,7 +504,7 @@ it("keeps an Attempt ungraded when grading fails or the Allowance is spent, grad
     attempts: [
       expect.objectContaining({
         verdict: null,
-        reason: "allowance_exhausted",
+        ungradedReason: "allowance_exhausted",
       }),
     ],
   });
@@ -610,7 +617,7 @@ it("never takes an Attempt on another student's practice set, or shows them anot
       { itemId: "9", text: "?" },
     ]),
   ).toEqual({ status: "refused", reason: "gone" });
-  expect(await understanding.latest(owner, artifactId)).toEqual([
+  expect(await understanding.latestAttempts(owner, artifactId)).toEqual([
     expect.objectContaining({ itemId: "1", text: "Meins." }),
   ]);
   expect(await understanding.history(other, topicId)).toEqual([]);
