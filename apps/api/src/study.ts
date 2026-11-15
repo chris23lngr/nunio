@@ -24,20 +24,18 @@ const Citation = z.object({
 });
 const Kind = z.enum(["practice_set", "flashcards", "draft", "critique"]);
 const ArtifactBase = z.object({
-    id: z.string(),
-    kind: Kind,
-    status: z.enum(["making", "ready", "failed"]),
-    failure: z.string().nullable(),
-    topicIds: z.array(z.string()),
-    obligationId: z.string().nullable(),
-    createdAt: z.date(),
-    openedAt: z.date().nullable(),
-    withdrawn: z
-      .boolean()
-      .describe(
-        "A Source it was drawn from is deleted, so its content is gone.",
-      ),
-  });
+  id: z.string(),
+  kind: Kind,
+  status: z.enum(["making", "ready", "failed"]),
+  failure: z.string().nullable(),
+  topicIds: z.array(z.string()),
+  obligationId: z.string().nullable(),
+  createdAt: z.date(),
+  openedAt: z.date().nullable(),
+  withdrawn: z
+    .boolean()
+    .describe("A Source it was drawn from is deleted, so its content is gone."),
+});
 export const ArtifactSummary = ArtifactBase.extend({
   title: z
     .string()
