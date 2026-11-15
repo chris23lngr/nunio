@@ -243,6 +243,7 @@ function fakeMaker() {
       inputs.push(input);
       return {
         value: {
+          title: "Gleichmäßige Konvergenz auf einen Blick",
           cards: [
             {
               id: "1",
@@ -334,6 +335,104 @@ it("makes a practice set on a Topic from the student's material, ready until the
   expect(await artifacts.open(await student(), started.artifactId)).toBe(
     "gone",
   );
+});
+
+it("lists a practice set by its title, with its Course, how many items it has and its latest version", async () => {
+  const p = await student();
+  const { courseId, topicId } = await courseWithTopic(p);
+  const artifacts = artifactsWith(fakeMaker().maker);
+  const started = await artifacts.request(p, {
+    kind: "practice_set",
+    topicIds: [topicId],
+    from: { selection: { courseIds: [courseId], sourceIds: [] } },
+  });
+  if (started.status !== "started") throw new Error(started.status);
+  await artifacts.make(started.runId);
+
+  expect(await artifacts.list(p, {})).toEqual([
+    expect.objectContaining({
+      id: started.artifactId,
+      title: "Gleichmäßige Konvergenz von Funktionenfolgen",
+      courseId,
+      count: 1,
+      version: 1,
+      updatedAt: expect.any(Date),
+    }),
+  ]);
+});
+
+it("lists flashcards by the title they were made with", async () => {
+  const p = await student();
+  const { artifacts, artifactId, courseId } = await flashcardsOf(p);
+
+  expect(await artifacts.list(p, {})).toEqual([
+    expect.objectContaining({
+      id: artifactId,
+      title: "Gleichmäßige Konvergenz auf einen Blick",
+      courseId,
+      count: 1,
+    }),
+  ]);
+  expect(await artifacts.open(p, artifactId)).toMatchObject({
+    content: { title: "Gleichmäßige Konvergenz auf einen Blick" },
+  });
+});
+
+it("keeps the title of flashcards the student edits, listing their latest version", async () => {
+  const p = await student();
+  const { artifacts, artifactId } = await flashcardsOf(p);
+
+  await artifacts.edit(p, artifactId, {
+    baseVersion: 1,
+    content: { cards: [{ id: "1", front: "Konvergenz", back: "Neu." }] },
+  });
+
+  expect(await artifacts.list(p, {})).toEqual([
+    expect.objectContaining({
+      title: "Gleichmäßige Konvergenz auf einen Blick",
+      version: 2,
+    }),
+  ]);
+});
+
+it("names an Artifact by its Topics while it is made and once withdrawn, counting nothing", async () => {
+  const p = await student();
+  const { courseId, topicId } = await courseWithTopic(p);
+  const notes = await readySource(p, "Notizen", [
+    "MA-101 Analysis I",
+    "Meine Notizen zur gleichmäßigen Konvergenz.",
+  ]);
+  await linkToCourse(p, notes);
+  const artifacts = artifactsWith(fakeMaker().maker);
+  const ask = async (sourceIds: string[]) => {
+    const started = await artifacts.request(p, {
+      kind: "practice_set",
+      topicIds: [topicId],
+      from: { selection: { courseIds: [], sourceIds } },
+    });
+    if (started.status !== "started") throw new Error(started.status);
+    return started;
+  };
+  const withdrawn = await ask([notes]);
+  await artifacts.make(withdrawn.runId);
+  await sources.remove(p, notes);
+  const making = await ask([]);
+
+  const named = { title: "Gleichmäßige Konvergenz", courseId, count: null };
+  expect(await artifacts.list(p, {})).toEqual([
+    expect.objectContaining({
+      id: making.artifactId,
+      ...named,
+      version: null,
+      updatedAt: null,
+    }),
+    expect.objectContaining({
+      id: withdrawn.artifactId,
+      ...named,
+      withdrawn: true,
+      version: 1,
+    }),
+  ]);
 });
 
 it("refuses a Topic that is not the student's, or that they rejected, recording nothing", async () => {
@@ -815,6 +914,34 @@ it("drafts an Obligation from the student's material and instructions when its A
       citations: [{ tag: "S1", provenance: { kind: "source", sourceId } }],
     },
   });
+});
+
+it("names a draft by its Obligation, counting nothing in a text", async () => {
+  const p = await student();
+  const { courseId, sheetId } = await courseWithObligations(p);
+  await facts.enterRule(p, {
+    obligationId: sheetId,
+    level: "course",
+    value: "allowed",
+  });
+  const artifacts = artifactsWith(fakeMaker().maker);
+  const started = await artifacts.request(p, {
+    kind: "draft",
+    obligationId: sheetId,
+    instructions: "",
+    from: { selection: { courseIds: [courseId], sourceIds: [] } },
+  });
+  if (started.status !== "started") throw new Error(started.status);
+  await artifacts.make(started.runId);
+
+  expect(await artifacts.list(p, {})).toEqual([
+    expect.objectContaining({
+      title: "Übungsblatt 3: Konvergenz",
+      courseId,
+      count: null,
+      version: 1,
+    }),
+  ]);
 });
 
 it("refuses to write while the AI-use Rule is unknown, forbidden, or conditional and unconfirmed, and for an exam, while practice stays open", async () => {

@@ -61,7 +61,7 @@ type StoredRequest = {
   of?: { ownWork: string } | { artifactId: string; version: number };
   conditionsConfirmed?: true;
 };
-export type ArtifactSummary = {
+type ArtifactBase = {
   id: string;
   kind: ArtifactRequest["kind"];
   status: "making" | "ready" | "failed";
@@ -73,6 +73,20 @@ export type ArtifactSummary = {
   /** A Source it was drawn from is deleted, so its content is gone. */
   withdrawn: boolean;
 };
+/** An Artifact as listed: named and counted from its latest version, so the student can tell them apart. */
+export type ArtifactSummary = ArtifactBase & {
+  /** Its own title, else its Obligation's or its Topics' names; null when none is known. */
+  title: string | null;
+  /** The Course of its Obligation or Topics. */
+  courseId: string | null;
+  /** Its items or cards; null for a text, and until made or once withdrawn. */
+  count: number | null;
+  /** Its latest version and when it was made; null until made. */
+  version: number | null;
+  updatedAt: Date | null;
+  /** When the student last answered one of its Practice Items. */
+  lastPractisedAt: Date | null;
+};
 type Item = {
   id: string;
   topicIds: string[];
@@ -83,7 +97,7 @@ type Card = { id: string; topicIds: string[]; front: string; back: string };
 /** A practice set's title and items, a set of flashcards, or a draft's or Critique's text, with citations as `C`. */
 type Content<C> =
   | { title: string | null; items: (Item & { citations: C[] })[] }
-  | { cards: (Card & { citations: C[] })[] }
+  | { title?: string | null; cards: (Card & { citations: C[] })[] }
   | { text: string; citations: C[] };
 /** What the student needs to hand an Obligation in themselves: nothing here is sent anywhere. */
 export type HandoffView = {
@@ -100,7 +114,7 @@ export type HandoffView = {
   /** The student's drafts for it, each at its latest version. */
   drafts: { id: string; version: number; createdAt: Date }[];
 };
-export type ArtifactView = ArtifactSummary & {
+export type ArtifactView = ArtifactBase & {
   version: number | null;
   /** Null until made, and once withdrawn. */
   content: Content<{ tag: string; provenance: Provenance | "gone" }> | null;
@@ -116,7 +130,7 @@ const citationsOf = <C>(content: Content<C>) =>
 /** What the Maker returns for each kind. */
 type Made =
   | { title: string; items: PracticeItem[] }
-  | { cards: Flashcard[] }
+  | { title: string; cards: Flashcard[] }
   | { written: Written };
 const notHandedIn = ["exam", "registration"];
 
@@ -221,7 +235,10 @@ export function createArtifacts({
                 const { value, usage } = await maker.flashcards(input, {
                   signal,
                 });
-                return { value: { cards: value.cards }, usage };
+                return {
+                  value: { title: value.title, cards: value.cards },
+                  usage,
+                };
               }
               const { value, usage } = await maker.practiceSet(input, {
                 signal,
@@ -318,7 +335,7 @@ export function createArtifacts({
       const rows = await tx.artifact.findMany({
         where,
         orderBy: { createdAt: "desc" },
-        include: { versions: { orderBy: { version: "desc" } } },
+        include: { versions: { orderBy: { version: "desc" }, take: 1 } },
       });
       const derivedFrom = [
         ...new Set(rows.flatMap((row) => row.versions[0]?.derivedFrom ?? [])),
@@ -336,8 +353,8 @@ export function createArtifacts({
         derivedFrom: row.versions[0]?.derivedFrom ?? [],
         summary: {
           id: row.id,
-          kind: row.kind as ArtifactSummary["kind"],
-          status: row.status as ArtifactSummary["status"],
+          kind: row.kind as ArtifactBase["kind"],
+          status: row.status as ArtifactBase["status"],
           failure: row.failure,
           topicIds: (row.request as StoredRequest).topicIds ?? [],
           obligationId: (row.request as StoredRequest).obligationId ?? null,
@@ -346,7 +363,7 @@ export function createArtifacts({
           withdrawn: Boolean(
             row.versions[0]?.derivedFrom.some((id) => !live.has(id)),
           ),
-        } satisfies ArtifactSummary,
+        } satisfies ArtifactBase,
       }));
     });
   }
@@ -469,7 +486,7 @@ export function createArtifacts({
       });
       const content: StoredContent =
         "cards" in made.value
-          ? { cards: made.value.cards.map(cite) }
+          ? { title: made.value.title, cards: made.value.cards.map(cite) }
           : "items" in made.value
             ? {
                 title: made.value.title,
@@ -512,16 +529,75 @@ export function createArtifacts({
       student: Principal,
       q: { ready?: true; derivedFrom?: string },
     ): Promise<ArtifactSummary[]> {
-      return (await summaries(student))
-        .filter(
-          ({ summary, derivedFrom }) =>
-            (!q.ready ||
-              (summary.status === "ready" &&
-                !summary.openedAt &&
-                !summary.withdrawn)) &&
-            (!q.derivedFrom || derivedFrom.includes(q.derivedFrom)),
-        )
-        .map(({ summary }) => summary);
+      const found = (await summaries(student)).filter(
+        ({ summary, derivedFrom }) =>
+          (!q.ready ||
+            (summary.status === "ready" &&
+              !summary.openedAt &&
+              !summary.withdrawn)) &&
+          (!q.derivedFrom || derivedFrom.includes(q.derivedFrom)),
+      );
+      const courses = (await facts.review(student)).courses;
+      const topics = new Map(
+        courses.flatMap((course) =>
+          course.facts
+            .filter((fact) => fact.type === "topic")
+            .map((fact) => [
+              fact.id,
+              { name: fact.value, courseId: course.id },
+            ]),
+        ),
+      );
+      const obligations = new Map(
+        courses.flatMap((course) =>
+          course.obligations.map((o) => [
+            o.id,
+            { name: o.title, courseId: course.id },
+          ]),
+        ),
+      );
+      return withOwner(db, student, async (tx) => {
+        const practised = new Map(
+          (
+            await tx.practiceAttempt.groupBy({
+              by: ["artifactId"],
+              where: { artifactId: { in: found.map(({ row }) => row.id) } },
+              _max: { createdAt: true },
+            })
+          ).map((group) => [group.artifactId, group._max.createdAt]),
+        );
+        return Promise.all(
+          found.map(async ({ row, summary }) => {
+            const [latest] = row.versions;
+            // A withdrawn one cannot be read; its Sources' keys are gone.
+            const text =
+              latest && !summary.withdrawn
+                ? await derived.open(tx, `${row.id}:${latest.version}`, latest)
+                : null;
+            const stored = text ? (JSON.parse(text) as StoredContent) : null;
+            const named = summary.obligationId
+              ? [obligations.get(summary.obligationId)]
+              : summary.topicIds.map((id) => topics.get(id));
+            const known = named.filter((n) => n !== undefined);
+            return {
+              ...summary,
+              title:
+                (stored && "title" in stored ? stored.title : null) ??
+                (known.length
+                  ? new Intl.ListFormat("de", { type: "conjunction" }).format(
+                      known.map((n) => n.name),
+                    )
+                  : null),
+              courseId: known[0]?.courseId ?? null,
+              count:
+                stored && !("text" in stored) ? rowsOf(stored).length : null,
+              version: latest?.version ?? null,
+              updatedAt: latest?.createdAt ?? null,
+              lastPractisedAt: practised.get(row.id) ?? null,
+            };
+          }),
+        );
+      });
     },
     /**
      * The student's edit of a set of flashcards or a draft, kept as a new version sealed under the same Sources. A
@@ -575,6 +651,7 @@ export function createArtifacts({
           let next = Math.max(0, ...base.map((card) => Number(card.id)));
           const topicIds = (artifact.request as StoredRequest).topicIds ?? [];
           content = {
+            ...("title" in stored ? { title: stored.title } : {}),
             cards: edit.content.cards.map((card) => {
               const kept = base.find((row) => row.id === card.id);
               return {
@@ -752,7 +829,11 @@ export function createArtifacts({
       const latest =
         version === undefined
           ? found.row.versions[0]
-          : found.row.versions.find((v) => v.version === version);
+          : await withOwner(db, student, (tx) =>
+              tx.artifactVersion.findUnique({
+                where: { artifactId_version: { artifactId, version } },
+              }),
+            );
       if (version !== undefined && !latest) return "gone";
       const text = await withOwner(db, student, async (tx) => {
         if (found.row.status === "ready" && !found.row.openedAt)
@@ -791,7 +872,11 @@ export function createArtifacts({
                 items: stored.items.map(resolve),
               }
             : "cards" in stored
-              ? { cards: stored.cards.map(resolve) }
+              ? {
+                  // Flashcards made before titles have none.
+                  title: stored.title ?? null,
+                  cards: stored.cards.map(resolve),
+                }
               : resolve(stored)),
       };
     },

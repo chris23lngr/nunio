@@ -104,6 +104,7 @@ const maker: Maker = {
   }),
   flashcards: async (input) => ({
     value: {
+      title: "Klausurbegriffe",
       cards: [
         {
           id: "1",
