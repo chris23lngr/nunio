@@ -55,6 +55,7 @@ it("makes a practice set from material sent as data apart from its instructions,
   const maker = makerReplying(
     bodies,
     JSON.stringify({
+      title: "Gleichmäßige und punktweise Konvergenz",
       items: [
         {
           topicIds: ["topic-1"],
@@ -80,6 +81,7 @@ it("makes a practice set from material sent as data apart from its instructions,
     signal: new AbortController().signal,
   });
 
+  expect(made.value.title).toBe("Gleichmäßige und punktweise Konvergenz");
   expect(made.value.items).toEqual([
     {
       id: "1",
@@ -101,6 +103,8 @@ it("makes a practice set from material sent as data apart from its instructions,
     bodies[0] as { messages: { role: string; content: unknown }[] }
   ).messages;
   expect(system!.role).toBe("system");
+  // The questions speak to the student informally, as the rest of nunio does.
+  expect(JSON.stringify(system)).toContain('informally as \\"du\\"');
   expect(JSON.stringify(system)).not.toContain("<data-1234>");
   expect(JSON.stringify(rest)).toContain("<data-1234>");
   // Topic names are extracted text, so they are fenced like the material.
@@ -111,7 +115,11 @@ it("makes a practice set from material sent as data apart from its instructions,
 });
 
 it("refuses a practice set the model did not finish", async () => {
-  const maker = makerReplying([], JSON.stringify({ items: [] }), "length");
+  const maker = makerReplying(
+    [],
+    JSON.stringify({ title: "Konvergenz", items: [] }),
+    "length",
+  );
 
   await expect(
     maker.practiceSet(input, { signal: new AbortController().signal }),

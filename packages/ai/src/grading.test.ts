@@ -80,6 +80,8 @@ it("grades the student's Attempt against the Practice Item, both sent as fenced 
     bodies[0] as { messages: { role: string; content: unknown }[] }
   ).messages;
   expect(system!.role).toBe("system");
+  // Feedback speaks to the student informally, as the rest of nunio does.
+  expect(JSON.stringify(system)).toContain('informally as \\"du\\"');
   expect(JSON.stringify(system)).not.toContain("punktweise");
   const sent = JSON.stringify(rest);
   expect(sent).toMatch(
