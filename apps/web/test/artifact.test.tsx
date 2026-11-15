@@ -7,7 +7,7 @@ import { api } from "./api";
 import { TestProviders } from "./providers";
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/study/artifacts/a0000000-0000-4000-8000-000000000001",
+  usePathname: () => "/artifacts/a0000000-0000-4000-8000-000000000001",
 }));
 
 beforeEach(() => {
@@ -129,12 +129,11 @@ test("shows a practice set under its title with the student's saved answers, the
   ).toBeTruthy();
   const trail = screen.getByRole("navigation", { name: "breadcrumb" });
   expect(
-    within(trail).getByRole("link", { name: "Lernen" }).getAttribute("href"),
-  ).toBe("/study");
-  expect(within(trail).getByText("Artefakte")).toBeTruthy();
+    within(trail).getByRole("link", { name: "Artefakte" }).getAttribute("href"),
+  ).toBe("/artifacts");
   expect(
     screen.getByRole("link", { name: "Zurück" }).getAttribute("href"),
-  ).toBe("/study");
+  ).toBe("/artifacts");
   expect(await screen.findByText("Zuletzt gelernt vor 3 Tagen")).toBeTruthy();
 
   const answered = screen.getByRole("article", { name: `1. ${first}` });

@@ -18,7 +18,7 @@ test("the list of questions jumps to a question and marks the one in view", asyn
   isMobile,
 }) => {
   test.skip(isMobile, "The list of questions shows on wide screens only.");
-  await page.goto(`/study/artifacts/${practiceSetId}`);
+  await page.goto(`/artifacts/${practiceSetId}`);
   const questions = page.getByRole("navigation", { name: "Fragen" });
   const link = (n: number) =>
     questions.getByRole("link", { name: new RegExp(`^${n}\\. `) });

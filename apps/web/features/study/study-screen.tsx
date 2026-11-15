@@ -93,7 +93,7 @@ function TopicCard({
       {make.data && (
         <p>
           Being made.{" "}
-          <Link href={`/study/artifacts/${make.data.artifactId}`}>
+          <Link href={`/artifacts/${make.data.artifactId}`}>
             Open the {opened[make.data.kind]}
           </Link>
         </p>
@@ -182,7 +182,7 @@ function HandoffPanel({
           <ul>
             {view.drafts.map((draft) => (
               <li key={draft.id}>
-                <Link href={`/study/artifacts/${draft.id}`}>
+                <Link href={`/artifacts/${draft.id}`}>
                   Draft, version {draft.version}
                 </Link>
               </li>
@@ -324,7 +324,7 @@ function ObligationCard({
       {write.data && "started" in write.data && (
         <p>
           Being made.{" "}
-          <Link href={`/study/artifacts/${write.data.started.artifactId}`}>
+          <Link href={`/artifacts/${write.data.started.artifactId}`}>
             Open the {writtenAs[write.data.started.kind]}
           </Link>
         </p>

@@ -80,14 +80,14 @@ test("each navigation link has its own decorative icon", () => {
   ).toBe("/settings/security");
 
   const links = screen.getAllByRole("link");
-  expect(links).toHaveLength(10);
+  expect(links).toHaveLength(11);
   const glyphs = links.map((link) => {
     const icon = link.querySelector("svg");
     expect(icon).not.toBeNull();
     expect(icon!.getAttribute("aria-hidden")).toBe("true");
     return icon!.innerHTML;
   });
-  expect(new Set(glyphs).size).toBe(10);
+  expect(new Set(glyphs).size).toBe(11);
 });
 
 test.each([
@@ -97,7 +97,8 @@ test.each([
   ["/chat", "Chat"],
   ["/plan", "Plan"],
   ["/study", "Study"],
-  ["/study/artifacts/a-1", "Study"],
+  ["/artifacts", "Artefakte"],
+  ["/artifacts/a-1", "Artefakte"],
   ["/courses", "Kurse"],
   ["/projects", "Projects"],
   ["/responsibilities", "Responsibilities"],

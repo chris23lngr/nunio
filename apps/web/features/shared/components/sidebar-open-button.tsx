@@ -7,7 +7,7 @@ import { PanelLeft } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 /** Pages that render a PageHeader, which places its own `inline` button. */
-const ownHeader = ["/chat", "/plan", "/study/artifacts"];
+const ownHeader = ["/chat", "/plan", "/artifacts"];
 
 /**
  * Opens the closed sidebar. The layout floats one over every page; screens with

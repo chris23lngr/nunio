@@ -1925,7 +1925,7 @@ test("shows a practice set started in an answer as a step and a card linking to 
     screen
       .getByRole("link", { name: "Practice Set öffnen" })
       .getAttribute("href"),
-  ).toBe("/study/artifacts/art-1");
+  ).toBe("/artifacts/art-1");
 });
 
 test("the waiting status stays until the first word when nunio does not reason", async () => {
