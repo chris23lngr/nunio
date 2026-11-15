@@ -1,9 +1,25 @@
+import { SidebarProvider } from "@nunio/ui/components/sidebar/sidebar";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import { ArtifactScreen } from "@/features/study/artifact-screen";
 import { api } from "./api";
 import { TestProviders } from "./providers";
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/study/artifacts/a0000000-0000-4000-8000-000000000001",
+}));
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+});
 
 const artifactId = "a0000000-0000-4000-8000-000000000001";
 const attemptId = "e0000000-0000-4000-8000-000000000001";
@@ -25,119 +41,298 @@ const summary = {
   withdrawn: false,
   version: 1,
 };
+const first = "Wann konvergiert eine Funktionenfolge gleichmäßig?";
+const second = "Was misst der Abstand?";
 const practiceSet = {
   ...summary,
   content: {
+    title: "Gleichmäßige Konvergenz von Funktionenfolgen",
     items: [
       {
         id: "1",
         topicIds: ["t1"],
-        question: "Wann konvergiert eine Funktionenfolge gleichmäßig?",
+        question: `${first} [S1]`,
         answer: "Wenn der Abstand überall klein wird.",
+        citations: [{ tag: "S1", provenance: source }],
+      },
+      {
+        id: "2",
+        topicIds: ["t1"],
+        question: `${second} [S1]`,
+        answer: "Wie weit die Folge von der Grenzfunktion liegt.",
         citations: [{ tag: "S1", provenance: source }],
       },
     ],
   },
 };
-const graded = (verdict: string) => ({
-  id: attemptId,
+const daysAgo = (days: number) =>
+  new Date(Date.now() - days * 86_400_000).toISOString();
+/** The latest Attempt on an item, as the API shows it. */
+const attempt = (
+  itemId: string,
+  text: string,
+  verdict: string | null,
+  extra: Record<string, unknown> = {},
+) => ({
+  id: `${attemptId.slice(0, -1)}${itemId}`,
   artifactId,
-  itemId: "1",
+  itemId,
   topicIds: ["t1"],
-  text: "Punktweise.",
+  text,
   verdict,
-  feedback: {
+  feedback: verdict && {
     text: "Punktweise reicht nicht [S1].",
     citations: [{ tag: "S1", provenance: source }],
   },
-  createdAt: "2026-11-10T09:05:00.000Z",
+  reason: null,
+  createdAt: daysAgo(3),
+  ...extra,
 });
 
-/** Serves the Artifact, one view per GET in turn (the last one repeats), and records what the student sends. */
-function serveArtifact(...views: unknown[]) {
-  const sent: { path: string; body: unknown }[] = [];
+/**
+ * Serves the Artifact, one view per GET in turn (the last one repeats), with the student's latest Attempts and
+ * Courses, then shows it.
+ */
+function serveArtifact(
+  shown: unknown,
+  { attempts = [] as unknown[], courses = [] as unknown[] } = {},
+) {
+  const views = Array.isArray(shown) ? shown : [shown];
   api.route("GET", `/api/me/artifacts/${artifactId}`, () =>
     Response.json(views.length > 1 ? views.shift() : views[0]),
   );
+  api.route("GET", `/api/me/artifacts/${artifactId}/attempts`, () =>
+    Response.json(attempts),
+  );
+  api.route("GET", "/api/me/review", () => Response.json({ courses }));
   render(
     <TestProviders>
-      <ArtifactScreen apiOrigin={api.origin} id={artifactId} pollMs={20} />
+      <SidebarProvider>
+        <ArtifactScreen apiOrigin={api.origin} id={artifactId} pollMs={20} />
+      </SidebarProvider>
     </TestProviders>,
   );
-  return sent;
 }
 
-test("waits while a practice set is made, then grades the student's answer with Feedback and its Source", async () => {
-  const sent: unknown[] = [];
-  api.route("POST", "/api/me/attempts", async (request) => {
-    sent.push(await request.json());
-    return Response.json(
-      { status: "graded", attempt: graded("incorrect") },
-      { status: 201 },
-    );
+test("shows a practice set under its title with the student's saved answers, their Feedback and when they last practised", async () => {
+  serveArtifact([practiceSet], {
+    attempts: [attempt("1", "Punktweise.", "incorrect")],
   });
-  serveArtifact(
-    { ...summary, status: "making", version: null, content: null },
-    practiceSet,
-  );
 
-  await screen.findByText("Being made…");
-  const item = await screen.findByRole("article", {
-    name: "Wann konvergiert eine Funktionenfolge gleichmäßig?",
-  });
-  await userEvent.type(
-    within(item).getByLabelText("Your answer"),
-    "Punktweise.",
-  );
-  await userEvent.click(
-    within(item).getByRole("button", { name: "Check my answer" }),
-  );
-
-  const feedback = await within(item).findByRole("region", {
-    name: "Feedback",
-  });
-  expect(within(feedback).getByText("Not yet correct")).toBeTruthy();
   expect(
-    within(feedback).getByText("Punktweise reicht nicht [S1]."),
+    (
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Gleichmäßige Konvergenz von Funktionenfolgen",
+      })
+    ).textContent,
   ).toBeTruthy();
+  const trail = screen.getByRole("navigation", { name: "breadcrumb" });
+  expect(
+    within(trail).getByRole("link", { name: "Lernen" }).getAttribute("href"),
+  ).toBe("/study");
+  expect(within(trail).getByText("Artefakte")).toBeTruthy();
+  expect(
+    screen.getByRole("link", { name: "Zurück" }).getAttribute("href"),
+  ).toBe("/study");
+  expect(await screen.findByText("Zuletzt gelernt vor 3 Tagen")).toBeTruthy();
+
+  const answered = screen.getByRole("article", { name: `1. ${first}` });
+  expect(
+    (within(answered).getByLabelText("Deine Antwort") as HTMLTextAreaElement)
+      .value,
+  ).toBe("Punktweise.");
+  expect(within(answered).getByText("Quelle: Skript, Seite 2")).toBeTruthy();
+  const feedback = within(answered).getByRole("region", { name: "Feedback" });
+  expect(within(feedback).getByText("Noch nicht richtig")).toBeTruthy();
+  expect(feedback.textContent).toContain("Punktweise reicht nicht");
   expect(
     within(feedback).getByRole("button", {
       name: "Quelle S1: Skript, Seite 2",
     }),
   ).toBeTruthy();
-  expect(sent).toEqual([{ artifactId, itemId: "1", text: "Punktweise." }]);
+
+  const open = screen.getByRole("article", { name: `2. ${second}` });
+  expect(
+    (within(open).getByLabelText("Deine Antwort") as HTMLTextAreaElement).value,
+  ).toBe("");
+  expect(within(open).queryByRole("region", { name: "Feedback" })).toBeNull();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Antworten prüfen",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+
+  const questions = screen.getByRole("navigation", { name: "Fragen" });
+  expect(
+    within(questions)
+      .getAllByRole("link")
+      .map((link) => [link.textContent, link.getAttribute("href")]),
+  ).toEqual([
+    [`1. ${first}`, "#frage-1"],
+    [`2. ${second}`, "#frage-2"],
+  ]);
 });
 
-test("keeps an answer it could not grade, and grades it when the student asks again", async () => {
-  api.route("POST", "/api/me/attempts", () =>
-    Response.json(
-      { status: "ungraded", attemptId, reason: "grader_failed" },
-      { status: 201 },
-    ),
+test("checks only the new, changed and ungraded answers with one button, and keeps the Feedback while the student reworks one", async () => {
+  const sent: unknown[] = [];
+  let release = () => {};
+  api.route(
+    "POST",
+    `/api/me/artifacts/${artifactId}/attempts`,
+    async (request) => {
+      const body = (await request.json()) as {
+        answers: { itemId: string; text: string }[];
+      };
+      sent.push(body);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return Response.json(
+        body.answers.map(({ itemId, text }) =>
+          attempt(itemId, text, itemId === "1" ? "correct" : "partial"),
+        ),
+        { status: 201 },
+      );
+    },
   );
-  api.route("POST", `/api/me/attempts/${attemptId}/grade`, () =>
-    Response.json(graded("correct")),
-  );
-  serveArtifact(practiceSet);
-  const item = await screen.findByRole("article", {
-    name: "Wann konvergiert eine Funktionenfolge gleichmäßig?",
+  serveArtifact(practiceSet, {
+    attempts: [attempt("1", "Gleichmäßig.", null)],
   });
+  const answered = await screen.findByRole("article", { name: `1. ${first}` });
+  const open = screen.getByRole("article", { name: `2. ${second}` });
+  await within(answered).findByText("Konnte nicht bewertet werden");
   await userEvent.type(
-    within(item).getByLabelText("Your answer"),
-    "Punktweise.",
-  );
-  await userEvent.click(
-    within(item).getByRole("button", { name: "Check my answer" }),
+    within(open).getByLabelText("Deine Antwort"),
+    "Abstand.",
   );
 
-  await within(item).findByText(
-    "Your answer is saved, but could not be graded yet.",
-  );
   await userEvent.click(
-    within(item).getByRole("button", { name: "Grade again" }),
+    screen.getByRole("button", { name: "Antworten prüfen" }),
   );
 
-  await within(item).findByText("Correct");
+  expect(
+    (await screen.findByRole("button", { name: "Wird geprüft…" })).hasAttribute(
+      "disabled",
+    ),
+  ).toBe(true);
+  expect(
+    (within(open).getByLabelText("Deine Antwort") as HTMLTextAreaElement)
+      .disabled,
+  ).toBe(true);
+  release();
+  await within(answered).findByText("Richtig");
+  expect(within(open).getByText("Teilweise richtig")).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Antworten prüfen",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+
+  await userEvent.type(
+    within(open).getByLabelText("Deine Antwort"),
+    " Überall.",
+  );
+  expect(within(open).getByText("Teilweise richtig")).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Antworten prüfen" }),
+  );
+  release();
+
+  await screen.findByRole("button", { name: "Antworten prüfen" });
+  expect(sent).toEqual([
+    {
+      answers: [
+        { itemId: "1", text: "Gleichmäßig." },
+        { itemId: "2", text: "Abstand." },
+      ],
+    },
+    { answers: [{ itemId: "2", text: "Abstand. Überall." }] },
+  ]);
+});
+
+test("says why an answer could not be graded, that Feedback went with its Source, and keeps the answers when checking fails", async () => {
+  let fail = false;
+  api.route("POST", `/api/me/artifacts/${artifactId}/attempts`, () =>
+    fail
+      ? Response.json({ error: "internal" }, { status: 500 })
+      : Response.json(
+          [attempt("2", "Abstand.", null, { reason: "allowance_exhausted" })],
+          { status: 201 },
+        ),
+  );
+  serveArtifact(practiceSet, {
+    attempts: [attempt("1", "Punktweise.", "partial", { feedback: null })],
+  });
+  const answered = await screen.findByRole("article", { name: `1. ${first}` });
+  const withdrawn = await within(answered).findByRole("region", {
+    name: "Feedback",
+  });
+  expect(within(withdrawn).getByText("Teilweise richtig")).toBeTruthy();
+  expect(
+    within(withdrawn).getByText(
+      "Das Feedback ist weg, weil eine Quelle gelöscht wurde.",
+    ),
+  ).toBeTruthy();
+
+  const open = screen.getByRole("article", { name: `2. ${second}` });
+  await userEvent.type(
+    within(open).getByLabelText("Deine Antwort"),
+    "Abstand.",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Antworten prüfen" }),
+  );
+  await within(open).findByText("Konnte nicht bewertet werden");
+  expect(
+    within(open).getByText("Dein KI-Kontingent ist aufgebraucht."),
+  ).toBeTruthy();
+
+  fail = true;
+  await userEvent.click(
+    screen.getByRole("button", { name: "Antworten prüfen" }),
+  );
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Deine Antworten konnten nicht geprüft werden. Versuch es noch einmal.",
+  );
+  expect(
+    (within(open).getByLabelText("Deine Antwort") as HTMLTextAreaElement).value,
+  ).toBe("Abstand.");
+});
+
+test("names a practice set made before titles by its Topics", async () => {
+  serveArtifact(
+    {
+      ...practiceSet,
+      content: { ...practiceSet.content, title: null },
+      topicIds: ["t1", "t2"],
+    },
+    {
+      courses: [
+        {
+          id: "c1",
+          title: "Analysis I",
+          status: "accepted",
+          facts: [
+            { id: "t1", type: "topic", state: "accepted", value: "Konvergenz" },
+            { id: "t2", type: "topic", state: "accepted", value: "Stetigkeit" },
+          ],
+          obligations: [],
+        },
+      ],
+    },
+  );
+
+  expect(
+    await screen.findByRole("heading", {
+      level: 1,
+      name: "Konvergenz und Stetigkeit",
+    }),
+  ).toBeTruthy();
 });
 
 test("says why an Artifact could not be made, and that a withdrawn one's content is gone", async () => {
