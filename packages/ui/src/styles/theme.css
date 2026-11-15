@@ -27,12 +27,22 @@
   /* Rose colors used by destructive components in Paper. */
   --destructive-50: oklch(96.9% 0.015 12.4);
   --destructive-500: oklch(64.5% 0.246 16.4);
+  --destructive-600: oklch(58.6% 0.253 17.6);
   --destructive-700: oklch(51.4% 0.222 16.9);
   --destructive-800: oklch(45.5% 0.188 13.7);
 
   /* Amber colors used by warnings in Paper. */
+  --warning-50: oklch(98.7% 0.022 95.3);
+  --warning-500: oklch(76.9% 0.188 70.1);
   --warning-600: oklch(66.6% 0.179 58.3);
   --warning-700: oklch(55.5% 0.163 49);
+  --warning-800: oklch(47.3% 0.137 46.2);
+
+  /* Green colors used by success states in Paper. */
+  --success-50: oklch(98.2% 0.018 155.8);
+  --success-500: oklch(72.3% 0.219 149.6);
+  --success-600: oklch(62.7% 0.194 149.2);
+  --success-800: oklch(44.8% 0.119 151.3);
 }
 
 /* Map Paper’s names to Tailwind’s utility namespaces. */
@@ -61,9 +71,17 @@
   --color-primary-950: var(--primary-950);
   --color-destructive-50: var(--destructive-50);
   --color-destructive-500: var(--destructive-500);
+  --color-destructive-600: var(--destructive-600);
   --color-destructive-700: var(--destructive-700);
   --color-destructive-800: var(--destructive-800);
+  --color-warning-50: var(--warning-50);
+  --color-warning-500: var(--warning-500);
   --color-warning-600: var(--warning-600);
   --color-warning-700: var(--warning-700);
+  --color-warning-800: var(--warning-800);
+  --color-success-50: var(--success-50);
+  --color-success-500: var(--success-500);
+  --color-success-600: var(--success-600);
+  --color-success-800: var(--success-800);
   --inset-shadow-button-primary: inset 0 1px 0 var(--primary-300);
 }
