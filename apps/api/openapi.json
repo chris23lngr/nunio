@@ -4442,6 +4442,13 @@
                   {
                     "type": "object",
                     "properties": {
+                      "title": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Null for a practice set made before titles."
+                      },
                       "items": {
                         "type": "array",
                         "items": {
@@ -4562,6 +4569,7 @@
                       }
                     },
                     "required": [
+                      "title",
                       "items"
                     ]
                   },
@@ -4801,6 +4809,28 @@
             "required": [
               "version",
               "content"
+            ]
+          }
+        ]
+      },
+      "AnsweredAttempt": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Attempt"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why it is ungraded, such as allowance_exhausted or grader_failed; known only right after grading failed."
+              }
+            },
+            "required": [
+              "reason"
             ]
           }
         ]
@@ -14410,93 +14440,30 @@
         }
       }
     },
-    "/api/me/attempts": {
-      "post": {
-        "description": "The student's answer to a Practice Item, recorded and then graded. A failed grading keeps it, ungraded.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "artifactId": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "itemId": {
-                    "type": "string",
-                    "maxLength": 20
-                  },
-                  "text": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 20000
-                  }
-                },
-                "required": [
-                  "artifactId",
-                  "itemId",
-                  "text"
-                ],
-                "additionalProperties": false
-              }
-            }
+    "/api/me/artifacts/{id}/attempts": {
+      "get": {
+        "description": "The latest Attempt on each Practice Item of a practice set the student answered, in the set's order.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
           }
-        },
+        ],
         "responses": {
-          "201": {
-            "description": "Recorded.",
+          "200": {
+            "description": "One per answered item.",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "graded"
-                          ]
-                        },
-                        "attempt": {
-                          "$ref": "#/components/schemas/Attempt"
-                        }
-                      },
-                      "required": [
-                        "status",
-                        "attempt"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "ungraded"
-                          ]
-                        },
-                        "attemptId": {
-                          "type": "string"
-                        },
-                        "reason": {
-                          "type": "string",
-                          "enum": [
-                            "grader_failed",
-                            "allowance_exhausted",
-                            "gone"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "status",
-                        "attemptId",
-                        "reason"
-                      ]
-                    }
-                  ]
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnsweredAttempt"
+                  }
                 }
               }
             }
@@ -14538,11 +14505,9 @@
             }
           }
         }
-      }
-    },
-    "/api/me/attempts/{id}/grade": {
+      },
       "post": {
-        "description": "Grades an Attempt again, such as an ungraded one; metered again.",
+        "description": "The student's answers to Practice Items of a practice set, recorded and then graded together. An item not in the set refuses them all; a failed grading keeps that Attempt, ungraded.",
         "parameters": [
           {
             "schema": {
@@ -14554,13 +14519,56 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "answers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "itemId": {
+                          "type": "string",
+                          "maxLength": 20
+                        },
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 20000
+                        }
+                      },
+                      "required": [
+                        "itemId",
+                        "text"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "minItems": 1,
+                    "maxItems": 50
+                  }
+                },
+                "required": [
+                  "answers"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {
-            "description": "The Attempt as it stands.",
+          "201": {
+            "description": "Recorded, one per answer.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Attempt"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnsweredAttempt"
+                  }
                 }
               }
             }

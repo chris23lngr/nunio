@@ -2,6 +2,7 @@
 
 export type { TopicLevel } from "./levels.js";
 export {
+  type AnsweredView,
   type AttemptView,
   createUnderstanding,
   type Understanding,

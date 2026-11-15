@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Grader } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import type { PrismaClient } from "@nunio/db";
-import type { Delegation, Principal } from "@nunio/delegation";
+import type { Delegation, Metered, Principal } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type {
@@ -28,6 +28,15 @@ export type AttemptView = {
     citations: { tag: string; provenance: Provenance | "gone" }[];
   } | null;
   createdAt: Date;
+};
+
+/** An Attempt with why it is ungraded, known only right after grading failed. */
+export type AnsweredView = AttemptView & {
+  reason:
+    | "grader_failed"
+    | "gone"
+    | Extract<Metered<unknown>, { status: "refused" }>["reason"]
+    | null;
 };
 
 /** One piece of Evidence about a Topic. */
@@ -66,6 +75,54 @@ export function createUnderstanding({
           .filter((fact) => fact.type === "topic" && fact.state !== "rejected")
           .map((fact) => ({ id: fact.id, courseId: course.id })),
       );
+  }
+  /** The student's Attempts, newest first; Feedback whose practice set lost a Source shows as gone. */
+  async function attemptsWhere(
+    student: Principal,
+    where: { topicIds: { has: string } } | { artifactId: string },
+  ): Promise<AttemptView[]> {
+    const opened = await withOwner(db, student, async (tx) => {
+      const rows = await tx.practiceAttempt.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+      });
+      return Promise.all(
+        rows.map(async (row) => ({
+          row,
+          feedback:
+            row.feedback &&
+            (await derived.open(tx, row.id, {
+              content: row.feedback,
+              contentKey: row.feedbackKey,
+              derivedFrom: row.derivedFrom,
+            })),
+        })),
+      );
+    });
+    const provenance = await reader.cite(
+      student,
+      opened.flatMap(({ row, feedback }) =>
+        feedback ? (row.citations as Citation[]).map((c) => c.cite) : [],
+      ),
+    );
+    return opened.map(({ row, feedback }) => ({
+      id: row.id,
+      artifactId: row.artifactId,
+      itemId: row.itemId,
+      topicIds: row.topicIds,
+      text: row.text,
+      verdict: row.verdict as AttemptView["verdict"],
+      feedback: feedback
+        ? {
+            text: feedback,
+            citations: (row.citations as Citation[]).map(({ tag, cite }) => ({
+              tag,
+              provenance: provenance.get(cite) ?? "gone",
+            })),
+          }
+        : null,
+      createdAt: row.createdAt,
+    }));
   }
   /** Grades a recorded Attempt against its Practice Item and seals the Feedback under the item's Sources. */
   async function gradeAttempt(student: Principal, attemptId: string) {
@@ -157,47 +214,49 @@ export function createUnderstanding({
     );
   return {
     /**
-     * Records the student's Attempt on a Practice Item, then grades it. A failed grading keeps the Attempt, ungraded
-     * and not counting, until `grade` succeeds.
+     * Records the student's Attempts on several Practice Items of one practice set, then grades them together. An
+     * item that is not in the set refuses them all; a failed grading keeps that Attempt, ungraded and not counting.
      */
-    async attempt(
+    async answer(
       student: Principal,
-      ref: { artifactId: string; itemId: string },
-      text: string,
-    ) {
-      const item = await artifacts.practiceItem(student, ref);
-      if (item === "gone")
-        return { status: "refused", reason: "gone" } as const;
-      const id = randomUUID();
+      artifactId: string,
+      answers: { itemId: string; text: string }[],
+    ): Promise<
+      | { status: "answered"; attempts: AnsweredView[] }
+      | { status: "refused"; reason: "gone" }
+    > {
+      const found = await Promise.all(
+        answers.map(({ itemId }) =>
+          artifacts.practiceItem(student, { artifactId, itemId }),
+        ),
+      );
+      const items = found.flatMap((item) => (item === "gone" ? [] : [item]));
+      if (!answers.length || items.length < answers.length)
+        return { status: "refused", reason: "gone" };
+      const rows = answers.map(({ itemId, text }, i) => ({
+        id: randomUUID(),
+        artifactId,
+        itemId,
+        topicIds: items[i]!.topicIds,
+        text,
+        createdAt: clock.now(),
+      }));
       await withOwner(db, student, (tx, studentId) =>
-        tx.practiceAttempt.create({
-          data: {
-            id,
-            studentId,
-            ...ref,
-            topicIds: item.topicIds,
-            text,
-            createdAt: clock.now(),
-          },
+        tx.practiceAttempt.createMany({
+          data: rows.map((row) => ({ ...row, studentId })),
         }),
       );
-      const graded = await gradeAttempt(student, id);
-      if (graded === "gone" || graded.status === "ungraded")
-        return {
-          status: "ungraded",
-          attemptId: id,
-          reason: graded === "gone" ? "gone" : graded.reason,
-        } as const;
-      return graded;
-    },
-    /** Grades an Attempt again, such as an ungraded one; metered again. */
-    async grade(
-      student: Principal,
-      attemptId: string,
-    ): Promise<AttemptView | "gone"> {
-      const graded = await gradeAttempt(student, attemptId);
-      if (graded === "gone") return "gone";
-      return graded.status === "graded" ? graded.attempt : graded.view;
+      const attempts = await Promise.all(
+        rows.map(async (row): Promise<AnsweredView> => {
+          const graded = await gradeAttempt(student, row.id);
+          if (graded === "gone")
+            return { ...row, verdict: null, feedback: null, reason: "gone" };
+          return graded.status === "graded"
+            ? { ...graded.attempt, reason: null }
+            : { ...graded.view, reason: graded.reason };
+        }),
+      );
+      return { status: "answered", attempts };
     },
     /** The student's own statement about a Topic, kept beside its Level; it never moves the Level itself. */
     async selfAssess(
@@ -252,67 +311,38 @@ export function createUnderstanding({
         ),
       );
     },
+    /** The latest Attempt on each Practice Item of a practice set the student answered, in the set's order. */
+    async latest(
+      student: Principal,
+      artifactId: string,
+    ): Promise<AnsweredView[] | "gone"> {
+      const artifact = await withOwner(db, student, (tx) =>
+        tx.artifact.findUnique({ where: { id: artifactId } }),
+      );
+      if (!artifact) return "gone";
+      const latest = new Map<string, AttemptView>();
+      for (const attempt of await attemptsWhere(student, { artifactId }))
+        if (!latest.has(attempt.itemId)) latest.set(attempt.itemId, attempt);
+      return [...latest.values()]
+        .sort((a, b) => Number(a.itemId) - Number(b.itemId))
+        .map((attempt) => ({ ...attempt, reason: null }));
+    },
     /** A Topic's Evidence, newest first; Feedback whose practice set lost a Source shows as gone. */
     async history(
       student: Principal,
       topicId: string,
     ): Promise<EvidenceView[]> {
-      const { attempts, selfAssessments } = await withOwner(
-        db,
-        student,
-        async (tx) => {
-          const rows = await tx.practiceAttempt.findMany({
-            where: { topicIds: { has: topicId } },
-          });
-          return {
-            attempts: await Promise.all(
-              rows.map(async (row) => ({
-                row,
-                feedback:
-                  row.feedback &&
-                  (await derived.open(tx, row.id, {
-                    content: row.feedback,
-                    contentKey: row.feedbackKey,
-                    derivedFrom: row.derivedFrom,
-                  })),
-              })),
-            ),
-            selfAssessments: await tx.selfAssessment.findMany({
-              where: { topicId },
-            }),
-          };
-        },
-      );
-      const provenance = await reader.cite(
-        student,
-        attempts.flatMap(({ row, feedback }) =>
-          feedback ? (row.citations as Citation[]).map((c) => c.cite) : [],
-        ),
+      const attempts = await attemptsWhere(student, {
+        topicIds: { has: topicId },
+      });
+      const selfAssessments = await withOwner(db, student, (tx) =>
+        tx.selfAssessment.findMany({ where: { topicId } }),
       );
       const evidence: (EvidenceView & { sortAt: Date })[] = [
-        ...attempts.map(({ row, feedback }) => ({
+        ...attempts.map((attempt) => ({
           kind: "attempt" as const,
-          sortAt: row.createdAt,
-          attempt: {
-            id: row.id,
-            artifactId: row.artifactId,
-            itemId: row.itemId,
-            topicIds: row.topicIds,
-            text: row.text,
-            verdict: row.verdict as AttemptView["verdict"],
-            feedback: feedback
-              ? {
-                  text: feedback,
-                  citations: (row.citations as Citation[]).map(
-                    ({ tag, cite }) => ({
-                      tag,
-                      provenance: provenance.get(cite) ?? "gone",
-                    }),
-                  ),
-                }
-              : null,
-            createdAt: row.createdAt,
-          },
+          sortAt: attempt.createdAt,
+          attempt,
         })),
         ...selfAssessments.map((row) => ({
           kind: "self_assessment" as const,

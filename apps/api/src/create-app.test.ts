@@ -89,6 +89,7 @@ const maker: Maker = {
   estimateMicroUsd: () => 1,
   practiceSet: async (input) => ({
     value: {
+      title: "Klausurthemen",
       items: [
         {
           id: "1",
@@ -4563,10 +4564,8 @@ describe("Chat", () => {
         })
       ).json()) as { artifactId: string; runId: string };
       await artifacts.make(runId);
-      await s.send("/api/me/attempts", {
-        artifactId,
-        itemId: "1",
-        text: "Konvergenz.",
+      await s.send(`/api/me/artifacts/${artifactId}/attempts`, {
+        answers: [{ itemId: "1", text: "Konvergenz." }],
       });
       await s.send(`/api/me/topics/${s.topicId}/self-assessment`, {
         level: "solid",
@@ -6675,6 +6674,7 @@ describe("study execution", () => {
       expect.objectContaining({
         id: artifactId,
         content: {
+          title: "Klausurthemen",
           items: [
             expect.objectContaining({
               question: "Was kommt in der Klausur dran? [S1]",
@@ -6787,26 +6787,25 @@ describe("study execution", () => {
     const levels = async () =>
       (await s.get(`/api/me/courses/${s.courseId}/levels`)).json();
 
-    const attempted = await s.send("/api/me/attempts", {
-      artifactId,
-      itemId: "1",
-      text: "Konvergenz.",
+    expect(
+      await (await s.get(`/api/me/artifacts/${artifactId}/attempts`)).json(),
+    ).toEqual([]);
+    const attempted = await s.send(`/api/me/artifacts/${artifactId}/attempts`, {
+      answers: [{ itemId: "1", text: "Konvergenz." }],
     });
-    const body = (await attempted.json()) as {
-      status: string;
-      attempt: { id: string };
-    };
-    expect([attempted.status, body]).toEqual([
-      201,
-      {
-        status: "graded",
-        attempt: expect.objectContaining({
-          text: "Konvergenz.",
-          verdict: "correct",
-          feedback: expect.objectContaining({ text: "Richtig [S1]." }),
-        }),
-      },
-    ]);
+    const answered = [
+      expect.objectContaining({
+        itemId: "1",
+        text: "Konvergenz.",
+        verdict: "correct",
+        feedback: expect.objectContaining({ text: "Richtig [S1]." }),
+        reason: null,
+      }),
+    ];
+    expect([attempted.status, await attempted.json()]).toEqual([201, answered]);
+    expect(
+      await (await s.get(`/api/me/artifacts/${artifactId}/attempts`)).json(),
+    ).toEqual(answered);
     expect(await levels()).toEqual([
       expect.objectContaining({ topicId: s.topicId, level: "shaky" }),
     ]);
@@ -6830,24 +6829,26 @@ describe("study execution", () => {
       expect.objectContaining({ kind: "self_assessment", level: "solid" }),
       expect.objectContaining({ kind: "attempt" }),
     ]);
-    const regraded = await s.send(
-      `/api/me/attempts/${body.attempt.id}/grade`,
-      {},
-    );
-    expect([regraded.status, await regraded.json()]).toEqual([
-      200,
-      expect.objectContaining({ id: body.attempt.id, verdict: "correct" }),
-    ]);
+    expect(
+      (
+        await s.send("/api/me/attempts", {
+          artifactId,
+          itemId: "1",
+          text: "Alt.",
+        })
+      ).status,
+    ).toBe(404);
 
     const other = await studyFixture("study-practice-other");
     expect(
       (
-        await other.send("/api/me/attempts", {
-          artifactId,
-          itemId: "1",
-          text: "Fremd.",
+        await other.send(`/api/me/artifacts/${artifactId}/attempts`, {
+          answers: [{ itemId: "1", text: "Fremd." }],
         })
       ).status,
+    ).toBe(404);
+    expect(
+      (await other.get(`/api/me/artifacts/${artifactId}/attempts`)).status,
     ).toBe(404);
     expect(
       (
