@@ -169,7 +169,10 @@ export interface Understanding {
 export type TopicLevel = {
   topicId: string;
   level: "not_studied" | "weak" | "shaky" | "solid"; // the latest Self-assessment (ADR-0023)
-  latestAttempt: { verdict: "correct" | "partial" | "incorrect"; at: Date } | null; // shown beside it only
+  latestAttempt: {
+    verdict: "correct" | "partial" | "incorrect";
+    at: Date;
+  } | null; // shown beside it only
   lastEvidenceAt: Date | null;
 };
 
