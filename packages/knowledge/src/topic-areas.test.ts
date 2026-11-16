@@ -57,7 +57,7 @@ beforeAll(async () => {
   });
   sources = createSources({ db: runtime, keys, storage });
   facts = createFacts({ db: runtime, keys, clock: { now: () => now } });
-  areas = createTopicAreas({ db: runtime, facts });
+  areas = createTopicAreas({ db: runtime, facts, clock: { now: () => now } });
   delegation = createDelegation({ db: runtime, aiEnabled: () => true });
 }, 180_000);
 afterAll(async () => {
@@ -250,6 +250,164 @@ it("drops an Area with a single Topic, and ignores Topics the model was not show
       "Breitensuche",
       "Dijkstra",
       "Tiefensuche",
+      "Hashing",
+      "O-Notation",
+    ],
+  });
+});
+
+it("places only new Topics on a later pass, reusing Areas by name and showing the model where Topics are", async () => {
+  const p = await student();
+  const courseId = await readDeck(p, "Algorithmen.pdf", eight);
+  const { grouper, inputs } = grouping(
+    [
+      { name: "Sortieren", topics: ["Bubblesort", "Quicksort", "Mergesort"] },
+      { name: "Graphen", topics: ["Breitensuche", "Tiefensuche", "Dijkstra"] },
+    ],
+    [
+      { name: "sortieren", topics: ["Heapsort", "Bubblesort"] },
+      { name: "Spannbäume", topics: ["Prim", "Kruskal", "Dijkstra"] },
+    ],
+  );
+  await areas.group(p, courseId, { grouper, delegation });
+  await readDeck(p, "Graphen.pdf", [["Heapsort", "Prim", "Kruskal"]]);
+
+  await areas.group(p, courseId, { grouper, delegation });
+
+  expect(await shown(p, courseId)).toEqual({
+    areas: [
+      {
+        name: "Sortieren",
+        topics: ["Bubblesort", "Quicksort", "Mergesort", "Heapsort"],
+      },
+      { name: "Graphen", topics: ["Breitensuche", "Tiefensuche", "Dijkstra"] },
+      { name: "Spannbäume", topics: ["Prim", "Kruskal"] },
+    ],
+    ungrouped: ["Hashing", "O-Notation"],
+  });
+  expect(inputs[1]?.areas).toEqual([
+    { name: "Sortieren", rejected: false },
+    { name: "Graphen", rejected: false },
+  ]);
+  expect(inputs[1]?.topics.find((t) => t.name === "Dijkstra")?.area).toBe(
+    "Graphen",
+  );
+});
+
+/** Reads the eight-Topic deck and groups it into Sortieren and Graphen. */
+async function grouped(p: Principal) {
+  const courseId = await readDeck(p, "Algorithmen.pdf", eight);
+  await areas.group(p, courseId, {
+    grouper: grouping([
+      { name: "Sortieren", topics: ["Bubblesort", "Quicksort", "Mergesort"] },
+      { name: "Graphen", topics: ["Breitensuche", "Tiefensuche", "Dijkstra"] },
+    ]).grouper,
+    delegation,
+  });
+  const listed = await areas.list(p, courseId);
+  const area = (name: string) => listed.areas.find((a) => a.name === name)!;
+  const topic = (name: string) =>
+    [...listed.areas.flatMap((a) => a.topics), ...listed.ungrouped].find(
+      (t) => t.name === name,
+    )!;
+  return { courseId, area, topic };
+}
+
+it("keeps a Topic where the student moved it, to another Area or to none, over later passes", async () => {
+  const p = await student();
+  const { courseId, area, topic } = await grouped(p);
+
+  expect(
+    await areas.move(p, topic("Dijkstra").id, area("Sortieren").id),
+  ).toEqual({ status: "ok" });
+  expect(await areas.move(p, topic("Quicksort").id, null)).toEqual({
+    status: "ok",
+  });
+  await areas.group(p, courseId, {
+    grouper: grouping([
+      { name: "Graphen", topics: ["Dijkstra", "Quicksort"] },
+      { name: "Sonstiges", topics: ["Quicksort", "Hashing"] },
+    ]).grouper,
+    delegation,
+  });
+
+  expect(await shown(p, courseId)).toEqual({
+    areas: [
+      { name: "Sortieren", topics: ["Bubblesort", "Mergesort", "Dijkstra"] },
+      { name: "Graphen", topics: ["Breitensuche", "Tiefensuche"] },
+    ],
+    ungrouped: ["Quicksort", "Hashing", "O-Notation"],
+  });
+});
+
+it("refuses to move a Topic into an Area of another Course or of another student", async () => {
+  const p = await student();
+  const other = await student();
+  const mine = await grouped(p);
+  const theirs = await grouped(other);
+
+  expect(
+    await areas.move(p, mine.topic("Dijkstra").id, theirs.area("Graphen").id),
+  ).toEqual({ status: "not_found" });
+  expect(await areas.move(other, mine.topic("Dijkstra").id, null)).toEqual({
+    status: "not_found",
+  });
+});
+
+it("keeps the student's name for an Area, shows it to the model, and refuses a name another Area has", async () => {
+  const p = await student();
+  const { courseId, area } = await grouped(p);
+  const { grouper, inputs } = grouping([
+    { name: "Sortierverfahren", topics: ["Hashing", "O-Notation"] },
+  ]);
+
+  expect(
+    await areas.rename(p, area("Sortieren").id, "Sortierverfahren"),
+  ).toEqual({ status: "ok" });
+  expect(
+    await areas.rename(p, area("Graphen").id, " sortierverfahren "),
+  ).toEqual({ status: "clash" });
+  await readDeck(p, "Nachtrag.pdf", [["Heapsort"]]);
+  await areas.group(p, courseId, { grouper, delegation });
+
+  expect(inputs[0]?.areas).toEqual([
+    { name: "Sortierverfahren", rejected: false },
+    { name: "Graphen", rejected: false },
+  ]);
+  expect((await shown(p, courseId)).areas).toEqual([
+    {
+      name: "Sortierverfahren",
+      topics: ["Bubblesort", "Quicksort", "Mergesort", "Hashing", "O-Notation"],
+    },
+    { name: "Graphen", topics: ["Breitensuche", "Tiefensuche", "Dijkstra"] },
+  ]);
+});
+
+it("hides a rejected Area for good, leaving its Topics ungrouped over later passes", async () => {
+  const p = await student();
+  const { courseId, area } = await grouped(p);
+  const { grouper, inputs } = grouping([
+    { name: "Sortieren", topics: ["Bubblesort", "Hashing", "O-Notation"] },
+    { name: "Graphen", topics: ["Quicksort"] },
+  ]);
+
+  expect(await areas.reject(p, area("Sortieren").id)).toEqual({
+    status: "ok",
+  });
+  await areas.group(p, courseId, { grouper, delegation });
+
+  expect(inputs[0]?.areas).toContainEqual({
+    name: "Sortieren",
+    rejected: true,
+  });
+  expect(await shown(p, courseId)).toEqual({
+    areas: [
+      { name: "Graphen", topics: ["Breitensuche", "Tiefensuche", "Dijkstra"] },
+    ],
+    ungrouped: [
+      "Bubblesort",
+      "Mergesort",
+      "Quicksort",
       "Hashing",
       "O-Notation",
     ],
