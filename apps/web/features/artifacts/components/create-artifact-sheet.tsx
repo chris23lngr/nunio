@@ -24,6 +24,7 @@ import { Textarea } from "@nunio/ui/components/textarea/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, CircleAlert } from "lucide-react";
 import { useState } from "react";
+import type { CourseColor } from "@/features/courses/api/course-queries";
 import { courseListQuery } from "@/features/courses/api/course-queries";
 import { colors } from "@/features/courses/course-format";
 import { createApiClient } from "@/lib/api-client";
@@ -81,6 +82,17 @@ const preselected = (options: ArtifactOptions | undefined) =>
     .slice(0, maxTopics)
     .map((t) => t.id);
 
+/** A Course's color, centred on the line of its title. */
+function CourseSwatch({ color }: { color: CourseColor }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="size-2.5 shrink-0 self-center rounded-sm"
+      style={{ backgroundColor: colors[color].swatch }}
+    />
+  );
+}
+
 function KindChoice({
   kind,
   onChange,
@@ -100,7 +112,7 @@ function KindChoice({
           return (
             <label
               key={each}
-              className={`flex cursor-pointer flex-col gap-1.5 rounded-lg px-4 py-4 shadow-xs outline has-focus-visible:outline-2 has-focus-visible:outline-primary-500 ${
+              className={`relative flex cursor-pointer flex-col gap-1.5 rounded-lg px-4 py-4 shadow-xs outline has-focus-visible:ring-2 has-focus-visible:ring-primary-500 has-focus-visible:ring-offset-4 has-focus-visible:ring-offset-white ${
                 picked
                   ? "bg-primary-50 outline-primary-400"
                   : "bg-white outline-base-700/15 hover:bg-base-50"
@@ -122,8 +134,19 @@ function KindChoice({
                   onChange={() => onChange(each)}
                   aria-label={label}
                   aria-describedby={`artifact-kind-${each}`}
-                  className="size-3.5 accent-primary-500"
+                  className="sr-only"
                 />
+                {/* Drawn rather than native: its see-through middle takes the card's color. */}
+                <span
+                  aria-hidden="true"
+                  className={`flex size-3.5 shrink-0 items-center justify-center rounded-full border ${
+                    picked ? "border-primary-400" : "border-base-500"
+                  }`}
+                >
+                  {picked && (
+                    <span className="size-1.5 rounded-full bg-primary-500" />
+                  )}
+                </span>
               </span>
               <span
                 id={`artifact-kind-${each}`}
@@ -708,7 +731,19 @@ export function CreateArtifactSheet({
               }))}
             >
               <SelectTrigger aria-label="Kurs" className="w-full">
-                <SelectValue />
+                <SelectValue>
+                  {(value: string | null) => {
+                    const c = offeredCourses.find((each) => each.id === value);
+                    return (
+                      c && (
+                        <>
+                          <CourseSwatch color={c.color} />
+                          <span className="truncate">{c.title}</span>
+                        </>
+                      )
+                    );
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent
                 align="start"
@@ -718,11 +753,7 @@ export function CreateArtifactSheet({
                 <SelectGroup>
                   {offeredCourses.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
-                      <span
-                        aria-hidden="true"
-                        className="size-2.5 shrink-0 rounded-sm"
-                        style={{ backgroundColor: colors[c.color].swatch }}
-                      />
+                      <CourseSwatch color={c.color} />
                       {c.title}
                     </SelectItem>
                   ))}
