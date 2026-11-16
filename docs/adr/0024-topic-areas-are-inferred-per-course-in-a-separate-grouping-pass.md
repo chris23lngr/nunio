@@ -9,7 +9,7 @@ A Course's Topics form one flat list, which grows long once several lecture deck
 We decided:
 
 - **Inferred, not only quoted.** A Topic Area may be named by a document (a deck title, an agenda entry, a heading) or inferred by the model from the Topics alone. Unlike every extracted item, an Area needs no page and quote; its Provenance is its Topics' citations, and an inferred Area is marked as grouped by nunio.
-- **Shape.** A Topic belongs to at most one Area. Areas have one level and no nesting. Topics in no Area show last under *Weitere Themen*; a Course without Areas shows its flat list. Areas and the Topics within each keep a stored order, first set from document order.
+- **Shape.** A Topic belongs to at most one Area. Areas have one level and no nesting. Topics in no Area show last under _Weitere Themen_; a Course without Areas shows its flat list. Areas and the Topics within each keep a stored order, first set from document order.
 - **A separate pass per Course.** Topic extraction is unchanged. After a Source's extraction commits, and after Courses are merged, a small metered call (task `grouping`) reads each Topic of the Course: its name, the title of its first Source, its page and its quote. It also reads the Course's current Areas, renamed and rejected ones included. The pass never re-reads page text.
   - A Course with fewer than 8 Topics gets no Areas, and no call is made. An Area needs at least 2 Topics; the model aims for about 3–8 Areas, names them in the documents' language, and leaves a Topic ungrouped rather than force it into a weak Area.
   - If the call fails or the Allowance runs out, nothing changes and the Source's extraction status is unaffected. The next trigger tries again.
