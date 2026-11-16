@@ -84,7 +84,7 @@ export function createTopicAreas({
     return { topics, row: new Map(rows.map((r) => [r.id, r])), stored };
   }
 
-  return {
+  const topicAreas = {
     /** Runs the grouping pass for one Course: one metered call, then stores the Areas it returns. */
     async group(
       p: Principal,
@@ -103,7 +103,13 @@ export function createTopicAreas({
           tx.topicArea.deleteMany({ where: { id: { in: empty } } }),
         );
       const stored = state.stored.filter((area) => !empty.includes(area.id));
-      if (topics.length < minTopics) return { status: "skipped" } as const;
+      // Groups are sticky: only Topics without an Area that the student did not place are open to the model.
+      const open = (topicId: string) => {
+        const placed = row.get(topicId);
+        return Boolean(placed && !placed.topicAreaId && !placed.movedAt);
+      };
+      if (topics.length < minTopics || !topics.some((t) => open(t.id)))
+        return { status: "skipped" } as const;
       const handles = new Map(topics.map((topic, i) => [`t${i + 1}`, topic]));
       const areaName = new Map(
         stored.filter((a) => !a.rejectedAt).map((a) => [a.id, a.name]),
@@ -134,11 +140,10 @@ export function createTopicAreas({
       );
       if (result.status === "refused")
         return { status: "refused", reason: result.reason } as const;
-      // Groups are sticky: only Topics without an Area that the student did not place count, each in its first Area.
+      // Each open Topic counts in the first Area the model puts it in.
       const placeable = (handle: string) => {
         const topic = handles.get(handle);
-        const placed = topic && row.get(topic.id);
-        return Boolean(placed && !placed.topicAreaId && !placed.movedAt);
+        return Boolean(topic && open(topic.id));
       };
       const taken = new Set<string>();
       const byKey = new Map(stored.map((area) => [area.matchKey, area]));
@@ -301,7 +306,30 @@ export function createTopicAreas({
           .map(view),
       };
     },
+
+    /** Runs the grouping pass for each Course with a Topic this Source supports, after its extraction. */
+    async groupSource(
+      p: Principal,
+      sourceId: string,
+      deps: { grouper: Grouper; delegation: Delegation; signal?: AbortSignal },
+    ) {
+      const courses = await withOwner(db, p, (tx) =>
+        tx.fact.findMany({
+          where: { type: "topic", extractions: { some: { sourceId } } },
+          distinct: ["courseId"],
+          select: { courseId: true },
+        }),
+      );
+      const results = [];
+      for (const { courseId } of courses)
+        results.push({
+          courseId,
+          ...(await topicAreas.group(p, courseId, deps)),
+        });
+      return results;
+    },
   };
+  return topicAreas;
 }
 
 type TopicRow = {

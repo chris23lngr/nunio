@@ -539,3 +539,34 @@ it("combines Topic Areas by name when Courses merge, the target's state and the 
     ],
   });
 });
+
+it("asks no model when every Topic already has a place", async () => {
+  const p = await student();
+  const { courseId, topic } = await grouped(p);
+  await areas.move(p, topic("Hashing").id, null);
+  await areas.move(p, topic("O-Notation").id, null);
+  const { grouper, inputs } = grouping();
+
+  expect(await areas.group(p, courseId, { grouper, delegation })).toEqual({
+    status: "skipped",
+  });
+  expect(inputs).toEqual([]);
+});
+
+it("groups each Course whose Topics a Source supports", async () => {
+  const p = await student();
+  const courseId = await readDeck(p, "Algorithmen.pdf", eight);
+  const sourceId = (await facts.review(p)).courses.find(
+    (c) => c.id === courseId,
+  )!.facts[0]!.values[0]!.citations[0]!.sourceId;
+  const { grouper } = grouping([
+    { name: "Sortieren", topics: ["Bubblesort", "Quicksort"] },
+  ]);
+
+  expect(await areas.groupSource(p, sourceId, { grouper, delegation })).toEqual(
+    [{ courseId, status: "grouped" }],
+  );
+  expect((await shown(p, courseId)).areas).toEqual([
+    { name: "Sortieren", topics: ["Bubblesort", "Quicksort"] },
+  ]);
+});

@@ -39,3 +39,4 @@ export {
   type Sources,
 } from "./sources.js";
 export { createSourceStorage, sourceStorageFromEnv } from "./storage.js";
+export { createTopicAreas, type TopicAreas } from "./topic-areas.js";
