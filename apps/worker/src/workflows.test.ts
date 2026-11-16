@@ -227,6 +227,65 @@ describe("Source Runs", () => {
     });
     expect(extracted).toEqual([{ studentId: "student", sourceId: "source" }]);
   });
+  it("groups a Source's Topics after its extraction is done, never failing the Source for it", async () => {
+    const grouped: unknown[] = [];
+    const run = async (workflow: string, extraction: string) => {
+      const worker = await Worker.create({
+        connection: env.nativeConnection,
+        taskQueue,
+        workflowBundle,
+        activities: {
+          processSource: async () => ({ status: "ready" }),
+          extractFacts: async () => ({ status: extraction }),
+          groupSourceTopics: async (input: unknown) => {
+            grouped.push(input);
+            throw new Error("uncertain call");
+          },
+        },
+      });
+      return worker.runUntil(
+        env.client.workflow.execute(workflow, {
+          taskQueue,
+          workflowId: `source-${randomUUID()}`,
+          args: [{ studentId: "student", sourceId: workflow }],
+        }),
+      );
+    };
+    expect(await run("ingestSource", "done")).toEqual({
+      status: "ready",
+      extraction: { status: "done" },
+    });
+    expect(await run("extractSource", "done")).toEqual({ status: "done" });
+    expect(await run("extractSource", "failed")).toEqual({ status: "failed" });
+    expect(grouped).toEqual([
+      { studentId: "student", sourceId: "ingestSource" },
+      { studentId: "student", sourceId: "extractSource" },
+    ]);
+  });
+  it("groups a merged Course's Topics with a single attempt", async () => {
+    const grouped: unknown[] = [];
+    const worker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities: {
+        groupCourseTopics: async (input: unknown) => {
+          grouped.push(input);
+          throw new Error("uncertain call");
+        },
+      },
+    });
+    await worker.runUntil(async () => {
+      await expect(
+        env.client.workflow.execute("groupCourse", {
+          taskQueue,
+          workflowId: `groupCourse/${randomUUID()}`,
+          args: [{ studentId: "student", courseId: "course" }],
+        }),
+      ).rejects.toThrow();
+    });
+    expect(grouped).toEqual([{ studentId: "student", courseId: "course" }]);
+  });
   it("waits for a busy parser instead of failing the Source", async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => {

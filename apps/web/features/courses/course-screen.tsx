@@ -15,11 +15,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { PageHeader } from "@/features/shared/components/page-header";
-import { coursePageQuery } from "./api/course-queries";
+import { coursePageQuery, topicAreasQuery } from "./api/course-queries";
 import { Agenda } from "./components/agenda";
 import { CourseSources, UploadButton } from "./components/course-sources";
 import { DisagreementCard } from "./components/disagreement-card";
-import { TopicList } from "./components/topic-list";
+import { TopicAreaList, TopicList } from "./components/topic-list";
 import { TopicSheet } from "./components/topic-sheet";
 import { colors, semesterLabel } from "./course-format";
 
@@ -68,6 +68,8 @@ export function CourseScreen({
   const router = useRouter();
   const pathname = usePathname();
   const page = useQuery(coursePageQuery(apiOrigin, id));
+  // Without Areas, or while they load or fail, the Topics show as one flat list.
+  const areas = useQuery(topicAreasQuery(apiOrigin, id)).data?.areas ?? [];
   const openTopic = (topicId: string | null) =>
     router.replace(topicId ? `${pathname}?topic=${topicId}` : pathname, {
       scroll: false,
@@ -162,7 +164,14 @@ export function CourseScreen({
                   disagreements={page.data.disagreements}
                 />
                 <Section title="Themen">
-                  {page.data.topics.length ? (
+                  {page.data.topics.length && areas.length ? (
+                    <TopicAreaList
+                      areas={areas}
+                      topics={page.data.topics}
+                      now={now}
+                      onOpen={openTopic}
+                    />
+                  ) : page.data.topics.length ? (
                     <TopicList
                       topics={page.data.topics}
                       now={now}

@@ -34,13 +34,14 @@ import {
 } from "@nunio/delegation";
 import { createAuth } from "@nunio/identity";
 import { createSourceKeys } from "@nunio/keys";
-import type { Facts, Sources } from "@nunio/knowledge";
+import type { Facts, Sources, TopicAreas } from "@nunio/knowledge";
 import {
   createCourses,
   createFacts,
   createKnowledgeReader,
   createProjects,
   createSources,
+  createTopicAreas,
 } from "@nunio/knowledge";
 import { createOutreach } from "@nunio/outreach";
 import { createPlan, createPlanExecutor, deadline } from "@nunio/planning";
@@ -77,6 +78,7 @@ let admin: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let sources: Sources;
 let facts: Facts;
+let topicAreas: TopicAreas;
 let delegation: Delegation;
 let responsibilities: Responsibilities;
 let artifacts: Artifacts;
@@ -374,6 +376,11 @@ beforeAll(async () => {
     },
   });
   facts = createFacts({ db: prisma, keys, clock: { now: () => new Date() } });
+  topicAreas = createTopicAreas({
+    db: prisma,
+    facts,
+    clock: { now: () => new Date() },
+  });
   const reader = createKnowledgeReader({
     db: prisma,
     keys,
@@ -477,7 +484,12 @@ beforeAll(async () => {
         if (workflowsDown) throw new Error("Temporal unavailable");
         started.push(args);
       },
+      groupCourse: async (...args) => {
+        if (workflowsDown) throw new Error("Temporal unavailable");
+        started.push(["groupCourse", ...args]);
+      },
     },
+    topicAreas,
     spike: { webhookSecret, pool },
   });
 }, 180_000);
@@ -1806,10 +1818,201 @@ it("merges one Course into another, reporting conflicting Corrections and Course
   ]);
   await correct(from, "2026-11-21");
   expect((await merge(from!.id, into!.id)).status).toBe(200);
+  expect(started).toContainEqual([
+    "groupCourse",
+    await studentId(cookie),
+    into!.id,
+  ]);
   expect((await review()).courses).toEqual([
     expect.objectContaining({ id: into!.id, status: "accepted" }),
   ]);
   expect((await merge(from!.id, into!.id)).status).toBe(404);
+});
+
+it("lists a Course's Topic Areas and lets the student rename and reject them and move Topics", async () => {
+  const cookie = await signUp("topic-areas");
+  const headers = {
+    cookie,
+    origin: appOrigin,
+    "content-type": "application/json",
+  };
+  const p = principal.fromSession({ studentId: await studentId(cookie) });
+  const names = [
+    "Bubblesort",
+    "Quicksort",
+    "Mergesort",
+    "Breitensuche",
+    "Tiefensuche",
+    "Dijkstra",
+    "Hashing",
+    "O-Notation",
+  ];
+  const upload = await sources.upload(p, {
+    title: "Algorithmen.pdf",
+    bytes: 100,
+    type: "application/pdf",
+  });
+  if (upload.status !== "ok") throw new Error("upload refused");
+  await sources.complete(p, upload.source.id);
+  await sources.ingest(p, upload.source.id, {
+    delegation,
+    parse: async () => ({
+      pages: [{ page: 1, text: ["INF-2 Algorithmen", ...names].join("\n") }],
+    }),
+    embedder: {
+      model: "test",
+      dims: 1,
+      relevanceFloor: 0.3,
+      estimateMicroUsd: () => 1,
+      embed: async (t) => ({
+        vectors: t.map(() => [1]),
+        usage: { microUsd: 1 },
+      }),
+    },
+    scans: {
+      estimateMicroUsd: () => 1,
+      read: async () => ({ text: "", usage: { microUsd: 1 } }),
+    },
+  });
+  await facts.extract(p, upload.source.id, {
+    delegation,
+    extractor: {
+      model: "test",
+      windows: (pages) => [[...pages]],
+      estimateMicroUsd: () => 1,
+      extract: async () => ({
+        usage: { microUsd: 1 },
+        value: {
+          courses: [
+            {
+              code: "INF-2",
+              title: "Algorithmen",
+              page: 1,
+              quote: "INF-2 Algorithmen",
+            },
+          ],
+          obligations: [],
+          facts: names.map((name) => ({
+            course: "INF-2",
+            type: "topic" as const,
+            key: name,
+            value: name,
+            page: 1,
+            quote: name,
+            uncertainty: null,
+          })),
+        },
+      }),
+    },
+  });
+  const courseId = (await facts.review(p)).courses[0]!.id;
+  await topicAreas.group(p, courseId, {
+    delegation,
+    grouper: {
+      model: "test",
+      estimateMicroUsd: () => 1,
+      group: async (input) => {
+        const handles = (...wanted: string[]) =>
+          wanted.map((n) => input.topics.find((t) => t.name === n)!.handle);
+        return {
+          usage: { microUsd: 1 },
+          value: {
+            areas: [
+              {
+                name: "Sortieren",
+                topics: handles("Bubblesort", "Mergesort", "Quicksort"),
+              },
+              {
+                name: "Graphen",
+                topics: handles("Breitensuche", "Dijkstra", "Tiefensuche"),
+              },
+            ],
+          },
+        };
+      },
+    },
+  });
+  type Listed = {
+    areas: {
+      id: string;
+      name: string;
+      inferred: boolean;
+      topics: { id: string; name: string }[];
+    }[];
+    ungrouped: { id: string; name: string }[];
+  };
+  const list = async (id = courseId) => {
+    const response = await app.request(
+      `${apiOrigin}/api/me/courses/${id}/topic-areas`,
+      { headers: { cookie } },
+    );
+    return [response.status, await response.json()] as [number, Listed];
+  };
+  const [status, listed] = await list();
+  expect(status).toBe(200);
+  expect(listed).toEqual({
+    areas: [
+      {
+        id: expect.any(String),
+        name: "Sortieren",
+        inferred: true,
+        topics: ["Bubblesort", "Mergesort", "Quicksort"].map((name) => ({
+          id: expect.any(String),
+          name,
+        })),
+      },
+      expect.objectContaining({ name: "Graphen" }),
+    ],
+    ungrouped: [
+      { id: expect.any(String), name: "Hashing" },
+      { id: expect.any(String), name: "O-Notation" },
+    ],
+  });
+  expect((await list(randomUUID()))[0]).toBe(404);
+  const [sortieren, graphen] = listed.areas;
+  const rename = (id: string, name: string) =>
+    app.request(`${apiOrigin}/api/me/topic-areas/${id}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ name }),
+    });
+  const move = (topicId: string, areaId: string | null) =>
+    app.request(`${apiOrigin}/api/me/topics/${topicId}/area`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ areaId }),
+    });
+  const reject = (id: string) =>
+    app.request(`${apiOrigin}/api/me/topic-areas/${id}/reject`, {
+      method: "POST",
+      headers,
+    });
+
+  expect((await rename(graphen!.id, "Graphentheorie")).status).toBe(200);
+  const clash = await rename(sortieren!.id, "graphentheorie");
+  expect([clash.status, await clash.json()]).toEqual([409, { error: "clash" }]);
+  expect((await rename(sortieren!.id, "  ")).status).toBe(400);
+  expect((await rename(randomUUID(), "Sortierverfahren")).status).toBe(404);
+  expect((await move(listed.ungrouped[0]!.id, graphen!.id)).status).toBe(200);
+  expect((await move(listed.ungrouped[1]!.id, randomUUID())).status).toBe(404);
+  expect((await reject(sortieren!.id)).status).toBe(200);
+  expect((await reject(sortieren!.id)).status).toBe(404);
+
+  expect((await list())[1]).toEqual({
+    areas: [
+      {
+        id: graphen!.id,
+        name: "Graphentheorie",
+        inferred: true,
+        topics: ["Breitensuche", "Dijkstra", "Tiefensuche", "Hashing"].map(
+          (name) => ({ id: expect.any(String), name }),
+        ),
+      },
+    ],
+    ungrouped: ["Bubblesort", "Mergesort", "O-Notation", "Quicksort"].map(
+      (name) => ({ id: expect.any(String), name }),
+    ),
+  });
 });
 
 it("enters an Obligation by hand, refusing invalid entries, Courses that are not accepted and existing keys", async () => {

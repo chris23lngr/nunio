@@ -24,13 +24,20 @@ import {
 import type { Auth } from "@nunio/identity";
 import { createAuth } from "@nunio/identity";
 import { sourceKeysFromEnv } from "@nunio/keys";
-import type { Courses, Facts, Projects, Sources } from "@nunio/knowledge";
+import type {
+  Courses,
+  Facts,
+  Projects,
+  Sources,
+  TopicAreas,
+} from "@nunio/knowledge";
 import {
   createCourses,
   createFacts,
   createKnowledgeReader,
   createProjects,
   createSources,
+  createTopicAreas,
   sourceStorageFromEnv,
 } from "@nunio/knowledge";
 import type { Outreach } from "@nunio/outreach";
@@ -61,6 +68,7 @@ export interface AppDeps {
   delegation: Delegation;
   sources: Sources;
   facts: Facts;
+  topicAreas: TopicAreas;
   sourceWorkflows: SourceWorkflows;
   chats: Chats;
   chatModels: ChatModels;
@@ -89,6 +97,7 @@ export function createApp({
   spike,
   sources,
   facts,
+  topicAreas,
   sourceWorkflows,
   chats,
   chatModels,
@@ -124,6 +133,7 @@ export function createApp({
     c.set("delegation", delegation);
     c.set("sources", sources);
     c.set("facts", facts);
+    c.set("topicAreas", topicAreas);
     c.set("sourceWorkflows", sourceWorkflows);
     c.set("chats", chats);
     c.set("chatModels", chatModels);
@@ -263,6 +273,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     spike,
     sources,
     facts,
+    topicAreas: createTopicAreas({ db: prisma, facts, clock }),
     sourceWorkflows: sourceWorkflowsFromEnv(env),
     chats: createChats({
       db: prisma,

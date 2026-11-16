@@ -21,6 +21,12 @@ export {
 } from "./extraction.js";
 export { createGrader, type GradeInput, type Grader } from "./grading.js";
 export {
+  createGrouper,
+  type Grouped,
+  type Grouper,
+  type GroupingInput,
+} from "./grouping.js";
+export {
   createModels,
   type DataHandlingLabel,
   isDefiniteFailure,
