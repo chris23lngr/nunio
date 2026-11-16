@@ -8,13 +8,12 @@ import { createApiClient } from "@/lib/api-client";
 import type { ArtifactRequest, Course, Level } from "./api/study-queries";
 import { coursesQueries, levelsQueries } from "./api/study-queries";
 
-/** A Level in words: coarse on purpose, and disputed shows both sides. */
+/** A Level in words: coarse on purpose. */
 function levelText(level: Level | undefined) {
   if (!level) return "";
-  if (level.level === "disputed")
-    return `Disputed: your Attempts say ${level.fromAttempts}, but you said ${level.selfAssessment}.`;
   return {
-    not_yet_practiced: "Not yet practiced",
+    not_studied: "Not studied",
+    weak: "Weak",
     shaky: "Shaky",
     solid: "Solid",
   }[level.level];
@@ -66,9 +65,6 @@ function TopicCard({
     <article aria-label={topic.value}>
       <h3>{topic.value}</h3>
       <p>{levelText(level)}</p>
-      {level?.selfAssessment && level.level !== "disputed" && (
-        <p>You said {level.selfAssessment}.</p>
-      )}
       {level?.lastEvidenceAt && (
         <p>
           Last evidence {new Date(level.lastEvidenceAt).toLocaleDateString()}

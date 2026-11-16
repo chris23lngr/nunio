@@ -12,7 +12,7 @@ import type {
   Provenance,
 } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
-import type { LevelAttempt, TopicLevel } from "./levels.js";
+import type { Level, LevelAttempt, TopicLevel } from "./levels.js";
 import { levelOf } from "./levels.js";
 
 export type AttemptView = {
@@ -40,7 +40,7 @@ export type UngradedReason =
 /** One piece of Evidence about a Topic. */
 export type EvidenceView =
   | { kind: "attempt"; attempt: AttemptView }
-  | { kind: "self_assessment"; level: "shaky" | "solid"; at: Date };
+  | { kind: "self_assessment"; level: Level; at: Date };
 
 /** Attempts, Feedback, Self-assessments and Understanding Levels. The only module that records Evidence. */
 export function createUnderstanding({
@@ -84,7 +84,13 @@ export function createUnderstanding({
         tx.practiceAttempt.findMany({
           where: { topicIds: { hasSome: topicIds } },
         }),
-        tx.selfAssessment.findMany({ where: { topicId: { in: topicIds } } }),
+        // A deleted (rejected) Topic's Self-assessments no longer count anywhere.
+        tx.selfAssessment.findMany({
+          where: {
+            topicId: { in: topicIds },
+            topic: { state: { not: "rejected" } },
+          },
+        }),
       ]),
     );
     return topicIds.map((topicId) =>
@@ -97,7 +103,7 @@ export function createUnderstanding({
         })),
         selfAssessments.map((s) => ({
           at: s.createdAt,
-          level: s.level as "shaky" | "solid",
+          level: s.level as Level,
           topicId: s.topicId,
         })),
       ),
@@ -282,11 +288,11 @@ export function createUnderstanding({
       );
       return { status: "answered", attempts };
     },
-    /** The student's own statement about a Topic, kept beside its Level; it never moves the Level itself. */
+    /** The student's own statement about a Topic, which sets its Level (ADR-0023). */
     async selfAssess(
       student: Principal,
       topicId: string,
-      level: "shaky" | "solid",
+      level: Level,
     ): Promise<{ status: "ok" | "gone" }> {
       if (!(await topicsOf(student)).some((topic) => topic.id === topicId))
         return { status: "gone" };
@@ -347,7 +353,7 @@ export function createUnderstanding({
         ...selfAssessments.map((row) => ({
           kind: "self_assessment" as const,
           sortAt: row.createdAt,
-          level: row.level as "shaky" | "solid",
+          level: row.level as Level,
           at: row.createdAt,
         })),
       ];

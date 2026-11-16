@@ -160,7 +160,7 @@ export interface Understanding {
   selfAssess(
     student: Principal,
     topicId: string,
-    level: "shaky" | "solid",
+    level: "not_studied" | "weak" | "shaky" | "solid",
   ): Promise<{ status: "ok" | "gone" }>;
   levels(student: Principal, q: { courseId: string }): Promise<TopicLevel[]>;
   history(student: Principal, topicId: string): Promise<EvidenceView[]>;
@@ -168,9 +168,8 @@ export interface Understanding {
 
 export type TopicLevel = {
   topicId: string;
-  level: "not_yet_practiced" | "shaky" | "solid" | "disputed";
-  fromAttempts: "shaky" | "solid" | null; // what disputed is made of
-  selfAssessment: "shaky" | "solid" | null;
+  level: "not_studied" | "weak" | "shaky" | "solid"; // the latest Self-assessment (ADR-0023)
+  latestAttempt: { verdict: "correct" | "partial" | "incorrect"; at: Date } | null; // shown beside it only
   lastEvidenceAt: Date | null;
 };
 
@@ -266,11 +265,10 @@ export interface Grader {
 
 ### Invariants
 
-- **Only Attempts move a Level.** `levels` applies a pure function, `levelOf(attempts, selfAssessments)`, per Topic:
-  - No Attempt gives _not yet practiced_, whatever the Self-assessment says. The Self-assessment is still shown beside it.
-  - Otherwise the Level from Attempts is _solid_ when the two most recent graded Attempts on the Topic are both `correct`, and _shaky_ otherwise. `partial` counts as not correct. Ungraded Attempts don't count.
-  - It is _disputed_ when the latest Self-assessment differs from the Level from Attempts, in either direction. It stays disputed until a new Self-assessment or new Attempts agree.
-  - An Attempt on an item with several Topics counts for each of them. Nothing depends on the clock (ADR-0002). `lastEvidenceAt` is the latest Attempt or Self-assessment.
+- **Only the student sets a Level (ADR-0023).** `levels` applies a pure function, `levelOf(attempts, selfAssessments)`, per Topic:
+  - The Level is the latest Self-assessment, and _not studied_ without one. Attempts never move it.
+  - `latestAttempt` is the latest graded Attempt on the Topic, shown beside the Level. Ungraded Attempts don't count, and an Attempt on an item with several Topics counts for each of them.
+  - A rejected (deleted) Topic's Self-assessments don't count. Nothing depends on the clock (ADR-0002). `lastEvidenceAt` is the latest graded Attempt or Self-assessment.
 - **Artifacts are never Evidence.** `artifacts` can't write an Attempt or a Self-assessment, and a Critique carries no verdict.
 - **Withdrawn with their Sources.** Every Artifact version, and every Feedback, is sealed through `DerivedText` under the key of each Source whose passages or Facts it was given, exactly like a Chat answer. Deleting any of those Sources shreds all of it, edited versions included:
   - `open` then returns the Artifact's kind, Topics, Obligation and dates without content;
@@ -370,7 +368,7 @@ All tables are owned by the student under the same row-level security policy as 
 All are authenticated and CSRF-protected like the existing student routes.
 
 In `web`, `features/study` has two screens:
-- `/study`: each Course's Topics with their Levels and last-Evidence dates, where _disputed_ shows both sides, with "Practice", "Flashcards" and the student's Self-assessment; and each assessed Obligation with a draft request, a Critique of the student's own work (the rule shown, and the question asked when it is unknown) and the Handoff;
+- `/study`: each Course's Topics with their Levels and last-Evidence dates, with "Practice", "Flashcards" and the student's Self-assessment; and each assessed Obligation with a draft request, a Critique of the student's own work (the rule shown, and the question asked when it is unknown) and the Handoff;
 - `/study/artifacts/[id]`: polled while it is made; the practice view with an answer box per item and its Feedback; flashcards with the import preview, editing and the Anki download; a draft to rework; a Critique to read.
 
 ## Testing
@@ -379,7 +377,7 @@ Through the `Artifacts`, `Understanding` and `Facts` interfaces over real Postgr
 
 - **Levels.** `levelOf` is table-tested on its own for every case above, including multi-Topic items, ungraded Attempts and a Self-assessment with no Attempts.
 - **Artifacts never touch Levels.** Making, opening, editing, exporting and withdrawing Artifacts leaves `levels` unchanged.
-- **Disputed.** A _solid_ Self-assessment against two incorrect Attempts shows _disputed_, and so does the reverse.
+- **The student's Level wins.** A _solid_ Self-assessment against incorrect Attempts stays _solid_.
 - **AI-use Rules.**
   - `resolveAiUse` is table-tested.
   - An unknown, forbidden or unconfirmed conditional rule refuses a draft, as does a rule changed between `request` and `make`.

@@ -239,7 +239,7 @@ nunio's assessment of an Attempt. Only Attempts get Feedback.
 _Avoid_: Grade, score, correction, evaluation, Critique
 
 **Self-assessment**:
-The student's own statement about how well they understand a Topic.
+The student's own statement about how well they understand a Topic: not studied, weak, shaky or solid. Their latest one is the Topic's Understanding Level.
 _Avoid_: Confidence rating, self-report, reflection
 
 **Evidence**:
@@ -247,7 +247,7 @@ Anything that tells nunio something about the student's understanding: an Attemp
 _Avoid_: Proof, signal, data point
 
 **Understanding Level**:
-A deliberately coarse judgment of the student's understanding of one Topic: not yet practiced until there is an Attempt; then shaky or solid as the Attempts show, the most recent counting most; or disputed when Self-assessment and Attempts disagree, in either direction. Only Attempts move it; a Self-assessment alone sits beside it and external grades never set it. It never fades on its own; it always shows when Evidence last supported it.
+A deliberately coarse statement of how well the student understands one Topic: not studied, weak, shaky or solid. It is their latest Self-assessment, not studied until they make one (ADR-0023). Attempts never move it, though the latest graded Attempt is shown beside it, and external grades never set it. Weak and shaky are what nunio treats as weak; not studied is not. It never fades on its own; it always shows when Evidence last supported it.
 _Avoid_: Mastery, score, progress, proficiency
 
 ### Outreach

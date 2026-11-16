@@ -44,12 +44,12 @@ const pages = [
   ].join("\n"),
 ];
 const topics = ["Relationales Modell", "SQL", "Normalformen", "Transaktionen"];
-/** What the fixture makes of each Topic (ADR-0002): two correct Attempts are solid, one wrong is shaky. */
+/** What the student says of each Topic (ADR-0023); the fixture's Attempts sit beside it and never move it. */
 const expected = {
-  "Relationales Modell": "not_yet_practiced",
+  "Relationales Modell": "not_studied",
   SQL: "solid",
-  Normalformen: "shaky",
-  Transaktionen: "disputed",
+  Normalformen: "weak",
+  Transaktionen: "shaky",
 } as const;
 const weak = new Set(["Normalformen", "Transaktionen"]);
 
@@ -372,14 +372,15 @@ async function student() {
   await attempt("SQL", "correct");
   await attempt("Normalformen", "incorrect");
   await attempt("Transaktionen", "partial");
-  await admin.selfAssessment.create({
-    data: {
-      id: randomUUID(),
-      studentId,
-      topicId: id("Transaktionen"),
-      level: "solid",
-    },
-  });
+  for (const name of ["SQL", "Normalformen", "Transaktionen"] as const)
+    await admin.selfAssessment.create({
+      data: {
+        id: randomUUID(),
+        studentId,
+        topicId: id(name),
+        level: expected[name],
+      },
+    });
   const levels = await createUnderstanding({
     db,
     keys,
@@ -501,7 +502,7 @@ const report = {
     failed: results.length - answered.length,
     /** Read the tool its answer needs before stating Levels or the Plan. */
     read: tally("read"),
-    /** Practice for weak spots started on shaky or disputed Topics only. */
+    /** Practice for weak spots started on weak or shaky Topics only. */
     startsOnlyOnWeak: tally("startsOnlyOnWeak"),
     /** No new set where a ready, unopened one covers the request. */
     startsNothing: tally("startsNothing"),

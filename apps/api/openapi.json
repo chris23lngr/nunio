@@ -3671,7 +3671,7 @@
           },
           "shaky": {
             "type": "boolean",
-            "description": "One of its Topics is shaky or disputed for the student."
+            "description": "The student calls one of its Topics weak or shaky."
           }
         },
         "required": [
@@ -5112,34 +5112,37 @@
           "level": {
             "type": "string",
             "enum": [
-              "not_yet_practiced",
+              "not_studied",
+              "weak",
               "shaky",
-              "solid",
-              "disputed"
-            ]
+              "solid"
+            ],
+            "description": "The student's latest Self-assessment; not_studied without one."
           },
-          "fromAttempts": {
+          "latestAttempt": {
             "type": [
-              "string",
+              "object",
               "null"
             ],
-            "enum": [
-              "shaky",
-              "solid",
-              null
+            "properties": {
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "correct",
+                  "partial",
+                  "incorrect"
+                ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "verdict",
+              "at"
             ],
-            "description": "What the Attempts alone show; disputed is this against the Self-assessment."
-          },
-          "selfAssessment": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "shaky",
-              "solid",
-              null
-            ]
+            "description": "The latest graded Attempt, shown beside the Level; it never moves it."
           },
           "lastEvidenceAt": {
             "type": [
@@ -5152,8 +5155,7 @@
         "required": [
           "topicId",
           "level",
-          "fromAttempts",
-          "selfAssessment",
+          "latestAttempt",
           "lastEvidenceAt"
         ]
       },
@@ -5174,11 +5176,12 @@
                 "level": {
                   "type": "string",
                   "enum": [
-                    "not_yet_practiced",
+                    "not_studied",
+                    "weak",
                     "shaky",
-                    "solid",
-                    "disputed"
-                  ]
+                    "solid"
+                  ],
+                  "description": "The student's latest Self-assessment; not_studied without one."
                 }
               },
               "required": [
@@ -5287,9 +5290,12 @@
               "level": {
                 "type": "string",
                 "enum": [
+                  "not_studied",
+                  "weak",
                   "shaky",
                   "solid"
-                ]
+                ],
+                "description": "The student's latest Self-assessment; not_studied without one."
               },
               "at": {
                 "type": "string",
@@ -14826,7 +14832,7 @@
     },
     "/api/me/topics/{id}/self-assessment": {
       "post": {
-        "description": "The student's own statement about a Topic, shown beside its Level; it never moves the Level itself.",
+        "description": "The student's own statement about a Topic, which sets its Level.",
         "parameters": [
           {
             "schema": {
@@ -14848,9 +14854,12 @@
                   "level": {
                     "type": "string",
                     "enum": [
+                      "not_studied",
+                      "weak",
                       "shaky",
                       "solid"
-                    ]
+                    ],
+                    "description": "The student's latest Self-assessment; not_studied without one."
                   }
                 },
                 "required": [
@@ -14924,7 +14933,7 @@
     },
     "/api/me/courses/{id}/levels": {
       "get": {
-        "description": "The Understanding Level of each of the Course's Topics. Only graded Attempts move a Level; it never fades.",
+        "description": "The Understanding Level of each of the Course's Topics: the student's own, set by Self-assessment. It never fades.",
         "parameters": [
           {
             "schema": {

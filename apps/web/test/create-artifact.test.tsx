@@ -64,9 +64,9 @@ beforeEach(() => {
   serveOptions(statistics, {
     topics: [
       topic(ids.hypotheses, "Hypothesentests", "shaky"),
-      topic(ids.intervals, "Konfidenzintervalle", "disputed"),
+      topic(ids.intervals, "Konfidenzintervalle", "weak"),
       topic(ids.regression, "Lineare Regression", "solid"),
-      topic(ids.anova, "Varianzanalyse", "not_yet_practiced"),
+      topic(ids.anova, "Varianzanalyse", "not_studied"),
     ],
     obligations: [],
   });
@@ -543,7 +543,7 @@ test("lets the student choose at most 20 Topics", async () => {
   expect(last.getAttribute("aria-disabled")).not.toBe("true");
 });
 
-test("asks for a practice set on the Topics of the Course worked on last, the shaky and disputed ones already chosen", async () => {
+test("asks for a practice set on the Topics of the Course worked on last, the weak and shaky ones already chosen", async () => {
   renderScreen();
   const user = userEvent.setup();
   await sheet();

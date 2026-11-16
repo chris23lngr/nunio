@@ -4,6 +4,8 @@
 
 # A Chat sees Understanding Levels, Shortfalls and Artifacts, and proposes removing Study Blocks
 
+> Amended by ADR-0023: each Topic line gives the student's Level, the latest graded Attempt beside it and the day of the last Evidence. Weak and shaky Topics are the weak ones, and the model never contradicts a Level with an Attempt result.
+
 A Chat could read the Plan and a Course's Facts (ADR-0020). It could not say where the student is weak, whether they will make a deadline, or what practice they already have, and it could create and move Study Blocks but not remove one. Now the existing tools return more, and one Action kind is added. No new read tool is added, because each costs a step of the six a turn has (ADR-0019).
 
 - **`courseFacts` adds Understanding Levels.** Each Topic line gives its Understanding Level, what the Attempts alone show, the latest Self-assessment and when Evidence last supported it.
