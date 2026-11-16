@@ -131,6 +131,114 @@ function streamAnswer(response: ServerResponse, questionId: string) {
   };
 }
 
+// A Course's page as in Paper's course screens.
+const courseId = "00000000-0000-4000-8000-000000000800";
+const lectureId = "00000000-0000-4000-8000-000000000801";
+const ago = (days: number) =>
+  new Date(Date.now() - days * 86_400_000).toISOString();
+const at = (days: number, hour: number) => {
+  const day = new Date();
+  day.setDate(day.getDate() + days);
+  day.setHours(hour, 0, 0, 0);
+  return day.toISOString();
+};
+const courseTopic = (
+  n: number,
+  title: string,
+  level: string,
+  lastEvidenceAt: string | null,
+) => ({
+  id: `00000000-0000-4000-8000-0000000008${String(10 + n)}`,
+  title,
+  level,
+  lastEvidenceAt,
+  sources: [{ id: lectureId, title: "Vorlesung 04.pdf", pages: [7] }],
+});
+const coursePage = {
+  course: {
+    id: courseId,
+    code: "INF2",
+    title: "Operations Management",
+    status: "accepted",
+    semester: "2026-ws",
+    color: "violet",
+    entered: false,
+    archived: false,
+  },
+  disagreements: ["Klausurraum", "Klausurdauer"].map((_, i) => ({
+    kind: "fact",
+    id: `00000000-0000-4000-8000-00000000083${i}`,
+    key: i ? "exam.duration" : "exam.room",
+    values: (i ? ["90 Minuten", "120 Minuten"] : ["B 204", "C 112"]).map(
+      (value, j) => ({
+        value,
+        extractionId: `00000000-0000-4000-8000-0000000008${4 + i}${j}`,
+        sources: [j ? "Modulhandbuch.pdf" : "Vorlesung 04.pdf"],
+      }),
+    ),
+  })),
+  topics: [
+    courseTopic(0, "Sortieralgorithmen", "solid", ago(2)),
+    courseTopic(1, "Bäume und Suchstrukturen", "shaky", ago(0)),
+    courseTopic(2, "Graphen", "weak", ago(7)),
+    courseTopic(3, "Hashing", "not_studied", null),
+    courseTopic(4, "Komplexitätsanalyse", "shaky", ago(1)),
+    courseTopic(5, "Dynamische Programmierung", "not_studied", null),
+  ],
+  sources: [
+    {
+      id: lectureId,
+      title: "Vorlesung 04.pdf",
+      bytes: 12_582_912,
+      createdAt: ago(3),
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000802",
+      title: "Einführung Operations Management.pdf",
+      bytes: 2_097_152,
+      createdAt: ago(28),
+    },
+  ],
+  dated: [
+    ["study_block", "Bäume wiederholen", at(0, 21), at(0, 23)],
+    ["course_event", "OM Vorlesung", at(1, 10), at(1, 12)],
+    ["obligation", "Klausur", at(4, 0), null],
+  ].map(([kind, title, start, end], i) => ({
+    kind,
+    id: `00000000-0000-4000-8000-00000000086${i}`,
+    title,
+    start,
+    end,
+    allDay: kind === "obligation",
+    obligationKind: kind === "obligation" ? "exam" : null,
+    unreviewed: kind === "obligation",
+  })),
+};
+const courseArtifacts = [
+  [
+    "flashcards",
+    "Schritte von Prognoseziel über Zeithorizont und Verfahrenswahl bis zur Überwachung",
+  ],
+  ["practice_set", "Prognoseprozess, qualitative Verfahren und Kausalprognose"],
+].map(([kind, title], i) => ({
+  id: `00000000-0000-4000-8000-00000000087${i}`,
+  kind,
+  status: "ready",
+  failure: null,
+  topicIds: [coursePage.topics[0]!.id],
+  obligationId: null,
+  createdAt: ago(2),
+  openedAt: ago(2),
+  withdrawn: false,
+  title,
+  courseId,
+  count: 4,
+  version: 1,
+  updatedAt: ago(2),
+  lastPractisedAt: null,
+  shaky: false,
+}));
+
 // A controlled auth boundary for browser checks; no database or live account.
 createServer((request, response) => {
   response.setHeader("Access-Control-Allow-Origin", "http://localhost:3100");
@@ -203,6 +311,10 @@ createServer((request, response) => {
     response.end(JSON.stringify(practiceSet));
   } else if (request.url === `/api/me/artifacts/${practiceSetId}/attempts`) {
     response.end(JSON.stringify(graded));
+  } else if (request.url === `/api/me/courses/${courseId}`) {
+    response.end(JSON.stringify(coursePage));
+  } else if (request.url === "/api/me/artifacts") {
+    response.end(JSON.stringify(courseArtifacts));
   } else if (request.url === "/health") {
     response.end("{}");
   } else {

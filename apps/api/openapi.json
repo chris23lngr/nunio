@@ -3273,6 +3273,364 @@
           "lastActivityAt"
         ]
       },
+      "CoursePage": {
+        "type": "object",
+        "properties": {
+          "course": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "proposed",
+                  "accepted"
+                ]
+              },
+              "semester": {
+                "type": "string",
+                "pattern": "^\\d{4}-(ws|ss)$",
+                "description": "Starting year and season: \"ws\" for a Wintersemester (October to March), \"ss\" for a Sommersemester."
+              },
+              "color": {
+                "type": "string",
+                "enum": [
+                  "rose",
+                  "orange",
+                  "amber",
+                  "emerald",
+                  "teal",
+                  "blue",
+                  "violet",
+                  "fuchsia"
+                ]
+              },
+              "entered": {
+                "type": "boolean",
+                "description": "The student created it, so it can only be deleted, not rejected."
+              },
+              "archived": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "title",
+              "status",
+              "semester",
+              "color",
+              "entered",
+              "archived"
+            ]
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "bytes": {
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "bytes",
+                "createdAt"
+              ]
+            }
+          },
+          "disagreements": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "obligation"
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "values": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "due": {
+                            "type": "object",
+                            "properties": {
+                              "date": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "time": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "timeZone": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "date",
+                              "time",
+                              "timeZone"
+                            ]
+                          },
+                          "extractionId": {
+                            "type": "string"
+                          },
+                          "sources": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "due",
+                          "extractionId",
+                          "sources"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "title",
+                    "values"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "fact"
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string",
+                      "description": "The exam logistics field, such as exam.room."
+                    },
+                    "values": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string"
+                          },
+                          "extractionId": {
+                            "type": "string"
+                          },
+                          "sources": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "extractionId",
+                          "sources"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "key",
+                    "values"
+                  ]
+                }
+              ]
+            },
+            "description": "Open Disagreements on due dates and exam logistics, each value with the Sources that give it; resolved by using one."
+          },
+          "dated": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "obligation",
+                    "study_block",
+                    "course_event"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "start": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "end": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Null for an Obligation, which is due at start."
+                },
+                "allDay": {
+                  "type": "boolean",
+                  "description": "An Obligation due on a date without a time; start is then that day's beginning."
+                },
+                "obligationKind": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "exam",
+                    "assignment",
+                    "presentation",
+                    "thesis",
+                    "registration",
+                    "other",
+                    null
+                  ]
+                },
+                "unreviewed": {
+                  "type": "boolean",
+                  "description": "An Obligation the student has not confirmed yet."
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "title",
+                "start",
+                "end",
+                "allDay",
+                "obligationKind",
+                "unreviewed"
+              ]
+            },
+            "description": "Every dated item, soonest first: Obligations still owed, Study Blocks for the Course's work and its Course Events."
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "level": {
+                  "type": "string",
+                  "enum": [
+                    "not_studied",
+                    "weak",
+                    "shaky",
+                    "solid"
+                  ]
+                },
+                "lastEvidenceAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "sources": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "pages": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "title",
+                      "pages"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "level",
+                "lastEvidenceAt",
+                "sources"
+              ]
+            }
+          }
+        },
+        "required": [
+          "course",
+          "sources",
+          "disagreements",
+          "dated",
+          "topics"
+        ]
+      },
       "Home": {
         "type": "object",
         "properties": {
@@ -12095,6 +12453,68 @@
           },
           "409": {
             "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "description": "What the Course's page shows: the Course; its Sources, those bound to it and those nunio matched to it; and its Topics in the order first found, with the student's Level and the pages they are cited on.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Course's page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoursePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
             "content": {
               "application/json": {
                 "schema": {

@@ -108,6 +108,15 @@ test("shows the current Semester's accepted Courses in the order the server give
   ]);
 });
 
+test("links each Course card to the Course's page by its title", async () => {
+  const analysis = course({ title: "Analysis I" });
+  serveCourses([analysis]);
+  renderScreen();
+
+  const link = await screen.findByRole("link", { name: "Analysis I" });
+  expect(link.getAttribute("href")).toBe(`/courses/${analysis.id}`);
+});
+
 test("shows the current Semester when the URL names none that exists", async () => {
   serveCourses([
     course({ title: "Analysis I" }),

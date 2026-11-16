@@ -268,6 +268,161 @@ export function createCourses({
       });
     },
 
+    /**
+     * One proposed or accepted Course for its page: its Sources, those bound to it and those nunio matched to it, the
+     * deleted ones left out. Null when it is rejected, merged or not the student's.
+     */
+    async detail(p: Principal, id: string) {
+      const reviewed = (await facts.review(p)).courses.find((c) => c.id === id);
+      return withOwner(db, p, async (tx) => {
+        const course = await tx.course.findFirst({
+          where: { id, status: { in: ["proposed", "accepted"] } },
+        });
+        if (!course || !reviewed) return null;
+        const found = new Map(
+          (
+            await tx.fact.findMany({
+              where: { courseId: id, type: "topic" },
+              select: { id: true, createdAt: true },
+            })
+          ).map((row) => [row.id, row.createdAt.getTime()]),
+        );
+        // In the order first found: by reading, and within one in the order it listed them.
+        const topics = reviewed.facts
+          .filter((fact) => fact.type === "topic" && fact.state !== "rejected")
+          .sort((a, b) => (found.get(a.id) ?? 0) - (found.get(b.id) ?? 0))
+          .map((fact) => {
+            const cited = new Map<
+              string,
+              { id: string; title: string; pages: number[] }
+            >();
+            for (const citation of fact.values
+              .filter((value) => !value.overruled)
+              .flatMap((value) => value.citations)) {
+              const source = cited.get(citation.sourceId) ?? {
+                id: citation.sourceId,
+                title: citation.title,
+                pages: [],
+              };
+              if (!source.pages.includes(citation.page))
+                source.pages.push(citation.page);
+              cited.set(citation.sourceId, source);
+            }
+            return {
+              id: fact.id,
+              title: fact.value,
+              sources: [...cited.values()].map((source) => ({
+                ...source,
+                pages: source.pages.sort((a, b) => a - b),
+              })),
+            };
+          });
+        const sources = await tx.source.findMany({
+          where: {
+            deletedAt: null,
+            OR: [{ courseId: id }, { courses: { some: { courseId: id } } }],
+          },
+          select: { id: true, title: true, bytes: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
+        });
+        const titles = new Map(
+          reviewed.obligations.map((o) => [o.id, o.title]),
+        );
+        const studyBlocks = await tx.studyBlock.findMany({
+          where: blocks(id),
+          select: {
+            id: true,
+            start: true,
+            end: true,
+            obligationId: true,
+            task: { select: { title: true } },
+          },
+        });
+        const courseEvents = await tx.fixedEvent.findMany({
+          where: {
+            detachedAt: null,
+            series: { courseId: id, confirmedAt: { not: null } },
+          },
+          select: { id: true, title: true, start: true, end: true },
+        });
+        type Cited = { citations: { extractionId: string; title: string }[] };
+        /** A value the student can use: its first extraction, and every Source that gives it. */
+        const usable = (value: Cited) => ({
+          extractionId: value.citations[0]!.extractionId,
+          sources: [...new Set(value.citations.map((c) => c.title))],
+        });
+        // The short, decision-shaped ones: due dates and exam logistics. Rules' prose stays on the review page.
+        const disagreements = [
+          ...reviewed.obligations
+            .filter((o) => o.disagreement && o.state !== "rejected")
+            .map((o) => ({
+              kind: "obligation" as const,
+              id: o.id,
+              title: o.title,
+              values: o.values
+                .filter((v) => !v.overruled && v.citations.length)
+                .map((v) => ({ due: v.due, ...usable(v) })),
+            })),
+          ...reviewed.facts
+            .filter(
+              (f) =>
+                f.disagreement &&
+                f.type === "exam_logistics" &&
+                f.state !== "rejected",
+            )
+            .map((f) => ({
+              kind: "fact" as const,
+              id: f.id,
+              key: f.key,
+              values: f.values
+                .filter((v) => !v.overruled && v.citations.length)
+                .map((v) => ({ value: v.value, ...usable(v) })),
+            })),
+        ];
+        return {
+          disagreements,
+          // Every dated item: its Obligations still owed, the Study Blocks for its work and its Course Events.
+          obligations: reviewed.obligations
+            .filter(
+              (o) =>
+                o.state !== "rejected" && !o.reportedSubmittedAt && o.due.date,
+            )
+            .map((o) => ({
+              id: o.id,
+              title: o.title,
+              kind: o.kind,
+              due: {
+                date: o.due.date!,
+                time: o.due.time,
+                timeZone: o.due.timeZone,
+              },
+              unreviewed: o.state === "unreviewed",
+            })),
+          studyBlocks: studyBlocks.map((block) => ({
+            id: block.id,
+            title:
+              block.task?.title ??
+              (block.obligationId ? titles.get(block.obligationId) : null) ??
+              "",
+            start: block.start,
+            end: block.end,
+          })),
+          courseEvents,
+          course: {
+            id: course.id,
+            code: course.code,
+            title: course.title,
+            status: course.status as "proposed" | "accepted",
+            semester: course.semester as Semester,
+            color: course.color as CourseColor,
+            entered: course.enteredAt !== null,
+            archived: course.archivedAt !== null,
+          },
+          sources,
+          topics,
+        };
+      });
+    },
     async create(
       p: Principal,
       input: { title: string; code: string | null; semester: string },

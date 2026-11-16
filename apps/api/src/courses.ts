@@ -2,6 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import { ObligationKind } from "@nunio/db";
 import { courseColors } from "@nunio/knowledge";
+import { deadline } from "@nunio/planning";
 import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
 import {
@@ -281,6 +282,170 @@ export function registerCourseRoutes(routes: OpenAPIHono<AppBindings>) {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
       return done(c, await c.get("courses").delete(p, c.req.valid("param").id));
+    },
+  );
+  // Last, so the fixed paths such as merge-suggestions win over {id}.
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/courses/{id}",
+      description:
+        "What the Course's page shows: the Course; its Sources, those bound to it and those nunio matched to it; and its Topics in the order first found, with the student's Level and the pages they are cited on.",
+      request: { params: id },
+      responses: {
+        200: json(
+          z
+            .object({
+              course: Course.omit({ next: true, lastActivityAt: true }),
+              sources: z.array(
+                z.object({
+                  id: z.string(),
+                  title: z.string(),
+                  bytes: z.number().int(),
+                  createdAt: z.date(),
+                }),
+              ),
+              disagreements: z
+                .array(
+                  z.discriminatedUnion("kind", [
+                    z.object({
+                      kind: z.literal("obligation"),
+                      id: z.string(),
+                      title: z.string(),
+                      values: z.array(
+                        z.object({
+                          due: z.object({
+                            date: z.string().nullable(),
+                            time: z.string().nullable(),
+                            timeZone: z.string().nullable(),
+                          }),
+                          extractionId: z.string(),
+                          sources: z.array(z.string()),
+                        }),
+                      ),
+                    }),
+                    z.object({
+                      kind: z.literal("fact"),
+                      id: z.string(),
+                      key: z
+                        .string()
+                        .describe(
+                          "The exam logistics field, such as exam.room.",
+                        ),
+                      values: z.array(
+                        z.object({
+                          value: z.string(),
+                          extractionId: z.string(),
+                          sources: z.array(z.string()),
+                        }),
+                      ),
+                    }),
+                  ]),
+                )
+                .describe(
+                  "Open Disagreements on due dates and exam logistics, each value with the Sources that give it; resolved by using one.",
+                ),
+              dated: z
+                .array(
+                  z.object({
+                    kind: z.enum(["obligation", "study_block", "course_event"]),
+                    id: z.string(),
+                    title: z.string(),
+                    start: z.date(),
+                    end: z
+                      .date()
+                      .nullable()
+                      .describe(
+                        "Null for an Obligation, which is due at start.",
+                      ),
+                    allDay: z
+                      .boolean()
+                      .describe(
+                        "An Obligation due on a date without a time; start is then that day's beginning.",
+                      ),
+                    obligationKind: z.enum(ObligationKind).nullable(),
+                    unreviewed: z
+                      .boolean()
+                      .describe(
+                        "An Obligation the student has not confirmed yet.",
+                      ),
+                  }),
+                )
+                .describe(
+                  "Every dated item, soonest first: Obligations still owed, Study Blocks for the Course's work and its Course Events.",
+                ),
+              topics: z.array(
+                z.object({
+                  id: z.string(),
+                  title: z.string(),
+                  level: z.enum(["not_studied", "weak", "shaky", "solid"]),
+                  lastEvidenceAt: z.date().nullable(),
+                  sources: z.array(
+                    z.object({
+                      id: z.string(),
+                      title: z.string(),
+                      pages: z.array(z.number().int()),
+                    }),
+                  ),
+                }),
+              ),
+            })
+            .openapi("CoursePage"),
+          "The Course's page.",
+        ),
+        ...errors,
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const detail = await c.get("courses").detail(p, c.req.valid("param").id);
+      if (!detail) return c.json({ error: "gone" }, 404);
+      const levels = await c.get("understanding").levelsOfTopics(
+        p,
+        detail.topics.map((topic) => topic.id),
+      );
+      const { obligations, studyBlocks, courseEvents, ...page } = detail;
+      const timeZone = await c.get("plan").timeZone(p);
+      const timed = { obligationKind: null, unreviewed: false, allDay: false };
+      const dated = [
+        ...obligations.map((o) => ({
+          kind: "obligation" as const,
+          id: o.id,
+          title: o.title,
+          start: deadline(o.due.date, o.due.time, o.due.timeZone ?? timeZone),
+          end: null,
+          allDay: !o.due.time,
+          obligationKind: o.kind,
+          unreviewed: o.unreviewed,
+        })),
+        ...studyBlocks.map((b) => ({
+          ...timed,
+          kind: "study_block" as const,
+          ...b,
+        })),
+        ...courseEvents.map((e) => ({
+          ...timed,
+          kind: "course_event" as const,
+          ...e,
+        })),
+      ].sort((a, b) => a.start.getTime() - b.start.getTime());
+      return c.json(
+        {
+          ...page,
+          dated,
+          topics: detail.topics.map((topic) => {
+            const level = levels.find((l) => l.topicId === topic.id);
+            return {
+              ...topic,
+              level: level?.level ?? ("not_studied" as const),
+              lastEvidenceAt: level?.lastEvidenceAt ?? null,
+            };
+          }),
+        },
+        200,
+      );
     },
   );
 }
