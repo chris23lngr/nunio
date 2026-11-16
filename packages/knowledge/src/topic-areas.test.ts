@@ -413,3 +413,69 @@ it("hides a rejected Area for good, leaving its Topics ungrouped over later pass
     ],
   });
 });
+
+it("changes nothing when the model call is refused", async () => {
+  const p = await student();
+  const courseId = await readDeck(p, "Algorithmen.pdf", eight);
+  const { grouper, inputs } = grouping();
+  const disabled = createDelegation({ db: runtime, aiEnabled: () => false });
+
+  const result = await areas.group(p, courseId, {
+    grouper,
+    delegation: disabled,
+  });
+
+  expect(result).toEqual({ status: "refused", reason: "ai_disabled" });
+  expect(inputs).toEqual([]);
+  expect((await shown(p, courseId)).areas).toEqual([]);
+});
+
+it("forgets an Area once it has no Topics left, but keeps a rejected one", async () => {
+  const p = await student();
+  const { courseId, area, topic } = await grouped(p);
+  const { grouper, inputs } = grouping([]);
+  await areas.reject(p, area("Graphen").id);
+  for (const name of ["Bubblesort", "Quicksort", "Mergesort"])
+    await areas.move(p, topic(name).id, null);
+
+  expect((await shown(p, courseId)).areas).toEqual([]);
+  await areas.group(p, courseId, { grouper, delegation });
+  await areas.group(p, courseId, {
+    grouper: grouping([
+      { name: "Sortieren", topics: ["Hashing", "O-Notation"] },
+    ]).grouper,
+    delegation,
+  });
+
+  expect(inputs[0]?.areas).toEqual([{ name: "Graphen", rejected: true }]);
+  expect((await shown(p, courseId)).areas).toEqual([
+    { name: "Sortieren", topics: ["Hashing", "O-Notation"] },
+  ]);
+});
+
+it("marks an Area inferred unless a member's quote or Source title names it", async () => {
+  const p = await student();
+  const courseId = await readDeck(p, "Algorithmen.pdf", [
+    ...eight,
+    ["Hashing mit Verkettung", "Offene Adressierung"],
+  ]);
+  await areas.group(p, courseId, {
+    grouper: grouping([
+      {
+        name: "Hashing",
+        topics: ["Hashing mit Verkettung", "Offene Adressierung"],
+      },
+      { name: "algorithmen", topics: ["Quicksort", "Mergesort"] },
+      { name: "Graphen", topics: ["Breitensuche", "Dijkstra"] },
+    ]).grouper,
+    delegation,
+  });
+
+  expect(
+    (await areas.list(p, courseId)).areas.map((a) => [a.name, a.inferred]),
+  ).toEqual([
+    ["Hashing", false],
+    ["algorithmen", false],
+    ["Graphen", true],
+  ]);
+});

@@ -91,7 +91,18 @@ export function createTopicAreas({
       courseId: string,
       deps: { grouper: Grouper; delegation: Delegation; signal?: AbortSignal },
     ) {
-      const { topics, row, stored } = await stateOf(p, courseId);
+      const state = await stateOf(p, courseId);
+      const { topics, row } = state;
+      // An Area left without Topics means nothing in a one-level list; a rejected one stays as a key.
+      const occupied = new Set(topics.map((t) => row.get(t.id)?.topicAreaId));
+      const empty = state.stored
+        .filter((area) => !area.rejectedAt && !occupied.has(area.id))
+        .map((area) => area.id);
+      if (empty.length)
+        await withOwner(db, p, (tx) =>
+          tx.topicArea.deleteMany({ where: { id: { in: empty } } }),
+        );
+      const stored = state.stored.filter((area) => !empty.includes(area.id));
       if (topics.length < minTopics) return { status: "skipped" } as const;
       const handles = new Map(topics.map((topic, i) => [`t${i + 1}`, topic]));
       const areaName = new Map(
@@ -154,7 +165,12 @@ export function createTopicAreas({
                 matchKey: normalize(area.name),
                 name: area.name,
                 order: nextOrder++,
-                inferred: true,
+                inferred: !members.some((handle) => {
+                  const topic = handles.get(handle)!;
+                  return [topic.quote, topic.source].some((text) =>
+                    normalize(text).includes(normalize(area.name)),
+                  );
+                }),
               },
             });
           }
