@@ -3,6 +3,7 @@ import type { ModelConfig } from "@nunio/ai";
 import {
   createEmbedder,
   createExtractor,
+  createGrouper,
   createModels,
   createScanReader,
 } from "@nunio/ai";
@@ -14,6 +15,7 @@ import type { Ingestion, Sources } from "@nunio/knowledge";
 import {
   createFacts,
   createSources,
+  createTopicAreas,
   IngestionError,
   sourceStorageFromEnv,
 } from "@nunio/knowledge";
@@ -23,6 +25,10 @@ import { log } from "./log.js";
 export interface SourceRef {
   studentId: string;
   sourceId: string;
+}
+export interface CourseRef {
+  studentId: string;
+  courseId: string;
 }
 const settings = [
   "DATABASE_URL",
@@ -57,7 +63,9 @@ export function createSourceActivities(
     keys,
     storage: sourceStorageFromEnv(env),
   });
-  const facts = createFacts({ db, keys, clock: { now: () => new Date() } });
+  const clock = { now: () => new Date() };
+  const facts = createFacts({ db, keys, clock });
+  const areas = createTopicAreas({ db, facts, clock });
   const provider = {
     apiKey: env.OPENROUTER_API_KEY!,
     baseURL: env.OPENROUTER_BASE_URL!,
@@ -65,7 +73,8 @@ export function createSourceActivities(
   const models = createModels({ ...provider, catalog });
   const embedder = createEmbedder(provider),
     scans = createScanReader(models),
-    extractor = createExtractor(models);
+    extractor = createExtractor(models),
+    grouper = createGrouper(models);
   const delegation = createDelegation({
     db,
     aiEnabled: () => env.AI_DISABLED !== "true",
@@ -122,6 +131,25 @@ export function createSourceActivities(
         } finally {
           clearInterval(heartbeat);
         }
+      },
+      async groupSourceTopics({ studentId, sourceId }: SourceRef) {
+        const results = await areas.groupSource(
+          principal.fromSession({ studentId }),
+          sourceId,
+          { grouper, delegation, signal: Context.current().cancellationSignal },
+        );
+        // IDs and outcomes only: never Topic names.
+        log("grouping finished", { sourceId, results });
+        return results;
+      },
+      async groupCourseTopics({ studentId, courseId }: CourseRef) {
+        const result = await areas.group(
+          principal.fromSession({ studentId }),
+          courseId,
+          { grouper, delegation, signal: Context.current().cancellationSignal },
+        );
+        log("grouping finished", { courseId, ...result });
+        return result;
       },
       async purgeSource({ studentId, sourceId }: SourceRef) {
         const p = principal.fromSession({ studentId });

@@ -10,7 +10,11 @@ import {
 } from "@temporalio/workflow";
 import type { Activities } from "./activities.js";
 import type { RunActivities, RunRef } from "./run-activities.js";
-import type { SourceActivities, SourceRef } from "./source-activities.js";
+import type {
+  CourseRef,
+  SourceActivities,
+  SourceRef,
+} from "./source-activities.js";
 
 const { hold, checkParser: parserHealth } = proxyActivities<Activities>({
   startToCloseTimeout: "1 minute",
@@ -59,15 +63,32 @@ const { extractFacts } = proxyActivities<SourceActivities>({
   heartbeatTimeout: "30 seconds",
   retry: { maximumAttempts: 1 },
 });
+// Grouping is metered too (ADR-0023). It never fails the Source: a failed pass leaves the Topics where they
+// were, and the next extraction or merge tries again.
+const { groupSourceTopics, groupCourseTopics } =
+  proxyActivities<SourceActivities>({
+    startToCloseTimeout: "5 minutes",
+    retry: { maximumAttempts: 1 },
+  });
+async function extractAndGroup(input: SourceRef) {
+  const extraction = await extractFacts(input);
+  if (patched("group-after-extract") && extraction.status === "done")
+    await groupSourceTopics(input).catch(() => undefined);
+  return extraction;
+}
 export async function ingestSource(input: SourceRef) {
   const ingestion = await processSource(input);
   if (!patched("extract-after-ingest") || ingestion.status !== "ready")
     return ingestion;
-  return { ...ingestion, extraction: await extractFacts(input) };
+  return { ...ingestion, extraction: await extractAndGroup(input) };
 }
 /** "Read again": extraction alone, started by the student and metered again. */
 export async function extractSource(input: SourceRef) {
-  return extractFacts(input);
+  return extractAndGroup(input);
+}
+/** After Courses merge, the target's Topics without an Area are placed. */
+export async function groupCourse(input: CourseRef) {
+  return groupCourseTopics(input);
 }
 export async function deleteSource(
   input: SourceRef & { cleanupAfter: string },
