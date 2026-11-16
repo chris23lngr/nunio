@@ -36,6 +36,7 @@ describe("the model registry", () => {
   it.each([
     ["extraction", "haiku-5.5-reasoning-high"],
     ["scan", "haiku-5.5-reasoning-high"],
+    ["grouping", "haiku-5.5-reasoning-high"],
     ["classification", "haiku-5.5-reasoning-high"],
     ["estimation", "haiku-5.5-reasoning-high"],
     ["agent", "sonnet-5.5-reasoning-high"],

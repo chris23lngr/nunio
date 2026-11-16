@@ -20,7 +20,12 @@ export {
   type Page,
 } from "./extraction.js";
 export { createGrader, type GradeInput, type Grader } from "./grading.js";
-export type { Grouped, Grouper, GroupingInput } from "./grouping.js";
+export {
+  createGrouper,
+  type Grouped,
+  type Grouper,
+  type GroupingInput,
+} from "./grouping.js";
 export {
   createModels,
   type DataHandlingLabel,
