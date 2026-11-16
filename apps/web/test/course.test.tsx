@@ -81,11 +81,17 @@ function topic(
   };
 }
 
-/** Serves the course page and records what the student sends. */
-function serve(data: Page = page()) {
+/** Serves the course page, its Topic Areas (none by default), and records what the student sends. */
+function serve(
+  data: Page = page(),
+  areas: Page = { areas: [], ungrouped: [] },
+) {
   const sent: { method: string; path: string; body: unknown }[] = [];
   let current = data;
   api.route("GET", `/api/me/courses/${courseId}`, () => Response.json(current));
+  api.route("GET", `/api/me/courses/${courseId}/topic-areas`, () =>
+    Response.json(areas),
+  );
   api.route("GET", "/api/me/artifacts", () => Response.json([]));
   const record = (reply: unknown) => async (request: Request) => {
     const text = await request.text();
@@ -161,6 +167,48 @@ test("shows the Course with its code, Semester and Sources, a way to learn, and 
     "SchwachpunktGraphenVor 1 Woche",
     "Nicht gelerntHashingNoch nie",
   ]);
+});
+
+test("groups Topics into collapsed Topic Areas with their counts, the rest last under Weitere Themen", async () => {
+  const ref = (id: string, name: string) => ({ id, name });
+  serve(page(), {
+    areas: [
+      {
+        id: crypto.randomUUID(),
+        name: "Algorithmen",
+        inferred: false,
+        topics: [
+          ref(ids.graphs, "Graphen"),
+          ref(ids.sorting, "Sortieralgorithmen"),
+        ],
+      },
+    ],
+    ungrouped: [
+      ref(ids.trees, "Bäume und Suchstrukturen"),
+      ref(ids.hashing, "Hashing"),
+    ],
+  });
+  renderScreen();
+
+  const algorithms = await screen.findByRole("button", {
+    name: "Algorithmen 2",
+  });
+  const others = screen.getByRole("button", { name: "Weitere Themen 2" });
+  expect(algorithms.getAttribute("aria-expanded")).toBe("false");
+  expect(others.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("Graphen")).toBeNull();
+
+  await userEvent.click(algorithms);
+
+  expect(
+    within(screen.getByRole("list", { name: "Algorithmen" }))
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toEqual([
+    "SchwachpunktGraphenVor 1 Woche",
+    "SicherSortieralgorithmenVor 2 Tagen",
+  ]);
+  expect(screen.queryByText("Hashing")).toBeNull();
 });
 
 function artifact(overrides: Record<string, unknown>) {

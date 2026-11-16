@@ -67,6 +67,25 @@ export function coursePageQuery(apiOrigin: string, courseId: string) {
   });
 }
 
+export type CourseTopicAreas =
+  paths["/api/me/courses/{id}/topic-areas"]["get"]["responses"][200]["content"]["application/json"];
+
+/** The Course's Topic Areas (ADR-0024) and the Topics in none, each in order. */
+export function topicAreasQuery(apiOrigin: string, courseId: string) {
+  return queryOptions({
+    queryKey: [apiOrigin, "course-page", courseId, "topic-areas"],
+    queryFn: async ({ signal }) => {
+      const result = await createApiClient(apiOrigin).GET(
+        "/api/me/courses/{id}/topic-areas",
+        { params: { path: { id: courseId } }, signal },
+      );
+      if (!result.data)
+        throw new Error("Die Themenbereiche konnten nicht geladen werden.");
+      return result.data;
+    },
+  });
+}
+
 class CourseGone extends Error {
   constructor() {
     super("Diesen Kurs gibt es nicht mehr.");
