@@ -63,7 +63,7 @@ export const ArtifactSummary = ArtifactBase.extend({
     .describe("When the student last answered one of its Practice Items."),
   shaky: z
     .boolean()
-    .describe("One of its Topics is shaky or disputed for the student."),
+    .describe("The student calls one of its Topics weak or shaky."),
 }).openapi("ArtifactSummary");
 const Content = z.union([
   z.object({
@@ -188,14 +188,20 @@ const Attempt = z
 const Level = z
   .object({
     topicId: z.string(),
-    level: z.enum(["not_yet_practiced", "shaky", "solid", "disputed"]),
-    fromAttempts: z
-      .enum(["shaky", "solid"])
+    level: z
+      .enum(["not_studied", "weak", "shaky", "solid"])
+      .describe(
+        "The student's latest Self-assessment; not_studied without one.",
+      ),
+    latestAttempt: z
+      .object({
+        verdict: z.enum(["correct", "partial", "incorrect"]),
+        at: z.date(),
+      })
       .nullable()
       .describe(
-        "What the Attempts alone show; disputed is this against the Self-assessment.",
+        "The latest graded Attempt, shown beside the Level; it never moves it.",
       ),
-    selfAssessment: z.enum(["shaky", "solid"]).nullable(),
     lastEvidenceAt: z.date().nullable(),
   })
   .openapi("UnderstandingLevel");
@@ -204,12 +210,12 @@ const Evidence = z
     z.object({ kind: z.literal("attempt"), attempt: Attempt }),
     z.object({
       kind: z.literal("self_assessment"),
-      level: z.enum(["shaky", "solid"]),
+      level: Level.shape.level,
       at: z.date(),
     }),
   ])
   .openapi("Evidence");
-/** The student's Artifacts as listed, each marked shaky when one of its Topics is shaky or disputed. */
+/** The student's Artifacts as listed, each marked shaky when the student calls one of its Topics weak or shaky. */
 export async function listArtifacts(
   c: Context<AppBindings>,
   p: Principal,
@@ -221,7 +227,7 @@ export async function listArtifacts(
     .levelsOfTopics(p, [...new Set(listed.flatMap((a) => a.topicIds))]);
   const shaky = new Set(
     levels
-      .filter((l) => l.level === "shaky" || l.level === "disputed")
+      .filter((l) => l.level === "weak" || l.level === "shaky")
       .map((l) => l.topicId),
   );
   return listed.map((a) => ({
@@ -525,14 +531,14 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
       method: "post",
       path: "/api/me/topics/{id}/self-assessment",
       description:
-        "The student's own statement about a Topic, shown beside its Level; it never moves the Level itself.",
+        "The student's own statement about a Topic, which sets its Level.",
       request: {
         params: z.object({ id: z.string().uuid() }),
         body: {
           required: true,
           content: {
             "application/json": {
-              schema: z.object({ level: z.enum(["shaky", "solid"]) }).strict(),
+              schema: z.object({ level: Level.shape.level }).strict(),
             },
           },
         },
@@ -562,7 +568,7 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
       method: "get",
       path: "/api/me/courses/{id}/levels",
       description:
-        "The Understanding Level of each of the Course's Topics. Only graded Attempts move a Level; it never fades.",
+        "The Understanding Level of each of the Course's Topics: the student's own, set by Self-assessment. It never fades.",
       request: { params: z.object({ id: z.string().uuid() }) },
       responses: { 200: json(z.array(Level), "One per Topic."), ...errors },
     }),
@@ -653,7 +659,7 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
             title: topic.value,
             level:
               levels.find((l) => l.topicId === topic.id)?.level ??
-              "not_yet_practiced",
+              "not_studied",
           })),
           obligations: await Promise.all(
             obligations.map(async (o) => {

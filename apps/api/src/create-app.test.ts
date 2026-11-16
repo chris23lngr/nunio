@@ -4546,17 +4546,17 @@ describe("Chat", () => {
       return { given, tag };
     }
 
-    it("gives a Topic without Evidence as not yet practiced", async () => {
+    it("gives a Topic without Evidence as not studied", async () => {
       const { headers, chatId } = await topicChat("chat-levels-none");
 
       const { given, tag } = await readCourseFacts(headers, chatId);
 
       expect(tag).toBeDefined();
-      expect(given).toContain(`[${tag}] not yet practiced`);
+      expect(given).toContain(`[${tag}] not studied`);
     });
 
-    it("gives a Topic's Level with what the Attempts show, the Self-assessment and the day of the last Evidence, even to a Chat that selected nothing", async () => {
-      const s = await studyFixture("chat-levels-disputed");
+    it("gives a Topic's self-assessed Level with the latest graded Attempt beside it and the day of the last Evidence, even to a Chat that selected nothing", async () => {
+      const s = await studyFixture("chat-levels-self-assessed");
       const { artifactId, runId } = (await (
         await s.send("/api/me/artifacts", {
           kind: "practice_set",
@@ -4585,7 +4585,7 @@ describe("Chat", () => {
       );
 
       expect(given).toContain(
-        `[${tag}] disputed (Attempts: shaky, Self-assessment: solid, last Evidence ${berlinDay(0)})`,
+        `[${tag}] solid (latest Attempt correct on ${berlinDay(0)}, last Evidence ${berlinDay(0)})`,
       );
     });
 
@@ -6773,7 +6773,7 @@ describe("study execution", () => {
     ).toBe(404);
   });
 
-  it("lists an Artifact as shaky once Attempts on its Topics show it, with when the student last practised it", async () => {
+  it("lists an Artifact as shaky while the student calls one of its Topics weak or shaky, never for Attempts alone, with when they last practised it", async () => {
     const s = await studyFixture("study-list");
     const requested = await s.send("/api/me/artifacts", {
       kind: "practice_set",
@@ -6807,8 +6807,21 @@ describe("study execution", () => {
       expect.objectContaining({
         id: artifactId,
         lastPractisedAt: expect.any(String),
-        shaky: true,
+        shaky: false,
       }),
+    ]);
+    const shakyAfter = async (level: string) => {
+      await s.send(`/api/me/topics/${s.topicId}/self-assessment`, { level });
+      return ((await listed()) as { shaky: boolean }[])[0]?.shaky;
+    };
+    expect(await shakyAfter("weak")).toBe(true);
+    expect(await shakyAfter("solid")).toBe(false);
+    expect(await shakyAfter("not_studied")).toBe(false);
+    expect(await shakyAfter("shaky")).toBe(true);
+
+    await s.send(`/api/me/review/fact/${s.topicId}/reject`, {});
+    expect(await listed()).toEqual([
+      expect.objectContaining({ id: artifactId, shaky: false }),
     ]);
   });
 
@@ -6842,9 +6855,7 @@ describe("study execution", () => {
     expect([options.status, await options.json()]).toEqual([
       200,
       {
-        topics: [
-          { id: s.topicId, title: "Klausur", level: "not_yet_practiced" },
-        ],
+        topics: [{ id: s.topicId, title: "Klausur", level: "not_studied" }],
         obligations: [
           {
             id: paper,
@@ -6870,7 +6881,7 @@ describe("study execution", () => {
     ).toBe(404);
   });
 
-  it("grades the student's Attempts, records Self-assessments, and shows each Topic's Level and Evidence", async () => {
+  it("grades the student's Attempts, sets each Topic's Level by Self-assessment with the latest Attempt beside it, and shows its Evidence", async () => {
     const s = await studyFixture("study-practice");
     const requested = await s.send("/api/me/artifacts", {
       kind: "practice_set",
@@ -6905,26 +6916,37 @@ describe("study execution", () => {
       await (await s.get(`/api/me/artifacts/${artifactId}/attempts`)).json(),
     ).toEqual(answered);
     expect(await levels()).toEqual([
-      expect.objectContaining({ topicId: s.topicId, level: "shaky" }),
+      {
+        topicId: s.topicId,
+        level: "not_studied",
+        latestAttempt: { verdict: "correct", at: expect.any(String) },
+        lastEvidenceAt: expect.any(String),
+      },
     ]);
     expect(
       (
         await s.send(`/api/me/topics/${s.topicId}/self-assessment`, {
-          level: "solid",
+          level: "weak",
         })
       ).status,
     ).toBe(200);
     expect(await levels()).toEqual([
       expect.objectContaining({
-        level: "disputed",
-        fromAttempts: "shaky",
-        selfAssessment: "solid",
+        level: "weak",
+        latestAttempt: expect.objectContaining({ verdict: "correct" }),
       }),
     ]);
     expect(
+      (
+        await s.send(`/api/me/topics/${s.topicId}/self-assessment`, {
+          level: "maybe",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
       await (await s.get(`/api/me/topics/${s.topicId}/evidence`)).json(),
     ).toEqual([
-      expect.objectContaining({ kind: "self_assessment", level: "solid" }),
+      expect.objectContaining({ kind: "self_assessment", level: "weak" }),
       expect.objectContaining({ kind: "attempt" }),
     ]);
 

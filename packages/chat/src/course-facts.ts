@@ -95,9 +95,13 @@ export function courseFactsTool(
         if (!tag) return [];
         const shown = `[${tag}] ${level.level.replaceAll("_", " ")}`;
         if (!level.lastEvidenceAt) return [shown];
+        // The Level is the student's own; the latest Attempt is shown beside it, never against it (ADR-0023).
         const evidence = [
-          `Attempts: ${level.fromAttempts ?? "none"}`,
-          `Self-assessment: ${level.selfAssessment ?? "none"}`,
+          ...(level.latestAttempt
+            ? [
+                `latest Attempt ${level.latestAttempt.verdict} on ${day.format(level.latestAttempt.at)}`,
+              ]
+            : []),
           `last Evidence ${day.format(level.lastEvidenceAt)}`,
         ];
         return [`${shown} (${evidence.join(", ")})`];

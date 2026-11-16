@@ -1,5 +1,7 @@
 # Understanding Levels do not decay
 
+> Partly superseded by ADR-0023: the student now sets the Level, so practice no longer changes it. The decision against decay still holds.
+
 An Understanding Level stays where its Evidence put it, however much time passes; instead, it always shows when Evidence last supported it. We rejected time-based decay (forgetting curves) because it would claim a precision about the student's memory that nunio does not have, and would turn nunio into the native spaced-repetition system the product brief puts out of scope. Staleness is surfaced through the last-Evidence date, and fresh practice is the way to change a Level.
 
 ## Considered Options

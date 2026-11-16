@@ -66,19 +66,22 @@ const levels: Record<
   TopicOption["level"],
   { text: string; className: string }
 > = {
+  weak: {
+    text: "Schwachpunkt",
+    className: "bg-destructive-50 text-destructive-800",
+  },
   shaky: { text: "Unsicher", className: shakyBadge },
-  disputed: { text: "Strittig", className: shakyBadge },
   solid: { text: "Sicher", className: "bg-success-50 text-success-800" },
-  not_yet_practiced: {
-    text: "Noch nicht geübt",
+  not_studied: {
+    text: "Nicht gelernt",
     className: "bg-base-100 text-base-600",
   },
 };
 
-/** The Topics chosen until the student changes them: the shaky and disputed ones. */
+/** The Topics chosen until the student changes them: the ones they call weak or shaky. */
 const preselected = (options: ArtifactOptions | undefined) =>
   (options?.topics ?? [])
-    .filter((t) => t.level === "shaky" || t.level === "disputed")
+    .filter((t) => t.level === "weak" || t.level === "shaky")
     .slice(0, maxTopics)
     .map((t) => t.id);
 

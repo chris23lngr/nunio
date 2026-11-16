@@ -396,12 +396,12 @@ it("shows the latest Attempt on each answered Practice Item of a practice set, g
   );
 });
 
-it("moves a Topic's Level only through graded Attempts, never through Artifacts, and shows a differing Self-assessment as disputed", async () => {
+it("sets a Topic's Level only through the student's Self-assessment, showing graded Attempts beside it", async () => {
   const p = await student();
   const { artifacts, artifactId, topicId, courseId } = await practiceSet(p);
   const understanding = understandingWith(
     artifacts,
-    scriptedGrader("correct", "correct").grader,
+    scriptedGrader("correct", "incorrect").grader,
   );
   const level = async () => (await understanding.levels(p, { courseId }))[0];
   const answer = (text: string) =>
@@ -410,27 +410,30 @@ it("moves a Topic's Level only through graded Attempts, never through Artifacts,
   expect(await understanding.levels(p, { courseId })).toEqual([
     {
       topicId,
-      level: "not_yet_practiced",
-      fromAttempts: null,
-      selfAssessment: null,
+      level: "not_studied",
+      latestAttempt: null,
       lastEvidenceAt: null,
     },
   ]);
   await artifacts.open(p, artifactId);
-  expect(await level()).toMatchObject({ level: "not_yet_practiced" });
   await answer("Erster Versuch.");
-  expect(await level()).toMatchObject({ level: "shaky" });
-  await answer("Zweiter Versuch.");
-  expect(await level()).toMatchObject({ level: "solid" });
+  expect(await level()).toMatchObject({
+    level: "not_studied",
+    latestAttempt: { verdict: "correct" },
+  });
 
-  expect(await understanding.selfAssess(p, topicId, "shaky")).toEqual({
+  expect(await understanding.selfAssess(p, topicId, "solid")).toEqual({
     status: "ok",
   });
+  await answer("Zweiter Versuch.");
   expect(await level()).toMatchObject({
-    level: "disputed",
-    fromAttempts: "solid",
-    selfAssessment: "shaky",
+    level: "solid",
+    latestAttempt: { verdict: "incorrect" },
   });
+  expect(await understanding.selfAssess(p, topicId, "weak")).toEqual({
+    status: "ok",
+  });
+  expect(await level()).toMatchObject({ level: "weak" });
   expect(
     await understanding.selfAssess(await student(), topicId, "solid"),
   ).toEqual({ status: "gone" });
@@ -473,7 +476,9 @@ it("keeps an Attempt ungraded when grading fails or the Allowance is spent, grad
       }),
     ],
   });
-  expect(await level()).toMatchObject({ level: "shaky" });
+  expect(await level()).toMatchObject({
+    latestAttempt: { verdict: "correct" },
+  });
   expect(
     await understanding.answer(p, artifactId, [
       { itemId: "1", text: "Zweiter Versuch." },
@@ -489,7 +494,9 @@ it("keeps an Attempt ungraded when grading fails or the Allowance is spent, grad
       }),
     ],
   });
-  expect(await level()).toMatchObject({ level: "solid" });
+  expect(await level()).toMatchObject({
+    latestAttempt: { verdict: "correct" },
+  });
 
   await delegation.meter(p, { microUsd: 1 }, async () => ({
     value: null,

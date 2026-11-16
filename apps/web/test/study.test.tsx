@@ -91,20 +91,17 @@ function serveStudy(level: Record<string, unknown>) {
   return sent;
 }
 
-test("shows a disputed Topic with both sides, and asks for practice on it", async () => {
+test("shows a Topic's Level and last Evidence, and asks for practice on it", async () => {
   const sent = serveStudy({
-    level: "disputed",
-    fromAttempts: "shaky",
-    selfAssessment: "solid",
+    level: "weak",
+    latestAttempt: null,
     lastEvidenceAt: "2026-11-09T10:00:00.000Z",
   });
   const topic = await screen.findByRole("article", {
     name: "Gleichmäßige Konvergenz",
   });
 
-  await within(topic).findByText(
-    "Disputed: your Attempts say shaky, but you said solid.",
-  );
+  await within(topic).findByText("Weak");
   expect(within(topic).getByText(/^Last evidence /)).toBeTruthy();
   await userEvent.click(
     within(topic).getByRole("button", { name: "Practice" }),
@@ -126,18 +123,17 @@ test("shows a disputed Topic with both sides, and asks for practice on it", asyn
   ]);
 });
 
-test("shows a Topic not yet practiced, and records the student's own Self-assessment", async () => {
+test("shows a Topic not studied, and records the student's own Self-assessment", async () => {
   const sent = serveStudy({
-    level: "not_yet_practiced",
-    fromAttempts: null,
-    selfAssessment: null,
+    level: "not_studied",
+    latestAttempt: null,
     lastEvidenceAt: null,
   });
   const topic = await screen.findByRole("article", {
     name: "Gleichmäßige Konvergenz",
   });
 
-  await within(topic).findByText("Not yet practiced");
+  await within(topic).findByText("Not studied");
   await userEvent.click(
     within(topic).getByRole("button", { name: "I feel shaky" }),
   );
