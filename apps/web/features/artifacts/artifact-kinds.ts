@@ -1,5 +1,10 @@
 import type { LucideIcon } from "lucide-react";
-import { BookOpenCheck, Layers, PencilRuler, ScanText } from "lucide-react";
+import {
+  BookOpenCheck,
+  PencilRuler,
+  PlayingCardsFan,
+  ScanText,
+} from "lucide-react";
 import type { ArtifactKind } from "./api/artifact-queries";
 
 /** How each kind of Artifact is named and drawn. */
@@ -10,6 +15,7 @@ export const kinds: Record<
     /** What it counts, singular and plural; null for a text. */
     counted: [string, string] | null;
     icon: LucideIcon;
+    /** Tailwind's emerald, violet, amber and pink 500, as in Paper; the theme drops that palette. */
     color: string;
   }
 > = {
@@ -17,24 +23,24 @@ export const kinds: Record<
     label: "Übungsset",
     counted: ["Aufgabe", "Aufgaben"],
     icon: BookOpenCheck,
-    color: "text-success-500",
+    color: "text-[oklch(69.6%_0.17_162.48)]",
   },
   flashcards: {
     label: "Karteikarten",
     counted: ["Karteikarte", "Karteikarten"],
-    icon: Layers,
-    color: "text-purple-500",
+    icon: PlayingCardsFan,
+    color: "text-[oklch(60.6%_0.25_292.717)]",
   },
   draft: {
     label: "Entwurf",
     counted: null,
     icon: PencilRuler,
-    color: "text-warning-500",
+    color: "text-[oklch(76.9%_0.188_70.08)]",
   },
   critique: {
     label: "Kritik",
     counted: null,
     icon: ScanText,
-    color: "text-pink-500",
+    color: "text-[oklch(65.6%_0.241_354.308)]",
   },
 };
