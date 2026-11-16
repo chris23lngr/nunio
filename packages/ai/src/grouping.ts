@@ -3,7 +3,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import type { Models } from "./models.js";
 
-/** What the grouping pass (ADR-0023) shows the model: a Course's Topics in document order and its current Areas. */
+/** What the grouping pass (ADR-0024) shows the model: a Course's Topics in document order and its current Areas. */
 export interface GroupingInput {
   topics: {
     /** A short handle such as "t3", never a database ID. */

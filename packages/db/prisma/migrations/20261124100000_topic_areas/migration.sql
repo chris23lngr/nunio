@@ -1,4 +1,4 @@
--- Topic Areas (ADR-0023): named groups of a Course's Topics, inferred by a grouping pass and never reviewed.
+-- Topic Areas (ADR-0024): named groups of a Course's Topics, inferred by a grouping pass and never reviewed.
 CREATE TABLE "topic_area" (
   "id" TEXT PRIMARY KEY,
   "studentId" TEXT NOT NULL,

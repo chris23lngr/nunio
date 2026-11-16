@@ -12,7 +12,7 @@ export interface SourceWorkflows {
     sourceId: string,
     cleanupAfter?: string,
   ): Promise<void>;
-  /** Groups a Course's Topics into Topic Areas after a merge (ADR-0023). */
+  /** Groups a Course's Topics into Topic Areas after a merge (ADR-0024). */
   groupCourse(studentId: string, courseId: string): Promise<void>;
 }
 export function sourceWorkflowsFromEnv(

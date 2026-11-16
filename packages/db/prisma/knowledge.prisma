@@ -279,7 +279,7 @@ model Fact {
   unsupported    Unsupported?
   createdAt      DateTime     @default(now())
 
-  /// The Topic Area of a Topic (ADR-0023), at most one.
+  /// The Topic Area of a Topic (ADR-0024), at most one.
   topicAreaId    String?
   topicArea      TopicArea?   @relation(fields: [topicAreaId], references: [id], onDelete: SetNull)
   /// Position within its Topic Area.
@@ -297,7 +297,7 @@ model Fact {
   @@map("fact")
 }
 
-/// A named group of a Course's Topics, inferred by the grouping pass (ADR-0023). Not a Fact: it is never reviewed.
+/// A named group of a Course's Topics, inferred by the grouping pass (ADR-0024). Not a Fact: it is never reviewed.
 model TopicArea {
   id         String    @id
   studentId  String

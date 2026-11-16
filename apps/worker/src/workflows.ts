@@ -63,7 +63,7 @@ const { extractFacts } = proxyActivities<SourceActivities>({
   heartbeatTimeout: "30 seconds",
   retry: { maximumAttempts: 1 },
 });
-// Grouping is metered too (ADR-0023). It never fails the Source: a failed pass leaves the Topics where they
+// Grouping is metered too (ADR-0024). It never fails the Source: a failed pass leaves the Topics where they
 // were, and the next extraction or merge tries again.
 const { groupSourceTopics, groupCourseTopics } =
   proxyActivities<SourceActivities>({

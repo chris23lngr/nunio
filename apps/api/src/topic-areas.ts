@@ -32,7 +32,7 @@ const TopicAreaList = z
   })
   .openapi("TopicAreas");
 
-/** Topic Areas (ADR-0023): read on the course page, renamed, rejected, and Topics moved between them. */
+/** Topic Areas (ADR-0024): read on the course page, renamed, rejected, and Topics moved between them. */
 export function registerTopicAreaRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
     createRoute({

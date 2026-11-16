@@ -364,7 +364,7 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
           { error: "conflicting_corrections", items: result.items },
           409,
         );
-      // Places the target's ungrouped Topics (ADR-0023); the merge stands if grouping cannot start.
+      // Places the target's ungrouped Topics (ADR-0024); the merge stands if grouping cannot start.
       await c
         .get("sourceWorkflows")
         .groupCourse(actor.studentId, c.req.valid("json").into)

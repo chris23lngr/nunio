@@ -11,7 +11,7 @@ export type TopicAreas = ReturnType<typeof createTopicAreas>;
 /** Below this many Topics a Course shows its flat list, and the pass asks no model. */
 const minTopics = 8;
 
-/** Topic Areas (ADR-0023): named groups of a Course's Topics, inferred by a grouping pass. */
+/** Topic Areas (ADR-0024): named groups of a Course's Topics, inferred by a grouping pass. */
 export function createTopicAreas({
   db,
   facts,
