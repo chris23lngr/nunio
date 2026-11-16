@@ -1,3 +1,5 @@
+import { differenceInCalendarDays } from "date-fns";
+import { timeAgo } from "@/features/shared/time-ago";
 import type { CourseColor, CourseSummary } from "./api/course-queries";
 
 /** "2026-ws" as "Wintersemester 2026/27", "2027-ss" as "Sommersemester 2027". */
@@ -96,4 +98,13 @@ export function deleteText(impact: {
     ? `${list(parts)} ${single ? "wird" : "werden"} endgültig gelöscht.`
     : "Der Kurs wird endgültig gelöscht.";
   return `${gone} Deine Quellen bleiben erhalten.`;
+}
+
+/** When something last happened, by calendar day: "Heute", "Gestern", "Vor 3 Tagen", "Vor 1 Woche"; "Noch nie" without. */
+export function dayAgoText(at: string | null, now: Date) {
+  if (!at) return "Noch nie";
+  const days = differenceInCalendarDays(now, new Date(at));
+  if (days <= 0) return "Heute";
+  if (days === 1) return "Gestern";
+  return timeAgo(new Date(at), now, "long");
 }

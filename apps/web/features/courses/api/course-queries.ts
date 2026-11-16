@@ -39,3 +39,36 @@ export function courseImpactQuery(apiOrigin: string, courseId: string) {
     staleTime: 0,
   });
 }
+
+export type CoursePage =
+  paths["/api/me/courses/{id}"]["get"]["responses"][200]["content"]["application/json"];
+export type CourseTopic = CoursePage["topics"][number];
+export type TopicLevel = CourseTopic["level"];
+
+/** Everything a Course's page shows; gone once the Course is rejected, merged or deleted. */
+export function coursePageQuery(apiOrigin: string, courseId: string) {
+  return queryOptions({
+    queryKey: [apiOrigin, "course-page", courseId],
+    queryFn: async ({ signal }) => {
+      const result = await createApiClient(apiOrigin).GET(
+        "/api/me/courses/{id}",
+        {
+          params: { path: { id: courseId } },
+          signal,
+        },
+      );
+      if (result.response.status === 404) throw new CourseGone();
+      if (!result.data)
+        throw new Error("Der Kurs konnte nicht geladen werden.");
+      return result.data;
+    },
+    // Asking again does not bring a gone Course back.
+    retry: (failures, error) => !(error instanceof CourseGone) && failures < 1,
+  });
+}
+
+class CourseGone extends Error {
+  constructor() {
+    super("Diesen Kurs gibt es nicht mehr.");
+  }
+}
