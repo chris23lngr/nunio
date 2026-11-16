@@ -111,6 +111,7 @@ model Course {
   tasks       Task[]
   eventSeries EventSeries[]
   facts       Fact[]
+  topicAreas  TopicArea[]
   chats       ChatCourse[]
   runPins     RunPinCourse[]
   priorities  Priority[]
@@ -278,13 +279,47 @@ model Fact {
   unsupported    Unsupported?
   createdAt      DateTime     @default(now())
 
+  /// The Topic Area of a Topic (ADR-0023), at most one.
+  topicAreaId    String?
+  topicArea      TopicArea?   @relation(fields: [topicAreaId], references: [id], onDelete: SetNull)
+  /// Position within its Topic Area.
+  topicAreaOrder Int?
+  /// Set when the student moved the Topic, or rejected its Area: later grouping passes leave it where it is.
+  movedAt        DateTime?
+
   extractions     FactExtraction[]
   selfAssessments SelfAssessment[]
 
   @@unique([id, studentId])
   @@unique([courseId, type, matchKey])
   @@index([studentId, courseId])
+  @@index([topicAreaId])
   @@map("fact")
+}
+
+/// A named group of a Course's Topics, inferred by the grouping pass (ADR-0023). Not a Fact: it is never reviewed.
+model TopicArea {
+  id         String    @id
+  studentId  String
+  courseId   String
+  course     Course    @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// The normalized name, so a later pass reuses the Area by name.
+  matchKey   String
+  name       String
+  order      Int
+  /// No member's quote or Source title names it: nunio grouped these Topics itself.
+  inferred   Boolean
+  renamedAt  DateTime?
+  /// A rejected Area is never recreated; it stays as a key without Topics.
+  rejectedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  topics Fact[]
+
+  @@unique([id, studentId])
+  @@unique([courseId, matchKey])
+  @@index([studentId, courseId])
+  @@map("topic_area")
 }
 
 model FactExtraction {
