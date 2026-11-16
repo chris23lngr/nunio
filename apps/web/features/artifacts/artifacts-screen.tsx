@@ -42,7 +42,7 @@ function FilterChip({
       type="button"
       aria-pressed={pressed}
       onClick={onClick}
-      className={`h-5.5 rounded-full px-2.5 text-xs font-medium outline focus-visible:outline-2 focus-visible:outline-primary-500 ${
+      className={`h-6 cursor-pointer rounded-full px-2.5 text-sm leading-5 font-medium outline focus-visible:outline-2 focus-visible:outline-primary-500 ${
         pressed
           ? "bg-primary-200 text-primary-900 outline-primary-400"
           : "text-base-800 outline-base-700/15 hover:bg-base-50"
