@@ -28,6 +28,7 @@ import { chosenCourse, newCourse } from "./new-course.js";
 import { normalize } from "./normalize.js";
 import { semesterAt } from "./semester.js";
 import { joinChunks } from "./sources.js";
+import { mergeTopicAreas } from "./topic-areas.js";
 
 const defaultTimeZone = "Europe/Berlin";
 const factTypes: FactType[] = [
@@ -1094,6 +1095,12 @@ export function createFacts({
           });
           await tx.obligation.delete({ where: { id: item.id } });
         }
+        await mergeTopicAreas(tx, {
+          fromId,
+          intoId,
+          pairs: factPairs.filter(({ item }) => item.type === "topic"),
+          now: clock.now(),
+        });
         for (const { item, target } of factPairs) {
           await tx.factExtraction.updateMany({
             where: { factId: item.id },

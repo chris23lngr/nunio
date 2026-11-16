@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Grouper, GroupingInput } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
-import type { Delegation, Principal } from "@nunio/delegation";
+import type { Delegation, Principal, Transaction } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { Facts } from "./facts.js";
 import { normalize } from "./normalize.js";
@@ -302,4 +302,75 @@ export function createTopicAreas({
       };
     },
   };
+}
+
+type TopicRow = {
+  id: string;
+  topicAreaId: string | null;
+  topicAreaOrder: number | null;
+  movedAt: Date | null;
+};
+
+/**
+ * Part of merging Courses: Areas with the same name combine, the target's name and rejected state winning; the
+ * others move to the target after its own. A Topic both Courses have keeps the target's Area, unless only the
+ * merged Course's copy was placed by the student.
+ */
+export async function mergeTopicAreas(
+  tx: Transaction,
+  {
+    fromId,
+    intoId,
+    pairs,
+    now,
+  }: {
+    fromId: string;
+    intoId: string;
+    pairs: { item: TopicRow; target: TopicRow }[];
+    now: Date;
+  },
+) {
+  const [fromAreas, intoAreas] = await Promise.all(
+    [fromId, intoId].map((courseId) =>
+      tx.topicArea.findMany({ where: { courseId }, orderBy: { order: "asc" } }),
+    ),
+  );
+  for (const { item, target } of pairs)
+    if (item.movedAt && !target.movedAt)
+      await tx.fact.update({
+        where: { id: target.id },
+        data: {
+          topicAreaId: item.topicAreaId,
+          topicAreaOrder: item.topicAreaOrder,
+          movedAt: item.movedAt,
+        },
+      });
+  let next = Math.max(-1, ...intoAreas!.map((area) => area.order)) + 1;
+  for (const area of fromAreas!) {
+    const same = intoAreas!.find((other) => other.matchKey === area.matchKey);
+    if (!same) {
+      await tx.topicArea.update({
+        where: { id: area.id },
+        data: { courseId: intoId, order: next++ },
+      });
+      continue;
+    }
+    const members = await tx.fact.findMany({
+      where: { topicAreaId: area.id },
+      orderBy: { topicAreaOrder: "asc" },
+    });
+    const last = await tx.fact.aggregate({
+      where: { topicAreaId: same.id },
+      _max: { topicAreaOrder: true },
+    });
+    const start = (last._max.topicAreaOrder ?? -1) + 1;
+    for (const [position, member] of members.entries())
+      await tx.fact.update({
+        where: { id: member.id },
+        data: same.rejectedAt
+          ? { topicAreaId: null, topicAreaOrder: null, movedAt: now }
+          : { topicAreaId: same.id, topicAreaOrder: start + position },
+      });
+    await tx.topicArea.delete({ where: { id: area.id } });
+  }
 }

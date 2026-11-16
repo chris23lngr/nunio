@@ -81,14 +81,17 @@ async function student(): Promise<Principal & { kind: "student" }> {
 }
 
 /**
- * Reads a deck of Algorithmen whose pages each teach the given Topics, and returns the Course's ID.
+ * Reads a deck of a Course, by default INF-2 Algorithmen, whose pages each teach the given Topics, and returns
+ * the Course's ID.
  * Pages are one extraction window each.
  */
 async function readDeck(
   p: Principal,
   title: string,
   pages: string[][],
+  course = { code: "INF-2", title: "Algorithmen" },
 ): Promise<string> {
+  const heading = `${course.code} ${course.title}`;
   const upload = await sources.upload(p, {
     title,
     bytes: 100,
@@ -100,7 +103,7 @@ async function readDeck(
     parse: async () => ({
       pages: pages.map((topics, index) => ({
         page: index + 1,
-        text: ["INF-2 Algorithmen", ...topics].join("\n"),
+        text: [heading, ...topics].join("\n"),
       })),
     }),
     delegation,
@@ -123,15 +126,14 @@ async function readDeck(
   const results: Extracted[] = pages.map((topics, index) => ({
     courses: [
       {
-        code: "INF-2",
-        title: "Algorithmen",
+        ...course,
         page: index + 1,
-        quote: "INF-2 Algorithmen",
+        quote: heading,
       },
     ],
     obligations: [],
     facts: topics.map((name) => ({
-      course: "INF-2",
+      course: course.code,
       type: "topic" as const,
       key: name,
       value: name,
@@ -153,10 +155,8 @@ async function readDeck(
     delegation,
   });
   if (extracted.status !== "done") throw new Error("extraction failed");
-  const course = (await facts.review(p)).courses.find(
-    (c) => c.code === "INF-2",
-  );
-  return course!.id;
+  return (await facts.review(p)).courses.find((c) => c.code === course.code)!
+    .id;
 }
 
 /** A Grouper answering with Topic names, which it turns into the handles it was shown. */
@@ -478,4 +478,64 @@ it("marks an Area inferred unless a member's quote or Source title names it", as
     ["algorithmen", false],
     ["Graphen", true],
   ]);
+});
+
+it("combines Topic Areas by name when Courses merge, the target's state and the student's moves winning", async () => {
+  const p = await student();
+  const into = await grouped(p);
+  await areas.reject(p, into.area("Graphen").id);
+  const fromId = await readDeck(
+    p,
+    "Übung.pdf",
+    [
+      ["Heapsort", "Shellsort", "Bubblesort"],
+      ["Prim", "Kruskal", "Hashing"],
+      ["Tries", "Bloom-Filter"],
+    ],
+    { code: "INF-2U", title: "Algorithmen Übung" },
+  );
+  await areas.group(p, fromId, {
+    grouper: grouping([
+      { name: "SORTIEREN", topics: ["Heapsort", "Shellsort", "Bubblesort"] },
+      { name: "Graphen", topics: ["Prim", "Kruskal"] },
+      { name: "Hashverfahren", topics: ["Hashing", "Bloom-Filter"] },
+    ]).grouper,
+    delegation,
+  });
+  const from = await areas.list(p, fromId);
+  const hashverfahren = from.areas.find((a) => a.name === "Hashverfahren")!;
+  await areas.move(
+    p,
+    hashverfahren.topics.find((t) => t.name === "Hashing")!.id,
+    hashverfahren.id,
+  );
+
+  expect(await facts.mergeCourses(p, fromId, into.courseId)).toEqual({
+    status: "ok",
+  });
+
+  expect(await shown(p, into.courseId)).toEqual({
+    areas: [
+      {
+        name: "Sortieren",
+        topics: [
+          "Bubblesort",
+          "Quicksort",
+          "Mergesort",
+          "Heapsort",
+          "Shellsort",
+        ],
+      },
+      { name: "Hashverfahren", topics: ["Bloom-Filter", "Hashing"] },
+    ],
+    ungrouped: [
+      "Breitensuche",
+      "Dijkstra",
+      "Tiefensuche",
+      "O-Notation",
+      "Kruskal",
+      "Prim",
+      "Tries",
+    ],
+  });
 });
