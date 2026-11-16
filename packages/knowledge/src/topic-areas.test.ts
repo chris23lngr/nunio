@@ -185,7 +185,7 @@ function grouping(...answers: { name: string; topics: string[] }[][]) {
 
 /** The Course's Topic Areas as names only, then its ungrouped Topics. */
 async function shown(p: Principal, courseId: string) {
-  const listed = await areas.list(p, courseId);
+  const listed = (await areas.list(p, courseId))!;
   return {
     areas: listed.areas.map((area) => ({
       name: area.name,
@@ -304,7 +304,7 @@ async function grouped(p: Principal) {
     ]).grouper,
     delegation,
   });
-  const listed = await areas.list(p, courseId);
+  const listed = (await areas.list(p, courseId))!;
   const area = (name: string) => listed.areas.find((a) => a.name === name)!;
   const topic = (name: string) =>
     [...listed.areas.flatMap((a) => a.topics), ...listed.ungrouped].find(
@@ -472,7 +472,7 @@ it("marks an Area inferred unless a member's quote or Source title names it", as
   });
 
   expect(
-    (await areas.list(p, courseId)).areas.map((a) => [a.name, a.inferred]),
+    (await areas.list(p, courseId))!.areas.map((a) => [a.name, a.inferred]),
   ).toEqual([
     ["Hashing", false],
     ["algorithmen", false],
@@ -502,7 +502,7 @@ it("combines Topic Areas by name when Courses merge, the target's state and the 
     ]).grouper,
     delegation,
   });
-  const from = await areas.list(p, fromId);
+  const from = (await areas.list(p, fromId))!;
   const hashverfahren = from.areas.find((a) => a.name === "Hashverfahren")!;
   await areas.move(
     p,

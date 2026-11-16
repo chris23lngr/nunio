@@ -272,8 +272,14 @@ export function createTopicAreas({
       });
     },
 
-    /** The Course's Topic Areas with their Topics, then the Topics in none, each in their order. */
+    /** The Course's Topic Areas with their Topics, then the Topics in none, each in their order; null when gone. */
     async list(p: Principal, courseId: string) {
+      const course = await withOwner(db, p, (tx) =>
+        tx.course.findFirst({
+          where: { id: courseId, status: { in: ["proposed", "accepted"] } },
+        }),
+      );
+      if (!course) return null;
       const { topics, row, stored } = await stateOf(p, courseId);
       const view = (topic: (typeof topics)[number]) => ({
         id: topic.id,
