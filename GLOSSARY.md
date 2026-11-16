@@ -224,7 +224,11 @@ _Avoid_: Done, completed, submitted
 
 **Topic**:
 A unit of Course content the student is expected to understand, such as "uniform convergence". Topics are Facts: extracted with Provenance and correctable by the student.
-_Avoid_: Concept, learning objective, skill, chapter
+_Avoid_: Concept, learning objective, skill, chapter, Topic Area
+
+**Topic Area**:
+A named group of a Course's Topics, such as "Algorithmen", that nunio infers when it reads Sources. A Topic belongs to at most one Topic Area. The student can rename or reject one and move Topics between them, but Topic Areas are not Facts and are not reviewed.
+_Avoid_: Chapter, section, group, category
 
 **Practice Item**:
 One question about one or more Topics, from a practice set nunio produced or from the student's own Sources, such as a problem from an old exam.
