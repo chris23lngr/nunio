@@ -22,6 +22,7 @@ import type {
   CatalogModel,
   Delegation,
   Executor,
+  Principal,
   Responsibilities,
   Schedules,
 } from "@nunio/delegation";
@@ -7014,5 +7015,543 @@ describe("study execution", () => {
     expect(
       (await other.get(`/api/me/obligations/${s.sheetId}/handoff`)).status,
     ).toBe(404);
+  });
+});
+
+describe("the course page", () => {
+  const extraction = (value: Partial<Extracted>): Extracted => ({
+    courses: [
+      { code: "OM-1", title: "Operations Management", page: 1, quote: "OM-1" },
+    ],
+    obligations: [],
+    facts: [],
+    ...value,
+  });
+  /** Reads a Source into the student's Courses as nunio would, bound to a Course when one is given. */
+  async function read(
+    p: Principal,
+    title: string,
+    bytes: number,
+    extracted: Extracted,
+    course?: { id: string },
+  ) {
+    const upload = await sources.upload(p, {
+      title,
+      bytes,
+      type: "application/pdf",
+      course,
+    });
+    if (upload.status !== "ok") throw new Error("upload refused");
+    await sources.complete(p, upload.source.id);
+    await sources.ingest(p, upload.source.id, {
+      delegation,
+      // Each page carries the quotes cited on it, so extraction keeps them.
+      parse: async () => ({
+        pages: Array.from({ length: 9 }, (_, i) => ({
+          page: i + 1,
+          text: [
+            `Seite ${i + 1}`,
+            ...[
+              ...extracted.courses,
+              ...extracted.obligations,
+              ...extracted.facts,
+            ]
+              .filter((item) => item.page === i + 1)
+              .map((item) => item.quote),
+          ].join("\n"),
+        })),
+      }),
+      embedder: chatEmbedder,
+      scans: {
+        estimateMicroUsd: () => 1,
+        read: async () => ({ text: "", usage: { microUsd: 1 } }),
+      },
+    });
+    await facts.extract(p, upload.source.id, {
+      delegation,
+      extractor: {
+        model: "test",
+        windows: (all) => [[...all]],
+        estimateMicroUsd: () => 1,
+        extract: async () => ({ usage: { microUsd: 1 }, value: extracted }),
+      },
+    });
+    return upload.source.id;
+  }
+  async function coursePage(
+    name: string,
+    lectureFacts: Extracted["facts"] = [],
+  ) {
+    const cookie = await signUp(name);
+    const p = principal.fromSession({ studentId: await studentId(cookie) });
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const call = (method: string, path: string, body?: unknown) =>
+      app.request(`${apiOrigin}${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    const lecture = await read(
+      p,
+      "Vorlesung 04.pdf",
+      12_582_912,
+      extraction({ facts: lectureFacts }),
+    );
+    const course = (await facts.review(p)).courses[0]!;
+    await facts.decideCourse(p, course.id, "accept");
+    return {
+      p,
+      call,
+      courseId: course.id,
+      lecture,
+      page: () => call("GET", `/api/me/courses/${course.id}`),
+    };
+  }
+
+  it("shows a Course with its Sources, those nunio matched to it and those bound to it, by size and upload date", async () => {
+    const s = await coursePage("course-page-sources");
+    const notes = await read(
+      s.p,
+      "Einführung Operations Management.pdf",
+      2_097_152,
+      extraction({ courses: [] }),
+      { id: s.courseId },
+    );
+    const gone = await read(s.p, "Alt.pdf", 10, extraction({}));
+    await sources.remove(s.p, gone);
+    await read(
+      s.p,
+      "Statistik.pdf",
+      10,
+      extraction({
+        courses: [
+          { code: "ST-2", title: "Statistics II", page: 1, quote: "ST-2" },
+        ],
+      }),
+    );
+
+    const page = await s.page();
+
+    expect(page.status).toBe(200);
+    expect(await page.json()).toEqual(
+      expect.objectContaining({
+        course: expect.objectContaining({
+          id: s.courseId,
+          code: "OM-1",
+          title: "Operations Management",
+          status: "accepted",
+          archived: false,
+          color: expect.any(String),
+          semester: expect.stringMatching(/^\d{4}-(ws|ss)$/),
+        }),
+        sources: [
+          {
+            id: s.lecture,
+            title: "Vorlesung 04.pdf",
+            bytes: 12_582_912,
+            createdAt: expect.any(String),
+          },
+          {
+            id: notes,
+            title: "Einführung Operations Management.pdf",
+            bytes: 2_097_152,
+            createdAt: expect.any(String),
+          },
+        ],
+      }),
+    );
+  });
+
+  it("lists the Course's Topics in the order first found, each with the student's Level and the pages of its Sources, without deleted ones", async () => {
+    const topic = (value: string, page: number) => ({
+      course: "OM-1",
+      type: "topic" as const,
+      key: value,
+      value,
+      page,
+      quote: value,
+      uncertainty: null,
+    });
+    const s = await coursePage("course-page-topics", [
+      topic("Hashing", 3),
+      topic("Graphen", 5),
+      topic("Sortieralgorithmen", 7),
+    ]);
+    const notes = await read(
+      s.p,
+      "Notizen.pdf",
+      10,
+      extraction({
+        facts: [topic("Dynamische Programmierung", 1), topic("Hashing", 2)],
+      }),
+      { id: s.courseId },
+    );
+    const id = async (title: string) =>
+      (await facts.review(s.p)).courses[0]!.facts.find(
+        (f) => f.value === title,
+      )!.id;
+    await s.call(
+      "POST",
+      `/api/me/topics/${await id("Hashing")}/self-assessment`,
+      {
+        level: "weak",
+      },
+    );
+    await s.call(
+      "POST",
+      `/api/me/review/fact/${await id("Graphen")}/reject`,
+      {},
+    );
+
+    const { topics } = (await (await s.page()).json()) as { topics: unknown };
+
+    expect(topics).toEqual([
+      {
+        id: await id("Hashing"),
+        title: "Hashing",
+        level: "weak",
+        lastEvidenceAt: expect.any(String),
+        sources: [
+          { id: s.lecture, title: "Vorlesung 04.pdf", pages: [3] },
+          { id: notes, title: "Notizen.pdf", pages: [2] },
+        ],
+      },
+      {
+        id: await id("Sortieralgorithmen"),
+        title: "Sortieralgorithmen",
+        level: "not_studied",
+        lastEvidenceAt: null,
+        sources: [{ id: s.lecture, title: "Vorlesung 04.pdf", pages: [7] }],
+      },
+      {
+        id: await id("Dynamische Programmierung"),
+        title: "Dynamische Programmierung",
+        level: "not_studied",
+        lastEvidenceAt: null,
+        sources: [{ id: notes, title: "Notizen.pdf", pages: [1] }],
+      },
+    ]);
+  });
+
+  it("lists every dated item of the Course, soonest first: its Obligations, the Study Blocks for its work and its Course Events", async () => {
+    const at = (days: number, hour: number) =>
+      new Date(
+        Date.UTC(
+          new Date().getUTCFullYear(),
+          new Date().getUTCMonth(),
+          new Date().getUTCDate() + days,
+          hour,
+        ),
+      );
+    const date = (days: number) => at(days, 12).toISOString().slice(0, 10);
+    const obligation = (
+      kind: Extracted["obligations"][number]["kind"],
+      title: string,
+      due: { date: string | null; time: string | null },
+      page: number,
+    ) => ({
+      course: "OM-1",
+      kind,
+      title,
+      key: title,
+      destination: null,
+      due: { ...due, timeZone: due.time ? "Europe/Berlin" : null, text: "" },
+      page,
+      quote: title,
+      uncertainty: null,
+    });
+    const cookie = await signUp("course-page-dated");
+    const p = principal.fromSession({ studentId: await studentId(cookie) });
+    await read(
+      p,
+      "Modulhandbuch.pdf",
+      10,
+      extraction({
+        obligations: [
+          obligation("exam", "Klausur", { date: date(10), time: null }, 1),
+          obligation(
+            "assignment",
+            "Übungsblatt 3",
+            { date: date(4), time: "12:00" },
+            2,
+          ),
+          obligation(
+            "assignment",
+            "Übungsblatt 1",
+            { date: date(-3), time: null },
+            3,
+          ),
+          obligation(
+            "presentation",
+            "Referat",
+            { date: date(5), time: null },
+            4,
+          ),
+          obligation(
+            "registration",
+            "Anmeldung",
+            { date: null, time: null },
+            5,
+          ),
+        ],
+      }),
+    );
+    const review = (await facts.review(p)).courses[0]!;
+    await facts.decideCourse(p, review.id, "accept");
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const call = (method: string, path: string, body?: unknown) =>
+      app.request(`${apiOrigin}/api/me${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    const id = (title: string) =>
+      review.obligations.find((o) => o.title === title)!.id;
+    await call("POST", `/review/obligation/${id("Übungsblatt 3")}/confirm`, {});
+    await call(
+      "POST",
+      `/obligations/${id("Übungsblatt 1")}/reported-submitted`,
+      {
+        reported: true,
+      },
+    );
+    await call("POST", `/review/obligation/${id("Referat")}/reject`, {});
+    const task = (await (
+      await call("POST", "/tasks", {
+        title: "Bäume wiederholen",
+        obligationId: null,
+        courseId: review.id,
+      })
+    ).json()) as { id: string };
+    for (const [work, days] of [
+      [{ kind: "task", id: task.id }, 1],
+      [{ kind: "obligation", id: id("Übungsblatt 3") }, 3],
+    ] as const)
+      expect(
+        (
+          await call("POST", "/study-blocks", {
+            work,
+            start: at(days, 9).toISOString(),
+            end: at(days, 11).toISOString(),
+          })
+        ).status,
+      ).toBe(201);
+    const stamp = (days: number, hour: number) =>
+      at(days, hour)
+        .toISOString()
+        .replace(/[-:]|\.\d{3}/g, "");
+    const event = (uid: string, title: string, days: number) => [
+      "BEGIN:VEVENT",
+      `UID:${uid}`,
+      `DTSTAMP:${stamp(0, 0)}`,
+      `SUMMARY:${title}`,
+      `DTSTART:${stamp(days, 9)}`,
+      `DTEND:${stamp(days, 11)}`,
+      "END:VEVENT",
+    ];
+    await call("POST", "/calendar-sources", {
+      name: "Stundenplan.ics",
+      ics: [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//test//EN",
+        ...event("om-1@uni", "OM Vorlesung", 2),
+        ...event("yoga@uni", "Yoga", 2),
+        "END:VCALENDAR",
+      ].join("\r\n"),
+    });
+    const { eventSeries } = (await (await call("GET", "/plan")).json()) as {
+      eventSeries: { id: string; title: string }[];
+    };
+    await call(
+      "POST",
+      `/event-series/${eventSeries.find((e) => e.title === "OM Vorlesung")!.id}/decision`,
+      { courseId: review.id },
+    );
+
+    const page = (await (
+      await call("GET", `/courses/${review.id}`)
+    ).json()) as {
+      dated: unknown;
+    };
+
+    const timed = { obligationKind: null, unreviewed: false, allDay: false };
+    expect(page.dated).toEqual([
+      {
+        ...timed,
+        kind: "study_block",
+        id: expect.any(String),
+        title: "Bäume wiederholen",
+        start: at(1, 9).toISOString(),
+        end: at(1, 11).toISOString(),
+      },
+      {
+        ...timed,
+        kind: "course_event",
+        id: expect.any(String),
+        title: "OM Vorlesung",
+        start: at(2, 9).toISOString(),
+        end: at(2, 11).toISOString(),
+      },
+      {
+        ...timed,
+        kind: "study_block",
+        id: expect.any(String),
+        title: "Übungsblatt 3",
+        start: at(3, 9).toISOString(),
+        end: at(3, 11).toISOString(),
+      },
+      {
+        kind: "obligation",
+        id: id("Übungsblatt 3"),
+        title: "Übungsblatt 3",
+        obligationKind: "assignment",
+        unreviewed: false,
+        allDay: false,
+        start: expect.stringMatching(new RegExp(`^${date(4)}T1[01]:00:00`)),
+        end: null,
+      },
+      {
+        kind: "obligation",
+        id: id("Klausur"),
+        title: "Klausur",
+        obligationKind: "exam",
+        unreviewed: true,
+        allDay: true,
+        start: expect.any(String),
+        end: null,
+      },
+    ]);
+  });
+
+  it("lists the Course's open Disagreements on exam logistics and due dates, each value with the Sources that give it", async () => {
+    const fact = (
+      type: "exam_logistics" | "course_rule" | "topic",
+      key: string,
+      value: string,
+      page: number,
+    ) => ({
+      course: "OM-1",
+      type,
+      key,
+      value,
+      page,
+      quote: `${key}: ${value}`,
+      uncertainty: null,
+    });
+    const sheet = (date: string, page: number) => ({
+      course: "OM-1",
+      kind: "assignment" as const,
+      title: "Übungsblatt 3",
+      key: "Blatt 3",
+      destination: null,
+      due: { date, time: null, timeZone: null, text: date },
+      page,
+      quote: `Blatt 3 bis ${date}`,
+      uncertainty: null,
+    });
+    const s = await coursePage("course-page-disagreements", [
+      fact("exam_logistics", "exam.room", "B 204", 1),
+      fact("exam_logistics", "exam.duration", "90 Minuten", 2),
+      fact("course_rule", "Zulassung", "50 % der Übungspunkte", 3),
+    ]);
+    await read(
+      s.p,
+      "Modulhandbuch.pdf",
+      10,
+      extraction({
+        obligations: [sheet("2026-11-22", 4)],
+        facts: [
+          fact("exam_logistics", "exam.room", "C 112", 1),
+          fact("exam_logistics", "exam.duration", "90 Minuten", 2),
+          fact("course_rule", "Zulassung", "60 % der Übungspunkte", 3),
+        ],
+      }),
+    );
+    await read(
+      s.p,
+      "Ankündigung.pdf",
+      10,
+      extraction({ obligations: [sheet("2026-11-20", 1)] }),
+    );
+    const course = (await facts.review(s.p)).courses[0]!;
+    const room = course.facts.find((f) => f.key === "exam.room")!;
+    const due = course.obligations.find((o) => o.title === "Übungsblatt 3")!;
+    const extractionOf = (
+      values: { citations: { extractionId: string; title: string }[] }[],
+      title: string,
+    ) =>
+      values.flatMap((v) => v.citations).find((c) => c.title === title)!
+        .extractionId;
+
+    const { disagreements } = (await (await s.page()).json()) as {
+      disagreements: unknown;
+    };
+
+    expect(disagreements).toEqual([
+      {
+        kind: "obligation",
+        id: due.id,
+        title: "Übungsblatt 3",
+        values: [
+          {
+            due: { date: "2026-11-22", time: null, timeZone: "Europe/Berlin" },
+            extractionId: extractionOf(due.values, "Modulhandbuch.pdf"),
+            sources: ["Modulhandbuch.pdf"],
+          },
+          {
+            due: { date: "2026-11-20", time: null, timeZone: "Europe/Berlin" },
+            extractionId: extractionOf(due.values, "Ankündigung.pdf"),
+            sources: ["Ankündigung.pdf"],
+          },
+        ],
+      },
+      {
+        kind: "fact",
+        id: room.id,
+        key: "exam.room",
+        values: [
+          {
+            value: "B 204",
+            extractionId: extractionOf(room.values, "Vorlesung 04.pdf"),
+            sources: ["Vorlesung 04.pdf"],
+          },
+          {
+            value: "C 112",
+            extractionId: extractionOf(room.values, "Modulhandbuch.pdf"),
+            sources: ["Modulhandbuch.pdf"],
+          },
+        ],
+      },
+    ]);
+
+    await s.call("POST", `/api/me/review/fact/${room.id}/use`, {
+      extractionId: extractionOf(room.values, "Modulhandbuch.pdf"),
+    });
+    expect(
+      (
+        (await (await s.page()).json()) as { disagreements: { id: string }[] }
+      ).disagreements.map((d) => d.id),
+    ).toEqual([due.id]);
+  });
+
+  it("is gone for another student and for a rejected Course", async () => {
+    const s = await coursePage("course-page-gone");
+    const other = await coursePage("course-page-gone-other");
+
+    expect(
+      (await other.call("GET", `/api/me/courses/${s.courseId}`)).status,
+    ).toBe(404);
+    const proposed = await coursePage("course-page-rejected");
+    await facts.decideCourse(proposed.p, proposed.courseId, "reject");
+    expect((await proposed.page()).status).toBe(404);
   });
 });
