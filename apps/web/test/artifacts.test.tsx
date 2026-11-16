@@ -131,6 +131,21 @@ test("shows each Artifact as a card naming what it is, its Course and when the s
   ]);
 });
 
+test("links each card by its title alone, and not while it is being made", async () => {
+  const ready = artifact({ title: "Hypothesentests", count: 12 });
+  serveArtifacts([
+    ready,
+    artifact({ title: "Im Bau", status: "making", openedAt: null }),
+  ]);
+
+  renderScreen();
+
+  const list = await screen.findByRole("list", { name: "Artefakte" });
+  const links = within(list).getAllByRole("link");
+  expect(links.map((link) => link.textContent)).toEqual(["Hypothesentests"]);
+  expect(links[0]?.getAttribute("href")).toBe(`/artifacts/${ready.id}`);
+});
+
 test("says so when there are no Artifacts yet", async () => {
   serveArtifacts([]);
   renderScreen();
