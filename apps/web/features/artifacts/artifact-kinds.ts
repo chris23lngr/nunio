@@ -7,6 +7,10 @@ import {
 } from "lucide-react";
 import type { ArtifactKind } from "./api/artifact-queries";
 
+/** The badge for shaky Topics: Tailwind's orange 100 and 700, as in Paper; the theme drops that palette. */
+export const shakyBadge =
+  "bg-[oklch(95.4%_0.038_75.164)] text-[oklch(55.3%_0.195_38.402)]";
+
 /** How each kind of Artifact is named and drawn. */
 export const kinds: Record<
   ArtifactKind,

@@ -36,7 +36,7 @@ import type {
 import { artifactOptionsQuery } from "../api/artifact-options-query";
 import type { ArtifactKind, ArtifactSummary } from "../api/artifact-queries";
 import { artifactsQuery } from "../api/artifact-queries";
-import { kinds } from "../artifact-kinds";
+import { kinds, shakyBadge } from "../artifact-kinds";
 
 type ArtifactRequest =
   paths["/api/me/artifacts"]["post"]["requestBody"]["content"]["application/json"];
@@ -66,8 +66,8 @@ const levels: Record<
   TopicOption["level"],
   { text: string; className: string }
 > = {
-  shaky: { text: "Unsicher", className: "bg-warning-50 text-warning-700" },
-  disputed: { text: "Strittig", className: "bg-warning-50 text-warning-700" },
+  shaky: { text: "Unsicher", className: shakyBadge },
+  disputed: { text: "Strittig", className: shakyBadge },
   solid: { text: "Sicher", className: "bg-success-50 text-success-800" },
   not_yet_practiced: {
     text: "Noch nicht geübt",

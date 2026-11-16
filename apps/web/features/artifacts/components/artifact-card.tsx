@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { timeAgo } from "@/features/shared/time-ago";
 import type { ArtifactSummary } from "../api/artifact-queries";
-import { kinds } from "../artifact-kinds";
+import { kinds, shakyBadge } from "../artifact-kinds";
 
 /** What the card says it is: how many items or cards, else its kind, and in which Course. */
 function whatText(artifact: ArtifactSummary, course: string | undefined) {
@@ -38,8 +38,7 @@ function badgeOf(artifact: ArtifactSummary) {
     return { text: "Quelle gelöscht", className: "bg-base-100 text-base-600" };
   if (!artifact.openedAt)
     return { text: "Neu", className: "bg-success-50 text-success-800" };
-  if (artifact.shaky)
-    return { text: "Unsicher", className: "bg-warning-50 text-warning-700" };
+  if (artifact.shaky) return { text: "Unsicher", className: shakyBadge };
   return null;
 }
 
