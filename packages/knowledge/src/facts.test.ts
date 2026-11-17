@@ -1990,7 +1990,12 @@ it("assigns lecture decks to a candidate Course by ID without grounding its name
     expect(options.context).toEqual({
       title: "analysis-02.pdf",
       courses: [
-        { id: existing.id, title: analysis.title, code: analysis.code },
+        {
+          id: existing.id,
+          title: analysis.title,
+          code: analysis.code,
+          topics: [],
+        },
       ],
     });
     return extract(window, options);
@@ -2117,13 +2122,109 @@ it("offers only this student's eligible current-Semester Courses to automatic ex
   const extract = extractor.extract;
   extractor.extract = async (window, options) => {
     expect(options.context?.courses).toEqual([
-      { id: eligible, title: "Current", code: null },
+      { id: eligible, title: "Current", code: null, topics: [] },
     ]);
     return extract(window, options);
   };
   expect(
     await facts.extract(p, source, { extractor, delegation }),
   ).toMatchObject({ status: "done" });
+});
+
+it("shows extraction the Topics of the Courses it may assign to, marking rejected ones", async () => {
+  const p = await student();
+  const topic = (course: string, name: string) => ({
+    course,
+    type: "topic" as const,
+    key: name,
+    value: name,
+    page: 1,
+    quote: name,
+    uncertainty: null,
+  });
+  const algebra = {
+    code: "MA-102",
+    title: "Lineare Algebra",
+    page: 1,
+    quote: "MA-102 Lineare Algebra",
+  };
+  await facts.extract(
+    p,
+    await readySource(p, "analysis-01.pdf", [
+      { page: 1, text: `${analysis.quote}\nKonvergenz\nStetigkeit` },
+    ]),
+    {
+      extractor: scripted({
+        ...empty,
+        courses: [analysis],
+        facts: [topic("MA-101", "Konvergenz"), topic("MA-101", "Stetigkeit")],
+      }),
+      delegation,
+    },
+  );
+  await facts.extract(
+    p,
+    await readySource(p, "algebra-01.pdf", [
+      { page: 1, text: `${algebra.quote}\nVektorräume` },
+    ]),
+    {
+      extractor: scripted({
+        ...empty,
+        courses: [algebra],
+        facts: [topic("MA-102", "Vektorräume")],
+      }),
+      delegation,
+    },
+  );
+  const courses = (await facts.review(p)).courses;
+  const analysisCourse = courses.find((c) => c.code === "MA-101")!;
+  const algebraCourse = courses.find((c) => c.code === "MA-102")!;
+  const stetigkeit = analysisCourse.facts.find((f) => f.value === "Stetigkeit");
+  await facts.reject(p, { kind: "fact", id: stetigkeit!.id });
+  const analysisContext = {
+    id: analysisCourse.id,
+    title: analysis.title,
+    code: analysis.code,
+    topics: [
+      { name: "Konvergenz", rejected: false },
+      { name: "Stetigkeit", rejected: true },
+    ],
+  };
+  const algebraContext = {
+    id: algebraCourse.id,
+    title: algebra.title,
+    code: algebra.code,
+    topics: [{ name: "Vektorräume", rejected: false }],
+  };
+  const seen: unknown[] = [];
+  const watched = () => {
+    const extractor = scripted(empty);
+    const extract = extractor.extract;
+    extractor.extract = async (window, options) => {
+      seen.push(options.context?.courses);
+      return extract(window, options);
+    };
+    return extractor;
+  };
+
+  const unbound = await readySource(p, "deck.pdf", [
+    { page: 1, text: "Lecture" },
+  ]);
+  await facts.extract(p, unbound, { extractor: watched(), delegation });
+  const bound = await readySource(p, "algebra-02.pdf", [
+    { page: 1, text: "Lecture" },
+  ]);
+  await admin.source.update({
+    where: { id: bound },
+    data: { courseId: algebraCourse.id },
+  });
+  await facts.extract(p, bound, { extractor: watched(), delegation });
+
+  expect(seen).toEqual([
+    expect.arrayContaining([analysisContext, algebraContext]),
+    [algebraContext],
+  ]);
+  expect(seen[0]).toHaveLength(2);
 });
 
 it("treats an unknown Course ID as a grounded proposal, keeping its Topics in this Source", async () => {
