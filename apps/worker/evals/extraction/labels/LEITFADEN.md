@@ -1,47 +1,63 @@
 # Leitfaden: Topics labeln
 
-> **Vom Gründer freigegeben am 2026-11-12.** Hintergrund: [docs/design/topic-quality.md](../../../../../docs/design/topic-quality.md).
+> **Entwurf, wartet auf Freigabe durch den Gründer.** Hintergrund: [ADR-0025](../../../../../docs/adr/0025-topics-are-coarse-units-the-student-practices.md). Ersetzt die Fassung vom 2026-11-12, die feine Konzepte pro Deck verlangte.
 
-Pro Deck eine Datei `<deck-id>.md`. Blind labeln: vorher keine Ausgabe von Modellen oder Agenten ansehen. Eine Zeile pro Konzept.
+Pro Kurs eine Datei `<kurs-id>.md`. Blind labeln: vorher keine Ausgabe von Modellen oder Agenten ansehen. Eine Zeile pro Topic, auch wenn es in mehreren Dokumenten vorkommt.
 
 ## Was ist ein Topic?
 
-Ein Topic ist ein Stück Kursinhalt, das Studierende verstehen sollen (GLOSSARY: _Topic_). Prüffrage: **Braucht man das Konzept, um eine Klausurfrage zu beantworten?** Dann ist es ein Topic.
+Ein Topic ist ein Teil des Kurses, den Studierende als Einheit üben und in dem sie geprüft werden, etwa so groß wie ein Abschnitt einer Vorlesung (GLOSSARY: _Topic_). Prüffrage: **Würde ich mich zu diesem Thema selbst einschätzen und dazu eine eigene Übungsaufgabe erwarten?** Dann ist es ein Topic. Ein Begriff innerhalb eines solchen Themas ist keins.
 
 Kein Topic sind:
 
-- **Gliederung und Überschriften:** „Einleitung“, „Zusammenfassung“, „Kapitel 3“, „Ausblick“.
-- **Organisatorisches:** Sprechstunden, Prüfungsmodus, Literatur, Software-Installation, Zeitplan.
-- **Beispiele um ihrer selbst willen:** ein konkreter Datensatz, eine Beispielschaltung mit Bauteilwerten, eine Firma. Das Konzept, das ein Beispiel zeigt, ist ein Topic, das Beispiel selbst nicht.
+- **Organisatorisches:** Ablauf, Termine, Bewertung, Anwesenheit, Sprechstunden, Literatur, Software-Installation. Solche Seiten bekommen keine Zeilen.
+- **Gliederung ohne Inhalt:** „Einleitung“, „Zusammenfassung“, „Ausblick“.
+- **Nebenbemerkungen:** Geschichte, Motivation, Anekdoten, die im Kurs nicht wieder vorkommen.
+- **Beispiele um ihrer selbst willen:** ein konkreter Datensatz, eine Beispielschaltung mit Bauteilwerten.
+
+Die Lerninhalte, die eine Modulbeschreibung oder ein Syllabus aufführt, sind Topics, wenn sie diese Größe haben.
 
 ## Granularität
 
-So fein, dass man dazu eine eigene Klausurfrage stellen kann, und so grob, dass es kein Einzelfall ist.
+| Zu grob            | Richtig                | Zu fein               |
+| ------------------ | ---------------------- | --------------------- |
+| Signalverarbeitung | Fourier-Transformation | Fourier-Koeffizient   |
+| Deep Learning      | Backpropagation        | Lernrate              |
+| Digitaltechnik     | Flip-Flops             | Zustand bei S = R = 1 |
 
-| Zu grob            | Richtig         | Zu fein                           |
-| ------------------ | --------------- | --------------------------------- |
-| Signalverarbeitung | Quantisierung   | Quantisierungsstufe 3             |
-| Deep Learning      | Backpropagation | Gradient von Gewicht w₁₂          |
-| Digitaltechnik     | RS-Flip-Flop    | Zustand bei S = R = 1 im Beispiel |
+Im Zweifel den Namen der Überschrift oder des Eintrags im Inhaltsverzeichnis nehmen, der den Teil abdeckt.
 
-Zwei Folien zum selben Konzept ergeben eine Zeile; tragen Sie beide Seiten ein.
+## Dokumente
 
-## Spalten
+Die erste Tabelle listet die Dokumente des Kurses in der Reihenfolge, in der Studierende sie hochladen würden:
 
-- **Konzept:** der Name, wie er im Deck steht.
-- **Aliase:** weitere Namen, getrennt durch `;`. Schreibvarianten („Bag of Words; bag-of-words“), Deutsch/Englisch („Abtastung; Sampling“), Singular/Plural („Wahrheitstabelle; Wahrheitstabellen“) und gängige Abkürzungen („BPE“). Keine leeren Einträge, keine Oberbegriffe, kein `|` in Namen.
-- **Seiten:** wo das Konzept behandelt wird, z. B. `3, 5–7`. Die Zählung steht im Kopf jeder Datei: bei einem Ausschnitt ist Seite 1 die erste Ausschnittseite.
-- **optional:** `ja`, wenn das Konzept nur gestreift wird und es weder fehlen noch stören soll, falls ein Modell es findet. Sonst leer.
-- **nur Abbildung:** `ja`, wenn man das Konzept nur aus einer Abbildung versteht (Schaltbild, Diagramm, Plot, Bild einer Tabelle) und der Folientext es nicht erklärt. Sonst leer.
+- **ID:** kurzer Name ohne Leerzeichen, z. B. `einfuehrung` oder `vl-03`. Nicht den Dateinamen.
+- **SHA-256:** Hash der PDF-Datei (`shasum -a 256 datei.pdf`). Die PDFs selbst bleiben lokal und kommen nie in git.
+- **Art:** `organisation` (Ablauf, Einführung ohne Stoff; hier erwarten wir keine Topics), `modul` (Modulbeschreibung oder Syllabus) oder `folien` (Vorlesungsfolien oder Skript).
+
+## Spalten der Topic-Tabelle
+
+- **Thema:** der Name, wie die Dokumente ihn nennen.
+- **Aliase:** weitere Namen, getrennt durch `;`: Schreibvarianten, Deutsch/Englisch, Singular/Plural, gängige Abkürzungen. Keine leeren Einträge, keine Oberbegriffe, kein `|` in Namen.
+- **Fundstellen:** Dokument-ID und Seiten, getrennt durch `;`, z. B. `modul 2; vl-01 4–9`. Seite 1 ist die erste Seite der Datei.
+- **optional:** `ja` für Grenzfälle, die weder fehlen noch stören sollen, falls ein Modell sie findet. Sonst leer.
 
 ## Beispiel
 
 ```
-| Konzept | Aliase | Seiten | optional | nur Abbildung |
-| --- | --- | --- | --- | --- |
-| Quantisierung | Quantization; Quantisierungen | 3, 5–7 | | |
-| RS-Flip-Flop | RS-Latch; SR-Flip-Flop | 4–6 | | ja |
-| Logikpegel | Logische Pegel | 12 | ja | |
+Kurs: Signale und Systeme
+
+| ID | SHA-256 | Art |
+| --- | --- | --- |
+| einfuehrung | 3f2a… | organisation |
+| modul | 9c1d… | modul |
+| vl-01 | a07b… | folien |
+
+| Thema | Aliase | Fundstellen | optional |
+| --- | --- | --- | --- |
+| Fourier-Transformation | Fouriertransformation; Fourier transform | modul 2; vl-01 4–9 | |
+| Abtasttheorem | Nyquist-Shannon-Abtasttheorem; Sampling theorem | modul 2; vl-01 12–15 | |
+| Fensterfunktionen | Fensterung | vl-01 16 | ja |
 ```
 
-Kurs und Tabellenkopf nicht ändern. Danach `write-labels.ts` ausführen (siehe Design-Dokument); Fehler nennen die Zeile.
+Tabellenköpfe nicht ändern. Fehler beim Einlesen nennen die Zeile.
