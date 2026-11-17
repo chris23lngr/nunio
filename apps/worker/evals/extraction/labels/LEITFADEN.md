@@ -1,8 +1,8 @@
 # Leitfaden: Topics labeln
 
-> **Entwurf, wartet auf Freigabe durch den Gründer.** Hintergrund: [ADR-0025](../../../../../docs/adr/0025-topics-are-coarse-units-the-student-practices.md). Ersetzt die Fassung vom 2026-11-12, die feine Konzepte pro Deck verlangte.
+> **Vom Gründer freigegeben am 2026-11-17.** Hintergrund: [ADR-0025](../../../../../docs/adr/0025-topics-are-coarse-units-the-student-practices.md). Ersetzt die Fassung vom 2026-11-12, die feine Konzepte pro Deck verlangte.
 
-Pro Kurs eine Datei `<kurs-id>.md`. Blind labeln: vorher keine Ausgabe von Modellen oder Agenten ansehen. Eine Zeile pro Topic, auch wenn es in mehreren Dokumenten vorkommt.
+Pro Kurs eine Datei `<kurs-id>.md`. Blind labeln: Wer labelt, ob Gründer oder Modell, sieht vorher keine Extraktion und keine Labels anderer. Labeln Modelle, führt der Gründer ihre Ergebnisse zusammen und prüft jede Zeile gegen die Prüffrage. Eine Zeile pro Topic, auch wenn es in mehreren Dokumenten vorkommt.
 
 ## Was ist ein Topic?
 
