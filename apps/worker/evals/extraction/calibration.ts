@@ -7,7 +7,7 @@ const [input, output, seed = "42"] = process.argv.slice(2);
 if (!input || !output)
   throw new Error("Usage: calibration.ts report.json checklist.md [seed]");
 const report = JSON.parse(await readFile(input, "utf8")) as {
-  documents: {
+  courses: {
     id: string;
     run: number;
     topicJudgement: {
@@ -17,18 +17,15 @@ const report = JSON.parse(await readFile(input, "utf8")) as {
     };
   }[];
 };
-// Scenario results ("scenario/deck") repeat the plain decks; sampling them would crowd out the rest.
-const candidates = report.documents.flatMap((document) => {
-  if (document.id.includes("/")) return [];
-  if (!document.topicJudgement)
-    throw new Error(`${document.id}: no Topic judgements recorded`);
-  const { labels, extracted, decisions } = document.topicJudgement;
+// `deck` is the stratum calibrationSample alternates over: here, the Topic Course.
+const candidates = report.courses.flatMap((course) => {
+  const { labels, extracted, decisions } = course.topicJudgement;
   if (!decisions) return [];
   return extracted.map((topic, topicId) => {
     const labelId = decisions[topicId] ?? null;
     return {
-      deck: document.id,
-      run: document.run,
+      deck: course.id,
+      run: course.run,
       topicId,
       topic,
       labelId,
@@ -49,7 +46,7 @@ await writeFile(
     "",
     "Bitte abhaken und Urteil eintragen: stimmt / falsch; bei Bedarf den richtigen Begriff ergänzen.",
     "",
-    "| Geprüft | Foliensatz / Lauf / Topic-ID | Course | Extrahiertes Topic (Schlüssel und Wert) | Bewerteter Begriff | Urteil des Gründers |",
+    "| Geprüft | Kurs / Lauf / Topic-ID | Course | Extrahiertes Topic (Schlüssel und Wert) | Bewerteter Begriff | Urteil des Gründers |",
     "| --- | --- | --- | --- | --- | --- |",
     ...sample.map(
       (item) =>
