@@ -160,6 +160,52 @@ it("refuses a truncated answer rather than storing part of it", async () => {
   ).rejects.toThrow();
 });
 
+it("names a Topic by its key whatever the model put in value", async () => {
+  const fact = {
+    course: "MA-101",
+    page: 1,
+    quote: "Fourier-Transformation",
+    uncertainty: null,
+  };
+  const extractor = createExtractor(
+    createModels({
+      apiKey: "test",
+      baseURL: "https://provider.invalid",
+      catalog: testCatalog,
+      fetch: recorded(
+        [],
+        JSON.stringify({
+          ...extracted,
+          facts: [
+            {
+              ...fact,
+              type: "topic",
+              key: "Fourier-Transformation",
+              value: "taught",
+            },
+            {
+              ...fact,
+              type: "course_rule",
+              key: "admission",
+              value: "50 % der Übungspunkte",
+            },
+          ],
+        }),
+      ),
+    }),
+  );
+
+  const result = await extractor.extract(
+    [{ page: 1, text: "MA-101 Fourier-Transformation" }],
+    { signal: AbortSignal.timeout(1000) },
+  );
+
+  expect(result.value.facts.map((f) => f.value)).toEqual([
+    "Fourier-Transformation",
+    "50 % der Übungspunkte",
+  ]);
+});
+
 it("windows pages within a size bound, overlapping by one page where both fit", () => {
   const extractor = createExtractor(
     createModels({
