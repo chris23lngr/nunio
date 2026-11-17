@@ -1,6 +1,6 @@
 # Topic quality
 
-Status: accepted design, 2026-11-12; Phase B ended 2026-11-13 with recall below target (see Result). Domain terms follow [GLOSSARY.md](../../GLOSSARY.md); the extraction pipeline is described in [extraction.md](extraction.md).
+Status: accepted design, 2026-11-12; Phase B ended 2026-11-13 with recall below target (see Result). Superseded by [ADR-0025](../adr/0025-topics-are-coarse-units-the-student-practices.md): Topics are now coarse, and its dataset, labels and targets replace the ones below. Domain terms follow [GLOSSARY.md](../../GLOSSARY.md); the extraction pipeline is described in [extraction.md](extraction.md).
 
 ## Goal
 

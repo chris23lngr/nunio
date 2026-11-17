@@ -223,7 +223,7 @@ _Avoid_: Done, completed, submitted
 ### Understanding
 
 **Topic**:
-A unit of Course content the student is expected to understand, such as "uniform convergence". Topics are Facts: extracted with Provenance and correctable by the student.
+A part of a Course's content that the student can practice and be assessed on as one unit, about the size of a lecture section, such as "uniform convergence" but not a single term within it. Course logistics are never Topics (ADR-0025). Topics are Facts: extracted with Provenance and correctable by the student.
 _Avoid_: Concept, learning objective, skill, chapter, Topic Area
 
 **Topic Area**:
