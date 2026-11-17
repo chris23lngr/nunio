@@ -33,12 +33,13 @@ const judge = createTopicJudge(
   }),
 );
 const report = JSON.parse(await readFile(input, "utf8")) as {
-  documents: {
+  courses: {
     id: string;
     topics: unknown;
-    topicJudgement?: {
+    topicJudgement: {
       labels: TopicLabel[];
       extracted: ExtractedTopic[];
+      logistics: string[];
       decisions: Judgement | null;
       failure?: string | null;
       costMicroUsd: number;
@@ -46,22 +47,22 @@ const report = JSON.parse(await readFile(input, "utf8")) as {
   }[];
 };
 let costMicroUsd = 0;
-for (const document of report.documents) {
-  const recorded = document.topicJudgement;
-  if (!recorded?.decisions || !recorded.extracted.length) continue;
-  const { labels, extracted } = recorded;
+for (const course of report.courses) {
+  const recorded = course.topicJudgement;
+  if (!recorded.decisions || !recorded.extracted.length) continue;
+  const { labels, extracted, logistics } = recorded;
   const response = await judge.judge(
     { labels, extracted },
     { signal: AbortSignal.timeout(300_000) },
   );
   costMicroUsd += response.usage.microUsd;
   const decisions = parseJudgement(response.value, labels, extracted);
-  document.topicJudgement = {
+  course.topicJudgement = {
     ...recorded,
     decisions,
     costMicroUsd: response.usage.microUsd,
   };
-  document.topics = scoreTopics(labels, extracted, decisions);
+  course.topics = scoreTopics(labels, extracted, decisions, logistics);
 }
 await writeFile(output, `${JSON.stringify(report, null, 2)}\n`);
 console.log(`Re-judged for USD ${(costMicroUsd / 1e6).toFixed(4)}`);
