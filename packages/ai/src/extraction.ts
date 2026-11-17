@@ -163,7 +163,7 @@ const schema = z.object({
       value: z
         .string()
         .describe(
-          "For ai_use_rule exactly one of forbidden, conditional (allowed only under conditions, such as declaring its use) or allowed",
+          "For a topic the topic name again; for ai_use_rule exactly one of forbidden, conditional (allowed only under conditions, such as declaring its use) or allowed",
         ),
       ...grounding,
       uncertainty,
@@ -269,6 +269,10 @@ export function createExtractor(models: Models): Extractor {
         throw new Error(`Extraction ended early (${result.finishReason})`);
       const value: Extracted = {
         ...result.output,
+        // A Topic is shown by its value, which models fill with filler such as "taught"; its name is the key.
+        facts: result.output.facts.map((item) =>
+          item.type === "topic" ? { ...item, value: item.key } : item,
+        ),
         obligations: result.output.obligations.map((item) => ({
           ...item,
           due: {
