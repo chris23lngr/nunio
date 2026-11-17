@@ -1,11 +1,12 @@
-// Phase 6 extraction eval (docs/design/extraction.md, "Eval"). Public and synthetic documents only.
+// Phase 6 extraction eval (docs/design/extraction.md, "Eval"). Public and synthetic documents, plus the Topic
+// Courses of ADR-0025, whose PDFs stay in the founder's local folder (EVAL_LOCAL_PDFS) and are found by SHA-256.
 // Runs the real pipeline: parser code in-process (host qpdf/Poppler), a throwaway Postgres, real ingestion and
 // extraction through OpenRouter. Build the workspace first, then from the repo root:
-//   apps/worker/node_modules/.bin/tsx --env-file=packages/ai/.env.staging apps/worker/evals/extraction.ts
+//   EVAL_LOCAL_PDFS=~/nunio-eval apps/worker/node_modules/.bin/tsx --env-file=packages/ai/.env.staging apps/worker/evals/extraction.ts
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,7 +33,14 @@ import { createFacts, createSources } from "@nunio/knowledge";
 import { createParserServer } from "@nunio/parser/server";
 import { parseSource } from "../src/source-activities.ts";
 import { scoreBoundCourse } from "./extraction/assignment.js";
-import type { Judgement, TopicLabel } from "./extraction/topics.js";
+import type { CourseLabels } from "./extraction/labels.js";
+import { parseCourseLabels } from "./extraction/labels.js";
+import { localPdf } from "./extraction/local.js";
+import type {
+  ExtractedTopic,
+  Judgement,
+  TopicLabel,
+} from "./extraction/topics.js";
 import { parseJudgement, scoreTopics } from "./extraction/topics.js";
 
 interface Label {
@@ -51,8 +59,8 @@ interface Document {
   injection?: boolean;
   source:
     | { file: string }
+    | { local: string }
     | { url: string; sha256?: string; pages?: [number, number] };
-  topics?: TopicLabel[];
   labelsStatus?: string;
   heldOut?: boolean;
   courses: { code: string | null; title: string }[];
@@ -73,12 +81,40 @@ const set = JSON.parse(
     expectedCourses: number;
   }[];
 };
+// Topic labels, one file per Course (ADR-0025); each Course's documents are read in their listed order.
+const labelled: (CourseLabels & { id: string })[] = await Promise.all(
+  (await readdir(here("./extraction/labels/")))
+    .filter((name) => name.endsWith(".md") && name !== "LEITFADEN.md")
+    .map(async (name) => ({
+      id: name.slice(0, -".md".length),
+      ...parseCourseLabels(
+        await readFile(here(`./extraction/labels/${name}`), "utf8"),
+      ),
+    })),
+);
+const courseDocuments = (course: (typeof labelled)[number]): Document[] =>
+  course.documents.map((document) => ({
+    id: `${course.id}/${document.id}`,
+    language: "unlabelled",
+    kind: document.kind,
+    scan: false,
+    source: { local: document.sha256 },
+    labelsStatus: "Topic labels per Course (ADR-0025)",
+    courses: [{ code: null, title: course.course }],
+    obligations: [],
+    logistics: [],
+  }));
 const cache = join(tmpdir(), "nunio-extraction-eval");
 await mkdir(cache, { recursive: true });
 
 async function bytesOf(document: Document) {
   if ("file" in document.source)
     return readFile(here(`./extraction/${document.source.file}`));
+  if ("local" in document.source) {
+    if (!process.env.EVAL_LOCAL_PDFS)
+      throw new Error("EVAL_LOCAL_PDFS is required for the Topic Courses");
+    return localPdf(process.env.EVAL_LOCAL_PDFS, document.source.local);
+  }
   const whole = join(cache, `${document.id}-whole.pdf`);
   if (!existsSync(whole)) {
     const response = await fetch(document.source.url, {
@@ -295,7 +331,8 @@ async function evaluate(
   const before = await delegation.allowance(p);
   const bytes = await bytesOf(document);
   const upload = await sources.upload(p, {
-    title: `${document.id}.pdf`,
+    // A Topic Course document is titled by its own ID ("vl-01"), so the title never names the Course.
+    title: `${document.id.split("/").pop()}.pdf`,
     bytes: bytes.length,
     type: "application/pdf",
     course,
@@ -405,69 +442,10 @@ async function evaluate(
       );
     }),
   );
-  // Defaults keep the existing label set usable until the enriched labels land.
-  const topicLabels = (document.topics ?? []).map((label) => ({
-    ...label,
-    pages: label.pages ?? [],
-    optional: label.optional ?? false,
-    figureOnly: label.figureOnly ?? false,
-  }));
-  // Collected even without labels: the scenarios check that every Source yields Topics.
-  const extractedTopics = courses.flatMap((c) =>
-    c.facts
-      .filter(
-        (f) =>
-          f.type === "topic" &&
-          f.values.some((v) =>
-            v.citations.some(
-              (citation) => citation.sourceId === upload.source.id,
-            ),
-          ),
-      )
-      .map((f) => ({
-        // Topic labels name their Course by title (the label file's Kurs line), never by code.
-        course:
-          document.courses.find((label) => courseFor(label)?.id === c.id)
-            ?.title ?? c.title,
-        key: f.key,
-        value: f.value,
-      })),
-  );
-  // A failed judge leaves this deck unscored instead of losing the whole paid run.
-  let judgement: Judgement | null = document.topics
-    ? extractedTopics.map(() => null)
-    : null;
-  let judgeFailure: string | null = null;
-  let judgeCostMicroUsd = 0;
-  if (document.topics && extractedTopics.length) {
-    try {
-      const input = { labels: topicLabels, extracted: extractedTopics };
-      const judged = await delegation.meter(
-        p,
-        { microUsd: topicJudge.estimateMicroUsd(input) },
-        async (signal) => {
-          try {
-            const response = await topicJudge.judge(input, { signal });
-            judgeCostMicroUsd = response.usage.microUsd;
-            return response;
-          } catch (error) {
-            if (isDefiniteFailure(error))
-              throw new DefiniteFailure("Provider rejected Topic judge");
-            throw error;
-          }
-        },
-      );
-      if (judged.status === "refused")
-        throw new Error(`Topic judge: ${judged.reason}`);
-      judgement = parseJudgement(judged.value, topicLabels, extractedTopics);
-    } catch (error) {
-      judgement = null;
-      judgeFailure = error instanceof Error ? error.message : String(error);
-    }
-  }
   const usage = await delegation.allowance(p);
   const result = {
     id: document.id,
+    sourceId: upload.source.id,
     assignment: {
       boundCourseId:
         (await sources.list(p)).find((source) => source.id === upload.source.id)
@@ -506,17 +484,6 @@ async function evaluate(
       usage.heldMicroUsd -
       before.usedMicroUsd -
       before.heldMicroUsd,
-    topics: judgement
-      ? scoreTopics(topicLabels, extractedTopics, judgement)
-      : null,
-    topicJudgement: {
-      model: topicJudge.model,
-      labels: topicLabels,
-      extracted: extractedTopics,
-      decisions: judgement,
-      failure: judgeFailure,
-      costMicroUsd: judgeCostMicroUsd,
-    },
     topicItems: courses.flatMap((c) =>
       c.facts
         .filter((f) => f.type === "topic")
@@ -590,8 +557,139 @@ async function evaluate(
   return result;
 }
 
+/** Judges a Course's Topics against its labels; a failed judge leaves the Course unscored instead of losing the run. */
+async function judgeTopics(
+  studentId: string,
+  labels: TopicLabel[],
+  extracted: ExtractedTopic[],
+) {
+  if (!extracted.length)
+    return { judgement: [] as Judgement, failure: null, costMicroUsd: 0 };
+  let costMicroUsd = 0;
+  try {
+    const input = { labels, extracted };
+    const judged = await delegation.meter(
+      principal.fromSession({ studentId }),
+      { microUsd: topicJudge.estimateMicroUsd(input) },
+      async (signal) => {
+        try {
+          const response = await topicJudge.judge(input, { signal });
+          costMicroUsd = response.usage.microUsd;
+          return response;
+        } catch (error) {
+          if (isDefiniteFailure(error))
+            throw new DefiniteFailure("Provider rejected Topic judge");
+          throw error;
+        }
+      },
+    );
+    if (judged.status === "refused")
+      throw new Error(`Topic judge: ${judged.reason}`);
+    return {
+      judgement: parseJudgement(judged.value, labels, extracted),
+      failure: null,
+      costMicroUsd,
+    };
+  } catch (error) {
+    return {
+      judgement: null,
+      failure: error instanceof Error ? error.message : String(error),
+      costMicroUsd,
+    };
+  }
+}
+
+/** Reads a Course's documents in order into one Course, as a student uploads a semester, then scores its Topics. */
+async function evaluateCourse(course: (typeof labelled)[number], run: number) {
+  const studentId = randomUUID();
+  const documents: Awaited<ReturnType<typeof evaluate>>[] = [];
+  let courseId: string | undefined;
+  for (const document of courseDocuments(course)) {
+    const result = await evaluate(
+      document,
+      run,
+      studentId,
+      courseId ? { id: courseId } : { title: course.course, code: null },
+    );
+    courseId ??= result.assignment.boundCourseId ?? undefined;
+    documents.push(result);
+  }
+  const documentOf = new Map(
+    documents.map((result, index) => [
+      result.sourceId,
+      course.documents[index]!.id,
+    ]),
+  );
+  const { courses } = await facts.review(principal.fromSession({ studentId }));
+  const extracted: ExtractedTopic[] = (
+    courses.find((c) => c.id === courseId)?.facts ?? []
+  )
+    .filter((f) => f.type === "topic")
+    .map((f) => ({
+      course: course.course,
+      key: f.key,
+      value: f.value,
+      documents: [
+        ...new Set(
+          f.values.flatMap((v) =>
+            v.citations.flatMap(
+              (citation) => documentOf.get(citation.sourceId) ?? [],
+            ),
+          ),
+        ),
+      ],
+    }));
+  const logistics = course.documents
+    .filter((document) => document.kind === "organisation")
+    .map((document) => document.id);
+  const judged = await judgeTopics(studentId, course.topics, extracted);
+  const result = {
+    id: course.id,
+    run,
+    topics: judged.judgement
+      ? scoreTopics(course.topics, extracted, judged.judgement, logistics)
+      : null,
+    topicJudgement: {
+      model: topicJudge.model,
+      labels: course.topics,
+      extracted,
+      logistics,
+      decisions: judged.judgement,
+      failure: judged.failure,
+      costMicroUsd: judged.costMicroUsd,
+    },
+    costMicroUsd:
+      documents.reduce((total, d) => total + d.costMicroUsd, 0) +
+      judged.costMicroUsd,
+    documents,
+  };
+  console.log(
+    JSON.stringify({ course: result.id, run, topics: result.topics }),
+  );
+  return result;
+}
+
 const runs = Number(process.env.EVAL_RUNS ?? 1);
 const results: Awaited<ReturnType<typeof evaluate>>[] = [];
+const courseResults: Awaited<ReturnType<typeof evaluateCourse>>[] = [];
+const documentById = new Map(
+  [...set.documents, ...labelled.flatMap(courseDocuments)].map((d) => [
+    d.id,
+    d,
+  ]),
+);
+// Course recognition across files: each Topic Course's first two documents, uploaded without a Course.
+const allScenarios = [
+  ...set.scenarios,
+  ...labelled.map((course) => ({
+    id: `several-files-one-course/${course.id}`,
+    mode: "automatic",
+    documents: courseDocuments(course)
+      .slice(0, 2)
+      .map((d) => d.id),
+    expectedCourses: 1,
+  })),
+];
 const scenarios: {
   id: string;
   expectedCourses: number;
@@ -599,8 +697,11 @@ const scenarios: {
   passed: boolean;
 }[] = [];
 try {
-  // EVAL_DOCUMENTS=id,id narrows a diagnostic run; the recorded report always covers the whole set.
+  // EVAL_DOCUMENTS=id,id narrows a diagnostic run to documents or Topic Courses (such as om26); the recorded
+  // report always covers the whole set.
   const only = process.env.EVAL_DOCUMENTS?.split(",");
+  const picked = (id: string) =>
+    !only || only.includes(id) || only.includes(id.split("/")[0]!);
   // Held-out decks (docs/design/topic-quality.md) run only for the final measurement.
   const heldOut = process.env.EVAL_HELD_OUT === "1";
   // EVAL_BOUND=1 uploads each document into its labelled Course, so Topic scores don't depend on recognition.
@@ -608,7 +709,7 @@ try {
   // One pass by default; EVAL_RUNS can repeat documents within the capped eval allowance.
   for (let run = 1; run <= runs; run++) {
     for (const document of set.documents.filter(
-      (d) => (!only || only.includes(d.id)) && (heldOut || !d.heldOut),
+      (d) => picked(d.id) && (heldOut || !d.heldOut),
     ))
       results.push(
         await evaluate(
@@ -618,10 +719,10 @@ try {
           bound ? document.courses[0] : undefined,
         ),
       );
+    for (const course of labelled.filter((c) => picked(c.id)))
+      courseResults.push(await evaluateCourse(course, run));
   }
-  for (const scenario of set.scenarios.filter(
-    (s) => !only || s.documents.some((id) => only.includes(id)),
-  )) {
+  for (const scenario of allScenarios.filter((s) => s.documents.some(picked))) {
     const studentId = randomUUID();
     let actualCourses = 0;
     let allSourcesAssigned = true;
@@ -634,13 +735,13 @@ try {
     let proposals = 0;
     for (const id of scenario.documents) {
       const result = await evaluate(
-        set.documents.find((d) => d.id === id)!,
+        documentById.get(id)!,
         1,
         studentId,
         scenario.mode === "bound"
           ? boundCourseId
             ? { id: boundCourseId }
-            : set.documents.find((d) => d.id === id)!.courses[0]
+            : documentById.get(id)!.courses[0]
           : undefined,
       );
       if (scenario.mode === "bound") {
@@ -653,9 +754,10 @@ try {
       }
       results.push({ ...result, id: `${scenario.id}/${id}` });
       actualCourses = result.courses.extracted;
+      // A logistics document may rightly yield no Topics (ADR-0025), so any item it attaches counts.
       allSourcesAssigned &&=
         result.extraction === "done" &&
-        result.topicJudgement.extracted.length > 0;
+        result.assignment.itemCourseIds.length > 0;
     }
     scenarios.push({
       id: scenario.id,
@@ -681,17 +783,22 @@ const sum = (pick: (r: (typeof results)[number]) => number) =>
 const times = results
   .flatMap((r) => (r.reviewableAfterMs == null ? [] : [r.reviewableAfterMs]))
   .sort((a, b) => a - b);
-const median = times.length
-  ? (times[Math.floor((times.length - 1) / 2)]! +
-      times[Math.ceil((times.length - 1) / 2)]!) /
-    2
-  : null;
+const medianOf = (sorted: number[]) =>
+  sorted.length
+    ? (sorted[Math.floor((sorted.length - 1) / 2)]! +
+        sorted[Math.ceil((sorted.length - 1) / 2)]!) /
+      2
+    : null;
+const median = medianOf(times);
+const courseSum = (pick: (r: (typeof courseResults)[number]) => number) =>
+  courseResults.reduce((total, r) => total + pick(r), 0);
+const courseDocumentResults = courseResults.flatMap((r) => r.documents);
 const report = {
   checkedAt: new Date().toISOString(),
   model: extractor.model,
   runsPerDocument: runs,
   labels:
-    "Original labels founder spot-checked; slide Topics and assignments draft, not yet spot-checked by founder",
+    "Original syllabus and handbook labels founder spot-checked; Topic Courses labelled by three models and checked by the founder (ADR-0025)",
   includedFeatureHead: process.env.EVAL_FEATURE_HEAD ?? "unspecified",
   scenarios,
   includedParallelChanges:
@@ -702,18 +809,31 @@ const report = {
     "repository parser code in-process with host qpdf/Poppler, not the container image",
   summary: {
     documents: results.length,
+    // Targets (ADR-0025): precision ≥ 0.85, recall ≥ 0.8, at most 1 false Topic per logistics document, median 0 duplicates.
     topics: {
+      courses: courseResults.length,
       precision: ratio(
-        sum((r) => r.topics?.matched ?? 0),
-        sum((r) => r.topics?.scored ?? 0),
+        courseSum((r) => r.topics?.matched ?? 0),
+        courseSum((r) => r.topics?.scored ?? 0),
       ),
       recall: ratio(
-        sum((r) => r.topics?.matched ?? 0),
-        sum((r) => r.topics?.labelled ?? 0),
+        courseSum((r) => r.topics?.matched ?? 0),
+        courseSum((r) => r.topics?.labelled ?? 0),
       ),
-      figureOnlyRecall: ratio(
-        sum((r) => r.topics?.figureOnly.matched ?? 0),
-        sum((r) => r.topics?.figureOnly.labelled ?? 0),
+      medianDuplicatesPerCourse: medianOf(
+        courseResults
+          .flatMap((r) => (r.topics ? [r.topics.duplicates] : []))
+          .sort((a, b) => a - b),
+      ),
+      maxFalseTopicsPerLogisticsDocument: Math.max(
+        0,
+        ...courseResults.flatMap(
+          (r) => r.topics?.logistics.map((l) => l.falseTopics) ?? [],
+        ),
+      ),
+      topicsPerCourse: ratio(
+        courseSum((r) => r.topics?.extracted ?? 0),
+        courseResults.filter((r) => r.topics).length,
       ),
     },
     obligations: {
@@ -754,15 +874,15 @@ const report = {
       ),
     },
     medianReviewableAfterMs: median,
-    costMicroUsd: sum((r) => r.costMicroUsd),
-    judgeCostMicroUsd: sum((r) => r.topicJudgement.costMicroUsd),
-    judgeFailures: results
+    costMicroUsd: sum((r) => r.costMicroUsd) + courseSum((r) => r.costMicroUsd),
+    judgeCostMicroUsd: courseSum((r) => r.topicJudgement.costMicroUsd),
+    judgeFailures: courseResults
       .filter((r) => r.topicJudgement.failure)
       .map((r) => `${r.id} (run ${r.run})`),
     injectionPassed: results
       .filter((r) => r.injection)
       .every((r) => r.injection!.passed),
-    failedExtractions: results
+    failedExtractions: [...results, ...courseDocumentResults]
       .filter((r) => r.extraction !== "done")
       .map((r) => `${r.id} (run ${r.run})`),
     worstObligationRecall: Object.fromEntries(
@@ -776,6 +896,7 @@ const report = {
       ]),
     ),
   },
+  courses: courseResults,
   documents: results,
 };
 // EVAL_REPORT writes a narrowed run's report too, e.g. for a calibration sample.

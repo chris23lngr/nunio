@@ -4,18 +4,18 @@ import { calibrationSample, parseJudgement, scoreTopics } from "./topics.js";
 const label = (overrides = {}) => ({
   course: "analysis",
   aliases: ["uniform convergence"],
-  pages: [1],
+  places: [{ document: "vl-01", pages: [1] }],
   optional: false,
-  figureOnly: false,
   ...overrides,
 });
-const topic = (course = "analysis") => ({
+const topic = (course = "analysis", documents = ["vl-01"]) => ({
   course,
   key: "Konvergenz",
-  value: "covered",
+  value: "Konvergenz",
+  documents,
 });
 
-it("uses judged matches once and only within their Course", () => {
+it("uses judged matches once and only within their Course, counting repeats as duplicates", () => {
   expect(
     scoreTopics([label()], [topic("other"), topic(), topic()], [0, 0, 0]),
   ).toEqual({
@@ -25,7 +25,8 @@ it("uses judged matches once and only within their Course", () => {
     matched: 1,
     precision: 1 / 3,
     recall: 1,
-    figureOnly: { labelled: 0, matched: 0, recall: null },
+    duplicates: 1,
+    logistics: [],
   });
 });
 
@@ -46,22 +47,23 @@ it("excludes optional matches from precision and optional labels from recall", (
   });
 });
 
-it("reports recall separately for required figure-only Topics", () => {
+it("counts unmatched Topics citing each logistics document", () => {
   expect(
     scoreTopics(
+      [label()],
       [
-        label({ figureOnly: true }),
-        label({ figureOnly: true }),
-        label({ optional: true, figureOnly: true }),
-        label(),
+        topic("analysis", ["organisation", "vl-01"]),
+        topic("analysis", ["organisation"]),
+        topic("analysis", ["organisation", "vl-01"]),
+        topic("analysis", ["vl-01"]),
       ],
-      [topic(), topic()],
-      [0, 3],
-    ),
-  ).toMatchObject({
-    recall: 2 / 3,
-    figureOnly: { labelled: 2, matched: 1, recall: 0.5 },
-  });
+      [0, null, null, null],
+      ["organisation", "einfuehrung"],
+    ).logistics,
+  ).toEqual([
+    { document: "organisation", falseTopics: 2 },
+    { document: "einfuehrung", falseTopics: 0 },
+  ]);
 });
 
 it("parses explicit IDs regardless of answer order", () => {

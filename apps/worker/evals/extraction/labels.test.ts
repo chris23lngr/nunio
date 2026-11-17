@@ -1,78 +1,94 @@
 import { expect, it } from "vitest";
-import { parseTopicLabels } from "./labels.js";
+import { parseCourseLabels } from "./labels.js";
 
+const sha = (digit: string) => digit.repeat(64);
 const file = (...rows: string[]) =>
   [
-    "# dhbw-digitaltechnik",
+    "Kurs: Signale und Systeme",
     "",
-    "Kurs: Digitaltechnik",
+    "| ID | SHA-256 | Art |",
+    "| --- | --- | --- |",
+    `| einfuehrung | ${sha("a")} | organisation |`,
+    `| modul | ${sha("b")} | modul |`,
+    `| vl-01 | ${sha("c")} | folien |`,
     "",
-    "| Konzept | Aliase | Seiten | optional | nur Abbildung |",
-    "| --- | --- | --- | --- | --- |",
+    "| Thema | Aliase | Fundstellen | optional |",
+    "| --- | --- | --- | --- |",
     ...rows,
     "",
   ].join("\n");
 
-it("turns each row into a Topic label of the file's Course", () => {
+it("reads a Course's documents in upload order and its Topics with their places", () => {
   expect(
-    parseTopicLabels(
+    parseCourseLabels(
       file(
-        "| Quantisierung | Quantization; Quantisierungen | 3, 5–7 | | ja |",
-        "| Abtastung | | 4 | ja | |",
+        "| Fourier-Transformation | Fouriertransformation; Fourier transform | modul 2; vl-01 4–6, 9 | |",
+        "| Fensterfunktionen | | vl-01 16 | ja |",
       ),
     ),
-  ).toEqual([
-    {
-      course: "Digitaltechnik",
-      aliases: ["Quantisierung", "Quantization", "Quantisierungen"],
-      pages: [3, 5, 6, 7],
-      optional: false,
-      figureOnly: true,
-    },
-    {
-      course: "Digitaltechnik",
-      aliases: ["Abtastung"],
-      pages: [4],
-      optional: true,
-      figureOnly: false,
-    },
-  ]);
+  ).toEqual({
+    course: "Signale und Systeme",
+    documents: [
+      { id: "einfuehrung", sha256: sha("a"), kind: "organisation" },
+      { id: "modul", sha256: sha("b"), kind: "modul" },
+      { id: "vl-01", sha256: sha("c"), kind: "folien" },
+    ],
+    topics: [
+      {
+        course: "Signale und Systeme",
+        aliases: [
+          "Fourier-Transformation",
+          "Fouriertransformation",
+          "Fourier transform",
+        ],
+        places: [
+          { document: "modul", pages: [2] },
+          { document: "vl-01", pages: [4, 5, 6, 9] },
+        ],
+        optional: false,
+      },
+      {
+        course: "Signale und Systeme",
+        aliases: ["Fensterfunktionen"],
+        places: [{ document: "vl-01", pages: [16] }],
+        optional: true,
+      },
+    ],
+  });
 });
 
 it.each([
-  ["too few cells", "| Quantisierung | | 3 |"],
-  ["no page", "| Quantisierung | | | | |"],
-  ["unreadable pages", "| Quantisierung | | drei | | |"],
-  ["a boolean other than ja", "| Quantisierung | | 3 | nein | |"],
-  ["no concept", "| | Quantization | 3 | | |"],
-  ["a reversed page range", "| Quantisierung | | 7–5 | | |"],
-  ["page 0", "| Quantisierung | | 0 | | |"],
-])("rejects a row with %s, naming its line", (_, row) => {
-  expect(() => parseTopicLabels(file(row))).toThrow("line 7");
+  ["too few cells", "| Fourier-Transformation | | vl-01 4 |"],
+  ["no Thema", "| | Fourier transform | vl-01 4 | |"],
+  ["an empty alias", "| Fourier-Transformation | Fourier; ; | vl-01 4 | |"],
+  ["no Fundstelle", "| Fourier-Transformation | | | |"],
+  ["a Fundstelle without pages", "| Fourier-Transformation | | vl-01 | |"],
+  ["unreadable pages", "| Fourier-Transformation | | vl-01 vier | |"],
+  ["a reversed page range", "| Fourier-Transformation | | vl-01 7–5 | |"],
+  ["page 0", "| Fourier-Transformation | | vl-01 0 | |"],
+  ["an unknown document", "| Fourier-Transformation | | vl-09 4 | |"],
+  ["a boolean other than ja", "| Fourier-Transformation | | vl-01 4 | nein |"],
+])("rejects a Topic row with %s, naming its line", (_, row) => {
+  expect(() => parseCourseLabels(file(row))).toThrow("line 11");
 });
 
-it("rejects a concept labelled twice, naming the second line", () => {
+it("rejects a Thema labelled twice, naming the second line", () => {
   expect(() =>
-    parseTopicLabels(
-      file("| Quantisierung | | 3 | | |", "| quantisierung | | 5 | | |"),
+    parseCourseLabels(
+      file(
+        "| Fourier-Transformation | | vl-01 4 | |",
+        "| fourier-transformation | | vl-01 5 | |",
+      ),
     ),
-  ).toThrow("line 8");
+  ).toThrow("line 12");
 });
 
-it("rejects an empty alias between separators, naming its line", () => {
-  expect(() =>
-    parseTopicLabels(file("| Quantisierung | Quantization; ; | 3 | | |")),
-  ).toThrow("line 7");
-});
-
-it("keeps a concept named like the header column", () => {
-  expect(parseTopicLabels(file("| Konzept | | 2 | | |"))).toEqual([
-    {
-      course: "Digitaltechnik",
-      aliases: ["Konzept"],
-      pages: [2],
-      optional: false,
-      figureOnly: false,
-    },
-  ]);
+it.each([
+  ["too few cells", `| vl-02 | ${sha("d")} |`],
+  ["a malformed SHA-256", "| vl-02 | abc | folien |"],
+  ["an unknown Art", `| vl-02 | ${sha("d")} | skript |`],
+  ["a repeated ID", `| vl-01 | ${sha("d")} | folien |`],
+])("rejects a document row with %s, naming its line", (_, row) => {
+  const text = file().replace("\n\n| Thema", `\n${row}\n\n| Thema`);
+  expect(() => parseCourseLabels(text)).toThrow("line 8");
 });
