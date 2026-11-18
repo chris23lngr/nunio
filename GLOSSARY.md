@@ -283,7 +283,7 @@ _Avoid_: Notification center, feed, activity
 ### Delegation
 
 **Agent**:
-An ongoing delegation the student owns, such as "keep this course organized", with its own scope, Budget, and pause control, carried out in Runs. One-off requests are never Agents.
+An ongoing delegation the student owns, such as "keep this course organized", with its own Courses, Budget, and pause control, carried out in Runs. One-off requests are never Agents.
 _Avoid_: Responsibility, automation, bot, assistant, job
 
 **Template**:
@@ -291,7 +291,7 @@ A starting point nunio curates for creating an Agent, such as "Klausur vorbereit
 _Avoid_: Preset, Vorlage, blueprint
 
 **Paused**:
-The state of an Agent that takes no further Actions, including in a Run already under way, while keeping its Grants. An Agent is Paused by the student, by exhausting its Budget, by losing a Connection it depends on, or by its Course being Archived; only the student resumes it, even after its Budget resets or its Course is unarchived.
+The state of an Agent that takes no further Actions, including in a Run already under way, while keeping its Grants. An Agent is Paused by the student, by exhausting its Budget, by losing a Connection it depends on, by all its Courses being Archived, or by losing its last Course; only the student resumes it, even after its Budget resets or a Course is unarchived.
 _Avoid_: Suspended, stopped, disabled, on hold
 
 **Ended**:
@@ -311,7 +311,7 @@ The student's consent to one exact Action, given by confirming that Action as nu
 _Avoid_: Confirmation, consent, permission
 
 **Grant**:
-Standing authority, given in advance, for an Agent to take a kind of Action within a defined scope without per-Action Approval. Grants exist only within an Agent. A Grant may still ask in cases nunio fixes, such as a change within the next day.
+Standing authority, given in advance, for an Agent to take a kind of Action on the work of its Courses without per-Action Approval. Grants exist only within an Agent. A Grant may still ask in cases nunio fixes, such as a change within the next day.
 _Avoid_: Permission, automation permission, authority
 
 **Capability**:
