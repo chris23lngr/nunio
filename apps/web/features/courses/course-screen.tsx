@@ -11,7 +11,7 @@ import {
 } from "@nunio/ui/components/breadcrumb/breadcrumb";
 import { buttonVariants } from "@nunio/ui/components/button/button";
 import { useQuery } from "@tanstack/react-query";
-import { Calendar, File, Tag } from "lucide-react";
+import { Calendar, File, Plus, Tag } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
@@ -169,7 +169,20 @@ export function CourseScreen({
                   courseId={id}
                   disagreements={page.data.disagreements}
                 />
-                <Section title="Themen">
+                <Section
+                  title="Themen"
+                  action={
+                    // Paper's action; the API cannot create a Topic yet.
+                    <button
+                      type="button"
+                      disabled
+                      className="flex cursor-not-allowed items-center gap-2 text-sm font-medium text-primary-500"
+                    >
+                      Erstellen
+                      <Plus aria-hidden="true" className="size-4" />
+                    </button>
+                  }
+                >
                   {page.data.topics.length && areas.length ? (
                     <TopicAreaList
                       areas={areas}
