@@ -2227,6 +2227,38 @@ it("shows extraction the Topics of the Courses it may assign to, marking rejecte
   expect(seen[0]).toHaveLength(2);
 });
 
+it("matches a Topic across Sources whichever apostrophe they type", async () => {
+  const p = await student();
+  for (const [title, name] of [
+    ["deck-01.pdf", "Gauß’sches Eliminationsverfahren"],
+    ["deck-02.pdf", "Gauß'sches Eliminationsverfahren"],
+  ] as const) {
+    const source = await readySource(p, title, [
+      { page: 1, text: `${analysis.quote}\n${name}` },
+    ]);
+    await facts.extract(p, source, {
+      extractor: scripted({
+        ...empty,
+        courses: [analysis],
+        facts: [
+          {
+            course: "MA-101",
+            type: "topic",
+            key: name,
+            value: name,
+            page: 1,
+            quote: name,
+            uncertainty: null,
+          },
+        ],
+      }),
+      delegation,
+    });
+  }
+  const [course] = (await facts.review(p)).courses;
+  expect(course?.facts.filter((f) => f.type === "topic")).toHaveLength(1);
+});
+
 it("treats an unknown Course ID as a grounded proposal, keeping its Topics in this Source", async () => {
   const p = await student();
   const source = await readySource(p, "deck.pdf", [
