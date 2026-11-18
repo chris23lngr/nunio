@@ -66,6 +66,20 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 `packages/commitlint-config` is the source of truth. The `commit-msg` hook (installed by `bun install`) and the CI `commits` job enforce it.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues (`chris23lngr/nunio`), managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `GLOSSARY.md` plus `docs/adr/`. See `docs/agents/domain.md`.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
