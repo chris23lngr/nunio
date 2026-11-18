@@ -187,7 +187,28 @@ const calls: {
   candidateIds: string[];
 }[] = [];
 const failures: string[] = [];
-const real = createExtractor(models);
+// EVAL_EXTRACTION_MODEL=sonnet-5.5 runs the one comparison run ADR-0025 allows; scans stay on Haiku.
+const compared = process.env.EVAL_EXTRACTION_MODEL;
+if (compared && compared !== "sonnet-5.5")
+  throw new Error("EVAL_EXTRACTION_MODEL accepts only sonnet-5.5");
+const real = compared
+  ? {
+      ...createExtractor(
+        createModels({
+          ...provider,
+          catalog: [
+            {
+              ...catalog[0]!,
+              providerModelId: sonnet.providerModelId,
+              prices: sonnet.prices,
+              upstream: sonnet.upstream,
+            },
+          ],
+        }),
+      ),
+      model: "sonnet-5.5-reasoning-high",
+    }
+  : createExtractor(models);
 const extractor: Extractor = {
   ...real,
   async extract(window, options) {
@@ -299,7 +320,7 @@ const code = (text: string | null) =>
 const ratio = (a: number, b: number) =>
   b ? Math.round((a / b) * 1000) / 1000 : null;
 
-// EVAL_BUDGET_USD caps the whole run's spend; each evaluation's student gets at most USD 0.50 of it.
+// EVAL_BUDGET_USD caps the whole run's spend; each evaluation's student gets at most USD 0.50 of it (Sonnet: 2).
 const budgetMicroUsd = Math.round(
   Number(process.env.EVAL_BUDGET_USD ?? 3.9) * 1_000_000,
 );
@@ -324,7 +345,11 @@ async function evaluate(
       Number(spent._sum.heldMicroUsd ?? 0);
     if (remaining <= 0) throw new Error("Eval budget exhausted");
     await admin.allowance.create({
-      data: { studentId, limitMicroUsd: Math.min(500_000, remaining) },
+      // Sonnet reserves about USD 0.50 per window for its output budget alone, so it gets more room.
+      data: {
+        studentId,
+        limitMicroUsd: Math.min(compared ? 2_000_000 : 500_000, remaining),
+      },
     });
   }
   const p = principal.fromSession({ studentId });
