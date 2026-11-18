@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "@nunio/ui";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -10,7 +11,7 @@ import {
 } from "@nunio/ui/components/breadcrumb/breadcrumb";
 import { buttonVariants } from "@nunio/ui/components/button/button";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, File, Tag } from "lucide-react";
+import { Calendar, File, Tag } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
@@ -37,14 +38,19 @@ function Fact({ icon, children }: { icon: ReactNode; children: ReactNode }) {
 function Section({
   title,
   action,
+  className,
   children,
 }: {
   title: string;
   action?: ReactNode;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <section aria-label={title} className="flex flex-col gap-5">
+    <section
+      aria-label={title}
+      className={cn("flex flex-col gap-5", className)}
+    >
       <div className="flex items-center justify-between">
         <h2 className="text-base font-medium text-base-800">{title}</h2>
         {action}
@@ -142,12 +148,12 @@ export function CourseScreen({
             </div>
             <ul
               aria-label="Über den Kurs"
-              className="mt-3 flex flex-wrap gap-x-6 gap-y-2 pl-5.5"
+              className="mt-3 flex flex-wrap gap-x-6 gap-y-2 pl-5"
             >
               {course.code && (
                 <Fact icon={<Tag aria-hidden="true" />}>{course.code}</Fact>
               )}
-              <Fact icon={<CalendarDays aria-hidden="true" />}>
+              <Fact icon={<Calendar aria-hidden="true" />}>
                 {semesterLabel(course.semester)}
               </Fact>
               <Fact icon={<File aria-hidden="true" />}>
@@ -201,7 +207,7 @@ export function CourseScreen({
                   />
                 </Section>
               </div>
-              <Section title="Termine">
+              <Section title="Termine" className="gap-4">
                 <Agenda dated={page.data.dated} now={now} />
               </Section>
             </div>

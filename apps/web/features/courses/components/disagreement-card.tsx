@@ -79,11 +79,11 @@ export function DisagreementCard({
   if (!current) return null;
   const { question, sources, values } = shapeOf(current);
   return (
-    <section aria-label="Abweichungen" className="relative pb-2">
+    <section aria-label="Abweichungen" className="relative">
       {disagreements.length > 1 && (
         <div
           aria-hidden="true"
-          className="absolute inset-x-3 top-3.5 bottom-0 rounded-lg bg-white shadow-sm outline outline-base-700/15"
+          className="absolute inset-x-3 top-3.5 -bottom-2 rounded-lg bg-white shadow-sm outline outline-base-700/15"
         />
       )}
       <div className="relative flex flex-col rounded-lg bg-white p-6 shadow-sm outline outline-base-700/15">
