@@ -533,7 +533,7 @@ test("asks about one open Disagreement at a time and uses the value the student 
     ),
   ).toBeTruthy();
   await user.click(
-    within(asked).getByRole("button", { name: "„C 112“ verwenden" }),
+    within(asked).getByRole("button", { name: "Raum C 112 verwenden" }),
   );
 
   await waitFor(() =>
@@ -557,7 +557,7 @@ test("asks about one open Disagreement at a time and uses the value the student 
     within(asked)
       .getAllByRole("button")
       .map((button) => button.textContent),
-  ).toEqual(["„22.11.“ verwenden", "„20.11., 12:00 Uhr“ verwenden"]);
+  ).toEqual(["Termin 22.11. verwenden", "Termin 20.11., 12:00 Uhr verwenden"]);
 });
 
 test("lists the Course's Sources by age and size, and deletes one only once the student confirms", async () => {

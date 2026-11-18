@@ -7,13 +7,26 @@ import { coursePageQuery } from "../api/course-queries";
 
 type Disagreement = CoursePage["disagreements"][number];
 
-/** Each exam logistics field by name, and what its values are called together; unknown ones fall back. */
-const fields: Record<string, { title: string; values: string }> = {
-  "exam.room": { title: "Klausurraum", values: "Räume" },
-  "exam.duration": { title: "Klausurdauer", values: "Zeiten" },
-  "exam.aids": { title: "Hilfsmittel", values: "Hilfsmittel" },
-  "exam.format": { title: "Prüfungsform", values: "Prüfungsformen" },
-};
+/** Each exam logistics field by name, what one value and its values together are called; unknown ones fall back. */
+const fields: Record<string, { title: string; value: string; values: string }> =
+  {
+    "exam.room": { title: "Klausurraum", value: "Raum", values: "Räume" },
+    "exam.duration": {
+      title: "Klausurdauer",
+      value: "Dauer",
+      values: "Zeiten",
+    },
+    "exam.aids": {
+      title: "Hilfsmittel",
+      value: "Hilfsmittel",
+      values: "Hilfsmittel",
+    },
+    "exam.format": {
+      title: "Prüfungsform",
+      value: "Prüfungsform",
+      values: "Prüfungsformen",
+    },
+  };
 
 const list = new Intl.ListFormat("de", { type: "conjunction" });
 
@@ -30,17 +43,20 @@ function shapeOf(disagreement: Disagreement) {
     disagreement.kind === "fact"
       ? disagreement.values.map((v) => ({ text: v.value, ...v }))
       : disagreement.values.map((v) => ({ text: dueText(v.due), ...v }));
-  const field =
+  const field: { title: string; value?: string; values: string } =
     disagreement.kind === "fact"
       ? (fields[disagreement.key] ?? {
           title: disagreement.key,
           values: "Angaben",
         })
-      : { title: disagreement.title, values: "Termine" };
+      : { title: disagreement.title, value: "Termin", values: "Termine" };
   return {
     question: `${field.title}: ${values.map((v) => v.text).join(" oder ")}?`,
     sources: `${list.format([...new Set(values.flatMap((v) => v.sources))])} nennen verschiedene ${field.values}`,
-    values,
+    values: values.map((v) => ({
+      ...v,
+      label: field.value ? `${field.value} ${v.text}` : `„${v.text}“`,
+    })),
   };
 }
 
@@ -79,11 +95,11 @@ export function DisagreementCard({
   if (!current) return null;
   const { question, sources, values } = shapeOf(current);
   return (
-    <section aria-label="Abweichungen" className="relative pb-2">
+    <section aria-label="Abweichungen" className="relative">
       {disagreements.length > 1 && (
         <div
           aria-hidden="true"
-          className="absolute inset-x-3 top-3.5 bottom-0 rounded-lg bg-white shadow-sm outline outline-base-700/15"
+          className="absolute inset-x-3 top-3.5 -bottom-2 rounded-lg bg-white shadow-sm outline outline-base-700/15"
         />
       )}
       <div className="relative flex flex-col rounded-lg bg-white p-6 shadow-sm outline outline-base-700/15">
@@ -109,7 +125,7 @@ export function DisagreementCard({
                 })
               }
             >
-              „{value.text}“ verwenden
+              {value.label} verwenden
             </Button>
           ))}
         </div>

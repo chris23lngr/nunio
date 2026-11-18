@@ -74,9 +74,9 @@ function TopicArea({
           />
         </svg>
         <span className="font-medium text-base-600">{name}</span>{" "}
-        <span className="text-base-500">{topics.length}</span>
+        <span className="ml-0.5 text-base-500">{topics.length}</span>
       </CollapsibleTrigger>
-      <CollapsibleContent className="pb-1">
+      <CollapsibleContent className="pb-1 pl-6">
         <TopicList topics={topics} now={now} onOpen={onOpen} label={name} />
       </CollapsibleContent>
     </Collapsible>
@@ -108,7 +108,7 @@ export function TopicAreaList({
   const placed = new Set(grouped.flatMap((a) => a.topics.map((t) => t.id)));
   const rest = topics.filter((topic) => !placed.has(topic.id));
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       {grouped.map((area) => (
         <TopicArea
           key={area.id}
