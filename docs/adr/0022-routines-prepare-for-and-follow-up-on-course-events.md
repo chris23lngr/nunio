@@ -4,6 +4,8 @@
 
 # Routines prepare for and follow up on Course Events
 
+> **Amended (2026-11-18):** Agents may now create Tasks. `task.create` is no longer Chat-only (see the amendment below).
+
 Preparing for and following up on lectures is study work that belongs to a Course but to no Obligation. nunio had no place for it. A Study Block needs exactly one Obligation or Task. A Task has no Course of its own, so Grants, Course limits and Archiving never reach a Task without an Obligation. Rebalance skips such a Task, because it has no deadline. The Chat's Plan tool does not show it. Fixed Events carry only a title, so nunio cannot tell which ones are a Course's lectures.
 
 We decided to close this gap for all Course work without an Obligation, with lecture preparation and follow-up as the leading case:
@@ -48,3 +50,17 @@ We decided to close this gap for all Course work without an Obligation, with lec
 - A future calendar Connection plugs into Event Series and external identity as they are. Writing Study Blocks into the student's calendar means recognizing them when the calendar is read back, so they never return as Fixed Events.
 - The Course of a piece of work now comes from the Task when it has no Obligation. Grants, Course limits, Priority and Archiving therefore reach such Tasks.
 - Linking Topics to Course Events, and offering Artifacts to prepare for one, are left for later.
+
+## Amendment (2026-11-18): Agents create Tasks
+
+Agents replace Responsibilities, and an Agent may now create Tasks ([Which Task tools an Agent gets](https://github.com/chris23lngr/nunio/issues/154)). This lifts "asked from a Chat only" for `task.create`. `task.reopen` stays as decided above.
+
+- **Aufgaben erstellen** (`task.create`) is an Agent's only Task tool. It creates one of the following:
+  - a Task in one of the Agent's Courses, such as "Thema X wiederholen";
+  - a Task toward an Obligation of one of its Courses, for which the Action gains an Obligation;
+  - a Preparation or Follow-up for a Course Event of one of its Courses that has none in that role yet.
+
+  It never creates a Task in no Course.
+- A Grant may cover `task.create` as it covers `studyBlock.create`. How Grants relate to an Agent's Courses and its approval mode is decided with the Agent's approval modes.
+- An Estimate an Agent gives counts as nunio's, so the student can correct it. An Estimate asked from a Chat stays the student's own.
+- Only the student completes or reopens a Task and changes an Estimate. No Agent tool changes an existing Task, so an Agent has no Tasks of its own; which Agent created a Task is known from its Run's Action.
