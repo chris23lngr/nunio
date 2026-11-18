@@ -242,14 +242,30 @@ export function createFacts({
         };
         // A Source bound to a Course puts everything there whatever the model names. It still sees that Course,
         // so a deck that never names its Course (a mid-series lecture) has one to attach its items to.
+        const listed = await withOwner(db, p, (tx) =>
+          tx.course.findMany({
+            where: source.courseId ? { id: source.courseId } : candidateWhere,
+            select: { id: true, title: true, code: true },
+          }),
+        );
+        // Each Course's Topics so far, so extraction reuses their names and never recreates a rejected one (ADR-0025).
+        const reviewed: Map<string, ReviewFact[]> = new Map(
+          (await facts.review(p)).courses.map((course) => [
+            course.id,
+            course.facts,
+          ]),
+        );
         const context = {
           title: source.title,
-          courses: await withOwner(db, p, (tx) =>
-            tx.course.findMany({
-              where: source.courseId ? { id: source.courseId } : candidateWhere,
-              select: { id: true, title: true, code: true },
-            }),
-          ),
+          courses: listed.map((course) => ({
+            ...course,
+            topics: (reviewed.get(course.id) ?? [])
+              .filter((fact) => fact.type === "topic")
+              .map((fact) => ({
+                name: fact.value,
+                rejected: fact.state === "rejected",
+              })),
+          })),
         };
         const candidateIds = new Set(
           context.courses.map((course) => course.id),

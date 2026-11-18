@@ -466,13 +466,27 @@ it("offers a bound Source only its own Course and ignores another it picks, but 
   expect(contexts).toEqual([
     {
       title: "Folien.pdf",
-      courses: [{ id: analysis, title: "Analysis I", code: "MA-101" }],
+      courses: [
+        expect.objectContaining({
+          id: analysis,
+          title: "Analysis I",
+          code: "MA-101",
+        }),
+      ],
     },
     {
       title: "Skript.pdf",
       courses: expect.arrayContaining([
-        { id: analysis, title: "Analysis I", code: "MA-101" },
-        { id: statistik, title: "Statistik II", code: null },
+        expect.objectContaining({
+          id: analysis,
+          title: "Analysis I",
+          code: "MA-101",
+        }),
+        expect.objectContaining({
+          id: statistik,
+          title: "Statistik II",
+          code: null,
+        }),
       ]),
     },
   ]);

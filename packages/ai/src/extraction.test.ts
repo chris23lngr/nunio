@@ -230,7 +230,7 @@ it("windows pages within a size bound, overlapping by one page where both fit", 
   ).toEqual([[1, 2], [2, 3], [4], [5]]);
 });
 
-it("keeps source title and candidate Courses inside nonce-fenced user data", async () => {
+it("keeps source title, candidate Courses and their Topics inside nonce-fenced user data", async () => {
   const bodies: Record<string, unknown>[] = [];
   const extractor = createExtractor(
     createModels({
@@ -244,7 +244,17 @@ it("keeps source title and candidate Courses inside nonce-fenced user data", asy
     signal: AbortSignal.timeout(1000),
     context: {
       title: "private-deck.pdf",
-      courses: [{ id: "candidate-id", title: "Private Course", code: null }],
+      courses: [
+        {
+          id: "candidate-id",
+          title: "Private Course",
+          code: null,
+          topics: [
+            { name: "Private Topic", rejected: false },
+            { name: "Rejected Topic", rejected: true },
+          ],
+        },
+      ],
     },
   });
   const messages = bodies[0]!.messages as { role: string; content: unknown }[];
@@ -252,7 +262,9 @@ it("keeps source title and candidate Courses inside nonce-fenced user data", asy
   const user = JSON.stringify(messages.filter((m) => m.role === "user"));
   expect(system).not.toContain("private-deck");
   expect(system).not.toContain("Private Course");
+  expect(system).not.toContain("Private Topic");
+  expect(system).not.toContain("Rejected Topic");
   expect(user).toMatch(
-    /<context-([0-9a-f]{32})>.*private-deck.*candidate-id.*<\/context-\1>/s,
+    /<context-([0-9a-f]{32})>.*private-deck.*candidate-id.*Private Topic.*Rejected Topic.*<\/context-\1>/s,
   );
 });
