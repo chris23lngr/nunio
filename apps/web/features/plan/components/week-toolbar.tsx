@@ -48,7 +48,7 @@ export function WeekToolbar({
   onDisplayChange: (next: DisplayOptions) => void;
 }) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex flex-1 items-center justify-between gap-3">
       <div className="flex items-center gap-3">
         <Button
           variant="outline"
@@ -74,7 +74,10 @@ export function WeekToolbar({
         >
           <ChevronRight />
         </Button>
-        <span className="text-base-600 text-sm">{weekLabel(week)}</span>
+        {/* On mobile the day headers carry the dates. */}
+        <span className="text-base-600 text-sm max-md:hidden">
+          {weekLabel(week)}
+        </span>
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger
