@@ -5,34 +5,37 @@ export interface ExtractedTopic {
   course: string;
   key: string;
   value: string;
+  /** IDs of the Course's documents this Topic cites. */
+  documents: string[];
 }
 /** Label indices aligned with extracted Topics; null means no match. */
 export type Judgement = (number | null)[];
 
+/** `logistics` names the Course's `organisation` documents, which should yield no Topics. */
 export function scoreTopics(
   labels: TopicLabel[],
   extracted: ExtractedTopic[],
   judgement: Judgement,
+  logistics: string[] = [],
 ) {
   const remaining = new Set(labels.map((_, index) => index));
   let matched = 0;
   let optionalMatched = 0;
+  let duplicates = 0;
   for (const [index, topic] of extracted.entries()) {
     const hit = judgement[index];
-    if (hit == null || !remaining.has(hit)) continue;
-    if (labels[hit]!.course !== topic.course) continue;
+    if (hit == null || labels[hit]!.course !== topic.course) continue;
+    // A later Topic for an already matched label repeats it; it still counts against precision.
+    if (!remaining.has(hit)) {
+      duplicates++;
+      continue;
+    }
     remaining.delete(hit);
     if (labels[hit]!.optional) optionalMatched++;
     else matched++;
   }
   const required = labels.filter((label) => !label.optional);
   const scored = extracted.length - optionalMatched;
-  const figures = labels.flatMap((label, index) =>
-    !label.optional && label.figureOnly ? [index] : [],
-  );
-  const figuresMatched = figures.filter(
-    (index) => !remaining.has(index),
-  ).length;
   return {
     labelled: required.length,
     extracted: extracted.length,
@@ -40,11 +43,14 @@ export function scoreTopics(
     matched,
     precision: scored ? matched / scored : null,
     recall: required.length ? matched / required.length : null,
-    figureOnly: {
-      labelled: figures.length,
-      matched: figuresMatched,
-      recall: figures.length ? figuresMatched / figures.length : null,
-    },
+    duplicates,
+    logistics: logistics.map((document) => ({
+      document,
+      falseTopics: extracted.filter(
+        (topic, index) =>
+          judgement[index] == null && topic.documents.includes(document),
+      ).length,
+    })),
   };
 }
 
