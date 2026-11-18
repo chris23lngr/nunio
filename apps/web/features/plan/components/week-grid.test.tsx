@@ -100,7 +100,7 @@ test("entries render in the form their duration and lane share call for", () => 
   expect(screen.getByText("b: full, narrow")).toBeTruthy();
 });
 
-test("an entry is placed from its time with a 4px inset", () => {
+test("an entry is placed from its time, in percent of the shown hours, with a 4px inset", () => {
   render(
     <WeekGrid
       days={[monday]}
@@ -111,8 +111,8 @@ test("an entry is placed from its time with a 4px inset", () => {
   );
 
   const card = screen.getByText("Analysis I").parentElement as HTMLElement;
-  expect(card.style.top).toBe("68px");
-  expect(card.style.height).toBe("56px");
+  expect(card.style.top).toBe("calc(20% + 4px)");
+  expect(card.style.height).toBe("max(20% - 8px, 16px)");
 });
 
 test("a short entry is never less than one line tall", () => {
@@ -133,8 +133,8 @@ test("a short entry is never less than one line tall", () => {
   );
 
   const card = screen.getByText("Kurz").parentElement as HTMLElement;
-  expect(card.style.top).toBe("36px");
-  expect(card.style.height).toBe("16px");
+  expect(card.style.top).toBe("calc(10% + 4px)");
+  expect(card.style.height).toBe("max(5% - 8px, 16px)");
 });
 
 test("background nodes such as Protected Time render in their day", () => {
@@ -199,6 +199,6 @@ test("Protected Time longer than the shown hours is cut to them", () => {
   );
 
   const area = screen.getByText("Geschützte Zeit").parentElement as HTMLElement;
-  expect(area.style.top).toBe("0px");
-  expect(area.style.height).toBe("320px");
+  expect(area.style.top).toBe("0%");
+  expect(area.style.height).toBe("100%");
 });

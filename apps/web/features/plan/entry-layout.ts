@@ -1,13 +1,20 @@
 import { differenceInMinutes, setHours, startOfDay } from "date-fns";
 
-export const HOUR_PX = 32;
-
-/** Pixel position of an entry in a day column whose first row is `fromHour`. */
-export function entryGeometry(fromHour: number, start: Date, end: Date) {
+/**
+ * Position of an entry in a day column showing `fromHour` to `toHour`, in
+ * percent of the column's height, since hour rows stretch to fill the screen.
+ */
+export function entryGeometry(
+  fromHour: number,
+  toHour: number,
+  start: Date,
+  end: Date,
+) {
   const gridStart = setHours(startOfDay(start), fromHour);
+  const shownMinutes = (toHour - fromHour) * 60;
   return {
-    top: (differenceInMinutes(start, gridStart) / 60) * HOUR_PX,
-    height: (differenceInMinutes(end, start) / 60) * HOUR_PX,
+    top: (differenceInMinutes(start, gridStart) / shownMinutes) * 100,
+    height: (differenceInMinutes(end, start) / shownMinutes) * 100,
   };
 }
 

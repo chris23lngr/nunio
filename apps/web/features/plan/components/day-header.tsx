@@ -30,7 +30,7 @@ export function DayHeader({
     >
       <span
         className={cn(
-          "text-sm font-medium text-base-800",
+          "truncate text-sm font-medium text-base-800",
           today && "text-primary-600",
         )}
       >
