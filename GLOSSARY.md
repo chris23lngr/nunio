@@ -10,10 +10,6 @@ nunio is a proactive study platform for university students. It keeps an actiona
 A conversation between the student and nunio that draws course material only from an explicitly selected set of Courses and Sources, and may read the student's whole Plan, Obligations and Facts. A Chat can propose Actions and start Runs but is never itself an Agent.
 _Avoid_: Assistant, conversation agent
 
-**Agent**:
-A worker that carries out proactive or multi-step study work for the student without the student driving each step.
-_Avoid_: Bot, assistant, automation
-
 ### Organization
 
 **Course**:
@@ -25,7 +21,7 @@ A named academic half-year, a Wintersemester from October to March or a Sommerse
 _Avoid_: Term, session, academic period
 
 **Archived**:
-The state of a Course the student is no longer studying, whether passed, dropped, or given up. Everything in it stays and the student can unarchive it, but nunio no longer plans or acts for it. Not to be confused with Ended, which applies only to Responsibilities.
+The state of a Course the student is no longer studying, whether passed, dropped, or given up. Everything in it stays and the student can unarchive it, but nunio no longer plans or acts for it. Not to be confused with Ended, which applies only to Agents.
 _Avoid_: Completed, finished, inactive, hidden
 
 **Last Activity**:
@@ -133,7 +129,7 @@ A Fixed Event whose Event Series the student confirmed as part of a Course, such
 _Avoid_: Session, lecture, class, meeting
 
 **Routine**:
-The student's standing instruction to prepare for, follow up on, or both, each Course Event of one Event Series for a set time. A Routine is the student's own planning, not a Responsibility.
+The student's standing instruction to prepare for, follow up on, or both, each Course Event of one Event Series for a set time. A Routine is the student's own planning, not an Agent.
 _Avoid_: Rule, template, habit, recurring task
 
 **Preparation**:
@@ -179,7 +175,7 @@ A soft rule about how the student wants to study, such as "at most 4 hours a day
 _Avoid_: Setting, rule, constraint
 
 **Budget**:
-The cap on AI usage for one Responsibility. A Responsibility that exhausts its Budget pauses and asks; it never draws further on the Allowance by itself.
+The monthly cap on AI usage for one Agent, which resets each month. An Agent that exhausts its Budget pauses and asks; it never draws further on the Allowance by itself.
 _Avoid_: Limit, quota, allowance
 
 **Allowance**:
@@ -191,7 +187,7 @@ One exact, immutable configuration for calling an AI model, named by its key suc
 _Avoid_: Variant, model ID, LLM
 
 **Model Catalog**:
-The founder-managed list of Models, with which ones Chat offers, the Chat default, and prices synced from the AI provider. Students choose among the Models it offers; tasks use Models chosen in code.
+The founder-managed list of Models, with which ones Chat offers, the Chat default, and prices synced from the AI provider. Students choose among the Models offered in Chat, for a Chat or an Agent; tasks use Models chosen in code.
 _Avoid_: Allowlist, model registry
 
 **Invitation**:
@@ -286,20 +282,24 @@ _Avoid_: Notification center, feed, activity
 
 ### Delegation
 
-**Responsibility**:
-An ongoing delegation the student owns, such as "keep this course organized", with its own scope, budget, and pause control. One-off requests are never Responsibilities.
-_Avoid_: Automation, task, job, agent
+**Agent**:
+An ongoing delegation the student owns, such as "keep this course organized", with its own scope, Budget, and pause control, carried out in Runs. One-off requests are never Agents.
+_Avoid_: Responsibility, automation, bot, assistant, job
+
+**Template**:
+A starting point nunio curates for creating an Agent, such as "Klausur vorbereiten". Students cannot publish Templates.
+_Avoid_: Preset, Vorlage, blueprint
 
 **Paused**:
-The state of a Responsibility that takes no further Actions, including in a Run already under way, while keeping its Grants. A Responsibility is Paused by the student, by exhausting its Budget, by losing a Connection it depends on, or by its Course being Archived; only the student resumes it, even after its Budget resets or its Course is unarchived.
+The state of an Agent that takes no further Actions, including in a Run already under way, while keeping its Grants. An Agent is Paused by the student, by exhausting its Budget, by losing a Connection it depends on, or by its Course being Archived; only the student resumes it, even after its Budget resets or its Course is unarchived.
 _Avoid_: Suspended, stopped, disabled, on hold
 
 **Ended**:
-The state of a Responsibility stopped for good: its Grants are gone and its history remains.
+The state of an Agent stopped for good: its Grants are gone and its history remains.
 _Avoid_: Revoked, cancelled, deleted, archived, completed
 
 **Run**:
-A single, bounded execution of Agent work, started either by the student, such as from a Chat, or by a Responsibility. Reading or deleting a Source is never a Run.
+A single, bounded execution of study work on the student's behalf, started either by the student, such as from a Chat, or by an Agent. Reading or deleting a Source is never a Run.
 _Avoid_: Job, task, session
 
 **Action**:
@@ -311,7 +311,7 @@ The student's consent to one exact Action, given by confirming that Action as nu
 _Avoid_: Confirmation, consent, permission
 
 **Grant**:
-Standing authority, given in advance, for a Responsibility to take a kind of Action within a defined scope without per-Action Approval. Grants exist only within a Responsibility.
+Standing authority, given in advance, for an Agent to take a kind of Action within a defined scope without per-Action Approval. Grants exist only within an Agent.
 _Avoid_: Permission, automation permission, authority
 
 **Unconfirmed**:
