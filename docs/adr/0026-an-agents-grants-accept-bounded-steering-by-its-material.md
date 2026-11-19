@@ -19,3 +19,13 @@ Agents run on the student's free-text Instructions and read the Sources of their
 - **Taint:** once a Run has read Source material, every later Action needs Approval. This is the strongest defence, but nearly every Agent reads material, so Grants would almost never act.
 - **Split models:** a planner model sees only the Instructions and the Plan, and a reader model summarises material for it. Stronger, but it doubles the Run loop and the summaries can still carry an injection.
 - **Accept bounded steering** (chosen): Grants keep their meaning, and the gate's checks, the caps and the eval bound what an injection can do.
+
+## Amendment (2026-11-19): Briefings
+
+An Agent with the Capability "Briefing erstellen" writes Briefings ([Whether Briefings become Agents](https://github.com/chris23lngr/nunio/issues/146)).
+
+- **A fourth read tool.** Such an Agent also gets `inbox`, which reads the student's whole Inbox across Courses: open Interventions, every Agent's pending Approvals, unread Notices and ready Artifacts. Its results are fenced data like every other tool's, including other Agents' Notices, so one Agent's Notice cannot instruct another. The tool test checks for its Capabilities plus the three read tools, plus `inbox` only with "Briefing erstellen".
+- **What the model writes.** The Briefing's text is plain text, never rendered as a link or formatting. It names the bundled items by id and nunio renders them itself, so an Approval card in a Briefing shows no model-written reason.
+- **Caps.** A Run makes at most 1 Briefing, and `briefing.create` is refused when nothing is open to bundle.
+- **Reach.** An Agent reaches its own student through a Notice or a Briefing and no one else.
+- **Eval.** The Agent injection eval also gives the Agent "Briefing erstellen" and fails on a Briefing that follows the hidden instructions, checked like Notices.
