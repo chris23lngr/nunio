@@ -160,12 +160,15 @@ export function AgentFormScreen({
   apiOrigin,
   agent,
   hasRuns = false,
+  run,
 }: {
   apiOrigin: string;
   /** Null for a "Neuer Agent" not saved yet. */
   agent: Saved | null;
   /** It ran before, so it opens on its Aktivität with the newest Run. */
   hasRuns?: boolean;
+  /** The Run Aktivität opens on instead of the newest, as from the Inbox. */
+  run?: string;
 }) {
   const id = useId();
   const router = useRouter();
@@ -318,7 +321,11 @@ export function AgentFormScreen({
           )}
           {tab === "activity" ? (
             agent ? (
-              <AgentActivity apiOrigin={apiOrigin} agentId={agent.id} />
+              <AgentActivity
+                apiOrigin={apiOrigin}
+                agentId={agent.id}
+                run={run}
+              />
             ) : (
               <div className="flex flex-col gap-1 p-8">
                 <p className="text-sm font-medium text-base-800">

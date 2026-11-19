@@ -183,12 +183,15 @@ function RunDetail({
 export function AgentActivity({
   apiOrigin,
   agentId,
+  run,
 }: {
   apiOrigin: string;
   agentId: string;
+  /** The Run to show first, as the Inbox opens it; the newest one otherwise. */
+  run?: string;
 }) {
   const list = useInfiniteQuery(agentRunListQueries(apiOrigin, agentId));
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(run ?? null);
   const end = useRef<HTMLDivElement>(null);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = list;
   // "Seit …" counts on while a Run is under way, also through a long step that changes nothing else.
@@ -230,7 +233,7 @@ export function AgentActivity({
         </p>
       </div>
     );
-  // The newest Run until the student picks another.
+  // The newest Run until the student picks another, or the Inbox opened one.
   const selected = runs.find((run) => run.id === picked) ?? runs[0]!;
   return (
     <div className="flex min-h-[calc(100dvh-6.5rem)]">
