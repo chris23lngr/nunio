@@ -3,15 +3,15 @@ import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
-import type { Executor, Principal } from "@nunio/delegation";
-import { principal } from "@nunio/delegation";
+import type { Delegation, Executor, Principal } from "@nunio/delegation";
+import { createDelegation, principal } from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import type { Facts } from "@nunio/knowledge";
 import { createFacts } from "@nunio/knowledge";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createPlanExecutor } from "./executor.js";
 import type { Plan } from "./plan.js";
-import { createPlan } from "./plan.js";
+import { createPlan, planRules } from "./plan.js";
 
 let database: TestDatabase;
 let admin: PrismaClient;
@@ -379,5 +379,209 @@ describe("the Plan executor", () => {
       ),
     ).toEqual({ status: "rejected", detail: "the Course Event is gone" });
     expect((await plan.view(s.p)).tasks).toEqual([]);
+  });
+});
+
+describe("an Agent's Study Block Actions through the gate", () => {
+  let gate: Delegation;
+  beforeAll(() => {
+    gate = createDelegation({
+      db: runtime,
+      aiEnabled: () => true,
+      clock,
+      executors: { plan: executor },
+      planRules,
+    });
+  });
+
+  /** A Run of a free-text Agent on the student's Course, with these Capabilities, and a Grant for each that holds one. */
+  async function agentRun(
+    s: Awaited<ReturnType<typeof student>>,
+    held: Record<string, "always" | "automatic" | "ask">,
+  ) {
+    const { courseId } = await admin.obligation.findUniqueOrThrow({
+      where: { id: s.obligationId },
+    });
+    await admin.course.update({
+      where: { id: courseId },
+      data: { status: "accepted" },
+    });
+    const agentId = randomUUID(),
+      runId = randomUUID();
+    const kinds: Record<string, string> = {
+      createStudyBlocks: "studyBlock.create",
+      moveOwnStudyBlocks: "studyBlock.move",
+      moveStudyBlocks: "studyBlock.move",
+    };
+    await admin.agent.create({
+      data: {
+        id: agentId,
+        studentId: s.studentId,
+        name: "Analysis",
+        budgetMicroUsd: 100_000,
+        courses: { create: { courseId } },
+        capabilities: {
+          create: Object.entries(held).map(([capability, mode]) => ({
+            capability,
+            mode,
+          })),
+        },
+      },
+    });
+    await admin.grant.createMany({
+      data: [
+        ...new Set(
+          Object.entries(held)
+            .filter(([, mode]) => mode !== "ask")
+            .map(([id]) => kinds[id]!),
+        ),
+      ].map((kind) => ({
+        id: randomUUID(),
+        studentId: s.studentId,
+        agentId,
+        kind,
+      })),
+    });
+    await admin.run.create({
+      data: { id: runId, studentId: s.studentId, agentId },
+    });
+    let n = 0;
+    const r = principal.fromRun(runId);
+    return {
+      /** Asks the gate for one Action of this Run, each under a new key. */
+      perform: (intent: Parameters<Delegation["perform"]>[1]["intent"]) =>
+        gate.perform(r, { key: `${runId}:${++n}`, intent }),
+    };
+  }
+  const create = (s: { obligationId: string }, hour: number) => ({
+    kind: "studyBlock.create" as const,
+    workId: s.obligationId,
+    ...span(hour),
+  });
+  const move = (studyBlockId: string, hour: number) => ({
+    kind: "studyBlock.move" as const,
+    studyBlockId,
+    ...span(hour),
+  });
+  const own = {
+    createStudyBlocks: "automatic",
+    moveOwnStudyBlocks: "automatic",
+    moveStudyBlocks: "ask",
+  } as const;
+
+  it("lets an Agent move the block it created, until the student moves it", async () => {
+    const s = await student();
+    const agent = await agentRun(s, own);
+
+    const created = await agent.perform(create(s, 9));
+    if (created.status !== "done") throw new Error(created.status);
+    const { studyBlockId } = created.effect as { studyBlockId: string };
+    expect(await agent.perform(move(studyBlockId, 11))).toMatchObject({
+      status: "done",
+    });
+    await plan.moveBlock(s.p, studyBlockId, span(13));
+
+    expect(await agent.perform(move(studyBlockId, 15))).toMatchObject({
+      status: "awaiting_approval",
+    });
+  });
+
+  it("counts a block created after an Approval as the Agent's own", async () => {
+    const s = await student();
+    const agent = await agentRun(s, { ...own, createStudyBlocks: "ask" });
+    const asked = await agent.perform(create(s, 9));
+    if (asked.status !== "awaiting_approval") throw new Error(asked.status);
+    await gate.decide(s.p, {
+      kind: "approve",
+      actionId: asked.actionId,
+      fingerprint: asked.fingerprint,
+    });
+    const [record] = await gate.history(s.p, { ids: [asked.actionId] });
+    const created = await gate.perform(principal.fromRun(record!.runId!), {
+      key: record!.key,
+      intent: record!.intent,
+    });
+    if (created.status !== "done") throw new Error(created.status);
+
+    expect(
+      await agent.perform(
+        move((created.effect as { studyBlockId: string }).studyBlockId, 11),
+      ),
+    ).toMatchObject({ status: "done" });
+  });
+
+  it("no longer counts a block as the Agent's own once the student moved it through a Chat", async () => {
+    const s = await student();
+    const agent = await agentRun(s, own);
+    const created = await agent.perform(create(s, 9));
+    if (created.status !== "done") throw new Error(created.status);
+    const { studyBlockId } = created.effect as { studyBlockId: string };
+    const key = "chat-1:message-1:0";
+    const asked = await gate.perform(s.p, {
+      key,
+      intent: move(studyBlockId, 11),
+    });
+    if (asked.status !== "awaiting_approval") throw new Error(asked.status);
+    await gate.decide(s.p, {
+      kind: "approve",
+      actionId: asked.actionId,
+      fingerprint: asked.fingerprint,
+    });
+    expect(
+      await gate.perform(s.p, { key, intent: move(studyBlockId, 11) }),
+    ).toMatchObject({ status: "done" });
+
+    expect(await agent.perform(move(studyBlockId, 15))).toMatchObject({
+      status: "awaiting_approval",
+    });
+  });
+
+  it("refuses, on any mode, what plan.check refuses: the past and overlaps", async () => {
+    const s = await student();
+    const agent = await agentRun(s, { ...own, createStudyBlocks: "always" });
+    await admin.fixedEvent.create({
+      data: {
+        id: randomUUID(),
+        studentId: s.studentId,
+        title: "Analysis I",
+        ...span(12),
+      },
+    });
+    const created = await agent.perform(create(s, 9));
+    if (created.status !== "done") throw new Error(created.status);
+
+    expect(
+      await agent.perform({
+        ...create(s, 9),
+        start: new Date("2026-11-09T06:00:00Z"),
+        end: new Date("2026-11-09T07:00:00Z"),
+      }),
+    ).toMatchObject({ status: "refused", reason: "past" });
+    expect(await agent.perform(create(s, 12))).toMatchObject({
+      status: "refused",
+      reason: "fixed_event",
+    });
+    expect(await agent.perform(create(s, 9))).toMatchObject({
+      status: "refused",
+      reason: "study_block",
+    });
+  });
+
+  it("asks on Automatisch for a block outside the study window, and places it on Immer erlaubt with a note", async () => {
+    const s = await student();
+    // 03:00 in Berlin, before the default study window opens at 09:00.
+    const early = create(s, 2);
+    const automatic = await agentRun(s, own);
+    expect(await automatic.perform(early)).toMatchObject({
+      status: "awaiting_approval",
+    });
+
+    const always = await agentRun(s, { createStudyBlocks: "always" });
+    const done = await always.perform(early);
+    expect(done).toMatchObject({ status: "done" });
+    const [record] = await gate.history(s.p, { ids: [done.actionId] });
+    expect(
+      record!.events.find((e) => e.type === "dispatched")?.detail,
+    ).toMatchObject({ brokenPreferences: ["outside_study_window"] });
   });
 });

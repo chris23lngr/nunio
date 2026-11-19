@@ -4,7 +4,13 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { ActionOutcome, Delegation, Executor } from "./index.js";
+import type {
+  ActionOutcome,
+  Delegation,
+  Executor,
+  PlanRules,
+  PlanVerdict,
+} from "./index.js";
 import {
   createDelegation,
   DelegationUnavailable,
@@ -76,12 +82,14 @@ function fakeExecutor(
 function gate(
   executor: Executor,
   deadlines: Record<string, Date> = {},
+  planRules?: PlanRules,
 ): Delegation {
   return createDelegation({
     db: runtime,
     aiEnabled: () => true,
     clock,
     executors: { plan: executor },
+    planRules,
     deadlineOf: async (_, obligationId) => deadlines[obligationId] ?? null,
   });
 }
@@ -713,7 +721,7 @@ describe("rechecks at dispatch", () => {
     ).toMatchObject({ status: "done" });
   });
 
-  it("asks, until the gate checks an Agent's Courses, under an unscoped Grant from a Capability's mode", async () => {
+  it("asks a preset Agent under an unscoped Grant: only its scoped Grants are its own", async () => {
     const s = await student();
     const r = await run(s, { grants: [] });
     await admin.grant.create({
@@ -1219,4 +1227,214 @@ describe("durable Approval decision delivery", () => {
       expect(dispatched).toEqual([]);
     },
   );
+});
+
+describe("a free-text Agent's Actions", () => {
+  /** A Run of a free-text Agent on the student's Course, with these Capabilities and a Grant for each on a Grant-holding mode. */
+  async function agentRun(
+    s: Awaited<ReturnType<typeof student>>,
+    held: Record<string, "always" | "automatic" | "ask">,
+  ) {
+    const agentId = randomUUID(),
+      runId = randomUUID();
+    // The Agent form offers only accepted Courses.
+    await admin.course.update({
+      where: { id: s.courseId },
+      data: { status: "accepted" },
+    });
+    await admin.agent.create({
+      data: {
+        id: agentId,
+        studentId: s.studentId,
+        name: "Analysis",
+        budgetMicroUsd: 100_000,
+        courses: { create: { courseId: s.courseId } },
+        capabilities: {
+          create: Object.entries(held).map(([capability, mode]) => ({
+            capability,
+            mode,
+          })),
+        },
+      },
+    });
+    const kinds = {
+      createStudyBlocks: "studyBlock.create",
+      moveOwnStudyBlocks: "studyBlock.move",
+      moveStudyBlocks: "studyBlock.move",
+      removeOwnStudyBlocks: "studyBlock.remove",
+    } as Record<string, string>;
+    await admin.grant.createMany({
+      data: [
+        ...new Set(
+          Object.entries(held)
+            .filter(([, mode]) => mode !== "ask")
+            .map(([id]) => kinds[id]!),
+        ),
+      ].map((kind) => ({
+        id: randomUUID(),
+        studentId: s.studentId,
+        agentId,
+        kind,
+      })),
+    });
+    await admin.run.create({
+      data: { id: runId, studentId: s.studentId, agentId },
+    });
+    return { agentId, runId, p: principal.fromRun(runId) };
+  }
+  /** The Plan's rules, answering every Study Block Action with one verdict. */
+  function rules(
+    verdict: PlanVerdict = { refusals: [], brokenPreferences: [] },
+  ) {
+    const checked: unknown[] = [];
+    const planRules: PlanRules = {
+      async check(_, intent) {
+        checked.push(intent);
+        return verdict;
+      },
+    };
+    return { planRules, checked };
+  }
+  const create = (s: { obligationId: string }, workId = s.obligationId) => ({
+    kind: "studyBlock.create" as const,
+    workId,
+    start: new Date("2026-11-12T09:00:00Z"),
+    end: new Date("2026-11-12T10:00:00Z"),
+  });
+
+  it("creates a block in its Course on Automatisch, by the Plan's rules", async () => {
+    const s = await student();
+    const r = await agentRun(s, { createStudyBlocks: "automatic" });
+    const { planRules, checked } = rules();
+    const { executor, dispatched } = fakeExecutor();
+
+    expect(
+      await gate(executor, {}, planRules).perform(r.p, {
+        key: `${r.runId}:1`,
+        intent: create(s),
+      }),
+    ).toMatchObject({ status: "done" });
+    expect(checked).toEqual([create(s)]);
+    expect(dispatched).toHaveLength(1);
+  });
+
+  it("refuses work outside its Courses, and in a Course since Archived", async () => {
+    const s = await student();
+    const r = await agentRun(s, { createStudyBlocks: "always" });
+    const taskId = randomUUID();
+    await admin.task.create({
+      data: {
+        id: taskId,
+        studentId: s.studentId,
+        title: "Bewerbung schreiben",
+      },
+    });
+    const g = gate(fakeExecutor().executor, {}, rules().planRules);
+
+    expect(
+      await g.perform(r.p, { key: `${r.runId}:1`, intent: create(s, taskId) }),
+    ).toMatchObject({ status: "refused", reason: "out_of_scope" });
+    await admin.course.update({
+      where: { id: s.courseId },
+      data: { archivedAt: now },
+    });
+    expect(
+      await g.perform(r.p, { key: `${r.runId}:2`, intent: create(s) }),
+    ).toMatchObject({ status: "refused", reason: "out_of_scope" });
+  });
+
+  it("refuses an approved Action for a Course removed from the Agent since it asked", async () => {
+    const s = await student();
+    const r = await agentRun(s, { createStudyBlocks: "ask" });
+    const { executor, dispatched } = fakeExecutor();
+    const g = gate(executor, {}, rules().planRules);
+    const key = `${r.runId}:1`;
+    const asking = await g.perform(r.p, { key, intent: create(s) });
+    if (asking.status !== "awaiting_approval") throw new Error(asking.status);
+    await admin.agentCourse.deleteMany({ where: { agentId: r.agentId } });
+    await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+
+    expect(await g.perform(r.p, { key, intent: create(s) })).toMatchObject({
+      status: "refused",
+      reason: "out_of_scope",
+    });
+    expect(dispatched).toEqual([]);
+  });
+
+  it("moves its own block on Automatisch, and asks to move a block it did not create", async () => {
+    const s = await student();
+    const r = await agentRun(s, {
+      moveOwnStudyBlocks: "automatic",
+      moveStudyBlocks: "ask",
+    });
+    const later = {
+      start: new Date("2026-11-12T09:00:00Z"),
+      end: new Date("2026-11-12T10:00:00Z"),
+    };
+    await admin.studyBlock.update({
+      where: { id: s.blockId },
+      data: { ...later, createdByAgentId: r.agentId },
+    });
+    const othersId = randomUUID();
+    await admin.studyBlock.create({
+      data: {
+        id: othersId,
+        studentId: s.studentId,
+        obligationId: s.obligationId,
+        placedBy: "nunio",
+        start: new Date("2026-11-13T09:00:00Z"),
+        end: new Date("2026-11-13T10:00:00Z"),
+      },
+    });
+    const g = gate(fakeExecutor().executor, {}, rules().planRules);
+
+    expect(
+      await g.perform(r.p, { key: `${r.runId}:1`, intent: move(s) }),
+    ).toMatchObject({ status: "done" });
+    expect(
+      await g.perform(r.p, {
+        key: `${r.runId}:2`,
+        intent: move({ blockId: othersId }, 16),
+      }),
+    ).toMatchObject({ status: "awaiting_approval" });
+  });
+
+  it("refuses what the Plan's rules refuse, without asking, on any mode", async () => {
+    const s = await student();
+    const r = await agentRun(s, { createStudyBlocks: "ask" });
+    const g = gate(
+      fakeExecutor().executor,
+      {},
+      rules({ refusals: ["fixed_event"], brokenPreferences: [] }).planRules,
+    );
+
+    expect(
+      await g.perform(r.p, { key: `${r.runId}:1`, intent: create(s) }),
+    ).toMatchObject({ status: "refused", reason: "fixed_event" });
+  });
+
+  it("notes the Preferences an Action breaks on Immer erlaubt", async () => {
+    const s = await student();
+    const r = await agentRun(s, { createStudyBlocks: "always" });
+    const g = gate(
+      fakeExecutor().executor,
+      {},
+      rules({ refusals: [], brokenPreferences: ["daily_limit"] }).planRules,
+    );
+
+    const done = await g.perform(r.p, {
+      key: `${r.runId}:1`,
+      intent: create(s),
+    });
+
+    expect(done).toMatchObject({ status: "done" });
+    const [record] = await g.history(s.p, { runId: r.runId });
+    expect(record!.events.find((e) => e.type === "dispatched")).toMatchObject({
+      detail: { brokenPreferences: ["daily_limit"] },
+    });
+  });
 });

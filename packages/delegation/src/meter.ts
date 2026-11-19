@@ -9,6 +9,7 @@ import type {
   Deny,
   Executors,
   HistoryQuery,
+  PlanRules,
   Resolve,
 } from "./gate.js";
 import { createGate } from "./gate.js";
@@ -104,6 +105,7 @@ export function createDelegation({
   aiEnabled,
   clock = { now: () => new Date() },
   executors,
+  planRules,
   deadlineOf,
 }: {
   db: PrismaClient;
@@ -112,6 +114,8 @@ export function createDelegation({
   clock?: Clock;
   /** Needed only to perform Actions. */
   executors?: Executors;
+  /** Needed only to perform a free-text Agent's Study Block Actions. */
+  planRules?: PlanRules;
   /** An Obligation's deadline, which caps how long a request for Approval stays open. */
   deadlineOf?: (
     studentId: string,
@@ -119,7 +123,7 @@ export function createDelegation({
   ) => Promise<Date | null>;
 }): Delegation {
   return {
-    ...createGate({ db, clock, executors, deadlineOf }),
+    ...createGate({ db, clock, executors, planRules, deadlineOf }),
     async meter(p, estimate, call, { timeoutMs = 120_000 } = {}) {
       if (!aiEnabled()) return { status: "refused", reason: "ai_disabled" };
       const reservationId = randomUUID();

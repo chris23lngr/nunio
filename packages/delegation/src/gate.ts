@@ -1,6 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
-import type { Decision, Refusal, Restrictions } from "./decision.js";
+import type { CapabilityId } from "./capabilities.js";
+import { capabilities } from "./capabilities.js";
+import type {
+  CapableAgent,
+  Decision,
+  PlanVerdict,
+  PresetAgent,
+  Refusal,
+  Restrictions,
+} from "./decision.js";
 import { decideAction } from "./decision.js";
 import type { ActionIntent, Args, GrantScope, Kind, Subject } from "./kinds.js";
 import { canonical, definitions, InvalidIntentError } from "./kinds.js";
@@ -53,6 +62,19 @@ export interface Executor {
 /** The pilot's one capability: Study Blocks within nunio's Plan. */
 export interface Executors {
   plan: Executor;
+}
+
+/** An Action on a Study Block. */
+export type BlockIntent = Extract<
+  ActionIntent,
+  { kind: "studyBlock.create" | "studyBlock.move" | "studyBlock.remove" }
+>;
+/**
+ * The Plan's rules for a Study Block Action, as `plan.check` applies them to a Chat's proposals, read in the gate's
+ * transaction. A port, because `delegation` never imports `planning`.
+ */
+export interface PlanRules {
+  check(tx: Transaction, intent: BlockIntent, now: Date): Promise<PlanVerdict>;
 }
 
 export type ActionOutcome =
@@ -132,6 +154,8 @@ export interface GateDeps {
   db: PrismaClient;
   clock: Clock;
   executors?: Executors;
+  /** Needed only to decide a free-text Agent's Study Block Actions. */
+  planRules?: PlanRules;
   /** An Obligation's deadline, which caps how long a request for Approval stays open. */
   deadlineOf?: (
     studentId: string,
@@ -356,11 +380,69 @@ async function subjectOf(
     start: block.start,
     end: block.end,
     placedBy: block.placedBy,
+    createdBy: block.createdByAgentId,
     locked: Boolean(block.lockedAt),
   };
 }
 
-export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
+/** The Run's Agent as the gate decides by it: a preset's scoped Grants, or a free-text Agent's Capabilities and Courses. */
+async function agentOf(
+  tx: Transaction,
+  agentId: string,
+): Promise<PresetAgent | CapableAgent> {
+  const current = await tx.agent.findUniqueOrThrow({
+    where: { id: agentId },
+    include: {
+      grants: true,
+      capabilities: true,
+      courses: { include: { course: true } },
+    },
+  });
+  if (current.preset)
+    return {
+      state: current.state,
+      // Only scoped Grants are a preset's: it acts only on its Course or exam.
+      grants: current.grants
+        .filter((g) => g.courseId || g.obligationId)
+        .map((g) => ({
+          id: g.id,
+          kind: g.kind as Kind,
+          scope: (g.courseId
+            ? { courseId: g.courseId }
+            : { obligationId: g.obligationId! }) as GrantScope,
+        })),
+      restrictions: current.restrictions as Restrictions,
+    };
+  return {
+    id: current.id,
+    state: current.state,
+    // A Capability no longer in code, or one that is no Action, authorises nothing.
+    capabilities: current.capabilities.flatMap(({ capability, mode }) =>
+      Object.hasOwn(capabilities, capability) && mode
+        ? [{ id: capability as CapabilityId, mode }]
+        : [],
+    ),
+    grants: current.grants.map((g) => ({ id: g.id, kind: g.kind as Kind })),
+    courseIds: current.courses
+      .filter(
+        ({ course }) => course.status === "accepted" && !course.archivedAt,
+      )
+      .map(({ courseId }) => courseId),
+  };
+}
+
+const isBlock = (intent: ActionIntent): intent is BlockIntent =>
+  intent.kind === "studyBlock.create" ||
+  intent.kind === "studyBlock.move" ||
+  intent.kind === "studyBlock.remove";
+
+export function createGate({
+  db,
+  clock,
+  executors,
+  planRules,
+  deadlineOf,
+}: GateDeps) {
   const event = (
     tx: Transaction,
     studentId: string,
@@ -584,30 +666,17 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
         if (run?.agentId)
           await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${run.agentId} FOR UPDATE`;
         // Read authority only after the lock, including changes committed while we waited.
-        const current = run?.agentId
-          ? await tx.agent.findUniqueOrThrow({
-              where: { id: run.agentId },
-              include: { grants: true },
-            })
-          : null;
-        const agent = current
-          ? {
-              state: current.state,
-              // A free-text Agent's Grants are unscoped: they act only once the gate checks the Agent's Courses.
-              grants: current.grants
-                .filter((g) => g.courseId || g.obligationId)
-                .map((g) => ({
-                  id: g.id,
-                  kind: g.kind as Kind,
-                  scope: (g.courseId
-                    ? { courseId: g.courseId }
-                    : { obligationId: g.obligationId! }) as GrantScope,
-                })),
-              restrictions: current.restrictions as Restrictions,
-            }
-          : null;
+        const agent = run?.agentId ? await agentOf(tx, run.agentId) : null;
         const subject = await subjectOf(tx, parsed);
         const now = clock.now();
+        let planCheck: PlanVerdict | null = null;
+        if (agent && "capabilities" in agent && subject && isBlock(parsed)) {
+          if (!planRules)
+            throw new Error(
+              "createDelegation needs planRules to decide an Agent's Study Block Actions",
+            );
+          planCheck = await planRules.check(tx, parsed, now);
+        }
         const fingerprint = subject
           ? (definition.fingerprint as (a: Args, s: Subject) => string)(
               args,
@@ -624,6 +693,7 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
           intoProtectedTime:
             intent.kind !== "studyBlock.remove" &&
             (await intoProtectedTime(tx, args as { start?: Date; end?: Date })),
+          planCheck,
           approval: existing?.approval
             ? {
                 id: existing.approval.id,
@@ -714,9 +784,13 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
             startedAt: now,
           },
         });
+        // A Preference it breaks on Immer erlaubt is noted for the Run's Activity.
         await event(tx, studentId, actionId, "dispatched", {
           ...decision.authority,
           attemptId,
+          ...(decision.brokenPreferences && {
+            brokenPreferences: decision.brokenPreferences,
+          }),
         });
         return {
           dispatch: {

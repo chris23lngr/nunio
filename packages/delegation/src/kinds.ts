@@ -54,6 +54,8 @@ export interface BlockSubject extends WorkSubject {
   start: Date;
   end: Date;
   placedBy: "nunio" | "student";
+  /** The Agent whose own block it is: the one that created it, until the student moves it. */
+  createdBy: string | null;
   locked: boolean;
 }
 /** ...and about the Task a reopening would change. */

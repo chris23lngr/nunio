@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { Restrictions, Snapshot } from "./decision.js";
+import type {
+  AgentCapability,
+  ApprovalMode,
+  CapabilityId,
+} from "./capabilities.js";
+import type {
+  BrokenPreference,
+  PlanRefusal,
+  Restrictions,
+  Snapshot,
+} from "./decision.js";
 import { decideAction } from "./decision.js";
 
 const now = new Date("2026-11-10T08:00:00Z");
@@ -7,6 +17,7 @@ const block = {
   courseId: "course-1",
   obligationId: "obligation-1",
   placedBy: "nunio" as const,
+  createdBy: null,
   locked: false,
   start: new Date("2026-11-10T09:00:00Z"),
   end: new Date("2026-11-10T10:00:00Z"),
@@ -31,6 +42,7 @@ const base: Snapshot = {
   now,
   agent: active,
   intoProtectedTime: false,
+  planCheck: null,
   approval: null,
 };
 const dispatchByGrant = {
@@ -238,5 +250,332 @@ describe("Restrictions", () => {
         ).toBeLessThanOrEqual(rank(unrestricted));
       }
     }
+  });
+});
+
+describe("a free-text Agent's Actions (ADR-0001)", () => {
+  const work = { courseId: "course-1", obligationId: "obligation-1" };
+  /** Far enough ahead that nothing changes within the next 24 hours. */
+  const later = {
+    start: new Date("2026-11-12T09:00:00Z"),
+    end: new Date("2026-11-12T10:00:00Z"),
+  };
+  const soon = {
+    start: new Date("2026-11-11T07:00:00Z"),
+    end: new Date("2026-11-11T08:00:00Z"),
+  };
+  const create = (span = later): Partial<Snapshot> => ({
+    intent: {
+      kind: "studyBlock.create",
+      args: { workId: "obligation-1", ...span },
+    },
+    subject: work,
+  });
+  const own = { ...block, ...later, createdBy: "agent-1" };
+  const move = (
+    subject: object = own,
+    span = {
+      start: new Date("2026-11-13T09:00:00Z"),
+      end: new Date("2026-11-13T10:00:00Z"),
+    },
+  ): Partial<Snapshot> => ({
+    intent: {
+      kind: "studyBlock.move",
+      args: { studyBlockId: "block-1", ...span },
+    },
+    subject: { ...own, ...subject },
+  });
+  const remove = (subject: object = own): Partial<Snapshot> => {
+    const target = { ...own, ...subject };
+    return {
+      intent: {
+        kind: "studyBlock.remove",
+        args: {
+          studyBlockId: "block-1",
+          workId: "obligation-1",
+          start: target.start,
+          end: target.end,
+        },
+      },
+      subject: target,
+    };
+  };
+  const modes = {
+    createStudyBlocks: "automatic",
+    moveOwnStudyBlocks: "automatic",
+    moveStudyBlocks: "ask",
+    removeOwnStudyBlocks: "automatic",
+  } as const;
+  type Held = Partial<Record<CapabilityId, ApprovalMode>>;
+  const agent = (held: Held = modes) => ({
+    id: "agent-1",
+    state: "active" as const,
+    capabilities: Object.entries(held).map(
+      ([id, mode]) => ({ id, mode }) as AgentCapability,
+    ),
+    grants: [
+      { id: "grant-create", kind: "studyBlock.create" as const },
+      { id: "grant-move", kind: "studyBlock.move" as const },
+      { id: "grant-remove", kind: "studyBlock.remove" as const },
+    ],
+    courseIds: ["course-1"],
+  });
+  const withModes = (held: Held) => ({
+    agent: agent({ ...modes, ...held }),
+  });
+  const verdict = (
+    refusals: PlanRefusal[] = [],
+    brokenPreferences: BrokenPreference[] = [],
+  ) => ({ planCheck: { refusals, brokenPreferences } });
+  const byGrant = (grantId: string, extra: object = {}) => ({
+    outcome: "dispatch",
+    authority: { grantId },
+    ...extra,
+  });
+  const byApproval = {
+    outcome: "dispatch",
+    authority: { approvalId: "approval-1" },
+  };
+  const situation = (...parts: Partial<Snapshot>[]): Partial<Snapshot> =>
+    Object.assign({ agent: agent(), ...verdict() }, ...parts);
+
+  it.each<[string, Partial<Snapshot>, object]>([
+    // Modes
+    [
+      "creates a block on Automatisch",
+      situation(create()),
+      byGrant("grant-create"),
+    ],
+    [
+      "creates a block on Immer erlaubt",
+      situation(create(), withModes({ createStudyBlocks: "always" })),
+      byGrant("grant-create"),
+    ],
+    [
+      "asks on Nachfragen",
+      situation(create(), withModes({ createStudyBlocks: "ask" })),
+      ask,
+    ],
+    [
+      "asks on Automatisch when the block would break a Preference",
+      situation(create(), verdict([], ["outside_study_window"])),
+      ask,
+    ],
+    [
+      "acts on Immer erlaubt despite a broken Preference, and notes it",
+      situation(
+        create(),
+        withModes({ createStudyBlocks: "always" }),
+        verdict([], ["daily_limit", "work_limit"]),
+      ),
+      byGrant("grant-create", {
+        brokenPreferences: ["daily_limit", "work_limit"],
+      }),
+    ],
+    [
+      "asks on Automatisch for a block that starts within the next 24 hours",
+      situation(create(soon)),
+      ask,
+    ],
+    [
+      "acts on Automatisch for a block that starts exactly 24 hours ahead",
+      situation(
+        create({
+          start: new Date("2026-11-11T08:00:00Z"),
+          end: new Date("2026-11-11T09:00:00Z"),
+        }),
+      ),
+      byGrant("grant-create"),
+    ],
+    [
+      "acts on Immer erlaubt for a block within the next 24 hours",
+      situation(create(soon), withModes({ createStudyBlocks: "always" })),
+      byGrant("grant-create"),
+    ],
+    [
+      "refuses a kind the Agent has no Capability for",
+      situation(create(), { agent: agent({ moveOwnStudyBlocks: "always" }) }),
+      refuse("no_capability"),
+    ],
+    [
+      "asks when its mode holds a Grant the Agent does not have yet",
+      situation(create(), {
+        agent: { ...agent(), grants: [] },
+      }),
+      ask,
+    ],
+    // Own and others' blocks
+    [
+      "moves its own block on Automatisch",
+      situation(move()),
+      byGrant("grant-move"),
+    ],
+    [
+      "asks on Automatisch to move its own block away from the next 24 hours",
+      situation(move({ ...soon })),
+      ask,
+    ],
+    [
+      "asks on Automatisch to move its own block into the next 24 hours",
+      situation(move(own, soon)),
+      ask,
+    ],
+    [
+      "asks to move a block the student placed, even on Immer erlaubt",
+      situation(
+        move({ createdBy: null, placedBy: "student" }),
+        withModes({ moveOwnStudyBlocks: "always" }),
+      ),
+      ask,
+    ],
+    [
+      "asks to move a block nunio placed outside this Agent",
+      situation(
+        move({ createdBy: null }),
+        withModes({ moveOwnStudyBlocks: "always" }),
+      ),
+      ask,
+    ],
+    [
+      "asks to move another Agent's block",
+      situation(
+        move({ createdBy: "agent-2" }),
+        withModes({ moveOwnStudyBlocks: "always" }),
+      ),
+      ask,
+    ],
+    [
+      "refuses to move others' blocks without Lernblöcke verschieben",
+      situation(move({ createdBy: null }), {
+        agent: agent({ moveOwnStudyBlocks: "always" }),
+      }),
+      refuse("no_capability"),
+    ],
+    [
+      "ignores Lernblöcke verschieben stored on a mode it does not allow",
+      situation(move({ createdBy: null }), {
+        agent: agent({
+          moveOwnStudyBlocks: "always",
+          moveStudyBlocks: "always",
+        }),
+      }),
+      refuse("no_capability"),
+    ],
+    [
+      "asks to move its own block with only Lernblöcke verschieben",
+      situation(move(), { agent: agent({ moveStudyBlocks: "ask" }) }),
+      ask,
+    ],
+    [
+      "removes its own block on Automatisch",
+      situation(remove()),
+      byGrant("grant-remove"),
+    ],
+    [
+      "asks on Automatisch to remove its own block within the next 24 hours",
+      situation(remove(soon)),
+      ask,
+    ],
+    [
+      "refuses to remove a block it did not create: no Capability does",
+      situation(remove({ createdBy: null })),
+      refuse("no_capability"),
+    ],
+    // Scope
+    [
+      "refuses work outside the Agent's Courses",
+      situation(create(), { subject: { ...work, courseId: "course-2" } }),
+      refuse("out_of_scope"),
+    ],
+    [
+      "refuses work in no Course",
+      situation(create(), { subject: { courseId: null, obligationId: null } }),
+      refuse("out_of_scope"),
+    ],
+    [
+      "refuses an Approval for a Course since removed or Archived",
+      situation(create(), withModes({ createStudyBlocks: "ask" }), {
+        agent: { ...agent(), courseIds: [] },
+        approval: approved,
+      }),
+      refuse("out_of_scope"),
+    ],
+    [
+      "refuses moving another Course's block, without asking",
+      situation(move({ createdBy: null, courseId: "course-2" })),
+      refuse("out_of_scope"),
+    ],
+    // Approvals
+    [
+      "acts on an Approval of the exact Action on Nachfragen",
+      situation(create(), withModes({ createStudyBlocks: "ask" }), {
+        approval: approved,
+      }),
+      byApproval,
+    ],
+    [
+      "acts on an Approval to move another's block",
+      situation(move({ createdBy: null }), { approval: approved }),
+      byApproval,
+    ],
+    [
+      "keeps waiting for an unanswered Approval",
+      situation(create(soon), { approval: requested }),
+      ask,
+    ],
+    [
+      "refuses a denied Approval",
+      situation(create(), { approval: { ...requested, decision: "denied" } }),
+      refuse("approval_denied"),
+    ],
+    [
+      "refuses an Approval of a different Action",
+      situation(create(), { approval: approved, fingerprint: "fp-2" }),
+      refuse("approval_mismatch"),
+    ],
+    [
+      "refuses for a Paused Agent",
+      situation(create(), { agent: { ...agent(), state: "paused" } }),
+      refuse("paused"),
+    ],
+    [
+      "refuses work the student does not own",
+      situation(create(), { subject: null }),
+      refuse("not_owner"),
+    ],
+    [
+      "refuses moving its own block once it has started, even when approved",
+      situation(move({ start: now }), { approval: approved }),
+      refuse("started"),
+    ],
+  ])("%s", (_, change, expected) => {
+    expect(decideAction({ ...base, ...change })).toEqual(expected);
+  });
+
+  /** What the Plan's rules refuse (`plan.check`), refused on every mode and despite an Approval. */
+  describe.each<PlanRefusal>([
+    "locked",
+    "started",
+    "past",
+    "protected_time",
+    "fixed_event",
+    "study_block",
+  ])("refuses %s", (reason) => {
+    it.each([
+      ["Immer erlaubt", withModes({ createStudyBlocks: "always" })],
+      ["Automatisch", withModes({ createStudyBlocks: "automatic" })],
+      ["Nachfragen", withModes({ createStudyBlocks: "ask" })],
+      [
+        "an Approval",
+        { ...withModes({ createStudyBlocks: "ask" }), approval: approved },
+      ],
+    ])("on %s", (_, mode) => {
+      expect(
+        decideAction({
+          ...base,
+          ...situation(create(), verdict([reason]), mode as Partial<Snapshot>),
+        }),
+      ).toEqual(refuse(reason));
+    });
   });
 });

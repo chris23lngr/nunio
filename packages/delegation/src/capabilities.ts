@@ -16,6 +16,8 @@ type Capability = {
   description: string;
   /** The Action it takes. */
   kind: Kind;
+  /** It covers only Study Blocks this Agent created and the student has not moved since (ADR-0001). */
+  ownBlocks?: true;
   /** The modes the student may pick, the first being its default when added. */
   modes: readonly [ApprovalMode, ...ApprovalMode[]];
 };
@@ -37,6 +39,7 @@ export const capabilities = {
     title: "Eigene Lernblöcke verschieben",
     description: "Nur Blöcke, die dieser Agent erstellt hat.",
     kind: "studyBlock.move",
+    ownBlocks: true,
     modes: ["automatic", "always", "ask"],
   },
   // Blocks the Agent did not create, the student's own included, are always asked (ADR-0001).
@@ -52,6 +55,7 @@ export const capabilities = {
     title: "Eigene Lernblöcke entfernen",
     description: "Nur Blöcke, die dieser Agent erstellt hat.",
     kind: "studyBlock.remove",
+    ownBlocks: true,
     modes: ["automatic", "always", "ask"],
   },
 } as const satisfies Record<string, Capability>;
