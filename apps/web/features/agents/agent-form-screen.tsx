@@ -25,18 +25,19 @@ import type { ReactNode } from "react";
 import { useId, useState } from "react";
 import { CourseDot } from "@/features/shared/components/course-dot";
 import { PageHeader } from "@/features/shared/components/page-header";
+import { courseSize, unavailable } from "./agent-course";
 import { saveAgent } from "./api/agent-mutations";
 import type { Agent, AgentCourse } from "./api/agent-queries";
 import { agentCourseQueries } from "./api/agent-queries";
 import { EditCoursesSheet } from "./components/edit-courses-sheet";
-import { courseSize } from "./course-size";
 
 type Draft = {
   name: string;
   description: string;
   emoji: string;
   instructions: string;
-  courseIds: string[];
+  /** Its Courses as last read, so one that is no longer on offer still shows and can be taken off. */
+  courses: AgentCourse[];
   /** In USD, as typed. */
   budget: string;
 };
@@ -47,7 +48,7 @@ const blank: Draft = {
   description: "",
   emoji: "🤖",
   instructions: "",
-  courseIds: [],
+  courses: [],
   budget: "5",
 };
 /** The API's cap on a monthly Budget, in USD. */
@@ -69,7 +70,7 @@ const draftOf = (agent: Saved): Draft => ({
   description: agent.description,
   emoji: agent.emoji,
   instructions: agent.instructions,
-  courseIds: agent.courses.map((course) => course.id),
+  courses: agent.courses,
   budget: String(agent.budget.limitMicroUsd / 1_000_000),
 });
 
@@ -143,20 +144,10 @@ export function AgentFormScreen({
     save.reset();
   };
 
-  const known = new Map<string, AgentCourse>(
-    [...(agent?.courses ?? []), ...(offered.data ?? [])].map((course) => [
-      course.id,
-      course,
-    ]),
-  );
-  const chosen = draft.courseIds.flatMap((courseId) => {
-    const course = known.get(courseId);
-    return course ? [course] : [];
-  });
   const budget = Number(draft.budget);
   const errors = {
     name: draft.name.trim() ? null : "Gib deinem Agenten einen Namen.",
-    courses: draft.courseIds.length ? null : "Wähle mindestens einen Kurs.",
+    courses: draft.courses.length ? null : "Wähle mindestens einen Kurs.",
     budget:
       draft.budget.trim() && budget > 0 && budget <= maxBudget
         ? null
@@ -174,7 +165,7 @@ export function AgentFormScreen({
         description: draft.description.trim(),
         emoji: draft.emoji,
         instructions: draft.instructions.trim(),
-        courseIds: draft.courseIds,
+        courseIds: draft.courses.map((course) => course.id),
         budgetMicroUsd: Math.round(budget * 1_000_000),
       })
       .catch(() => {
@@ -360,9 +351,9 @@ export function AgentFormScreen({
                     Alles Vorwissen aus diesen Kursen fließt in das Wissen des
                     Agenten ein.
                   </p>
-                  {!!chosen.length && (
+                  {!!draft.courses.length && (
                     <ul aria-label="Kurse" className="mt-3 flex flex-col gap-3">
-                      {chosen.map((course) => (
+                      {draft.courses.map((course) => (
                         <li
                           key={course.id}
                           className="flex items-start gap-2 rounded-lg border border-base-200 px-4 py-3"
@@ -375,9 +366,9 @@ export function AgentFormScreen({
                               <span className="min-w-0 truncate text-sm font-medium text-base-800">
                                 {course.title}
                               </span>
-                              {course.archived && (
+                              {unavailable(course, offered.data) && (
                                 <span className="shrink-0 rounded-sm bg-base-100 px-1.5 text-xs leading-5 text-base-600">
-                                  Archiviert
+                                  {unavailable(course, offered.data)}
                                 </span>
                               )}
                             </span>
@@ -453,9 +444,9 @@ export function AgentFormScreen({
         offered={offered.data ?? []}
         loading={offered.isPending}
         error={offered.error?.message}
-        selected={draft.courseIds}
-        onSave={(courseIds) => {
-          change({ courseIds });
+        selected={draft.courses}
+        onSave={(courses) => {
+          change({ courses });
           setEditingCourses(false);
         }}
         onClose={() => setEditingCourses(false)}

@@ -2,7 +2,11 @@ import type { paths } from "@nunio/api-client";
 import type { QueryClient } from "@tanstack/react-query";
 import { mutationOptions } from "@tanstack/react-query";
 import { createApiClient } from "@/lib/api-client";
-import { agentListQueries, agentQueries } from "./agent-queries";
+import {
+  agentCourseQueries,
+  agentListQueries,
+  agentQueries,
+} from "./agent-queries";
 
 type Delegate = Extract<
   paths["/api/me/agents"]["post"]["requestBody"]["content"]["application/json"],
@@ -69,6 +73,11 @@ export function saveAgent(
           queryKey: agentQueries(apiOrigin, saved).queryKey,
         }),
       ]),
+    // A Course may have been Archived or deleted meanwhile: show which, so it can be taken off.
+    onError: () =>
+      queryClient.invalidateQueries({
+        queryKey: agentCourseQueries(apiOrigin).queryKey,
+      }),
   });
 }
 

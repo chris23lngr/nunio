@@ -215,6 +215,8 @@ test("a saved Agent's form shows its Courses, an Archived one as archived, and S
 
   await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
+  // Shown once the saved Agent is read back, so no request outlives the test.
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
   await waitFor(() =>
     expect(saved).toEqual([
       {
@@ -229,7 +231,7 @@ test("a saved Agent's form shows its Courses, an Archived one as archived, and S
   );
 });
 
-test("'Kurse verwalten' searches, reflects the Agent's Courses and offers no Archived Course", async () => {
+test("'Kurse verwalten' searches, reflects the Agent's Courses, and lists an Archived one only to remove it", async () => {
   const saved: unknown[] = [];
   api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
   api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
@@ -253,8 +255,12 @@ test("'Kurse verwalten' searches, reflects the Agent's Courses and offers no Arc
     ["Algorithms and Data Structures1 Thema · 1 Quelle", "false"],
     ["Statistics II12 Themen · 3 Quellen", "true"],
     ["Microeconomics4 Themen · 0 Quellen", "false"],
+    ["Alte VorlesungArchiviert2 Themen · 1 Quelle", "true"],
   ]);
-  expect(within(sheet).queryByText("Alte Vorlesung")).toBeNull();
+  // Once unchecked, an Archived Course is gone from the Agent: the sheet offers it no more.
+  await userEvent.click(
+    within(sheet).getByRole("checkbox", { name: /Alte Vorlesung/ }),
+  );
 
   await userEvent.type(
     within(sheet).getByRole("searchbox", { name: "Kurse durchsuchen" }),
@@ -272,14 +278,69 @@ test("'Kurse verwalten' searches, reflects the Agent's Courses and offers no Arc
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
-  // The Archived Course stays on the Agent: the sheet only changes the Courses it offers.
-  await waitFor(() =>
-    expect(saved).toEqual([
-      expect.objectContaining({
-        courseIds: [ids.archived, ids.statistics, ids.micro],
-      }),
-    ]),
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  expect(saved).toEqual([
+    expect.objectContaining({ courseIds: [ids.statistics, ids.micro] }),
+  ]);
+});
+
+test("a Course Archived while the form is open shows as unavailable and can be taken off before saving", async () => {
+  let courses = offered;
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/courses", () => Response.json(courses));
+  api.route("POST", "/api/me/agents", async (request) => {
+    const body = (await request.json()) as { courseIds: string[] };
+    saved.push(body);
+    return body.courseIds.includes(ids.statistics)
+      ? Response.json({ error: "course_archived" }, { status: 409 })
+      : Response.json({ id: "a-1" }, { status: 201 });
+  });
+  renderScreen(<AgentFormScreen apiOrigin={api.origin} agent={null} />);
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Name" }),
+    "Statistik",
   );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Kurse bearbeiten" }),
+  );
+  let sheet = await screen.findByRole("dialog", { name: "Kurse verwalten" });
+  await userEvent.click(
+    await within(sheet).findByRole("checkbox", { name: /Statistics II/ }),
+  );
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // Archived elsewhere meanwhile.
+  courses = offered.filter((course) => course.id !== ids.statistics);
+
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect((await screen.findByRole("alert")).textContent).toMatch(/archiviert/);
+  const chosen = screen.getByRole("list", { name: "Kurse" });
+  expect(await within(chosen).findByText("Nicht mehr verfügbar")).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Kurse bearbeiten" }),
+  );
+  sheet = await screen.findByRole("dialog", { name: "Kurse verwalten" });
+  const stale = within(sheet).getByRole("checkbox", { name: /Statistics II/ });
+  expect(stale.closest("label")?.textContent).toMatch(/Nicht mehr verfügbar/);
+  expect(stale.getAttribute("aria-checked")).toBe("true");
+  await userEvent.click(stale);
+  await userEvent.click(
+    within(sheet).getByRole("checkbox", { name: /Microeconomics/ }),
+  );
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  await waitFor(() => expect(replace).toHaveBeenCalledWith("/agents/a-1"));
+  expect(saved).toEqual([
+    expect.objectContaining({ courseIds: [ids.statistics] }),
+    expect.objectContaining({ courseIds: [ids.micro] }),
+  ]);
 });
 
 test("Abbrechen closes 'Kurse verwalten' without changing the Agent's Courses", async () => {

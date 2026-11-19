@@ -19,12 +19,12 @@ import {
 import { Search } from "lucide-react";
 import { useState } from "react";
 import { CourseDot } from "@/features/shared/components/course-dot";
+import { courseSize, unavailable } from "../agent-course";
 import type { AgentCourse } from "../api/agent-queries";
-import { courseSize } from "../course-size";
 
 /**
- * "Kurse verwalten": picks the Agent's Courses among those it can be given. Courses it has that are no longer offered,
- * such as an Archived one, stay on the Agent.
+ * "Kurse verwalten": picks the Agent's Courses among those it can be given. A Course it has that is no longer offered,
+ * such as an Archived one, is listed after them, marked, only so it can be taken off.
  */
 export function EditCoursesSheet({
   open,
@@ -39,8 +39,8 @@ export function EditCoursesSheet({
   offered: AgentCourse[];
   loading: boolean;
   error?: string;
-  selected: string[];
-  onSave: (courseIds: string[]) => void;
+  selected: AgentCourse[];
+  onSave: (courses: AgentCourse[]) => void;
   onClose: () => void;
 }) {
   return (
@@ -73,13 +73,17 @@ function CourseChoice({
   offered: AgentCourse[];
   loading: boolean;
   error?: string;
-  selected: string[];
-  onSave: (courseIds: string[]) => void;
+  selected: AgentCourse[];
+  onSave: (courses: AgentCourse[]) => void;
   onClose: () => void;
 }) {
-  const [checked, setChecked] = useState(selected);
+  const [checked, setChecked] = useState(selected.map((course) => course.id));
   const [query, setQuery] = useState("");
-  const shown = offered.filter((course) =>
+  const listed = [
+    ...offered,
+    ...selected.filter((course) => unavailable(course, offered)),
+  ];
+  const shown = listed.filter((course) =>
     course.title.toLowerCase().includes(query.trim().toLowerCase()),
   );
   const toggle = (id: string) =>
@@ -147,6 +151,11 @@ function CourseChoice({
                         {course.title}
                       </span>
                       <CourseDot color={course.color} />
+                      {unavailable(course, offered) && (
+                        <span className="ml-0.5 shrink-0 rounded-sm bg-base-100 px-1.5 text-xs leading-5 text-base-600">
+                          {unavailable(course, offered)}
+                        </span>
+                      )}
                     </span>
                     <span className="text-xs leading-4 text-base-500">
                       {courseSize(course)}
@@ -161,13 +170,14 @@ function CourseChoice({
       <SheetFooter>
         <Button
           onClick={() =>
+            // The Agent's Courses still checked keep their order; newly checked ones follow.
             onSave([
-              ...selected.filter(
-                (id) =>
-                  checked.includes(id) ||
-                  !offered.some((course) => course.id === id),
+              ...selected.filter((course) => checked.includes(course.id)),
+              ...offered.filter(
+                (course) =>
+                  checked.includes(course.id) &&
+                  !selected.some((each) => each.id === course.id),
               ),
-              ...checked.filter((id) => !selected.includes(id)),
             ])
           }
         >
