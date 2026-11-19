@@ -4511,6 +4511,376 @@
           "next"
         ]
       },
+      "ActivityRun": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "done",
+              "stopped",
+              "failed"
+            ]
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "schedule",
+              "manual"
+            ]
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Null while it runs."
+          },
+          "stopReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it stopped or failed, such as budget_exhausted, paused, model_unavailable, model_ended_early or cancelled; null when done, or when a failure gave none."
+          },
+          "openApprovals": {
+            "type": "integer",
+            "description": "Its Approvals still open and unexpired; while any is, it needs the student's Approval (Freigabe benötigt)."
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "trigger",
+          "startedAt",
+          "endedAt",
+          "stopReason",
+          "openApprovals"
+        ]
+      },
+      "ActivityRunDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ActivityRun"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "costMicroUsd": {
+                "type": "integer",
+                "description": "What it cost: settled usage plus what its calls in flight hold."
+              },
+              "budgetMicroUsd": {
+                "type": "integer",
+                "description": "The Agent's monthly Budget it counts against."
+              },
+              "summary": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The Agent's own words on what it did; null without a final message, or once a Source it drew on is deleted."
+              },
+              "summaryGone": {
+                "type": "boolean",
+                "description": "It had a summary, gone with a Source it drew on that was deleted since."
+              },
+              "verlauf": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/VerlaufEntry"
+                }
+              }
+            },
+            "required": [
+              "costMicroUsd",
+              "budgetMicroUsd",
+              "summary",
+              "summaryGone",
+              "verlauf"
+            ]
+          }
+        ]
+      },
+      "VerlaufEntry": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "start"
+                ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "trigger": {
+                "type": "string",
+                "enum": [
+                  "schedule",
+                  "manual"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "at",
+              "trigger"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "read"
+                ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "step": {
+                "type": "integer"
+              },
+              "plan": {
+                "type": "boolean",
+                "description": "It read the Plan."
+              },
+              "courses": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Null once it is deleted (gelöscht)."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title"
+                  ]
+                },
+                "description": "The Courses whose Facts it read."
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Null once it is deleted (gelöscht)."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title"
+                  ]
+                },
+                "description": "The Sources it drew on."
+              }
+            },
+            "required": [
+              "type",
+              "at",
+              "step",
+              "plan",
+              "courses",
+              "sources"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "action"
+                ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "step": {
+                "type": "integer"
+              },
+              "capability": {
+                "type": "string",
+                "description": "The Capability whose tool was called."
+              },
+              "action": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "studyBlock.create",
+                      "studyBlock.move",
+                      "studyBlock.remove",
+                      "task.create",
+                      "task.reopen"
+                    ]
+                  },
+                  "work": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "title": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Null when its title can no longer be read."
+                      },
+                      "course": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "course"
+                    ],
+                    "description": "Its Obligation or Task as it is now, Archived Courses included; null once deleted (gelöscht)."
+                  },
+                  "start": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time",
+                    "description": "Where the block was put or removed from; null for an Action that places nothing in time."
+                  },
+                  "end": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "work",
+                  "start",
+                  "end"
+                ],
+                "description": "Null when the call named nothing the Run read, so nothing was asked."
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "done",
+                  "awaiting_approval",
+                  "refused",
+                  "failed",
+                  "unconfirmed"
+                ]
+              },
+              "refusal": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why it was refused, such as run_cap, open_approvals_cap, out_of_scope or locked; invalid when nothing was asked."
+              },
+              "brokenPreferences": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "outside_study_window",
+                    "daily_limit",
+                    "work_limit"
+                  ]
+                },
+                "description": "Preferences it broke under Immer erlaubt."
+              }
+            },
+            "required": [
+              "type",
+              "at",
+              "step",
+              "capability",
+              "action",
+              "outcome",
+              "refusal",
+              "brokenPreferences"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "end"
+                ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "done",
+                  "stopped",
+                  "failed"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "As the Run's stopReason."
+              }
+            },
+            "required": [
+              "type",
+              "at",
+              "status",
+              "reason"
+            ]
+          }
+        ]
+      },
       "Intervention": {
         "type": "object",
         "properties": {
@@ -14380,6 +14750,177 @@
           },
           "503": {
             "description": "The Run could not start (error not_started); nothing is under way, so asking again may start it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "description": "A free-text Agent's Runs for its Aktivität, newest first.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "required": true,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of its Runs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ActivityRun"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass it back for older Runs; null at the oldest."
+                    }
+                  },
+                  "required": [
+                    "runs",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/agents/{id}/runs/{runId}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "runId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Run, with its cost, summary and Verlauf.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityRunDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
             "content": {
               "application/json": {
                 "schema": {

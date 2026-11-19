@@ -1,6 +1,13 @@
 /** Chats: a selection of Courses and Sources, and the questions the student asks over it; and Agents' Runs, which read
  * with the same tools. */
 
+export {
+  type Activity,
+  type ActivityCursor,
+  type ActivityRun,
+  createActivity,
+  type VerlaufEntry,
+} from "./activity.js";
 export type { AgendaOutput } from "./agenda.js";
 export {
   type AgentRuns,

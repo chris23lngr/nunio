@@ -2,7 +2,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { Estimator, SeriesAssigner } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { pilotStatus } from "@nunio/billing";
-import type { Chats } from "@nunio/chat";
+import type { Activity, Chats } from "@nunio/chat";
 import type { PrismaClient } from "@nunio/db";
 import type { Agents, Delegation } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
@@ -55,6 +55,7 @@ export interface AppBindings {
     projects: Projects;
     courses: Courses;
     agents: Agents;
+    activity: Activity;
     runWorkflows: RunWorkflows;
     outreach: Outreach;
     artifacts: Artifacts;

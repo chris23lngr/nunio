@@ -1,8 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Embedder } from "@nunio/ai";
 import { createAgentModel, createModels } from "@nunio/ai";
-import type { AgentRuns } from "@nunio/chat";
-import { createAgentRuns } from "@nunio/chat";
+import type { Activity, AgentRuns } from "@nunio/chat";
+import { createActivity, createAgentRuns } from "@nunio/chat";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -44,6 +44,7 @@ let admin: PrismaClient;
 /** Connects as the restricted runtime role, as the worker does. */
 let runtime: PrismaClient;
 let runs: AgentRuns;
+let activity: Activity;
 let agents: ReturnType<typeof createAgents>;
 let sources: ReturnType<typeof createSources>;
 
@@ -227,6 +228,7 @@ beforeAll(async () => {
       }),
     clock,
   });
+  activity = createActivity({ db: runtime, keys, facts, clock });
 }, 180_000);
 
 afterAll(async () => {
@@ -651,6 +653,69 @@ describe("an Agent's Run", () => {
     });
     expect(prompts).toHaveLength(0);
   });
+
+  it("records its Verlauf: the start and its trigger, what each step read, and the end", async () => {
+    const s = await started();
+    const course = await admin.course.findFirstOrThrow({
+      where: { studentId: s.studentId },
+    });
+    const source = await admin.source.findFirstOrThrow({
+      where: { studentId: s.studentId },
+    });
+    script = [
+      () => calls("agenda", { from: day(0), to: day(13) }),
+      () => [
+        ...calls("courseFacts", { course: "K1" }),
+        ...calls("searchMaterial", { query: "Klausur" }),
+      ],
+      () => says("Deine Klausur ist am 3. März."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    const shown = await activity.run(s.p, s.agentId, s.runId);
+    expect(shown).toMatchObject({
+      status: "done",
+      trigger: "manual",
+      summary: "Deine Klausur ist am 3. März.",
+      openApprovals: 0,
+      // Three model steps and the search's embedding, each metered at 1.
+      costMicroUsd: 4,
+      budgetMicroUsd: 1_000_000,
+    });
+    expect(shown!.verlauf.map(({ at: _, ...entry }) => entry)).toEqual([
+      { type: "start", trigger: "manual" },
+      { type: "read", step: 1, plan: true, courses: [], sources: [] },
+      {
+        type: "read",
+        step: 2,
+        plan: false,
+        courses: [{ id: course.id, title: "Statistik II" }],
+        sources: [{ id: source.id, title: "Skript.pdf" }],
+      },
+      { type: "end", status: "done", reason: null },
+    ]);
+  });
+
+  it("ends its Verlauf with why it stopped, and has no summary", async () => {
+    const s = await started();
+    offered = [];
+
+    await run(s);
+
+    const shown = await activity.run(s.p, s.agentId, s.runId);
+    expect(shown).toMatchObject({
+      status: "stopped",
+      stopReason: "model_unavailable",
+      summary: null,
+      costMicroUsd: 0,
+    });
+    expect(shown!.verlauf.map((entry) => entry.type)).toEqual(["start", "end"]);
+    expect(shown!.verlauf.at(-1)).toMatchObject({
+      status: "stopped",
+      reason: "model_unavailable",
+    });
+  });
 });
 
 /** The four Lernblöcke Capabilities, each on the given mode or its default. */
@@ -770,6 +835,99 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
         select: { decision: true },
       }),
     ).toEqual([{ decision: null }]);
+  });
+
+  it("shows each Action call and its outcome in the Verlauf, refusals, run_cap and a broken Preference included", async () => {
+    // On Immer erlaubt a block outside the study window acts, and the broken Preference is noted.
+    const s = await started({
+      held: lernbloecke({ createStudyBlocks: "always" }),
+    });
+    script = [
+      readPlan,
+      () => [
+        ...createBlock(3, 3),
+        // Names nothing the Run read: refused, nothing asked, and not counted.
+        ...calls("createStudyBlocks", {
+          work: "O9",
+          start: `${day(4)}T10:00`,
+          end: `${day(4)}T11:00`,
+        }),
+        ...[4, 5, 6, 7, 8].flatMap((offset) => createBlock(offset)),
+      ],
+      () => says("Fertig."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    const verlauf = (await activity.run(s.p, s.agentId, s.runId))!.verlauf;
+    const created = {
+      kind: "studyBlock.create",
+      work: { title: "Klausur Statistik II", course: "Statistik II" },
+      start: expect.any(Date),
+      end: expect.any(Date),
+    };
+    expect(
+      verlauf
+        .filter((entry) => entry.type === "action")
+        .map(({ at: _, ...entry }) => entry),
+    ).toEqual([
+      {
+        type: "action",
+        step: 2,
+        capability: "createStudyBlocks",
+        action: created,
+        outcome: "done",
+        refusal: null,
+        brokenPreferences: expect.arrayContaining(["outside_study_window"]),
+      },
+      {
+        type: "action",
+        step: 2,
+        capability: "createStudyBlocks",
+        action: null,
+        outcome: "refused",
+        refusal: "invalid",
+        brokenPreferences: [],
+      },
+      ...Array(4).fill({
+        type: "action",
+        step: 2,
+        capability: "createStudyBlocks",
+        action: created,
+        outcome: "done",
+        refusal: null,
+        brokenPreferences: [],
+      }),
+      {
+        type: "action",
+        step: 2,
+        capability: "createStudyBlocks",
+        action: created,
+        outcome: "refused",
+        refusal: "run_cap",
+        brokenPreferences: [],
+      },
+    ]);
+    expect(verlauf.at(-1)).toMatchObject({ type: "end", status: "done" });
+  });
+
+  it("shows an asked Action in the Verlauf, and the Run as needing Approval while it stays open", async () => {
+    const s = await started({
+      held: lernbloecke({ createStudyBlocks: "ask" }),
+    });
+    script = [readPlan, () => createBlock(3), () => says("Gefragt.")];
+
+    await run(s);
+
+    const shown = await activity.run(s.p, s.agentId, s.runId);
+    expect(shown).toMatchObject({ status: "done", openApprovals: 1 });
+    expect(shown!.verlauf.find((e) => e.type === "action")).toMatchObject({
+      outcome: "awaiting_approval",
+      refusal: null,
+    });
+    expect(
+      (await activity.runs(s.p, s.agentId, { limit: 10 }))!.runs,
+    ).toMatchObject([{ id: s.runId, openApprovals: 1 }]);
   });
 
   it("refuses a sixth Action call in one step with run_cap and carries on", async () => {
@@ -991,6 +1149,55 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
     });
     expect(moved.start.getTime() - own.start.getTime()).toBe(86_400_000);
     expect(moved.createdByAgentId).toBe(s.agentId);
+  });
+
+  it("names an Action's work and times in the Verlauf as they were, after its block is removed and its Course Archived", async () => {
+    const { s, own } = await withOwnBlock();
+    const next = await requested(s.p, s.agentId);
+    script = [
+      readPlan,
+      () =>
+        calls("moveOwnStudyBlocks", {
+          block: "B1",
+          start: `${day(4)}T10:00`,
+          end: `${day(4)}T11:00`,
+        }),
+      () => says("Fertig."),
+    ];
+    await run(next);
+    const moved = await admin.studyBlock.findUniqueOrThrow({
+      where: { id: own.id },
+    });
+
+    await admin.studyBlock.delete({ where: { id: own.id } });
+    await admin.course.updateMany({
+      where: { studentId: s.studentId },
+      data: { archivedAt: new Date() },
+    });
+
+    const work = { title: "Klausur Statistik II", course: "Statistik II" };
+    const actionOf = async (runId: string) =>
+      (await activity.run(s.p, s.agentId, runId))!.verlauf.find(
+        (entry) => entry.type === "action",
+      );
+    expect(await actionOf(s.runId)).toMatchObject({
+      outcome: "done",
+      action: {
+        kind: "studyBlock.create",
+        work,
+        start: own.start,
+        end: own.end,
+      },
+    });
+    expect(await actionOf(next.runId)).toMatchObject({
+      outcome: "done",
+      action: {
+        kind: "studyBlock.move",
+        work,
+        start: moved.start,
+        end: moved.end,
+      },
+    });
   });
 
   it("removes its own block on its Grant, and asks to move the student's", async () => {

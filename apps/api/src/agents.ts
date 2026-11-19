@@ -1,5 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
+import type { ActivityCursor } from "@nunio/chat";
 import type { AgentScope } from "@nunio/delegation";
 import {
   approvalModes,
@@ -157,6 +158,124 @@ const Agent = z
       .describe("The next planned Action."),
   })
   .openapi("Agent");
+
+/** One of an Agent's Runs in its Aktivität list. */
+const ActivityRun = z
+  .object({
+    id: z.string(),
+    status: z.enum(["running", "done", "stopped", "failed"]),
+    trigger: z.enum(["schedule", "manual"]),
+    startedAt: z.date(),
+    endedAt: z.date().nullable().describe("Null while it runs."),
+    stopReason: z
+      .string()
+      .nullable()
+      .describe(
+        "Why it stopped or failed, such as budget_exhausted, paused, model_unavailable, model_ended_early or cancelled; null when done, or when a failure gave none.",
+      ),
+    openApprovals: z
+      .number()
+      .int()
+      .describe(
+        "Its Approvals still open and unexpired; while any is, it needs the student's Approval (Freigabe benötigt).",
+      ),
+  })
+  .openapi("ActivityRun");
+
+/** A Course or Source a Verlauf entry names, by its name now. */
+const Named = z.object({
+  id: z.string(),
+  title: z.string().nullable().describe("Null once it is deleted (gelöscht)."),
+});
+
+/** One entry of a Run's Verlauf, which nunio renders from structured events, never from what the model wrote. */
+const VerlaufEntrySchema = z
+  .discriminatedUnion("type", [
+    z.object({
+      type: z.literal("start"),
+      at: z.date(),
+      trigger: z.enum(["schedule", "manual"]),
+    }),
+    z.object({
+      type: z.literal("read"),
+      at: z.date(),
+      step: z.number().int(),
+      plan: z.boolean().describe("It read the Plan."),
+      courses: z.array(Named).describe("The Courses whose Facts it read."),
+      sources: z.array(Named).describe("The Sources it drew on."),
+    }),
+    z.object({
+      type: z.literal("action"),
+      at: z.date(),
+      step: z.number().int(),
+      capability: z.string().describe("The Capability whose tool was called."),
+      action: z
+        .object({
+          kind: ActionShown.shape.kind,
+          work: z
+            .object({
+              title: z
+                .string()
+                .nullable()
+                .describe("Null when its title can no longer be read."),
+              course: z.string().nullable(),
+            })
+            .nullable()
+            .describe(
+              "Its Obligation or Task as it is now, Archived Courses included; null once deleted (gelöscht).",
+            ),
+          start: z
+            .date()
+            .nullable()
+            .describe(
+              "Where the block was put or removed from; null for an Action that places nothing in time.",
+            ),
+          end: z.date().nullable(),
+        })
+        .nullable()
+        .describe(
+          "Null when the call named nothing the Run read, so nothing was asked.",
+        ),
+      outcome: z.enum([
+        "done",
+        "awaiting_approval",
+        "refused",
+        "failed",
+        "unconfirmed",
+      ]),
+      refusal: z
+        .string()
+        .nullable()
+        .describe(
+          "Why it was refused, such as run_cap, open_approvals_cap, out_of_scope or locked; invalid when nothing was asked.",
+        ),
+      brokenPreferences: z
+        .array(z.enum(["outside_study_window", "daily_limit", "work_limit"]))
+        .describe("Preferences it broke under Immer erlaubt."),
+    }),
+    z.object({
+      type: z.literal("end"),
+      at: z.date(),
+      status: z.enum(["done", "stopped", "failed"]),
+      reason: z.string().nullable().describe("As the Run's stopReason."),
+    }),
+  ])
+  .openapi("VerlaufEntry");
+
+/** An `activity` cursor in the URL: the last Run's start and ID. */
+const encodeCursor = ({ startedAt, id }: ActivityCursor) =>
+  Buffer.from(`${startedAt.toISOString()}|${id}`).toString("base64url");
+const Cursor = z.string().transform((cursor, ctx): ActivityCursor => {
+  const [at = "", id = ""] = Buffer.from(cursor, "base64url")
+    .toString()
+    .split("|");
+  const startedAt = new Date(at);
+  if (Number.isNaN(startedAt.getTime()) || !id) {
+    ctx.addIssue({ code: "custom", message: "Not a cursor." });
+    return z.NEVER;
+  }
+  return { startedAt, id };
+});
 
 type Review = Awaited<ReturnType<AppBindings["Variables"]["facts"]["review"]>>;
 
@@ -493,6 +612,113 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
         return c.json({ error: "not_started" }, 503);
       }
       return c.json({ id: requested.runId }, 201);
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/agents/{id}/runs",
+      description: "A free-text Agent's Runs for its Aktivität, newest first.",
+      request: {
+        params: id,
+        query: z.object({
+          limit: z.coerce.number().int().min(1).max(50),
+          cursor: Cursor.optional(),
+        }),
+      },
+      responses: {
+        200: json(
+          z.object({
+            runs: z.array(ActivityRun),
+            nextCursor: z
+              .string()
+              .nullable()
+              .describe("Pass it back for older Runs; null at the oldest."),
+          }),
+          "One page of its Runs.",
+        ),
+        ...errors,
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const page = await c
+        .get("activity")
+        .runs(p, c.req.valid("param").id, c.req.valid("query"));
+      if (!page) return c.json({ error: "gone" }, 404);
+      return c.json(
+        {
+          runs: page.runs,
+          nextCursor: page.nextCursor && encodeCursor(page.nextCursor),
+        },
+        200,
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/agents/{id}/runs/{runId}",
+      request: {
+        params: z.object({ id: z.string().uuid(), runId: z.string().uuid() }),
+      },
+      responses: {
+        200: json(
+          ActivityRun.extend({
+            costMicroUsd: z
+              .number()
+              .int()
+              .describe(
+                "What it cost: settled usage plus what its calls in flight hold.",
+              ),
+            budgetMicroUsd: z
+              .number()
+              .int()
+              .describe("The Agent's monthly Budget it counts against."),
+            summary: z
+              .string()
+              .nullable()
+              .describe(
+                "The Agent's own words on what it did; null without a final message, or once a Source it drew on is deleted.",
+              ),
+            summaryGone: z
+              .boolean()
+              .describe(
+                "It had a summary, gone with a Source it drew on that was deleted since.",
+              ),
+            verlauf: z.array(VerlaufEntrySchema),
+          }).openapi("ActivityRunDetail"),
+          "The Run, with its cost, summary and Verlauf.",
+        ),
+        ...errors,
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const { id: agentId, runId } = c.req.valid("param");
+      const run = await c.get("activity").run(p, agentId, runId);
+      if (!run) return c.json({ error: "gone" }, 404);
+      return c.json(
+        {
+          ...run,
+          verlauf: run.verlauf.map((entry) =>
+            entry.type === "action" && entry.action
+              ? {
+                  ...entry,
+                  action: {
+                    ...entry.action,
+                    kind: entry.action.kind as z.infer<
+                      typeof ActionShown
+                    >["kind"],
+                  },
+                }
+              : entry,
+          ),
+        },
+        200,
+      );
     },
   );
   for (const control of ["pause", "resume", "end"] as const) {
