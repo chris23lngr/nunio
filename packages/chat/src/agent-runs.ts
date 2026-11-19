@@ -21,6 +21,8 @@ import { createDerivedText, definitely } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
 import type { ModelMessage } from "ai";
+import type { ActionEvent } from "./activity.js";
+import { recordEvents } from "./activity.js";
 import { agendaTool } from "./agenda.js";
 import { chatContext } from "./context.js";
 import { courseFactsTool } from "./course-facts.js";
@@ -363,6 +365,24 @@ export function createAgentRuns({
       const derivedFrom = [
         ...new Set([...(run.steps.at(-1)?.derivedFrom ?? []), ...turn.sources]),
       ];
+      // What the step read, for the Verlauf: ids only, since names are looked up when shown.
+      const read = (name: string) =>
+        stepped.value.toolResults.filter((result) => result.toolName === name);
+      const reads = {
+        step: n,
+        plan: read("agenda").length > 0,
+        courseIds: [
+          ...new Set(
+            read("courseFacts").flatMap((result) => {
+              const course = context.courses.get(
+                (result.input as { course: `K${number}` }).course,
+              );
+              return course ? [course.id] : [];
+            }),
+          ),
+        ],
+        sourceIds: [...turn.sources],
+      };
       const answered = stepped.value.finishReason === "stop";
       // Read in order, so a block created by one call keeps its handle for the next; an answer acts on nothing.
       const calls: StoredCall[] = [];
@@ -404,6 +424,10 @@ export function createAgentRuns({
             handles: turn.handled(),
           },
         });
+        if (stepped.value.toolResults.length)
+          await recordEvents(tx, { runId, studentId: run.studentId }, [
+            { key: `read:${n}`, type: "read", detail: reads },
+          ]);
         return answered;
       });
       if (stored === "ended") return { status: "refused", reason: "run_ended" };
@@ -422,16 +446,58 @@ export function createAgentRuns({
       const step = await withOwner(db, p, (tx) =>
         tx.runStep.findUniqueOrThrow({
           where: { runId_n: { runId, n } },
-          select: { calls: true },
+          select: { calls: true, studentId: true },
         }),
       );
+      // Each call's outcome goes into the Verlauf once the gate decided it; a repeat writes nothing twice.
+      const record = (i: number, detail: Omit<ActionEvent, "step" | "call">) =>
+        withOwner(db, p, (tx) =>
+          recordEvents(tx, { runId, studentId: step.studentId }, [
+            {
+              key: `action:${n}:${i + 1}`,
+              type: "action",
+              detail: { step: n, call: i + 1, ...detail },
+            },
+          ]),
+        );
       for (const [i, call] of (
         (step.calls as StoredCall[] | null) ?? []
       ).entries()) {
-        if (!("intent" in call)) continue;
+        if (!("intent" in call)) {
+          await record(i, {
+            capability: call.toolName,
+            actionId: null,
+            outcome: "refused",
+            refusal: "invalid",
+            brokenPreferences: [],
+          });
+          continue;
+        }
         const outcome = await delegation.perform(p, {
           key: `${runId}:${n}:${i + 1}`,
           intent: intentOf(call),
+        });
+        // A Preference broken under Immer erlaubt is noted on the Action as the gate dispatched it.
+        const dispatched =
+          outcome.status === "refused"
+            ? null
+            : await withOwner(db, p, (tx) =>
+                tx.actionEvent.findFirst({
+                  where: { actionId: outcome.actionId, type: "dispatched" },
+                  select: { detail: true },
+                }),
+              );
+        await record(i, {
+          capability: call.toolName,
+          actionId: outcome.actionId,
+          outcome: outcome.status,
+          refusal: outcome.status === "refused" ? outcome.reason : null,
+          brokenPreferences:
+            (
+              dispatched?.detail as {
+                brokenPreferences?: ActionEvent["brokenPreferences"];
+              } | null
+            )?.brokenPreferences ?? [],
         });
         if (outcome.status === "unconfirmed") return { unconfirmed: true };
       }
