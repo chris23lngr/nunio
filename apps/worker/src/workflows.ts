@@ -1,14 +1,23 @@
 // Source ingestion and deletion workflows, plus the spike d checks. Workflow code is deterministic:
 // no I/O here, only Activities (durable-ai.md).
+
+import type { RunEnd } from "@nunio/chat";
 import {
+  CancellationScope,
   condition,
   defineSignal,
+  isCancellation,
   patched,
   proxyActivities,
   setHandler,
   sleep,
+  workflowInfo,
 } from "@temporalio/workflow";
 import type { Activities } from "./activities.js";
+import type {
+  AgentRunActivities,
+  AgentRunRef,
+} from "./agent-run-activities.js";
 import type { RunActivities, RunRef } from "./run-activities.js";
 import type {
   CourseRef,
@@ -172,6 +181,64 @@ export async function responsibilityRun(ref: RunRef) {
     }
   }
   return { status: "done" as const };
+}
+
+// A free-text Agent's Run (ADR-0006, #141): one bounded workflow, one Activity per model step. Messages and material
+// never cross into workflow history; the steps are persisted in Postgres. Starting and ending are safe to retry.
+const { startAgentRun, finishAgentRun } = proxyActivities<AgentRunActivities>({
+  startToCloseTimeout: "1 minute",
+  retry: {
+    initialInterval: "5 seconds",
+    maximumInterval: "1 minute",
+    maximumAttempts: 10,
+  },
+});
+// A step is paid, but claimed per (runId, n) before its model call: a retry calls the model again only after an
+// attempt whose call certainly cost nothing, never after one whose call may have been sent.
+const { agentStep } = proxyActivities<AgentRunActivities>({
+  startToCloseTimeout: "5 minutes",
+  retry: { initialInterval: "5 seconds", maximumAttempts: 3 },
+});
+
+/**
+ * Runs the Agent's model step by step until it answers; the step cap lives with the steps, whose last must answer.
+ * A refused step, such as a Paused Agent or an exhausted Budget, stops the Run; a failed one, or an error after its
+ * retries, fails it. However it ends, cancelled included, the Run is ended, so it never stays under way.
+ */
+export async function agentRun(ref: AgentRunRef) {
+  // The Run startAgentRun records or takes up, known even if starting fails.
+  const run = {
+    runId: ref.runId ?? workflowInfo().runId,
+    studentId: ref.studentId,
+  };
+  const finish = (end: RunEnd) =>
+    CancellationScope.nonCancellable(() => finishAgentRun({ run, end }));
+  let end: RunEnd = { status: "done" };
+  try {
+    const runId = await startAgentRun(ref);
+    if (!runId) return { status: "skipped" as const };
+    for (let n = 1; ; n++) {
+      const step = await agentStep({ runId, n });
+      if (step.status === "answered") break;
+      if (step.status === "refused") {
+        end = { status: "stopped", reason: step.reason };
+        break;
+      }
+      if (step.status === "failed") {
+        end = { status: "failed", reason: step.reason };
+        break;
+      }
+    }
+  } catch (error) {
+    await finish(
+      isCancellation(error)
+        ? { status: "stopped", reason: "cancelled" }
+        : { status: "failed" },
+    );
+    throw error;
+  }
+  await finish(end);
+  return end;
 }
 
 // An Artifact's Run (ADR-0006): one workflow, one Activity. A single attempt, like extraction: a model call that

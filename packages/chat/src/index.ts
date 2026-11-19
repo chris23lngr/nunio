@@ -1,6 +1,16 @@
-/** Chats: a selection of Courses and Sources, and the questions the student asks over it. */
+/** Chats: a selection of Courses and Sources, and the questions the student asks over it; and Agents' Runs, which read
+ * with the same tools. */
 
 export type { AgendaOutput } from "./agenda.js";
+export {
+  type AgentRuns,
+  createAgentRuns,
+  maxSteps,
+  type RunEnd,
+  type RunStepPart,
+  type StepOutcome,
+  summaryOf,
+} from "./agent-runs.js";
 export {
   type AskStep,
   type ChatCursor,

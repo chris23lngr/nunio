@@ -144,9 +144,21 @@ const grader: Grader = {
 /** What the API asked of Agent Schedules, and which Runs it woke, in order. */
 const scheduled: string[] = [];
 const signalled: { workflowId: string; runId: string; actionId: string }[] = [];
+/** The Agent Runs the API started now, in order; the worker would then run each. */
+const agentRunsStarted: {
+  studentId: string;
+  agentId: string;
+  runId: string;
+  workflowId: string;
+}[] = [];
+let agentRunsDown = false;
 const runWorkflows: RunWorkflows = {
   signalDecided: async (run, actionId) =>
     void signalled.push({ ...run, actionId }),
+  startAgentRun: async (run) => {
+    if (agentRunsDown) throw new Error("Temporal unavailable");
+    agentRunsStarted.push(run);
+  },
 };
 const schedules: Schedules = {
   create: async ({ agentId }) => void scheduled.push(`create ${agentId}`),
@@ -6972,6 +6984,107 @@ describe("a free-text Agent's form", () => {
       grants: [],
     });
     expect(await grantsOf(id)).toEqual([]);
+  });
+
+  it("starts a Run now with the saved configuration, and shows it under way until it ends", async () => {
+    const s = await student("agent-run-now");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      running: false,
+    });
+
+    const startedNow = await s.call("POST", `/${id}/runs`);
+
+    expect(startedNow.status).toBe(201);
+    const { id: runId } = (await startedNow.json()) as { id: string };
+    expect(agentRunsStarted.at(-1)).toEqual({
+      studentId: s.id,
+      agentId: id,
+      runId,
+      workflowId: `agentRun/${runId}`,
+    });
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      running: true,
+    });
+    // One Run at a time: nothing is queued.
+    const again = await s.call("POST", `/${id}/runs`);
+    expect(again.status).toBe(409);
+    expect(await again.json()).toEqual({ error: "running" });
+
+    await admin.run.update({
+      where: { id: runId },
+      data: { status: "done", endedAt: new Date() },
+    });
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      running: false,
+    });
+    expect((await s.call("POST", `/${id}/runs`)).status).toBe(201);
+  });
+
+  it("refuses to start a Run of a Paused or Ended Agent, or of a preset", async () => {
+    const s = await student("agent-run-refused");
+    const statistics = await course(s.id, "Statistics II");
+    const created = async () =>
+      (
+        (await (await s.call("POST", "", form([statistics]))).json()) as {
+          id: string;
+        }
+      ).id;
+    const paused = await created();
+    await s.call("POST", `/${paused}/pause`);
+    const ended = await created();
+    await s.call("POST", `/${ended}/end`);
+    const preset = (
+      (await (
+        await s.call("POST", "", {
+          preset: "keep_course_organized",
+          courseId: statistics,
+        })
+      ).json()) as { id: string }
+    ).id;
+    const before = agentRunsStarted.length;
+
+    for (const [agent, status, error] of [
+      [paused, 409, "paused"],
+      [ended, 409, "ended"],
+      [preset, 400, "invalid"],
+      [randomUUID(), 404, "gone"],
+    ] as const) {
+      const refused = await s.call("POST", `/${agent}/runs`);
+      expect([refused.status, await refused.json()]).toEqual([
+        status,
+        { error },
+      ]);
+    }
+    expect(agentRunsStarted).toHaveLength(before);
+    expect(
+      await admin.run.count({ where: { agentId: { in: [paused, ended] } } }),
+    ).toBe(0);
+  });
+
+  it("does not leave a Run under way when Temporal cannot start it", async () => {
+    const s = await student("agent-run-down");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+
+    agentRunsDown = true;
+    try {
+      const failed = await s.call("POST", `/${id}/runs`);
+      expect([failed.status, await failed.json()]).toEqual([
+        503,
+        { error: "not_started" },
+      ]);
+    } finally {
+      agentRunsDown = false;
+    }
+
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      running: false,
+    });
+    expect((await s.call("POST", `/${id}/runs`)).status).toBe(201);
   });
 
   it("lists the capability set the drawer offers, with each Capability's modes and default", async () => {

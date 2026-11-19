@@ -410,6 +410,10 @@ export function createAgents({
           },
         });
         if (!r) return null;
+        const running = await tx.run.findFirst({
+          where: { agentId: id, status: "running" },
+          select: { id: true },
+        });
         return {
           id: r.id,
           preset: r.preset as Preset | null,
@@ -434,6 +438,8 @@ export function createAgents({
           scope: scopeOf(r),
           state: r.state as "active" | "paused" | "ended",
           pausedBy: r.pausedBy as PausedBy | null,
+          /** One of its Runs is under way. */
+          running: Boolean(running),
           grants: r.grants.map((g) => ({
             kind: g.kind as Kind,
             courseId: g.courseId,
@@ -459,12 +465,17 @@ export function createAgents({
       });
     },
 
-    /** Records a Run of an active Agent, as its Schedule fires; null when it is not active. */
+    /**
+     * Records a Run of an active Agent as its Schedule fires, or takes up the one the student started now, and
+     * snapshots a free-text Agent's configuration for it. Null when the Agent is not active, or when a free-text
+     * Agent's other Run is still running: one Run at a time.
+     */
     async startRun({
       studentId,
       agentId,
       runId,
       workflowId,
+      modelKey = null,
     }: {
       studentId: string;
       agentId: string;
@@ -472,20 +483,103 @@ export function createAgents({
       runId: string;
       /** The workflow to signal once the student decides on one of the Run's Actions. */
       workflowId: string;
+      /** The Model a free-text Agent's Run runs on; null when none is offered. */
+      modelKey?: string | null;
     }) {
       return withOwner(db, mint.fromSession({ studentId }), async (tx) => {
         await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${agentId} FOR UPDATE`;
         const existing = await tx.run.findUnique({ where: { id: runId } });
-        if (existing) return existing.agentId === agentId ? existing.id : null;
         const agent = await tx.agent.findUnique({
           where: { id: agentId },
+          include: { capabilities: true },
         });
+        const snapshot = agent && {
+          instructions: agent.instructions,
+          capabilities: capabilityIds.flatMap((capability) =>
+            agent.capabilities
+              .filter((c) => c.capability === capability)
+              .map((c) => ({ id: capability, mode: c.mode })),
+          ),
+          modelKey,
+        };
+        if (existing) {
+          if (existing.agentId !== agentId) return null;
+          // A Run the student started now begins with the configuration saved as it starts.
+          if (
+            snapshot &&
+            existing.status === "running" &&
+            existing.instructions === null
+          )
+            await tx.run.update({ where: { id: runId }, data: snapshot });
+          return existing.id;
+        }
         if (agent?.state !== "active") return null;
+        if (
+          !agent.preset &&
+          (await tx.run.findFirst({ where: { agentId, status: "running" } }))
+        )
+          return null;
         const run = await tx.run.create({
-          data: { id: runId, studentId, agentId, workflowId },
+          data: {
+            id: runId,
+            studentId,
+            agentId,
+            workflowId,
+            ...(agent.preset
+              ? {}
+              : { status: "running", trigger: "schedule", ...snapshot }),
+          },
         });
         return run.id;
       });
+    },
+
+    /**
+     * Records a Run of a free-text Agent that the student starts now, for the caller to start its workflow. Refused
+     * while one of its Runs is running, or while it is Paused or Ended; a preset Agent has no such Run ("invalid").
+     */
+    async requestRun(
+      p: Principal,
+      id: string,
+    ): Promise<
+      | { status: "ok"; runId: string; workflowId: string }
+      | { status: "gone" | "invalid" | "running" | "paused" | "ended" }
+    > {
+      if (p.kind !== "student") return { status: "gone" };
+      return withOwner(db, p, async (tx, studentId) => {
+        await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
+        const agent = await tx.agent.findUnique({ where: { id } });
+        if (!agent) return { status: "gone" };
+        if (agent.preset) return { status: "invalid" };
+        if (agent.state !== "active") return { status: agent.state };
+        if (
+          await tx.run.findFirst({ where: { agentId: id, status: "running" } })
+        )
+          return { status: "running" };
+        const runId = randomUUID();
+        const workflowId = `agentRun/${runId}`;
+        await tx.run.create({
+          data: {
+            id: runId,
+            studentId,
+            agentId: id,
+            workflowId,
+            status: "running",
+            trigger: "manual",
+          },
+        });
+        return { status: "ok", runId, workflowId };
+      });
+    },
+
+    /** Records that a Run the student started never got under way, so it no longer blocks the next. */
+    async failRun(p: Principal, runId: string) {
+      await withOwner(db, p, (tx) =>
+        tx.run.updateMany({
+          where: { id: runId, status: "running" },
+          data: { status: "failed", endedAt: clock.now() },
+        }),
+      );
     },
 
     /**

@@ -10,19 +10,36 @@ export interface RunWorkflows {
     run: { workflowId: string; runId: string },
     actionId: string,
   ): Promise<void>;
+  /** Starts the workflow of a free-text Agent's Run that the student started now and the API already recorded. */
+  startAgentRun(run: {
+    studentId: string;
+    agentId: string;
+    runId: string;
+    workflowId: string;
+  }): Promise<void>;
 }
 
 /** Signals by workflow and run ID, so a decision never reaches another Run of the same Agent. */
 export function createRunWorkflows({
   client,
+  taskQueue,
 }: {
   client: Client;
+  taskQueue: string;
 }): RunWorkflows {
   return {
     async signalDecided({ workflowId, runId }, actionId) {
       await client.workflow
         .getHandle(workflowId, runId)
         .signal("approvalDecided", actionId);
+    },
+    // One workflow per Run (ADR-0006), under the ID the Run was recorded with.
+    async startAgentRun({ studentId, agentId, runId, workflowId }) {
+      await client.workflow.start("agentRun", {
+        taskQueue,
+        workflowId,
+        args: [{ studentId, agentId, runId }],
+      });
     },
   };
 }
@@ -58,11 +75,15 @@ export function runWorkflowsFromEnv(env: NodeJS.ProcessEnv) {
       client,
       taskQueue: required("TEMPORAL_TASK_QUEUE"),
     });
+  const runWorkflowsOf = (client: Client) =>
+    createRunWorkflows({ client, taskQueue: required("TEMPORAL_TASK_QUEUE") });
   const runWorkflows: RunWorkflows = {
     signalDecided: (run, actionId) =>
       withClient((client) =>
-        createRunWorkflows({ client }).signalDecided(run, actionId),
+        runWorkflowsOf(client).signalDecided(run, actionId),
       ),
+    startAgentRun: (run) =>
+      withClient((client) => runWorkflowsOf(client).startAgentRun(run)),
   };
   const schedules: Schedules = {
     create: (r) => withClient((client) => schedulesOf(client).create(r)),

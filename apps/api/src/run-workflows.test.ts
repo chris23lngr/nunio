@@ -23,7 +23,10 @@ describe("waking a Run on Temporal", () => {
       args: [{}],
     });
 
-    await createRunWorkflows({ client: env.client }).signalDecided(
+    await createRunWorkflows({
+      client: env.client,
+      taskQueue: "runs",
+    }).signalDecided(
       { workflowId, runId: handle.firstExecutionRunId },
       "action-1",
     );
@@ -38,5 +41,37 @@ describe("waking a Run on Temporal", () => {
     expect(
       Buffer.from(signalled[0]!.input!.payloads![0]!.data!).toString(),
     ).toBe('"action-1"');
+  });
+});
+
+describe("starting an Agent's Run on Temporal", () => {
+  it("starts one agentRun workflow under the Run's workflow ID, with the recorded Run", async () => {
+    const runId = randomUUID();
+    const workflowId = `agentRun/${runId}`;
+
+    await createRunWorkflows({
+      client: env.client,
+      taskQueue: "runs",
+    }).startAgentRun({
+      studentId: "student",
+      agentId: "agent",
+      runId,
+      workflowId,
+    });
+
+    const handle = env.client.workflow.getHandle(workflowId);
+    const described = await handle.describe();
+    expect(described.type).toBe("agentRun");
+    expect(described.taskQueue).toBe("runs");
+    const [started] = (await handle.fetchHistory()).events ?? [];
+    expect(
+      JSON.parse(
+        Buffer.from(
+          started!.workflowExecutionStartedEventAttributes!.input!.payloads![0]!
+            .data!,
+        ).toString(),
+      ),
+    ).toEqual({ studentId: "student", agentId: "agent", runId });
+    await handle.terminate();
   });
 });

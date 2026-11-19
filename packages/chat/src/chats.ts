@@ -307,7 +307,7 @@ export function createChats({
       // A Chat with nothing selected has nothing to search, nor Topics to practise.
       ...(history.selected
         ? {
-            searchMaterial: searchTool(turn, reader, p, chatId),
+            searchMaterial: searchTool(turn, reader, p, { chatId }),
             startPracticeSet: startArtifactTool("practice_set", turn, {
               reader,
               p,

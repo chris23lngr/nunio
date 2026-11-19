@@ -101,3 +101,30 @@ export function controlAgent(
       }),
   });
 }
+
+/** Starts a Run of a saved free-text Agent now, with its saved configuration; unsaved edits stay in the form. */
+export function startAgentRun(
+  apiOrigin: string,
+  id: string,
+  queryClient: QueryClient,
+) {
+  return mutationOptions({
+    mutationFn: async () => {
+      const result = await createApiClient(apiOrigin).POST(
+        "/api/me/agents/{id}/runs",
+        { params: { path: { id } } },
+      );
+      if (!result.data)
+        throw new Error(
+          result.response.status === 409
+            ? "Dein Agent läuft gerade oder ist pausiert oder beendet."
+            : "Dein Agent konnte nicht gestartet werden. Versuche es noch einmal.",
+        );
+    },
+    // Settles once the Agent is read back as running, so the button never flickers back meanwhile.
+    onSettled: () =>
+      queryClient.invalidateQueries({
+        queryKey: agentQueries(apiOrigin, id).queryKey,
+      }),
+  });
+}
