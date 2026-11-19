@@ -179,7 +179,7 @@ The monthly cap on AI usage for one Agent, which resets each month. An Agent tha
 _Avoid_: Limit, quota, allowance
 
 **Allowance**:
-The student's total included AI usage, shared across all Runs and the reading of Sources, and counted in the model cost it incurs. During the pilot only the founder increases it, manually; it does not reset automatically.
+The student's total included AI usage, shared across all Runs, Chats and the reading of Sources, and counted in the model cost it incurs. During the pilot only the founder increases it, manually; it does not reset automatically.
 _Avoid_: Credits, quota, budget
 
 **Model**:
