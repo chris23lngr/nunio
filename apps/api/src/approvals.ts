@@ -167,7 +167,7 @@ async function approvalsOf(c: Context<AppBindings>, p: Principal) {
     asking.flatMap((a) => (a.agentId ? [a.agentId] : [])),
   )) {
     const r = await c.get("agents").view(p, id);
-    if (r) presets.set(id, r.preset);
+    if (r) presets.set(id, r.preset ?? "");
   }
   return asking.map((a: ActionRecord) => ({
     actionId: a.id,

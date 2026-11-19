@@ -6513,6 +6513,8 @@ describe("Agents", () => {
       {
         id,
         preset: "keep_course_organized",
+        name: "",
+        emoji: "🤖",
         course: { id: s.courseId, title: "Analysis I" },
         exam: null,
         state: "ended",
@@ -6540,6 +6542,7 @@ describe("Agents", () => {
           kind: "agent",
           id: asked.agentId,
           preset: "keep_course_organized",
+          name: "",
           course: "Analysis I",
           exam: null,
           state: "active",
@@ -6579,6 +6582,247 @@ describe("Agents", () => {
         },
       },
     ]);
+  });
+});
+
+describe("a free-text Agent's form", () => {
+  /** A Course of the student's, accepted unless told otherwise. */
+  async function course(
+    studentId: string,
+    title: string,
+    data: { archivedAt?: Date; status?: "accepted" | "proposed" } = {},
+  ) {
+    const id = randomUUID();
+    await admin.course.create({
+      data: {
+        id,
+        studentId,
+        title,
+        matchTitle: title.toLowerCase(),
+        semester: "2026-ws",
+        color: "violet",
+        status: data.status ?? "accepted",
+        archivedAt: data.archivedAt ?? null,
+      },
+    });
+    return id;
+  }
+  async function student(name: string) {
+    const cookie = await signUp(name);
+    const id = await studentId(cookie);
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const call = (method: string, path: string, body?: unknown) =>
+      app.request(`${apiOrigin}/api/me/agents${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    return { id, call };
+  }
+  const form = (courseIds: string[]) => ({
+    name: "Klausur Statistik",
+    description: "Hält meine Klausurvorbereitung auf Kurs.",
+    emoji: "🤖",
+    instructions: "Bereite mich auf die Klausur in Statistics II vor.",
+    courseIds,
+    budgetMicroUsd: 5_000_000,
+  });
+
+  it("creates an Agent from the whole form and reads it back, each Course with its Topic and Source counts", async () => {
+    const s = await student("agent-form-create");
+    const statistics = await course(s.id, "Statistics II");
+    await admin.fact.createMany({
+      data: ["Regression", "Varianz", "Verworfen"].map((key) => ({
+        id: randomUUID(),
+        studentId: s.id,
+        courseId: statistics,
+        type: "topic" as const,
+        matchKey: key,
+        state:
+          key === "Verworfen" ? ("rejected" as const) : ("confirmed" as const),
+      })),
+    });
+    const source = (data: { courseId?: string; deletedAt?: Date }) =>
+      admin.source.create({
+        data: {
+          id: randomUUID(),
+          studentId: s.id,
+          title: "Vorlesung.pdf",
+          bytes: 1,
+          uploadExpiresAt: new Date(),
+          ...data,
+        },
+      });
+    await source({ courseId: statistics });
+    await source({ courseId: statistics, deletedAt: new Date() });
+    const matched = await source({});
+    await admin.sourceCourse.create({
+      data: { sourceId: matched.id, courseId: statistics, studentId: s.id },
+    });
+
+    const created = await s.call("POST", "", form([statistics]));
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+    const shown = await s.call("GET", `/${id}`);
+
+    expect(shown.status).toBe(200);
+    expect(await shown.json()).toMatchObject({
+      id,
+      preset: null,
+      name: "Klausur Statistik",
+      description: "Hält meine Klausurvorbereitung auf Kurs.",
+      emoji: "🤖",
+      instructions: "Bereite mich auf die Klausur in Statistics II vor.",
+      courses: [
+        {
+          id: statistics,
+          title: "Statistics II",
+          color: "violet",
+          archived: false,
+          topics: 2,
+          sources: 2,
+        },
+      ],
+      budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
+      state: "active",
+      grants: [],
+      next: { runAt: null, action: null },
+    });
+    // Its trigger is not built yet, so nothing starts its Runs.
+    expect(scheduled).not.toContain(`create ${id}`);
+    expect(await (await s.call("GET", "")).json()).toEqual([
+      expect.objectContaining({ id, preset: null, name: "Klausur Statistik" }),
+    ]);
+  });
+
+  it("updates the whole form, keeping a Course that was Archived since and showing it as archived", async () => {
+    const s = await student("agent-form-update");
+    const statistics = await course(s.id, "Statistics II");
+    const micro = await course(s.id, "Microeconomics");
+    const { id } = (await (
+      await s.call("POST", "", form([statistics]))
+    ).json()) as { id: string };
+    await admin.course.update({
+      where: { id: statistics },
+      data: { archivedAt: new Date() },
+    });
+
+    const updated = await s.call("PUT", `/${id}`, {
+      ...form([statistics, micro]),
+      name: "Mikro und Statistik",
+      description: "",
+      instructions: "Plane beide Kurse.",
+      budgetMicroUsd: 2_500_000,
+    });
+
+    expect(updated.status).toBe(200);
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      name: "Mikro und Statistik",
+      description: "",
+      instructions: "Plane beide Kurse.",
+      budget: { limitMicroUsd: 2_500_000 },
+      courses: expect.arrayContaining([
+        expect.objectContaining({ id: statistics, archived: true }),
+        expect.objectContaining({ id: micro, archived: false }),
+      ]),
+    });
+    expect(
+      (await (await s.call("PUT", `/${id}`, form([micro]))).json()) as object,
+    ).toEqual({ status: "ok" });
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      courses: [expect.objectContaining({ id: micro })],
+    });
+  });
+
+  it("requires at least one Course, and only the student's accepted, unarchived Courses can be added", async () => {
+    const s = await student("agent-form-courses");
+    const statistics = await course(s.id, "Statistics II");
+    const archived = await course(s.id, "Alte Vorlesung", {
+      archivedAt: new Date(),
+    });
+    const proposed = await course(s.id, "Vorgeschlagen", {
+      status: "proposed",
+    });
+    const stranger = await student("agent-form-stranger");
+    const theirs = await course(stranger.id, "Fremder Kurs");
+
+    expect((await s.call("POST", "", form([]))).status).toBe(400);
+    expect(
+      (await s.call("POST", "", { ...form([statistics]), name: " " })).status,
+    ).toBe(400);
+    const onArchived = await s.call("POST", "", form([archived]));
+    expect(onArchived.status).toBe(409);
+    expect(await onArchived.json()).toEqual({ error: "course_archived" });
+    expect((await s.call("POST", "", form([proposed]))).status).toBe(404);
+    expect((await s.call("POST", "", form([theirs]))).status).toBe(404);
+
+    const { id } = (await (
+      await s.call("POST", "", form([statistics]))
+    ).json()) as { id: string };
+    expect((await s.call("PUT", `/${id}`, form([]))).status).toBe(400);
+    expect(
+      (await s.call("PUT", `/${id}`, form([statistics, archived]))).status,
+    ).toBe(409);
+    expect((await stranger.call("PUT", `/${id}`, form([theirs]))).status).toBe(
+      404,
+    );
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      courses: [expect.objectContaining({ id: statistics })],
+    });
+  });
+
+  it("offers the student's accepted, unarchived Courses with their Topic and Source counts", async () => {
+    const s = await student("agent-form-offered");
+    const statistics = await course(s.id, "Statistics II");
+    await course(s.id, "Alte Vorlesung", { archivedAt: new Date() });
+    await course(s.id, "Vorgeschlagen", { status: "proposed" });
+
+    const offered = await s.call("GET", "/courses");
+
+    expect(offered.status).toBe(200);
+    expect(await offered.json()).toEqual([
+      {
+        id: statistics,
+        title: "Statistics II",
+        color: "violet",
+        archived: false,
+        topics: 0,
+        sources: 0,
+      },
+    ]);
+  });
+
+  it("leaves a preset Agent's form alone until the cutover", async () => {
+    const s = await withCourse("agent-form-preset");
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/agents`, {
+        method: "POST",
+        headers: s.headers,
+        body: JSON.stringify({
+          preset: "keep_course_organized",
+          courseId: s.courseId,
+        }),
+      })
+    ).json()) as { id: string };
+
+    const updated = await app.request(`${apiOrigin}/api/me/agents/${id}`, {
+      method: "PUT",
+      headers: s.headers,
+      body: JSON.stringify(form([s.courseId])),
+    });
+
+    expect(updated.status).toBe(400);
+    expect(
+      await (
+        await app.request(`${apiOrigin}/api/me/agents/${id}`, {
+          headers: { cookie: s.cookie },
+        })
+      ).json(),
+    ).toMatchObject({ preset: "keep_course_organized", courses: [] });
   });
 });
 
@@ -6636,6 +6880,7 @@ describe("'prepare me for this exam'", () => {
           kind: "agent",
           id,
           preset: "prepare_for_exam",
+          name: "",
           course: "Analysis I",
           exam: "Klausur",
           state: "active",

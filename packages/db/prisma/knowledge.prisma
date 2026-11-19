@@ -117,6 +117,7 @@ model Course {
   priorities  Priority[]
   preference  CoursePreference?
   projects    ProjectCourse[]
+  agents      AgentCourse[]
   boundSources Source[]
   distinctFrom DistinctCoursePair[] @relation("distinct")
   distinctTo   DistinctCoursePair[] @relation("distinctOther")

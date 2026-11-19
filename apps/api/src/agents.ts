@@ -1,6 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import type { AgentScope } from "@nunio/delegation";
+import { courseColors } from "@nunio/knowledge";
 import { deadline } from "@nunio/planning";
 import type { AppBindings } from "./app.js";
 import { ActionShown, describeAction } from "./approvals.js";
@@ -20,10 +21,64 @@ import {
 /** Every pilot Agent gets the same Budget; its presets make no model calls yet. */
 const defaultBudgetMicroUsd = 1_000_000;
 
+/** One of an Agent's Courses, or one it could be given, with what the Agent will read of it. */
+const AgentCourse = z
+  .object({
+    id: z.string(),
+    title: z.string(),
+    color: z.enum(courseColors),
+    archived: z
+      .boolean()
+      .describe("The Agent still reads it but no longer acts for it."),
+    topics: z.number().describe("How many Topics it has."),
+    sources: z.number().describe("How many Sources it has."),
+  })
+  .openapi("AgentCourse");
+
+/** A free-text Agent's form, saved whole. */
+const AgentForm = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    description: z.string().trim().max(500).describe("Its Beschreibung."),
+    emoji: z.string().trim().min(1).max(16),
+    instructions: z
+      .string()
+      .trim()
+      .max(4000)
+      .describe("What it should do, in the student's words."),
+    courseIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .max(50)
+      .describe(
+        "Its Courses: accepted, unarchived ones, or ones it already has.",
+      ),
+    budgetMicroUsd: z
+      .number()
+      .int()
+      .positive()
+      .max(100_000_000)
+      .describe("Its monthly Budget."),
+  })
+  .strict()
+  .openapi("AgentForm");
+
 const Agent = z
   .object({
     id: z.string(),
-    preset: z.enum(["keep_course_organized", "prepare_for_exam"]),
+    preset: z
+      .enum(["keep_course_organized", "prepare_for_exam"])
+      .nullable()
+      .describe("Null for a free-text Agent."),
+    name: z
+      .string()
+      .describe("Empty for a preset Agent, which is named after its scope."),
+    description: z.string(),
+    emoji: z.string(),
+    instructions: z.string(),
+    courses: z
+      .array(AgentCourse)
+      .describe("A free-text Agent's Courses; none for a preset Agent."),
     course: z.object({ id: z.string(), title: z.string() }).nullable(),
     exam: z
       .object({ id: z.string(), title: z.string() })
@@ -70,7 +125,8 @@ const Agent = z
 type Review = Awaited<ReturnType<AppBindings["Variables"]["facts"]["review"]>>;
 
 /** Names an Agent's scope as the student's review shows it: its Course and, for an exam, the exam. */
-export function scopeNames(review: Review, scope: AgentScope) {
+export function scopeNames(review: Review, scope: AgentScope | null) {
+  if (!scope) return { course: null, exam: null };
   const course =
     "courseId" in scope
       ? review.courses.find((c) => c.id === scope.courseId)
@@ -110,16 +166,21 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
     createRoute({
       method: "post",
       path: "/api/me/agents",
+      description:
+        "Create a free-text Agent from its form, or a pilot preset until the Agents cutover.",
       request: body(
-        z.discriminatedUnion("preset", [
-          z.object({
-            preset: z.literal("keep_course_organized"),
-            courseId: z.string().uuid(),
-          }),
-          z.object({
-            preset: z.literal("prepare_for_exam"),
-            obligationId: z.string().uuid(),
-          }),
+        z.union([
+          z.discriminatedUnion("preset", [
+            z.object({
+              preset: z.literal("keep_course_organized"),
+              courseId: z.string().uuid(),
+            }),
+            z.object({
+              preset: z.literal("prepare_for_exam"),
+              obligationId: z.string().uuid(),
+            }),
+          ]),
+          AgentForm,
         ]),
       ),
       responses: { 201: Created, ...archivedOutcomes },
@@ -132,7 +193,67 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
         c,
         await c
           .get("agents")
-          .create(p, { ...input, budgetMicroUsd: defaultBudgetMicroUsd }),
+          .create(
+            p,
+            "preset" in input
+              ? { ...input, budgetMicroUsd: defaultBudgetMicroUsd }
+              : input,
+          ),
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "put",
+      path: "/api/me/agents/{id}",
+      description:
+        "Save a free-text Agent's whole form; its next Run reads it. A preset Agent has no form (400).",
+      request: { params: id, ...body(AgentForm) },
+      responses: { 200: Done, ...archivedOutcomes },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(
+        c,
+        await c
+          .get("agents")
+          .update(p, c.req.valid("param").id, c.req.valid("json")),
+      );
+    },
+  );
+  // Before "/api/me/agents/{id}", which would otherwise take "courses" for an id.
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/agents/courses",
+      responses: {
+        200: json(
+          z.array(AgentCourse),
+          "The Courses an Agent can be given: the student's accepted, unarchived ones.",
+        ),
+        401: errors[401],
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const offered = (await c.get("courses").list(p)).courses.filter(
+        (course) => course.status === "accepted" && !course.archived,
+      );
+      const sizes = await c.get("courses").sizes(
+        p,
+        offered.map((course) => course.id),
+      );
+      return c.json(
+        offered.map((course) => ({
+          id: course.id,
+          title: course.title,
+          color: course.color,
+          archived: false,
+          ...sizes.get(course.id)!,
+        })),
+        200,
       );
     },
   );
@@ -159,12 +280,28 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
       const history = await c
         .get("delegation")
         .history(p, { agentId: r.id, limit: 10 });
-      const [next] =
-        r.state === "active" ? await c.get("plan").intentsFor(p, r.scope) : [];
+      const sizes = await c.get("courses").sizes(
+        p,
+        r.courses.map((course) => course.id),
+      );
+      // Only a preset Agent runs yet, on its daily Schedule.
+      const scheduled = r.state === "active" && r.scope;
+      const [next] = scheduled
+        ? await c.get("plan").intentsFor(p, r.scope!)
+        : [];
       return c.json(
         {
           id: r.id,
           preset: r.preset,
+          name: r.name,
+          description: r.description,
+          emoji: r.emoji,
+          instructions: r.instructions,
+          courses: r.courses.map((course) => ({
+            ...course,
+            color: course.color as (typeof courseColors)[number],
+            ...sizes.get(course.id)!,
+          })),
           ...scopeNames(review, r.scope),
           state: r.state,
           pausedBy: r.pausedBy,
@@ -178,10 +315,9 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
             action: describeAction(plan, a.kind, a.args),
           })),
           next: {
-            runAt:
-              r.state === "active"
-                ? nextRun(new Date(), plan.limits.preferences.timeZone)
-                : null,
+            runAt: scheduled
+              ? nextRun(new Date(), plan.limits.preferences.timeZone)
+              : null,
             action: next ? describeAction(plan, next.kind, next) : null,
           },
         },
@@ -199,6 +335,8 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
             Agent.pick({
               id: true,
               preset: true,
+              name: true,
+              emoji: true,
               course: true,
               exam: true,
               state: true,
@@ -219,6 +357,8 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
         listed.map((r) => ({
           id: r.id,
           preset: r.preset,
+          name: r.name,
+          emoji: r.emoji,
           ...scopeNames(review!, r.scope),
           state: r.state,
           pausedBy: r.pausedBy,

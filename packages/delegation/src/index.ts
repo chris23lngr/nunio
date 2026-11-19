@@ -3,6 +3,7 @@
  */
 
 export {
+  type AgentForm,
   type AgentScope,
   type Agents,
   createAgents,

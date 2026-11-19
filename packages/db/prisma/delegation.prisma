@@ -41,7 +41,14 @@ model Agent {
   id             String              @id
   studentId      String
   student        User                @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  preset         String
+  /// A pilot preset's name; null for a free-text Agent. The Agents cutover removes it.
+  preset         String?
+  name           String              @default("")
+  /// Its Beschreibung, for telling it apart from the student's other Agents.
+  description    String              @default("")
+  emoji          String              @default("🤖")
+  /// The student's Instructions, the only text its Runs follow as a request (ADR-0026).
+  instructions   String              @default("")
   /// Its scope, kept after End removes its Grants: a Course, or one exam (with the exam's Course).
   courseId       String?
   obligationId   String?
@@ -57,12 +64,26 @@ model Agent {
   createdAt      DateTime            @default(now())
   endedAt        DateTime?
 
-  grants Grant[]
-  runs   Run[]
+  grants  Grant[]
+  runs    Run[]
+  courses AgentCourse[]
 
   @@unique([id, studentId])
   @@index([studentId])
   @@map("agent")
+}
+
+/// One of an Agent's Courses, its scope: possibly Archived, in which case the Agent only reads it.
+model AgentCourse {
+  agentId   String
+  courseId  String
+  studentId String
+  agent     Agent  @relation(fields: [agentId, studentId], references: [id, studentId], onDelete: Cascade)
+  course    Course @relation(fields: [courseId, studentId], references: [id, studentId], onDelete: Cascade)
+
+  @@id([agentId, courseId])
+  @@index([studentId, courseId])
+  @@map("agent_course")
 }
 
 /// Standing authority for one kind of Action within one Course or Obligation; Grants exist only within an Agent.

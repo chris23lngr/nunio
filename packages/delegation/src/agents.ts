@@ -27,14 +27,51 @@ const presets = {
 };
 export type Preset = keyof typeof presets;
 
-/** What an Agent covers: one Course, or one exam. Its Grants and its Runs' proposals take exactly this. */
+/** What a preset Agent covers: one Course, or one exam. Its Grants and its Runs' proposals take exactly this. */
 export type AgentScope = { courseId: string } | { obligationId: string };
-/** The scope as stored: an exam's row also keeps the exam's Course, for showing. */
+/** The scope as stored: an exam's row also keeps the exam's Course, for showing. Null for a free-text Agent. */
 const scopeOf = (r: {
+  preset: string | null;
   courseId: string | null;
   obligationId: string | null;
-}): AgentScope =>
-  r.obligationId ? { obligationId: r.obligationId } : { courseId: r.courseId! };
+}): AgentScope | null =>
+  !r.preset
+    ? null
+    : r.obligationId
+      ? { obligationId: r.obligationId }
+      : { courseId: r.courseId! };
+
+/** The form a free-text Agent is created and edited with: all of it is saved at once. */
+export type AgentForm = {
+  name: string;
+  description: string;
+  emoji: string;
+  instructions: string;
+  /** Its Courses, its scope: at least one. */
+  courseIds: string[];
+  budgetMicroUsd: number;
+};
+
+/**
+ * The form's Courses, if each may be on the Agent: one of the student's accepted, unarchived Courses, or one the Agent
+ * already has, Archived or not. Otherwise why not.
+ */
+async function checkCourses(
+  tx: Transaction,
+  courseIds: string[],
+  kept: string[] = [],
+) {
+  const ids = [...new Set(courseIds)];
+  if (!ids.length) return "invalid" as const;
+  const found = await tx.course.findMany({ where: { id: { in: ids } } });
+  for (const id of ids) {
+    if (kept.includes(id)) continue;
+    const course = found.find((c) => c.id === id);
+    if (course?.status !== "accepted") return "gone" as const;
+    if (course.archivedAt) return "course_archived" as const;
+  }
+  return ids;
+}
 
 /** Why an Agent is Paused: by the student, by exhausting its Budget, or by its Course being Archived. */
 export type PausedBy = "student" | "budget" | "course_archived";
@@ -69,6 +106,8 @@ export function createAgents({
     withOwner(db, p, async (tx) => {
       await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
       const r = await tx.agent.findUnique({ where: { id } });
+      // Until Agents get their trigger, only a preset Agent has a Schedule.
+      if (!r?.preset) return;
       if (r?.state === "paused") await scheduled().pause(id);
       else if (r?.state === "active") await scheduled().unpause(id);
       else if (r?.state === "ended") await scheduled().delete(id);
@@ -99,14 +138,34 @@ export function createAgents({
     for (const id of ids) await syncSchedule(p, id);
   };
   return {
+    /** A pilot preset with its Grants and Schedule, or a free-text Agent from its form, which has neither yet. */
     async create(
       p: Principal,
-      input: (
-        | { preset: "keep_course_organized"; courseId: string }
-        | { preset: "prepare_for_exam"; obligationId: string }
-      ) & { budgetMicroUsd: number },
+      input:
+        | ((
+            | { preset: "keep_course_organized"; courseId: string }
+            | { preset: "prepare_for_exam"; obligationId: string }
+          ) & { budgetMicroUsd: number })
+        | AgentForm,
     ) {
       if (p.kind !== "student") return { status: "gone" } as const;
+      if (!("preset" in input))
+        return withOwner(db, p, async (tx, studentId) => {
+          const courseIds = await checkCourses(tx, input.courseIds);
+          if (typeof courseIds === "string")
+            return { status: courseIds } as const;
+          const id = randomUUID();
+          const { courseIds: _, ...fields } = input;
+          await tx.agent.create({ data: { id, studentId, ...fields } });
+          await tx.agentCourse.createMany({
+            data: courseIds.map((courseId) => ({
+              agentId: id,
+              courseId,
+              studentId,
+            })),
+          });
+          return { status: "ok", id } as const;
+        });
       return withOwner(db, p, async (tx, studentId) => {
         // The scope, and the Course stored beside it: the Course itself, or the exam's.
         const found =
@@ -162,6 +221,43 @@ export function createAgents({
         // Inside the transaction: if the Schedule cannot be created, no Agent is recorded.
         await scheduled().create({ agentId: id, studentId, timeZone });
         return { status: "ok", id } as const;
+      });
+    },
+
+    /**
+     * Saves a free-text Agent's whole form; its next Run reads it. Its Courses may keep one that was Archived since.
+     * A preset Agent has no form until the Agents cutover converts it, so it is "invalid".
+     */
+    async update(p: Principal, id: string, form: AgentForm) {
+      if (p.kind !== "student") return { status: "gone" } as const;
+      return withOwner(db, p, async (tx, studentId) => {
+        const r = await tx.agent.findUnique({
+          where: { id },
+          include: { courses: true },
+        });
+        if (!r) return { status: "gone" } as const;
+        if (r.preset) return { status: "invalid" } as const;
+        const courseIds = await checkCourses(
+          tx,
+          form.courseIds,
+          r.courses.map((c) => c.courseId),
+        );
+        if (typeof courseIds === "string")
+          return { status: courseIds } as const;
+        const { courseIds: _, ...fields } = form;
+        await tx.agent.update({ where: { id }, data: fields });
+        await tx.agentCourse.deleteMany({
+          where: { agentId: id, courseId: { notIn: courseIds } },
+        });
+        await tx.agentCourse.createMany({
+          data: courseIds.map((courseId) => ({
+            agentId: id,
+            courseId,
+            studentId,
+          })),
+          skipDuplicates: true,
+        });
+        return { status: "ok" } as const;
       });
     },
 
@@ -243,7 +339,9 @@ export function createAgents({
         (await tx.agent.findMany({ orderBy: { createdAt: "desc" } })).map(
           (r) => ({
             id: r.id,
-            preset: r.preset as Preset,
+            preset: r.preset as Preset | null,
+            name: r.name,
+            emoji: r.emoji,
             scope: scopeOf(r),
             state: r.state as "active" | "paused" | "ended",
             pausedBy: r.pausedBy as PausedBy | null,
@@ -252,17 +350,29 @@ export function createAgents({
       );
     },
 
-    /** Its scope, state, Grants, and usage against its Budget; null when it is not the student's. */
+    /** Its form, scope, state, Grants, and usage against its Budget; null when it is not the student's. */
     async view(p: Principal, id: string) {
       return withOwner(db, p, async (tx) => {
         const r = await tx.agent.findUnique({
           where: { id },
-          include: { grants: true },
+          include: { grants: true, courses: { include: { course: true } } },
         });
         if (!r) return null;
         return {
           id: r.id,
-          preset: r.preset as Preset,
+          preset: r.preset as Preset | null,
+          name: r.name,
+          description: r.description,
+          emoji: r.emoji,
+          instructions: r.instructions,
+          courses: r.courses
+            .map(({ course }) => ({
+              id: course.id,
+              title: course.title,
+              color: course.color,
+              archived: course.archivedAt !== null,
+            }))
+            .sort((a, b) => a.title.localeCompare(b.title, "de")),
           scope: scopeOf(r),
           state: r.state as "active" | "paused" | "ended",
           pausedBy: r.pausedBy as PausedBy | null,

@@ -3879,11 +3879,20 @@
                       "type": "string"
                     },
                     "preset": {
-                      "type": "string",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
                       "enum": [
                         "keep_course_organized",
-                        "prepare_for_exam"
-                      ]
+                        "prepare_for_exam",
+                        null
+                      ],
+                      "description": "Null for a free-text Agent."
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "Empty for a preset Agent, which is named after its scope."
                     },
                     "course": {
                       "type": [
@@ -3911,6 +3920,7 @@
                     "kind",
                     "id",
                     "preset",
+                    "name",
                     "course",
                     "exam",
                     "state"
@@ -4096,6 +4106,100 @@
           "agent"
         ]
       },
+      "AgentForm": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Its Beschreibung."
+          },
+          "emoji": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "What it should do, in the student's words."
+          },
+          "courseIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Its Courses: accepted, unarchived ones, or ones it already has."
+          },
+          "budgetMicroUsd": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 100000000,
+            "description": "Its monthly Budget."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "emoji",
+          "instructions",
+          "courseIds",
+          "budgetMicroUsd"
+        ],
+        "additionalProperties": false
+      },
+      "AgentCourse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "rose",
+              "orange",
+              "amber",
+              "emerald",
+              "teal",
+              "blue",
+              "violet",
+              "fuchsia"
+            ]
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "The Agent still reads it but no longer acts for it."
+          },
+          "topics": {
+            "type": "number",
+            "description": "How many Topics it has."
+          },
+          "sources": {
+            "type": "number",
+            "description": "How many Sources it has."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "color",
+          "archived",
+          "topics",
+          "sources"
+        ]
+      },
       "Agent": {
         "type": "object",
         "properties": {
@@ -4103,11 +4207,36 @@
             "type": "string"
           },
           "preset": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "enum": [
               "keep_course_organized",
-              "prepare_for_exam"
-            ]
+              "prepare_for_exam",
+              null
+            ],
+            "description": "Null for a free-text Agent."
+          },
+          "name": {
+            "type": "string",
+            "description": "Empty for a preset Agent, which is named after its scope."
+          },
+          "description": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "courses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCourse"
+            },
+            "description": "A free-text Agent's Courses; none for a preset Agent."
           },
           "course": {
             "type": [
@@ -4273,6 +4402,11 @@
         "required": [
           "id",
           "preset",
+          "name",
+          "description",
+          "emoji",
+          "instructions",
+          "courses",
           "course",
           "exam",
           "state",
@@ -4421,11 +4555,20 @@
                   "type": "string"
                 },
                 "preset": {
-                  "type": "string",
+                  "type": [
+                    "string",
+                    "null"
+                  ],
                   "enum": [
                     "keep_course_organized",
-                    "prepare_for_exam"
-                  ]
+                    "prepare_for_exam",
+                    null
+                  ],
+                  "description": "Null for a free-text Agent."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Empty for a preset Agent, which is named after its scope."
                 },
                 "course": {
                   "type": [
@@ -4443,6 +4586,7 @@
               "required": [
                 "id",
                 "preset",
+                "name",
                 "course",
                 "exam"
               ]
@@ -13506,12 +13650,13 @@
     },
     "/api/me/agents": {
       "post": {
+        "description": "Create a free-text Agent from its form, or a pilot preset until the Agents cutover.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "oneOf": [
+                "anyOf": [
                   {
                     "type": "object",
                     "properties": {
@@ -13549,6 +13694,9 @@
                       "preset",
                       "obligationId"
                     ]
+                  },
+                  {
+                    "$ref": "#/components/schemas/AgentForm"
                   }
                 ]
               }
@@ -13663,11 +13811,23 @@
                         "type": "string"
                       },
                       "preset": {
-                        "type": "string",
+                        "type": [
+                          "string",
+                          "null"
+                        ],
                         "enum": [
                           "keep_course_organized",
-                          "prepare_for_exam"
-                        ]
+                          "prepare_for_exam",
+                          null
+                        ],
+                        "description": "Null for a free-text Agent."
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Empty for a preset Agent, which is named after its scope."
+                      },
+                      "emoji": {
+                        "type": "string"
                       },
                       "course": {
                         "type": [
@@ -13730,6 +13890,8 @@
                     "required": [
                       "id",
                       "preset",
+                      "name",
+                      "emoji",
                       "course",
                       "exam",
                       "state",
@@ -13762,6 +13924,125 @@
       }
     },
     "/api/me/agents/{id}": {
+      "put": {
+        "description": "Save a free-text Agent's whole form; its next Run reads it. A preset Agent has no form (400).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, or its Course is Archived (error course_archived): nunio does not act for it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "parameters": [
           {
@@ -13805,6 +14086,43 @@
           },
           "404": {
             "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/agents/courses": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "The Courses an Agent can be given: the student's accepted, unarchived ones.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentCourse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
             "content": {
               "application/json": {
                 "schema": {
