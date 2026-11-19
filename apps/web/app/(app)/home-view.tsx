@@ -194,6 +194,7 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
                 <li key={item.id}>
                   <Link href={`/agents/${item.id}`}>
                     {nameOf({
+                      name: item.name,
                       course: item.course ? { title: item.course } : null,
                       exam: item.exam ? { title: item.exam } : null,
                     })}

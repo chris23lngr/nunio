@@ -110,6 +110,7 @@ export function InboxScreen({ apiOrigin }: { apiOrigin: string }) {
                   {b.agents.map((r) => (
                     <li key={r.id}>
                       {nameOf({
+                        name: r.name,
                         course: r.course === null ? null : { title: r.course },
                         exam: r.exam === null ? null : { title: r.exam },
                       })}
