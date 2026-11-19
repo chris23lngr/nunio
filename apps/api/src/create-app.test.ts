@@ -44,7 +44,12 @@ import {
   createTopicAreas,
 } from "@nunio/knowledge";
 import { createOutreach } from "@nunio/outreach";
-import { createPlan, createPlanExecutor, deadline } from "@nunio/planning";
+import {
+  createPlan,
+  createPlanExecutor,
+  deadline,
+  planRules,
+} from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
 import { createUnderstanding } from "@nunio/understanding";
 import { APICallError } from "ai";
@@ -347,6 +352,7 @@ beforeAll(async () => {
     db: prisma,
     aiEnabled: () => true,
     executors: { plan: createPlanExecutor({ db: prisma }) },
+    planRules,
     deadlineOf: async (studentId, obligationId) =>
       (await plan.view(principal.fromSession({ studentId }))).obligations.find(
         (o) => o.id === obligationId,

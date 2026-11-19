@@ -92,6 +92,9 @@ model StudyBlock {
   end          DateTime
   /// Who placed or last moved it; moving the student's own needs their Approval.
   placedBy     PlanActor
+  /// The Agent that created it, whose own block it is until the student moves it (ADR-0001). Not a relation, like
+  /// usage_reservation's: an Agent's id is never reused, so a deleted Agent's blocks are no Agent's own.
+  createdByAgentId String?
   lockedAt     DateTime?
   createdAt    DateTime    @default(now())
 

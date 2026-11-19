@@ -5,6 +5,8 @@ import type {
   ActionIntent,
   AgentScope,
   Delegation,
+  PlanRefusal,
+  PlanRules,
   Principal,
   Transaction,
 } from "@nunio/delegation";
@@ -387,31 +389,6 @@ export function createPlan({
       proposal: named(rebalance(state), eventSeries),
     };
   }
-  /** A work's own daily limit: a Task's, else its Course's; null when it has none. */
-  async function workLimit(tx: Transaction, work: WorkRef) {
-    const task =
-      work.kind === "task"
-        ? await tx.task.findUnique({ where: { id: work.id } })
-        : null;
-    if (task?.maxMinutesPerDay) return task.maxMinutesPerDay;
-    const obligationId =
-      work.kind === "obligation" ? work.id : task?.obligationId;
-    const obligation = obligationId
-      ? await tx.obligation.findUnique({ where: { id: obligationId } })
-      : null;
-    const courseId = obligation?.courseId ?? task?.courseId;
-    if (!courseId) return null;
-    return (
-      (await tx.coursePreference.findUnique({ where: { courseId } }))
-        ?.maxMinutesPerDay ?? null
-    );
-  }
-  const workExists = async (tx: Transaction, work: WorkRef) =>
-    Boolean(
-      work.kind === "obligation"
-        ? await tx.obligation.findUnique({ where: { id: work.id } })
-        : await tx.task.findUnique({ where: { id: work.id } }),
-    );
   /** `applyRoutines`, as a local function so the methods that call it do not depend on `this`. */
   async function applyRoutines(p: Principal) {
     return withOwner(db, p, async (tx, studentId) => {
@@ -530,141 +507,8 @@ export function createPlan({
      * Checks a Study Block nunio might propose (ADR-0019) against the Plan's hard rules, which refuse it, and its
      * Preferences, which it may break only with the student's Approval and so only notes.
      */
-    async check(
-      p: Principal,
-      proposal: BlockProposal,
-    ): Promise<
-      | { status: "refused"; reasons: BlockRefusal[] }
-      | { status: "ok"; notes: BlockNote[] }
-    > {
-      // Removing places nothing: only a Lock, or the block having started, refuses it (ADR-0021).
-      if (proposal.kind === "remove")
-        return withOwner(db, p, async (tx) => {
-          const block = await tx.studyBlock.findUnique({
-            where: { id: proposal.blockId },
-          });
-          if (!block) return { status: "refused", reasons: ["gone"] };
-          const reasons: BlockRefusal[] = [];
-          if (block.lockedAt) reasons.push("locked");
-          if (block.start <= clock.now()) reasons.push("started");
-          return reasons.length
-            ? { status: "refused", reasons }
-            : { status: "ok", notes: [] };
-        });
-      if (!validInterval(proposal, maxBlockMs))
-        return { status: "refused", reasons: ["invalid"] };
-      return withOwner(db, p, async (tx) => {
-        const block =
-          proposal.kind === "move"
-            ? await tx.studyBlock.findUnique({
-                where: { id: proposal.blockId },
-              })
-            : null;
-        if (
-          proposal.kind === "move"
-            ? !block
-            : !(await workExists(tx, proposal.work))
-        )
-          return { status: "refused", reasons: ["gone"] };
-        const stored = await tx.planPreference.findFirst();
-        const timeZone = stored?.timeZone ?? defaults.timeZone;
-        const during = {
-          start: { lt: proposal.end },
-          end: { gt: proposal.start },
-        };
-        const spans = await tx.protectedTime.findMany();
-        const protectedTime = [
-          ...weekly(
-            spans.flatMap((span) =>
-              span.weekday === null
-                ? []
-                : [
-                    {
-                      weekday: span.weekday,
-                      fromMinute: span.fromMinute!,
-                      toMinute: span.toMinute!,
-                    },
-                  ],
-            ),
-            proposal.start,
-            proposal.end,
-            timeZone,
-          ),
-          ...spans.flatMap((span) =>
-            span.start && span.end
-              ? [{ start: span.start, end: span.end }]
-              : [],
-          ),
-        ];
-        const reasons: BlockRefusal[] = [];
-        if (proposal.start < clock.now()) reasons.push("past");
-        if (
-          protectedTime.some(
-            (span) => span.start < proposal.end && span.end > proposal.start,
-          )
-        )
-          reasons.push("protected_time");
-        if (await tx.fixedEvent.count({ where: during }))
-          reasons.push("fixed_event");
-        if (
-          await tx.studyBlock.count({
-            where: { ...during, ...(block ? { id: { not: block.id } } : {}) },
-          })
-        )
-          reasons.push("study_block");
-        if (block?.lockedAt) reasons.push("locked");
-        if (reasons.length) return { status: "refused", reasons };
-
-        const notes: BlockNote[] = [];
-        const first = local(proposal.start.getTime(), timeZone);
-        const last = local(proposal.end.getTime() - 60_000, timeZone);
-        if (
-          first.date !== last.date ||
-          first.minute <
-            (stored?.studyFromMinute ?? defaults.studyFromMinute) ||
-          last.minute + 1 > (stored?.studyToMinute ?? defaults.studyToMinute)
-        )
-          notes.push("outside_study_window");
-        // Minutes per local day: the proposal's, and those already planned around it.
-        const proposed = new Map<string, number>();
-        addMinutes(proposed, proposal, timeZone);
-        const nearby = await tx.studyBlock.findMany({
-          where: {
-            start: { lt: new Date(proposal.end.getTime() + dayMs) },
-            end: { gt: new Date(proposal.start.getTime() - dayMs) },
-            ...(block ? { id: { not: block.id } } : {}),
-          },
-        });
-        const over = (blocks: Interval[], limit: number) => {
-          const used = new Map<string, number>();
-          for (const b of blocks) addMinutes(used, b, timeZone);
-          return [...proposed].some(
-            ([date, minutes]) => (used.get(date) ?? 0) + minutes > limit,
-          );
-        };
-        if (over(nearby, stored?.maxMinutesPerDay ?? defaults.maxMinutesPerDay))
-          notes.push("daily_limit");
-        const work: WorkRef =
-          proposal.kind === "create"
-            ? proposal.work
-            : block!.obligationId
-              ? { kind: "obligation", id: block!.obligationId }
-              : { kind: "task", id: block!.taskId! };
-        const limit = await workLimit(tx, work);
-        if (
-          limit !== null &&
-          over(
-            nearby.filter(
-              (b) =>
-                (work.kind === "obligation" ? b.obligationId : b.taskId) ===
-                work.id,
-            ),
-            limit,
-          )
-        )
-          notes.push("work_limit");
-        return { status: "ok", notes };
-      });
+    async check(p: Principal, proposal: BlockProposal): Promise<BlockCheck> {
+      return withOwner(db, p, (tx) => checkBlock(tx, proposal, clock.now()));
     },
     /** The time zone the student's days, deadlines and Study Blocks are read in. */
     async timeZone(p: Principal) {
@@ -747,7 +591,12 @@ export function createPlan({
         } else {
           await tx.studyBlock.update({
             where: { id: move.blockId },
-            data: { start: move.to.start, end: move.to.end },
+            // The student moved it, so it is no Agent's own any more (ADR-0001).
+            data: {
+              start: move.to.start,
+              end: move.to.end,
+              createdByAgentId: null,
+            },
           });
         }
         return { status: "ok" } as const;
@@ -828,7 +677,13 @@ export function createPlan({
       return withOwner(db, p, async (tx) => {
         const { count } = await tx.studyBlock.updateMany({
           where: { id },
-          data: { start: to.start, end: to.end, placedBy: "student" },
+          // Nor is it any Agent's own any more (ADR-0001).
+          data: {
+            start: to.start,
+            end: to.end,
+            placedBy: "student",
+            createdByAgentId: null,
+          },
         });
         return { status: count ? "ok" : "gone" } as const;
       });
@@ -1453,6 +1308,208 @@ export function createPlan({
   };
 }
 export type Plan = ReturnType<typeof createPlan>;
+
+/** The result of checking a Study Block nunio might propose: refused by the Plan's hard rules, or the Preferences it breaks. */
+export type BlockCheck =
+  | { status: "refused"; reasons: BlockRefusal[] }
+  | { status: "ok"; notes: BlockNote[] };
+
+/**
+ * Checks a Study Block nunio might propose against the Plan's hard rules, which refuse it, and its Preferences, which
+ * it may break only with the student's Approval and so only notes.
+ */
+async function checkBlock(
+  tx: Transaction,
+  proposal: BlockProposal,
+  now: Date,
+): Promise<BlockCheck> {
+  // Removing places nothing: only a Lock, or the block having started, refuses it (ADR-0021).
+  if (proposal.kind === "remove") {
+    const block = await tx.studyBlock.findUnique({
+      where: { id: proposal.blockId },
+    });
+    if (!block) return { status: "refused", reasons: ["gone"] };
+    const reasons: BlockRefusal[] = [];
+    if (block.lockedAt) reasons.push("locked");
+    if (block.start <= now) reasons.push("started");
+    return reasons.length
+      ? { status: "refused", reasons }
+      : { status: "ok", notes: [] };
+  }
+  if (!validInterval(proposal, maxBlockMs))
+    return { status: "refused", reasons: ["invalid"] };
+  const block =
+    proposal.kind === "move"
+      ? await tx.studyBlock.findUnique({
+          where: { id: proposal.blockId },
+        })
+      : null;
+  if (
+    proposal.kind === "move" ? !block : !(await workExists(tx, proposal.work))
+  )
+    return { status: "refused", reasons: ["gone"] };
+  const stored = await tx.planPreference.findFirst();
+  const timeZone = stored?.timeZone ?? defaults.timeZone;
+  const during = {
+    start: { lt: proposal.end },
+    end: { gt: proposal.start },
+  };
+  const spans = await tx.protectedTime.findMany();
+  const protectedTime = [
+    ...weekly(
+      spans.flatMap((span) =>
+        span.weekday === null
+          ? []
+          : [
+              {
+                weekday: span.weekday,
+                fromMinute: span.fromMinute!,
+                toMinute: span.toMinute!,
+              },
+            ],
+      ),
+      proposal.start,
+      proposal.end,
+      timeZone,
+    ),
+    ...spans.flatMap((span) =>
+      span.start && span.end ? [{ start: span.start, end: span.end }] : [],
+    ),
+  ];
+  const reasons: BlockRefusal[] = [];
+  if (proposal.start < now) reasons.push("past");
+  if (
+    protectedTime.some(
+      (span) => span.start < proposal.end && span.end > proposal.start,
+    )
+  )
+    reasons.push("protected_time");
+  if (await tx.fixedEvent.count({ where: during })) reasons.push("fixed_event");
+  if (
+    await tx.studyBlock.count({
+      where: { ...during, ...(block ? { id: { not: block.id } } : {}) },
+    })
+  )
+    reasons.push("study_block");
+  if (block?.lockedAt) reasons.push("locked");
+  if (reasons.length) return { status: "refused", reasons };
+
+  const notes: BlockNote[] = [];
+  const first = local(proposal.start.getTime(), timeZone);
+  const last = local(proposal.end.getTime() - 60_000, timeZone);
+  if (
+    first.date !== last.date ||
+    first.minute < (stored?.studyFromMinute ?? defaults.studyFromMinute) ||
+    last.minute + 1 > (stored?.studyToMinute ?? defaults.studyToMinute)
+  )
+    notes.push("outside_study_window");
+  // Minutes per local day: the proposal's, and those already planned around it.
+  const proposed = new Map<string, number>();
+  addMinutes(proposed, proposal, timeZone);
+  const nearby = await tx.studyBlock.findMany({
+    where: {
+      start: { lt: new Date(proposal.end.getTime() + dayMs) },
+      end: { gt: new Date(proposal.start.getTime() - dayMs) },
+      ...(block ? { id: { not: block.id } } : {}),
+    },
+  });
+  const over = (blocks: Interval[], limit: number) => {
+    const used = new Map<string, number>();
+    for (const b of blocks) addMinutes(used, b, timeZone);
+    return [...proposed].some(
+      ([date, minutes]) => (used.get(date) ?? 0) + minutes > limit,
+    );
+  };
+  if (over(nearby, stored?.maxMinutesPerDay ?? defaults.maxMinutesPerDay))
+    notes.push("daily_limit");
+  const work: WorkRef =
+    proposal.kind === "create"
+      ? proposal.work
+      : block!.obligationId
+        ? { kind: "obligation", id: block!.obligationId }
+        : { kind: "task", id: block!.taskId! };
+  const limit = await workLimit(tx, work);
+  if (
+    limit !== null &&
+    over(
+      nearby.filter(
+        (b) =>
+          (work.kind === "obligation" ? b.obligationId : b.taskId) === work.id,
+      ),
+      limit,
+    )
+  )
+    notes.push("work_limit");
+  return { status: "ok", notes };
+}
+
+/** The Plan's rules as the gate applies them to an Agent's Study Block Actions, in the gate's own transaction. */
+export const planRules: PlanRules = {
+  async check(tx, intent, now) {
+    const checked = await checkBlock(
+      tx,
+      intent.kind === "studyBlock.remove"
+        ? { kind: "remove", blockId: intent.studyBlockId }
+        : intent.kind === "studyBlock.move"
+          ? {
+              kind: "move",
+              blockId: intent.studyBlockId,
+              start: intent.start,
+              end: intent.end,
+            }
+          : {
+              kind: "create",
+              work: {
+                kind: (await tx.obligation.findUnique({
+                  where: { id: intent.workId },
+                }))
+                  ? "obligation"
+                  : "task",
+                id: intent.workId,
+              },
+              start: intent.start,
+              end: intent.end,
+            },
+      now,
+    );
+    return checked.status === "ok"
+      ? { refusals: [], brokenPreferences: checked.notes }
+      : {
+          // The gate parsed the intent and found what it is for in this transaction, so neither is invalid or gone.
+          refusals: checked.reasons.filter(
+            (reason): reason is PlanRefusal =>
+              reason !== "invalid" && reason !== "gone",
+          ),
+          brokenPreferences: [],
+        };
+  },
+};
+
+/** A work's own daily limit: a Task's, else its Course's; null when it has none. */
+async function workLimit(tx: Transaction, work: WorkRef) {
+  const task =
+    work.kind === "task"
+      ? await tx.task.findUnique({ where: { id: work.id } })
+      : null;
+  if (task?.maxMinutesPerDay) return task.maxMinutesPerDay;
+  const obligationId =
+    work.kind === "obligation" ? work.id : task?.obligationId;
+  const obligation = obligationId
+    ? await tx.obligation.findUnique({ where: { id: obligationId } })
+    : null;
+  const courseId = obligation?.courseId ?? task?.courseId;
+  if (!courseId) return null;
+  return (
+    (await tx.coursePreference.findUnique({ where: { courseId } }))
+      ?.maxMinutesPerDay ?? null
+  );
+}
+const workExists = async (tx: Transaction, work: WorkRef) =>
+  Boolean(
+    work.kind === "obligation"
+      ? await tx.obligation.findUnique({ where: { id: work.id } })
+      : await tx.task.findUnique({ where: { id: work.id } }),
+  );
 
 /** Names each skip_routine tradeoff by its Event Series, which rebalance knows only by id. */
 function named(

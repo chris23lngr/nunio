@@ -20,7 +20,7 @@ import { createScalewayMailer } from "@nunio/identity/email";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createFacts } from "@nunio/knowledge";
 import { createOutreachSender, createWebPusher, keyOf } from "@nunio/outreach";
-import { createPlan, createPlanExecutor } from "@nunio/planning";
+import { createPlan, createPlanExecutor, planRules } from "@nunio/planning";
 import { Context } from "@temporalio/activity";
 
 // What an Agent's Schedule passes its Run. The field keeps the old name until the Agents cutover reschedules every Agent.
@@ -145,6 +145,7 @@ export function runActivitiesFromEnv(
     aiEnabled: () => env.AI_DISABLED !== "true",
     clock,
     executors: { plan: createPlanExecutor({ db }) },
+    planRules,
     deadlineOf: async (studentId, obligationId) =>
       (await plan.view(principal.fromSession({ studentId }))).obligations.find(
         (o) => o.id === obligationId,

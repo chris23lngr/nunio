@@ -13,7 +13,7 @@ const effectOf = (done: {
 /** The gate's executor for Study Blocks and Tasks within nunio's Plan: each key takes its effect at most once. */
 export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
   return {
-    async execute({ studentId, intent }, { idempotencyKey }) {
+    async execute({ studentId, actionId, intent }, { idempotencyKey }) {
       return withOwner(db, principal.fromSession({ studentId }), async (tx) => {
         // Serializes executions of one key, so a repeat sees the effect the first recorded.
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${idempotencyKey}))`;
@@ -67,6 +67,14 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
           });
           return { status: "done", effect: { taskId } };
         }
+        // The Agent whose Run asked for it, approved or not; null for a Chat.
+        const agentId =
+          (
+            await tx.action.findUnique({
+              where: { id: actionId },
+              select: { run: { select: { agentId: true } } },
+            })
+          )?.run?.agentId ?? null;
         let studyBlockId: string = randomUUID();
         if (intent.kind === "studyBlock.move") {
           const { count } = await tx.studyBlock.updateMany({
@@ -75,6 +83,14 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
           });
           if (!count)
             return { status: "rejected", detail: "the block is gone" };
+          // Moved by anyone but the Agent that created it, such as the student through a Chat, it is no longer that Agent's own.
+          await tx.studyBlock.updateMany({
+            where: {
+              id: intent.studyBlockId,
+              NOT: { createdByAgentId: agentId },
+            },
+            data: { createdByAgentId: null },
+          });
           studyBlockId = intent.studyBlockId;
         } else if (intent.kind === "studyBlock.remove") {
           const { count } = await tx.studyBlock.deleteMany({
@@ -100,6 +116,7 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
               start: intent.start,
               end: intent.end,
               placedBy: "nunio",
+              createdByAgentId: agentId,
             },
           });
         }

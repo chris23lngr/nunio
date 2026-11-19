@@ -20,11 +20,18 @@ export {
   capabilityIds,
   capabilitySections,
 } from "./capabilities.js";
-export type { Refusal, Restrictions } from "./decision.js";
+export type {
+  BrokenPreference,
+  PlanRefusal,
+  PlanVerdict,
+  Refusal,
+  Restrictions,
+} from "./decision.js";
 export {
   type ActionOutcome,
   type ActionRecord,
   type Approve,
+  type BlockIntent,
   type Clock,
   type DecisionNotifier,
   DelegationUnavailable,
@@ -33,6 +40,7 @@ export {
   type Executors,
   type HistoryQuery,
   KeyConflictError,
+  type PlanRules,
   type Resolve,
   StaleApprovalError,
   UnknownActionError,

@@ -43,7 +43,7 @@ import {
 import type { Outreach } from "@nunio/outreach";
 import { createOutreach, InvalidUnsubscribeError } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
-import { createPlan, createPlanExecutor } from "@nunio/planning";
+import { createPlan, createPlanExecutor, planRules } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
 import { createUnderstanding } from "@nunio/understanding";
 import { attachDatabasePool } from "@vercel/functions";
@@ -205,6 +205,8 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     aiEnabled: () => env.AI_DISABLED !== "true",
     // A Chat's Action has no Run, so the API performs it once the student approves (ADR-0019).
     executors: { plan: createPlanExecutor({ db: prisma }) },
+    // An Agent's Approvals are performed here too, by the Plan's rules (ADR-0001).
+    planRules,
     deadlineOf: async (studentId, obligationId) =>
       (await plan.view(principal.fromSession({ studentId }))).obligations.find(
         (o) => o.id === obligationId,

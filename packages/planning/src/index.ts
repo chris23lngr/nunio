@@ -9,6 +9,7 @@ export {
 } from "./calendar.js";
 export { createPlanExecutor } from "./executor.js";
 export {
+  type BlockCheck,
   type BlockNote,
   type BlockProposal,
   type BlockRefusal,
@@ -16,6 +17,7 @@ export {
   type Plan,
   type PriorityRef,
   type ProtectedSpan,
+  planRules,
   type WorkRef,
 } from "./plan.js";
 export {
