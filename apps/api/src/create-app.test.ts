@@ -13,7 +13,8 @@ import type {
 import { createAnswerer, createModels } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
-import { createActivity, createChats } from "@nunio/chat";
+import type { AgentRuns } from "@nunio/chat";
+import { createActivity, createAgentRuns, createChats } from "@nunio/chat";
 import type { Pool, PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -88,6 +89,7 @@ let delegation: Delegation;
 let agents: Agents;
 let artifacts: Artifacts;
 let understanding: Understanding;
+let agentRuns: AgentRuns;
 /** The Artifact Runs the API asked to start, by run ID; the worker would then make each. */
 const artifactRuns: string[] = [];
 const artifactWorkflows: ArtifactWorkflows = {
@@ -450,6 +452,22 @@ beforeAll(async () => {
     facts,
     delegation,
     grader,
+    clock: { now: () => new Date() },
+  });
+  // Only to end Runs as the worker does; no step runs here.
+  agentRuns = createAgentRuns({
+    db: prisma,
+    keys,
+    reader,
+    plan,
+    understanding,
+    artifacts,
+    delegation,
+    agents,
+    catalog: { chatModels: async () => [] },
+    modelFor: () => {
+      throw new Error("No model step runs in the API");
+    },
     clock: { now: () => new Date() },
   });
   app = createApp({
@@ -7474,6 +7492,7 @@ describe("a free-text Agent's form", () => {
       name: string,
       capability: "createStudyBlocks" | "moveStudyBlocks",
       more: string[] = [],
+      run: { status?: "running" } = {},
     ) {
       const s = await student(name);
       const statistics = await course(s.id, "Statistics II");
@@ -7509,7 +7528,7 @@ describe("a free-text Agent's form", () => {
           end: new Date("2099-02-01T10:00:00Z"),
         },
       });
-      const runId = await recordedRun(s.id, agentId, 10);
+      const runId = await recordedRun(s.id, agentId, 10, run);
       const outcome = await delegation.perform(principal.fromRun(runId), {
         key: `${runId}:1:1`,
         intent:
@@ -7766,6 +7785,98 @@ describe("a free-text Agent's form", () => {
       expect(
         await admin.intervention.count({ where: { studentId: a.s.id } }),
       ).toBe(0);
+    });
+
+    describe("the Run's Intervention in the Inbox", () => {
+      /** A Run under way that asked for Approvals, as the Inbox shows its Interventions. */
+      async function asking(name: string) {
+        const a = await askedByRun(name, "createStudyBlocks", [], {
+          status: "running",
+        });
+        const inbox = async () => {
+          const response = await app.request(`${apiOrigin}/api/me/inbox`, {
+            headers: { cookie: a.s.headers.cookie },
+          });
+          expect(response.status).toBe(200);
+          return ((await response.json()) as { interventions: unknown[] })
+            .interventions;
+        };
+        const end = () =>
+          agentRuns.finish(
+            { runId: a.runId, studentId: a.s.id },
+            { status: "done" },
+          );
+        return { ...a, inbox, end };
+      }
+
+      it("raises one once the Run ends with Approvals open, naming its Agent and opening that Run", async () => {
+        const a = await asking("run-intervention-raised");
+        expect(await a.inbox()).toEqual([]);
+
+        await a.end();
+        await a.end();
+
+        expect(await a.inbox()).toEqual([
+          {
+            id: expect.any(String),
+            kind: "run_approvals",
+            title: "Klausur Statistik",
+            course: null,
+            action: null,
+            shortMinutes: null,
+            run: {
+              id: a.runId,
+              agentId: a.agentId,
+              openApprovals: 1,
+            },
+            raisedAt: expect.any(String),
+            state: "open",
+            closedAt: null,
+          },
+        ]);
+      });
+
+      it.each([
+        [
+          "decided",
+          (a: Awaited<ReturnType<typeof asking>>) =>
+            a.decide({ decision: "deny" }),
+        ],
+        [
+          "expired",
+          (a: Awaited<ReturnType<typeof asking>>) =>
+            admin.approval.update({
+              where: { actionId: a.asking.actionId },
+              data: { expiresAt: new Date(Date.now() - 60_000) },
+            }),
+        ],
+      ])(
+        "lapses once no Approval of the Run is open, the last one %s, with no timer",
+        async (_, close) => {
+          const a = await asking(`run-intervention-lapses-${_}`);
+          await a.end();
+
+          await close(a);
+
+          expect(await a.inbox()).toEqual([
+            expect.objectContaining({
+              kind: "run_approvals",
+              run: expect.objectContaining({ openApprovals: 0 }),
+              state: "lapsed",
+              closedAt: expect.any(String),
+            }),
+          ]);
+        },
+      );
+
+      it("raises none for a Run that ends with nothing open", async () => {
+        const a = await asking("run-intervention-none");
+        await a.decide({ decision: "deny" });
+
+        await a.end();
+
+        expect(await a.inbox()).toEqual([]);
+      });
     });
   });
 

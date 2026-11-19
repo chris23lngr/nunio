@@ -5025,12 +5025,13 @@
               "shortfall",
               "disagreement",
               "approval_expired",
-              "unconfirmed"
+              "unconfirmed",
+              "run_approvals"
             ]
           },
           "title": {
             "type": "string",
-            "description": "What it is about: the work, Fact or Action, as it is now."
+            "description": "What it is about: the work, Fact or Action, or the Agent whose Run it is, as it is now."
           },
           "course": {
             "type": [
@@ -5055,6 +5056,30 @@
               "null"
             ],
             "description": "A Shortfall's current size; null once it is gone."
+          },
+          "run": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "agentId": {
+                "type": "string"
+              },
+              "openApprovals": {
+                "type": "integer",
+                "description": "Its Approvals still open; it lapses once none is."
+              }
+            },
+            "required": [
+              "id",
+              "agentId",
+              "openApprovals"
+            ],
+            "description": "The Agent Run whose open Approvals it is about, to open in the Agent's Activity; null for other kinds or once the Agent is deleted."
           },
           "raisedAt": {
             "type": "string",
@@ -5084,6 +5109,7 @@
           "course",
           "action",
           "shortMinutes",
+          "run",
           "raisedAt",
           "state",
           "closedAt"
