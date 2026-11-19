@@ -452,6 +452,16 @@ describe("a free-text Agent's Actions (ADR-0001)", () => {
       refuse("no_capability"),
     ],
     [
+      "ignores Lernblöcke verschieben stored on a mode it does not allow",
+      situation(move({ createdBy: null }), {
+        agent: agent({
+          moveOwnStudyBlocks: "always",
+          moveStudyBlocks: "always",
+        }),
+      }),
+      refuse("no_capability"),
+    ],
+    [
       "asks to move its own block with only Lernblöcke verschieben",
       situation(move(), { agent: agent({ moveStudyBlocks: "ask" }) }),
       ask,

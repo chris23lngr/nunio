@@ -177,11 +177,20 @@ function decideForAgent<K extends Kind>(
   if (!subject.courseId || !agent.courseIds.includes(subject.courseId))
     return refuse("out_of_scope");
   const own = "createdBy" in subject && subject.createdBy === agent.id;
-  // The most permissive of the Capabilities that cover it.
+  // The most permissive of the Capabilities that cover it. A mode the Capability does not allow, such as a stale row
+  // putting Lernblöcke verschieben on a Grant-holding mode, authorises nothing.
   const mode = agent.capabilities
-    .filter(({ id }) => {
-      const capability: { kind: Kind; ownBlocks?: true } = capabilities[id];
-      return capability.kind === intent.kind && (own || !capability.ownBlocks);
+    .filter(({ id, mode }) => {
+      const capability: {
+        kind: Kind;
+        ownBlocks?: true;
+        modes: readonly string[];
+      } = capabilities[id];
+      return (
+        capability.kind === intent.kind &&
+        (own || !capability.ownBlocks) &&
+        capability.modes.includes(mode)
+      );
     })
     .map((c) => c.mode)
     .sort((a, b) => approvalModes.indexOf(a) - approvalModes.indexOf(b))[0];
