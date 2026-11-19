@@ -1,4 +1,4 @@
-// Records awaitApproval, ingestSource and responsibilityRun histories for the replay test (src/replay.test.ts). Usage, from apps/worker:
+// Records awaitApproval, ingestSource, responsibilityRun and agentRun histories for the replay test (src/replay.test.ts). Usage, from apps/worker:
 //   node scripts/record-history.ts [workflows file] [ingestSource history name]
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
@@ -58,6 +58,12 @@ try {
                 actionId: "action",
                 effect: { studyBlockId: "block" },
               },
+        // An Agent's Run that reads twice, then answers.
+        startAgentRun: async () => "agent-run",
+        agentStep: async ({ n }: { n: number }) => ({
+          status: n < 3 ? "continue" : "answered",
+        }),
+        finishAgentRun: async () => {},
       },
     });
   const workflowId = `approval-${randomUUID()}`;
@@ -101,6 +107,18 @@ try {
   write(
     "responsibility-run",
     await env.client.workflow.getHandle(runWorkflowId).fetchHistory(),
+  );
+  const agentRunWorkflowId = `agentRun/${randomUUID()}`;
+  await (await worker()).runUntil(
+    env.client.workflow.execute("agentRun", {
+      taskQueue,
+      workflowId: agentRunWorkflowId,
+      args: [{ studentId: "student", agentId: "agent", runId: "agent-run" }],
+    }),
+  );
+  write(
+    "agent-run",
+    await env.client.workflow.getHandle(agentRunWorkflowId).fetchHistory(),
   );
 } finally {
   await env.teardown();

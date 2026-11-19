@@ -12,7 +12,7 @@ import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import type { Facts } from "./facts.js";
 import { createFacts } from "./facts.js";
 import { createProjects } from "./projects.js";
-import type { Item, KnowledgeReader, ScopeRef } from "./reader.js";
+import type { Item, KnowledgeReader, Query, ScopeRef } from "./reader.js";
 import {
   createKnowledgeReader,
   InvalidQueryError,
@@ -190,6 +190,58 @@ async function acceptedCourse(
   await facts.decideCourse(p, id, "accept");
   return id;
 }
+
+it("lets an Agent's Run read the whole Plan's Facts, which no other Run may", async () => {
+  const p = await student();
+  const analysis = await readySource(p, "Analysis.pdf", [
+    "MA-101 Analysis I",
+    "Übungsblatt 1 bis 01.12.2026",
+  ]);
+  const course = await acceptedCourse(
+    p,
+    analysis,
+    { code: "MA-101", title: "Analysis I", quote: "MA-101 Analysis I" },
+    [exam("2026-12-01", 2, "Übungsblatt 1 bis 01.12.2026")],
+  );
+  const agents = createAgents({ db: runtime, clock });
+  const created = await agents.create(p, {
+    name: "Klausur",
+    description: "",
+    emoji: "🤖",
+    instructions: "Bereite mich vor.",
+    courseIds: [course],
+    capabilities: [],
+    budgetMicroUsd: 1_000_000,
+  });
+  if (created.status !== "ok") throw new Error(created.status);
+  const studentId = (p as { studentId: string }).studentId;
+  const agentRun = (await agents.startRun({
+    studentId,
+    agentId: created.id,
+    runId: randomUUID(),
+    workflowId: "agentRun",
+  }))!;
+  const studentRun = randomUUID();
+  await agents.startStudentRun(p, {
+    runId: studentRun,
+    workflowId: `artifactRun/${studentRun}`,
+  });
+  const query: Query = { kind: "facts", types: ["obligation"] };
+
+  const result = await reader.retrieve(
+    principal.fromRun(agentRun),
+    { planning: true },
+    query,
+  );
+
+  if (result.status !== "ok") throw new Error(result.status);
+  expect(result.items.map((i) => i.label)).toEqual([
+    "Analysis I, Obligation from Analysis.pdf, page 2",
+  ]);
+  await expect(
+    reader.retrieve(principal.fromRun(studentRun), { planning: true }, query),
+  ).rejects.toThrow(ScopeMismatchError);
+});
 
 it("retrieves nothing for a Chat with nothing selected, without embedding or metering", async () => {
   const p = await student(0);

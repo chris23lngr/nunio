@@ -5,6 +5,8 @@ model UsageReservation {
   allowance        Allowance         @relation(fields: [studentId], references: [studentId], onDelete: Cascade)
   /// The Agent whose Budget the call also counts against; null outside an Agent's Run.
   agentId          String?
+  /// The Run whose call it was, for the Run's cost; null outside a Run.
+  runId            String?
   estimateMicroUsd BigInt
   actualMicroUsd   BigInt?
   status           ReservationStatus @default(reserved)
@@ -14,6 +16,7 @@ model UsageReservation {
   settledBy        String?
 
   @@index([studentId, status])
+  @@index([runId])
   @@map("usage_reservation")
 }
 
@@ -136,14 +139,68 @@ model Run {
   /// The Temporal workflow running it, which the API signals once the student decides on one of its Actions.
   workflowId       String?
   startedAt        DateTime        @default(now())
+  /// A free-text Agent's Run records the rest; null for preset, Chat and Artifact Runs.
+  status           RunStatus?
+  trigger          RunTrigger?
+  endedAt          DateTime?
+  /// Why a stopped Run stopped, such as paused, budget_exhausted or model_unavailable.
+  stopReason       String?
+  /// The Agent's configuration as the Run started: its Instructions, Capabilities and Model. Its Courses are pinned.
+  instructions     String?
+  capabilities     Json?
+  modelKey         String?
+  /// The model's final message, plain text, sealed under every Source the Run read; null without one.
+  summaryContent   Bytes?
+  summaryKey       Bytes?
+  derivedFrom      String[]        @default([])
 
   actions  Action[]
   pin      RunPin?
   artifact Artifact?
+  steps    RunStep[]
 
   @@unique([id, studentId])
   @@index([studentId])
+  @@index([agentId, status])
   @@map("run")
+}
+
+/// running: the model is working. stopped: Paused, Ended, out of Budget or Allowance, or its Model unavailable.
+enum RunStatus {
+  running
+  done
+  stopped
+  failed
+
+  @@map("run_status")
+}
+
+enum RunTrigger {
+  schedule
+  manual
+
+  @@map("run_trigger")
+}
+
+/// One model step of an Agent's Run, idempotent on (runId, n). Both texts are sealed under the Sources read so far.
+model RunStep {
+  runId             String
+  n                 Int
+  studentId         String
+  run               Run      @relation(fields: [runId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// The model answered instead of calling a tool, so the Run's work is done.
+  answered          Boolean
+  /// What the student may see of the step: its tool calls, each with what it showed.
+  partsContent      Bytes
+  partsKey          Bytes?
+  /// The step's model messages, which later steps are given; dropped when the Run ends.
+  transcriptContent Bytes?
+  transcriptKey     Bytes?
+  derivedFrom       String[] @default([])
+  createdAt         DateTime @default(now())
+
+  @@id([runId, n])
+  @@map("run_step")
 }
 
 enum ActionStatus {

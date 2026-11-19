@@ -2,6 +2,11 @@
  * Model registry and bounded model calls (ADR-0011, ADR-0012).
  */
 
+export {
+  type AgentModel,
+  type AgentStep,
+  createAgentModel,
+} from "./agent.js";
 export { type Answerer, type AnswerStep, createAnswerer } from "./answer.js";
 export {
   createEstimator,

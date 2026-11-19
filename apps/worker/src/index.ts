@@ -7,6 +7,7 @@ import { payloadCodecFromEnv } from "@nunio/keys";
 import { Client, Connection } from "@temporalio/client";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import { createActivities } from "./activities.js";
+import { agentRunActivitiesFromEnv } from "./agent-run-activities.js";
 import { createArtifactActivities } from "./artifact-activities.js";
 import { createDecisionNotifier } from "./decision-notifier.js";
 import { log } from "./log.js";
@@ -47,6 +48,7 @@ const modelCatalog = createModelCatalogActivities(process.env);
 const taskModels = await modelCatalog.taskModels();
 const sourceActivities = createSourceActivities(process.env, taskModels);
 const artifactActivities = createArtifactActivities(process.env, taskModels);
+const agentRunActivities = agentRunActivitiesFromEnv(process.env, taskModels);
 
 // The reconcile, outreach and model price Schedules live in Temporal; creating them again on each start is a no-op.
 const clientConnection = await Connection.connect({
@@ -77,6 +79,7 @@ const worker = await Worker.create({
     ...sourceActivities.activities,
     ...artifactActivities.activities,
     ...runActivities.activities,
+    ...agentRunActivities.activities,
     ...modelCatalog.activities,
   },
   dataConverter: { payloadCodecs: [codec] },
@@ -90,6 +93,7 @@ try {
   await sourceActivities.close();
   await artifactActivities.close();
   await runActivities.close();
+  await agentRunActivities.close();
   await modelCatalog.close();
   await clientConnection.close();
 }

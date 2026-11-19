@@ -1,0 +1,413 @@
+import type { AgentModel } from "@nunio/ai";
+import type { Artifacts } from "@nunio/artifacts";
+import type { PrismaClient } from "@nunio/db";
+import type {
+  Agents,
+  CatalogModel,
+  Delegation,
+  ModelCatalog,
+  Principal,
+} from "@nunio/delegation";
+import { principal, withOwner } from "@nunio/delegation";
+import type { SourceKeys } from "@nunio/keys";
+import type { KnowledgeReader, Sealed } from "@nunio/knowledge";
+import { createDerivedText, definitely } from "@nunio/knowledge";
+import type { Plan } from "@nunio/planning";
+import type { Understanding } from "@nunio/understanding";
+import type { ModelMessage } from "ai";
+import { agendaTool } from "./agenda.js";
+import { chatContext } from "./context.js";
+import { courseFactsTool } from "./course-facts.js";
+import type { ChatPart } from "./parts.js";
+import { retryRateLimited } from "./retry.js";
+import { searchTool } from "./search.js";
+import { createTurn } from "./turn.js";
+
+/** At most this many model steps make one Run; the last must answer (ADR-0026). */
+export const maxSteps = 20;
+/** The summary's length, about as long as the student reads in Activity (#149). */
+const maxSummary = 600;
+
+/** What the student may see of a step: each read tool call with what it showed, never what the model was given. */
+export type RunStepPart = Extract<
+  ChatPart,
+  { type: "tool-searchMaterial" | "tool-courseFacts" | "tool-agenda" }
+>;
+
+/** How a step went: the model called tools, answered, or the Run must stop for `reason`. */
+export type StepOutcome =
+  | { status: "continue" }
+  | { status: "answered" }
+  | { status: "refused"; reason: string };
+
+/** How a Run ended. A stopped Run's reason is a refusal, such as paused, budget_exhausted or model_unavailable. */
+export type RunEnd =
+  | { status: "done" }
+  | { status: "stopped"; reason: string }
+  | { status: "failed" };
+
+/** The model's final message, as the student reads it: plain text without links, citation tags or Markdown. */
+export function summaryOf(text: string) {
+  const plain = text
+    .replace(/\s*\[S\d+\]/g, "")
+    .replace(/\b(?:https?:\/\/|www\.)\S+/gi, "")
+    .replace(/\*\*|__|^#+\s*/gm, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (plain.length <= maxSummary) return plain;
+  const cut = plain.slice(0, maxSummary - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > maxSummary / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+/** The text of the last assistant message among a step's messages. */
+function finalText(messages: ModelMessage[]) {
+  const answer = messages.findLast((message) => message.role === "assistant");
+  if (!answer) return "";
+  if (typeof answer.content === "string") return answer.content;
+  return answer.content
+    .flatMap((part) => (part.type === "text" ? [part.text] : []))
+    .join("\n\n");
+}
+
+/**
+ * A free-text Agent's Runs (#141): started with the Agent's configuration snapshotted, then one metered model step at a
+ * time over the read tools, each persisted per `(runId, n)` so a repeated step never runs the model again, then ended
+ * with the model's final message as its summary. Only nunio's system prompt and the saved Instructions are requests;
+ * every tool result is fenced data (ADR-0026).
+ */
+export function createAgentRuns({
+  db,
+  keys,
+  reader,
+  plan,
+  understanding,
+  artifacts,
+  delegation,
+  agents,
+  catalog,
+  modelFor,
+  clock,
+}: {
+  db: PrismaClient;
+  keys: SourceKeys;
+  reader: KnowledgeReader;
+  plan: Pick<Plan, "view" | "timeZone">;
+  understanding: Pick<Understanding, "levels">;
+  artifacts: Pick<Artifacts, "list">;
+  delegation: Delegation;
+  agents: Pick<Agents, "startRun">;
+  catalog: Pick<ModelCatalog, "chatModels">;
+  /** The Model a Run's steps run on, from the catalog's offered row. */
+  modelFor: (model: CatalogModel) => AgentModel;
+  clock: { now(): Date };
+}) {
+  const derived = createDerivedText(keys);
+  const sealedOf = (
+    content: Uint8Array<ArrayBuffer>,
+    contentKey: Uint8Array<ArrayBuffer> | null,
+    derivedFrom: string[],
+  ): Sealed => ({ content, contentKey, derivedFrom });
+  return {
+    /**
+     * Records the Run, or takes up the one the student started, with the Agent's Instructions, Capabilities and the
+     * catalog's Chat default Model snapshotted, and pins its Courses, Archived ones included, as what it reads. Null
+     * when the Agent may not run now. Idempotent on `runId`.
+     */
+    async start(ref: {
+      studentId: string;
+      agentId: string;
+      runId: string;
+      workflowId: string;
+    }): Promise<string | null> {
+      const offered = await catalog.chatModels();
+      const runId = await agents.startRun({
+        ...ref,
+        modelKey: offered.find((model) => model.chatDefault)?.key ?? null,
+      });
+      if (!runId) return null;
+      const student = principal.fromSession({ studentId: ref.studentId });
+      // A merged Course went into another, which the Agent has only if the student gave it.
+      const courseIds = await withOwner(db, student, async (tx) =>
+        (
+          await tx.agentCourse.findMany({
+            where: {
+              agentId: ref.agentId,
+              course: { status: { not: "merged" } },
+            },
+            select: { courseId: true },
+          })
+        ).map((c) => c.courseId),
+      );
+      const pinned = await reader.pin(student, {
+        runId,
+        from: { selection: { courseIds, sourceIds: [] } },
+      });
+      if (pinned.status !== "ok") throw new Error("The Run's Courses are gone");
+      return runId;
+    },
+
+    /**
+     * Runs model step `n` of the Run, metered against the Agent's Budget and the Allowance, and persists it. A step
+     * already persisted returns how it went without running the model again. The last allowed step must answer.
+     */
+    async step(runId: string, n: number): Promise<StepOutcome> {
+      if (!Number.isInteger(n) || n < 1 || n > maxSteps)
+        throw new Error(`A Run has no step ${n}`);
+      const p = principal.fromRun(runId);
+      const outcome = (answered: boolean): StepOutcome => ({
+        status: answered ? "answered" : "continue",
+      });
+      const loaded = await withOwner(db, p, async (tx) => {
+        const done = await tx.runStep.findUnique({
+          where: { runId_n: { runId, n } },
+        });
+        if (done) return { done };
+        const run = await tx.run.findUniqueOrThrow({
+          where: { id: runId },
+          include: {
+            pin: { include: { courses: { include: { course: true } } } },
+            steps: { where: { n: { lt: n } }, orderBy: { n: "asc" } },
+          },
+        });
+        if (run.steps.length !== n - 1)
+          throw new Error(`Step ${n} of Run ${runId} comes too early`);
+        const transcripts = await Promise.all(
+          run.steps.map((step) =>
+            step.transcriptContent
+              ? derived.open(
+                  tx,
+                  `${runId}:${step.n}:transcript`,
+                  sealedOf(
+                    step.transcriptContent,
+                    step.transcriptKey,
+                    step.derivedFrom,
+                  ),
+                )
+              : null,
+          ),
+        );
+        return { run, transcripts };
+      });
+      if ("done" in loaded) return outcome(loaded.done!.answered);
+      const { run, transcripts } = loaded;
+      // A Source deleted since takes the earlier steps with it, so the Run cannot go on from them.
+      if (transcripts.some((transcript) => transcript === null))
+        return { status: "refused", reason: "source_deleted" };
+      // Checked per step: a Model may stop being offered while the Run is under way (ADR-0018).
+      const offered = (await catalog.chatModels()).find(
+        (model) => model.key === run.modelKey,
+      );
+      if (!offered) return { status: "refused", reason: "model_unavailable" };
+      const model = modelFor(offered);
+      const timeZone = await plan.timeZone(p);
+      const context = chatContext(
+        run.startedAt,
+        timeZone,
+        (run.pin?.courses ?? [])
+          .map(({ course }) => course)
+          .sort((a, b) => a.title.localeCompare(b.title, "de")),
+      );
+      const turn = createTurn();
+      const tools = {
+        searchMaterial: searchTool(
+          turn,
+          reader,
+          p,
+          { runId },
+          "Searches the material of your Courses and returns the best matching passages, each with a tag.",
+        ),
+        courseFacts: courseFactsTool(turn, {
+          reader,
+          understanding,
+          artifacts,
+          p,
+          timeZone,
+          courses: context.courses,
+        }),
+        agenda: agendaTool(turn, {
+          reader,
+          plan,
+          p,
+          timeZone,
+          courses: context.courses,
+        }),
+      };
+      const input = {
+        instructions: run.instructions ?? "",
+        messages: [
+          {
+            role: "user" as const,
+            content: `${context.text}\nCarry out your Instructions now.`,
+          },
+          ...transcripts.flatMap(
+            (transcript) => JSON.parse(transcript!) as ModelMessage[],
+          ),
+        ],
+        tools,
+        last: n === maxSteps,
+      };
+      const stepped = await retryRateLimited(() =>
+        delegation.meter(
+          p,
+          { microUsd: model.estimateMicroUsd(input) },
+          (deadline) =>
+            definitely(() => model.step(input, { signal: deadline })),
+        ),
+      );
+      const refusal = turn.refusal();
+      if (refusal) return { status: "refused", reason: refusal };
+      if (stepped.status === "refused")
+        return { status: "refused", reason: stepped.reason };
+      const parts = stepped.value.toolResults.map(
+        (result) =>
+          ({
+            type: `tool-${result.toolName}`,
+            toolCallId: result.toolCallId,
+            input: result.input,
+            output: result.output,
+          }) as RunStepPart,
+      );
+      // A step's text may restate anything read before it, so it goes with every Source read so far.
+      const derivedFrom = [
+        ...new Set([...(run.steps.at(-1)?.derivedFrom ?? []), ...turn.sources]),
+      ];
+      const answered = stepped.value.finishReason === "stop";
+      const stored = await withOwner(db, p, async (tx, studentId) => {
+        const sealedParts = await derived.seal(
+          tx,
+          `${runId}:${n}:parts`,
+          derivedFrom,
+          JSON.stringify(parts),
+        );
+        const transcript = await derived.seal(
+          tx,
+          `${runId}:${n}:transcript`,
+          derivedFrom,
+          JSON.stringify(stepped.value.messages),
+        );
+        if (!sealedParts || !transcript) return null;
+        // A concurrent attempt at the same step may have stored it first; its outcome stands.
+        await tx.runStep.createMany({
+          data: [
+            {
+              runId,
+              n,
+              studentId,
+              answered,
+              partsContent: sealedParts.content,
+              partsKey: sealedParts.contentKey,
+              transcriptContent: transcript.content,
+              transcriptKey: transcript.contentKey,
+              derivedFrom,
+            },
+          ],
+          skipDuplicates: true,
+        });
+        return (
+          await tx.runStep.findUniqueOrThrow({
+            where: { runId_n: { runId, n } },
+          })
+        ).answered;
+      });
+      if (stored === null)
+        return { status: "refused", reason: "source_deleted" };
+      return outcome(stored);
+    },
+
+    /**
+     * Ends the Run: its status, when it ended, why it stopped, and, when done, the model's final message as its
+     * summary, sealed under every Source the Run read. The transcript is dropped. Ending it again changes nothing.
+     */
+    async finish(runId: string, end: RunEnd) {
+      await withOwner(db, principal.fromRun(runId), async (tx) => {
+        const run = await tx.run.findUniqueOrThrow({
+          where: { id: runId },
+          include: { steps: { orderBy: { n: "desc" }, take: 1 } },
+        });
+        if (run.status !== "running") return;
+        const last = run.steps[0];
+        const transcript =
+          end.status === "done" && last?.answered && last.transcriptContent
+            ? await derived.open(
+                tx,
+                `${runId}:${last.n}:transcript`,
+                sealedOf(
+                  last.transcriptContent,
+                  last.transcriptKey,
+                  last.derivedFrom,
+                ),
+              )
+            : null;
+        const text = transcript
+          ? summaryOf(finalText(JSON.parse(transcript)))
+          : "";
+        const summary = text
+          ? await derived.seal(tx, `${runId}:summary`, last!.derivedFrom, text)
+          : null;
+        await tx.run.update({
+          where: { id: runId },
+          data: {
+            status: end.status,
+            endedAt: clock.now(),
+            stopReason: end.status === "stopped" ? end.reason : null,
+            summaryContent: summary?.content ?? null,
+            summaryKey: summary?.contentKey ?? null,
+            derivedFrom: summary?.derivedFrom ?? [],
+          },
+        });
+        await tx.runStep.updateMany({
+          where: { runId },
+          data: { transcriptContent: null, transcriptKey: null },
+        });
+      });
+    },
+
+    /**
+     * The Run as the student may see it: status, trigger, start and end, why it stopped, its summary, and each step's
+     * tool calls. Null when it is not the student's; the summary and a step's parts are null once a Source they were
+     * drawn from is deleted.
+     */
+    async view(p: Principal, runId: string) {
+      return withOwner(db, p, async (tx) => {
+        const run = await tx.run.findUnique({
+          where: { id: runId },
+          include: { steps: { orderBy: { n: "asc" } } },
+        });
+        if (!run?.status) return null;
+        const summary = run.summaryContent
+          ? await derived.open(
+              tx,
+              `${runId}:summary`,
+              sealedOf(run.summaryContent, run.summaryKey, run.derivedFrom),
+            )
+          : null;
+        return {
+          id: run.id,
+          status: run.status as RunEnd["status"] | "running",
+          trigger: run.trigger as "schedule" | "manual",
+          startedAt: run.startedAt,
+          endedAt: run.endedAt,
+          stopReason: run.stopReason,
+          summary,
+          steps: await Promise.all(
+            run.steps.map(async (step) => {
+              const parts = await derived.open(
+                tx,
+                `${runId}:${step.n}:parts`,
+                sealedOf(step.partsContent, step.partsKey, step.derivedFrom),
+              );
+              return {
+                n: step.n,
+                parts:
+                  parts === null ? null : (JSON.parse(parts) as RunStepPart[]),
+              };
+            }),
+          ),
+        };
+      });
+    },
+  };
+}
+export type AgentRuns = ReturnType<typeof createAgentRuns>;

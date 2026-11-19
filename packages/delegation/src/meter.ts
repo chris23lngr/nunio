@@ -171,8 +171,8 @@ export function createDelegation({
           return "allowance_exhausted";
         }
         await tx.$executeRaw`
-          INSERT INTO "usage_reservation" ("id", "studentId", "estimateMicroUsd", "agentId")
-          VALUES (${reservationId}, ${studentId}, ${estimate.microUsd}, ${agentId})`;
+          INSERT INTO "usage_reservation" ("id", "studentId", "estimateMicroUsd", "agentId", "runId")
+          VALUES (${reservationId}, ${studentId}, ${estimate.microUsd}, ${agentId}, ${p.kind === "run" ? p.runId : null})`;
         return undefined;
       });
       if (refusal) return { status: "refused", reason: refusal };

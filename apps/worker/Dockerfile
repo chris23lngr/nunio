@@ -34,6 +34,7 @@ COPY --from=deps --chown=node:node /app .
 COPY --from=builder --chown=node:node /app/apps/worker/dist ./apps/worker/dist
 COPY --from=builder --chown=node:node /app/packages/ai/dist ./packages/ai/dist
 COPY --from=builder --chown=node:node /app/packages/artifacts/dist ./packages/artifacts/dist
+COPY --from=builder --chown=node:node /app/packages/chat/dist ./packages/chat/dist
 COPY --from=builder --chown=node:node /app/packages/db/dist ./packages/db/dist
 COPY --from=builder --chown=node:node /app/packages/delegation/dist ./packages/delegation/dist
 COPY --from=builder --chown=node:node /app/packages/identity/dist ./packages/identity/dist
@@ -41,8 +42,9 @@ COPY --from=builder --chown=node:node /app/packages/keys/dist ./packages/keys/di
 COPY --from=builder --chown=node:node /app/packages/knowledge/dist ./packages/knowledge/dist
 COPY --from=builder --chown=node:node /app/packages/outreach/dist ./packages/outreach/dist
 COPY --from=builder --chown=node:node /app/packages/planning/dist ./packages/planning/dist
+COPY --from=builder --chown=node:node /app/packages/understanding/dist ./packages/understanding/dist
 USER node
 # Check runtime imports without connecting to Temporal or the database.
-RUN node -e "import('./apps/worker/dist/run-activities.js')"
+RUN node -e "Promise.all(['run-activities', 'agent-run-activities'].map((m) => import('./apps/worker/dist/' + m + '.js')))"
 # node directly, so SIGTERM reaches the worker, which drains for SHUTDOWN_GRACE_SECONDS.
 CMD ["node", "apps/worker/dist/index.js"]

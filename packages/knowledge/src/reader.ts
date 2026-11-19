@@ -429,6 +429,19 @@ export function createKnowledgeReader({
     );
     return { status: "ok", value: embedded.value };
   }
+  /** Whether a Run Principal's Run exists and is an Agent's. */
+  const isAgentRun = async (p: Principal) =>
+    p.kind === "run" &&
+    db.$transaction(async (tx) => {
+      const [row] = await tx.$queryRaw<
+        { owner: string | null }[]
+      >`SELECT run_owner(${p.runId}) AS owner`;
+      if (!row?.owner) return false;
+      await tx.$executeRaw`SELECT set_config('app.owner_id', ${row.owner}, true)`;
+      return Boolean(
+        (await tx.run.findUnique({ where: { id: p.runId } }))?.agentId,
+      );
+    });
   /** A Chat's current selection: its Courses, and its Sources with every Source of those Courses. */
   async function chatSelection(tx: Transaction, chatId: string) {
     const chat = await tx.chat.findUnique({
@@ -556,13 +569,17 @@ export function createKnowledgeReader({
       scope: ScopeRef,
       query: Query,
     ): Promise<Retrieval> {
-      // Chat and planning scopes are the student's own; a Run reads only through its own pinned scope.
+      // Chat and planning scopes are the student's own; a Run reads only through its own pinned scope, except that an
+      // Agent's Run reads the whole Plan, as the student's planning does.
       if ("runId" in scope) {
         if (p.kind !== "run" || p.runId !== scope.runId)
           throw new ScopeMismatchError("Only the Run itself reads its scope");
-      } else if (p.kind !== "student")
+      } else if (
+        p.kind !== "student" &&
+        !("planning" in scope && (await isAgentRun(p)))
+      )
         throw new ScopeMismatchError(
-          "Only a student reads a Chat or planning scope",
+          "Only a student or an Agent's Run reads planning scope, and only a student a Chat",
         );
       if ("planning" in scope) {
         if (
