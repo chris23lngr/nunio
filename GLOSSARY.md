@@ -295,7 +295,7 @@ The student's free-text account of what one Agent should do, the only text its R
 _Avoid_: Prompt, rules, description
 
 **Template**:
-A starting point nunio curates for creating an Agent, such as "Klausur vorbereiten". Students cannot publish Templates.
+A starting point nunio curates for creating an Agent, such as "Klausur vorbereiten". An Agent made from a Template is a copy: changing the Template never changes the Agent. Students cannot publish Templates.
 _Avoid_: Preset, Vorlage, blueprint
 
 **Paused**:
