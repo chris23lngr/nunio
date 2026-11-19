@@ -68,6 +68,7 @@ const detail = (
     summaryGone?: boolean;
     costMicroUsd?: number;
     verlauf?: unknown[];
+    approvals?: unknown[];
   } = {},
 ) => ({
   ...run,
@@ -78,6 +79,7 @@ const detail = (
   verlauf: more.verlauf ?? [
     { type: "start", at: run.startedAt, trigger: run.trigger },
   ],
+  approvals: more.approvals ?? [],
 });
 
 /** A stat card's value. */
@@ -112,6 +114,7 @@ test("an Agent that ran opens on Aktivität with its newest Run: Datum, Kosten, 
             at: stopped.startedAt,
             step: 1,
             plan: true,
+            approvals: true,
             courses: [
               { id: "c-1", title: "Statistics II" },
               { id: "c-2", title: null },
@@ -214,7 +217,7 @@ test("an Agent that ran opens on Aktivität with its newest Run: Datum, Kosten, 
   expect(verlauf).toEqual([
     expect.stringContaining("Zur geplanten Zeit gestartet"),
     expect.stringMatching(
-      /Hat den Plan gelesen, 2 Kurse gelesen und 1 Quelle aufgerufenKurse: Statistics II, gelöschtQuellen: gelöscht$/,
+      /Hat den Plan gelesen, deine Freigaben gelesen, 2 Kurse gelesen und 1 Quelle aufgerufenKurse: Statistics II, gelöschtQuellen: gelöscht$/,
     ),
     expect.stringMatching(
       /Lernblock erstellt„Klausur Statistik“ · Statistics II · .+Immer erlaubt, obwohl: Außerhalb deines Lernfensters$/,
@@ -365,4 +368,188 @@ test("'Seit …' counts on while a Run is under way, even when nothing else chan
   await act(() => vi.advanceTimersByTimeAsync(60_000));
 
   expect(within(list).getByText("Seit 6 Min.")).toBeTruthy();
+});
+
+/** An open Approval of the Run as nunio renders it: a new block, or a move of one. */
+const card = (
+  actionId: string,
+  action: {
+    kind: "studyBlock.create" | "studyBlock.move";
+    from: { start: string; end: string } | null;
+    to: { start: string; end: string };
+  },
+) => ({
+  actionId,
+  action: {
+    ...action,
+    work: { title: "Klausur Statistik", course: "Statistics II" },
+    task: null,
+  },
+  fingerprint: `fp-${actionId}`,
+  expiresAt: "2099-02-09T08:00:00.000Z",
+  agent: { id: "a-1", preset: "", name: "Klausurhelfer" },
+});
+const at = {
+  monday: {
+    start: "2099-02-02T09:00:00.000Z",
+    end: "2099-02-02T10:00:00.000Z",
+  },
+  tuesday: {
+    start: "2099-02-03T14:00:00.000Z",
+    end: "2099-02-03T15:00:00.000Z",
+  },
+};
+
+test("Freigaben shows the selected Run's open Approvals as nunio renders them, and Akzeptieren approves exactly the one shown", async () => {
+  const run = listed("r-1", 60, "done", { openApprovals: 2 });
+  const asked = [
+    card("x-1", { kind: "studyBlock.create", from: null, to: at.monday }),
+    card("x-2", {
+      kind: "studyBlock.move",
+      from: at.monday,
+      to: at.tuesday,
+    }),
+  ];
+  let approvals = asked;
+  const decided: unknown[] = [];
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [run], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-1", () =>
+    Response.json(detail(run, { summary: "Ich habe gefragt.", approvals })),
+  );
+  api.route("POST", "/api/me/approvals/x-1", async (request) => {
+    decided.push(await request.json());
+    approvals = asked.slice(1);
+    return Response.json({ status: "ok" });
+  });
+  api.route("POST", "/api/me/approvals/x-2", async (request) => {
+    decided.push(await request.json());
+    approvals = [];
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+
+  const freigaben = await screen.findByRole("region", { name: "Freigaben" });
+  const cards = within(freigaben).getAllByRole("group");
+  expect(cards.map((c) => c.textContent)).toEqual([
+    expect.stringMatching(
+      /^Lernblock erstellen„Klausur Statistik“ · Statistics IINeu: Mo\., 2\. Feb\., \d\d:\d\d – \d\d:\d\d UhrKlausurhelfer · Läuft ab am Mo\., 9\. Feb\., \d\d:\d\dAblehnenAkzeptieren$/,
+    ),
+    expect.stringMatching(
+      /^Lernblock verschieben„Klausur Statistik“ · Statistics IIMo\., 2\. Feb\., \d\d:\d\d – \d\d:\d\d Uhr → Di\., 3\. Feb\., \d\d:\d\d – \d\d:\d\d UhrKlausurhelfer · Läuft ab am .+AblehnenAkzeptieren$/,
+    ),
+  ]);
+  // The Agent's own words stay in the Zusammenfassung, never on a card.
+  expect(within(freigaben).queryByText(/Ich habe gefragt/)).toBeNull();
+
+  await userEvent.click(
+    within(cards[0]!).getByRole("button", { name: "Akzeptieren" }),
+  );
+  await waitFor(() =>
+    expect(within(freigaben).getAllByRole("group")).toHaveLength(1),
+  );
+  await userEvent.click(
+    within(freigaben).getByRole("button", { name: "Ablehnen" }),
+  );
+
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: "Freigaben" })).toBeNull(),
+  );
+  expect(decided).toEqual([
+    { decision: "approve", fingerprint: "fp-x-1" },
+    { decision: "deny" },
+  ]);
+});
+
+test("an Approval whose Action changed says so and reloads instead of approving", async () => {
+  const run = listed("r-1", 60, "done", { openApprovals: 1 });
+  let approvals = [
+    card("x-1", { kind: "studyBlock.move", from: at.monday, to: at.tuesday }),
+  ];
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [run], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-1", () =>
+    Response.json(detail(run, { approvals })),
+  );
+  api.route("POST", "/api/me/approvals/x-1", () => {
+    // The gate refused it, so it is open no more.
+    approvals = [];
+    return Response.json({ error: "changed" }, { status: 409 });
+  });
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+
+  const freigaben = await screen.findByRole("region", { name: "Freigaben" });
+  await userEvent.click(
+    within(freigaben).getByRole("button", { name: "Akzeptieren" }),
+  );
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Diese Aktion hat sich geändert, seit dein Agent gefragt hat. Nichts wurde ausgeführt; die Freigaben wurden neu geladen.",
+  );
+  await waitFor(() =>
+    expect(within(freigaben).queryAllByRole("group")).toHaveLength(0),
+  );
+});
+
+test("the Verlauf shows each Approval decided or expired, and what became of an approved one", async () => {
+  const run = listed("r-1", 60, "done");
+  const action = {
+    kind: "studyBlock.create",
+    work: { title: "Klausur Statistik", course: "Statistics II" },
+    ...at.monday,
+  };
+  const decided = (more: object) => ({
+    type: "approval",
+    at: run.endedAt,
+    action,
+    outcome: null,
+    refusal: null,
+    ...more,
+  });
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [run], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-1", () =>
+    Response.json(
+      detail(run, {
+        verlauf: [
+          decided({ decision: "approved", outcome: "done" }),
+          decided({
+            decision: "approved",
+            outcome: "refused",
+            refusal: "out_of_scope",
+          }),
+          decided({
+            decision: "approved",
+            outcome: "refused",
+            refusal: "approval_mismatch",
+          }),
+          decided({ decision: "denied" }),
+          decided({ decision: "expired" }),
+        ],
+      }),
+    ),
+  );
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+
+  const verlauf = await screen.findByRole("list", { name: "Verlauf" });
+  expect(
+    within(verlauf)
+      .getAllByRole("listitem")
+      .map((entry) => entry.textContent),
+  ).toEqual([
+    expect.stringMatching(
+      /Von dir freigegeben: Lernblock erstellt„Klausur Statistik“ · Statistics II · .+$/,
+    ),
+    expect.stringMatching(
+      /Freigegeben, nicht ausgeführt: Lernblock erstellen.+Grund: Keine Arbeit seiner Kurse$/,
+    ),
+    expect.stringMatching(
+      /Freigegeben, nicht ausgeführt: Lernblock erstellen.+Grund: Hat sich seit der Frage geändert$/,
+    ),
+    expect.stringMatching(/Von dir abgelehnt: Lernblock erstellen„Klausur/),
+    expect.stringMatching(/Freigabe abgelaufen: Lernblock erstellen„Klausur/),
+  ]);
 });

@@ -71,6 +71,31 @@ export const dated = (at: string) =>
 export const timeOf = (at: string) => format(new Date(at), "HH:mm:ss");
 
 type ActionEntry = Extract<VerlaufEntry, { type: "action" }>;
+type ApprovalEntry = Extract<VerlaufEntry, { type: "approval" }>;
+
+/** What each kind of Action does, before and after it happened: an Approval card's title, and a decided one's entry. */
+export const kinds: Record<
+  ApprovalEntry["action"]["kind"],
+  { asked: string; done: string }
+> = {
+  "studyBlock.create": {
+    asked: "Lernblock erstellen",
+    done: "Lernblock erstellt",
+  },
+  "studyBlock.move": {
+    asked: "Lernblock verschieben",
+    done: "Lernblock verschoben",
+  },
+  "studyBlock.remove": {
+    asked: "Lernblock entfernen",
+    done: "Lernblock entfernt",
+  },
+  "task.create": { asked: "Aufgabe anlegen", done: "Aufgabe angelegt" },
+  "task.reopen": {
+    asked: "Aufgabe wieder öffnen",
+    done: "Aufgabe wieder geöffnet",
+  },
+};
 
 /** What each Capability's tool does, before and after it happened. */
 const actions: Record<string, { asked: string; done: string }> = {
@@ -131,6 +156,7 @@ export function describeEntry(entry: VerlaufEntry): {
     case "read": {
       const done = [
         ...(entry.plan ? ["den Plan gelesen"] : []),
+        ...(entry.approvals ? ["deine Freigaben gelesen"] : []),
         ...(entry.courses.length
           ? [
               `${entry.courses.length} ${entry.courses.length === 1 ? "Kurs" : "Kurse"} gelesen`,
@@ -156,6 +182,8 @@ export function describeEntry(entry: VerlaufEntry): {
     }
     case "action":
       return describeAction(entry);
+    case "approval":
+      return describeApproval(entry);
     case "end":
       return {
         title:
@@ -165,6 +193,22 @@ export function describeEntry(entry: VerlaufEntry): {
         details: [],
       };
   }
+}
+
+/** The work an Action was for, its Course and when, as one line; gone only once deleted. */
+function workLine(action: NonNullable<ActionEntry["action"]>) {
+  return [
+    // Gone only once deleted; an Archived Course's work is still named.
+    action.work
+      ? action.work.title
+        ? quoted(action.work.title)
+        : "Ohne Titel"
+      : "gelöscht",
+    ...(action.work?.course ? [action.work.course] : []),
+    ...(action.start && action.end
+      ? [shortSpan({ start: action.start, end: action.end })]
+      : []),
+  ].join(" · ");
 }
 
 function describeAction(entry: ActionEntry) {
@@ -179,32 +223,42 @@ function describeAction(entry: ActionEntry) {
     failed: `Fehlgeschlagen: ${named.asked}`,
     unconfirmed: `Unbestätigt: ${named.asked}`,
   }[entry.outcome];
-  const action = entry.action;
   return {
     title,
     details: [
-      ...(action
-        ? [
-            [
-              // Gone only once deleted; an Archived Course's work is still named.
-              action.work
-                ? action.work.title
-                  ? quoted(action.work.title)
-                  : "Ohne Titel"
-                : "gelöscht",
-              ...(action.work?.course ? [action.work.course] : []),
-              ...(action.start && action.end
-                ? [shortSpan({ start: action.start, end: action.end })]
-                : []),
-            ].join(" · "),
-          ]
-        : []),
+      ...(entry.action ? [workLine(entry.action)] : []),
       ...(entry.refusal
         ? [`Grund: ${refusals[entry.refusal] ?? entry.refusal}`]
         : []),
       ...entry.brokenPreferences.map(
         (broken) => `Immer erlaubt, obwohl: ${noted[broken]}`,
       ),
+    ],
+  };
+}
+
+/** An Approval the student decided, or that expired unanswered, and what became of an approved one. */
+function describeApproval(entry: ApprovalEntry) {
+  const named = kinds[entry.action.kind];
+  const title =
+    entry.decision === "denied"
+      ? `Von dir abgelehnt: ${named.asked}`
+      : entry.decision === "expired"
+        ? `Freigabe abgelaufen: ${named.asked}`
+        : {
+            done: `Von dir freigegeben: ${named.done}`,
+            refused: `Freigegeben, nicht ausgeführt: ${named.asked}`,
+            failed: `Freigegeben, fehlgeschlagen: ${named.asked}`,
+            unconfirmed: `Freigegeben, unbestätigt: ${named.asked}`,
+            pending: `Freigegeben, wird ausgeführt: ${named.asked}`,
+          }[entry.outcome ?? "pending"];
+  return {
+    title,
+    details: [
+      workLine(entry.action),
+      ...(entry.refusal
+        ? [`Grund: ${refusals[entry.refusal] ?? entry.refusal}`]
+        : []),
     ],
   };
 }

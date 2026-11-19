@@ -191,7 +191,8 @@ export async function readCall(
   });
 }
 
-const why: Record<Refusal, string> = {
+/** Why the gate refused an Action, as the model is told. */
+export const why: Record<Refusal, string> = {
   not_owner: "the work or block is gone",
   paused: "your Agent is Paused",
   ended: "your Agent is Ended",

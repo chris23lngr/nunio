@@ -11,7 +11,12 @@ import {
 import { courseColors } from "@nunio/knowledge";
 import { deadline } from "@nunio/planning";
 import type { AppBindings } from "./app.js";
-import { ActionShown, describeAction } from "./approvals.js";
+import {
+  ActionShown,
+  Approval,
+  approvalsOf,
+  describeAction,
+} from "./approvals.js";
 import {
   archivedOutcomes,
   body,
@@ -201,6 +206,7 @@ const VerlaufEntrySchema = z
       at: z.date(),
       step: z.number().int(),
       plan: z.boolean().describe("It read the Plan."),
+      approvals: z.boolean().describe("It read its Agent's Approvals."),
       courses: z.array(Named).describe("The Courses whose Facts it read."),
       sources: z.array(Named).describe("The Sources it drew on."),
     }),
@@ -252,6 +258,41 @@ const VerlaufEntrySchema = z
       brokenPreferences: z
         .array(z.enum(["outside_study_window", "daily_limit", "work_limit"]))
         .describe("Preferences it broke under Immer erlaubt."),
+    }),
+    z.object({
+      type: z.literal("approval"),
+      at: z
+        .date()
+        .describe("When the student decided, or when it expired unanswered."),
+      action: z.object({
+        kind: ActionShown.shape.kind,
+        work: z
+          .object({
+            title: z.string().nullable(),
+            course: z.string().nullable(),
+          })
+          .nullable()
+          .describe("As in an action entry; null once deleted (gelöscht)."),
+        start: z.date().nullable(),
+        end: z.date().nullable(),
+      }),
+      decision: z
+        .enum(["approved", "denied", "expired"])
+        .describe(
+          "The student's answer, or expired when none came in time; expiry writes nothing, it shows once it passed.",
+        ),
+      outcome: z
+        .enum(["done", "refused", "failed", "unconfirmed", "pending"])
+        .nullable()
+        .describe(
+          "What the gate made of an approved Action, pending while it is performed; null unless approved.",
+        ),
+      refusal: z
+        .string()
+        .nullable()
+        .describe(
+          "Why the gate refused the approved Action, such as out_of_scope or approval_mismatch (it changed since it was asked).",
+        ),
     }),
     z.object({
       type: z.literal("end"),
@@ -688,8 +729,13 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
                 "It had a summary, gone with a Source it drew on that was deleted since.",
               ),
             verlauf: z.array(VerlaufEntrySchema),
+            approvals: z
+              .array(Approval)
+              .describe(
+                "Its open, unexpired Approvals (Freigaben), each as nunio renders the Action, never as the model put it.",
+              ),
           }).openapi("ActivityRunDetail"),
-          "The Run, with its cost, summary and Verlauf.",
+          "The Run, with its cost, summary, Verlauf and open Approvals.",
         ),
         ...errors,
       },
@@ -704,7 +750,8 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
         {
           ...run,
           verlauf: run.verlauf.map((entry) =>
-            entry.type === "action" && entry.action
+            (entry.type === "action" || entry.type === "approval") &&
+            entry.action
               ? {
                   ...entry,
                   action: {
@@ -716,6 +763,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
                 }
               : entry,
           ),
+          approvals: await approvalsOf(c, p, { runId }),
         },
         200,
       );

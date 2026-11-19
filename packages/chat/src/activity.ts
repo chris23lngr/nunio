@@ -10,10 +10,12 @@ import type { SourceKeys } from "@nunio/keys";
 import type { Facts } from "@nunio/knowledge";
 import { createDerivedText } from "@nunio/knowledge";
 
-/** What one model step read: the Plan, the Facts of these Courses, and these Sources. */
+/** What one model step read: the Plan, its Agent's Approvals, the Facts of these Courses, and these Sources. */
 export type ReadEvent = {
   step: number;
   plan: boolean;
+  /** It read the Agent's Approvals; absent in events written before that tool existed. */
+  approvals?: boolean;
   courseIds: string[];
   sourceIds: string[];
 };
@@ -83,6 +85,7 @@ export type VerlaufEntry =
       at: Date;
       step: number;
       plan: boolean;
+      approvals: boolean;
       courses: { id: string; title: string | null }[];
       sources: { id: string; title: string | null }[];
     }
@@ -102,6 +105,23 @@ export type VerlaufEntry =
       outcome: ActionEvent["outcome"];
       refusal: ActionEvent["refusal"];
       brokenPreferences: BrokenPreference[];
+    }
+  | {
+      type: "approval";
+      at: Date;
+      /** The Action the Approval was asked for, named as in an `action` entry. */
+      action: {
+        kind: string;
+        work: { title: string | null; course: string | null } | null;
+        start: Date | null;
+        end: Date | null;
+      };
+      /** The student's answer, or that none came in time; expiry is lazy, so no event marks it (#149). */
+      decision: "approved" | "denied" | "expired";
+      /** For an approved one, what the gate made of it then; `pending` while it is being performed. Null otherwise. */
+      outcome: "done" | "refused" | "failed" | "unconfirmed" | "pending" | null;
+      /** Why the gate refused the approved Action, such as out_of_scope or approval_mismatch. */
+      refusal: Refusal | null;
     }
   | {
       type: "end";
@@ -246,11 +266,39 @@ export function createActivity({
         const reads = run.events
           .filter((event) => event.type === "read")
           .map((event) => event.detail as ReadEvent);
-        const workIds = run.events.flatMap((event) => {
-          const workId =
-            event.type === "action" && (event.detail as ActionEvent).workId;
-          return workId ? [workId] : [];
+        // Its Approvals as they stand: decided, expired, or still open.
+        const approvals = await tx.approval.findMany({
+          where: { action: { runId } },
+          select: {
+            decision: true,
+            decidedAt: true,
+            expiresAt: true,
+            action: {
+              select: {
+                id: true,
+                kind: true,
+                args: true,
+                status: true,
+                refusal: true,
+              },
+            },
+          },
         });
+        const calls = run.events
+          .filter((event) => event.type === "action")
+          .map((event) => event.detail as ActionEvent);
+        // A move names only its block, so its work is the one its call named when it was asked.
+        const workOfAction = (action: { id: string; args: unknown }) =>
+          (action.args as { workId?: string }).workId ??
+          calls.find((call) => call.actionId === action.id)?.workId ??
+          null;
+        const workIds = [
+          ...calls.flatMap((call) => (call.workId ? [call.workId] : [])),
+          ...approvals.flatMap(({ action }) => {
+            const workId = workOfAction(action);
+            return workId ? [workId] : [];
+          }),
+        ];
         const [sources, obligations, tasks] = await Promise.all([
           tx.source.findMany({
             where: {
@@ -289,6 +337,8 @@ export function createActivity({
           run,
           cost,
           summary,
+          approvals,
+          workOfAction,
           open: await openApprovals(tx, [runId]),
           sources,
           obligations,
@@ -327,6 +377,64 @@ export function createActivity({
           course: courseTitle(obligation.courseId),
         };
       };
+      const now = clock.now();
+      const decided = read.approvals
+        .flatMap(
+          ({ decision, decidedAt, expiresAt, action }): VerlaufEntry[] => {
+            const { start, end } = action.args as {
+              start?: string;
+              end?: string;
+            };
+            const shown = {
+              kind: action.kind,
+              work: workOf(read.workOfAction(action)),
+              start: start ? new Date(start) : null,
+              end: end ? new Date(end) : null,
+            };
+            if (decision === "approved" || decision === "denied")
+              return [
+                {
+                  type: "approval",
+                  at: decidedAt!,
+                  action: shown,
+                  decision: decision === "approved" ? "approved" : "denied",
+                  outcome:
+                    decision === "denied"
+                      ? null
+                      : action.status === "awaiting_approval" ||
+                          action.status === "dispatching"
+                        ? "pending"
+                        : action.status,
+                  refusal:
+                    decision === "approved" && action.status === "refused"
+                      ? (action.refusal as Refusal)
+                      : null,
+                },
+              ];
+            // Unanswered past its expiry, or refused once a late answer came: shown as expired from then.
+            if (
+              (action.status === "awaiting_approval" && expiresAt <= now) ||
+              action.refusal === "approval_expired"
+            )
+              return [
+                {
+                  type: "approval",
+                  at: expiresAt,
+                  action: shown,
+                  decision: "expired",
+                  outcome: null,
+                  refusal: null,
+                },
+              ];
+            return [];
+          },
+        )
+        .sort((a, b) => a.at.getTime() - b.at.getTime());
+      // What was decided after the Run ended follows its end.
+      const ended =
+        run.status !== "running" && run.endedAt ? run.endedAt : null;
+      const afterEnd = (entry: VerlaufEntry) =>
+        ended !== null && entry.at >= ended;
       const verlauf: VerlaufEntry[] = [
         {
           type: "start",
@@ -341,6 +449,7 @@ export function createActivity({
               at: event.at,
               step: read.step,
               plan: read.plan,
+              approvals: read.approvals ?? false,
               courses: titled(read.courseIds, courses),
               sources: titled(read.sourceIds, sources),
             };
@@ -365,16 +474,18 @@ export function createActivity({
             brokenPreferences: call.brokenPreferences,
           };
         }),
-        ...(run.status !== "running" && run.endedAt
+        ...decided.filter((entry) => !afterEnd(entry)),
+        ...(ended
           ? [
               {
                 type: "end" as const,
-                at: run.endedAt,
+                at: ended,
                 status: run.status as Exclude<ActivityRun["status"], "running">,
                 reason: run.stopReason,
               },
             ]
           : []),
+        ...decided.filter(afterEnd),
       ];
       return {
         ...shown(run, read.open),

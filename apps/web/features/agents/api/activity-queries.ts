@@ -9,7 +9,7 @@ export type ActivityRunDetail =
 export type VerlaufEntry = ActivityRunDetail["verlauf"][number];
 
 /** Under the Agent's own key, so whatever refreshes the Agent, such as "Jetzt starten", refreshes its Runs too. */
-const runsKey = (apiOrigin: string, agentId: string) => [
+export const runsKey = (apiOrigin: string, agentId: string) => [
   apiOrigin,
   "agents",
   agentId,

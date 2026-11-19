@@ -1,7 +1,12 @@
 "use client";
 
 import { cn } from "@nunio/ui";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   dated,
@@ -13,8 +18,10 @@ import {
   timeOf,
   usd,
 } from "../activity-wording";
+import { decideRunApproval } from "../api/activity-mutations";
 import type { ActivityRun } from "../api/activity-queries";
 import { agentRunListQueries, agentRunQueries } from "../api/activity-queries";
+import { RunApprovalCard } from "./run-approval-card";
 
 /** A Run's badge, shown only when it isn't simply done. */
 function Badge({ run }: { run: ActivityRun }) {
@@ -45,7 +52,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** The selected Run: Datum, Kosten and Status, its Zusammenfassung, and its Verlauf. */
+/** The selected Run: Datum, Kosten and Status, its Zusammenfassung, its open Approvals, and its Verlauf. */
 function RunDetail({
   apiOrigin,
   agentId,
@@ -56,6 +63,9 @@ function RunDetail({
   runId: string;
 }) {
   const query = useQuery(agentRunQueries(apiOrigin, agentId, runId));
+  const decide = useMutation(
+    decideRunApproval(apiOrigin, agentId, useQueryClient()),
+  );
   const run = query.data;
   if (!run)
     return query.error ? (
@@ -104,6 +114,34 @@ function RunDetail({
           </p>
         )}
       </section>
+      {(run.approvals.length > 0 || decide.error) && (
+        <section
+          aria-labelledby={`${runId}-freigaben`}
+          className="max-w-[40rem]"
+        >
+          <h2
+            id={`${runId}-freigaben`}
+            className="text-base font-medium text-base-800"
+          >
+            Freigaben
+          </h2>
+          {decide.error && (
+            <p role="alert" className="mt-3 text-sm text-warning-700">
+              {decide.error.message}
+            </p>
+          )}
+          <div className="mt-4 flex flex-col gap-3">
+            {run.approvals.map((approval) => (
+              <RunApprovalCard
+                key={approval.actionId}
+                approval={approval}
+                busy={decide.isPending}
+                onDecide={(decision) => decide.mutate({ approval, decision })}
+              />
+            ))}
+          </div>
+        </section>
+      )}
       <section aria-labelledby={`${runId}-verlauf`} className="max-w-[40rem]">
         <h2
           id={`${runId}-verlauf`}
