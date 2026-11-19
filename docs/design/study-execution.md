@@ -339,13 +339,13 @@ All tables are owned by the student under the same row-level security policy as 
 
 ## Seams and adapters
 
-| Dependency                                          | Category            | Seam                               | Adapters                                        |
-| --------------------------------------------------- | ------------------- | ---------------------------------- | ----------------------------------------------- |
-| Postgres                                            | Local-substitutable | Internal only                      | Real Postgres; Testcontainers                   |
-| Models for making and grading                       | True external       | **Real ports** (`Maker`, `Grader`) | Model adapters in `@nunio/ai`; scriptable fakes |
-| `reader`, `facts`, `agents`, `delegation`           | In-process          | None; the real modules             | Real modules on the same test database          |
-| `DerivedText`                                       | In-process          | Shared helper, not a port          | One implementation, moved out of `chats`        |
-| Clock                                               | In-process          | Small                              | System clock; manual clock                      |
+| Dependency                                | Category            | Seam                               | Adapters                                        |
+| ----------------------------------------- | ------------------- | ---------------------------------- | ----------------------------------------------- |
+| Postgres                                  | Local-substitutable | Internal only                      | Real Postgres; Testcontainers                   |
+| Models for making and grading             | True external       | **Real ports** (`Maker`, `Grader`) | Model adapters in `@nunio/ai`; scriptable fakes |
+| `reader`, `facts`, `agents`, `delegation` | In-process          | None; the real modules             | Real modules on the same test database          |
+| `DerivedText`                             | In-process          | Shared helper, not a port          | One implementation, moved out of `chats`        |
+| Clock                                     | In-process          | Small                              | System clock; manual clock                      |
 - `levelOf` and `resolveAiUse` are internal seams: pure functions table-tested on their own, never exported from their package's root.
 - `DerivedText` replaces the private key-wrapping code in `chats.ts`, which today is the only caller. With three callers it earns a module of its own; Chats' existing tests must pass unchanged.
 - Default model tasks are `explanation` for practice sets and flashcards, and `feedback` for grading, drafts and Critiques. Phase 12's evals confirm them.
