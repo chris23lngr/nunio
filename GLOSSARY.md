@@ -179,7 +179,7 @@ The monthly cap on AI usage for one Agent, which resets each month. An Agent tha
 _Avoid_: Limit, quota, allowance
 
 **Allowance**:
-The student's total included AI usage, shared across all Runs and the reading of Sources, and counted in the model cost it incurs. During the pilot only the founder increases it, manually; it does not reset automatically.
+The student's total included AI usage, shared across all Runs, Chats and the reading of Sources, and counted in the model cost it incurs. During the pilot only the founder increases it, manually; it does not reset automatically.
 _Avoid_: Credits, quota, budget
 
 **Model**:
@@ -299,7 +299,7 @@ A starting point nunio curates for creating an Agent, such as "Klausur vorbereit
 _Avoid_: Preset, Vorlage, blueprint
 
 **Paused**:
-The state of an Agent that takes no further Actions, including in a Run already under way, while keeping its Grants. An Agent is Paused by the student, by exhausting its Budget, by losing a Connection it depends on, by all its Courses being Archived, or by losing its last Course; only the student resumes it, even after its Budget resets or a Course is unarchived.
+The state of an Agent that takes no further Actions, including in a Run already under way, while keeping its Grants. An Agent is Paused by the student, by exhausting its Budget, by losing a Connection it depends on, by all its Courses being Archived, by losing its last Course, or by nunio when it made the Agent from one of the student's earlier delegations; only the student resumes it, even after its Budget resets or a Course is unarchived.
 _Avoid_: Suspended, stopped, disabled, on hold
 
 **Ended**:
@@ -319,7 +319,7 @@ One concrete effect a Run, or the student's request in a Chat, has on the studen
 _Avoid_: Operation, step, tool call
 
 **Approval**:
-The student's consent to one exact Action, given by confirming that Action as nunio shows it back to them. A Chat request alone is never an Approval; any deviation from the approved Action needs a new Approval. An unanswered request for Approval expires.
+The student's consent to one exact Action, given by confirming that Action as nunio shows it back to them. A Chat request alone is never an Approval; any deviation from the approved Action needs a new Approval. An unanswered request for Approval expires, or is withdrawn when its Agent is Paused or Ended.
 _Avoid_: Confirmation, consent, permission
 
 **Grant**:

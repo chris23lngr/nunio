@@ -4,9 +4,17 @@ Each Run is one bounded Temporal workflow. A Responsibility is not a workflow. I
 
 We rejected one long-lived workflow per Responsibility because semester-long executions must survive every code deploy, which is where Temporal versioning is most costly. They also accumulate large histories that clash with short retention and with storing only opaque IDs in payloads.
 
-## Amendment (2026-11-19): Approvals in an Agent's Runs
+## Amendment (2026-11-19): Approvals outlive the Run
 
-An Agent's Run that awaits Approval raises one Intervention for as long as any of its Approvals is open ([What a Run records and shows in Activity](https://github.com/chris23lngr/nunio/issues/149)). The Intervention lapses when the last Approval is decided, expires or is withdrawn, and opening it leads to that Run's Approvals in the Agent's Activity. One Intervention per Run, rather than one per Approval, keeps a Run's up to five questions to a single announcement.
+Agents replace Responsibilities, and a Run that waited up to 7 days for its Approvals would skip every scheduled Run and "Jetzt starten" in the meantime, so one ignored card would stop a daily Agent for a week ([What happens to an Agent's next Runs while one awaits Approval](https://github.com/chris23lngr/nunio/issues/153)).
 
-- **Expiry.** An expired Approval in an Agent's Run no longer raises an Intervention of its own: its Activity records the expiry. An Approval asked in a Chat still raises one when it expires.
-- **Pause and End.** Pausing or Ending an Agent withdraws its Runs' open Approvals at once, because a Paused Agent takes no further Actions.
+- **A Run ends when its model finishes.** Its workflow no longer waits for Approvals. An Action needing Approval goes back to the model as asked, not happened, and stays open in the Inbox after the Run ends. The student's decision is applied by the API through the gate, as for a Chat's Approvals ([ADR-0019](0019-the-chat-model-calls-tools.md)), and the Action still belongs to its Run.
+- **Expiry is lazy.** An Approval still expires after 7 days, never later than the related Obligation's deadline, but no timer closes it. It shows as expired, the gate refuses a late decision, and no Intervention is raised.
+- **Pausing or Ending withdraws.** Pausing an Agent, for any reason, or Ending it withdraws all its open Approvals for good. Resuming brings none back; the next Run asks again if the Action still makes sense.
+- **The next Run sees them.** Each Run reads its Agent's open Approvals and those decided or expired since its previous Run, so it does not ask twice and can build on the answers. Nothing deduplicates across Runs.
+- **One Run at a time.** The Schedule keeps skipping a start while the Agent's Run is still under way, and "Jetzt starten" is unavailable then. No start is queued.
+- **Rejected:** keeping the wait, which stalls the Agent; letting Runs overlap, which allows up to 7 live Runs asking the same things; and having each new Run supersede the last, which caps an Approval's life at the Agent's rhythm.
+
+## Amendment (2026-11-19): One Intervention per Agent Run with open Approvals
+
+The Approvals an Agent's Run leaves open reach the Inbox as one Intervention per Run ([What a Run records and shows in Activity](https://github.com/chris23lngr/nunio/issues/149)). It is raised when the Run ends with at least one Approval open, announced under the student's outreach settings, and lapses when the last of them is decided, expires or is withdrawn. Like expiry, lapsing needs no timer. Opening it leads to that Run's Approvals in the Agent's Activity. One Intervention per Run, rather than one per Approval, keeps a Run's up to five questions to a single announcement. Expiry and withdrawal still raise nothing of their own.
