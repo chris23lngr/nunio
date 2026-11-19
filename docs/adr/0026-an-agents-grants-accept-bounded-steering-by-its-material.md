@@ -35,3 +35,14 @@ An Agent with the Capability "Briefing erstellen" writes Briefings ([Whether Bri
 Approvals now outlive the Run that asked them ([ADR-0006](0006-one-workflow-per-run.md)), so a daily Agent the student ignores could otherwise leave 35 cards open within a week ([What happens to an Agent's next Runs while one awaits Approval](https://github.com/chris23lngr/nunio/issues/153)).
 
 - **At most 5 open Approvals per Agent,** on top of the 5 per Run. An Action that would ask past it is refused with `open_approvals_cap` and the model is told. Granted Actions go on.
+
+## Amendment (2026-11-19): The builder
+
+The AI builder panel drafts an Agent's form, and what it writes becomes Instructions once the student saves ([How the AI builder panel fills an Agent's form](https://github.com/chris23lngr/nunio/issues/148)). Anything the builder reads could therefore become a request to every Run. We decided what it reads and runs on ([What the builder reads and what it runs on](https://github.com/chris23lngr/nunio/issues/165)).
+
+- **What it reads.** The form as it stands, the conversation, the student's Courses (id, name and code, fenced as data, since a proposed Course's name can come from extraction) and the Capabilities that exist in code. It never reads Sources, Facts, Obligations, Tasks or the Plan, so no material reaches the Instructions through it. A Run reads that material itself, as data. Text the student pastes into the conversation is their own request.
+- **Not a Chat.** The builder has no Citations, proposes no Actions and starts no Runs. Its only tool fills the form. The conversation is not kept once the student leaves the form, on a new Agent or on an existing Agent's Auftrag tab alike.
+- **Limits in code.** The form-fill tool's schema has no Budget or Model field, Capabilities are an enum of those in code, and "Lernblöcke verschieben" is held at Nachfragen whatever the model sends. No builder injection eval is needed: the only material left is fenced Course names, and the student sees every change marked before saving.
+- **Model and cost.** It runs on a task Model chosen in code (`taskModels.builder`, starting at `sonnet-5.5-reasoning-high`), with no picker. Each answer is metered against the student's Allowance like a Chat answer, never against an Agent's Budget. With the Allowance exhausted, the panel is unavailable and the form can still be filled by hand.
+
+Considered: also reading Obligations and their dates, or the full material, for more specific drafts. Rejected because an instruction hidden in a Source or an extracted title could then be saved as a request, and dates copied into Instructions go stale.
