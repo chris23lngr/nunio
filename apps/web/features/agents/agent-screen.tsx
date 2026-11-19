@@ -1,12 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { controlResponsibility } from "./api/responsibility-mutations";
-import type { Responsibility } from "./api/responsibility-queries";
-import { responsibilityQueries } from "./api/responsibility-queries";
+import { controlAgent } from "./api/agent-mutations";
+import type { Agent } from "./api/agent-queries";
+import { agentQueries } from "./api/agent-queries";
 import { nameOf, pausedBecause } from "./name";
 
-type Shown = Responsibility["recentActions"][number]["action"];
+type Shown = Agent["recentActions"][number]["action"];
 const when = (value: string) =>
   new Date(value).toLocaleString([], {
     weekday: "short",
@@ -43,8 +43,8 @@ function describe(action: Shown, past: boolean) {
   return `${verb} a block for ${action.work.title} ${action.from ? `to ${when(action.to.start)}` : `on ${when(action.to.start)}`}`;
 }
 
-/** One Responsibility: its scope and Grants, what it did and will do next, its Budget, and its controls. */
-export function ResponsibilityScreen({
+/** One Agent: its scope and Grants, what it did and will do next, its Budget, and its controls. */
+export function AgentScreen({
   apiOrigin,
   id,
 }: {
@@ -52,14 +52,12 @@ export function ResponsibilityScreen({
   id: string;
 }) {
   const queryClient = useQueryClient();
-  const query = useQuery(responsibilityQueries(apiOrigin, id));
-  const control = useMutation(
-    controlResponsibility(apiOrigin, id, queryClient),
-  );
+  const query = useQuery(agentQueries(apiOrigin, id));
+  const control = useMutation(controlAgent(apiOrigin, id, queryClient));
   const r = query.data;
   if (!r) return query.error ? <p role="alert">{query.error.message}</p> : null;
   return (
-    <section aria-label="Responsibility">
+    <section aria-label="Agent">
       <h1>
         {nameOf(r)}
         {r.exam && r.course && ` (${r.course.title})`}
@@ -121,7 +119,7 @@ export function ResponsibilityScreen({
           disabled={control.isPending}
           onClick={() =>
             window.confirm(
-              "End this Responsibility for good? Its Grants are removed.",
+              "End this Agent for good? Its Grants are removed.",
             ) && control.mutate("end")
           }
         >

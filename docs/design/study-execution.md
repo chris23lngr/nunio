@@ -9,7 +9,7 @@ Phase 11 adds two modules and extends two existing ones. Each piece of behaviour
 - A new **`packages/artifacts`** is the single module that makes, stores, shows and exports Artifacts, and prepares Handoffs. It is the only module that turns course material into nunio's own work.
 - **`packages/understanding`**, today an empty package, is the single module that records Attempts, Feedback and Self-assessments and works out Understanding Levels. It reads a Practice Item, and whether an Artifact is the student's, from `artifacts` through two methods and writes nothing there.
 - **`facts`** (`packages/knowledge`) resolves AI-use Rules and records Reported as Submitted, because Correction precedence, Disagreements and Obligations already live there.
-- **`responsibilities`** (`packages/delegation`) starts Runs the student starts, because every Run row is already created there.
+- **`agents`** (`packages/delegation`) starts Runs the student starts, because every Run row is already created there.
 
 Only `understanding` writes Evidence, and only from an Attempt or a Self-assessment. "An Artifact never changes an Understanding Level" therefore holds by construction: `artifacts` has no way to reach Evidence.
 
@@ -23,7 +23,7 @@ export function createArtifacts(deps: {
   derived: DerivedText; // in-process; seals text under its Sources' keys
   reader: KnowledgeReader; // passages and Facts, through a Run's pinned scope
   facts: Facts; // AI-use Rules, Obligations and their Destination wording
-  responsibilities: Responsibilities; // starts the student's Runs
+  agents: Agents; // starts the student's Runs
   delegation: Delegation; // meter() only
   maker: Maker; // true external; model adapter and a fake
   clock: Clock; // in-process; injected
@@ -204,9 +204,9 @@ export type AiUse =
       provenance: Provenance;
     };
 
-// Added to Responsibilities (packages/delegation)
-interface Responsibilities {
-  /** A Run the student started, with no Responsibility and so no Grants (ADR-0001). Idempotent on runId. */
+// Added to Agents (packages/delegation)
+interface Agents {
+  /** A Run the student started, with no Agent and so no Grants (ADR-0001). Idempotent on runId. */
   startStudentRun(
     student: Principal,
     run: { runId: string; workflowId: string; chatId?: string },
@@ -299,12 +299,12 @@ export interface Grader {
 
 ## What the implementation hides
 
-- **Starting a Run.** `request` mints the `runId`, calls `responsibilities.startStudentRun`, pins the Run's scope through `reader.pin` (from the Chat, or from the explicit selection), and records the Artifact as `making`. `make` reads only through `{ runId }`. This builds the part of knowledge-retrieval.md that Phase 9 deferred:
+- **Starting a Run.** `request` mints the `runId`, calls `agents.startStudentRun`, pins the Run's scope through `reader.pin` (from the Chat, or from the explicit selection), and records the Artifact as `making`. `make` reads only through `{ runId }`. This builds the part of knowledge-retrieval.md that Phase 9 deferred:
   - `pin` and the `{ runId }` scope for Run Principals;
   - frozen additions with live removals;
   - `run_unpinned`.
 
-  `meter` already charges a Run with no Responsibility to the Allowance alone.
+  `meter` already charges a Run with no Agent to the Allowance alone.
 - **Making.** A practice set retrieves passages for each Topic (its name as the query, narrowed to the Topic's Course), plus the Topics' Facts. With `quoteFrom`, it also retrieves the given Sources' passages, and the model must quote their problems verbatim rather than invent new ones. Each Practice Item carries:
   - its Topic IDs, checked against the request;
   - a model answer;
@@ -343,7 +343,7 @@ All tables are owned by the student under the same row-level security policy as 
 | --------------------------------------------------- | ------------------- | ---------------------------------- | ----------------------------------------------- |
 | Postgres                                            | Local-substitutable | Internal only                      | Real Postgres; Testcontainers                   |
 | Models for making and grading                       | True external       | **Real ports** (`Maker`, `Grader`) | Model adapters in `@nunio/ai`; scriptable fakes |
-| `reader`, `facts`, `responsibilities`, `delegation` | In-process          | None; the real modules             | Real modules on the same test database          |
+| `reader`, `facts`, `agents`, `delegation`           | In-process          | None; the real modules             | Real modules on the same test database          |
 | `DerivedText`                                       | In-process          | Shared helper, not a port          | One implementation, moved out of `chats`        |
 | Clock                                               | In-process          | Small                              | System clock; manual clock                      |
 - `levelOf` and `resolveAiUse` are internal seams: pure functions table-tested on their own, never exported from their package's root.
@@ -359,7 +359,7 @@ All tables are owned by the student under the same row-level security policy as 
 - **AI-use Rule resolution in `artifacts`.** It would re-implement Correction precedence and Disagreement detection, which already live in `facts`.
 - **Own Work as its own store.** Only a Critique reads it, and a Handoff needs nothing from nunio but the student's word, so it stays in the Critique's request.
 - **A separate `dependents` method.** It is `list({ derivedFrom })`.
-- **Runs started inside `artifacts`.** Every Run row is created in `responsibilities`, so the student's Runs are started there too.
+- **Runs started inside `artifacts`.** Every Run row is created in `agents`, so the student's Runs are started there too.
 
 ## API and web
 
@@ -397,7 +397,7 @@ Through the `Artifacts`, `Understanding` and `Facts` interfaces over real Postgr
 
 - Attempts and Own Work are typed text. A photo of handwritten work needs a vision model and the Source quarantine path, and waits for pilot demand.
 - nunio cannot tell an old exam from a problem sheet still to be handed in. A practice set quoting from a graded sheet whose AI-use Rule forbids AI gets no check; the request UI says so.
-- The exam preset (Phase 9) still proposes only the Rebalance. Practice sets inside a Responsibility's Runs, and Topic coverage, are left for later.
+- The exam preset (Phase 9) still proposes only the Rebalance. Practice sets inside an Agent's Runs, and Topic coverage, are left for later.
 - External grades are Evidence for a Course (GLOSSARY.md) but are not recorded yet.
 - Feedback is a model's judgment. The student can answer the item again, but can't set a verdict aside.
 - _Solid_ needs two correct Attempts in a row, so one good answer still shows _shaky_.

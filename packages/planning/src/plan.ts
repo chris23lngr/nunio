@@ -3,9 +3,9 @@ import type { Estimator, SeriesAssigner } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
 import type {
   ActionIntent,
+  AgentScope,
   Delegation,
   Principal,
-  ResponsibilityScope,
   Transaction,
 } from "@nunio/delegation";
 import { principal, withOwner } from "@nunio/delegation";
@@ -679,10 +679,7 @@ export function createPlan({
      * The Rebalance moves for one Course's Obligations, or one exam, and their Tasks, as Actions for the
      * gate, which decides which of them need the student's Approval.
      */
-    async intentsFor(
-      p: Principal,
-      scope: ResponsibilityScope,
-    ): Promise<ActionIntent[]> {
+    async intentsFor(p: Principal, scope: AgentScope): Promise<ActionIntent[]> {
       const {
         obligations: items,
         tasks,

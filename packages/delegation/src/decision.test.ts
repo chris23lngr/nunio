@@ -23,13 +23,13 @@ const grant = {
 };
 const active = { state: "active" as const, grants: [grant], restrictions: {} };
 
-/** A Run's move of a block nunio placed, inside its Responsibility's Grant: dispatched without asking. */
+/** A Run's move of a block nunio placed, inside its Agent's Grant: dispatched without asking. */
 const base: Snapshot = {
   intent: { kind: "studyBlock.move", args },
   subject: block,
   fingerprint: "fp-1",
   now,
-  responsibility: active,
+  agent: active,
   intoProtectedTime: false,
   approval: null,
 };
@@ -56,7 +56,7 @@ const removal: Partial<Snapshot> = {
       end: block.end,
     },
   },
-  responsibility: null,
+  agent: null,
   approval: approved,
 };
 const requested = {
@@ -75,18 +75,18 @@ describe("decideAction", () => {
       refuse("not_owner"),
     ],
     [
-      "refuses for a Paused Responsibility, even with a Grant",
-      { responsibility: { ...active, state: "paused" } },
+      "refuses for a Paused Agent, even with a Grant",
+      { agent: { ...active, state: "paused" } },
       refuse("paused"),
     ],
     [
-      "refuses for a Paused Responsibility, even with an Approval",
-      { responsibility: { ...active, state: "paused" }, approval: approved },
+      "refuses for a Paused Agent, even with an Approval",
+      { agent: { ...active, state: "paused" }, approval: approved },
       refuse("paused"),
     ],
     [
-      "refuses for an Ended Responsibility",
-      { responsibility: { ...active, state: "ended" } },
+      "refuses for an Ended Agent",
+      { agent: { ...active, state: "ended" } },
       refuse("ended"),
     ],
     [
@@ -101,13 +101,13 @@ describe("decideAction", () => {
     ],
     [
       "asks when no Grant covers the Action",
-      { responsibility: { ...active, grants: [] } },
+      { agent: { ...active, grants: [] } },
       ask,
     ],
     [
       "asks when the Grant is for another kind",
       {
-        responsibility: {
+        agent: {
           ...active,
           grants: [{ ...grant, kind: "studyBlock.create" }],
         },
@@ -117,7 +117,7 @@ describe("decideAction", () => {
     [
       "asks when the Grant's scope does not cover the work",
       {
-        responsibility: {
+        agent: {
           ...active,
           grants: [{ ...grant, scope: { courseId: "course-2" } }],
         },
@@ -129,19 +129,15 @@ describe("decideAction", () => {
       { subject: { ...block, placedBy: "student" } },
       ask,
     ],
-    [
-      "always asks in a Chat, which has no Responsibility",
-      { responsibility: null },
-      ask,
-    ],
+    ["always asks in a Chat, which has no Agent", { agent: null }, ask],
     [
       "keeps waiting for an unanswered Approval",
-      { responsibility: null, approval: requested },
+      { agent: null, approval: requested },
       ask,
     ],
     [
       "acts on an Approval of the exact Action",
-      { responsibility: null, approval: approved },
+      { agent: null, approval: approved },
       { outcome: "dispatch", authority: { approvalId: "approval-1" } },
     ],
     [
@@ -151,17 +147,17 @@ describe("decideAction", () => {
     ],
     [
       "refuses an Approval of a different Action",
-      { responsibility: null, approval: approved, fingerprint: "fp-2" },
+      { agent: null, approval: approved, fingerprint: "fp-2" },
       refuse("approval_mismatch"),
     ],
     [
       "refuses an unanswered Approval past its expiry",
-      { responsibility: null, approval: { ...requested, expiresAt: now } },
+      { agent: null, approval: { ...requested, expiresAt: now } },
       refuse("approval_expired"),
     ],
     [
       "refuses an approved Action at its expiry",
-      { responsibility: null, approval: { ...approved, expiresAt: now } },
+      { agent: null, approval: { ...approved, expiresAt: now } },
       refuse("approval_expired"),
     ],
     [
@@ -181,7 +177,7 @@ describe("decideAction", () => {
 
 describe("Restrictions", () => {
   const restricted = (restrictions: object): Partial<Snapshot> => ({
-    responsibility: { ...active, restrictions },
+    agent: { ...active, restrictions },
   });
 
   it.each<[string, Partial<Snapshot>, object]>([
@@ -209,7 +205,7 @@ describe("Restrictions", () => {
     expect(decideAction({ ...base, ...change })).toEqual(expected);
   });
 
-  it("never widen authority: no combination dispatches what the unrestricted Responsibility would not", () => {
+  it("never widen authority: no combination dispatches what the unrestricted Agent would not", () => {
     const restrictionSets: Restrictions[] = [
       {},
       { allowedKinds: [] },
@@ -223,7 +219,7 @@ describe("Restrictions", () => {
     const situations: Partial<Snapshot>[] = [
       {},
       { subject: { ...block, placedBy: "student" } },
-      { responsibility: { ...active, grants: [] } },
+      { agent: { ...active, grants: [] } },
       { approval: requested },
       { approval: approved },
       { subject: { ...block, locked: true } },
@@ -233,12 +229,12 @@ describe("Restrictions", () => {
     for (const situation of situations) {
       const unrestricted = decideAction({ ...base, ...situation });
       for (const restrictions of restrictionSets) {
-        const responsibility = {
-          ...(situation.responsibility ?? active),
+        const agent = {
+          ...(situation.agent ?? active),
           restrictions,
         };
         expect(
-          rank(decideAction({ ...base, ...situation, responsibility })),
+          rank(decideAction({ ...base, ...situation, agent })),
         ).toBeLessThanOrEqual(rank(unrestricted));
       }
     }

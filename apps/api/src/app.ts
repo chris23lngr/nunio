@@ -4,7 +4,7 @@ import type { Artifacts } from "@nunio/artifacts";
 import { pilotStatus } from "@nunio/billing";
 import type { Chats } from "@nunio/chat";
 import type { PrismaClient } from "@nunio/db";
-import type { Delegation, Responsibilities } from "@nunio/delegation";
+import type { Agents, Delegation } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 import type {
@@ -17,6 +17,7 @@ import type {
 import type { Outreach } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
+import { registerAgentRoutes } from "./agents.js";
 import { registerApprovalRoutes } from "./approvals.js";
 import type { ArtifactWorkflows } from "./artifact-workflows.js";
 import type { ChatModels } from "./chat-models.js";
@@ -30,7 +31,6 @@ import {
 } from "./inbox.js";
 import { registerPlanRoutes } from "./plan.js";
 import { registerProjectRoutes } from "./projects.js";
-import { registerResponsibilityRoutes } from "./responsibilities.js";
 import { registerReviewRoutes } from "./review.js";
 import type { RunWorkflows } from "./run-workflows.js";
 import type { SourceWorkflows } from "./source-workflows.js";
@@ -54,7 +54,7 @@ export interface AppBindings {
     seriesAssigner: SeriesAssigner;
     projects: Projects;
     courses: Courses;
-    responsibilities: Responsibilities;
+    agents: Agents;
     runWorkflows: RunWorkflows;
     outreach: Outreach;
     artifacts: Artifacts;
@@ -228,7 +228,7 @@ registerProjectRoutes(routes);
 registerCourseRoutes(routes);
 registerHomeRoutes(routes);
 registerApprovalRoutes(routes);
-registerResponsibilityRoutes(routes);
+registerAgentRoutes(routes);
 registerInboxRoutes(routes);
 registerOutreachSettingsRoutes(routes);
 registerPushRoutes(routes);

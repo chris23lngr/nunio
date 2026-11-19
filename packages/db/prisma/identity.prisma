@@ -28,7 +28,7 @@ model User {
   eventSeries      EventSeries[]
   routines         Routine[]
   projects         Project[]
-  responsibilities Responsibility[]
+  agents           Agent[]
   runs             Run[]
   actions          Action[]
   planEffects      PlanEffect[]

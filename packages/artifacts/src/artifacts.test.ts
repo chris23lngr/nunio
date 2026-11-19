@@ -13,11 +13,7 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import type { Delegation, Principal } from "@nunio/delegation";
-import {
-  createDelegation,
-  createResponsibilities,
-  principal,
-} from "@nunio/delegation";
+import { createAgents, createDelegation, principal } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import { createSourceKeys } from "@nunio/keys";
 import type { Facts, KnowledgeReader, Sources } from "@nunio/knowledge";
@@ -267,7 +263,7 @@ function artifactsWith(maker: Maker) {
     keys,
     reader,
     facts,
-    responsibilities: createResponsibilities({ db: runtime, clock }),
+    agents: createAgents({ db: runtime, clock }),
     delegation,
     maker,
     clock,

@@ -15,7 +15,7 @@ export const principal = {
   fromSession(actor: { readonly studentId: string }): Principal {
     return { kind: "student", studentId: actor.studentId } as Principal;
   },
-  /** A persisted Run, resolved to its student and Responsibility on every call. */
+  /** A persisted Run, resolved to its student and Agent on every call. */
   fromRun(runId: string): Principal {
     return { kind: "run", runId } as Principal;
   },

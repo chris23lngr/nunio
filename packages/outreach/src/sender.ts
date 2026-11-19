@@ -1,11 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
-import type {
-  Clock,
-  Delegation,
-  Principal,
-  Responsibilities,
-} from "@nunio/delegation";
+import type { Agents, Clock, Delegation, Principal } from "@nunio/delegation";
 import { principal, withOwner } from "@nunio/delegation";
 import type { Facts } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
@@ -101,7 +96,7 @@ export function createOutreachSender({
   plan,
   facts,
   delegation,
-  responsibilities,
+  agents,
   mailer,
   pusher,
   inboxUrl,
@@ -112,7 +107,7 @@ export function createOutreachSender({
   plan: Plan;
   facts: Facts;
   delegation: Delegation;
-  responsibilities: Responsibilities;
+  agents: Agents;
   mailer: Mailer;
   pusher: Pusher;
   /** The only link a message outside the app carries. */
@@ -127,7 +122,7 @@ export function createOutreachSender({
       delegation.history(p, { status: "refused", limit: 500 }),
       delegation.history(p, { status: "unconfirmed", limit: 500 }),
     ]);
-    const pausedForArchivedCourse = (await responsibilities.list(p))
+    const pausedForArchivedCourse = (await agents.list(p))
       .filter((r) => r.pausedBy === "course_archived")
       .map((r) => r.id);
     const current = causesOf({
@@ -195,7 +190,7 @@ export function createOutreachSender({
     if (settings?.lastBriefingOn === date) return;
     const [approvals, delegated] = await Promise.all([
       delegation.history(p, { status: "awaiting_approval" }),
-      responsibilities.list(p),
+      agents.list(p),
     ]);
     await withOwner(db, p, async (tx, studentId) => {
       const open = await tx.intervention.findMany({
@@ -206,9 +201,7 @@ export function createOutreachSender({
       const items: BriefingItems = {
         interventions: open.map((i) => i.id),
         approvals: approvals.map((a) => a.id),
-        responsibilities: delegated
-          .filter((r) => r.state === "active")
-          .map((r) => r.id),
+        agents: delegated.filter((r) => r.state === "active").map((r) => r.id),
       };
       const id = randomUUID();
       const made =

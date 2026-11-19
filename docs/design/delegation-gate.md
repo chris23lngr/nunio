@@ -28,7 +28,7 @@ export interface Delegation {
 export type Principal = Brand<{ kind: "student"; studentId: string } | { kind: "run"; runId: string }, "Principal">;
 export const principal: { fromSession(s: AuthSession): Principal; fromRun(runId: string): Principal };
 
-// What a model or UI may supply: no actor, Grant, or Responsibility fields. Closed union.
+// What a model or UI may supply: no actor, Grant, or Agent fields. Closed union.
 export type ActionIntent =
   | { kind: "studyBlock.create"; calendarConnectionId: string; start: Date; end: Date; title: string; taskId?: string }
   | { kind: "studyBlock.move"; calendarConnectionId: string; studyBlockId: string; start: Date; end: Date }
@@ -55,14 +55,14 @@ type Resolve = { kind: "resolve"; actionId: string; resolution: "happened" | "di
 
 - **Idempotent on `key`.** The caller supplies a deterministic key: `runId:step` from a workflow, or `chatId:messageId:n` from the API. Repeating `perform` with the same key returns the recorded outcome or resumes it, and never dispatches twice. The same key with a different intent throws `KeyConflictError`. A changed Action needs a new key, and therefore a new Approval.
 - **Authority** comes from one of two sources:
-  - a Grant on the Run's Responsibility, provided the Responsibility is not Paused or Ended;
+  - a Grant on the Run's Agent, provided the Agent is not Paused or Ended;
   - an Approval whose fingerprint equals the hash of kind@version, Destination, canonical arguments, and Artifact version plus a content hash re-read at dispatch.
 
   Chat-origin Runs have no Grants, so they always need an Approval (ADR-0001). An Approval is created only via `decide(approve)` with the fingerprint shown to the student (ADR-0010).
 - **Approval expiry** is min(created + 7 days, the related Obligation's deadline), evaluated against `clock` on every call.
 - **Rechecks happen at dispatch time** in the same transaction that reserves usage. The checks are ownership, Paused/Ended, a Disconnected Connection, Approval validity, Lock, Protected Time, a verified Destination (otherwise `handoff_only`), Restrictions, Budget, and Allowance. Nothing is trusted from an earlier call.
-- **Restrictions can only tighten.** Advanced Agent configuration (allowed kinds, always-ask kinds, per-Action caps) is data on the Responsibility, compiled into Restrictions. A Restriction can turn "allowed by Grant" into "awaiting Approval" or "refused", and never the reverse.
-- **Budget exhaustion** sets the Responsibility to Paused in the reserving transaction. The gate never draws further on the Allowance.
+- **Restrictions can only tighten.** Advanced Agent configuration (allowed kinds, always-ask kinds, per-Action caps) is data on the Agent, compiled into Restrictions. A Restriction can turn "allowed by Grant" into "awaiting Approval" or "refused", and never the reverse.
+- **Budget exhaustion** sets the Agent to Paused in the reserving transaction. The gate never draws further on the Allowance.
 - **An Unconfirmed Action** is never dispatched again. Its reservation stays held until `decide(resolve)`.
 - **`meter`** wraps every model call. It reserves the estimate against Budget and Allowance in one transaction, runs the call with an abort signal, then settles the actual usage. If the call's fate is unknown, the reservation stays held. Callers cannot reserve without settling.
 
@@ -86,12 +86,12 @@ Domain results are values, never exceptions, so Temporal does not retry them. A 
 
 ## What the implementation hides
 
-- Resolving a Principal to its owning student, Run, Responsibility, Grants, and Agent configuration.
+- Resolving a Principal to its owning student, Run, Agent, Grants, and Agent configuration.
 - Per-kind definitions. These are an internal seam, each with an argument schema, `grantCovers`, a conservative usage estimate, the capability route, and the Obligation that caps Approval expiry.
 - Canonical fingerprinting.
 - A pure decision core, `decide(snapshot, now) → Decision | Refusal`, tested exhaustively without I/O.
 - The dispatch protocol:
-  1. An intent transaction locks the Responsibility, Allowance, and Action rows, decides, reserves, and writes an Attempt row (in flight, idempotency key derived from `actionId:attemptN`). That row is the outbox.
+  1. An intent transaction locks the Agent, Allowance, and Action rows, decides, reserves, and writes an Attempt row (in flight, idempotency key derived from `actionId:attemptN`). That row is the outbox.
   2. The executor is called outside the transaction.
   3. A result transaction records done, failed, or Unconfirmed, and settles or holds the reservation.
 - Recovery. `reconcile`, run on a Temporal Schedule, and any repeated `perform` find stale in-flight Attempts and ask the executor's `lookup(key)`. `found` means done. `absent`, when the provider honours keys, means a retry with the same key. Anything else means Unconfirmed. Nothing is retried blindly.

@@ -1,8 +1,8 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { ResponsibilitiesScreen } from "@/features/responsibilities/responsibilities-screen";
-import { ResponsibilityScreen } from "@/features/responsibilities/responsibility-screen";
+import { AgentScreen } from "@/features/agents/agent-screen";
+import { AgentsScreen } from "@/features/agents/agents-screen";
 import { api } from "./api";
 import { TestProviders } from "./providers";
 
@@ -28,9 +28,9 @@ const courses = [
 test("the student delegates 'keep this course organized' for one of their accepted Courses", async () => {
   let delegated: object[] = [];
   const created: unknown[] = [];
-  api.route("GET", "/api/me/responsibilities", () => Response.json(delegated));
+  api.route("GET", "/api/me/agents", () => Response.json(delegated));
   api.route("GET", "/api/me/review", () => Response.json({ courses }));
-  api.route("POST", "/api/me/responsibilities", async (request) => {
+  api.route("POST", "/api/me/agents", async (request) => {
     created.push(await request.json());
     delegated = [
       {
@@ -45,7 +45,7 @@ test("the student delegates 'keep this course organized' for one of their accept
   });
   render(
     <TestProviders>
-      <ResponsibilitiesScreen apiOrigin={api.origin} />
+      <AgentsScreen apiOrigin={api.origin} />
     </TestProviders>,
   );
 
@@ -61,7 +61,7 @@ test("the student delegates 'keep this course organized' for one of their accept
   const row = await screen.findByRole("link", {
     name: /Keep Analysis I organized/,
   });
-  expect(row.getAttribute("href")).toBe("/responsibilities/r-1");
+  expect(row.getAttribute("href")).toBe("/agents/r-1");
   expect(within(row.closest("li")!).getByText(/active/i)).toBeTruthy();
   await waitFor(() =>
     expect(created).toEqual([
@@ -112,20 +112,18 @@ const shown = (state: "active" | "paused") => ({
       : { runAt: null, action: null },
 });
 
-test("a Responsibility's screen shows its scope, Grants, recent and next Actions and Budget, and pauses it", async () => {
+test("an Agent's screen shows its scope, Grants, recent and next Actions and Budget, and pauses it", async () => {
   let state: "active" | "paused" = "active";
   const controls: string[] = [];
-  api.route("GET", "/api/me/responsibilities/r-1", () =>
-    Response.json(shown(state)),
-  );
-  api.route("POST", "/api/me/responsibilities/r-1/pause", () => {
+  api.route("GET", "/api/me/agents/r-1", () => Response.json(shown(state)));
+  api.route("POST", "/api/me/agents/r-1/pause", () => {
     controls.push("pause");
     state = "paused";
     return Response.json({ status: "ok" });
   });
   render(
     <TestProviders>
-      <ResponsibilityScreen apiOrigin={api.origin} id="r-1" />
+      <AgentScreen apiOrigin={api.origin} id="r-1" />
     </TestProviders>,
   );
 
@@ -152,20 +150,16 @@ test("a Responsibility's screen shows its scope, Grants, recent and next Actions
 test("pausing refreshes the list even while its cached state is fresh", async () => {
   let state: "active" | "paused" = "active";
   api.route("GET", "/api/me/review", () => Response.json({ courses }));
-  api.route("GET", "/api/me/responsibilities", () =>
-    Response.json([shown(state)]),
-  );
-  api.route("GET", "/api/me/responsibilities/r-1", () =>
-    Response.json(shown(state)),
-  );
-  api.route("POST", "/api/me/responsibilities/r-1/pause", () => {
+  api.route("GET", "/api/me/agents", () => Response.json([shown(state)]));
+  api.route("GET", "/api/me/agents/r-1", () => Response.json(shown(state)));
+  api.route("POST", "/api/me/agents/r-1/pause", () => {
     state = "paused";
     return Response.json({ status: "ok" });
   });
   render(
     <TestProviders>
-      <ResponsibilitiesScreen apiOrigin={api.origin} />
-      <ResponsibilityScreen apiOrigin={api.origin} id="r-1" />
+      <AgentsScreen apiOrigin={api.origin} />
+      <AgentScreen apiOrigin={api.origin} id="r-1" />
     </TestProviders>,
   );
   const row = (
@@ -204,17 +198,17 @@ test("the student delegates 'prepare me for this exam' for one of their exams", 
     },
   ];
   const created: unknown[] = [];
-  api.route("GET", "/api/me/responsibilities", () => Response.json([]));
+  api.route("GET", "/api/me/agents", () => Response.json([]));
   api.route("GET", "/api/me/review", () =>
     Response.json({ courses: withExams }),
   );
-  api.route("POST", "/api/me/responsibilities", async (request) => {
+  api.route("POST", "/api/me/agents", async (request) => {
     created.push(await request.json());
     return Response.json({ id: "r-2" }, { status: 201 });
   });
   render(
     <TestProviders>
-      <ResponsibilitiesScreen apiOrigin={api.origin} />
+      <AgentsScreen apiOrigin={api.origin} />
     </TestProviders>,
   );
 
@@ -241,9 +235,9 @@ test("the student delegates 'prepare me for this exam' for one of their exams", 
   );
 });
 
-test("an exam's Responsibility is named for the exam in the list and on its screen", async () => {
+test("an exam's Agent is named for the exam in the list and on its screen", async () => {
   const exam = { id: "e0000000-0000-4000-8000-000000000001", title: "Klausur" };
-  api.route("GET", "/api/me/responsibilities", () =>
+  api.route("GET", "/api/me/agents", () =>
     Response.json([
       {
         id: "r-2",
@@ -256,7 +250,7 @@ test("an exam's Responsibility is named for the exam in the list and on its scre
     ]),
   );
   api.route("GET", "/api/me/review", () => Response.json({ courses }));
-  api.route("GET", "/api/me/responsibilities/r-2", () =>
+  api.route("GET", "/api/me/agents/r-2", () =>
     Response.json({
       ...shown("active"),
       id: "r-2",
@@ -266,8 +260,8 @@ test("an exam's Responsibility is named for the exam in the list and on its scre
   );
   render(
     <TestProviders>
-      <ResponsibilitiesScreen apiOrigin={api.origin} />
-      <ResponsibilityScreen apiOrigin={api.origin} id="r-2" />
+      <AgentsScreen apiOrigin={api.origin} />
+      <AgentScreen apiOrigin={api.origin} id="r-2" />
     </TestProviders>,
   );
 
@@ -275,7 +269,7 @@ test("an exam's Responsibility is named for the exam in the list and on its scre
     (
       await screen.findByRole("link", { name: "Prepare for Klausur" })
     ).getAttribute("href"),
-  ).toBe("/responsibilities/r-2");
+  ).toBe("/agents/r-2");
   expect(
     await screen.findByRole("heading", {
       name: "Prepare for Klausur (Analysis I)",

@@ -5,11 +5,7 @@ import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Executor, Schedules } from "./index.js";
-import {
-  createDelegation,
-  createResponsibilities,
-  principal,
-} from "./index.js";
+import { createAgents, createDelegation, principal } from "./index.js";
 
 let db: TestDatabase;
 /** Seeds fixtures as the migration role, outside RLS. */
@@ -36,17 +32,17 @@ const clock = { now: () => now };
 function fakeSchedules() {
   const calls: string[] = [];
   const schedules: Schedules = {
-    async create({ responsibilityId }) {
-      calls.push(`create ${responsibilityId}`);
+    async create({ agentId }) {
+      calls.push(`create ${agentId}`);
     },
-    async pause(responsibilityId) {
-      calls.push(`pause ${responsibilityId}`);
+    async pause(agentId) {
+      calls.push(`pause ${agentId}`);
     },
-    async unpause(responsibilityId) {
-      calls.push(`unpause ${responsibilityId}`);
+    async unpause(agentId) {
+      calls.push(`unpause ${agentId}`);
     },
-    async delete(responsibilityId) {
-      calls.push(`delete ${responsibilityId}`);
+    async delete(agentId) {
+      calls.push(`delete ${agentId}`);
     },
   };
   return { schedules, calls };
@@ -125,11 +121,11 @@ const move = (blockId: string) => ({
   end: new Date("2026-11-11T15:00:00Z"),
 });
 
-describe("Responsibilities", () => {
+describe("Agents", () => {
   it("lets the Runs of 'keep this course organized' act on that Course without asking", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules,
       clock,
@@ -141,17 +137,17 @@ describe("Responsibilities", () => {
       executors: { plan: executor },
     });
 
-    const created = await responsibilities.create(s.p, {
+    const created = await agents.create(s.p, {
       preset: "keep_course_organized",
       courseId: s.courseId,
       budgetMicroUsd: 50_000,
     });
     if (created.status !== "ok") throw new Error(created.status);
-    const runId = await responsibilities.startRun({
+    const runId = await agents.startRun({
       runId: randomUUID(),
       workflowId: "run-workflow",
       studentId: s.studentId,
-      responsibilityId: created.id,
+      agentId: created.id,
     });
     if (!runId) throw new Error("no Run");
 
@@ -167,7 +163,7 @@ describe("Responsibilities", () => {
   it("pauses: the Schedule pauses, no Run starts, and a Run under way takes no next Action", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules,
       clock,
@@ -178,30 +174,30 @@ describe("Responsibilities", () => {
       clock,
       executors: { plan: executor },
     });
-    const created = await responsibilities.create(s.p, {
+    const created = await agents.create(s.p, {
       preset: "keep_course_organized",
       courseId: s.courseId,
       budgetMicroUsd: 50_000,
     });
     if (created.status !== "ok") throw new Error(created.status);
-    const runId = (await responsibilities.startRun({
+    const runId = (await agents.startRun({
       runId: randomUUID(),
       workflowId: "run-workflow",
       studentId: s.studentId,
-      responsibilityId: created.id,
+      agentId: created.id,
     }))!;
 
-    expect(await responsibilities.pause(s.p, created.id)).toEqual({
+    expect(await agents.pause(s.p, created.id)).toEqual({
       status: "ok",
     });
 
     expect(calls).toEqual([`create ${created.id}`, `pause ${created.id}`]);
     expect(
-      await responsibilities.startRun({
+      await agents.startRun({
         runId: randomUUID(),
         workflowId: "run-workflow",
         studentId: s.studentId,
-        responsibilityId: created.id,
+        agentId: created.id,
       }),
     ).toBeNull();
     expect(
@@ -215,7 +211,7 @@ describe("Responsibilities", () => {
   it("resumes only when the student says so, even after exhausting its Budget", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules,
       clock,
@@ -226,17 +222,17 @@ describe("Responsibilities", () => {
       clock,
       executors: { plan: executor },
     });
-    const created = await responsibilities.create(s.p, {
+    const created = await agents.create(s.p, {
       preset: "keep_course_organized",
       courseId: s.courseId,
       budgetMicroUsd: 1_000,
     });
     if (created.status !== "ok") throw new Error(created.status);
-    const runId = (await responsibilities.startRun({
+    const runId = (await agents.startRun({
       runId: randomUUID(),
       workflowId: "run-workflow",
       studentId: s.studentId,
-      responsibilityId: created.id,
+      agentId: created.id,
     }))!;
     const call = async () => ({ value: "ok", usage: { microUsd: 1_000 } });
     await gate.meter(principal.fromRun(runId), { microUsd: 1_000 }, call);
@@ -244,25 +240,25 @@ describe("Responsibilities", () => {
       await gate.meter(principal.fromRun(runId), { microUsd: 1 }, call),
     ).toEqual({ status: "refused", reason: "budget_exhausted" });
     expect(
-      await responsibilities.startRun({
+      await agents.startRun({
         runId: randomUUID(),
         workflowId: "run-workflow",
         studentId: s.studentId,
-        responsibilityId: created.id,
+        agentId: created.id,
       }),
     ).toBeNull();
 
-    expect(await responsibilities.resume(s.p, created.id)).toEqual({
+    expect(await agents.resume(s.p, created.id)).toEqual({
       status: "ok",
     });
 
     expect(calls).toEqual([`create ${created.id}`, `unpause ${created.id}`]);
     expect(
-      await responsibilities.startRun({
+      await agents.startRun({
         runId: randomUUID(),
         workflowId: "run-workflow",
         studentId: s.studentId,
-        responsibilityId: created.id,
+        agentId: created.id,
       }),
     ).toEqual(expect.any(String));
   });
@@ -273,21 +269,21 @@ describe("Responsibilities", () => {
     schedules.pause = async () => {
       throw new Error("Temporal unavailable");
     };
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules,
       clock,
     });
-    const created = await responsibilities.create(s.p, {
+    const created = await agents.create(s.p, {
       preset: "keep_course_organized",
       courseId: s.courseId,
       budgetMicroUsd: 50_000,
     });
     if (created.status !== "ok") throw new Error(created.status);
-    await expect(responsibilities.pause(s.p, created.id)).rejects.toThrow(
+    await expect(agents.pause(s.p, created.id)).rejects.toThrow(
       "Temporal unavailable",
     );
-    expect(await responsibilities.view(s.p, created.id)).toMatchObject({
+    expect(await agents.view(s.p, created.id)).toMatchObject({
       state: "paused",
     });
   });
@@ -308,20 +304,20 @@ describe("Responsibilities", () => {
       await pauseReleased;
       calls.push(`pause ${id}`);
     };
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules,
       clock,
     });
-    const created = await responsibilities.create(s.p, {
+    const created = await agents.create(s.p, {
       preset: "keep_course_organized",
       courseId: s.courseId,
       budgetMicroUsd: 50_000,
     });
     if (created.status !== "ok") throw new Error(created.status);
-    const pausing = responsibilities.pause(s.p, created.id);
+    const pausing = agents.pause(s.p, created.id);
     await pauseStarted;
-    const resuming = responsibilities.resume(s.p, created.id);
+    const resuming = agents.resume(s.p, created.id);
     // Let resume reach the database while the Schedule pause is still in flight.
     await new Promise((resolve) => setTimeout(resolve, 100));
     release();
@@ -331,7 +327,7 @@ describe("Responsibilities", () => {
       `pause ${created.id}`,
       `unpause ${created.id}`,
     ]);
-    expect(await responsibilities.view(s.p, created.id)).toMatchObject({
+    expect(await agents.view(s.p, created.id)).toMatchObject({
       state: "active",
     });
   });
@@ -339,12 +335,12 @@ describe("Responsibilities", () => {
   it("records one Run when startup is retried, even after a Pause", async () => {
     const s = await student();
     const { schedules } = fakeSchedules();
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules,
       clock,
     });
-    const created = await responsibilities.create(s.p, {
+    const created = await agents.create(s.p, {
       preset: "keep_course_organized",
       courseId: s.courseId,
       budgetMicroUsd: 50_000,
@@ -352,26 +348,21 @@ describe("Responsibilities", () => {
     if (created.status !== "ok") throw new Error(created.status);
     const ref = {
       studentId: s.studentId,
-      responsibilityId: created.id,
+      agentId: created.id,
       runId: randomUUID(),
       workflowId: "run-workflow",
     };
-    const ids = await Promise.all([
-      responsibilities.startRun(ref),
-      responsibilities.startRun(ref),
-    ]);
+    const ids = await Promise.all([agents.startRun(ref), agents.startRun(ref)]);
     expect(ids).toEqual([ref.runId, ref.runId]);
-    await responsibilities.pause(s.p, created.id);
-    expect(await responsibilities.startRun(ref)).toBe(ref.runId);
-    expect(
-      await admin.run.count({ where: { responsibilityId: created.id } }),
-    ).toBe(1);
+    await agents.pause(s.p, created.id);
+    expect(await agents.startRun(ref)).toBe(ref.runId);
+    expect(await admin.run.count({ where: { agentId: created.id } })).toBe(1);
   });
 
-  it("does not let a Run create Grants or control Responsibilities", async () => {
+  it("does not let a Run create Grants or control Agents", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules,
       clock,
@@ -381,30 +372,30 @@ describe("Responsibilities", () => {
       courseId: s.courseId,
       budgetMicroUsd: 50_000,
     };
-    const created = await responsibilities.create(s.p, input);
+    const created = await agents.create(s.p, input);
     if (created.status !== "ok") throw new Error(created.status);
-    const runId = await responsibilities.startRun({
+    const runId = await agents.startRun({
       studentId: s.studentId,
-      responsibilityId: created.id,
+      agentId: created.id,
       runId: randomUUID(),
       workflowId: "run-workflow",
     });
     if (!runId) throw new Error("no Run");
     const run = principal.fromRun(runId);
-    await responsibilities.pause(s.p, created.id);
-    expect(await responsibilities.create(run, input)).toEqual({
+    await agents.pause(s.p, created.id);
+    expect(await agents.create(run, input)).toEqual({
       status: "gone",
     });
-    expect(await responsibilities.resume(run, created.id)).toEqual({
+    expect(await agents.resume(run, created.id)).toEqual({
       status: "gone",
     });
-    expect(await responsibilities.pause(run, created.id)).toEqual({
+    expect(await agents.pause(run, created.id)).toEqual({
       status: "gone",
     });
-    expect(await responsibilities.end(run, created.id)).toEqual({
+    expect(await agents.end(run, created.id)).toEqual({
       status: "gone",
     });
-    expect(await responsibilities.view(s.p, created.id)).toMatchObject({
+    expect(await agents.view(s.p, created.id)).toMatchObject({
       state: "paused",
     });
     expect(calls).toEqual([`create ${created.id}`, `pause ${created.id}`]);
@@ -413,7 +404,7 @@ describe("Responsibilities", () => {
   it("ends for good: its Grants and Schedule are gone, its history remains", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules,
       clock,
@@ -424,50 +415,50 @@ describe("Responsibilities", () => {
       clock,
       executors: { plan: executor },
     });
-    const created = await responsibilities.create(s.p, {
+    const created = await agents.create(s.p, {
       preset: "keep_course_organized",
       courseId: s.courseId,
       budgetMicroUsd: 50_000,
     });
     if (created.status !== "ok") throw new Error(created.status);
-    const runId = (await responsibilities.startRun({
+    const runId = (await agents.startRun({
       runId: randomUUID(),
       workflowId: "run-workflow",
       studentId: s.studentId,
-      responsibilityId: created.id,
+      agentId: created.id,
     }))!;
     await gate.perform(principal.fromRun(runId), {
       key: `${runId}:1`,
       intent: move(s.blockId),
     });
 
-    expect(await responsibilities.end(s.p, created.id)).toEqual({
+    expect(await agents.end(s.p, created.id)).toEqual({
       status: "ok",
     });
 
     expect(calls).toEqual([`create ${created.id}`, `delete ${created.id}`]);
-    expect(await responsibilities.resume(s.p, created.id)).toEqual({
+    expect(await agents.resume(s.p, created.id)).toEqual({
       status: "gone",
     });
-    expect(await responsibilities.view(s.p, created.id)).toMatchObject({
+    expect(await agents.view(s.p, created.id)).toMatchObject({
       state: "ended",
       grants: [],
     });
-    expect(
-      await gate.history(s.p, { responsibilityId: created.id }),
-    ).toMatchObject([{ status: "done" }]);
+    expect(await gate.history(s.p, { agentId: created.id })).toMatchObject([
+      { status: "done" },
+    ]);
   });
 
-  it("never delegates, or controls, another student's Course or Responsibility", async () => {
+  it("never delegates, or controls, another student's Course or Agent", async () => {
     const s = await student();
     const other = await student();
     const { schedules, calls } = fakeSchedules();
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules,
       clock,
     });
-    const theirs = await responsibilities.create(other.p, {
+    const theirs = await agents.create(other.p, {
       preset: "keep_course_organized",
       courseId: other.courseId,
       budgetMicroUsd: 50_000,
@@ -475,22 +466,22 @@ describe("Responsibilities", () => {
     if (theirs.status !== "ok") throw new Error(theirs.status);
 
     expect(
-      await responsibilities.create(s.p, {
+      await agents.create(s.p, {
         preset: "keep_course_organized",
         courseId: other.courseId,
         budgetMicroUsd: 50_000,
       }),
     ).toEqual({ status: "gone" });
-    expect(await responsibilities.pause(s.p, theirs.id)).toEqual({
+    expect(await agents.pause(s.p, theirs.id)).toEqual({
       status: "gone",
     });
-    expect(await responsibilities.resume(s.p, theirs.id)).toEqual({
+    expect(await agents.resume(s.p, theirs.id)).toEqual({
       status: "gone",
     });
-    expect(await responsibilities.end(s.p, theirs.id)).toEqual({
+    expect(await agents.end(s.p, theirs.id)).toEqual({
       status: "gone",
     });
-    expect(await responsibilities.view(s.p, theirs.id)).toBeNull();
+    expect(await agents.view(s.p, theirs.id)).toBeNull();
     expect(calls).toEqual([`create ${theirs.id}`]);
   });
 });
@@ -527,7 +518,7 @@ describe("'prepare me for this exam'", () => {
   it("lets its Runs act on that exam's blocks without asking, and asks for any other work in the Course", async () => {
     const s = await student();
     const { examId, examBlockId } = await exam(s);
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules: fakeSchedules().schedules,
       clock,
@@ -539,15 +530,15 @@ describe("'prepare me for this exam'", () => {
       executors: { plan: executor },
     });
 
-    const created = await responsibilities.create(s.p, {
+    const created = await agents.create(s.p, {
       preset: "prepare_for_exam",
       obligationId: examId,
       budgetMicroUsd: 50_000,
     });
     if (created.status !== "ok") throw new Error(created.status);
-    const runId = (await responsibilities.startRun({
+    const runId = (await agents.startRun({
       studentId: s.studentId,
-      responsibilityId: created.id,
+      agentId: created.id,
       runId: randomUUID(),
       workflowId: "run-workflow",
     }))!;
@@ -564,7 +555,7 @@ describe("'prepare me for this exam'", () => {
         intent: move(s.blockId),
       }),
     ).toMatchObject({ status: "awaiting_approval" });
-    expect(await responsibilities.view(s.p, created.id)).toMatchObject({
+    expect(await agents.view(s.p, created.id)).toMatchObject({
       preset: "prepare_for_exam",
       scope: { obligationId: examId },
       grants: [
@@ -579,7 +570,7 @@ describe("'prepare me for this exam'", () => {
     const other = await student();
     const { examId: theirExam } = await exam(other);
     const { schedules, calls } = fakeSchedules();
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules,
       clock,
@@ -591,14 +582,14 @@ describe("'prepare me for this exam'", () => {
     ).id;
 
     expect(
-      await responsibilities.create(s.p, {
+      await agents.create(s.p, {
         preset: "prepare_for_exam",
         obligationId: assignment,
         budgetMicroUsd: 50_000,
       }),
     ).toEqual({ status: "gone" });
     expect(
-      await responsibilities.create(s.p, {
+      await agents.create(s.p, {
         preset: "prepare_for_exam",
         obligationId: theirExam,
         budgetMicroUsd: 50_000,
@@ -610,13 +601,13 @@ describe("'prepare me for this exam'", () => {
   it("refuses an exam the student rejected, or one in a Course they merged away or rejected", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules,
       clock,
     });
     const prepare = (obligationId: string) =>
-      responsibilities.create(s.p, {
+      agents.create(s.p, {
         preset: "prepare_for_exam",
         obligationId,
         budgetMicroUsd: 50_000,
@@ -662,29 +653,27 @@ describe("'prepare me for this exam'", () => {
     expect(calls).toEqual([]);
   });
 
-  it("gives each Run its Responsibility's scope, exactly as its proposals take it", async () => {
+  it("gives each Run its Agent's scope, exactly as its proposals take it", async () => {
     const s = await student();
     const { examId } = await exam(s);
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules: fakeSchedules().schedules,
       clock,
     });
-    const runOf = async (
-      input: Parameters<typeof responsibilities.create>[1],
-    ) => {
-      const created = await responsibilities.create(s.p, input);
+    const runOf = async (input: Parameters<typeof agents.create>[1]) => {
+      const created = await agents.create(s.p, input);
       if (created.status !== "ok") throw new Error(created.status);
-      return (await responsibilities.startRun({
+      return (await agents.startRun({
         studentId: s.studentId,
-        responsibilityId: created.id,
+        agentId: created.id,
         runId: randomUUID(),
         workflowId: "run-workflow",
       }))!;
     };
 
     expect(
-      await responsibilities.scopeOfRun(
+      await agents.scopeOfRun(
         await runOf({
           preset: "prepare_for_exam",
           obligationId: examId,
@@ -693,7 +682,7 @@ describe("'prepare me for this exam'", () => {
       ),
     ).toEqual({ obligationId: examId });
     expect(
-      await responsibilities.scopeOfRun(
+      await agents.scopeOfRun(
         await runOf({
           preset: "keep_course_organized",
           courseId: s.courseId,
@@ -709,7 +698,7 @@ describe("a Run the student started", () => {
     const s = await student();
     const chatId = randomUUID();
     await admin.chat.create({ data: { id: chatId, studentId: s.studentId } });
-    const responsibilities = createResponsibilities({ db: runtime, clock });
+    const agents = createAgents({ db: runtime, clock });
     const gate = createDelegation({
       db: runtime,
       aiEnabled: () => true,
@@ -720,14 +709,14 @@ describe("a Run the student started", () => {
 
     expect(
       await Promise.all([
-        responsibilities.startStudentRun(s.p, run),
-        responsibilities.startStudentRun(s.p, run),
+        agents.startStudentRun(s.p, run),
+        agents.startStudentRun(s.p, run),
       ]),
     ).toEqual([{ status: "ok" }, { status: "ok" }]);
     expect(await admin.run.findMany({ where: { id: run.runId } })).toEqual([
-      expect.objectContaining({ responsibilityId: null, chatId }),
+      expect.objectContaining({ agentId: null, chatId }),
     ]);
-    expect(await responsibilities.scopeOfRun(run.runId)).toBeNull();
+    expect(await agents.scopeOfRun(run.runId)).toBeNull();
     expect(
       await gate.perform(principal.fromRun(run.runId), {
         key: `${run.runId}:1`,
@@ -743,29 +732,29 @@ describe("a Run the student started", () => {
     await admin.chat.create({
       data: { id: foreignChat, studentId: other.studentId },
     });
-    const responsibilities = createResponsibilities({ db: runtime, clock });
+    const agents = createAgents({ db: runtime, clock });
     const runId = randomUUID();
 
     expect(
-      await responsibilities.startStudentRun(s.p, {
+      await agents.startStudentRun(s.p, {
         runId,
         workflowId: "artifact-run",
         chatId: foreignChat,
       }),
     ).toEqual({ status: "gone" });
     expect(await admin.run.count({ where: { id: runId } })).toBe(0);
-    await responsibilities.startStudentRun(s.p, {
+    await agents.startStudentRun(s.p, {
       runId,
       workflowId: "artifact-run",
     });
     expect(
-      await responsibilities.startStudentRun(other.p, {
+      await agents.startStudentRun(other.p, {
         runId,
         workflowId: "artifact-run",
       }),
     ).toEqual({ status: "gone" });
     await expect(
-      responsibilities.startStudentRun(principal.fromRun(runId), {
+      agents.startStudentRun(principal.fromRun(runId), {
         runId: randomUUID(),
         workflowId: "artifact-run",
       }),
@@ -773,16 +762,16 @@ describe("a Run the student started", () => {
   });
 });
 
-describe("Responsibilities on an Archived Course", () => {
+describe("Agents on an Archived Course", () => {
   it("refuses to start one on an Archived Course, or to resume one while its Course is Archived", async () => {
     const s = await student();
     const { schedules } = fakeSchedules();
-    const responsibilities = createResponsibilities({
+    const agents = createAgents({
       db: runtime,
       schedules,
       clock,
     });
-    const created = await responsibilities.create(s.p, {
+    const created = await agents.create(s.p, {
       preset: "keep_course_organized",
       courseId: s.courseId,
       budgetMicroUsd: 50_000,
@@ -793,16 +782,16 @@ describe("Responsibilities on an Archived Course", () => {
       where: { id: s.courseId },
       data: { archivedAt: now },
     });
-    await responsibilities.pauseForCourse(s.p, s.courseId);
+    await agents.pauseForCourse(s.p, s.courseId);
 
     expect(
-      await responsibilities.create(s.p, {
+      await agents.create(s.p, {
         preset: "keep_course_organized",
         courseId: s.courseId,
         budgetMicroUsd: 50_000,
       }),
     ).toEqual({ status: "course_archived" });
-    expect(await responsibilities.resume(s.p, created.id)).toEqual({
+    expect(await agents.resume(s.p, created.id)).toEqual({
       status: "course_archived",
     });
 
@@ -810,7 +799,7 @@ describe("Responsibilities on an Archived Course", () => {
       where: { id: s.courseId },
       data: { archivedAt: null },
     });
-    expect(await responsibilities.resume(s.p, created.id)).toEqual({
+    expect(await agents.resume(s.p, created.id)).toEqual({
       status: "ok",
     });
   });

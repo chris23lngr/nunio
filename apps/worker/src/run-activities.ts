@@ -1,17 +1,17 @@
-// Run Activities: all I/O of a Responsibility's Run. Every Action goes through the gate, never around it.
+// Run Activities: all I/O of an Agent's Run. Every Action goes through the gate, never around it.
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type {
   ActionIntent,
   ActionOutcome,
+  Agents,
   DecisionNotifier,
   Delegation,
-  Responsibilities,
 } from "@nunio/delegation";
 import {
+  createAgents,
   createDelegation,
-  createResponsibilities,
   principal,
   withOwner,
 } from "@nunio/delegation";
@@ -23,6 +23,7 @@ import { createOutreachSender, createWebPusher, keyOf } from "@nunio/outreach";
 import { createPlan, createPlanExecutor } from "@nunio/planning";
 import { Context } from "@temporalio/activity";
 
+// What an Agent's Schedule passes its Run. The field keeps the old name until the Agents cutover reschedules every Agent.
 export interface RunRef {
   studentId: string;
   responsibilityId: string;
@@ -37,21 +38,25 @@ const revive = (intent: ActionIntent): ActionIntent =>
 export function createRunActivities({
   db,
   delegation,
-  responsibilities,
+  agents,
   propose,
   notifyDecision,
 }: {
   db: PrismaClient;
   notifyDecision: DecisionNotifier;
   delegation: Delegation;
-  responsibilities: Responsibilities;
-  /** The Responsibility's preset: the Actions this Run should take now. */
+  agents: Agents;
+  /** The Agent's preset: the Actions this Run should take now. */
   propose: (runId: string) => Promise<ActionIntent[]>;
 }) {
   return {
-    async startRun(ref: RunRef): Promise<string | null> {
-      return responsibilities.startRun({
-        ...ref,
+    async startRun({
+      studentId,
+      responsibilityId,
+    }: RunRef): Promise<string | null> {
+      return agents.startRun({
+        studentId,
+        agentId: responsibilityId,
         runId: Context.current().info.workflowExecution!.runId,
         workflowId: Context.current().info.workflowExecution!.workflowId,
       });
@@ -145,14 +150,14 @@ export function runActivitiesFromEnv(
         (o) => o.id === obligationId,
       )?.due ?? null,
   });
-  const responsibilities = createResponsibilities({ db, clock });
+  const agents = createAgents({ db, clock });
   const outreach = createOutreachSender({
     db,
     clock,
     plan,
     facts,
     delegation,
-    responsibilities,
+    agents,
     // Its own key and sender, so notification email is tracked apart from authentication email (ADR-0014).
     mailer: createScalewayMailer({
       projectId: env.SCW_PROJECT_ID!,
@@ -170,9 +175,9 @@ export function runActivitiesFromEnv(
       url: `${env.API_ORIGIN}/unsubscribe/briefing-email`,
     },
   });
-  /** Each preset's Actions: the Rebalance of the Responsibility's Course, or of its one exam. */
+  /** Each preset's Actions: the Rebalance of the Agent's Course, or of its one exam. */
   const propose = async (runId: string) => {
-    const scope = await responsibilities.scopeOfRun(runId);
+    const scope = await agents.scopeOfRun(runId);
     return scope ? plan.intentsFor(principal.fromRun(runId), scope) : [];
   };
 
@@ -181,7 +186,7 @@ export function runActivitiesFromEnv(
       ...createRunActivities({
         db,
         delegation,
-        responsibilities,
+        agents,
         propose,
         notifyDecision,
       }),

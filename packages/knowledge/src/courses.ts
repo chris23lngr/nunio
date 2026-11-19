@@ -1,10 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
-import type {
-  Principal,
-  Responsibilities,
-  Transaction,
-} from "@nunio/delegation";
+import type { Agents, Principal, Transaction } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { Facts } from "./facts.js";
 import type { CourseColor } from "./new-course.js";
@@ -215,12 +211,12 @@ export function createCourses({
   db,
   clock,
   facts,
-  responsibilities,
+  agents,
 }: {
   db: PrismaClient;
   clock: { now(): Date };
   facts: Pick<Facts, "review">;
-  responsibilities: Pick<Responsibilities, "pauseForCourse" | "endForCourse">;
+  agents: Pick<Agents, "pauseForCourse" | "endForCourse">;
 }) {
   /** The Course's Tasks: those toward its Obligations, and those in it. */
   const tasks = (courseId: string) => ({
@@ -495,7 +491,7 @@ export function createCourses({
           futureStudyBlocks: await tx.studyBlock.count({
             where: futureBlocks(id),
           }),
-          responsibilities: await tx.responsibility.count({
+          agents: await tx.agent.count({
             where: { courseId: id, state: { not: "ended" } },
           }),
         };
@@ -504,14 +500,14 @@ export function createCourses({
 
     /**
      * nunio stops planning and acting for the Course: its future Study Blocks go, Locked ones too, since the student
-     * chose this, and its Responsibilities are Paused. They are Paused first, so a failure leaves nunio doing less.
+     * chose this, and its Agents are Paused. They are Paused first, so a failure leaves nunio doing less.
      */
     async archive(p: Principal, id: string) {
       const accepted = await withOwner(db, p, (tx) =>
         tx.course.findFirst({ where: { id, status: "accepted" } }),
       );
       if (!accepted) return { status: "gone" } as const;
-      await responsibilities.pauseForCourse(p, id);
+      await agents.pauseForCourse(p, id);
       return withOwner(db, p, async (tx) => {
         await tx.studyBlock.deleteMany({ where: futureBlocks(id) });
         await tx.course.update({
@@ -524,7 +520,7 @@ export function createCourses({
 
     /**
      * Removes the Course and everything only in it; Sources stay, so a later reading may propose it again (ADR 0015).
-     * Its Responsibilities are Ended first, in their own transaction because each Schedule is deleted after that commit;
+     * Its Agents are Ended first, in their own transaction because each Schedule is deleted after that commit;
      * a failure in between leaves them Ended on a Course that still exists, which the student asked to go anyway.
      */
     async delete(p: Principal, id: string) {
@@ -532,7 +528,7 @@ export function createCourses({
         tx.course.findFirst({ where: { id, status: "accepted" } }),
       );
       if (!accepted) return { status: "gone" } as const;
-      await responsibilities.endForCourse(p, id);
+      await agents.endForCourse(p, id);
       return withOwner(db, p, async (tx) => {
         const { count } = await tx.course.deleteMany({ where: { id } });
         return { status: count ? "ok" : "gone" } as const;
@@ -598,7 +594,7 @@ export function createCourses({
       });
     },
 
-    /** Its Obligations return to the Plan; removed Study Blocks stay gone and Paused Responsibilities stay Paused. */
+    /** Its Obligations return to the Plan; removed Study Blocks stay gone and Paused Agents stay Paused. */
     async unarchive(p: Principal, id: string) {
       return withOwner(db, p, async (tx) => {
         const { count } = await tx.course.updateMany({

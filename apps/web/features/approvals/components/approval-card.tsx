@@ -66,8 +66,8 @@ export function ApprovalCard({
       denyLabel="Don't"
       description={
         <>
-          {approval.responsibility
-            ? `${presets[approval.responsibility.preset] ?? "A Responsibility"} asks`
+          {approval.agent
+            ? `${presets[approval.agent.preset] ?? "An Agent"} asks`
             : "nunio asks"}
           {action.work.course && ` for ${action.work.course}`}
           {time}.

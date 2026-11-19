@@ -4,11 +4,7 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import type { Principal } from "@nunio/delegation";
-import {
-  createDelegation,
-  createResponsibilities,
-  principal,
-} from "@nunio/delegation";
+import { createAgents, createDelegation, principal } from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import type { Facts } from "@nunio/knowledge";
 import { createFacts } from "@nunio/knowledge";
@@ -122,7 +118,7 @@ beforeAll(async () => {
     plan,
     facts,
     delegation: createDelegation({ db: runtime, aiEnabled: () => true }),
-    responsibilities: createResponsibilities({ db: runtime, clock }),
+    agents: createAgents({ db: runtime, clock }),
     mailer,
     pusher,
     inboxUrl: "https://app.nunio.test/inbox",
@@ -348,7 +344,7 @@ describe("the daily Briefing", () => {
         madeAt: at("2026-11-09 07:05"),
         interventions: [shortfall!.id],
         approvals: [],
-        responsibilities: [],
+        agents: [],
       },
     ]);
   });
@@ -400,7 +396,7 @@ describe("the daily Briefing", () => {
     expect((await outreach.inbox(p)).briefings).toHaveLength(1);
   });
 
-  it("bundles the Approvals nunio waits for and the Responsibilities still active", async () => {
+  it("bundles the Approvals nunio waits for and the Agents still active", async () => {
     now = at("2026-11-09 07:05");
     const p = await student();
     if (p.kind !== "student") throw new Error("a student");
@@ -417,7 +413,7 @@ describe("the daily Briefing", () => {
       },
     });
     const [active, ended] = [randomUUID(), randomUUID()];
-    await admin.responsibility.createMany({
+    await admin.agent.createMany({
       data: [
         {
           id: active,
@@ -441,7 +437,7 @@ describe("the daily Briefing", () => {
       expect.objectContaining({
         interventions: [],
         approvals: [actionId],
-        responsibilities: [active],
+        agents: [active],
       }),
     ]);
   });

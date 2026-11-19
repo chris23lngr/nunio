@@ -29,13 +29,13 @@ These are engineering proposals inferred from the brief and evidence above; API 
 
 ### Identity
 
-- Keep the Better Auth server instance in a server-only package consumed by the API. The browser receives the client; workers act under a stored responsibility grant, not a captured browser session token.
+- Keep the Better Auth server instance in a server-only package consumed by the API. The browser receives the client; workers act under an Agent's stored Grant, not a captured browser session token.
 - Prefer one public origin with `/api/*` routed to the independently deployed API. Separate deployables do not require cross-origin browser cookies. If separate origins are necessary, test credentialed CORS, exact origin allowlists, cookies, callback URLs, and proxy headers end to end.
 - Start with database-backed sessions and cookie caching disabled. Recheck authoritative session state for new grants, deletion, integration changes, and submission approvals. Preserve every `Set-Cookie` response header; do not blindly copy a generic header loop if it merges multiple cookies.
 - Use a Fetch-compatible dedicated API on Bun; mount the original request through `auth.handler(request)` without consuming its body first. tRPC or REST is a separate transport decision; Better Auth does not need to be wrapped in a tRPC procedure. Fastify is an optional alternative, not a commitment. If used, its [documented integration](https://better-auth.com/docs/integrations/fastify) provides `fromNodeHeaders(request.headers)` for Node-style headers. Production URL construction must use the configured canonical origin/trusted proxy contract. Auth mounting and Stripe raw-body parsing need separate route handling.
 - Proposed compatibility baseline: pin Prisma 7 CLI/client/driver adapter and Better Auth versions proven together. Read the versioned v7 docs, generate the auth schema, review the resulting Prisma migration, explicitly generate the client, and execute signup/session/revocation plus application transactions under Bun. Run the same checks against the deployed API runtime. A Bun package manager does not prove every hosting target executes Bun.
 - Maintain domain authorization in shared application rules: authenticated actor, resource owner, selected context, action grant, current revocation state, and permitted destination. Test cross-user access in API routes, queued jobs, retrieval, exports, and file downloads.
-- Sessions, responsibility grants, and paid entitlements are three different state machines. Signing out need not cancel previously authorized background work; pausing/revoking a responsibility must stop subsequent actions even if its queue item predates revocation.
+- Sessions, Agent Grants, and paid entitlements are three different state machines. Signing out need not cancel previously authorized background work; pausing/revoking an Agent must stop subsequent actions even if its queue item predates revocation.
 
 ### Billing and capped usage
 

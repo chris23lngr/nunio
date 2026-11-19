@@ -1831,13 +1831,13 @@ it("records Reported as Submitted and takes it back, but never for an exam", asy
   });
 });
 
-/** The Course list as the overview shows it; this file changes no Responsibilities. */
+/** The Course list as the overview shows it; this file changes no Agents. */
 const coursesOf = () =>
   createCourses({
     db: runtime,
     clock: { now: () => now },
     facts,
-    responsibilities: {
+    agents: {
       pauseForCourse: async () => {},
       endForCourse: async () => {},
     },

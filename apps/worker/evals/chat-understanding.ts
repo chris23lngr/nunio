@@ -18,11 +18,7 @@ import { createArtifacts } from "@nunio/artifacts";
 import { createChats } from "@nunio/chat";
 import { createPool, createPrismaClient } from "@nunio/db";
 import { startTestDatabase } from "@nunio/db/testing";
-import {
-  createDelegation,
-  createResponsibilities,
-  principal,
-} from "@nunio/delegation";
+import { createAgents, createDelegation, principal } from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import {
   createFacts,
@@ -183,7 +179,7 @@ const maker: Maker = {
     usage: { microUsd: 1 },
   }),
 };
-const responsibilities = createResponsibilities({
+const agents = createAgents({
   db,
   schedules: {
     create: async () => {},
@@ -198,7 +194,7 @@ const artifacts = createArtifacts({
   keys,
   reader,
   facts,
-  responsibilities,
+  agents,
   delegation,
   maker,
   clock,

@@ -4,7 +4,7 @@ import type { paths } from "@nunio/api-client";
 import { createApiClient } from "@nunio/api-client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { nameOf } from "@/features/responsibilities/name";
+import { nameOf } from "@/features/agents/name";
 import {
   hours,
   overlapReasons,
@@ -192,7 +192,7 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
                 </li>
               ) : (
                 <li key={item.id}>
-                  <Link href={`/responsibilities/${item.id}`}>
+                  <Link href={`/agents/${item.id}`}>
                     {nameOf({
                       course: item.course ? { title: item.course } : null,
                       exam: item.exam ? { title: item.exam } : null,
@@ -205,8 +205,8 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
           </ul>
         ) : (
           <p>
-            Nothing yet. <Link href="/responsibilities">Delegate a Course</Link>{" "}
-            and nunio keeps its Study Blocks planned.
+            Nothing yet. <Link href="/agents">Delegate a Course</Link> and nunio
+            keeps its Study Blocks planned.
           </p>
         )}
       </section>

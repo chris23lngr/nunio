@@ -58,7 +58,7 @@ beforeAll(async () => {
     db: runtime,
     clock,
     facts,
-    responsibilities: {
+    agents: {
       pauseForCourse: async () => {},
       endForCourse: async () => {},
     },

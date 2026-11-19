@@ -76,9 +76,9 @@ export function causesOf({
     id: string;
     status: string;
     refusal: string | null;
-    responsibilityId?: string | null;
+    agentId?: string | null;
   }[];
-  /** Responsibilities Paused because their Course is Archived; their Actions raise nothing. */
+  /** Agents Paused because their Course is Archived; their Actions raise nothing. */
   pausedForArchivedCourse: readonly string[];
 }): Cause[] {
   const disagreement = (on: "obligation" | "fact", { id }: Flagged): Cause => ({
@@ -103,11 +103,7 @@ export function causesOf({
           .map((f) => disagreement("fact", f)),
       ]),
     ...actions
-      .filter(
-        (a) =>
-          !a.responsibilityId ||
-          !pausedForArchivedCourse.includes(a.responsibilityId),
-      )
+      .filter((a) => !a.agentId || !pausedForArchivedCourse.includes(a.agentId))
       .flatMap((a): Cause[] => {
         if (a.status === "refused" && a.refusal === "approval_expired")
           return [

@@ -1,12 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Flashcard, Maker, PracticeItem, Written } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
-import type {
-  Delegation,
-  Metered,
-  Principal,
-  Responsibilities,
-} from "@nunio/delegation";
+import type { Agents, Delegation, Metered, Principal } from "@nunio/delegation";
 import { principal, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type {
@@ -140,7 +135,7 @@ export function createArtifacts({
   keys,
   reader,
   facts,
-  responsibilities,
+  agents,
   delegation,
   maker,
   clock,
@@ -149,7 +144,7 @@ export function createArtifacts({
   keys: SourceKeys;
   reader: KnowledgeReader;
   facts: Facts;
-  responsibilities: Responsibilities;
+  agents: Agents;
   delegation: Delegation;
   maker: Maker;
   clock: { now(): Date };
@@ -408,7 +403,7 @@ export function createArtifacts({
       }
       const runId = randomUUID(),
         artifactId = req.artifactId ?? randomUUID();
-      const started = await responsibilities.startStudentRun(student, {
+      const started = await agents.startStudentRun(student, {
         runId,
         workflowId: `artifactRun/${runId}`,
         ...("chatId" in req.from ? { chatId: req.from.chatId } : {}),

@@ -847,7 +847,7 @@ it("leaves an Event Series undecided once its Course is deleted, keeping its eve
     db: runtime,
     clock,
     facts,
-    responsibilities: {
+    agents: {
       pauseForCourse: async () => {},
       endForCourse: async () => {},
     },
@@ -1663,7 +1663,7 @@ it("leaves an Archived Course's work out of the Plan, and brings it back when un
     db: runtime,
     clock,
     facts,
-    responsibilities: {
+    agents: {
       pauseForCourse: async () => {},
       endForCourse: async () => {},
     },
@@ -1693,7 +1693,7 @@ it("keeps a Task in a Course, which the Course's daily limit, Archiving and dele
     db: runtime,
     clock,
     facts,
-    responsibilities: {
+    agents: {
       pauseForCourse: async () => {},
       endForCourse: async () => {},
     },

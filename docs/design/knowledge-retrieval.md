@@ -21,7 +21,7 @@ export interface KnowledgeReader {
     p: Principal,
     req: {
       runId: string;
-      from: { chatId: string } | { responsibilityId: string };
+      from: { chatId: string } | { agentId: string };
       widen?: { courseIds?: string[]; sourceIds?: string[] };
     },
   ): Promise<Pinned>;
@@ -139,8 +139,8 @@ If `meter` cannot tell whether an embedding call finished, the reservation stays
 
 ## What the implementation hides
 
-- **Scope resolution:** from a Principal to its owner and to the Chat, Run, or Responsibility selection. Pinned revisions are stored as rows (selected IDs plus a Fact-sequence cutoff), and liveness is rechecked against deleted Sources and Disconnected Connections.
-- **Retrieval strategies (internal seam):** exact filtered pgvector first (`WHERE owner AND source_id = ANY($live) … ORDER BY embedding <=> $q LIMIT k`, with filter columns indexed). Later options: keyword (`tsvector`), hybrid via reciprocal-rank fusion, a metered reranker, and HNSW with `hnsw.iterative_scan` plus an exact fallback when results run short. `truncated` reports reduced recall. Strategy settings are internal Responsibility configuration and are not exposed to the model initially.
+- **Scope resolution:** from a Principal to its owner and to the Chat, Run, or Agent selection. Pinned revisions are stored as rows (selected IDs plus a Fact-sequence cutoff), and liveness is rechecked against deleted Sources and Disconnected Connections.
+- **Retrieval strategies (internal seam):** exact filtered pgvector first (`WHERE owner AND source_id = ANY($live) … ORDER BY embedding <=> $q LIMIT k`, with filter columns indexed). Later options: keyword (`tsvector`), hybrid via reciprocal-rank fusion, a metered reranker, and HNSW with `hnsw.iterative_scan` plus an exact fallback when results run short. `truncated` reports reduced recall. Strategy settings are internal Agent configuration and are not exposed to the model initially.
 - **Source-kind profiles (internal seam):** chunking, location anchors and display, and whether a kind is course material or operational. A new Source type means adding one profile.
 - **Crypto-shredding consistency (ADR-0007):** chunk text, summaries, and cached rendered blocks are encrypted under the Source's own data key and decrypted only after scope filtering. Embedding rows are deleted with the key, in the same transaction.
 - **Correction merge and disagreement detection,** and mapping Facts to passages by location.
@@ -201,7 +201,7 @@ All tests cross `pin`, `retrieve`, and `cite`. Scenarios:
 
 ## Phase 11 decisions
 
-- **`pin` takes `{ chatId }` or `{ selection: { courseIds, sourceIds } }`,** not `{ responsibilityId }`. Only Runs the student starts read course material so far; a Responsibility's Runs still read the Plan alone. `widen` is not implemented. `pin` is called by the student, idempotent on `runId`, and returns `gone` for an unknown Run or a selection that is not the student's or no longer exists. It stores the selection as rows (`run_pin`, `run_pin_course`, `run_pin_source`), with a Course's Sources expanded when pinned.
+- **`pin` takes `{ chatId }` or `{ selection: { courseIds, sourceIds } }`,** not `{ agentId }`. Only Runs the student starts read course material so far; an Agent's Runs still read the Plan alone. `widen` is not implemented. `pin` is called by the student, idempotent on `runId`, and returns `gone` for an unknown Run or a selection that is not the student's or no longer exists. It stores the selection as rows (`run_pin`, `run_pin_course`, `run_pin_source`), with a Course's Sources expanded when pinned.
 - **`{ runId }` is read only by that Run's Principal.** Anyone else gets `ScopeMismatchError`, and an unpinned Run gets `run_unpinned`.
 - **Frozen additions.** Passages come from the pinned Sources that are still live. Facts come from the pinned Courses, minus Obligations and Facts first created after the pin. A new Source's differing value for an existing Fact still shows as a Disagreement, so only new items are frozen out.
 - **Derived text.** The Chat answer's key wrapping moved into `createDerivedText`, which Artifacts and Feedback will share.

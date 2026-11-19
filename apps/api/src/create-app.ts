@@ -14,11 +14,11 @@ import type { Chats } from "@nunio/chat";
 import { createChats } from "@nunio/chat";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
-import type { Delegation, Responsibilities } from "@nunio/delegation";
+import type { Agents, Delegation } from "@nunio/delegation";
 import {
+  createAgents,
   createDelegation,
   createModelCatalog,
-  createResponsibilities,
   principal,
 } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
@@ -77,7 +77,7 @@ export interface AppDeps {
   seriesAssigner: SeriesAssigner;
   projects: Projects;
   courses: Courses;
-  responsibilities: Responsibilities;
+  agents: Agents;
   runWorkflows: RunWorkflows;
   outreach: Outreach;
   artifacts: Artifacts;
@@ -106,7 +106,7 @@ export function createApp({
   seriesAssigner,
   projects,
   courses,
-  responsibilities,
+  agents,
   runWorkflows,
   outreach,
   artifacts,
@@ -142,7 +142,7 @@ export function createApp({
     c.set("seriesAssigner", seriesAssigner);
     c.set("projects", projects);
     c.set("courses", courses);
-    c.set("responsibilities", responsibilities);
+    c.set("agents", agents);
     c.set("runWorkflows", runWorkflows);
     c.set("outreach", outreach);
     c.set("artifacts", artifacts);
@@ -237,7 +237,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
   const { runWorkflows, schedules } = runWorkflowsFromEnv(env);
 
   const plan = createPlan({ db: prisma, facts, clock });
-  const responsibilities = createResponsibilities({
+  const agents = createAgents({
     db: prisma,
     schedules,
     clock,
@@ -248,7 +248,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     keys,
     reader,
     facts,
-    responsibilities,
+    agents,
     delegation,
     maker: createMaker(models),
     clock,
@@ -267,7 +267,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     auth,
     prisma,
     delegation,
-    responsibilities,
+    agents,
     runWorkflows,
     appOrigin,
     spike,
@@ -294,7 +294,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     estimator: createEstimator(models),
     seriesAssigner: createSeriesAssigner(models),
     projects: createProjects({ db: prisma }),
-    courses: createCourses({ db: prisma, clock, facts, responsibilities }),
+    courses: createCourses({ db: prisma, clock, facts, agents }),
     artifacts,
     artifactWorkflows,
     understanding,

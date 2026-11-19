@@ -45,7 +45,7 @@ export function createOutreachSender(deps: {
   plan: Plan; // Shortfalls, from the Plan's view
   facts: Facts; // Disagreements, from review
   delegation: Delegation; // expired Approvals and Unconfirmed Actions, from history
-  responsibilities: Responsibilities; // ongoing work for Briefings
+  agents: Agents; // ongoing work for Briefings
   mailer: Mailer; // true external; Scaleway adapter and a fake
   pusher: Pusher; // true external; web-push adapter and a fake
   inboxUrl: string; // the only link an email or push carries
@@ -104,7 +104,7 @@ export interface Pusher {
 - **Live details.** An open Intervention stores its cause, not a copy of its content. `inbox` renders it from the cause's current state, so a growing Shortfall needs no update. A closed one whose subject is gone is shown as gone.
 - **Delivery queue.** Raising an Intervention or making a Briefing queues one delivery per enabled channel. Each tick sends what is due per student and channel as one message ("3 items need your attention"), after rechecking that an announced Intervention is still open, that it is outside Quiet Hours, and that the daily limit leaves room. A delivery past the limit is dropped; its Intervention stays in the Inbox and the next Briefing.
 - **Timing.** Pushes carry a TTL of 12 hours (Briefings `low` urgency), never the library's four-week default. Quiet Hours and the Briefing time are evaluated in the Plan's time zone at send time, so changed settings apply to what is already queued.
-- **Briefings.** Once the student's local time passes `briefingAtMinute`, the tick makes that day's Briefing from open Interventions, waiting Approvals and active Responsibilities (ready Artifacts from Phase 11), then records the day as done even when nothing was made.
+- **Briefings.** Once the student's local time passes `briefingAtMinute`, the tick makes that day's Briefing from open Interventions, waiting Approvals and active Agents (ready Artifacts from Phase 11), then records the day as done even when nothing was made.
 - **Students across tenants.** The tick lists students with an active Pilot entitlement through a `SECURITY DEFINER` function, then works on each as `principal.fromSession({ studentId })`, as the worker's Source activities already do. A failure for one student is logged and does not stop the others.
 
 ## Data
@@ -121,7 +121,7 @@ All tables are owned by the student under the same row-level security policy as 
 
 - `Mailer`: a Scaleway TEM adapter in `outreach` built on the request `identity` already makes (`packages/identity/src/email.ts`), and a fake for tests. Two adapters, a real seam.
 - `Pusher`: a `web-push` adapter (version chosen by a spike, see Accepted limits) with the VAPID key from the environment, and a fake for tests.
-- `plan`, `facts`, `delegation`, `responsibilities`: the existing modules, passed in as `createPlan` already takes `facts`. No new port: tests run them over real Postgres.
+- `plan`, `facts`, `delegation`, `agents`: the existing modules, passed in as `createPlan` already takes `facts`. No new port: tests run them over real Postgres.
 - The worker runs `tick` from an `outreachTick` workflow on a five-minute Temporal Schedule ensured at start, like `reconcile-actions`. No per-student workflow or Schedule.
 - Phase 9's `raiseIntervention` activity stays so that recorded Run histories still replay. Its rows use the same cause keys, so sync adopts them; a missed raise is caught on the next tick.
 

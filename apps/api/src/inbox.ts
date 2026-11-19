@@ -5,10 +5,10 @@ import {
   NotOpenError,
   UnknownInterventionError,
 } from "@nunio/outreach";
+import { scopeNames } from "./agents.js";
 import type { AppBindings } from "./app.js";
 import { ActionShown, describeAction } from "./approvals.js";
 import { body, Done, errors, json, outcomes, student } from "./outcomes.js";
-import { scopeNames } from "./responsibilities.js";
 
 const Settings = z
   .object({
@@ -92,7 +92,7 @@ const Briefing = z
           ),
       }),
     ),
-    responsibilities: z.array(
+    agents: z.array(
       z.object({
         id: z.string(),
         preset: z.enum(["keep_course_organized", "prepare_for_exam"]),
@@ -138,13 +138,11 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
       const [plan, review, actions, delegated] = await Promise.all([
         c.get("plan").view(p),
         interventions.some((i) => i.kind === "disagreement") ||
-        briefings.some((b) => b.responsibilities.length)
+        briefings.some((b) => b.agents.length)
           ? c.get("facts").review(p)
           : null,
         ids.length ? c.get("delegation").history(p, { ids }) : [],
-        briefings.some((b) => b.responsibilities.length)
-          ? c.get("responsibilities").list(p)
-          : [],
+        briefings.some((b) => b.agents.length) ? c.get("agents").list(p) : [],
       ]);
       const shown = (actionId: string) => {
         const a = actions.find((x) => x.id === actionId);
@@ -217,7 +215,7 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
               action: shown(actionId),
               state: approvalState(actionId),
             })),
-            responsibilities: b.responsibilities.flatMap((id) => {
+            agents: b.agents.flatMap((id) => {
               const r = delegated.find((x) => x.id === id);
               if (!r || !review) return [];
               const { course, exam } = scopeNames(review, r.scope);

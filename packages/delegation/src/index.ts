@@ -1,7 +1,15 @@
 /**
- * Execution gate, usage metering, Responsibilities, and Runs. See docs/design/delegation-gate.md.
+ * Execution gate, usage metering, Agents, and Runs. See docs/design/delegation-gate.md.
  */
 
+export {
+  type AgentScope,
+  type Agents,
+  createAgents,
+  type PausedBy,
+  type Preset,
+  type Schedules,
+} from "./agents.js";
 export type { Refusal, Restrictions } from "./decision.js";
 export {
   type ActionOutcome,
@@ -46,11 +54,3 @@ export {
   type Transaction,
   withOwner,
 } from "./principal.js";
-export {
-  createResponsibilities,
-  type PausedBy,
-  type Preset,
-  type Responsibilities,
-  type ResponsibilityScope,
-  type Schedules,
-} from "./responsibilities.js";

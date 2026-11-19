@@ -1,7 +1,7 @@
 import type { Schedules } from "@nunio/delegation";
 import { payloadCodecFromEnv } from "@nunio/keys";
 import { Client, Connection } from "@temporalio/client";
-import { createResponsibilitySchedules } from "./responsibility-schedules.js";
+import { createAgentSchedules } from "./agent-schedules.js";
 
 /** The Temporal side of Runs as the API needs it: waking a Run once the student decided on one of its Actions. */
 export interface RunWorkflows {
@@ -12,7 +12,7 @@ export interface RunWorkflows {
   ): Promise<void>;
 }
 
-/** Signals by workflow and run ID, so a decision never reaches another Run of the same Responsibility. */
+/** Signals by workflow and run ID, so a decision never reaches another Run of the same Agent. */
 export function createRunWorkflows({
   client,
 }: {
@@ -27,7 +27,7 @@ export function createRunWorkflows({
   };
 }
 
-/** Runs and Responsibility Schedules on the deployment's Temporal namespace, connecting per call as Source workflows do. */
+/** Runs and Agent Schedules on the deployment's Temporal namespace, connecting per call as Source workflows do. */
 export function runWorkflowsFromEnv(env: NodeJS.ProcessEnv) {
   const required = (name: string) => {
     const value = env[name];
@@ -54,7 +54,7 @@ export function runWorkflowsFromEnv(env: NodeJS.ProcessEnv) {
     }
   }
   const schedulesOf = (client: Client) =>
-    createResponsibilitySchedules({
+    createAgentSchedules({
       client,
       taskQueue: required("TEMPORAL_TASK_QUEUE"),
     });

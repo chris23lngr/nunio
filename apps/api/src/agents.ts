@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
-import type { ResponsibilityScope } from "@nunio/delegation";
+import type { AgentScope } from "@nunio/delegation";
 import { deadline } from "@nunio/planning";
 import type { AppBindings } from "./app.js";
 import { ActionShown, describeAction } from "./approvals.js";
@@ -17,10 +17,10 @@ import {
   student,
 } from "./outcomes.js";
 
-/** Every pilot Responsibility gets the same Budget; its presets make no model calls yet. */
+/** Every pilot Agent gets the same Budget; its presets make no model calls yet. */
 const defaultBudgetMicroUsd = 1_000_000;
 
-const Responsibility = z
+const Agent = z
   .object({
     id: z.string(),
     preset: z.enum(["keep_course_organized", "prepare_for_exam"]),
@@ -65,12 +65,12 @@ const Responsibility = z
       })
       .describe("The next planned Action."),
   })
-  .openapi("Responsibility");
+  .openapi("Agent");
 
 type Review = Awaited<ReturnType<AppBindings["Variables"]["facts"]["review"]>>;
 
-/** Names a Responsibility's scope as the student's review shows it: its Course and, for an exam, the exam. */
-export function scopeNames(review: Review, scope: ResponsibilityScope) {
+/** Names an Agent's scope as the student's review shows it: its Course and, for an exam, the exam. */
+export function scopeNames(review: Review, scope: AgentScope) {
   const course =
     "courseId" in scope
       ? review.courses.find((c) => c.id === scope.courseId)
@@ -105,11 +105,11 @@ function nextRun(now: Date, timeZone: string) {
   return deadline(tomorrow.toISOString().slice(0, 10), "06:00", timeZone);
 }
 
-export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
+export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
     createRoute({
       method: "post",
-      path: "/api/me/responsibilities",
+      path: "/api/me/agents",
       request: body(
         z.discriminatedUnion("preset", [
           z.object({
@@ -131,7 +131,7 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
       return created(
         c,
         await c
-          .get("responsibilities")
+          .get("agents")
           .create(p, { ...input, budgetMicroUsd: defaultBudgetMicroUsd }),
       );
     },
@@ -139,11 +139,11 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
     createRoute({
       method: "get",
-      path: "/api/me/responsibilities/{id}",
+      path: "/api/me/agents/{id}",
       request: { params: id },
       responses: {
         200: json(
-          Responsibility,
+          Agent,
           "Its scope, Grants, recent and next Actions, and Budget.",
         ),
         ...errors,
@@ -152,15 +152,13 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
-      const r = await c
-        .get("responsibilities")
-        .view(p, c.req.valid("param").id);
+      const r = await c.get("agents").view(p, c.req.valid("param").id);
       if (!r) return c.json({ error: "gone" }, 404);
       const plan = await c.get("plan").view(p);
       const review = await c.get("facts").review(p);
       const history = await c
         .get("delegation")
-        .history(p, { responsibilityId: r.id, limit: 10 });
+        .history(p, { agentId: r.id, limit: 10 });
       const [next] =
         r.state === "active" ? await c.get("plan").intentsFor(p, r.scope) : [];
       return c.json(
@@ -194,11 +192,11 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
     createRoute({
       method: "get",
-      path: "/api/me/responsibilities",
+      path: "/api/me/agents",
       responses: {
         200: json(
           z.array(
-            Responsibility.pick({
+            Agent.pick({
               id: true,
               preset: true,
               course: true,
@@ -207,7 +205,7 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
               pausedBy: true,
             }),
           ),
-          "The student's Responsibilities, newest first.",
+          "The student's Agents, newest first.",
         ),
         401: errors[401],
       },
@@ -215,7 +213,7 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
-      const listed = await c.get("responsibilities").list(p);
+      const listed = await c.get("agents").list(p);
       const review = listed.length ? await c.get("facts").review(p) : null;
       return c.json(
         listed.map((r) => ({
@@ -233,7 +231,7 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
     routes.openapi(
       createRoute({
         method: "post",
-        path: `/api/me/responsibilities/{id}/${control}`,
+        path: `/api/me/agents/{id}/${control}`,
         request: { params: id },
         responses: { 200: Done, ...archivedOutcomes },
       }),
@@ -242,7 +240,7 @@ export function registerResponsibilityRoutes(routes: OpenAPIHono<AppBindings>) {
         if (!p) return c.json({ error: "unauthorized" }, 401);
         return done(
           c,
-          await c.get("responsibilities")[control](p, c.req.valid("param").id),
+          await c.get("agents")[control](p, c.req.valid("param").id),
         );
       },
     );

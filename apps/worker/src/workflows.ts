@@ -99,7 +99,7 @@ export async function deleteSource(
   await purgeSource({ studentId: input.studentId, sourceId: input.sourceId });
 }
 
-// A Responsibility's Run (ADR-0006): one bounded workflow, started by its Schedule. Domain outcomes come back as values
+// An Agent's Run (ADR-0006): one bounded workflow, started by its Schedule. Domain outcomes come back as values
 // from the gate, so a refused Action is never retried; a thrown Activity error is infrastructure, safe to retry by key.
 const {
   startRun,
@@ -123,6 +123,7 @@ const {
 export const approvalDecidedSignal =
   defineSignal<[actionId: string]>("approvalDecided");
 
+// The workflow type keeps the old name until the Agents cutover reschedules every Agent.
 export async function responsibilityRun(ref: RunRef) {
   const runId = await startRun(ref);
   if (!runId) return { status: "skipped" as const };
@@ -162,7 +163,7 @@ export async function responsibilityRun(ref: RunRef) {
       });
       return { status: "stopped" as const, reason: "unconfirmed" as const };
     }
-    // A Paused or Ended Responsibility takes no further Action, including in this Run.
+    // A Paused or Ended Agent takes no further Action, including in this Run.
     if (
       outcome.status === "refused" &&
       (outcome.reason === "paused" || outcome.reason === "ended")

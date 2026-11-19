@@ -3,7 +3,7 @@
 import { Button } from "@nunio/ui/components/button/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { hours } from "@/app/(app)/plan-wording";
-import { nameOf } from "@/features/responsibilities/name";
+import { nameOf } from "@/features/agents/name";
 import { closeIntervention } from "./api/inbox-mutations";
 import type { Intervention } from "./api/inbox-queries";
 import { inboxQueries } from "./api/inbox-queries";
@@ -107,7 +107,7 @@ export function InboxScreen({ apiOrigin }: { apiOrigin: string }) {
                       {action ? action.work.title : "an Action that is gone"}
                     </li>
                   ))}
-                  {b.responsibilities.map((r) => (
+                  {b.agents.map((r) => (
                     <li key={r.id}>
                       {nameOf({
                         course: r.course === null ? null : { title: r.course },

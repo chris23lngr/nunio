@@ -28,13 +28,13 @@ The central promise is: “I know what needs my attention, and the work of keepi
 6. Review or submit finished work according to explicit authority and supported destination coverage.
 7. Track outcomes, follow up on unfinished work, and adapt the plan.
 
-Target first-use value: a useful, reviewable result within ten minutes, using uploads alone if necessary. This is a pilot target, not a measured result. Ongoing responsibilities activate after scope and permission review.
+Target first-use value: a useful, reviewable result within ten minutes, using uploads alone if necessary. This is a pilot target, not a measured result. Agents activate after scope and permission review.
 
 ## User experience and information model
 
 - Home presents an actionable day: attention needed, prepared results, and ongoing background work. Chat stays accessible and connected to the current activity.
 - Courses hold longer-lived academic context.
-- Projects are optional outcome-oriented workspaces, such as an exam, thesis, or assignment. They bring together tasks, materials, chats, outputs, and responsibilities across one or more courses.
+- Projects are optional outcome-oriented workspaces, such as an exam, thesis, or assignment. They bring together tasks, materials, chats, outputs, and agents across one or more courses.
 - Shared knowledge keeps facts consistent across the product. Students can inspect and correct it; isolated conversations can remain outside it.
 - Chats and agents allow explicit selection of courses and materials. Retrieval is restricted to that selection by default. Operational context such as calendar availability is separately identified. Scope expansion requires authorization; relevant passages are retrieved rather than indiscriminately loading documents.
 - Work completed and demonstrated understanding are tracked separately. Generated work is not evidence of student understanding. Practice and student feedback inform preparation without false precision in mastery claims.
@@ -45,7 +45,7 @@ Target first-use value: a useful, reviewable result within ten minutes, using up
 
 Proactivity supports scheduled, event-driven, goal-driven, and follow-through behavior. Daily briefings and change alerts are presets, not the limits of the system.
 
-Students primarily delegate ongoing responsibilities such as “keep this course organized” or “prepare me for this exam.” Each exposes scope, permissions, recent actions, next planned action, usage limits, and a pause control. Advanced users can configure agent details.
+Students primarily delegate ongoing work to agents such as “keep this course organized” or “prepare me for this exam.” Each exposes scope, permissions, recent actions, next planned action, usage limits, and a pause control. Advanced users can configure agent details.
 
 Provide presets, plain-language customization, and advanced settings. Natural-language changes become inspectable configuration; increases in authority require confirmation.
 
@@ -78,7 +78,7 @@ Stripe is the payment requirement; Better Auth is the authentication requirement
 ## Security, privacy, and reliability requirements
 
 - EU hosting for core student data. External AI providers require verified processing locations, retention policies, contractual terms, and no training on student content. Exclusively EU processing across all providers is not yet promised.
-- Enforce permissions in the application independently of model behavior. Treat uploaded and connected content as untrusted input. Grant least-privilege access to responsibilities.
+- Enforce permissions in the application independently of model behavior. Treat uploaded and connected content as untrusted input. Grant least-privilege access to agents.
 - Isolate generated-code execution, control external access, and maintain inspectable histories of consequential actions.
 - Support data export, deletion of sources and associated indexes/derived memory, and integration revocation. Disconnecting stops future access and affected automation; deletion of prior imports is a separate explicit action. Document backup deletion schedules.
 - Continue independent work when a task is blocked. Surface deadline risks and needed decisions. Preserve artifacts, retry only when safe, and distinguish attempted actions from confirmed success.
@@ -90,8 +90,8 @@ Stripe is the payment requirement; Better Auth is the authentication requirement
 
 - Subscription with included AI usage; optional capped usage purchases can follow. Bounded trial rather than unrestricted free tier.
 - Pilot is free with explicit usage limits. Set prices after measuring costs.
-- Enforce budgets for background responsibilities. No automatic paid overages by default. Explain paused AI work while continuing ordinary reminders and access to existing plans.
-- Automatically select suitable models by default. Advanced users may choose supported models per chat or responsibility, with capability, cost, and data-handling differences visible.
+- Enforce budgets for agents. No automatic paid overages by default. Explain paused AI work while continuing ordinary reminders and access to existing plans.
+- Automatically select suitable models by default. Advanced users may choose supported models per chat or agent, with capability, cost, and data-handling differences visible.
 - User-supplied API keys and arbitrary model endpoints are deferred.
 
 ## Validation

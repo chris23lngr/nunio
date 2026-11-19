@@ -19,7 +19,7 @@ const approval = {
   fingerprint:
     "ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12",
   expiresAt: "2026-11-24T08:00:00.000Z",
-  responsibility: { id: "r-1", preset: "keep_course_organized" },
+  agent: { id: "r-1", preset: "keep_course_organized" },
 };
 
 test("an Approval card shows the exact Action, and approving confirms exactly the fingerprint shown", async () => {
@@ -161,7 +161,7 @@ test("an Approval card names the Task a Chat proposes to add or reopen, with no 
       from: null,
       to: null,
     },
-    responsibility: null,
+    agent: null,
   });
   api.route("GET", "/api/me/approvals", () =>
     Response.json([
@@ -208,7 +208,7 @@ test("an Approval to remove a block names the block and asks to approve the remo
       from: approval.action.from,
       to: null,
     },
-    responsibility: null,
+    agent: null,
   };
   api.route("GET", "/api/me/approvals", () => Response.json([removal]));
   api.route("GET", "/api/me/actions/unconfirmed", () => Response.json([]));

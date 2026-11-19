@@ -11,7 +11,7 @@ const none: State = {
 };
 
 describe("causesOf", () => {
-  it("holds no expired Approval from a Responsibility Paused because its Course is Archived", () => {
+  it("holds no expired Approval from an Agent Paused because its Course is Archived", () => {
     expect(
       causesOf({
         ...none,
@@ -20,7 +20,7 @@ describe("causesOf", () => {
             id: "a1",
             status: "refused",
             refusal: "approval_expired",
-            responsibilityId: "r1",
+            agentId: "r1",
           },
         ],
         pausedForArchivedCourse: ["r1"],

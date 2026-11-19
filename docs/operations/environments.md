@@ -122,7 +122,7 @@ The command charges the actual cost, frees the rest of the estimate, and records
 
 - `SELECT, UPDATE ("status", "actualMicroUsd", "settledAt", "settledBy")` on `usage_reservation`;
 - `SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd", "updatedAt")` on `allowance`;
-- `SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd")` on `responsibility`, for calls made in a Responsibility's Run.
+- `SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd")` on `agent`, for calls made in an Agent's Run.
 
 Set `AI_DISABLED=true` on `nunio-api` and the Render worker and redeploy both to stop all new model calls; Allowance reads keep working. Verified with Testcontainers under the runtime role. On 2026-11-02 the founder confirmed all manual Phase 4 staging checks passed (Allowance read, founder grant/audit, and kill switch).
 

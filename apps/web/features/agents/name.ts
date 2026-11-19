@@ -1,4 +1,4 @@
-/** How a Responsibility is named to the student: after its exam, or after its Course. */
+/** How an Agent is named to the student: after its exam, or after its Course. */
 export function nameOf(r: {
   course: { title: string } | null;
   exam: { title: string } | null;
@@ -8,7 +8,7 @@ export function nameOf(r: {
     : `Keep ${r.course?.title ?? "a Course that is gone"} organized`;
 }
 
-/** Why a Responsibility is Paused, in words; null when the student paused it. */
+/** Why an Agent is Paused, in words; null when the student paused it. */
 export const pausedBecause = {
   student: null,
   budget: "its Budget is used up",

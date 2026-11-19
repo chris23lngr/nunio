@@ -17,7 +17,7 @@ export default async function HomePage() {
       <Link href="/chat">Chat</Link>
       <Link href="/plan">Plan</Link>
       <Link href="/projects">Projects</Link>
-      <Link href="/responsibilities">Responsibilities</Link>
+      <Link href="/agents">Agents</Link>
       <SignOutButton apiOrigin={apiOrigin()} />
       <ApprovalsPanel apiOrigin={apiOrigin()} />
       <HomeView apiOrigin={apiOrigin()} />

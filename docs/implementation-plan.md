@@ -259,7 +259,7 @@ Agreed scope and sequencing: [identity-and-pilot-access.md](design/identity-and-
 **What to implement.**
 
 1. In `packages/delegation`: `meter(p, estimate, call)` from [delegation-gate.md](design/delegation-gate.md).
-   - Atomic reservation against the student's Allowance (and the Responsibility's Budget once Phase 9 exists), in one transaction with `SELECT … FOR UPDATE`.
+   - Atomic reservation against the student's Allowance (and the Agent's Budget once Phase 9 exists), in one transaction with `SELECT … FOR UPDATE`.
    - Settle actual usage after the call; hold uncertain reservations.
    - Return `budget_exhausted` / `allowance_exhausted` as values.
 2. `packages/ai`:
@@ -418,7 +418,7 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 
 ---
 
-## Phase 9: Delegation gate, Responsibilities, and Runs
+## Phase 9: Delegation gate, Agents, and Runs
 
 > **How this serves the primary goal:** "the work of keeping my studies organized is largely handled" requires proactive Runs. The gate is what guarantees they act only within explicit permissions and never repeat a consequential Action.
 
@@ -432,14 +432,14 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
    - an outbox, Attempts, and Unconfirmed handling.
 
    Pilot Action kinds: `studyBlock.create` and `studyBlock.move` within nunio's Plan.
-2. Responsibilities as records plus Temporal Schedules (ADR-0006): Grants, Budget, Paused/Ended. Pause pauses the Schedule and stops the next Action. Budget exhaustion pauses and asks.
+2. Agents as records plus Temporal Schedules (ADR-0006): Grants, Budget, Paused/Ended. Pause pauses the Schedule and stops the next Action. Budget exhaustion pauses and asks.
 3. Runs as one workflow each:
    - Approval waits via signal with an expiry timer (7 days, capped at the Obligation's deadline);
    - an expired Approval raises an Intervention;
    - `reconcile` runs on a Schedule.
 4. Approval cards in `web` showing the exact Action and fingerprint (ADR-0010). Chat-proposed Actions always go through the card.
-5. Pilot Responsibility presets: "keep this course organized" (Rebalance plus Study Blocks) and "prepare me for this exam" (Topic coverage plus practice scheduling).
-6. Responsibility screen: scope, Grants, recent Actions, next planned Action, usage against Budget, and pause control.
+5. Pilot Agent presets: "keep this course organized" (Rebalance plus Study Blocks) and "prepare me for this exam" (Topic coverage plus practice scheduling).
+6. Agent screen: scope, Grants, recent Actions, next planned Action, usage against Budget, and pause control.
 
 **Documentation references.** [delegation-gate.md](design/delegation-gate.md) (entire); ADR-0001, 0004, 0006, 0010; [durable-ai.md](research/durable-ai.md) "Verification to carry into the plan"; Phase 0 Temporal Schedules entry.
 
@@ -453,20 +453,20 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 
 **Progress (2026-11-10).** The gate in `packages/delegation` is implemented: the gate suite (`gate.test.ts`), the contract suite (`kinds.test.ts`) and the table-driven decision core (`decision.test.ts`), with the pilot deviations recorded in [delegation-gate.md](design/delegation-gate.md). It covers "a Pause between two Actions stops the second", "repeated Approval clicks dispatch once", and, standing in for a stale Artifact version, a moved block refused with `approval_mismatch`.
 
-**Progress (2026-11-11).** Responsibilities and Runs are implemented:
-- `createResponsibilities` (create, pause, resume, end, view, startRun) with a `Schedules` port; the Temporal adapter in `apps/api` starts a Run daily at 06:00 in the student's time zone and skips a day while a Run still waits.
+**Progress (2026-11-11).** Agents and Runs are implemented:
+- `createAgents` (create, pause, resume, end, view, startRun) with a `Schedules` port; the Temporal adapter in `apps/api` starts a Run daily at 06:00 in the student's time zone and skips a day while a Run still waits.
 - The `responsibilityRun` workflow performs the preset's Actions under `runId:step` keys, waits on the `approvalDecided` signal or the Approval's expiry, raises an Intervention for an expired Approval or an Unconfirmed Action, and stops on Paused or Ended. Its tests (`apps/worker/src/runs.test.ts`) cover a worker restart while awaiting Approval, a Pause between Actions, and repeated Approval clicks; its recorded history replays in CI.
 - `reconcileActions` runs every five minutes on a Schedule the worker ensures at start.
 - The Plan executor (`createPlanExecutor`) records each key's effect with the effect itself, so its `lookup` is always certain; "keep this course organized" proposes the Rebalance of its Course (`plan.intentsFor`).
 - Interventions are minimal records (`intervention`), deduplicated per trigger, for Phase 10's inbox.
 
-**Progress (2026-11-12).** Approval cards and the Responsibility screen are implemented:
+**Progress (2026-11-12).** Approval cards and the Agent screen are implemented:
 - `GET /api/me/approvals` shows each waiting Action exactly (work, Course, where its block is and would go), with its fingerprint and expiry; `POST /api/me/approvals/{actionId}` approves only the fingerprint shown (409 otherwise, 404 for another student's) or denies, then signals `approvalDecided` to the Run by its stored workflow and run ID. `GET /api/me/actions/unconfirmed` and `POST /api/me/actions/{actionId}/resolve` let the student resolve what nunio could not confirm.
-- Responsibility routes create "keep this course organized" (fixed $1 Budget), list, show (scope, Grants, recent Actions, next Run at 06:00 and its first Action, Budget), pause, resume and end; the API reaches Temporal through `runWorkflowsFromEnv`. Home's Agent work lists the waiting Approvals and each Responsibility.
-- `web` shows the cards on Home (`features/approvals`), and `/responsibilities` with each Responsibility's screen (`features/responsibilities`).
+- Agent routes create "keep this course organized" (fixed $1 Budget), list, show (scope, Grants, recent Actions, next Run at 06:00 and its first Action, Budget), pause, resume and end; the API reaches Temporal through `runWorkflowsFromEnv`. Home's Agent work lists the waiting Approvals and each Agent.
+- `web` shows the cards on Home (`features/approvals`), and `/agents` with each Agent's screen (`features/agents`).
 - Chat-origin Actions are not proposed yet: no Chat proposes an Action until a Chat can, so every card is a Run's.
 
-**Progress (2026-11-13).** "Prepare me for this exam" is implemented as a reduced preset: a Responsibility scoped to one exam Obligation, with Grants to create and move Study Blocks for that exam only, whose Runs propose the Rebalance of that exam and its Tasks (`plan.intentsFor(p, { obligationId })`). Only an exam of the student's own qualifies. Topic coverage and practice scheduling wait for Phase 11, where practice items and Attempts exist; per-Topic Tasks would need a new Action kind.
+**Progress (2026-11-13).** "Prepare me for this exam" is implemented as a reduced preset: an Agent scoped to one exam Obligation, with Grants to create and move Study Blocks for that exam only, whose Runs propose the Rebalance of that exam and its Tasks (`plan.intentsFor(p, { obligationId })`). Only an exam of the student's own qualifies. Topic coverage and practice scheduling wait for Phase 11, where practice items and Attempts exist; per-Topic Tasks would need a new Action kind.
 
 **Anti-pattern guards.** No app code checks Grants itself. `delegation` never imports Temporal. Free text is never treated as an Approval. There are no global Grants.
 
@@ -495,7 +495,7 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 **Progress (2026-11-09).** Outreach is implemented in `packages/outreach` per [outreach.md](design/outreach.md):
 - The Inbox lists Interventions, open first, and the last seven Briefings. The student acknowledges or dismisses an open Intervention; either closes it once.
 - A five-minute `outreachTick` Schedule in the worker derives each student's causes (Shortfalls, Disagreements, expired Approvals, Unconfirmed Actions), raises one Intervention per new cause, and lapses those whose cause is gone. Phase 9's `raiseIntervention` stays so recorded Runs replay; its rows use the same cause keys.
-- A daily Briefing, at a time the student sets in their Plan's time zone, bundles open Interventions, waiting Approvals and active Responsibilities; it makes no model calls, and an empty day has none.
+- A daily Briefing, at a time the student sets in their Plan's time zone, bundles open Interventions, waiting Approvals and active Agents; it makes no model calls, and an empty day has none.
 - Email (ADR-0014) and opt-in browser push carry no content: email gives a count and the Inbox link, push is empty and the service worker shows fixed text. Each channel is sent and retried independently; a push service's 404 or 410 deletes the subscription. Quiet Hours hold both; a daily limit counts announcements, not channel copies, and leaves Briefings out.
 - Briefing emails carry RFC 8058 one-click unsubscribe headers, after a staging send confirmed TEM's DKIM signature covers them; the link stops only Briefing emails.
 - Deviations from the design: `Pusher` names the VAPID key it signs with (`keyId`), and push is sent with `web-push` 3.6.7's `generateRequestDetails` and `fetch`, since the library always uses `https`. A `briefingEmail` setting and an `unsubscribe` signing dependency were added for one-click unsubscribe.
@@ -529,7 +529,7 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 - `packages/understanding` records Attempts with Feedback and Self-assessments; only graded Attempts move a Level, solid after two correct ones in a row.
 - AI-use Rules are a Fact (`ai_use_rule`), and Reported as Submitted is a column on the Obligation that stops its planning.
 - The worker makes each Artifact in an `artifactRun` workflow with a single attempt; the API serves the routes in the design; the web has `/study` (Topics with Levels, practice, flashcards, drafts, Critiques and the Handoff) and `/study/artifacts/[id]`, and Home lists ready Artifacts.
-- Left for later: Briefings bundling ready Artifacts, practice inside the exam Responsibility, Practice Items quoted from the student's own Sources (`quoteFrom`), and photos of handwritten work.
+- Left for later: Briefings bundling ready Artifacts, practice inside the exam Agent, Practice Items quoted from the student's own Sources (`quoteFrom`), and photos of handwritten work.
 
 **Anti-pattern guards.** No mastery percentages. No automatic Submission. No Destination is treated as verified.
 
@@ -559,7 +559,7 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
    - Source and account deletion end to end;
    - documented backup deletion schedules (30 days);
    - Disconnect behavior.
-7. **Pilot limits:** per-student Allowance, Responsibility Budgets, and the kill switch documented.
+7. **Pilot limits:** per-student Allowance, Agent Budgets, and the kill switch documented.
 8. **Pilot measurement:** coordination effort, Obligations caught or missed, work completed, Corrections and Dismissals, and willingness to pay (brief "Validation").
 
 **Documentation references.** Brief "Security, privacy, and reliability" and "Validation"; ADR-0007, 0008, 0011; [identity-billing-security.md](research/identity-billing-security.md) verification cases 1–8.
@@ -581,7 +581,7 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
    - `prisma-client-js`, `directUrl`, `postgresqlExtensions`, `hono/vercel`, `middleware.ts`, `payloadCodecPath`, `cronSchedule`;
    - `https://openrouter.ai/api` (global endpoint), `global.anthropic`, `us.anthropic`, `tool_choice`, `jsonTool`;
    - `disableCSRFCheck`, `disableOriginCheck`, `FROM node:.*alpine`.
-3. **Full test run.** Unit, contract, Testcontainers integration, workflow replay, and end-to-end on staging: upload a syllabus, review it, then a Responsibility Run proposes a Study Block, the student approves it, and the Action is done.
+3. **Full test run.** Unit, contract, Testcontainers integration, workflow replay, and end-to-end on staging: upload a syllabus, review it, then an Agent Run proposes a Study Block, the student approves it, and the Action is done.
 4. **First-use timing.** Re-measure the ten-minute result on staging with eval materials.
 
 ---
@@ -729,7 +729,7 @@ Phase 15 is built before the Phase 12 gates, and its evals join them. Work happe
 - [x] A Chat that did not select a Course still reads that Course's Levels ("… even to a Chat that selected nothing"), and starting practice on its Topics goes back to the model with the reason ("starts no Artifact on Topics outside the Chat's selected Courses").
 - [x] `agenda` gives Shortfalls for the range and lists every current Shortfall, including one due beyond the range (`create-app.test.ts`, "agenda with Shortfalls").
 - [x] A proposal to remove a Locked block, or one that has started, goes back to the model with its reason, and no card is asked (`create-app.test.ts`, "returns a Locked block to the model…"; `packages/planning/src/plan.test.ts`, "refuses a proposed removal…").
-- [x] A removal is performed only after the student approves the fingerprint shown, in the Chat or on Home (`create-app.test.ts`, "proposing to remove a Study Block"). The gate refuses one whose block started meanwhile (`packages/delegation/src/decision.test.ts`), and a Responsibility's Grant never covers it (`kinds.test.ts`).
+- [x] A removal is performed only after the student approves the fingerprint shown, in the Chat or on Home (`create-app.test.ts`, "proposing to remove a Study Block"). The gate refuses one whose block started meanwhile (`packages/delegation/src/decision.test.ts`), and an Agent's Grant never covers it (`kinds.test.ts`).
 - [x] The Chat search eval is rerun: [phase-15-chat-search-eval.json](operations/phase-15-chat-search-eval.json). Its students have no Courses, so it measures the longer instructions, not the larger `courseFacts`. The Understanding and Plan eval covers that.
 - [x] Injection eval: a Source that also tells assistants to remove every Study Block causes no Action, and any proposal appears only as a card ([phase-15-chat-injection-eval.json](operations/phase-15-chat-injection-eval.json)).
 - [x] Understanding and Plan eval is recorded: [phase-15-chat-understanding-eval.json](operations/phase-15-chat-understanding-eval.json). The founder spot-checked the answers of all three Phase 15 evals on 2026-11-13 and accepted them; no thresholds are set.
@@ -763,7 +763,7 @@ Phase 15 is built before the Phase 12 gates, and its evals join them. Work happe
 
 **Anti-pattern guards.**
 - No new read tool where an existing one can carry the data.
-- No Self-assessments, Attempts, Responsibilities or Dismissals from a Chat (ADR-0021).
+- No Self-assessments, Attempts, Agents or Dismissals from a Chat (ADR-0021).
 - Never remove a Locked block, not even with Approval.
 - No Source wording in the new data without adding its Source to `derivedFrom`.
 

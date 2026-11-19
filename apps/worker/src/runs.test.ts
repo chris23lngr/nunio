@@ -5,8 +5,8 @@ import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import type { ActionIntent, Executor } from "@nunio/delegation";
 import {
+  createAgents,
   createDelegation,
-  createResponsibilities,
   InvalidIntentError,
   principal,
 } from "@nunio/delegation";
@@ -124,12 +124,12 @@ async function student({
     });
   }
   const p = principal.fromSession({ studentId });
-  const responsibilities = createResponsibilities({
+  const agents = createAgents({
     db: runtime,
     schedules: noSchedules,
     clock,
   });
-  const created = await responsibilities.create(p, {
+  const created = await agents.create(p, {
     preset: "keep_course_organized",
     courseId,
     budgetMicroUsd: 50_000,
@@ -140,8 +140,8 @@ async function student({
     obligationId,
     blockIds,
     p,
-    responsibilityId: created.id,
-    responsibilities,
+    agentId: created.id,
+    agents,
   };
 }
 
@@ -174,13 +174,13 @@ async function worker(
       db: runtime,
       delegation,
       notifyDecision: createDecisionNotifier(env.client),
-      responsibilities: s.responsibilities,
+      agents: s.agents,
       propose: async () => intents,
     }),
   });
 }
 
-describe("a Responsibility's Run", () => {
+describe("an Agent's Run", () => {
   it("performs each Action its Grants cover, once", async () => {
     const s = await student({ blocks: 2 });
     const { executor, dispatched } = fakeExecutor();
@@ -194,9 +194,7 @@ describe("a Responsibility's Run", () => {
       env.client.workflow.execute("responsibilityRun", {
         taskQueue,
         workflowId: `run-${randomUUID()}`,
-        args: [
-          { studentId: s.studentId, responsibilityId: s.responsibilityId },
-        ],
+        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
       }),
     );
 
@@ -206,9 +204,9 @@ describe("a Responsibility's Run", () => {
 
   it("reuses the Run after startup commits but its Activity completion is lost", async () => {
     const s = await student();
-    const start = s.responsibilities.startRun;
+    const start = s.agents.startRun;
     let calls = 0;
-    s.responsibilities.startRun = async (ref) => {
+    s.agents.startRun = async (ref) => {
       const id = await start(ref);
       if (++calls === 1) throw new Error("lost Activity completion");
       return id;
@@ -219,16 +217,14 @@ describe("a Responsibility's Run", () => {
         env.client.workflow.execute("responsibilityRun", {
           taskQueue,
           workflowId: `retry-start-${randomUUID()}`,
-          args: [
-            { studentId: s.studentId, responsibilityId: s.responsibilityId },
-          ],
+          args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
         }),
       ),
     ).toEqual({ status: "done" });
     expect(calls).toBe(2);
     expect(
       await admin.run.count({
-        where: { responsibilityId: s.responsibilityId },
+        where: { agentId: s.agentId },
       }),
     ).toBe(1);
   });
@@ -265,7 +261,7 @@ describe("a Responsibility's Run", () => {
           taskQueue,
           workflowId,
           workflowExecutionTimeout: "4 seconds",
-          args: [{ studentId: "student", responsibilityId: "responsibility" }],
+          args: [{ studentId: "student", responsibilityId: "agent" }],
         }),
       ),
     ).toEqual({ status: "done" });
@@ -293,7 +289,7 @@ describe("a Responsibility's Run", () => {
           taskQueue,
           workflowId: `invalid-${randomUUID()}`,
           workflowExecutionTimeout: "7 seconds",
-          args: [{ studentId: "student", responsibilityId: "responsibility" }],
+          args: [{ studentId: "student", responsibilityId: "agent" }],
         }),
       ),
     ).rejects.toThrow();
@@ -315,9 +311,7 @@ describe("a Responsibility's Run", () => {
       const handle = await env.client.workflow.start("responsibilityRun", {
         taskQueue,
         workflowId: `run-${randomUUID()}`,
-        args: [
-          { studentId: s.studentId, responsibilityId: s.responsibilityId },
-        ],
+        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
       });
       const asking = await awaitingApproval(s.p);
       await gate.decide(s.p, {
@@ -352,12 +346,10 @@ describe("a Pause during a Run", () => {
       const handle = await env.client.workflow.start("responsibilityRun", {
         taskQueue,
         workflowId: `run-${randomUUID()}`,
-        args: [
-          { studentId: s.studentId, responsibilityId: s.responsibilityId },
-        ],
+        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
       });
       const asking = await awaitingApproval(s.p);
-      await s.responsibilities.pause(s.p, s.responsibilityId);
+      await s.agents.pause(s.p, s.agentId);
       await handle.signal(approvalDecidedSignal, asking.id);
       return handle.result();
     });
@@ -390,9 +382,7 @@ describe("an Action nobody can confirm", () => {
       env.client.workflow.execute("responsibilityRun", {
         taskQueue,
         workflowId: `run-${randomUUID()}`,
-        args: [
-          { studentId: s.studentId, responsibilityId: s.responsibilityId },
-        ],
+        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
       }),
     );
 
@@ -419,9 +409,7 @@ describe("an unanswered request for Approval", () => {
       env.client.workflow.execute("responsibilityRun", {
         taskQueue,
         workflowId: `run-${randomUUID()}`,
-        args: [
-          { studentId: s.studentId, responsibilityId: s.responsibilityId },
-        ],
+        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
       }),
     );
 
@@ -462,9 +450,7 @@ describe("repeated Approval clicks", () => {
       const handle = await env.client.workflow.start("responsibilityRun", {
         taskQueue,
         workflowId: `run-${randomUUID()}`,
-        args: [
-          { studentId: s.studentId, responsibilityId: s.responsibilityId },
-        ],
+        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
       });
       const asking = await awaitingApproval(s.p);
       await Promise.all(
@@ -505,9 +491,7 @@ describe("a worker restart while a Run awaits Approval", () => {
       await env.client.workflow.start("responsibilityRun", {
         taskQueue,
         workflowId,
-        args: [
-          { studentId: s.studentId, responsibilityId: s.responsibilityId },
-        ],
+        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
       });
       return awaitingApproval(s.p);
     });
@@ -574,9 +558,7 @@ describe("reconciliation", () => {
         const handle = await env.client.workflow.start("responsibilityRun", {
           taskQueue,
           workflowId: `lost-decision-${randomUUID()}`,
-          args: [
-            { studentId: s.studentId, responsibilityId: s.responsibilityId },
-          ],
+          args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
         });
         try {
           const asking = await awaitingApproval(s.p);
@@ -606,11 +588,11 @@ describe("reconciliation", () => {
 
   it("confirms a dispatch a dead worker left in flight, through the executor's lookup", async () => {
     const s = await student();
-    const runId = (await s.responsibilities.startRun({
+    const runId = (await s.agents.startRun({
       runId: randomUUID(),
       workflowId: "run-workflow",
       studentId: s.studentId,
-      responsibilityId: s.responsibilityId,
+      agentId: s.agentId,
     }))!;
     const hung: Executor = {
       execute: () => new Promise(() => {}), // The worker dies mid-call: no answer ever comes.
@@ -651,7 +633,7 @@ describe("reconciliation", () => {
         db: runtime,
         delegation,
         notifyDecision: createDecisionNotifier(env.client),
-        responsibilities: s.responsibilities,
+        agents: s.agents,
         propose: async () => [],
       }),
     });

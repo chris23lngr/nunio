@@ -6,8 +6,9 @@ import {
   ScheduleOverlapPolicy,
 } from "@temporalio/client";
 
-const scheduleId = (responsibilityId: string) =>
-  `responsibility/${responsibilityId}`;
+// The Schedule ID, workflow type and `responsibilityId` arg keep the old name until the Agents cutover
+// reschedules every Agent.
+const scheduleId = (agentId: string) => `responsibility/${agentId}`;
 
 /** Each call is safe to repeat: a Schedule that already exists, or is already gone, is left as it is. */
 const ignoring =
@@ -15,8 +16,8 @@ const ignoring =
     if (!(error instanceof expected)) throw error;
   };
 
-/** The Temporal Schedules that start each Responsibility's Runs (ADR-0006): daily at 06:00, the student's time. */
-export function createResponsibilitySchedules({
+/** The Temporal Schedules that start each Agent's Runs (ADR-0006): daily at 06:00, the student's time. */
+export function createAgentSchedules({
   client,
   taskQueue,
 }: {
@@ -24,32 +25,32 @@ export function createResponsibilitySchedules({
   taskQueue: string;
 }): Schedules {
   return {
-    async create({ responsibilityId, studentId, timeZone }) {
+    async create({ agentId, studentId, timeZone }) {
       await client.schedule
         .create({
-          scheduleId: scheduleId(responsibilityId),
+          scheduleId: scheduleId(agentId),
           spec: { calendars: [{ hour: 6, minute: 0 }], timezone: timeZone },
           action: {
             type: "startWorkflow",
             workflowType: "responsibilityRun",
             taskQueue,
-            workflowId: `run/${responsibilityId}`,
-            args: [{ studentId, responsibilityId }],
+            workflowId: `run/${agentId}`,
+            args: [{ studentId, responsibilityId: agentId }],
           },
           // A Run still waiting for an Approval is not joined by the next day's.
           policies: { overlap: ScheduleOverlapPolicy.SKIP },
         })
         .catch(ignoring(ScheduleAlreadyRunning));
     },
-    async pause(responsibilityId) {
-      await client.schedule.getHandle(scheduleId(responsibilityId)).pause();
+    async pause(agentId) {
+      await client.schedule.getHandle(scheduleId(agentId)).pause();
     },
-    async unpause(responsibilityId) {
-      await client.schedule.getHandle(scheduleId(responsibilityId)).unpause();
+    async unpause(agentId) {
+      await client.schedule.getHandle(scheduleId(agentId)).unpause();
     },
-    async delete(responsibilityId) {
+    async delete(agentId) {
       await client.schedule
-        .getHandle(scheduleId(responsibilityId))
+        .getHandle(scheduleId(agentId))
         .delete()
         .catch(ignoring(ScheduleNotFoundError));
     },

@@ -3872,7 +3872,7 @@
                     "kind": {
                       "type": "string",
                       "enum": [
-                        "responsibility"
+                        "agent"
                       ]
                     },
                     "id": {
@@ -3918,7 +3918,7 @@
                 }
               ]
             },
-            "description": "Approvals the Agent is waiting for first, then each Responsibility the student delegated."
+            "description": "Approvals waiting for the student first, then each Agent the student delegated."
           }
         },
         "required": [
@@ -4069,7 +4069,7 @@
             "type": "string",
             "format": "date-time"
           },
-          "responsibility": {
+          "agent": {
             "type": [
               "object",
               "null"
@@ -4093,10 +4093,10 @@
           "action",
           "fingerprint",
           "expiresAt",
-          "responsibility"
+          "agent"
         ]
       },
-      "Responsibility": {
+      "Agent": {
         "type": "object",
         "properties": {
           "id": {
@@ -4412,7 +4412,7 @@
               ]
             }
           },
-          "responsibilities": {
+          "agents": {
             "type": "array",
             "items": {
               "type": "object",
@@ -4454,7 +4454,7 @@
           "madeAt",
           "interventions",
           "approvals",
-          "responsibilities"
+          "agents"
         ]
       },
       "OutreachSettings": {
@@ -12433,7 +12433,7 @@
         }
       },
       "delete": {
-        "description": "Removes the Course and everything only in it, ending its Responsibilities; its Sources stay.",
+        "description": "Removes the Course and everything only in it, ending its Agents; its Sources stay.",
         "parameters": [
           {
             "schema": {
@@ -12640,7 +12640,7 @@
                       "type": "integer",
                       "description": "Those still ahead, which archiving removes."
                     },
-                    "responsibilities": {
+                    "agents": {
                       "type": "integer"
                     }
                   },
@@ -12649,7 +12649,7 @@
                     "tasks",
                     "studyBlocks",
                     "futureStudyBlocks",
-                    "responsibilities"
+                    "agents"
                   ]
                 }
               }
@@ -12696,7 +12696,7 @@
     },
     "/api/me/courses/{id}/archive": {
       "post": {
-        "description": "nunio stops planning and acting for the Course: its future Study Blocks go and its Responsibilities are Paused.",
+        "description": "nunio stops planning and acting for the Course: its future Study Blocks go and its Agents are Paused.",
         "parameters": [
           {
             "schema": {
@@ -12807,7 +12807,7 @@
     },
     "/api/me/courses/{id}/unarchive": {
       "post": {
-        "description": "Its Obligations return to the Plan; Paused Responsibilities stay Paused.",
+        "description": "Its Obligations return to the Plan; Paused Agents stay Paused.",
         "parameters": [
           {
             "schema": {
@@ -13504,7 +13504,7 @@
         }
       }
     },
-    "/api/me/responsibilities": {
+    "/api/me/agents": {
       "post": {
         "requestBody": {
           "required": true,
@@ -13651,7 +13651,7 @@
       "get": {
         "responses": {
           "200": {
-            "description": "The student's Responsibilities, newest first.",
+            "description": "The student's Agents, newest first.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13761,7 +13761,7 @@
         }
       }
     },
-    "/api/me/responsibilities/{id}": {
+    "/api/me/agents/{id}": {
       "get": {
         "parameters": [
           {
@@ -13780,7 +13780,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Responsibility"
+                  "$ref": "#/components/schemas/Agent"
                 }
               }
             }
@@ -13824,7 +13824,7 @@
         }
       }
     },
-    "/api/me/responsibilities/{id}/pause": {
+    "/api/me/agents/{id}/pause": {
       "post": {
         "parameters": [
           {
@@ -13934,7 +13934,7 @@
         }
       }
     },
-    "/api/me/responsibilities/{id}/resume": {
+    "/api/me/agents/{id}/resume": {
       "post": {
         "parameters": [
           {
@@ -14044,7 +14044,7 @@
         }
       }
     },
-    "/api/me/responsibilities/{id}/end": {
+    "/api/me/agents/{id}/end": {
       "post": {
         "parameters": [
           {

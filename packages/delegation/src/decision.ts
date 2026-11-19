@@ -1,9 +1,9 @@
 import type { Args, GrantScope, Kind, Subject } from "./kinds.js";
 import { definitions } from "./kinds.js";
 
-/** Advanced Agent configuration on a Responsibility. Restrictions can only tighten what Grants allow. */
+/** Advanced Agent configuration on an Agent. Restrictions can only tighten what Grants allow. */
 export interface Restrictions {
-  /** Kinds the Responsibility may take at all; absent means every kind. */
+  /** Kinds the Agent may take at all; absent means every kind. */
   allowedKinds?: Kind[];
   /** Kinds that always ask for Approval, even under a Grant. */
   alwaysAsk?: Kind[];
@@ -29,8 +29,8 @@ export interface Snapshot<K extends Kind = Kind> {
   /** The fingerprint of the Action as it stands now. */
   fingerprint: string;
   now: Date;
-  /** The Run's Responsibility; null in a Chat, which has none and so no Grants. */
-  responsibility: {
+  /** The Run's Agent; null in a Chat, which has none and so no Grants. */
+  agent: {
     state: "active" | "paused" | "ended";
     grants: { id: string; kind: Kind; scope: GrantScope }[];
     restrictions: Restrictions;
@@ -57,10 +57,10 @@ const refuse = (reason: Refusal): Decision => ({ outcome: "refuse", reason });
 
 /** The pure decision core: whether an Action may happen now, and on which authority. */
 export function decideAction<K extends Kind>(s: Snapshot<K>): Decision {
-  const { intent, subject, responsibility, approval } = s;
+  const { intent, subject, agent, approval } = s;
   if (!subject) return refuse("not_owner");
-  if (responsibility?.state === "ended") return refuse("ended");
-  if (responsibility?.state === "paused") return refuse("paused");
+  if (agent?.state === "ended") return refuse("ended");
+  if (agent?.state === "paused") return refuse("paused");
   // Neither a Lock nor Protected Time yields to asking.
   if ("locked" in subject && subject.locked) return refuse("locked");
   // A block that has started is the student's past, even with an Approval given earlier (ADR-0021).
@@ -71,7 +71,7 @@ export function decideAction<K extends Kind>(s: Snapshot<K>): Decision {
   )
     return refuse("started");
   if (s.intoProtectedTime) return refuse("protected_time");
-  const restrictions = responsibility?.restrictions ?? {};
+  const restrictions = agent?.restrictions ?? {};
   if (
     restrictions.allowedKinds &&
     !restrictions.allowedKinds.includes(intent.kind)
@@ -92,7 +92,7 @@ export function decideAction<K extends Kind>(s: Snapshot<K>): Decision {
   };
   const grant = restrictions.alwaysAsk?.includes(intent.kind)
     ? undefined
-    : responsibility?.grants.find(
+    : agent?.grants.find(
         (g) =>
           g.kind === intent.kind &&
           definition.grantCovers(g.scope, intent.args, subject),
