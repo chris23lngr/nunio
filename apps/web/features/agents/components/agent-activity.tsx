@@ -96,9 +96,11 @@ function RunDetail({
           <p className="mt-3 text-sm text-base-600">
             {run.status === "running"
               ? "Dein Agent arbeitet noch."
-              : run.status === "done"
-                ? "Keine Zusammenfassung."
-                : endLine(run.status, run.stopReason)}
+              : run.status !== "done"
+                ? endLine(run.status, run.stopReason)
+                : run.summaryGone
+                  ? "Zusammenfassung nicht mehr verfügbar: eine Quelle, aus der sie stammt, wurde gelöscht."
+                  : "Keine Zusammenfassung."}
           </p>
         )}
       </section>
@@ -151,6 +153,19 @@ export function AgentActivity({
   const [picked, setPicked] = useState<string | null>(null);
   const end = useRef<HTMLDivElement>(null);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = list;
+  // "Seit …" counts on while a Run is under way, also through a long step that changes nothing else.
+  const [now, setNow] = useState(() => new Date());
+  const running = Boolean(
+    list.data?.pages.some((page) =>
+      page.runs.some((run) => run.status === "running"),
+    ),
+  );
+  useEffect(() => {
+    if (!running) return;
+    setNow(new Date());
+    const tick = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(tick);
+  }, [running]);
   useEffect(() => {
     const element = end.current;
     if (!element || !hasNextPage || isFetchingNextPage) return;
@@ -179,7 +194,6 @@ export function AgentActivity({
     );
   // The newest Run until the student picks another.
   const selected = runs.find((run) => run.id === picked) ?? runs[0]!;
-  const now = new Date();
   return (
     <div className="flex min-h-[calc(100dvh-6.5rem)]">
       <nav

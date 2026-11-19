@@ -460,6 +460,7 @@ beforeAll(async () => {
     activity: createActivity({
       db: prisma,
       keys,
+      facts,
       clock: { now: () => new Date() },
     }),
     runWorkflows,
@@ -7203,13 +7204,13 @@ describe("a free-text Agent's form", () => {
     });
   });
 
-  it("shows a Run's cost against the Budget, its summary and its Verlauf, naming a deleted Course or Source gelöscht", async () => {
+  it("shows a Run's cost against the Budget, its summary and its Verlauf, naming only a deleted Course, Source or work gelöscht", async () => {
     const s = await student("agent-activity-run");
     const statistics = await course(s.id, "Statistics II");
     const { id } = (await (
       await s.call("POST", "", form([statistics]))
     ).json()) as { id: string };
-    const entered = await facts.enterObligation(
+    const exam = await facts.enterObligation(
       principal.fromSession({ studentId: s.id }),
       {
         course: { id: statistics },
@@ -7219,7 +7220,25 @@ describe("a free-text Agent's form", () => {
         destination: null,
       },
     );
-    if (entered.status !== "ok") throw new Error(entered.status);
+    if (exam.status !== "ok") throw new Error(exam.status);
+    // Archived since: its work is still named, not gelöscht.
+    await admin.course.update({
+      where: { id: statistics },
+      data: { archivedAt: new Date() },
+    });
+    const removed = await course(s.id, "Alte Vorlesung");
+    await admin.course.delete({ where: { id: removed } });
+    const deletedSource = randomUUID();
+    await admin.source.create({
+      data: {
+        id: deletedSource,
+        studentId: s.id,
+        title: "Altes Skript.pdf",
+        bytes: 100,
+        uploadExpiresAt: new Date(),
+        deletedAt: new Date(),
+      },
+    });
     const runId = await recordedRun(s.id, id, 10, {
       summary: "Ich habe einen Lernblock für deine Klausur eingetragen.",
     });
@@ -7255,22 +7274,22 @@ describe("a free-text Agent's form", () => {
         },
       ],
     });
-    const actionId = randomUUID();
-    const start = new Date("2099-02-01T09:00:00Z");
-    const end = new Date("2099-02-01T10:00:00Z");
-    await admin.action.create({
-      data: {
-        id: actionId,
-        studentId: s.id,
-        runId,
-        key: `${runId}:2:1`,
-        kind: "studyBlock.create",
-        args: { workId: entered.id, start, end },
-        status: "done",
+    const start = "2099-02-01T09:00:00.000Z";
+    const end = "2099-02-01T10:00:00.000Z";
+    const call = (n: number, detail: object) => ({
+      runId,
+      studentId: s.id,
+      key: `action:2:${n}`,
+      type: "action",
+      detail: {
+        step: 2,
+        call: n,
+        capability: "createStudyBlocks",
+        refusal: null,
+        brokenPreferences: [],
+        ...detail,
       },
     });
-    const goneCourse = randomUUID();
-    const goneSource = randomUUID();
     await admin.runEvent.createMany({
       data: [
         {
@@ -7281,40 +7300,37 @@ describe("a free-text Agent's form", () => {
           detail: {
             step: 1,
             plan: true,
-            courseIds: [statistics, goneCourse],
-            sourceIds: [goneSource],
+            courseIds: [statistics, removed],
+            sourceIds: [deletedSource],
           },
         },
-        {
-          runId,
-          studentId: s.id,
-          key: "action:2:1",
-          type: "action",
-          detail: {
-            step: 2,
-            call: 1,
-            capability: "createStudyBlocks",
-            actionId,
-            outcome: "done",
-            refusal: null,
-            brokenPreferences: ["outside_study_window"],
-          },
-        },
-        {
-          runId,
-          studentId: s.id,
-          key: "action:2:2",
-          type: "action",
-          detail: {
-            step: 2,
-            call: 2,
-            capability: "createStudyBlocks",
-            actionId: null,
-            outcome: "refused",
-            refusal: "invalid",
-            brokenPreferences: [],
-          },
-        },
+        call(1, {
+          actionId: randomUUID(),
+          kind: "studyBlock.create",
+          workId: exam.id,
+          start,
+          end,
+          outcome: "done",
+          brokenPreferences: ["outside_study_window"],
+        }),
+        call(2, {
+          actionId: randomUUID(),
+          kind: "studyBlock.create",
+          workId: randomUUID(),
+          start,
+          end,
+          outcome: "refused",
+          refusal: "run_cap",
+        }),
+        call(3, {
+          actionId: null,
+          kind: null,
+          workId: null,
+          start: null,
+          end: null,
+          outcome: "refused",
+          refusal: "invalid",
+        }),
       ],
     });
 
@@ -7328,6 +7344,7 @@ describe("a free-text Agent's form", () => {
       costMicroUsd: 120_000,
       budgetMicroUsd: 5_000_000,
       summary: "Ich habe einen Lernblock für deine Klausur eingetragen.",
+      summaryGone: false,
       openApprovals: 0,
     });
     expect(run.verlauf.map(({ at: _, ...entry }) => entry)).toEqual([
@@ -7338,9 +7355,9 @@ describe("a free-text Agent's form", () => {
         plan: true,
         courses: [
           { id: statistics, title: "Statistics II" },
-          { id: goneCourse, title: null },
+          { id: removed, title: null },
         ],
-        sources: [{ id: goneSource, title: null }],
+        sources: [{ id: deletedSource, title: null }],
       },
       {
         type: "action",
@@ -7349,12 +7366,21 @@ describe("a free-text Agent's form", () => {
         action: {
           kind: "studyBlock.create",
           work: { title: "Klausur Statistik", course: "Statistics II" },
-          start: start.toISOString(),
-          end: end.toISOString(),
+          start,
+          end,
         },
         outcome: "done",
         refusal: null,
         brokenPreferences: ["outside_study_window"],
+      },
+      {
+        type: "action",
+        step: 2,
+        capability: "createStudyBlocks",
+        action: { kind: "studyBlock.create", work: null, start, end },
+        outcome: "refused",
+        refusal: "run_cap",
+        brokenPreferences: [],
       },
       {
         type: "action",
@@ -7367,6 +7393,42 @@ describe("a free-text Agent's form", () => {
       },
       { type: "end", status: "done", reason: null },
     ]);
+  });
+
+  it("tells a summary gone with a deleted Source apart from a Run that wrote none", async () => {
+    const s = await student("agent-activity-summary-gone");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+    const deletedSource = randomUUID();
+    await admin.source.create({
+      data: {
+        id: deletedSource,
+        studentId: s.id,
+        title: "Skript.pdf",
+        bytes: 100,
+        uploadExpiresAt: new Date(),
+        deletedAt: new Date(),
+      },
+    });
+    const shredded = await recordedRun(s.id, id, 20);
+    await admin.run.update({
+      where: { id: shredded },
+      data: {
+        summaryContent: Buffer.from("sealed"),
+        summaryKey: Buffer.from("wrapped"),
+        derivedFrom: [deletedSource],
+      },
+    });
+    const without = await recordedRun(s.id, id, 10);
+
+    for (const [runId, summaryGone] of [
+      [shredded, true],
+      [without, false],
+    ] as const)
+      expect(
+        await (await s.call("GET", `/${id}/runs/${runId}`)).json(),
+      ).toMatchObject({ summary: null, summaryGone });
   });
 
   it("shows no Activity of another student's Agent, nor a Run under another Agent", async () => {

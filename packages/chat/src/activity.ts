@@ -7,6 +7,7 @@ import type {
 } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
+import type { Facts } from "@nunio/knowledge";
 import { createDerivedText } from "@nunio/knowledge";
 
 /** What one model step read: the Plan, the Facts of these Courses, and these Sources. */
@@ -19,7 +20,8 @@ export type ReadEvent = {
 
 /**
  * What became of one Action call: the gate's outcome for the Action it asked for, or a refusal without one when the call
- * named nothing the Run had read (`invalid`). A Preference it broke under Immer erlaubt is noted.
+ * named nothing the Run had read (`invalid`). A Preference it broke under Immer erlaubt is noted. The work and times are
+ * kept as the call named them, so the entry still reads right once the block is moved or removed.
  */
 export type ActionEvent = {
   step: number;
@@ -28,6 +30,13 @@ export type ActionEvent = {
   capability: string;
   /** Null when no Action was asked. */
   actionId: string | null;
+  /** The Action's kind; null when none was asked. */
+  kind: string | null;
+  /** The Obligation or Task it was for, by id. */
+  workId: string | null;
+  /** Where a Study Block was put, or removed from, as ISO times; null for an Action that places nothing in time. */
+  start: string | null;
+  end: string | null;
   outcome: "done" | "awaiting_approval" | "refused" | "failed" | "unconfirmed";
   refusal: Refusal | "invalid" | null;
   brokenPreferences: BrokenPreference[];
@@ -82,8 +91,14 @@ export type VerlaufEntry =
       at: Date;
       step: number;
       capability: string;
-      /** The Action as the gate recorded it; null when none was asked. */
-      action: { kind: string; args: unknown } | null;
+      /** The Action as the call named it; null when none was asked. */
+      action: {
+        kind: string;
+        /** Its work by its title now; null once deleted. A null title is one that can no longer be read. */
+        work: { title: string | null; course: string | null } | null;
+        start: Date | null;
+        end: Date | null;
+      } | null;
       outcome: ActionEvent["outcome"];
       refusal: ActionEvent["refusal"];
       brokenPreferences: BrokenPreference[];
@@ -104,10 +119,13 @@ export type ActivityCursor = { startedAt: Date; id: string };
 export function createActivity({
   db,
   keys,
+  facts,
   clock,
 }: {
   db: PrismaClient;
   keys: SourceKeys;
+  /** Obligations' titles as the student reviews them, Archived Courses included. */
+  facts: Pick<Facts, "review">;
   clock: { now(): Date };
 }) {
   const derived = createDerivedText(keys);
@@ -186,10 +204,12 @@ export function createActivity({
 
     /**
      * One of the Agent's Runs: its cost (settled usage plus what its calls in flight hold) against the Agent's Budget,
-     * its summary, null once a Source it was drawn from is deleted, and its Verlauf. Null when it is not the student's.
+     * its summary, and its Verlauf. The summary is null without a final message, and `summaryGone` once a Source it
+     * was drawn from is deleted. Courses, Sources and work are named as they are now, Archived ones included, and
+     * null only once deleted. Null when the Run is not the student's.
      */
     async run(p: Principal, agentId: string, runId: string) {
-      return withOwner(db, p, async (tx) => {
+      const read = await withOwner(db, p, async (tx) => {
         const run = await tx.run.findUnique({
           where: { id: runId },
           include: {
@@ -226,14 +246,12 @@ export function createActivity({
         const reads = run.events
           .filter((event) => event.type === "read")
           .map((event) => event.detail as ReadEvent);
-        const calls = run.events
-          .filter((event) => event.type === "action")
-          .map((event) => event.detail as ActionEvent);
-        const [courses, sources, actions] = await Promise.all([
-          tx.course.findMany({
-            where: { id: { in: reads.flatMap((read) => read.courseIds) } },
-            select: { id: true, title: true },
-          }),
+        const workIds = run.events.flatMap((event) => {
+          const workId =
+            event.type === "action" && (event.detail as ActionEvent).workId;
+          return workId ? [workId] : [];
+        });
+        const [sources, obligations, tasks] = await Promise.all([
           tx.source.findMany({
             where: {
               id: { in: reads.flatMap((read) => read.sourceIds) },
@@ -241,75 +259,131 @@ export function createActivity({
             },
             select: { id: true, title: true },
           }),
-          tx.action.findMany({
-            where: {
-              id: {
-                in: calls.flatMap((call) =>
-                  call.actionId ? [call.actionId] : [],
-                ),
-              },
+          tx.obligation.findMany({
+            where: { id: { in: workIds } },
+            select: { id: true, courseId: true },
+          }),
+          tx.task.findMany({
+            where: { id: { in: workIds } },
+            select: {
+              id: true,
+              title: true,
+              courseId: true,
+              obligationId: true,
             },
-            select: { id: true, kind: true, args: true },
           }),
         ]);
-        const titled = (ids: string[], rows: { id: string; title: string }[]) =>
-          ids.map((id) => ({
-            id,
-            title: rows.find((row) => row.id === id)?.title ?? null,
-          }));
-        const verlauf: VerlaufEntry[] = [
-          {
-            type: "start",
-            at: run.startedAt,
-            trigger: run.trigger as ActivityRun["trigger"],
+        const courses = await tx.course.findMany({
+          where: {
+            id: {
+              in: [
+                ...reads.flatMap((read) => read.courseIds),
+                ...obligations.map((o) => o.courseId),
+                ...tasks.flatMap((t) => (t.courseId ? [t.courseId] : [])),
+              ],
+            },
           },
-          ...run.events.map((event): VerlaufEntry => {
-            if (event.type === "read") {
-              const read = event.detail as ReadEvent;
-              return {
-                type: "read",
-                at: event.at,
-                step: read.step,
-                plan: read.plan,
-                courses: titled(read.courseIds, courses),
-                sources: titled(read.sourceIds, sources),
-              };
-            }
-            const call = event.detail as ActionEvent;
-            const action = actions.find((a) => a.id === call.actionId);
-            return {
-              type: "action",
-              at: event.at,
-              step: call.step,
-              capability: call.capability,
-              action: action ? { kind: action.kind, args: action.args } : null,
-              outcome: call.outcome,
-              refusal: call.refusal,
-              brokenPreferences: call.brokenPreferences,
-            };
-          }),
-          ...(run.status !== "running" && run.endedAt
-            ? [
-                {
-                  type: "end" as const,
-                  at: run.endedAt,
-                  status: run.status as Exclude<
-                    ActivityRun["status"],
-                    "running"
-                  >,
-                  reason: run.stopReason,
-                },
-              ]
-            : []),
-        ];
+          select: { id: true, title: true },
+        });
         return {
-          ...shown(run, await openApprovals(tx, [runId])),
-          costMicroUsd: Number(cost),
-          budgetMicroUsd: Number(run.agent.budgetMicroUsd),
+          run,
+          cost,
           summary,
-          verlauf,
+          open: await openApprovals(tx, [runId]),
+          sources,
+          obligations,
+          tasks,
+          courses,
         };
       });
+      if (!read) return null;
+      const { run, sources, obligations, tasks, courses } = read;
+      // An Obligation's title is read the way the student reviews it.
+      const reviewed = obligations.length
+        ? (await facts.review(p)).courses.flatMap((course) =>
+            course.obligations.map((o) => ({ id: o.id, title: o.title })),
+          )
+        : [];
+      const titled = (ids: string[], rows: { id: string; title: string }[]) =>
+        ids.map((id) => ({
+          id,
+          title: rows.find((row) => row.id === id)?.title ?? null,
+        }));
+      const courseTitle = (id: string | null | undefined) =>
+        courses.find((course) => course.id === id)?.title ?? null;
+      const workOf = (workId: string | null) => {
+        const task = tasks.find((t) => t.id === workId);
+        const obligation = obligations.find(
+          (o) => o.id === (task?.obligationId ?? workId),
+        );
+        if (task)
+          return {
+            title: task.title,
+            course: courseTitle(task.courseId ?? obligation?.courseId),
+          };
+        if (!obligation) return null;
+        return {
+          title: reviewed.find((o) => o.id === obligation.id)?.title || null,
+          course: courseTitle(obligation.courseId),
+        };
+      };
+      const verlauf: VerlaufEntry[] = [
+        {
+          type: "start",
+          at: run.startedAt,
+          trigger: run.trigger as ActivityRun["trigger"],
+        },
+        ...run.events.map((event): VerlaufEntry => {
+          if (event.type === "read") {
+            const read = event.detail as ReadEvent;
+            return {
+              type: "read",
+              at: event.at,
+              step: read.step,
+              plan: read.plan,
+              courses: titled(read.courseIds, courses),
+              sources: titled(read.sourceIds, sources),
+            };
+          }
+          const call = event.detail as ActionEvent;
+          return {
+            type: "action",
+            at: event.at,
+            step: call.step,
+            capability: call.capability,
+            action:
+              call.actionId && call.kind
+                ? {
+                    kind: call.kind,
+                    work: workOf(call.workId),
+                    start: call.start ? new Date(call.start) : null,
+                    end: call.end ? new Date(call.end) : null,
+                  }
+                : null,
+            outcome: call.outcome,
+            refusal: call.refusal,
+            brokenPreferences: call.brokenPreferences,
+          };
+        }),
+        ...(run.status !== "running" && run.endedAt
+          ? [
+              {
+                type: "end" as const,
+                at: run.endedAt,
+                status: run.status as Exclude<ActivityRun["status"], "running">,
+                reason: run.stopReason,
+              },
+            ]
+          : []),
+      ];
+      return {
+        ...shown(run, read.open),
+        costMicroUsd: Number(read.cost),
+        budgetMicroUsd: Number(run.agent!.budgetMicroUsd),
+        summary: read.summary,
+        summaryGone: run.summaryContent !== null && read.summary === null,
+        verlauf,
+      };
     },
   };
 }

@@ -1,5 +1,5 @@
 import { SidebarProvider } from "@nunio/ui/components/sidebar/sidebar";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { AgentDetailScreen } from "@/features/agents/agent-detail-screen";
@@ -63,12 +63,18 @@ const listed = (
 });
 const detail = (
   run: ReturnType<typeof listed>,
-  more: { summary?: string; costMicroUsd?: number; verlauf?: unknown[] } = {},
+  more: {
+    summary?: string;
+    summaryGone?: boolean;
+    costMicroUsd?: number;
+    verlauf?: unknown[];
+  } = {},
 ) => ({
   ...run,
   costMicroUsd: more.costMicroUsd ?? 0,
   budgetMicroUsd: 5_000_000,
   summary: more.summary ?? null,
+  summaryGone: more.summaryGone ?? false,
   verlauf: more.verlauf ?? [
     { type: "start", at: run.startedAt, trigger: run.trigger },
   ],
@@ -134,12 +140,28 @@ test("an Agent that ran opens on Aktivität with its newest Run: Datum, Kosten, 
             capability: "createStudyBlocks",
             action: {
               kind: "studyBlock.create",
-              work: { title: null, course: null },
+              work: null,
               start: "2099-02-03T09:00:00.000Z",
               end: "2099-02-03T10:00:00.000Z",
             },
             outcome: "refused",
             refusal: "run_cap",
+            brokenPreferences: [],
+          },
+          {
+            type: "action",
+            at: stopped.startedAt,
+            step: 2,
+            capability: "createStudyBlocks",
+            // An Action that places nothing in time, such as a Task, shows no times.
+            action: {
+              kind: "task.create",
+              work: { title: "Übungsblatt 4", course: "Statistics II" },
+              start: null,
+              end: null,
+            },
+            outcome: "awaiting_approval",
+            refusal: null,
             brokenPreferences: [],
           },
           {
@@ -199,6 +221,9 @@ test("an Agent that ran opens on Aktivität with its newest Run: Datum, Kosten, 
     ),
     expect.stringMatching(
       /Abgelehnt: Lernblock erstellengelöscht · .+Grund: Limit dieses Laufs erreicht$/,
+    ),
+    expect.stringMatching(
+      /Freigabe angefragt: Lernblock erstellen„Übungsblatt 4“ · Statistics II$/,
     ),
     expect.stringMatching(
       /Abgelehnt: Lernblock erstellenGrund: Ungültige Angaben, nichts wurde gefragt$/,
@@ -292,4 +317,52 @@ test("the Run list shows each start's duration, 'Seit …' while running, and ba
       expect.stringMatching(/2 Min\.Fehlgeschlagen$/),
     ]),
   );
+});
+
+test("a done Run whose summary went with a deleted Source says so, unlike one that wrote none", async () => {
+  const gone = listed("r-2", 60, "done");
+  const none = listed("r-1", 120, "done");
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [gone, none], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-2", () =>
+    Response.json(detail(gone, { summaryGone: true })),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-1", () =>
+    Response.json(detail(none)),
+  );
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+
+  expect(
+    await screen.findByText(
+      "Zusammenfassung nicht mehr verfügbar: eine Quelle, aus der sie stammt, wurde gelöscht.",
+    ),
+  ).toBeTruthy();
+  await userEvent.click(
+    within(screen.getByRole("navigation", { name: "Läufe" })).getAllByRole(
+      "button",
+    )[1]!,
+  );
+  expect(await screen.findByText("Keine Zusammenfassung.")).toBeTruthy();
+});
+
+test("'Seit …' counts on while a Run is under way, even when nothing else changes", async () => {
+  vi.useFakeTimers({
+    toFake: ["Date", "setInterval", "clearInterval"],
+    shouldAdvanceTime: true,
+  });
+  const running = listed("r-1", 5, "running");
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [running], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-1", () =>
+    Response.json(detail(running)),
+  );
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+  const list = await screen.findByRole("navigation", { name: "Läufe" });
+  expect(within(list).getByText("Seit 5 Min.")).toBeTruthy();
+
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+
+  expect(within(list).getByText("Seit 6 Min.")).toBeTruthy();
 });

@@ -467,12 +467,39 @@ export function createAgentRuns({
           await record(i, {
             capability: call.toolName,
             actionId: null,
+            kind: null,
+            workId: null,
+            start: null,
+            end: null,
             outcome: "refused",
             refusal: "invalid",
             brokenPreferences: [],
           });
           continue;
         }
+        const intent = call.intent as {
+          kind: string;
+          workId?: string;
+          studyBlockId?: string;
+          start?: string;
+          end?: string;
+        };
+        // A move names only its block, so its work is read before the block can change; the entry keeps it.
+        const block =
+          !intent.workId && intent.studyBlockId
+            ? await withOwner(db, p, (tx) =>
+                tx.studyBlock.findUnique({
+                  where: { id: intent.studyBlockId },
+                  select: { obligationId: true, taskId: true },
+                }),
+              )
+            : null;
+        const named = {
+          kind: intent.kind,
+          workId: intent.workId ?? block?.taskId ?? block?.obligationId ?? null,
+          start: intent.start ?? null,
+          end: intent.end ?? null,
+        };
         const outcome = await delegation.perform(p, {
           key: `${runId}:${n}:${i + 1}`,
           intent: intentOf(call),
@@ -490,6 +517,7 @@ export function createAgentRuns({
         await record(i, {
           capability: call.toolName,
           actionId: outcome.actionId,
+          ...named,
           outcome: outcome.status,
           refusal: outcome.status === "refused" ? outcome.reason : null,
           brokenPreferences:

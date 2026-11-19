@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
-import type { ActivityCursor, VerlaufEntry } from "@nunio/chat";
+import type { ActivityCursor } from "@nunio/chat";
 import type { AgentScope } from "@nunio/delegation";
 import {
   approvalModes,
@@ -11,7 +11,7 @@ import {
 import { courseColors } from "@nunio/knowledge";
 import { deadline } from "@nunio/planning";
 import type { AppBindings } from "./app.js";
-import { ActionShown, describeAction, workOf } from "./approvals.js";
+import { ActionShown, describeAction } from "./approvals.js";
 import {
   archivedOutcomes,
   body,
@@ -212,15 +212,25 @@ const VerlaufEntrySchema = z
       action: z
         .object({
           kind: ActionShown.shape.kind,
-          work: z.object({
-            title: z
-              .string()
-              .nullable()
-              .describe("Null once the work is deleted (gelöscht)."),
-            course: z.string().nullable(),
-          }),
-          start: z.date().describe("Where the block was put or removed from."),
-          end: z.date(),
+          work: z
+            .object({
+              title: z
+                .string()
+                .nullable()
+                .describe("Null when its title can no longer be read."),
+              course: z.string().nullable(),
+            })
+            .nullable()
+            .describe(
+              "Its Obligation or Task as it is now, Archived Courses included; null once deleted (gelöscht).",
+            ),
+          start: z
+            .date()
+            .nullable()
+            .describe(
+              "Where the block was put or removed from; null for an Action that places nothing in time.",
+            ),
+          end: z.date().nullable(),
         })
         .nullable()
         .describe(
@@ -266,27 +276,6 @@ const Cursor = z.string().transform((cursor, ctx): ActivityCursor => {
   }
   return { startedAt, id };
 });
-
-type PlanView = Awaited<ReturnType<AppBindings["Variables"]["plan"]["view"]>>;
-
-/** A Verlauf entry as the student reads it: an Action names its work and Course by the Plan now. */
-function shownEntry(plan: PlanView | null, entry: VerlaufEntry) {
-  if (entry.type !== "action" || !entry.action) return entry;
-  const { task, obligation } = workOf(plan!, entry.action.args);
-  const { start, end } = entry.action.args as { start: string; end: string };
-  return {
-    ...entry,
-    action: {
-      kind: entry.action.kind as z.infer<typeof ActionShown>["kind"],
-      work: {
-        title: task?.title ?? obligation?.title ?? null,
-        course: obligation?.course ?? task?.course ?? null,
-      },
-      start: new Date(start),
-      end: new Date(end),
-    },
-  };
-}
 
 type Review = Awaited<ReturnType<AppBindings["Variables"]["facts"]["review"]>>;
 
@@ -693,6 +682,11 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
               .describe(
                 "The Agent's own words on what it did; null without a final message, or once a Source it drew on is deleted.",
               ),
+            summaryGone: z
+              .boolean()
+              .describe(
+                "It had a summary, gone with a Source it drew on that was deleted since.",
+              ),
             verlauf: z.array(VerlaufEntrySchema),
           }).openapi("ActivityRunDetail"),
           "The Run, with its cost, summary and Verlauf.",
@@ -706,13 +700,22 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
       const { id: agentId, runId } = c.req.valid("param");
       const run = await c.get("activity").run(p, agentId, runId);
       if (!run) return c.json({ error: "gone" }, 404);
-      const plan = run.verlauf.some((entry) => entry.type === "action")
-        ? await c.get("plan").view(p)
-        : null;
       return c.json(
         {
           ...run,
-          verlauf: run.verlauf.map((entry) => shownEntry(plan, entry)),
+          verlauf: run.verlauf.map((entry) =>
+            entry.type === "action" && entry.action
+              ? {
+                  ...entry,
+                  action: {
+                    ...entry.action,
+                    kind: entry.action.kind as z.infer<
+                      typeof ActionShown
+                    >["kind"],
+                  },
+                }
+              : entry,
+          ),
         },
         200,
       );

@@ -4590,6 +4590,10 @@
                 ],
                 "description": "The Agent's own words on what it did; null without a final message, or once a Source it drew on is deleted."
               },
+              "summaryGone": {
+                "type": "boolean",
+                "description": "It had a summary, gone with a Source it drew on that was deleted since."
+              },
               "verlauf": {
                 "type": "array",
                 "items": {
@@ -4601,6 +4605,7 @@
               "costMicroUsd",
               "budgetMicroUsd",
               "summary",
+              "summaryGone",
               "verlauf"
             ]
           }
@@ -4748,14 +4753,17 @@
                     ]
                   },
                   "work": {
-                    "type": "object",
+                    "type": [
+                      "object",
+                      "null"
+                    ],
                     "properties": {
                       "title": {
                         "type": [
                           "string",
                           "null"
                         ],
-                        "description": "Null once the work is deleted (gelöscht)."
+                        "description": "Null when its title can no longer be read."
                       },
                       "course": {
                         "type": [
@@ -4767,15 +4775,22 @@
                     "required": [
                       "title",
                       "course"
-                    ]
+                    ],
+                    "description": "Its Obligation or Task as it is now, Archived Courses included; null once deleted (gelöscht)."
                   },
                   "start": {
-                    "type": "string",
+                    "type": [
+                      "string",
+                      "null"
+                    ],
                     "format": "date-time",
-                    "description": "Where the block was put or removed from."
+                    "description": "Where the block was put or removed from; null for an Action that places nothing in time."
                   },
                   "end": {
-                    "type": "string",
+                    "type": [
+                      "string",
+                      "null"
+                    ],
                     "format": "date-time"
                   }
                 },

@@ -274,7 +274,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     prisma,
     delegation,
     agents,
-    activity: createActivity({ db: prisma, keys, clock }),
+    activity: createActivity({ db: prisma, keys, facts, clock }),
     runWorkflows,
     appOrigin,
     spike,

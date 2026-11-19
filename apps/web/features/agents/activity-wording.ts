@@ -186,9 +186,16 @@ function describeAction(entry: ActionEntry) {
       ...(action
         ? [
             [
-              action.work.title ? quoted(action.work.title) : "gelöscht",
-              ...(action.work.course ? [action.work.course] : []),
-              shortSpan(action),
+              // Gone only once deleted; an Archived Course's work is still named.
+              action.work
+                ? action.work.title
+                  ? quoted(action.work.title)
+                  : "Ohne Titel"
+                : "gelöscht",
+              ...(action.work?.course ? [action.work.course] : []),
+              ...(action.start && action.end
+                ? [shortSpan({ start: action.start, end: action.end })]
+                : []),
             ].join(" · "),
           ]
         : []),

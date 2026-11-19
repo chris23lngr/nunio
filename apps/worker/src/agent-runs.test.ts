@@ -228,7 +228,7 @@ beforeAll(async () => {
       }),
     clock,
   });
-  activity = createActivity({ db: runtime, keys, clock });
+  activity = createActivity({ db: runtime, keys, facts, clock });
 }, 180_000);
 
 afterAll(async () => {
@@ -862,7 +862,9 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
     const verlauf = (await activity.run(s.p, s.agentId, s.runId))!.verlauf;
     const created = {
       kind: "studyBlock.create",
-      args: expect.objectContaining({ workId: s.obligationId }),
+      work: { title: "Klausur Statistik II", course: "Statistik II" },
+      start: expect.any(Date),
+      end: expect.any(Date),
     };
     expect(
       verlauf
@@ -1147,6 +1149,55 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
     });
     expect(moved.start.getTime() - own.start.getTime()).toBe(86_400_000);
     expect(moved.createdByAgentId).toBe(s.agentId);
+  });
+
+  it("names an Action's work and times in the Verlauf as they were, after its block is removed and its Course Archived", async () => {
+    const { s, own } = await withOwnBlock();
+    const next = await requested(s.p, s.agentId);
+    script = [
+      readPlan,
+      () =>
+        calls("moveOwnStudyBlocks", {
+          block: "B1",
+          start: `${day(4)}T10:00`,
+          end: `${day(4)}T11:00`,
+        }),
+      () => says("Fertig."),
+    ];
+    await run(next);
+    const moved = await admin.studyBlock.findUniqueOrThrow({
+      where: { id: own.id },
+    });
+
+    await admin.studyBlock.delete({ where: { id: own.id } });
+    await admin.course.updateMany({
+      where: { studentId: s.studentId },
+      data: { archivedAt: new Date() },
+    });
+
+    const work = { title: "Klausur Statistik II", course: "Statistik II" };
+    const actionOf = async (runId: string) =>
+      (await activity.run(s.p, s.agentId, runId))!.verlauf.find(
+        (entry) => entry.type === "action",
+      );
+    expect(await actionOf(s.runId)).toMatchObject({
+      outcome: "done",
+      action: {
+        kind: "studyBlock.create",
+        work,
+        start: own.start,
+        end: own.end,
+      },
+    });
+    expect(await actionOf(next.runId)).toMatchObject({
+      outcome: "done",
+      action: {
+        kind: "studyBlock.move",
+        work,
+        start: moved.start,
+        end: moved.end,
+      },
+    });
   });
 
   it("removes its own block on its Grant, and asks to move the student's", async () => {
