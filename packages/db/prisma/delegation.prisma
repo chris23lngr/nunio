@@ -182,16 +182,17 @@ enum RunTrigger {
   @@map("run_trigger")
 }
 
-/// One model step of an Agent's Run, idempotent on (runId, n). Both texts are sealed under the Sources read so far.
+/// One model step of an Agent's Run, idempotent on (runId, n): claimed before its model call, filled in once it returned.
+/// Both texts are sealed under the Sources read so far; a claim without parts is a step that never finished.
 model RunStep {
   runId             String
   n                 Int
   studentId         String
   run               Run      @relation(fields: [runId, studentId], references: [id, studentId], onDelete: Cascade)
   /// The model answered instead of calling a tool, so the Run's work is done.
-  answered          Boolean
+  answered          Boolean  @default(false)
   /// What the student may see of the step: its tool calls, each with what it showed.
-  partsContent      Bytes
+  partsContent      Bytes?
   partsKey          Bytes?
   /// The step's model messages, which later steps are given; dropped when the Run ends.
   transcriptContent Bytes?

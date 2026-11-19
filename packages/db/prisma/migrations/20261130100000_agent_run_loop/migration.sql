@@ -23,14 +23,15 @@ ALTER TABLE "usage_reservation" ADD COLUMN "runId" TEXT;
 CREATE INDEX "usage_reservation_runId_idx" ON "usage_reservation"("runId");
 GRANT INSERT ("runId") ON "usage_reservation" TO nunio_runtime;
 
--- One model step of a Run. Its display parts and the transcript later steps are given are sealed under the Sources it
--- read so far; the transcript is dropped when the Run ends.
+-- One model step of a Run, claimed before its model call so a retried attempt never calls the model again. Its display
+-- parts and the transcript later steps are given are sealed under the Sources it read so far; the transcript is
+-- dropped when the Run ends. A claim without parts is a step that never finished.
 CREATE TABLE "run_step" (
   "runId" TEXT NOT NULL,
   "n" INTEGER NOT NULL,
   "studentId" TEXT NOT NULL,
-  "answered" BOOLEAN NOT NULL,
-  "partsContent" BYTEA NOT NULL,
+  "answered" BOOLEAN NOT NULL DEFAULT false,
+  "partsContent" BYTEA,
   "partsKey" BYTEA,
   "transcriptContent" BYTEA,
   "transcriptKey" BYTEA,
@@ -40,7 +41,8 @@ CREATE TABLE "run_step" (
   FOREIGN KEY ("runId", "studentId") REFERENCES "run"("id", "studentId") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-GRANT SELECT, INSERT, UPDATE ON "run_step" TO nunio_runtime;
+-- DELETE releases a claim whose model call certainly did not complete.
+GRANT SELECT, INSERT, UPDATE, DELETE ON "run_step" TO nunio_runtime;
 ALTER TABLE "run_step" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "run_step" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "owner" ON "run_step" USING ("studentId" = current_setting('app.owner_id', true));

@@ -191,7 +191,7 @@ async function acceptedCourse(
   return id;
 }
 
-it("lets an Agent's Run read the whole Plan's Facts, which no other Run may", async () => {
+it("lets a free-text Agent's running Run read the whole Plan's Facts, which no other Run may", async () => {
   const p = await student();
   const analysis = await readySource(p, "Analysis.pdf", [
     "MA-101 Analysis I",
@@ -203,7 +203,17 @@ it("lets an Agent's Run read the whole Plan's Facts, which no other Run may", as
     { code: "MA-101", title: "Analysis I", quote: "MA-101 Analysis I" },
     [exam("2026-12-01", 2, "Übungsblatt 1 bis 01.12.2026")],
   );
-  const agents = createAgents({ db: runtime, clock });
+  const noSchedule = async () => {};
+  const agents = createAgents({
+    db: runtime,
+    clock,
+    schedules: {
+      create: noSchedule,
+      pause: noSchedule,
+      unpause: noSchedule,
+      delete: noSchedule,
+    },
+  });
   const created = await agents.create(p, {
     name: "Klausur",
     description: "",
@@ -238,8 +248,28 @@ it("lets an Agent's Run read the whole Plan's Facts, which no other Run may", as
   expect(result.items.map((i) => i.label)).toEqual([
     "Analysis I, Obligation from Analysis.pdf, page 2",
   ]);
+  const preset = await agents.create(p, {
+    preset: "keep_course_organized",
+    courseId: course,
+    budgetMicroUsd: 1_000_000,
+  });
+  if (preset.status !== "ok") throw new Error(preset.status);
+  const presetRun = (await agents.startRun({
+    studentId,
+    agentId: preset.id,
+    runId: randomUUID(),
+    workflowId: "responsibilityRun",
+  }))!;
+  for (const runId of [studentRun, presetRun])
+    await expect(
+      reader.retrieve(principal.fromRun(runId), { planning: true }, query),
+    ).rejects.toThrow(ScopeMismatchError);
+  await admin.run.update({
+    where: { id: agentRun },
+    data: { status: "done", endedAt: new Date() },
+  });
   await expect(
-    reader.retrieve(principal.fromRun(studentRun), { planning: true }, query),
+    reader.retrieve(principal.fromRun(agentRun), { planning: true }, query),
   ).rejects.toThrow(ScopeMismatchError);
 });
 

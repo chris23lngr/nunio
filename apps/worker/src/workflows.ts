@@ -3,12 +3,15 @@
 
 import type { RunEnd } from "@nunio/chat";
 import {
+  CancellationScope,
   condition,
   defineSignal,
+  isCancellation,
   patched,
   proxyActivities,
   setHandler,
   sleep,
+  workflowInfo,
 } from "@temporalio/workflow";
 import type { Activities } from "./activities.js";
 import type {
@@ -190,7 +193,8 @@ const { startAgentRun, finishAgentRun } = proxyActivities<AgentRunActivities>({
     maximumAttempts: 10,
   },
 });
-// A step is paid, but persisted per (runId, n): a retry repeats the model call only if the step was never stored.
+// A step is paid, but claimed per (runId, n) before its model call: a retry calls the model again only after an
+// attempt whose call threw, never after one whose call may have completed.
 const { agentStep } = proxyActivities<AgentRunActivities>({
   startToCloseTimeout: "5 minutes",
   retry: { initialInterval: "5 seconds", maximumAttempts: 3 },
@@ -198,13 +202,21 @@ const { agentStep } = proxyActivities<AgentRunActivities>({
 
 /**
  * Runs the Agent's model step by step until it answers; the step cap lives with the steps, whose last must answer.
- * A refused step, such as a Paused Agent or an exhausted Budget, stops the Run; one that fails after its retries fails it.
+ * A refused step, such as a Paused Agent or an exhausted Budget, stops the Run; a failed one, or an error after its
+ * retries, fails it. However it ends, cancelled included, the Run is ended, so it never stays under way.
  */
 export async function agentRun(ref: AgentRunRef) {
-  const runId = await startAgentRun(ref);
-  if (!runId) return { status: "skipped" as const };
+  // The Run startAgentRun records or takes up, known even if starting fails.
+  const run = {
+    runId: ref.runId ?? workflowInfo().runId,
+    studentId: ref.studentId,
+  };
+  const finish = (end: RunEnd) =>
+    CancellationScope.nonCancellable(() => finishAgentRun({ run, end }));
   let end: RunEnd = { status: "done" };
   try {
+    const runId = await startAgentRun(ref);
+    if (!runId) return { status: "skipped" as const };
     for (let n = 1; ; n++) {
       const step = await agentStep({ runId, n });
       if (step.status === "answered") break;
@@ -212,12 +224,20 @@ export async function agentRun(ref: AgentRunRef) {
         end = { status: "stopped", reason: step.reason };
         break;
       }
+      if (step.status === "failed") {
+        end = { status: "failed", reason: step.reason };
+        break;
+      }
     }
   } catch (error) {
-    await finishAgentRun({ runId, end: { status: "failed" } });
+    await finish(
+      isCancellation(error)
+        ? { status: "stopped", reason: "cancelled" }
+        : { status: "failed" },
+    );
     throw error;
   }
-  await finishAgentRun({ runId, end });
+  await finish(end);
   return end;
 }
 

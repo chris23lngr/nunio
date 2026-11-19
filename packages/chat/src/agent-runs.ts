@@ -34,17 +34,22 @@ export type RunStepPart = Extract<
   { type: "tool-searchMaterial" | "tool-courseFacts" | "tool-agenda" }
 >;
 
-/** How a step went: the model called tools, answered, or the Run must stop for `reason`. */
+/**
+ * How a step went: the model called tools or answered; the Run must stop for a refusal, such as paused,
+ * budget_exhausted or model_unavailable; or it fails, as when the model's step ended early or an earlier attempt at
+ * the step may have paid for a model call it never stored (step_interrupted).
+ */
 export type StepOutcome =
   | { status: "continue" }
   | { status: "answered" }
-  | { status: "refused"; reason: string };
+  | { status: "refused"; reason: string }
+  | { status: "failed"; reason: string };
 
-/** How a Run ended. A stopped Run's reason is a refusal, such as paused, budget_exhausted or model_unavailable. */
+/** How a Run ended, and why when it did not simply finish. */
 export type RunEnd =
   | { status: "done" }
   | { status: "stopped"; reason: string }
-  | { status: "failed" };
+  | { status: "failed"; reason?: string };
 
 /** The model's final message, as the student reads it: plain text without links, citation tags or Markdown. */
 export function summaryOf(text: string) {
@@ -73,8 +78,8 @@ function finalText(messages: ModelMessage[]) {
 
 /**
  * A free-text Agent's Runs (#141): started with the Agent's configuration snapshotted, then one metered model step at a
- * time over the read tools, each persisted per `(runId, n)` so a repeated step never runs the model again, then ended
- * with the model's final message as its summary. Only nunio's system prompt and the saved Instructions are requests;
+ * time over the read tools, each claimed per `(runId, n)` before its model call, so no attempt calls the model for a
+ * step another attempt may have paid for, then ended with the model's final message as its summary. Only nunio's system prompt and the saved Instructions are requests;
  * every tool result is fenced data (ADR-0026).
  */
 export function createAgentRuns({
@@ -150,7 +155,9 @@ export function createAgentRuns({
 
     /**
      * Runs model step `n` of the Run, metered against the Agent's Budget and the Allowance, and persists it. A step
-     * already persisted returns how it went without running the model again. The last allowed step must answer.
+     * already persisted returns how it went. The step is claimed before its model call and released only when the
+     * call certainly did not complete, so an attempt that finds it claimed but never stored fails instead of calling
+     * the model again. The last allowed step must answer.
      */
     async step(runId: string, n: number): Promise<StepOutcome> {
       if (!Number.isInteger(n) || n < 1 || n > maxSteps)
@@ -171,6 +178,7 @@ export function createAgentRuns({
             steps: { where: { n: { lt: n } }, orderBy: { n: "asc" } },
           },
         });
+        if (run.status !== "running") return { ended: true };
         if (run.steps.length !== n - 1)
           throw new Error(`Step ${n} of Run ${runId} comes too early`);
         const transcripts = await Promise.all(
@@ -190,7 +198,11 @@ export function createAgentRuns({
         );
         return { run, transcripts };
       });
-      if ("done" in loaded) return outcome(loaded.done!.answered);
+      if ("done" in loaded)
+        return loaded.done!.partsContent
+          ? outcome(loaded.done!.answered)
+          : { status: "failed", reason: "step_interrupted" };
+      if ("ended" in loaded) return { status: "refused", reason: "run_ended" };
       const { run, transcripts } = loaded;
       // A Source deleted since takes the earlier steps with it, so the Run cannot go on from them.
       if (transcripts.some((transcript) => transcript === null))
@@ -248,6 +260,23 @@ export function createAgentRuns({
         tools,
         last: n === maxSteps,
       };
+      // Claimed before the model call: only one attempt may ever call the model for this step.
+      const claimed = await withOwner(
+        db,
+        p,
+        async (tx, studentId) =>
+          (
+            await tx.runStep.createMany({
+              data: [{ runId, n, studentId }],
+              skipDuplicates: true,
+            })
+          ).count === 1,
+      );
+      if (!claimed) return { status: "failed", reason: "step_interrupted" };
+      const release = () =>
+        withOwner(db, p, (tx) =>
+          tx.runStep.deleteMany({ where: { runId, n, partsContent: null } }),
+        );
       const stepped = await retryRateLimited(() =>
         delegation.meter(
           p,
@@ -255,11 +284,20 @@ export function createAgentRuns({
           (deadline) =>
             definitely(() => model.step(input, { signal: deadline })),
         ),
-      );
+      ).catch(async (error: unknown) => {
+        // The call threw rather than returned, so Temporal may retry it; a held reservation counts its estimate.
+        await release();
+        throw error;
+      });
+      if (stepped.status === "refused") {
+        await release();
+        return { status: "refused", reason: stepped.reason };
+      }
+      // From here the model call completed and is settled: the claim stays, so the step is never called again.
       const refusal = turn.refusal();
       if (refusal) return { status: "refused", reason: refusal };
-      if (stepped.status === "refused")
-        return { status: "refused", reason: stepped.reason };
+      if (stepped.value.failure)
+        return { status: "failed", reason: "model_ended_early" };
       const parts = stepped.value.toolResults.map(
         (result) =>
           ({
@@ -274,7 +312,14 @@ export function createAgentRuns({
         ...new Set([...(run.steps.at(-1)?.derivedFrom ?? []), ...turn.sources]),
       ];
       const answered = stepped.value.finishReason === "stop";
-      const stored = await withOwner(db, p, async (tx, studentId) => {
+      const stored = await withOwner(db, p, async (tx) => {
+        // Serialised with ending the Run: a step that returns after the Run ended keeps nothing.
+        await tx.$executeRaw`SELECT 1 FROM "run" WHERE "id" = ${runId} FOR UPDATE`;
+        const current = await tx.run.findUniqueOrThrow({
+          where: { id: runId },
+          select: { status: true },
+        });
+        if (current.status !== "running") return "ended" as const;
         const sealedParts = await derived.seal(
           tx,
           `${runId}:${n}:parts`,
@@ -288,45 +333,47 @@ export function createAgentRuns({
           JSON.stringify(stepped.value.messages),
         );
         if (!sealedParts || !transcript) return null;
-        // A concurrent attempt at the same step may have stored it first; its outcome stands.
-        await tx.runStep.createMany({
-          data: [
-            {
-              runId,
-              n,
-              studentId,
-              answered,
-              partsContent: sealedParts.content,
-              partsKey: sealedParts.contentKey,
-              transcriptContent: transcript.content,
-              transcriptKey: transcript.contentKey,
-              derivedFrom,
-            },
-          ],
-          skipDuplicates: true,
+        await tx.runStep.update({
+          where: { runId_n: { runId, n } },
+          data: {
+            answered,
+            partsContent: sealedParts.content,
+            partsKey: sealedParts.contentKey,
+            transcriptContent: transcript.content,
+            transcriptKey: transcript.contentKey,
+            derivedFrom,
+          },
         });
-        return (
-          await tx.runStep.findUniqueOrThrow({
-            where: { runId_n: { runId, n } },
-          })
-        ).answered;
+        return answered;
       });
+      if (stored === "ended") return { status: "refused", reason: "run_ended" };
       if (stored === null)
         return { status: "refused", reason: "source_deleted" };
       return outcome(stored);
     },
 
     /**
-     * Ends the Run: its status, when it ended, why it stopped, and, when done, the model's final message as its
-     * summary, sealed under every Source the Run read. The transcript is dropped. Ending it again changes nothing.
+     * Ends the student's Run: its status, when it ended, why it did not simply finish, and, when done, the model's
+     * final message as its summary, sealed under every Source the Run read. The transcript is dropped. Ending it again,
+     * or a Run that was never recorded, changes nothing.
      */
-    async finish(runId: string, end: RunEnd) {
-      await withOwner(db, principal.fromRun(runId), async (tx) => {
-        const run = await tx.run.findUniqueOrThrow({
+    async finish(
+      { runId, studentId }: { runId: string; studentId: string },
+      end: RunEnd,
+    ) {
+      await withOwner(db, principal.fromSession({ studentId }), async (tx) => {
+        await tx.$executeRaw`SELECT 1 FROM "run" WHERE "id" = ${runId} FOR UPDATE`;
+        const run = await tx.run.findUnique({
           where: { id: runId },
-          include: { steps: { orderBy: { n: "desc" }, take: 1 } },
+          include: {
+            steps: {
+              where: { partsContent: { not: null } },
+              orderBy: { n: "desc" },
+              take: 1,
+            },
+          },
         });
-        if (run.status !== "running") return;
+        if (run?.status !== "running") return;
         const last = run.steps[0];
         const transcript =
           end.status === "done" && last?.answered && last.transcriptContent
@@ -351,7 +398,7 @@ export function createAgentRuns({
           data: {
             status: end.status,
             endedAt: clock.now(),
-            stopReason: end.status === "stopped" ? end.reason : null,
+            stopReason: end.status === "done" ? null : (end.reason ?? null),
             summaryContent: summary?.content ?? null,
             summaryKey: summary?.contentKey ?? null,
             derivedFrom: summary?.derivedFrom ?? [],
@@ -373,7 +420,12 @@ export function createAgentRuns({
       return withOwner(db, p, async (tx) => {
         const run = await tx.run.findUnique({
           where: { id: runId },
-          include: { steps: { orderBy: { n: "asc" } } },
+          include: {
+            steps: {
+              where: { partsContent: { not: null } },
+              orderBy: { n: "asc" },
+            },
+          },
         });
         if (!run?.status) return null;
         const summary = run.summaryContent
@@ -396,7 +448,7 @@ export function createAgentRuns({
               const parts = await derived.open(
                 tx,
                 `${runId}:${step.n}:parts`,
-                sealedOf(step.partsContent, step.partsKey, step.derivedFrom),
+                sealedOf(step.partsContent!, step.partsKey, step.derivedFrom),
               );
               return {
                 n: step.n,

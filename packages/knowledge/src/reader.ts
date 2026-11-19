@@ -429,7 +429,7 @@ export function createKnowledgeReader({
     );
     return { status: "ok", value: embedded.value };
   }
-  /** Whether a Run Principal's Run exists and is an Agent's. */
+  /** Whether a Run Principal's Run is a free-text Agent's Run under way; only such a Run records a status. */
   const isAgentRun = async (p: Principal) =>
     p.kind === "run" &&
     db.$transaction(async (tx) => {
@@ -438,9 +438,8 @@ export function createKnowledgeReader({
       >`SELECT run_owner(${p.runId}) AS owner`;
       if (!row?.owner) return false;
       await tx.$executeRaw`SELECT set_config('app.owner_id', ${row.owner}, true)`;
-      return Boolean(
-        (await tx.run.findUnique({ where: { id: p.runId } }))?.agentId,
-      );
+      const run = await tx.run.findUnique({ where: { id: p.runId } });
+      return Boolean(run?.agentId && run.status === "running");
     });
   /** A Chat's current selection: its Courses, and its Sources with every Source of those Courses. */
   async function chatSelection(tx: Transaction, chatId: string) {
@@ -569,8 +568,8 @@ export function createKnowledgeReader({
       scope: ScopeRef,
       query: Query,
     ): Promise<Retrieval> {
-      // Chat and planning scopes are the student's own; a Run reads only through its own pinned scope, except that an
-      // Agent's Run reads the whole Plan, as the student's planning does.
+      // Chat and planning scopes are the student's own; a Run reads only through its own pinned scope, except that a
+      // free-text Agent's Run under way reads the whole Plan, as the student's planning does.
       if ("runId" in scope) {
         if (p.kind !== "run" || p.runId !== scope.runId)
           throw new ScopeMismatchError("Only the Run itself reads its scope");

@@ -19,8 +19,10 @@ export interface AgentModel {
   readonly modelKey: string;
   estimateMicroUsd(step: AgentStep): number;
   /**
-   * Runs one step and resolves once it ended with an answer (`stop`) or with tool calls, which the tools that have an
-   * `execute` already ran. Any other end, an error or an abort throws.
+   * Runs one step and resolves once the model returned: with an answer (`stop`) or with tool calls, which the tools
+   * that have an `execute` already ran. A step that returned but ended otherwise, such as on its output limit, with tool
+   * calls on the last step, or without usage, resolves with `failure` and what it cost, so it is settled, never
+   * retried. An error or an abort throws.
    */
   step(
     step: AgentStep,
@@ -28,7 +30,9 @@ export interface AgentModel {
   ): Promise<{
     value: {
       messages: ModelMessage[];
-      finishReason: "stop" | "tool-calls";
+      finishReason: string;
+      /** Why a step that returned cannot be used. */
+      failure?: string;
       /** What each tool call returned for the student to see, apart from what the model was given. */
       toolResults: {
         toolCallId: string;
@@ -56,7 +60,7 @@ const instructionsOf = (instructions: string) =>
 
 /** Runs an Agent's model steps on `model`: the Model its Run snapshotted, resolved per step. */
 export function createAgentModel(model: RegisteredModel): AgentModel {
-  return {
+  const agentModel: AgentModel = {
     modelKey: model.key,
     estimateMicroUsd: ({ instructions, messages, tools }) =>
       model.estimateMicroUsd([
@@ -70,7 +74,8 @@ export function createAgentModel(model: RegisteredModel): AgentModel {
           }),
         ),
       ]),
-    async step({ instructions, messages, tools, last }, { signal }) {
+    async step(step, { signal }) {
+      const { instructions, messages, tools, last } = step;
       const offered = Object.keys(tools).length > 0;
       const result = await generateText({
         model: model.model,
@@ -83,14 +88,19 @@ export function createAgentModel(model: RegisteredModel): AgentModel {
         ...(offered ? { toolChoice: last ? "none" : "auto" } : {}),
       });
       const { finishReason, usage, providerMetadata, response } = result;
-      if (finishReason !== "stop" && (finishReason !== "tool-calls" || last))
-        throw new Error(`Agent step ended early (${finishReason})`);
-      if (usage.inputTokens === undefined || usage.outputTokens === undefined)
-        throw new Error("Missing Agent step usage");
+      const counted =
+        usage.inputTokens !== undefined && usage.outputTokens !== undefined;
+      const failure =
+        finishReason !== "stop" && (finishReason !== "tool-calls" || last)
+          ? `ended early (${finishReason})`
+          : counted
+            ? undefined
+            : "missing usage";
       return {
         value: {
           messages: response.messages,
           finishReason,
+          ...(failure ? { failure } : {}),
           toolResults: result.toolResults.map((r) => ({
             toolCallId: r.toolCallId,
             toolName: r.toolName,
@@ -98,8 +108,14 @@ export function createAgentModel(model: RegisteredModel): AgentModel {
             output: r.output,
           })),
         },
-        usage: { microUsd: model.actualMicroUsd({ usage, providerMetadata }) },
+        // Without token counts, the estimate is the upper bound it may have cost.
+        usage: {
+          microUsd: counted
+            ? model.actualMicroUsd({ usage, providerMetadata })
+            : agentModel.estimateMicroUsd(step),
+        },
       };
     },
   };
+  return agentModel;
 }

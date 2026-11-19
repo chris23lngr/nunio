@@ -16,6 +16,7 @@ import {
   createSources,
 } from "@nunio/knowledge";
 import { createPlan } from "@nunio/planning";
+import { ApplicationFailure } from "@temporalio/common";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import type { WorkflowBundle } from "@temporalio/worker";
 import { bundleWorkflowCode, Worker } from "@temporalio/worker";
@@ -76,10 +77,8 @@ const sonnet: CatalogModel = {
 let offered: CatalogModel[] = [];
 
 /** What the model returns in a step, given its prompt and whether it may call a tool. */
-type Scripted = (
-  prompt: unknown,
-  toolChoice: string,
-) => unknown[] | Promise<unknown[]>;
+type Step = unknown[] | { content: unknown[]; finishReason: string };
+type Scripted = (prompt: unknown, toolChoice: string) => Step | Promise<Step>;
 /** The model's next steps; with none queued it answers "Fertig.". */
 let script: Scripted[] = [];
 const prompts: unknown[] = [];
@@ -105,15 +104,16 @@ const model = new MockLanguageModelV4({
     prompts.push(prompt);
     const choice = toolChoice?.type ?? "auto";
     toolChoices.push(choice);
-    const content = await (script.shift() ?? (() => says("Fertig.")))(
+    const step = await (script.shift() ?? (() => says("Fertig.")))(
       prompt,
       choice,
     );
-    const reason = content.some(
-      (part) => (part as { type: string }).type === "tool-call",
-    )
-      ? "tool-calls"
-      : "stop";
+    const content = Array.isArray(step) ? step : step.content;
+    const reason = !Array.isArray(step)
+      ? step.finishReason
+      : content.some((part) => (part as { type: string }).type === "tool-call")
+        ? "tool-calls"
+        : "stop";
     return {
       content,
       finishReason: { unified: reason, raw: reason },
@@ -425,6 +425,118 @@ describe("an Agent's Run", () => {
       stopReason: "paused",
       summary: null,
     });
+  });
+
+  it("never calls the model again for a step a lost worker may have paid for, and fails the Run", async () => {
+    const s = await started();
+    let release = () => {};
+    script = [
+      () => calls("agenda", { from: day(0), to: day(6) }),
+      // The worker dies while the provider still works on step 2.
+      () =>
+        new Promise<Step>((resolve) => {
+          release = () => resolve(says("Zu spät."));
+        }),
+    ];
+    const activities = createAgentRunActivities(runs);
+    const step = activities.agentStep;
+    let died = false;
+    activities.agentStep = async (ref) => {
+      if (ref.n !== 2 || died) return step(ref);
+      died = true;
+      void step(ref);
+      await expect.poll(() => prompts.length).toBe(2);
+      throw new Error("worker died");
+    };
+
+    await expect(run(s, activities)).resolves.toEqual({
+      status: "failed",
+      reason: "step_interrupted",
+    });
+
+    expect(prompts).toHaveLength(2);
+    expect(await runs.view(s.p, s.runId)).toMatchObject({
+      status: "failed",
+      stopReason: "step_interrupted",
+      summary: null,
+    });
+    // The late answer is metered but never becomes part of the ended Run.
+    release();
+    await expect
+      .poll(() =>
+        admin.usageReservation.count({
+          where: { runId: s.runId, status: "settled" },
+        }),
+      )
+      .toBe(2);
+    expect((await runs.view(s.p, s.runId))!.steps).toHaveLength(1);
+    expect(
+      await admin.runStep.count({
+        where: { runId: s.runId, transcriptContent: { not: null } },
+      }),
+    ).toBe(0);
+  });
+
+  it("fails without retrying when the model's step ends early, settling what it cost", async () => {
+    const s = await started();
+    script = [() => ({ content: says("Ich habe"), finishReason: "length" })];
+
+    expect(await run(s)).toEqual({
+      status: "failed",
+      reason: "model_ended_early",
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(await runs.view(s.p, s.runId)).toMatchObject({
+      status: "failed",
+      stopReason: "model_ended_early",
+      summary: null,
+    });
+    expect(
+      await admin.usageReservation.findMany({
+        where: { runId: s.runId },
+        select: { status: true, actualMicroUsd: true },
+      }),
+    ).toEqual([{ status: "settled", actualMicroUsd: 1n }]);
+  });
+
+  it("ends the Run the API recorded as failed when it cannot start", async () => {
+    const s = await started();
+    const activities = createAgentRunActivities(runs);
+    activities.startAgentRun = async () => {
+      throw ApplicationFailure.nonRetryable("database unavailable");
+    };
+
+    await expect(run(s, activities)).rejects.toThrow();
+
+    expect(await runs.view(s.p, s.runId)).toMatchObject({ status: "failed" });
+    expect((await agents.view(s.p, s.agentId))!.running).toBe(false);
+  });
+
+  it("ends as stopped, dropping its transcript, when its workflow is cancelled mid-step", async () => {
+    const s = await started();
+    script = [
+      async () => {
+        await env.client.workflow.getHandle(s.workflowId).cancel();
+        return calls("agenda", { from: day(0), to: day(6) });
+      },
+    ];
+
+    await expect(run(s)).rejects.toThrow();
+
+    await expect
+      .poll(async () => (await runs.view(s.p, s.runId))?.status)
+      .toBe("stopped");
+    expect(await runs.view(s.p, s.runId)).toMatchObject({
+      stopReason: "cancelled",
+      summary: null,
+    });
+    await expect.poll(() => prompts.length).toBe(1);
+    expect(
+      await admin.runStep.count({
+        where: { runId: s.runId, transcriptContent: { not: null } },
+      }),
+    ).toBe(0);
   });
 
   it("stops when its Model is no longer offered", async () => {

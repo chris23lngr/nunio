@@ -50,8 +50,14 @@ export function createAgentRunActivities(
     /** One metered model step, idempotent on `(runId, n)`. */
     agentStep: ({ runId, n }: { runId: string; n: number }) =>
       runs.step(runId, n),
-    finishAgentRun: ({ runId, end }: { runId: string; end: RunEnd }) =>
-      runs.finish(runId, end),
+    /** Ends the Run, if it was recorded; safe to repeat. */
+    finishAgentRun: ({
+      run,
+      end,
+    }: {
+      run: { runId: string; studentId: string };
+      end: RunEnd;
+    }) => runs.finish(run, end),
   };
 }
 
