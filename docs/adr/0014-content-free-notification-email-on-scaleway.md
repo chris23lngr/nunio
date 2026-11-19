@@ -12,3 +12,13 @@ TEM permits transactional email only and may suspend the whole account, authenti
 
 - **Emails that describe the Intervention:** more useful without opening nunio. Rejected because content would reach Scaleway's retained subjects and mailboxes outside the EU.
 - **A separate provider for notification email:** isolates authentication email from a suspension. Rejected for the pilot because it adds a second processor and DPA review for little volume. Revisit it if complaints or Briefing volume grow.
+
+## Amendment (2026-11-19): Notices from Agents
+
+An Agent with the Capability "Dich benachrichtigen" may write the student a Notice ([How an Agent alerts the student](https://github.com/chris23lngr/nunio/issues/155)). Its email follows this ADR and is stricter than for an Intervention: it says only that an Agent wrote, such as "nunio: 1 neue Nachricht von einem Agenten", and carries neither the model's text nor the Agent's name, since both may hold the student's content and the text is the least trustworthy content nunio has.
+
+- **In the app.** A Notice is plain text of at most 500 characters, never rendered as a link or formatting, and always shown as written by its Agent.
+- **How often.** A Run sends at most one Notice. Its announcements, by email or push, count against the student's daily limit together with Interventions; past it, the Notice reaches only the Inbox.
+- **Quiet Hours.** A Notice written in them is announced afterwards only if it is still unread.
+- **Briefings** bundle the Notices still unread when they are made.
+- **Pause.** A Paused or Ended Agent sends no Notice; Notices it sent before stay in the Inbox.
