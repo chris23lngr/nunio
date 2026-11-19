@@ -108,7 +108,7 @@ model AgentCapability {
   @@map("agent_capability")
 }
 
-/// Standing authority for one kind of Action within one Course or Obligation; Grants exist only within an Agent.
+/// Standing authority for one kind of Action across the Agent's Courses (a preset Agent's Grant is still scoped to one Course or Obligation); Grants exist only within an Agent.
 model Grant {
   id               String         @id
   studentId        String
