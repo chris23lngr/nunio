@@ -1,0 +1,615 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throw away. Answers wayfinder ticket "How the AI builder panel fills an Agent's form" (#148).
+  Four variants of the builder panel next to the Agent form, switchable via ?variant=A|B|C|D and the bottom bar.
+  The builder is scripted (keyword matching), not a model. Nothing is persisted; reload resets.
+  Open by double-clicking.
+-->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYP · KI-Builder für Agenten</title>
+<style>
+:root{
+  --b50:oklch(98.4% .003 247.9);--b100:oklch(96.8% .007 247.9);--b200:oklch(92.9% .013 255.5);--b300:oklch(86.9% .022 252.9);
+  --b400:oklch(70.4% .04 256.8);--b500:oklch(55.4% .046 257.4);--b600:oklch(44.6% .043 257.3);--b700:oklch(37.2% .044 257.3);
+  --b800:oklch(27.9% .041 260);--b900:oklch(20.8% .042 265.8);
+  --p50:oklch(97.7% .013 236.6);--p100:oklch(95.1% .026 236.8);--p200:oklch(90.1% .058 230.9);--p500:oklch(68.5% .169 237.3);
+  --p600:oklch(58.8% .158 242);--p700:oklch(50% .134 242.8);
+  --w50:oklch(98.7% .022 95.3);--w600:oklch(66.6% .179 58.3);--w800:oklch(47.3% .137 46.2);
+  --s50:oklch(98.2% .018 155.8);--s800:oklch(44.8% .119 151.3);
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/20px system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--b800);background:#fff}
+button,input,select,textarea{font:inherit;color:inherit}
+.proto-banner{background:var(--b900);color:#fff;font-size:12px;line-height:16px;padding:6px 20px;display:flex;gap:12px;align-items:center}
+.proto-banner b{color:var(--w600);letter-spacing:.06em}
+.top{display:flex;align-items:center;justify-content:space-between;padding:14px 28px 0;border-bottom:1px solid var(--b200)}
+.crumb{color:var(--b500)}.crumb b{color:var(--b800);font-weight:500}
+.tabs{display:flex;gap:6px;margin:10px 0 0;padding-bottom:10px}
+.tab{padding:2px 8px;border-radius:6px;color:var(--b600)}.tab.on{background:var(--p50);color:var(--p600)}.tab.off{color:var(--b400)}
+.actions{display:flex;gap:8px;align-self:flex-start}
+.btn{border:1px solid var(--b300);background:#fff;border-radius:6px;padding:5px 10px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--b50)}
+.btn.primary{background:var(--p500);border-color:var(--p500);color:#fff}.btn.primary:hover{background:var(--p600)}
+.btn.sm{padding:2px 8px;font-size:13px}
+.btn[disabled]{opacity:.5;cursor:default}
+.link{background:none;border:0;padding:0;color:var(--p600);cursor:pointer}
+.link:hover{text-decoration:underline}
+.page{display:grid;grid-template-columns:minmax(0,520px) minmax(0,480px);gap:56px;padding:28px 28px 120px;justify-content:start}
+.sec{padding:0 0 28px;margin:0 0 28px;border-bottom:1px solid var(--b200)}
+.sec:last-child{border:0}
+.sec h2{font-size:16px;font-weight:500;margin:0}
+.sec .sub{font-size:12px;color:var(--b500);margin:2px 0 14px}
+.field{margin:0 0 16px;border-radius:8px;transition:background .3s,box-shadow .3s}
+.lbl{display:block;font-weight:500;margin:0 0 6px}
+.hint{font-size:12px;color:var(--b500);margin:-4px 0 6px}
+.in{width:100%;border:1px solid var(--b300);border-radius:6px;padding:6px 9px;background:#fff}
+textarea.in{resize:vertical;line-height:20px}
+.in:focus{outline:2px solid var(--p200);border-color:var(--p500)}
+.suffix{position:relative}.suffix span{position:absolute;right:10px;top:7px;color:var(--b500);pointer-events:none}
+.field.changed{background:var(--p50);box-shadow:0 0 0 8px var(--p50)}
+.field.changed .in{border-color:var(--p500)}
+.chg-note{font-size:12px;color:var(--p700);margin-top:6px}
+.flash{animation:flash 1.4s}
+@keyframes flash{0%,60%{background:var(--w50);box-shadow:0 0 0 8px var(--w50)}100%{background:transparent;box-shadow:0 0 0 8px transparent}}
+.sug{margin-top:8px;border:1px dashed var(--p500);background:var(--p50);border-radius:8px;padding:8px 10px}
+.sug-head{font-size:12px;color:var(--p700);font-weight:500;margin-bottom:4px;display:flex;gap:6px;align-items:center}
+.sug-val{white-space:pre-wrap;color:var(--b800)}
+.sug-act{display:flex;gap:6px;margin-top:8px}
+.courses label{display:flex;gap:8px;align-items:center;padding:6px 0}
+.dot{width:8px;height:8px;border-radius:2px;display:inline-block}
+.cap{border:1px solid var(--b200);border-radius:8px;padding:10px 12px;display:flex;gap:10px;align-items:flex-start;margin:0 0 8px}
+.cap.ghost{border:1px dashed var(--p500);background:var(--p50)}
+.cap .ic{color:var(--p600);width:18px;flex:0 0 18px}
+.cap .body{flex:1;min-width:0}
+.cap .t{font-weight:500;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cap .d{color:var(--b600);font-size:13px}
+.cap select{border:1px solid var(--b300);border-radius:6px;padding:2px 4px;font-size:12px;background:#fff}
+.cap .x{border:0;background:none;color:var(--b500);cursor:pointer;font-size:16px;line-height:16px}
+.cap-wrap{margin:0}
+.cap-wrap.changed{background:var(--p50);box-shadow:0 0 0 6px var(--p50);border-radius:8px;margin-bottom:8px}
+.cap-wrap .chg-note{margin:-4px 0 8px 2px}
+.badge{font-size:11px;line-height:16px;padding:0 5px;border-radius:4px;font-weight:500}
+.badge.auto{background:var(--s50);color:var(--s800)}
+.badge.always{background:var(--p100);color:var(--p700)}
+.badge.ask{background:var(--b100);color:var(--b600)}
+.badge.on{background:var(--b100);color:var(--b600)}
+.tag{font-size:11px;padding:0 5px;border-radius:4px;font-weight:500}
+.tag.warn{background:var(--w50);color:var(--w800);border:1px solid var(--w600)}
+.panel{position:sticky;top:16px;height:calc(100vh - 230px);min-height:480px;background:var(--b50);border:1px solid var(--b200);border-radius:16px;display:flex;flex-direction:column;overflow:hidden}
+.msgs{flex:1;overflow:auto;padding:20px 16px 8px;display:flex;flex-direction:column;gap:12px}
+.empty{margin:auto;text-align:center;padding:0 24px}
+.empty h3{font-size:20px;font-weight:500;margin:0 0 8px;color:var(--b800)}
+.empty p{margin:0;color:var(--b500);font-size:13px}
+.empty .rule{margin-top:14px;font-size:12px;color:var(--b600);background:#fff;border:1px solid var(--b200);border-radius:8px;padding:8px 10px;text-align:left}
+.m-user{align-self:flex-end;max-width:85%;background:var(--p500);color:#fff;border-radius:12px 12px 2px 12px;padding:7px 11px}
+.m-bot{align-self:flex-start;max-width:94%;display:flex;flex-direction:column;gap:8px}
+.bubble{background:#fff;border:1px solid var(--b200);border-radius:12px 12px 12px 2px;padding:8px 11px}
+.card{background:#fff;border:1px solid var(--b200);border-radius:10px;overflow:hidden}
+.card-h{padding:8px 11px;font-size:12px;font-weight:500;color:var(--b600);border-bottom:1px solid var(--b200);display:flex;justify-content:space-between;gap:8px;align-items:center}
+.card-b{padding:4px 11px}
+.card-f{padding:8px 11px;border-top:1px solid var(--b200);display:flex;gap:6px;align-items:center;font-size:12px;color:var(--b600)}
+.prow{display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--b100);align-items:flex-start}
+.prow:last-child{border:0}
+.prow input{margin-top:3px}
+.plabel{font-size:12px;color:var(--b500)}
+.pdiff{font-size:13px}
+.pdiff s{color:var(--b500)}
+.pre{white-space:pre-wrap}
+.clist{margin:0;padding:0;list-style:none;font-size:13px}
+.clist li{padding:3px 0;display:flex;gap:6px;align-items:baseline;justify-content:space-between}
+.clist .k{color:var(--b500)}
+.quote{white-space:pre-wrap;border-left:3px solid var(--p500);padding:6px 10px;background:#fff;border-radius:0 8px 8px 0;font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--b300);background:#fff;border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer}
+.chip:hover{border-color:var(--p500);color:var(--p700)}
+.examples{padding:8px 16px 0;border-top:1px solid var(--b200)}
+.examples .k{font-size:11px;color:var(--b500);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.examples .chips{max-height:88px;overflow:auto;padding-bottom:2px}
+.composer{margin:10px 12px 12px;background:#fff;border:1px solid var(--b300);border-radius:10px;padding:8px 8px 8px 12px;display:flex;gap:8px;align-items:flex-end}
+.composer textarea{flex:1;border:0;resize:none;outline:none;min-height:40px;max-height:120px}
+.send{width:28px;height:28px;border-radius:6px;border:0;background:var(--p500);color:#fff;cursor:pointer}
+.typing{font-size:12px;color:var(--b500);padding-left:4px}
+.statebox{position:fixed;right:16px;bottom:80px;width:300px;background:#fff;border:1px solid var(--b300);border-radius:10px;box-shadow:0 6px 24px rgb(0 0 0 / .08);font-size:12px;line-height:17px;z-index:5}
+.statebox .h{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid var(--b200);font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:11px;color:var(--b600)}
+.statebox .b{padding:8px 10px;display:grid;gap:6px}
+.statebox .row .k{color:var(--b500)}
+.statebox .log{color:var(--b600);max-height:110px;overflow:auto}
+.statebox.min .b{display:none}
+.switcher{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--b900);color:#fff;border-radius:999px;display:flex;align-items:center;gap:4px;padding:4px;box-shadow:0 8px 24px rgb(0 0 0 / .25);z-index:6;font-size:13px}
+.switcher button{background:none;border:0;color:#fff;width:30px;height:30px;border-radius:999px;cursor:pointer;font-size:15px}
+.switcher button:hover{background:rgb(255 255 255 / .12)}
+.switcher .lab{padding:0 10px;min-width:220px;text-align:center}
+.switcher .lab b{color:var(--w600)}
+.toast{position:fixed;top:56px;left:50%;transform:translateX(-50%);background:var(--b800);color:#fff;padding:7px 14px;border-radius:8px;font-size:13px;z-index:7;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+.sugbar{position:sticky;top:0;z-index:3;background:var(--p50);border:1px solid var(--p200);border-radius:8px;padding:8px 12px;margin:0 0 20px;display:flex;align-items:center;gap:8px}
+.sugbar .grow{flex:1;color:var(--p700);font-weight:500}
+</style>
+</head>
+<body>
+<div class="proto-banner"><b>PROTOTYP</b><span>Frage: Wie füllt der KI-Builder das Agent-Formular? Antworten sind geskriptet, nichts wird gespeichert. Varianten unten wechseln (← →).</span></div>
+<header class="top">
+  <div>
+    <div class="crumb">Agenten &nbsp;/&nbsp; <b id="crumbName">Neuer Agent</b></div>
+    <div class="tabs"><span class="tab">Aktivität</span><span class="tab on">Auftrag</span><span class="tab off">Ablauf</span></div>
+  </div>
+  <div class="actions"><button class="btn" id="run">Jetzt starten ▷</button><button class="btn primary" id="save">Speichern</button></div>
+</header>
+<div class="page">
+  <form id="form" autocomplete="off" onsubmit="return false"></form>
+  <aside class="panel">
+    <div class="msgs" id="msgs"></div>
+    <div class="examples"><div class="k">Beispiele zum Ausprobieren</div><div class="chips" id="examples"></div></div>
+    <div class="composer"><textarea id="input" rows="2" placeholder="Beschreibe, was dein Agent können soll."></textarea><button class="send" id="send" title="Senden">↑</button></div>
+  </aside>
+</div>
+<div class="statebox" id="statebox"></div>
+<div class="switcher"><button id="prev" title="Vorherige Variante (←)">←</button><div class="lab" id="vlabel"></div><button id="next" title="Nächste Variante (→)">→</button></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------- domain ----------
+const VARIANTS = {
+  A: { name: 'Direkt ins Formular', rule: 'nunio trägt Änderungen sofort ins Formular ein und markiert sie. Du kannst jede rückgängig machen. Gespeichert wird erst mit „Speichern“.' },
+  B: { name: 'Vorschlag im Chat', rule: 'nunio schickt einen Änderungsvorschlag in den Chat. Erst „Übernehmen“ ändert das Formular, gespeichert wird mit „Speichern“.' },
+  C: { name: 'Vorschläge am Feld', rule: 'nunio schlägt Änderungen direkt an den Feldern vor. Du nimmst jede einzeln an oder lehnst sie ab. Gespeichert wird mit „Speichern“.' },
+  D: { name: 'Nur der Auftrag', rule: 'nunio schreibt nur den Auftrag. Kurse, Auslöser und Fähigkeiten stellst du selbst ein, nunio zeigt dir wo.' },
+};
+const VKEYS = Object.keys(VARIANTS);
+const COURSES = [
+  { name: 'Statistics II', color: '#a855f7', re: /stat/ },
+  { name: 'Algorithms and Data Structures', color: '#f43f5e', re: /algo|datenstruktur/ },
+  { name: 'Microeconomics', color: '#d946ef', re: /micro|mikro/ },
+];
+const CAPS = {
+  'studyBlock.create':    { label: 'Lernblöcke erstellen', desc: 'Neue Lernzeit in freie Zeitfenster eintragen.', action: true, def: 'Automatisch' },
+  'studyBlock.moveOwn':   { label: 'Eigene Lernblöcke verschieben', desc: 'Nur Blöcke, die dieser Agent erstellt hat.', action: true, def: 'Automatisch' },
+  'studyBlock.removeOwn': { label: 'Eigene Lernblöcke entfernen', desc: 'Nur Blöcke, die dieser Agent erstellt hat.', action: true, def: 'Automatisch' },
+  'studyBlock.moveOthers':{ label: 'Lernblöcke verschieben', desc: 'Von dir geplante Lernzeit verschieben. Fragt immer nach.', action: true, fixed: 'Nachfragen' },
+  'task.create':          { label: 'Aufgaben erstellen', desc: 'Aufgaben für Abgaben und Termine anlegen.', action: true, def: 'Nachfragen' },
+  'artifact.flashcards':  { label: 'Karteikarten erstellen', desc: 'Ein Set pro Run aus deinem Kursmaterial.', action: false },
+  'artifact.exercises':   { label: 'Übungsaufgaben erstellen', desc: 'Ein Set pro Run aus deinem Kursmaterial.', action: false },
+  'notice.create':        { label: 'Dich benachrichtigen', desc: 'Höchstens eine Nachricht pro Run in deine Inbox.', action: false },
+  'briefing.create':      { label: 'Briefing erstellen', desc: 'Liest deine Inbox und schreibt dir einen Überblick.', action: false },
+};
+const MODES = ['Automatisch', 'Immer erlaubt', 'Nachfragen'];
+const LABELS = { name: 'Name', description: 'Beschreibung', instructions: 'Auftrag', rhythm: 'Rhythmus', time: 'Uhrzeit', courses: 'Kurse', budget: 'Budget', model: 'Modell' };
+const ORDER = ['name', 'description', 'instructions', 'rhythm', 'time', 'courses'];
+
+const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+function blankForm() {
+  return { name: 'Neuer Agent', description: '', instructions: '', rhythm: 'Täglich', time: '06:00', courses: [], capabilities: {}, budget: 5, model: 'Opus 5.5' };
+}
+function getV(f, key) { return key.startsWith('cap:') ? (f.capabilities[key.slice(4)] ?? null) : f[key]; }
+function setV(f, key, v) {
+  if (key.startsWith('cap:')) { if (v == null) delete f.capabilities[key.slice(4)]; else f.capabilities[key.slice(4)] = v; }
+  else f[key] = clone(v);
+}
+function label(key) { return key.startsWith('cap:') ? CAPS[key.slice(4)].label : LABELS[key]; }
+function fmt(key, v) {
+  if (key.startsWith('cap:')) return v == null ? 'nicht aktiv' : v === 'an' ? 'An' : v;
+  if (key === 'courses') return v.length ? v.join(', ') : 'keine';
+  if (key === 'budget') return `${v} USD pro Monat`;
+  if (v === '' || v == null) return '(leer)';
+  return String(v);
+}
+function fmtShort(key, v) { const s = fmt(key, v); return s.length > 70 ? s.slice(0, 68) + '…' : s; }
+function capChange(key, from, to) {
+  if (from == null) return `Hinzufügen · ${fmt(key, to)}`;
+  if (to == null) return 'Entfernen';
+  return `${fmt(key, from)} → ${fmt(key, to)}`;
+}
+function allKeys(...forms) {
+  const caps = new Set(forms.flatMap((f) => Object.keys(f.capabilities)));
+  return [...ORDER, 'budget', 'model', ...[...caps].map((c) => 'cap:' + c)];
+}
+
+// ---------- the scripted builder (stands in for the model) ----------
+function parseTime(t) {
+  const m = t.match(/um (\d{1,2})(?::(\d{2}))?|(\d{1,2})(?::(\d{2}))? uhr/);
+  if (!m) return null;
+  const h = Number(m[1] ?? m[3]), min = m[2] ?? m[4] ?? '00';
+  return h <= 23 ? `${String(h).padStart(2, '0')}:${min}` : null;
+}
+function parseDate(text) {
+  const m = text.match(/(\d{1,2})\.\s*(januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember)/i);
+  return m ? `${m[1]}. ${m[2][0].toUpperCase()}${m[2].slice(1).toLowerCase()}` : null;
+}
+const andList = (xs) => (xs.length < 2 ? xs.join('') : xs.slice(0, -1).join(', ') + ' und ' + xs.at(-1));
+
+function respond(text, f) {
+  const t = text.toLowerCase();
+  const time = parseTime(t);
+  const mentioned = COURSES.filter((c) => c.re.test(t)).map((c) => c.name);
+  const actionCaps = Object.keys(f.capabilities).filter((id) => CAPS[id].action && !CAPS[id].fixed);
+
+  if (/budget|usd|€|euro|kosten|modell|opus|sonnet|haiku/.test(t))
+    return { reply: 'Budget und Modell stellst du selbst ein, unten im Formular. Ich ändere sie nicht, weil sie bestimmen, was dein Agent kostet.' };
+  if (/speicher|jetzt starten|starte ihn|leg los/.test(t))
+    return { reply: 'Speichern und Starten bleiben bei dir. Prüf das Formular und klick oben auf „Speichern“.' };
+  if (/was (bedeutet|heißt|ist)|erklär|unterschied|wie funktioniert/.test(t))
+    return { reply: '„Automatisch“: Der Agent handelt selbst, fragt aber nach, wenn etwas gegen deine Lernzeiten oder Limits verstößt oder die nächsten 24 Stunden ändert. „Immer erlaubt“: Er fragt nie. „Nachfragen“: Jede Änderung landet als Freigabe in deiner Inbox.' };
+
+  if (/verschieb/.test(t) && /meine|von mir|selbst|andere/.test(t)) {
+    if (f.capabilities['studyBlock.moveOthers'])
+      return { reply: '„Lernblöcke verschieben“ ist schon dabei. Es fragt immer nach, bevor es einen deiner Blöcke verschiebt, das kann niemand ändern.' };
+    return { reply: 'Deine eigenen Blöcke verschiebt ein Agent nie ohne Freigabe, das kann ich nicht ändern. Ich füge „Lernblöcke verschieben“ hinzu: Jede Verschiebung landet als Freigabe in deiner Inbox.', ops: [{ key: 'cap:studyBlock.moveOthers', to: 'Nachfragen' }] };
+  }
+  if (/ohne (zu )?fragen|nie fragen|nicht fragen|immer erlaubt/.test(t)) {
+    const ids = /anleg|erstell/.test(t) ? ['studyBlock.create'] : actionCaps.length ? actionCaps : ['studyBlock.create'];
+    return { reply: `Dann ${ids.length > 1 ? 'handelt er' : 'legt er Blöcke an'}, ohne zu fragen, auch wenn das gegen deine Lernzeiten verstößt oder morgen früh betrifft. Prüf das, bevor du speicherst.`, ops: ids.map((id) => ({ key: 'cap:' + id, to: 'Immer erlaubt' })) };
+  }
+  if (/frag|bevor du/.test(t)) {
+    const ids = /anleg|erstell/.test(t) ? ['studyBlock.create'] : actionCaps;
+    if (!ids.length) return { reply: 'Dein Agent hat noch keine Fähigkeiten, die etwas ändern. Sag mir zuerst, was er übernehmen soll.' };
+    return { reply: `Gut, dann fragt er dich vorher. ${andList(ids.map((id) => '„' + CAPS[id].label + '“'))} ${ids.length > 1 ? 'stehen' : 'steht'} jetzt auf „Nachfragen“.`, ops: ids.map((id) => ({ key: 'cap:' + id, to: 'Nachfragen' })) };
+  }
+  if (/karteikarten/.test(t))
+    return { reply: 'Ich habe „Karteikarten erstellen“ hinzugefügt. Pro Run entsteht höchstens ein Set.', ops: [{ key: 'cap:artifact.flashcards', to: 'an' }] };
+  if (/briefing|zusammenfass|überblick/.test(t))
+    return {
+      reply: 'Ich habe ein Briefing eingerichtet: jeden Morgen um 07:00 ein kurzer Überblick über alle deine Kurse.',
+      replyD: 'Hier ist ein Auftrag für dein Briefing.',
+      ops: [
+        { key: 'name', to: 'Briefing' },
+        { key: 'description', to: 'Gibt mir jeden Morgen einen Überblick.' },
+        { key: 'instructions', to: 'Fasse jeden Morgen kurz zusammen, was heute für mich ansteht: offene Freigaben, neue Nachrichten, fertiges Lernmaterial und was in meinem Plan als Nächstes kommt.' },
+        { key: 'rhythm', to: 'Täglich' }, { key: 'time', to: time ?? '07:00' },
+        { key: 'courses', to: COURSES.map((c) => c.name) },
+        { key: 'cap:briefing.create', to: 'an' },
+      ],
+    };
+  if (/klausur|prüfung|exam|vorbereit/.test(t)) {
+    if (!mentioned.length && !f.courses.length)
+      return { reply: 'Für welchen Kurs? Ein Agent braucht mindestens einen Kurs, sonst darf er nichts planen.', chips: COURSES.map((c) => `Klausur in ${c.name}`) };
+    const cs = mentioned.length ? mentioned : f.courses;
+    const date = parseDate(text);
+    return {
+      reply: `Ich habe einen Entwurf für deine Klausur in ${andList(cs)} gemacht. Er plant jeden Morgen um ${time ?? '06:00'} Lernblöcke und verschiebt nur seine eigenen. Deine selbst geplanten Blöcke fasst er nicht an.`,
+      replyD: `Hier ist ein Auftrag für deine Klausur in ${andList(cs)}.`,
+      ops: [
+        { key: 'name', to: `Klausur ${cs[0]}` },
+        { key: 'description', to: `Plant meine Vorbereitung auf die Klausur in ${andList(cs)}${date ? ' am ' + date : ''}.` },
+        { key: 'instructions', to: `Bereite mich auf die Klausur in ${andList(cs)} vor.\n\nVerteile die Themen bis ${date ? 'zum ' + date : 'zum Prüfungstag'} auf realistische Lernblöcke. Priorisiere Themen, bei denen ich noch unsicher bin, und plane Wiederholungen ein.\n\nPrüfe bei jedem Start meinen Fortschritt und passe den Plan an. Lass meine selbst geplanten Lernblöcke unverändert.` },
+        { key: 'rhythm', to: 'Täglich' }, { key: 'time', to: time ?? '06:00' },
+        { key: 'courses', to: COURSES.map((c) => c.name).filter((n) => cs.includes(n)) },
+        { key: 'cap:studyBlock.create', to: 'Automatisch' },
+        { key: 'cap:studyBlock.moveOwn', to: 'Automatisch' },
+        { key: 'cap:studyBlock.removeOwn', to: 'Automatisch' },
+        { key: 'cap:notice.create', to: 'an' },
+      ],
+    };
+  }
+  if (mentioned.length || time) {
+    const ops = [], said = [];
+    if (mentioned.length) {
+      const next = COURSES.map((c) => c.name).filter((n) => f.courses.includes(n) || mentioned.includes(n));
+      ops.push({ key: 'courses', to: next }); said.push(`${andList(mentioned)} ${mentioned.length > 1 ? 'sind' : 'ist'} dabei`);
+    }
+    if (time) { ops.push({ key: 'time', to: time }); said.push(`dein Agent startet um ${time}`); }
+    return { reply: said.join(', und ') + '.', ops };
+  }
+  return { reply: 'Erzähl mir, was dein Agent für dich übernehmen soll, zum Beispiel: „Bereite mich auf die Klausur in Statistics II vor.“ Dann fülle ich das Formular für dich aus.' };
+}
+
+const EXAMPLES = [
+  'Bereite mich auf die Klausur in Statistics II am 9. Februar vor',
+  'Mach mir einen Agent für meine Klausur',
+  'Nimm auch Microeconomics dazu und starte erst um 7',
+  'Frag mich lieber, bevor du Lernblöcke anlegst',
+  'Er soll Lernblöcke anlegen, ohne zu fragen',
+  'Lass ihn meine Lernblöcke verschieben, ohne zu fragen',
+  'Mach auch Karteikarten',
+  'Was bedeutet Automatisch?',
+  'Setz mein Budget auf 20 USD',
+  'Speicher das und leg los',
+  'Ich will jeden Morgen ein Briefing',
+];
+
+// ---------- state ----------
+let variant = new URLSearchParams(location.search).get('variant');
+if (!VARIANTS[variant]) variant = 'A';
+let S, seq = 0;
+function reset() {
+  S = { form: blankForm(), saved: null, messages: [], changed: {}, suggestions: {}, log: [], busy: false };
+}
+function log(s) { if (S.log.at(-1) !== s) S.log.push(s); }
+function baseline() { return S.saved ?? blankForm(); }
+function dirtyKeys() { const b = baseline(); return allKeys(S.form, b).filter((k) => !same(getV(S.form, k), getV(b, k))); }
+function pendingCount() {
+  if (variant === 'A') return Object.keys(S.changed).length;
+  if (variant === 'B') return S.messages.filter((m) => m.status === 'offen').reduce((n, m) => n + m.ops.filter((o) => o.checked).length, 0);
+  if (variant === 'C') return Object.keys(S.suggestions).length;
+  return S.messages.filter((m) => m.draft && !m.draftDone).length;
+}
+
+// ---------- actions ----------
+function send(text) {
+  text = text.trim();
+  if (!text || S.busy) return;
+  S.messages.push({ role: 'user', text });
+  S.busy = true;
+  renderSide();
+  setTimeout(() => { S.busy = false; handleBot(respond(text, S.form)); }, 450);
+}
+function handleBot(r) {
+  const m = { role: 'bot', id: ++seq, text: r.reply, chips: r.chips };
+  const ops = (r.ops ?? []).map((o) => ({ ...o, from: clone(getV(S.form, o.key)) })).filter((o) => !same(o.from, o.to));
+  if (variant === 'A') {
+    for (const o of ops) { S.changed[o.key] = { prev: o.from, msgId: m.id }; setV(S.form, o.key, o.to); }
+    m.ops = ops;
+    if (ops.length) log(`nunio hat ${ops.length} ${ops.length > 1 ? 'Felder' : 'Feld'} geändert`);
+  } else if (variant === 'B') {
+    S.messages.forEach((x) => { if (x.status === 'offen') x.status = 'ersetzt'; });
+    m.ops = ops.map((o) => ({ ...o, checked: true }));
+    if (ops.length) { m.status = 'offen'; log(`nunio schlägt ${ops.length} Änderungen vor`); }
+  } else if (variant === 'C') {
+    for (const o of ops) S.suggestions[o.key] = { to: o.to, from: o.from };
+    m.ops = ops;
+    if (ops.length) log(`nunio schlägt ${ops.length} Änderungen vor`);
+  } else {
+    const ins = ops.find((o) => o.key === 'instructions');
+    m.draft = ins ? ins.to : null;
+    m.manual = ops.filter((o) => o.key !== 'instructions');
+    if (ins && r.replyD) m.text = r.replyD;
+    if (m.manual.length) m.text += m.manual.some((o) => o.key.startsWith('cap:'))
+      ? ' Was der Agent darf, gehört nicht in den Auftrag, das bestimmen nur die Fähigkeiten. Das stellst du selbst ein:'
+      : ' Den Rest stellst du selbst ein:';
+  }
+  S.messages.push(m);
+  renderAll();
+}
+function undo(key) {
+  const c = S.changed[key]; if (!c) return;
+  setV(S.form, key, c.prev); delete S.changed[key];
+  log(`${label(key)} zurückgesetzt`);
+}
+function acceptSug(key) { const s = S.suggestions[key]; setV(S.form, key, s.to); delete S.suggestions[key]; log(`Vorschlag übernommen: ${label(key)}`); }
+function rejectSug(key) { delete S.suggestions[key]; log(`Vorschlag verworfen: ${label(key)}`); }
+function userSet(key, v, rerender) {
+  setV(S.form, key, v);
+  if (S.changed[key]) {
+    delete S.changed[key];
+    const w = document.querySelector(`[data-wrap="${CSS.escape(key)}"]`);
+    if (w) { w.classList.remove('changed'); w.querySelector('.chg-note')?.remove(); }
+  }
+  log(`Du hast ${label(key)} geändert`);
+  rerender ? renderAll() : renderSide();
+}
+function save() {
+  const open = pendingCount();
+  S.saved = clone(S.form);
+  if (variant === 'A') S.changed = {};
+  log('Du hast gespeichert' + (variant === 'C' && open ? ` (${open} Vorschläge bleiben offen)` : variant === 'B' && open ? ' (Vorschlag nicht übernommen)' : ''));
+  toast('Gespeichert. Ab dem nächsten Run gilt diese Fassung.');
+  renderAll();
+}
+function goto(key) {
+  const w = document.querySelector(`[data-wrap="${CSS.escape(key)}"]`) ?? document.querySelector(`[data-sec="${key.startsWith('cap:') ? 'caps' : key}"]`);
+  if (!w) return;
+  w.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  w.classList.remove('flash'); void w.offsetWidth; w.classList.add('flash');
+}
+let toastTimer;
+function toast(s) { const el = document.getElementById('toast'); el.textContent = s; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2600); }
+
+// ---------- render: form ----------
+function note(key) {
+  return variant === 'A' && S.changed[key] ? `<div class="chg-note">✦ von nunio geändert · <button type="button" class="link" data-undo="${esc(key)}">Rückgängig</button></div>` : '';
+}
+function sugBox(key) {
+  const s = variant === 'C' && S.suggestions[key];
+  if (!s) return '';
+  const stale = !same(getV(S.form, key), s.from);
+  const val = key.startsWith('cap:') ? capChange(key, s.from, s.to) : fmt(key, s.to);
+  return `<div class="sug"><div class="sug-head">✦ Vorschlag von nunio ${stale ? '<span class="tag warn">Feld seitdem geändert</span>' : ''}</div>
+    <div class="sug-val">${esc(val)}</div>
+    <div class="sug-act"><button type="button" class="btn sm primary" data-sug-accept="${esc(key)}">Übernehmen</button><button type="button" class="btn sm" data-sug-reject="${esc(key)}">Verwerfen</button></div></div>`;
+}
+function field(key, lbl, hint, inner) {
+  const ch = variant === 'A' && S.changed[key];
+  return `<div class="field ${ch ? 'changed' : ''}" data-wrap="${key}"><label class="lbl">${lbl}</label>${hint ? `<div class="hint">${hint}</div>` : ''}${inner}${note(key)}${sugBox(key)}</div>`;
+}
+function badge(mode) {
+  const cls = { Automatisch: 'auto', 'Immer erlaubt': 'always', Nachfragen: 'ask', an: 'on' }[mode];
+  return mode && mode !== 'an' ? `<span class="badge ${cls}">${mode}</span>` : '';
+}
+function capCard(id) {
+  const c = CAPS[id], key = 'cap:' + id, v = S.form.capabilities[id] ?? null;
+  const s = variant === 'C' && S.suggestions[key];
+  const ghost = v == null;
+  const shown = v ?? s?.to;
+  let ctrl = '';
+  if (!ghost) {
+    if (c.action) ctrl += `<select data-key="${key}" ${c.fixed ? 'disabled title="Fragt immer nach"' : ''}>${MODES.map((m) => `<option ${m === v ? 'selected' : ''}>${m}</option>`).join('')}</select>`;
+    ctrl += `<button type="button" class="x" data-remove="${id}" title="Entfernen">×</button>`;
+  }
+  const ch = variant === 'A' && S.changed[key];
+  return `<div class="cap-wrap ${ch ? 'changed' : ''}" data-wrap="${key}">
+    <div class="cap ${ghost ? 'ghost' : ''}"><div class="ic">${c.action ? '▦' : '✦'}</div>
+      <div class="body"><div class="t">${c.label} ${badge(shown)}</div><div class="d">${c.desc}</div></div>${ctrl}</div>
+    ${note(key)}${sugBox(key)}</div>`;
+}
+function renderForm() {
+  const f = S.form;
+  const sugN = variant === 'C' ? Object.keys(S.suggestions).length : 0;
+  // caps shown: those on the form, plus suggested additions (C), plus ones nunio just removed (A, for undo)
+  const capIds = Object.keys(CAPS).filter((id) => f.capabilities[id] != null || (variant === 'C' && S.suggestions['cap:' + id]) || (variant === 'A' && S.changed['cap:' + id]));
+  const addable = Object.keys(CAPS).filter((id) => f.capabilities[id] == null);
+  document.getElementById('form').innerHTML = `
+    ${sugN ? `<div class="sugbar"><span class="grow">✦ nunio schlägt ${sugN} ${sugN > 1 ? 'Änderungen' : 'Änderung'} vor</span><button type="button" class="btn sm primary" data-sug-all>Alle übernehmen</button><button type="button" class="btn sm" data-sug-none>Alle verwerfen</button></div>` : ''}
+    <section class="sec" data-sec="general"><h2>Allgemein</h2><div class="sub"></div>
+      ${field('name', 'Name', '', `<input class="in" data-key="name" value="${esc(f.name)}">`)}
+      ${field('description', 'Beschreibung', '', `<textarea class="in" rows="3" data-key="description">${esc(f.description)}</textarea>`)}
+    </section>
+    <section class="sec" data-sec="instructions"><h2>Auftrag</h2><div class="sub">Was soll der Agent für dich übernehmen?</div>
+      ${field('instructions', '', '', `<textarea class="in" rows="8" data-key="instructions" placeholder="Beschreibe in eigenen Worten, was der Agent tun soll.">${esc(f.instructions)}</textarea>`)}
+    </section>
+    <section class="sec" data-sec="trigger"><h2>Auslöser</h2><div class="sub">Wann soll der Agent gestartet werden?</div>
+      ${field('rhythm', 'Rhythmus', '', `<select class="in" data-key="rhythm">${['Täglich', 'Werktags', 'Wöchentlich (montags)'].map((r) => `<option ${r === f.rhythm ? 'selected' : ''}>${r}</option>`).join('')}</select>`)}
+      ${field('time', 'Uhrzeit', 'Zu dieser Uhrzeit wird dein Agent gestartet', `<input class="in" type="time" data-key="time" value="${f.time}">`)}
+    </section>
+    <section class="sec" data-sec="courses"><h2>Kontext</h2><div class="sub">Dein Agent arbeitet nur in diesen Kursen und kennt ihr Material.</div>
+      ${field('courses', 'Kurse', 'Mindestens einer.', `<div class="courses">${COURSES.map((c) => `<label><input type="checkbox" data-course="${c.name}" ${f.courses.includes(c.name) ? 'checked' : ''}><span class="dot" style="background:${c.color}"></span>${c.name}</label>`).join('')}</div>`)}
+    </section>
+    <section class="sec" data-sec="caps"><h2>Fähigkeiten</h2><div class="sub">Bestimme, was der Agent machen darf und was nicht.</div>
+      ${capIds.length ? capIds.map(capCard).join('') : '<div class="hint" style="margin:0 0 10px">Noch keine Fähigkeiten. Der Agent kann dann nur lesen.</div>'}
+      <select class="in" data-add-cap style="width:auto;color:var(--p600);border-color:transparent;padding-left:0"><option value="">+ Fähigkeit hinzufügen</option>${addable.map((id) => `<option value="${id}">${CAPS[id].label}</option>`).join('')}</select>
+    </section>
+    <section class="sec" data-sec="budget"><h2>Budget</h2><div class="sub">Wie viel dein Agent pro Monat ausgeben darf.</div>
+      ${field('budget', '', '', `<div class="suffix"><input class="in" type="number" min="1" data-key="budget" value="${f.budget}"><span>USD pro Monat</span></div>`)}
+    </section>
+    <section class="sec" data-sec="model"><h2>Modell</h2><div class="sub">Wähle aus, welches Modell dein Agent verwenden soll.</div>
+      ${field('model', '', '', `<select class="in" data-key="model" style="width:auto">${['Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5'].map((m) => `<option ${m === f.model ? 'selected' : ''}>${m}</option>`).join('')}</select>`)}
+    </section>`;
+  document.getElementById('crumbName').textContent = f.name || 'Neuer Agent';
+}
+
+// ---------- render: chat ----------
+function renderBotExtras(m) {
+  let h = '';
+  if (variant === 'A' && m.ops?.length) {
+    const live = m.ops.filter((o) => S.changed[o.key]?.msgId === m.id);
+    h += `<div class="card"><div class="card-h"><span>Im Formular geändert</span>${live.length ? `<button class="link" data-undo-msg="${m.id}">Alle rückgängig</button>` : ''}</div><div class="card-b"><ul class="clist">
+      ${m.ops.map((o) => `<li><span><span class="k">${esc(label(o.key))}:</span> ${esc(o.key.startsWith('cap:') ? capChange(o.key, o.from, o.to) : fmtShort(o.key, o.to))}</span>${S.changed[o.key]?.msgId === m.id ? `<button class="link" data-goto="${esc(o.key)}">zeigen</button>` : '<span class="k">geprüft</span>'}</li>`).join('')}
+    </ul></div></div>`;
+  }
+  if (variant === 'B' && m.ops?.length) {
+    const open = m.status === 'offen';
+    const k = m.ops.filter((o) => o.checked).length;
+    h += `<div class="card"><div class="card-h"><span>Vorschlag · ${m.ops.length} ${m.ops.length > 1 ? 'Änderungen' : 'Änderung'}</span></div><div class="card-b">
+      ${m.ops.map((o, i) => {
+        const stale = open && !same(getV(S.form, o.key), o.from);
+        const isText = o.key === 'instructions';
+        const diff = o.key.startsWith('cap:') ? esc(capChange(o.key, o.from, o.to))
+          : isText ? `<div class="pre">${esc(o.to)}</div>${o.from ? `<s class="pre" style="display:block;margin-top:4px">${esc(fmtShort(o.key, o.from))}</s>` : ''}`
+          : `${o.from !== '' && o.from != null && !(Array.isArray(o.from) && !o.from.length) ? `<s>${esc(fmtShort(o.key, o.from))}</s> → ` : ''}<b>${esc(fmtShort(o.key, o.to))}</b>`;
+        return `<label class="prow"><input type="checkbox" data-prop-check="${m.id}:${i}" ${o.checked ? 'checked' : ''} ${open ? '' : 'disabled'}><div style="min-width:0"><div class="plabel">${esc(label(o.key))} ${stale ? '<span class="tag warn">Feld seitdem geändert</span>' : ''}</div><div class="pdiff">${diff}</div></div></label>`;
+      }).join('')}</div>
+      <div class="card-f">${open
+        ? `<button class="btn sm primary" data-prop-accept="${m.id}" ${k ? '' : 'disabled'}>Übernehmen (${k})</button><button class="btn sm" data-prop-reject="${m.id}">Verwerfen</button>`
+        : { übernommen: `✓ Übernommen: ${m.acceptedN} von ${m.ops.length}`, verworfen: 'Verworfen', ersetzt: 'Ersetzt durch einen neueren Vorschlag' }[m.status]}</div></div>`;
+  }
+  if (variant === 'C' && m.ops?.length) {
+    const left = m.ops.filter((o) => S.suggestions[o.key] && same(S.suggestions[o.key].to, o.to)).length;
+    h += `<div class="card"><div class="card-f" style="border:0">${left
+      ? `✦ ${left} ${left > 1 ? 'Vorschläge' : 'Vorschlag'} im Formular <button class="link" data-goto="${esc(m.ops.find((o) => S.suggestions[o.key]).key)}" style="margin-left:auto">zeigen</button>`
+      : '✓ Alle Vorschläge bearbeitet'}</div></div>`;
+  }
+  if (variant === 'D') {
+    if (m.draft) h += `<div class="quote">${esc(m.draft)}</div><div>${m.draftDone ? '<span class="k" style="font-size:12px;color:var(--b500)">✓ In den Auftrag übernommen</span>' : `<button class="btn sm primary" data-draft="${m.id}">In den Auftrag übernehmen</button>${S.form.instructions ? ' <span style="font-size:12px;color:var(--b500)">ersetzt deinen jetzigen Auftrag</span>' : ''}`}</div>`;
+    if (m.manual?.length) h += `<div class="card"><div class="card-b"><ul class="clist">${m.manual.map((o) => `<li><span><span class="k">${esc(label(o.key))}:</span> ${esc(o.key.startsWith('cap:') ? capChange(o.key, o.from, o.to) : fmtShort(o.key, o.to))}</span><button class="link" data-goto="${esc(o.key)}">zeigen</button></li>`).join('')}</ul></div></div>`;
+  }
+  if (m.chips) h += `<div class="chips">${m.chips.map((c) => `<button class="chip" data-chip="${esc(c)}">${esc(c)}</button>`).join('')}</div>`;
+  return h;
+}
+function renderMsgs() {
+  const el = document.getElementById('msgs');
+  if (!S.messages.length) {
+    el.innerHTML = `<div class="empty"><h3>Was soll dein Agent können?</h3><p>nunio kann dir helfen, deinen Agenten zu bauen. Stelle einfach eine Frage.</p><div class="rule"><b>Variante ${variant}:</b> ${VARIANTS[variant].rule}</div></div>`;
+    return;
+  }
+  el.innerHTML = S.messages.map((m) => m.role === 'user'
+    ? `<div class="m-user">${esc(m.text)}</div>`
+    : `<div class="m-bot"><div class="bubble">${esc(m.text)}</div>${renderBotExtras(m)}</div>`).join('')
+    + (S.busy ? '<div class="typing">nunio schreibt …</div>' : '');
+  el.scrollTop = el.scrollHeight;
+}
+function renderState() {
+  const d = dirtyKeys(), p = pendingCount();
+  const pLabel = { A: 'Von nunio geändert, noch nicht angesehen', B: 'Offen im Vorschlag', C: 'Offene Vorschläge am Feld', D: 'Entwürfe nicht übernommen' }[variant];
+  const box = document.getElementById('statebox');
+  const min = box.classList.contains('min');
+  box.innerHTML = `<div class="h"><span>Zustand</span><span><button class="link" id="resetBtn">Zurücksetzen</button> · <button class="link" id="minBtn">${min ? 'auf' : 'zu'}</button></span></div>
+    <div class="b">
+      <div class="row"><span class="k">Agent:</span> ${S.saved ? 'gespeichert' : 'noch nie gespeichert, existiert erst nach „Speichern“'}</div>
+      <div class="row"><span class="k">Ungespeichert:</span> ${d.length ? esc(d.map(label).join(', ')) : 'nichts'}</div>
+      <div class="row"><span class="k">${pLabel}:</span> ${p}</div>
+      <div class="row"><span class="k">Verlauf:</span><div class="log">${S.log.length ? S.log.slice(-8).map(esc).join('<br>') : '–'}</div></div>
+    </div>`;
+}
+function renderSide() { renderMsgs(); renderState(); }
+function renderAll() { renderForm(); renderSide(); }
+function renderSwitcher() { document.getElementById('vlabel').innerHTML = `<b>${variant}</b> · ${VARIANTS[variant].name}`; }
+
+// ---------- wiring ----------
+document.getElementById('examples').innerHTML = EXAMPLES.map((e) => `<button class="chip" data-chip="${esc(e)}">${esc(e)}</button>`).join('');
+const input = document.getElementById('input');
+input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input.value); input.value = ''; } });
+document.getElementById('send').onclick = () => { send(input.value); input.value = ''; };
+document.getElementById('save').onclick = save;
+document.getElementById('run').onclick = () => toast(S.saved && !dirtyKeys().length ? 'Prototyp: hier würde ein Run starten.' : 'Erst speichern: ein Run nutzt nur die gespeicherte Fassung.');
+
+const form = document.getElementById('form');
+form.addEventListener('input', (e) => {
+  const el = e.target, key = el.dataset.key;
+  if (!key || el.tagName === 'SELECT' || el.type === 'time') return;
+  userSet(key, key === 'budget' ? Number(el.value) : el.value, false);
+});
+form.addEventListener('change', (e) => {
+  const el = e.target;
+  if (el.dataset.course !== undefined) {
+    const next = [...form.querySelectorAll('[data-course]')].filter((x) => x.checked).map((x) => x.dataset.course);
+    return userSet('courses', next, true);
+  }
+  if (el.dataset.addCap !== undefined) {
+    if (!el.value) return;
+    const c = CAPS[el.value];
+    return userSet('cap:' + el.value, c.fixed ?? (c.action ? c.def : 'an'), true);
+  }
+  const key = el.dataset.key;
+  if (key && (el.tagName === 'SELECT' || el.type === 'time')) userSet(key, el.value, true);
+});
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button, input[type=checkbox]');
+  if (!t) return;
+  const d = t.dataset;
+  if (d.chip) return send(d.chip);
+  if (d.undo) { undo(d.undo); return renderAll(); }
+  if (d.undoMsg) { Object.entries(S.changed).filter(([, c]) => c.msgId === Number(d.undoMsg)).forEach(([k]) => undo(k)); return renderAll(); }
+  if (d.remove) return userSet('cap:' + d.remove, null, true);
+  if (d.goto) return goto(d.goto);
+  if (d.sugAccept) { acceptSug(d.sugAccept); return renderAll(); }
+  if (d.sugReject) { rejectSug(d.sugReject); return renderAll(); }
+  if (t.hasAttribute('data-sug-all')) { Object.keys(S.suggestions).forEach(acceptSug); return renderAll(); }
+  if (t.hasAttribute('data-sug-none')) { Object.keys(S.suggestions).forEach(rejectSug); return renderAll(); }
+  if (d.propCheck) { const [id, i] = d.propCheck.split(':').map(Number); const m = S.messages.find((x) => x.id === id); m.ops[i].checked = t.checked; return renderSide(); }
+  if (d.propAccept) {
+    const m = S.messages.find((x) => x.id === Number(d.propAccept));
+    const picked = m.ops.filter((o) => o.checked);
+    picked.forEach((o) => setV(S.form, o.key, o.to));
+    m.status = 'übernommen'; m.acceptedN = picked.length;
+    log(`Du hast ${picked.length} von ${m.ops.length} Änderungen übernommen`);
+    return renderAll();
+  }
+  if (d.propReject) { const m = S.messages.find((x) => x.id === Number(d.propReject)); m.status = 'verworfen'; log('Du hast den Vorschlag verworfen'); return renderSide(); }
+  if (d.draft) { const m = S.messages.find((x) => x.id === Number(d.draft)); setV(S.form, 'instructions', m.draft); m.draftDone = true; log('Entwurf in den Auftrag übernommen'); renderAll(); return goto('instructions'); }
+  if (t.id === 'resetBtn') { reset(); return renderAll(); }
+  if (t.id === 'minBtn') { document.getElementById('statebox').classList.toggle('min'); return renderState(); }
+});
+
+function switchTo(v) {
+  variant = v;
+  const u = new URL(location.href); u.searchParams.set('variant', v); history.replaceState(null, '', u);
+  reset(); renderSwitcher(); renderAll();
+}
+const step = (n) => switchTo(VKEYS[(VKEYS.indexOf(variant) + n + VKEYS.length) % VKEYS.length]);
+document.getElementById('prev').onclick = () => step(-1);
+document.getElementById('next').onclick = () => step(1);
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft') step(-1);
+  if (e.key === 'ArrowRight') step(1);
+});
+
+reset(); renderSwitcher(); renderAll();
+</script>
+</body>
+</html>
