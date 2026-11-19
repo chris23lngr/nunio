@@ -25,3 +25,5 @@ A Chat could read the Plan and a Course's Facts (ADR-0020). It could not say whe
 - **A read tool for each capability** (`understanding`, `capacity`, `artifacts`): each answers one question cleanly, but a common question needs two or three steps, and the Topic tags `startPracticeSet` takes would come from another tool.
 - **Shortfalls only for the range read:** a smaller result, but "will I make the exam in ten weeks?" could not be answered.
 - **Removing Locked blocks with Approval:** one more thing the Chat could do, but it would break the Lock's promise that nunio leaves the block alone.
+
+**Amendment (2026-11-18):** an Agent may remove a Study Block it created, under the mode the student set on that Capability ([ADR-0001](0001-grants-only-within-agents.md)). A Grant can cover such a removal. Removing any other block still needs Approval, and a Chat still only proposes.

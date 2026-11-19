@@ -157,7 +157,7 @@ The student's ranking of how much their Courses, Projects, or Obligations matter
 _Avoid_: Importance, weight, urgency
 
 **Rebalance**:
-nunio's automatic rearrangement of the Plan within its Grants and the student's Preferences. A Rebalance never moves a Locked Study Block, and moves one the student placed or moved only with Approval.
+nunio's automatic rearrangement of the Plan within an Agent's Grants and the student's Preferences. A Rebalance never moves a Locked Study Block, and moves one the Agent did not create, or that the student has moved since, only with Approval.
 _Avoid_: Reschedule, replan, optimize
 
 **Lock**:
@@ -311,8 +311,12 @@ The student's consent to one exact Action, given by confirming that Action as nu
 _Avoid_: Confirmation, consent, permission
 
 **Grant**:
-Standing authority, given in advance, for an Agent to take a kind of Action within a defined scope without per-Action Approval. Grants exist only within an Agent.
+Standing authority, given in advance, for an Agent to take a kind of Action within a defined scope without per-Action Approval. Grants exist only within an Agent. A Grant may still ask in cases nunio fixes, such as a change within the next day.
 _Avoid_: Permission, automation permission, authority
+
+**Capability**:
+A kind of effect the student lets one Agent have, such as creating Study Blocks or making flashcards. A Capability that is an Action is either asked each time or held as a Grant; any other Capability is simply on or off. Reading the student's material and Plan is never a Capability.
+_Avoid_: Tool, skill, permission
 
 **Unconfirmed**:
 The state of an Action nunio attempted but cannot confirm took effect, such as a Submission whose Destination gave no answer. The student must resolve it; nunio never retries it blindly.
