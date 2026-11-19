@@ -299,7 +299,7 @@ A starting point nunio curates for creating an Agent, such as "Klausur vorbereit
 _Avoid_: Preset, Vorlage, blueprint
 
 **Paused**:
-The state of an Agent that takes no further Actions, including in a Run already under way, while keeping its Grants. An Agent is Paused by the student, by exhausting its Budget, by losing a Connection it depends on, by all its Courses being Archived, or by losing its last Course; only the student resumes it, even after its Budget resets or a Course is unarchived.
+The state of an Agent that takes no further Actions, including in a Run already under way, while keeping its Grants. An Agent is Paused by the student, by exhausting its Budget, by losing a Connection it depends on, by all its Courses being Archived, by losing its last Course, or by nunio when it made the Agent from one of the student's earlier delegations; only the student resumes it, even after its Budget resets or a Course is unarchived.
 _Avoid_: Suspended, stopped, disabled, on hold
 
 **Ended**:
