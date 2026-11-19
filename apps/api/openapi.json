@@ -4375,6 +4375,10 @@
               null
             ]
           },
+          "running": {
+            "type": "boolean",
+            "description": "One of its Runs is under way; another cannot start until it ends."
+          },
           "capabilities": {
             "type": "array",
             "items": {
@@ -4499,6 +4503,7 @@
           "exam",
           "state",
           "pausedBy",
+          "running",
           "capabilities",
           "grants",
           "budget",
@@ -14249,6 +14254,132 @@
           },
           "401": {
             "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/agents/{id}/runs": {
+      "post": {
+        "description": "Start a free-text Agent's Run now (Jetzt starten), with its saved configuration. Nothing is queued.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The Run, now under way.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A preset Agent has no such Run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "One of its Runs is still under way (error running), or it is Paused (error paused) or Ended (error ended).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Run could not start (error not_started); nothing is under way, so asking again may start it.",
             "content": {
               "application/json": {
                 "schema": {

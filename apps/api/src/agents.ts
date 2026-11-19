@@ -18,6 +18,7 @@ import {
   created,
   Done,
   done,
+  ErrorBody,
   errors,
   id,
   json,
@@ -109,6 +110,11 @@ const Agent = z
       .describe("The one exam it prepares for; null for a Course."),
     state: z.enum(["active", "paused", "ended"]),
     pausedBy: z.enum(["student", "budget", "course_archived"]).nullable(),
+    running: z
+      .boolean()
+      .describe(
+        "One of its Runs is under way; another cannot start until it ends.",
+      ),
     capabilities: z
       .array(AgentCapability)
       .describe(
@@ -380,6 +386,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
           ...scopeNames(review, r.scope),
           state: r.state,
           pausedBy: r.pausedBy,
+          running: r.running,
           grants: r.grants.map((g) => g.kind),
           budget: r.budget,
           recentActions: history.map((a) => ({
@@ -440,6 +447,52 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
         })),
         200,
       );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/agents/{id}/runs",
+      description:
+        "Start a free-text Agent's Run now (Jetzt starten), with its saved configuration. Nothing is queued.",
+      request: { params: id },
+      responses: {
+        201: json(z.object({ id: z.string() }), "The Run, now under way."),
+        400: json(ErrorBody, "A preset Agent has no such Run."),
+        409: json(
+          ErrorBody,
+          "One of its Runs is still under way (error running), or it is Paused (error paused) or Ended (error ended).",
+        ),
+        503: json(
+          ErrorBody,
+          "The Run could not start (error not_started); nothing is under way, so asking again may start it.",
+        ),
+        ...errors,
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      if (p.kind !== "student") return c.json({ error: "gone" }, 404);
+      const agentId = c.req.valid("param").id;
+      const requested = await c.get("agents").requestRun(p, agentId);
+      if (requested.status === "gone") return c.json({ error: "gone" }, 404);
+      if (requested.status === "invalid")
+        return c.json({ error: "invalid" }, 400);
+      if (requested.status !== "ok")
+        return c.json({ error: requested.status }, 409);
+      try {
+        await c.get("runWorkflows").startAgentRun({
+          studentId: p.studentId,
+          agentId,
+          runId: requested.runId,
+          workflowId: requested.workflowId,
+        });
+      } catch {
+        await c.get("agents").failRun(p, requested.runId);
+        return c.json({ error: "not_started" }, 503);
+      }
+      return c.json({ id: requested.runId }, 201);
     },
   );
   for (const control of ["pause", "resume", "end"] as const) {
