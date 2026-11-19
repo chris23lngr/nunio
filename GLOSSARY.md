@@ -273,11 +273,15 @@ A daily window in the student's time zone in which nunio sends them nothing outs
 _Avoid_: Do not disturb, mute, quiet time
 
 **Briefing**:
-A scheduled summary nunio delivers that bundles the current Interventions, ready Artifacts, and ongoing work, as they stood when it was made. A Briefing is not an Intervention and cannot be dismissed; nothing to bundle means no Briefing.
+A scheduled summary nunio delivers that bundles the current Interventions, unread Notices, ready Artifacts, and ongoing work, as they stood when it was made. A Briefing is not an Intervention and cannot be dismissed; nothing to bundle means no Briefing.
 _Avoid_: Digest, daily summary, report
 
+**Notice**:
+A message an Agent writes to the student during a Run, shown as the Agent's own words, never as nunio's. A Notice has no cause, so it never lapses and is neither acknowledged nor dismissed; it is unread until the student opens it.
+_Avoid_: Alert, notification, Agent message, Intervention
+
 **Inbox**:
-The place in nunio where the student's Interventions and Briefings live. Anything nunio sends outside the app only points to the Inbox and never closes an Intervention.
+The place in nunio where the student's Interventions, Notices and Briefings live. Anything nunio sends outside the app only points to the Inbox and never closes an Intervention.
 _Avoid_: Notification center, feed, activity
 
 ### Delegation
@@ -303,7 +307,7 @@ A single, bounded execution of study work on the student's behalf, started eithe
 _Avoid_: Job, task, session
 
 **Action**:
-One concrete effect a Run, or the student's request in a Chat, has on the student's plan or outside world, such as creating a study block or submitting an artifact. Messages nunio sends the student, such as Interventions and Briefings, are not Actions, and neither is making an Artifact.
+One concrete effect a Run, or the student's request in a Chat, has on the student's plan or outside world, such as creating a study block or submitting an artifact. Messages nunio sends the student, such as Interventions, Notices and Briefings, are not Actions, and neither is making an Artifact.
 _Avoid_: Operation, step, tool call
 
 **Approval**:
