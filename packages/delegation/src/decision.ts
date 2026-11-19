@@ -1,7 +1,7 @@
 import type { Args, GrantScope, Kind, Subject } from "./kinds.js";
 import { definitions } from "./kinds.js";
 
-/** Advanced Agent configuration on an Agent. Restrictions can only tighten what Grants allow. */
+/** Advanced configuration on an Agent. Restrictions can only tighten what Grants allow. */
 export interface Restrictions {
   /** Kinds the Agent may take at all; absent means every kind. */
   allowedKinds?: Kind[];
