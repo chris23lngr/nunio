@@ -24,6 +24,8 @@ import type { ModelMessage } from "ai";
 import type { ActionEvent } from "./activity.js";
 import { recordEvents } from "./activity.js";
 import { agendaTool } from "./agenda.js";
+import type { ApprovalsOutput } from "./approvals.js";
+import { approvalsTool } from "./approvals.js";
 import { chatContext } from "./context.js";
 import { courseFactsTool } from "./course-facts.js";
 import type { ChatPart } from "./parts.js";
@@ -40,10 +42,17 @@ export const maxSteps = 20;
 const maxSummary = 600;
 
 /** What the student may see of a step: each read tool call with what it showed, never what the model was given. */
-export type RunStepPart = Extract<
-  ChatPart,
-  { type: "tool-searchMaterial" | "tool-courseFacts" | "tool-agenda" }
->;
+export type RunStepPart =
+  | Extract<
+      ChatPart,
+      { type: "tool-searchMaterial" | "tool-courseFacts" | "tool-agenda" }
+    >
+  | {
+      type: "tool-approvals";
+      toolCallId: string;
+      input: Record<string, never>;
+      output: ApprovalsOutput;
+    };
 
 /**
  * How a step went: the model called tools, `actions` of them Action tools for the gate to perform, or answered; the
@@ -273,6 +282,7 @@ export function createAgentRuns({
           courses: context.courses,
           agentId: run.agentId ?? undefined,
         }),
+        approvals: approvalsTool(turn, { db, p, runId, timeZone, clock }),
         ...actionTools(held),
       };
       const called = (previous?.calls as StoredCall[] | null) ?? [];
@@ -371,6 +381,7 @@ export function createAgentRuns({
       const reads = {
         step: n,
         plan: read("agenda").length > 0,
+        approvals: read("approvals").length > 0,
         courseIds: [
           ...new Set(
             read("courseFacts").flatMap((result) => {

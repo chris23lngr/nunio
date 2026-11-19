@@ -663,7 +663,10 @@ describe("an Agent's Run", () => {
       where: { studentId: s.studentId },
     });
     script = [
-      () => calls("agenda", { from: day(0), to: day(13) }),
+      () => [
+        ...calls("agenda", { from: day(0), to: day(13) }),
+        ...calls("approvals", {}),
+      ],
       () => [
         ...calls("courseFacts", { course: "K1" }),
         ...calls("searchMaterial", { query: "Klausur" }),
@@ -685,11 +688,19 @@ describe("an Agent's Run", () => {
     });
     expect(shown!.verlauf.map(({ at: _, ...entry }) => entry)).toEqual([
       { type: "start", trigger: "manual" },
-      { type: "read", step: 1, plan: true, courses: [], sources: [] },
+      {
+        type: "read",
+        step: 1,
+        plan: true,
+        approvals: true,
+        courses: [],
+        sources: [],
+      },
       {
         type: "read",
         step: 2,
         plan: false,
+        approvals: false,
         courses: [{ id: course.id, title: "Statistik II" }],
         sources: [{ id: source.id, title: "Skript.pdf" }],
       },
@@ -758,7 +769,7 @@ const statuses = async (runId: string) =>
 
 describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
   it("offers exactly the Agent's Capabilities as Action tools beside its read tools", async () => {
-    const reads = ["agenda", "courseFacts", "searchMaterial"];
+    const reads = ["agenda", "approvals", "courseFacts", "searchMaterial"];
     const all = await started({ held: lernbloecke() });
     await run(all);
     const none = await started();
@@ -1033,6 +1044,91 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
       expect.stringMatching(/^Refused/),
       expect.stringMatching(/^Done/),
     ]);
+  });
+
+  it("reads its Agent's open Approvals and those decided or expired since its previous Run, as fenced data", async () => {
+    const s = await started({
+      held: lernbloecke({ createStudyBlocks: "ask" }),
+    });
+    script = [
+      readPlan,
+      () => [3, 4, 5, 6].flatMap((offset) => createBlock(offset)),
+      () => says("Ich habe um vier Freigaben gebeten."),
+    ];
+    await run(s);
+    const [approved, denied, expired] = await admin.action.findMany({
+      where: { runId: s.runId },
+      orderBy: { key: "asc" },
+      include: { approval: true },
+    });
+    // The student decides two as the API does, and lets one expire; the fourth stays open.
+    const decided = await delegation.decide(s.p, {
+      kind: "approve",
+      actionId: approved!.id,
+      fingerprint: approved!.approval!.fingerprint,
+    });
+    await delegation.perform(principal.fromRun(s.runId), {
+      key: decided.key,
+      intent: decided.intent,
+    });
+    await delegation.decide(s.p, { kind: "deny", actionId: denied!.id });
+    // It expired once the Run had ended, before the next Run.
+    const { endedAt } = await admin.run.findUniqueOrThrow({
+      where: { id: s.runId },
+    });
+    await admin.approval.update({
+      where: { actionId: expired!.id },
+      data: { expiresAt: endedAt! },
+    });
+    const approvalsRead = (prompt: unknown) =>
+      (prompt as { role: string; content: unknown }[])
+        .filter((message) => message.role === "tool")
+        .flatMap(
+          (message) =>
+            message.content as {
+              toolName: string;
+              output: { value?: string };
+            }[],
+        )
+        .filter((part) => part.toolName === "approvals")
+        .map((part) => part.output.value ?? "")
+        .join("\n");
+
+    const next = await requested(s.p, s.agentId);
+    script = [() => calls("approvals", {}), () => says("Fertig.")];
+    expect(await run(next)).toEqual({ status: "done" });
+
+    const read = approvalsRead(prompts.at(-1));
+    expect(read).toMatch(/^<<<BEGIN approvals [0-9a-f]+>>>/);
+    const lines = read.split("\n");
+    const open = lines.indexOf(
+      "Open, the student has not decided yet; do not ask for these again:",
+    );
+    const since = lines.indexOf("Decided or expired since your previous Run:");
+    const at = (offset: number) => `${day(offset)} 10:00–11:00`;
+    expect(lines.slice(open + 1, since)).toEqual([
+      expect.stringMatching(
+        new RegExp(`^- create a Study Block for O1 at ${at(6)} · expires `),
+      ),
+    ]);
+    expect(lines.slice(since + 1, -1)).toEqual([
+      `- create a Study Block for O1 at ${at(3)} · approved and done: the Study Block is B1`,
+      `- create a Study Block for O1 at ${at(4)} · declined by the student`,
+      `- create a Study Block for O1 at ${at(5)} · expired unanswered`,
+    ]);
+
+    // The Run after it is given only what was decided since the one before.
+    const third = await requested(s.p, s.agentId);
+    script = [() => calls("approvals", {}), () => says("Fertig.")];
+    await run(third);
+    const again = approvalsRead(prompts.at(-1)).split("\n");
+    expect(
+      again.slice(
+        again.indexOf("Decided or expired since your previous Run:") + 1,
+        -1,
+      ),
+    ).toEqual(["none"]);
+    expect(again.filter((line) => line.includes(at(6)))).toHaveLength(1);
   });
 
   it("never performs an Action twice when the worker loses the completion of the step or of its Actions", async () => {
