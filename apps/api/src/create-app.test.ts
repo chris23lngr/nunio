@@ -19,17 +19,17 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import type {
+  Agents,
   CatalogModel,
   Delegation,
   Executor,
   Principal,
-  Responsibilities,
   Schedules,
 } from "@nunio/delegation";
 import {
+  createAgents,
   createDelegation,
   createModelCatalog,
-  createResponsibilities,
   principal,
 } from "@nunio/delegation";
 import { createAuth } from "@nunio/identity";
@@ -80,7 +80,7 @@ let sources: Sources;
 let facts: Facts;
 let topicAreas: TopicAreas;
 let delegation: Delegation;
-let responsibilities: Responsibilities;
+let agents: Agents;
 let artifacts: Artifacts;
 let understanding: Understanding;
 /** The Artifact Runs the API asked to start, by run ID; the worker would then make each. */
@@ -136,7 +136,7 @@ const grader: Grader = {
     usage: { microUsd: 1 },
   }),
 };
-/** What the API asked of Responsibility Schedules, and which Runs it woke, in order. */
+/** What the API asked of Agent Schedules, and which Runs it woke, in order. */
 const scheduled: string[] = [];
 const signalled: { workflowId: string; runId: string; actionId: string }[] = [];
 const runWorkflows: RunWorkflows = {
@@ -144,8 +144,7 @@ const runWorkflows: RunWorkflows = {
     void signalled.push({ ...run, actionId }),
 };
 const schedules: Schedules = {
-  create: async ({ responsibilityId }) =>
-    void scheduled.push(`create ${responsibilityId}`),
+  create: async ({ agentId }) => void scheduled.push(`create ${agentId}`),
   pause: async (id) => void scheduled.push(`pause ${id}`),
   unpause: async (id) => void scheduled.push(`unpause ${id}`),
   delete: async (id) => void scheduled.push(`delete ${id}`),
@@ -410,7 +409,7 @@ beforeAll(async () => {
     },
     startArtifactRun: (runId) => artifactWorkflows.start(runId),
   });
-  responsibilities = createResponsibilities({
+  agents = createAgents({
     db: prisma,
     schedules,
     clock: { now: () => new Date() },
@@ -420,7 +419,7 @@ beforeAll(async () => {
     keys,
     reader,
     facts,
-    responsibilities,
+    agents,
     delegation,
     maker,
     clock: { now: () => new Date() },
@@ -439,7 +438,7 @@ beforeAll(async () => {
     artifacts,
     artifactWorkflows,
     understanding,
-    responsibilities,
+    agents,
     runWorkflows,
     auth,
     prisma,
@@ -471,7 +470,7 @@ beforeAll(async () => {
       db: prisma,
       clock: { now: () => new Date() },
       facts,
-      responsibilities,
+      agents,
     }),
     outreach: createOutreach({
       db: prisma,
@@ -3701,7 +3700,7 @@ describe("Chat", () => {
       {
         actionId: card.action.id,
         fingerprint: card.action.fingerprint,
-        responsibility: null,
+        agent: null,
       },
     ]);
     const reopened = (await (
@@ -5836,7 +5835,7 @@ it("creates, edits, archives and deletes Courses through origin-protected routes
     tasks: 0,
     studyBlocks: 0,
     futureStudyBlocks: 0,
-    responsibilities: 0,
+    agents: 0,
   });
   expect((await call("POST", `/${id}/archive`)).status).toBe(200);
   expect((await listed()).courses[0]!.archived).toBe(true);
@@ -5864,7 +5863,7 @@ it("creates, edits, archives and deletes Courses through origin-protected routes
   expect((await listed()).courses).toEqual([]);
 });
 
-it("refuses Obligations and Responsibilities on an Archived Course with a conflict", async () => {
+it("refuses Obligations and Agents on an Archived Course with a conflict", async () => {
   const cookie = await signUp("courses-archived");
   const headers = {
     cookie,
@@ -5902,20 +5901,17 @@ it("refuses Obligations and Responsibilities on an Archived Course with a confli
     }),
   });
   expect(obligation.status).toBe(409);
-  const responsibility = await app.request(
-    `${apiOrigin}/api/me/responsibilities`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        preset: "keep_course_organized",
-        courseId: id,
-        budgetMicroUsd: 100_000,
-      }),
-    },
-  );
-  expect(responsibility.status).toBe(409);
-  expect(await responsibility.json()).toEqual({ error: "course_archived" });
+  const agent = await app.request(`${apiOrigin}/api/me/agents`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      preset: "keep_course_organized",
+      courseId: id,
+      budgetMicroUsd: 100_000,
+    }),
+  });
+  expect(agent.status).toBe(409);
+  expect(await agent.json()).toEqual({ error: "course_archived" });
   const rejected = await app.request(
     `${apiOrigin}/api/me/courses/${id}/decision`,
     { method: "POST", headers, body: JSON.stringify({ decision: "reject" }) },
@@ -6043,7 +6039,7 @@ async function askedForApproval(
       end: new Date("2099-01-01T10:00:00Z"),
     },
   });
-  const created = await responsibilities.create(
+  const created = await agents.create(
     principal.fromSession({ studentId: id }),
     {
       preset: "keep_course_organized",
@@ -6054,9 +6050,9 @@ async function askedForApproval(
   if (created.status !== "ok") throw new Error(created.status);
   const runId = randomUUID(),
     workflowId = `run/${created.id}-2099-01-01T06:00:00Z`;
-  await responsibilities.startRun({
+  await agents.startRun({
     studentId: id,
-    responsibilityId: created.id,
+    agentId: created.id,
     runId,
     workflowId,
   });
@@ -6086,7 +6082,7 @@ async function askedForApproval(
     asking,
     runId,
     workflowId,
-    responsibilityId: created.id,
+    agentId: created.id,
     blockId,
     obligationId,
   };
@@ -6166,8 +6162,8 @@ describe("Approvals", () => {
         },
         fingerprint: asked.asking.fingerprint,
         expiresAt: asked.asking.expiresAt.toISOString(),
-        responsibility: {
-          id: asked.responsibilityId,
+        agent: {
+          id: asked.agentId,
           preset: "keep_course_organized",
         },
       },
@@ -6374,9 +6370,9 @@ async function withCourse(name: string) {
   return { cookie, headers, courseId, obligationId: entered.id };
 }
 
-describe("Responsibilities", () => {
-  it("keeps an empty Course identifiable in its Responsibility detail, list and Home", async () => {
-    const cookie = await signUp("responsibility-empty-course");
+describe("Agents", () => {
+  it("keeps an empty Course identifiable in its Agent detail, list and Home", async () => {
+    const cookie = await signUp("agent-empty-course");
     const courseId = randomUUID();
     await admin.course.create({
       data: {
@@ -6389,7 +6385,7 @@ describe("Responsibilities", () => {
         status: "accepted",
       },
     });
-    const response = await app.request(`${apiOrigin}/api/me/responsibilities`, {
+    const response = await app.request(`${apiOrigin}/api/me/agents`, {
       method: "POST",
       headers: {
         cookie,
@@ -6401,11 +6397,10 @@ describe("Responsibilities", () => {
     expect(response.status).toBe(201);
     const { id } = (await response.json()) as { id: string };
     const course = { id: courseId, title: "Analysis I" };
-    const detail = await app.request(
-      `${apiOrigin}/api/me/responsibilities/${id}`,
-      { headers: { cookie } },
-    );
-    const list = await app.request(`${apiOrigin}/api/me/responsibilities`, {
+    const detail = await app.request(`${apiOrigin}/api/me/agents/${id}`, {
+      headers: { cookie },
+    });
+    const list = await app.request(`${apiOrigin}/api/me/agents`, {
       headers: { cookie },
     });
     const home = await app.request(`${apiOrigin}/api/me/home`, {
@@ -6421,9 +6416,9 @@ describe("Responsibilities", () => {
   });
 
   it("delegates 'keep this course organized' and shows its scope, Grants, Budget and next planned Action", async () => {
-    const s = await withCourse("responsibility-create");
+    const s = await withCourse("agent-create");
 
-    const created = await app.request(`${apiOrigin}/api/me/responsibilities`, {
+    const created = await app.request(`${apiOrigin}/api/me/agents`, {
       method: "POST",
       headers: s.headers,
       body: JSON.stringify({
@@ -6433,10 +6428,9 @@ describe("Responsibilities", () => {
     });
     expect(created.status).toBe(201);
     const { id } = (await created.json()) as { id: string };
-    const shown = await app.request(
-      `${apiOrigin}/api/me/responsibilities/${id}`,
-      { headers: { cookie: s.cookie } },
-    );
+    const shown = await app.request(`${apiOrigin}/api/me/agents/${id}`, {
+      headers: { cookie: s.cookie },
+    });
 
     expect(scheduled).toContain(`create ${id}`);
     expect(shown.status).toBe(200);
@@ -6471,9 +6465,9 @@ describe("Responsibilities", () => {
   });
 
   it("pauses, resumes and ends through its Schedule, and lists it with its state", async () => {
-    const s = await withCourse("responsibility-control");
+    const s = await withCourse("agent-control");
     const { id } = (await (
-      await app.request(`${apiOrigin}/api/me/responsibilities`, {
+      await app.request(`${apiOrigin}/api/me/agents`, {
         method: "POST",
         headers: s.headers,
         body: JSON.stringify({
@@ -6483,13 +6477,13 @@ describe("Responsibilities", () => {
       })
     ).json()) as { id: string };
     const control = (action: string) =>
-      app.request(`${apiOrigin}/api/me/responsibilities/${id}/${action}`, {
+      app.request(`${apiOrigin}/api/me/agents/${id}/${action}`, {
         method: "POST",
         headers: s.headers,
       });
     const shown = async () =>
       (await (
-        await app.request(`${apiOrigin}/api/me/responsibilities/${id}`, {
+        await app.request(`${apiOrigin}/api/me/agents/${id}`, {
           headers: { cookie: s.cookie },
         })
       ).json()) as object;
@@ -6512,7 +6506,7 @@ describe("Responsibilities", () => {
       `unpause ${id}`,
       `delete ${id}`,
     ]);
-    const listed = await app.request(`${apiOrigin}/api/me/responsibilities`, {
+    const listed = await app.request(`${apiOrigin}/api/me/agents`, {
       headers: { cookie: s.cookie },
     });
     expect(await listed.json()).toEqual([
@@ -6527,8 +6521,8 @@ describe("Responsibilities", () => {
     ]);
   });
 
-  it("show on Home as Agent work: the Approvals waiting first, then each Responsibility", async () => {
-    const asked = await askedForApproval("responsibility-home");
+  it("show on Home as Agent work: the Approvals waiting first, then each Agent", async () => {
+    const asked = await askedForApproval("agent-home");
 
     const home = await app.request(`${apiOrigin}/api/me/home`, {
       headers: { cookie: asked.cookie },
@@ -6543,8 +6537,8 @@ describe("Responsibilities", () => {
           expiresAt: asked.asking.expiresAt.toISOString(),
         },
         {
-          kind: "responsibility",
-          id: asked.responsibilityId,
+          kind: "agent",
+          id: asked.agentId,
           preset: "keep_course_organized",
           course: "Analysis I",
           exam: null,
@@ -6555,10 +6549,10 @@ describe("Responsibilities", () => {
   });
 
   it("shows its recent Actions on its screen, each as the exact Action", async () => {
-    const asked = await askedForApproval("responsibility-recent");
+    const asked = await askedForApproval("agent-recent");
 
     const shown = await app.request(
-      `${apiOrigin}/api/me/responsibilities/${asked.responsibilityId}`,
+      `${apiOrigin}/api/me/agents/${asked.agentId}`,
       { headers: { cookie: asked.cookie } },
     );
 
@@ -6590,7 +6584,7 @@ describe("Responsibilities", () => {
 
 describe("'prepare me for this exam'", () => {
   it("is delegated for one exam, which its screen and the list name, and never for other work", async () => {
-    const s = await withCourse("responsibility-exam");
+    const s = await withCourse("agent-exam");
     const exam = await facts.enterObligation(
       principal.fromSession({ studentId: await studentId(s.cookie) }),
       {
@@ -6603,7 +6597,7 @@ describe("'prepare me for this exam'", () => {
     );
     if (exam.status !== "ok") throw new Error(exam.status);
     const delegate = (obligationId: string) =>
-      app.request(`${apiOrigin}/api/me/responsibilities`, {
+      app.request(`${apiOrigin}/api/me/agents`, {
         method: "POST",
         headers: s.headers,
         body: JSON.stringify({ preset: "prepare_for_exam", obligationId }),
@@ -6614,17 +6608,16 @@ describe("'prepare me for this exam'", () => {
     expect(created.status).toBe(201);
     const { id } = (await created.json()) as { id: string };
 
-    const shown = await app.request(
-      `${apiOrigin}/api/me/responsibilities/${id}`,
-      { headers: { cookie: s.cookie } },
-    );
+    const shown = await app.request(`${apiOrigin}/api/me/agents/${id}`, {
+      headers: { cookie: s.cookie },
+    });
     expect(await shown.json()).toMatchObject({
       preset: "prepare_for_exam",
       course: { id: s.courseId, title: "Analysis I" },
       exam: { id: exam.id, title: "Klausur" },
       grants: ["studyBlock.create", "studyBlock.move"],
     });
-    const listed = await app.request(`${apiOrigin}/api/me/responsibilities`, {
+    const listed = await app.request(`${apiOrigin}/api/me/agents`, {
       headers: { cookie: s.cookie },
     });
     expect(await listed.json()).toEqual([
@@ -6640,7 +6633,7 @@ describe("'prepare me for this exam'", () => {
     expect(((await home.json()) as { agentWork: unknown[] }).agentWork).toEqual(
       [
         {
-          kind: "responsibility",
+          kind: "agent",
           id,
           preset: "prepare_for_exam",
           course: "Analysis I",
@@ -6709,7 +6702,7 @@ describe("a Briefing's Approvals", () => {
         items: {
           interventions: [],
           approvals: [asked.asking.actionId],
-          responsibilities: [],
+          agents: [],
         },
       },
     });

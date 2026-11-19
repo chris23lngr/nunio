@@ -1,10 +1,10 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
+import { scopeNames } from "./agents.js";
 import type { AppBindings } from "./app.js";
 import { describeAction } from "./approvals.js";
 import { errors, json, student } from "./outcomes.js";
 import { Tradeoff } from "./plan.js";
-import { scopeNames } from "./responsibilities.js";
 import { ArtifactSummary, listArtifacts } from "./study.js";
 
 const Attention = z.discriminatedUnion("kind", [
@@ -71,7 +71,7 @@ const HomeView = z
             expiresAt: z.date(),
           }),
           z.object({
-            kind: z.literal("responsibility"),
+            kind: z.literal("agent"),
             id: z.string(),
             preset: z.enum(["keep_course_organized", "prepare_for_exam"]),
             course: z.string().nullable(),
@@ -84,7 +84,7 @@ const HomeView = z
         ]),
       )
       .describe(
-        "Approvals the Agent is waiting for first, then each Responsibility the student delegated.",
+        "Approvals waiting for the student first, then each Agent the student delegated.",
       ),
   })
   .openapi("Home");
@@ -107,7 +107,7 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
         c.get("facts").review(p),
         c.get("sources").list(p),
         c.get("delegation").history(p, { status: "awaiting_approval" }),
-        c.get("responsibilities").list(p),
+        c.get("agents").list(p),
       ]);
       const now = new Date();
       const agentWork = [
@@ -123,7 +123,7 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
         ...delegated.map((r) => {
           const { course, exam } = scopeNames(review, r.scope);
           return {
-            kind: "responsibility" as const,
+            kind: "agent" as const,
             id: r.id,
             preset: r.preset,
             course: course?.title ?? null,

@@ -1,6 +1,6 @@
 # Deleting a Course keeps its Sources
 
-Deleting a Course removes the Course and everything that exists only within it: its Obligations, Facts, Corrections, Tasks, Study Blocks, Estimates and Priority. Its Responsibilities are Ended. Its Sources stay, and Chats and Projects lose only their link to it. A later reading of a remaining Source can therefore propose the Course again. That is intended: Reject is how the student keeps a Course away, and Archive is how they stop nunio working on one without losing anything.
+Deleting a Course removes the Course and everything that exists only within it: its Obligations, Facts, Corrections, Tasks, Study Blocks, Estimates and Priority. Its Agents are Ended. Its Sources stay, and Chats and Projects lose only their link to it. A later reading of a remaining Source can therefore propose the Course again. That is intended: Reject is how the student keeps a Course away, and Archive is how they stop nunio working on one without losing anything.
 
 ## Considered Options
 

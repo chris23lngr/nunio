@@ -61,7 +61,7 @@ model Delivery {
   @@map("delivery")
 }
 
-/// A scheduled summary, never edited once made: which Interventions, Approvals and Responsibilities it bundled.
+/// A scheduled summary, never edited once made: which Interventions, Approvals and Agents it bundled.
 model Briefing {
   id        String   @id
   studentId String

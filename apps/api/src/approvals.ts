@@ -17,7 +17,7 @@ const Approval = z
       .string()
       .describe("Sent back unchanged to approve exactly this Action."),
     expiresAt: z.date(),
-    responsibility: z.object({ id: z.string(), preset: z.string() }).nullable(),
+    agent: z.object({ id: z.string(), preset: z.string() }).nullable(),
   })
   .openapi("Approval");
 
@@ -164,9 +164,9 @@ async function approvalsOf(c: Context<AppBindings>, p: Principal) {
   const plan = await c.get("plan").view(p);
   const presets = new Map<string, string>();
   for (const id of new Set(
-    asking.flatMap((a) => (a.responsibilityId ? [a.responsibilityId] : [])),
+    asking.flatMap((a) => (a.agentId ? [a.agentId] : [])),
   )) {
-    const r = await c.get("responsibilities").view(p, id);
+    const r = await c.get("agents").view(p, id);
     if (r) presets.set(id, r.preset);
   }
   return asking.map((a: ActionRecord) => ({
@@ -174,10 +174,10 @@ async function approvalsOf(c: Context<AppBindings>, p: Principal) {
     action: describeAction(plan, a.kind, a.args),
     fingerprint: a.approval!.fingerprint,
     expiresAt: a.approval!.expiresAt,
-    responsibility: a.responsibilityId
+    agent: a.agentId
       ? {
-          id: a.responsibilityId,
-          preset: presets.get(a.responsibilityId) ?? "",
+          id: a.agentId,
+          preset: presets.get(a.agentId) ?? "",
         }
       : null,
   }));

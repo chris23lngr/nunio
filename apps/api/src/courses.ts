@@ -182,7 +182,7 @@ export function registerCourseRoutes(routes: OpenAPIHono<AppBindings>) {
               .number()
               .int()
               .describe("Those still ahead, which archiving removes."),
-            responsibilities: z.number().int(),
+            agents: z.number().int(),
           }),
           "Counts for the student to confirm.",
         ),
@@ -203,8 +203,8 @@ export function registerCourseRoutes(routes: OpenAPIHono<AppBindings>) {
         path: `/api/me/courses/{id}/${action}`,
         description:
           action === "archive"
-            ? "nunio stops planning and acting for the Course: its future Study Blocks go and its Responsibilities are Paused."
-            : "Its Obligations return to the Plan; Paused Responsibilities stay Paused.",
+            ? "nunio stops planning and acting for the Course: its future Study Blocks go and its Agents are Paused."
+            : "Its Obligations return to the Plan; Paused Agents stay Paused.",
         request: { params: id },
         responses: { 200: Done, ...outcomes },
       }),
@@ -274,7 +274,7 @@ export function registerCourseRoutes(routes: OpenAPIHono<AppBindings>) {
       method: "delete",
       path: "/api/me/courses/{id}",
       description:
-        "Removes the Course and everything only in it, ending its Responsibilities; its Sources stay.",
+        "Removes the Course and everything only in it, ending its Agents; its Sources stay.",
       request: { params: id },
       responses: { 200: Done, ...outcomes },
     }),

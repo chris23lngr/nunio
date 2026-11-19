@@ -12,24 +12,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useId } from "react";
 import { useAppForm } from "@/lib/form";
-import { delegateResponsibility } from "./api/responsibility-mutations";
-import {
-  delegableCourseQueries,
-  responsibilityListQueries,
-} from "./api/responsibility-queries";
+import { delegateAgent } from "./api/agent-mutations";
+import { agentListQueries, delegableCourseQueries } from "./api/agent-queries";
 import { nameOf, pausedBecause } from "./name";
 
 const states = { active: "active", paused: "paused", ended: "ended" } as const;
 
 /** What the student delegated to nunio, and delegating one more Course or exam. */
-export function ResponsibilitiesScreen({ apiOrigin }: { apiOrigin: string }) {
+export function AgentsScreen({ apiOrigin }: { apiOrigin: string }) {
   const id = useId();
   const queryClient = useQueryClient();
-  const delegated = useQuery(responsibilityListQueries(apiOrigin)).data ?? [];
+  const delegated = useQuery(agentListQueries(apiOrigin)).data ?? [];
   const courses = useQuery(delegableCourseQueries(apiOrigin)).data ?? [];
   // One mutation each, so each form shows only its own error.
-  const create = useMutation(delegateResponsibility(apiOrigin, queryClient));
-  const prepare = useMutation(delegateResponsibility(apiOrigin, queryClient));
+  const create = useMutation(delegateAgent(apiOrigin, queryClient));
+  const prepare = useMutation(delegateAgent(apiOrigin, queryClient));
   const exams = courses.flatMap((course) =>
     course.obligations
       .filter((o) => o.kind === "exam" && o.state !== "rejected")
@@ -64,13 +61,12 @@ export function ResponsibilitiesScreen({ apiOrigin }: { apiOrigin: string }) {
   });
 
   return (
-    <section aria-label="Responsibilities">
-      <h1>Responsibilities</h1>
+    <section aria-label="Agents">
+      <h1>Agents</h1>
       <ul>
         {delegated.map((r) => (
           <li key={r.id}>
-            <Link href={`/responsibilities/${r.id}`}>{nameOf(r)}</Link> (
-            {states[r.state]}
+            <Link href={`/agents/${r.id}`}>{nameOf(r)}</Link> ({states[r.state]}
             {r.pausedBy &&
               pausedBecause[r.pausedBy] &&
               `, ${pausedBecause[r.pausedBy]}`}

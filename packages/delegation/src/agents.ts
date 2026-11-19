@@ -6,18 +6,18 @@ import type { Principal, Transaction } from "./principal.js";
 import { principal as mint, withOwner } from "./principal.js";
 
 /**
- * The Temporal Schedules that start a Responsibility's Runs (ADR-0006). A port, because `delegation` never imports
+ * The Temporal Schedules that start an Agent's Runs (ADR-0006). A port, because `delegation` never imports
  * Temporal; each call must be idempotent, so a repeated pause or end is harmless.
  */
 export interface Schedules {
   create(r: {
-    responsibilityId: string;
+    agentId: string;
     studentId: string;
     timeZone: string;
   }): Promise<void>;
-  pause(responsibilityId: string): Promise<void>;
-  unpause(responsibilityId: string): Promise<void>;
-  delete(responsibilityId: string): Promise<void>;
+  pause(agentId: string): Promise<void>;
+  unpause(agentId: string): Promise<void>;
+  delete(agentId: string): Promise<void>;
 }
 
 /** The pilot presets and the Grants each holds on its scope. */
@@ -27,21 +27,19 @@ const presets = {
 };
 export type Preset = keyof typeof presets;
 
-/** What a Responsibility covers: one Course, or one exam. Its Grants and its Runs' proposals take exactly this. */
-export type ResponsibilityScope =
-  | { courseId: string }
-  | { obligationId: string };
+/** What an Agent covers: one Course, or one exam. Its Grants and its Runs' proposals take exactly this. */
+export type AgentScope = { courseId: string } | { obligationId: string };
 /** The scope as stored: an exam's row also keeps the exam's Course, for showing. */
 const scopeOf = (r: {
   courseId: string | null;
   obligationId: string | null;
-}): ResponsibilityScope =>
+}): AgentScope =>
   r.obligationId ? { obligationId: r.obligationId } : { courseId: r.courseId! };
 
-/** Why a Responsibility is Paused: by the student, by exhausting its Budget, or by its Course being Archived. */
+/** Why an Agent is Paused: by the student, by exhausting its Budget, or by its Course being Archived. */
 export type PausedBy = "student" | "budget" | "course_archived";
 
-/** nunio no longer acts for an Archived Course, so no Responsibility on it may run. */
+/** nunio no longer acts for an Archived Course, so no Agent on it may run. */
 const isCourseArchived = async (tx: Transaction, courseId: string | null) =>
   Boolean(
     courseId &&
@@ -51,7 +49,7 @@ const isCourseArchived = async (tx: Transaction, courseId: string | null) =>
   );
 
 /** Ongoing delegations the student owns: records plus the Schedules that start their Runs. */
-export function createResponsibilities({
+export function createAgents({
   db,
   schedules,
   clock,
@@ -63,21 +61,19 @@ export function createResponsibilities({
 }) {
   const scheduled = () => {
     if (!schedules)
-      throw new Error(
-        "createResponsibilities needs schedules to change a Responsibility",
-      );
+      throw new Error("createAgents needs schedules to change an Agent");
     return schedules;
   };
   // Re-read committed authority under a lock so a delayed command cannot overwrite a newer Schedule state.
   const syncSchedule = (p: Principal, id: string) =>
     withOwner(db, p, async (tx) => {
-      await tx.$executeRaw`SELECT 1 FROM "responsibility" WHERE "id" = ${id} FOR UPDATE`;
-      const r = await tx.responsibility.findUnique({ where: { id } });
+      await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
+      const r = await tx.agent.findUnique({ where: { id } });
       if (r?.state === "paused") await scheduled().pause(id);
       else if (r?.state === "active") await scheduled().unpause(id);
       else if (r?.state === "ended") await scheduled().delete(id);
     });
-  /** Moves a Course's Responsibilities in `from` to a new state, then syncs each one's Schedule after the commit. */
+  /** Moves a Course's Agents in `from` to a new state, then syncs each one's Schedule after the commit. */
   const changeForCourse = async (
     p: Principal,
     courseId: string,
@@ -89,15 +85,15 @@ export function createResponsibilities({
     if (p.kind !== "student") return;
     const ids = await withOwner(db, p, async (tx) => {
       const ids = (
-        await tx.responsibility.findMany({
+        await tx.agent.findMany({
           where: { courseId, state: from },
           select: { id: true },
         })
       ).map((r) => r.id);
       const data = to();
-      await tx.responsibility.updateMany({ where: { id: { in: ids } }, data });
+      await tx.agent.updateMany({ where: { id: { in: ids } }, data });
       if (data.state === "ended")
-        await tx.grant.deleteMany({ where: { responsibilityId: { in: ids } } });
+        await tx.grant.deleteMany({ where: { agentId: { in: ids } } });
       return ids;
     });
     for (const id of ids) await syncSchedule(p, id);
@@ -142,7 +138,7 @@ export function createResponsibilities({
           return { status: "course_archived" } as const;
         const { scope } = found;
         const id = randomUUID();
-        await tx.responsibility.create({
+        await tx.agent.create({
           data: {
             id,
             studentId,
@@ -156,15 +152,15 @@ export function createResponsibilities({
           data: presets[input.preset].map((kind) => ({
             id: randomUUID(),
             studentId,
-            responsibilityId: id,
+            agentId: id,
             kind,
             ...scope,
           })),
         });
         const timeZone =
           (await tx.planPreference.findFirst())?.timeZone ?? "Europe/Berlin";
-        // Inside the transaction: if the Schedule cannot be created, no Responsibility is recorded.
-        await scheduled().create({ responsibilityId: id, studentId, timeZone });
+        // Inside the transaction: if the Schedule cannot be created, no Agent is recorded.
+        await scheduled().create({ agentId: id, studentId, timeZone });
         return { status: "ok", id } as const;
       });
     },
@@ -173,13 +169,12 @@ export function createResponsibilities({
     async pause(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
       const found = await withOwner(db, p, async (tx) => {
-        await tx.responsibility.updateMany({
+        await tx.agent.updateMany({
           where: { id, state: "active" },
           data: { state: "paused", pausedBy: "student" },
         });
         return (
-          (await tx.responsibility.findUnique({ where: { id } }))?.state ===
-          "paused"
+          (await tx.agent.findUnique({ where: { id } }))?.state === "paused"
         );
       });
       if (!found) return { status: "gone" } as const;
@@ -188,20 +183,19 @@ export function createResponsibilities({
       return { status: "ok" } as const;
     },
 
-    /** Only the student resumes a Paused Responsibility, whoever paused it, and not while its Course is Archived. */
+    /** Only the student resumes a Paused Agent, whoever paused it, and not while its Course is Archived. */
     async resume(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
       const found = await withOwner(db, p, async (tx) => {
-        const r = await tx.responsibility.findUnique({ where: { id } });
+        const r = await tx.agent.findUnique({ where: { id } });
         if (r && (await isCourseArchived(tx, r.courseId)))
           return "course_archived";
-        await tx.responsibility.updateMany({
+        await tx.agent.updateMany({
           where: { id, state: "paused" },
           data: { state: "active", pausedBy: null },
         });
         return (
-          (await tx.responsibility.findUnique({ where: { id } }))?.state ===
-          "active"
+          (await tx.agent.findUnique({ where: { id } }))?.state === "active"
         );
       });
       if (found === "course_archived")
@@ -215,19 +209,19 @@ export function createResponsibilities({
     async end(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
       const found = await withOwner(db, p, async (tx) => {
-        await tx.responsibility.updateMany({
+        await tx.agent.updateMany({
           where: { id, state: { not: "ended" } },
           data: { state: "ended", endedAt: clock.now() },
         });
-        await tx.grant.deleteMany({ where: { responsibilityId: id } });
-        return Boolean(await tx.responsibility.findUnique({ where: { id } }));
+        await tx.grant.deleteMany({ where: { agentId: id } });
+        return Boolean(await tx.agent.findUnique({ where: { id } }));
       });
       if (!found) return { status: "gone" } as const;
       await syncSchedule(p, id);
       return { status: "ok" } as const;
     },
 
-    /** Pauses every active Responsibility on an Archived Course; only the student resumes them. */
+    /** Pauses every active Agent on an Archived Course; only the student resumes them. */
     async pauseForCourse(p: Principal, courseId: string) {
       await changeForCourse(p, courseId, "active", () => ({
         state: "paused",
@@ -235,7 +229,7 @@ export function createResponsibilities({
       }));
     },
 
-    /** Ends every Responsibility on a Course being deleted; their Grants go and their history remains. */
+    /** Ends every Agent on a Course being deleted; their Grants go and their history remains. */
     async endForCourse(p: Principal, courseId: string) {
       await changeForCourse(p, courseId, { not: "ended" }, () => ({
         state: "ended",
@@ -243,25 +237,25 @@ export function createResponsibilities({
       }));
     },
 
-    /** The student's Responsibilities, newest first, Ended ones included: their history remains. */
+    /** The student's Agents, newest first, Ended ones included: their history remains. */
     async list(p: Principal) {
       return withOwner(db, p, async (tx) =>
-        (
-          await tx.responsibility.findMany({ orderBy: { createdAt: "desc" } })
-        ).map((r) => ({
-          id: r.id,
-          preset: r.preset as Preset,
-          scope: scopeOf(r),
-          state: r.state as "active" | "paused" | "ended",
-          pausedBy: r.pausedBy as PausedBy | null,
-        })),
+        (await tx.agent.findMany({ orderBy: { createdAt: "desc" } })).map(
+          (r) => ({
+            id: r.id,
+            preset: r.preset as Preset,
+            scope: scopeOf(r),
+            state: r.state as "active" | "paused" | "ended",
+            pausedBy: r.pausedBy as PausedBy | null,
+          }),
+        ),
       );
     },
 
     /** Its scope, state, Grants, and usage against its Budget; null when it is not the student's. */
     async view(p: Principal, id: string) {
       return withOwner(db, p, async (tx) => {
-        const r = await tx.responsibility.findUnique({
+        const r = await tx.agent.findUnique({
           where: { id },
           include: { grants: true },
         });
@@ -286,51 +280,48 @@ export function createResponsibilities({
       });
     },
 
-    /** The scope of the Responsibility a Run belongs to; null for a Run without one. */
-    async scopeOfRun(runId: string): Promise<ResponsibilityScope | null> {
+    /** The scope of the Agent a Run belongs to; null for a Run without one. */
+    async scopeOfRun(runId: string): Promise<AgentScope | null> {
       return withOwner(db, mint.fromRun(runId), async (tx) => {
         const run = await tx.run.findUnique({
           where: { id: runId },
-          include: { responsibility: true },
+          include: { agent: true },
         });
-        return run?.responsibility ? scopeOf(run.responsibility) : null;
+        return run?.agent ? scopeOf(run.agent) : null;
       });
     },
 
-    /** Records a Run of an active Responsibility, as its Schedule fires; null when it is not active. */
+    /** Records a Run of an active Agent, as its Schedule fires; null when it is not active. */
     async startRun({
       studentId,
-      responsibilityId,
+      agentId,
       runId,
       workflowId,
     }: {
       studentId: string;
-      responsibilityId: string;
+      agentId: string;
       /** Stable across retries of the workflow's startup Activity. */
       runId: string;
       /** The workflow to signal once the student decides on one of the Run's Actions. */
       workflowId: string;
     }) {
       return withOwner(db, mint.fromSession({ studentId }), async (tx) => {
-        await tx.$executeRaw`SELECT 1 FROM "responsibility" WHERE "id" = ${responsibilityId} FOR UPDATE`;
+        await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${agentId} FOR UPDATE`;
         const existing = await tx.run.findUnique({ where: { id: runId } });
-        if (existing)
-          return existing.responsibilityId === responsibilityId
-            ? existing.id
-            : null;
-        const responsibility = await tx.responsibility.findUnique({
-          where: { id: responsibilityId },
+        if (existing) return existing.agentId === agentId ? existing.id : null;
+        const agent = await tx.agent.findUnique({
+          where: { id: agentId },
         });
-        if (responsibility?.state !== "active") return null;
+        if (agent?.state !== "active") return null;
         const run = await tx.run.create({
-          data: { id: runId, studentId, responsibilityId, workflowId },
+          data: { id: runId, studentId, agentId, workflowId },
         });
         return run.id;
       });
     },
 
     /**
-     * Records a Run the student started, from a Chat or elsewhere: it has no Responsibility and so no Grants (ADR-0001).
+     * Records a Run the student started, from a Chat or elsewhere: it has no Agent and so no Grants (ADR-0001).
      * Idempotent on `runId`; "gone" for a Chat that is not the student's, or a `runId` already used otherwise.
      */
     async startStudentRun(
@@ -342,7 +333,7 @@ export function createResponsibilities({
       }: { runId: string; workflowId: string; chatId?: string },
     ): Promise<{ status: "ok" | "gone" }> {
       if (student.kind !== "student")
-        throw new Error("Only a student starts a Run without a Responsibility");
+        throw new Error("Only a student starts a Run without an Agent");
       return withOwner(db, student, async (tx, studentId) => {
         // RLS hides another student's Chat, so it counts as gone like one that never existed.
         if (chatId && !(await tx.chat.findUnique({ where: { id: chatId } })))
@@ -355,7 +346,7 @@ export function createResponsibilities({
         const run = await tx.run.findUnique({ where: { id: runId } });
         return {
           status:
-            run && !run.responsibilityId && run.chatId === (chatId ?? null)
+            run && !run.agentId && run.chatId === (chatId ?? null)
               ? "ok"
               : "gone",
         };
@@ -363,4 +354,4 @@ export function createResponsibilities({
     },
   };
 }
-export type Responsibilities = ReturnType<typeof createResponsibilities>;
+export type Agents = ReturnType<typeof createAgents>;

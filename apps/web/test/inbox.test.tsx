@@ -194,7 +194,7 @@ test("a Briefing lists what it bundled when it was made", async () => {
           madeAt: "2026-11-10T06:05:00.000Z",
           interventions: [expired.id],
           approvals: [],
-          responsibilities: [
+          agents: [
             {
               id: "r-1",
               preset: "keep_course_organized",
@@ -253,7 +253,7 @@ test("a Briefing says where each of its Approvals stands now, and keeps what is 
             approval("a-3", "denied"),
             approval("a-4", "expired"),
           ],
-          responsibilities: [],
+          agents: [],
         },
       ],
     }),

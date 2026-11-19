@@ -40,7 +40,7 @@ We decided to close this gap for all Course work without an Obligation, with lec
 
 - **A time budget per Course** ("2 hours a week for OM"): needs no Tasks, but a Study Block would have to belong to a Course, and missed follow-ups would not show.
 - **A Routine per Course and kind of event** (lecture, tutorial, lab): one setting per Course, but the model would have to classify the kind, and nunio would need a fixed list of kinds. A Routine per Event Series needs neither.
-- **Routines inside `keep_course_organized`:** would reuse the daily Run, but lecture follow-up would need a delegation the student may not want. A Routine only adds Tasks. Placing their Study Blocks without asking still needs the Responsibility.
+- **Routines inside `keep_course_organized`:** would reuse the daily Run, but lecture follow-up would need a delegation the student may not want. A Routine only adds Tasks. Placing their Study Blocks without asking still needs the Agent.
 - **Tasks for the whole Semester at once:** the Plan would be complete at once, but every cancellation or Routine change would rework many Tasks.
 - **Following up within a fixed span after each event:** simpler, but it fits courses that meet twice a week badly.
 - **A calendar Connection now:** would read and write the student's real calendar. It still waits for the pilot tool inventory. Course assignment and Routines work on Fixed Events from any origin, so a Connection only feeds them better data.

@@ -81,7 +81,7 @@ const covers = {
   // A Rebalance moves a block the student placed or moved only with their Approval.
   "studyBlock.move": (scope: GrantScope, _: unknown, block: BlockSubject) =>
     inScope(scope, block) && block.placedBy === "nunio",
-  // No Responsibility adds or reopens Tasks: only the student, from a Chat, with their Approval (ADR-0022).
+  // No Agent adds or reopens Tasks: only the student, from a Chat, with their Approval (ADR-0022).
   "task.create": () => false,
   "task.reopen": () => false,
   // Only the student removes a block: no Grant covers it (ADR-0021).
@@ -166,7 +166,7 @@ export const definitions = {
 };
 
 export type Kind = keyof typeof definitions;
-/** What a model or UI may supply: no actor, Grant, or Responsibility fields. */
+/** What a model or UI may supply: no actor, Grant, or Agent fields. */
 export type ActionIntent = {
   [K in Kind]: { kind: K } & z.infer<(typeof schemas)[K]>;
 }[Kind];

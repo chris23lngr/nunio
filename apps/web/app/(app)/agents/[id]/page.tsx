@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ResponsibilityScreen } from "@/features/responsibilities/responsibility-screen";
+import { AgentScreen } from "@/features/agents/agent-screen";
 import { apiOrigin, getSession } from "@/lib/session";
 
-export default async function ResponsibilityPage({
+export default async function AgentPage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -14,8 +14,8 @@ export default async function ResponsibilityPage({
 
   return (
     <main>
-      <Link href="/responsibilities">All Responsibilities</Link>
-      <ResponsibilityScreen apiOrigin={apiOrigin()} id={id} />
+      <Link href="/agents">All Agents</Link>
+      <AgentScreen apiOrigin={apiOrigin()} id={id} />
     </main>
   );
 }

@@ -20,7 +20,7 @@ export type BriefingView = {
   madeAt: Date;
   interventions: string[];
   approvals: string[];
-  responsibilities: string[];
+  agents: string[];
 };
 
 export type OutreachSettings = {

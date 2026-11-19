@@ -4,7 +4,7 @@ import type { ModelConfig } from "@nunio/ai";
 import { createEmbedder, createMaker, createModels } from "@nunio/ai";
 import { createArtifacts } from "@nunio/artifacts";
 import { createPool, createPrismaClient } from "@nunio/db";
-import { createDelegation, createResponsibilities } from "@nunio/delegation";
+import { createAgents, createDelegation } from "@nunio/delegation";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createFacts, createKnowledgeReader } from "@nunio/knowledge";
 import { log } from "./log.js";
@@ -47,7 +47,7 @@ export function createArtifactActivities(
       clock,
     }),
     facts: createFacts({ db, keys, clock }),
-    responsibilities: createResponsibilities({ db, clock }),
+    agents: createAgents({ db, clock }),
     delegation,
     maker: createMaker(createModels({ ...provider, catalog })),
     clock,

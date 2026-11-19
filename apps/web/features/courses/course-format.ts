@@ -64,16 +64,16 @@ const list = (parts: string[]) =>
     ? `${parts.slice(0, -1).join(", ")} und ${parts.at(-1)}`
     : (parts[0] ?? "");
 
-/** What archiving stops: future Study Blocks go, Responsibilities pause. */
+/** What archiving stops: future Study Blocks go, Agents pause. */
 export function archiveText(impact: {
   futureStudyBlocks: number;
-  responsibilities: number;
+  agents: number;
 }) {
   const parts = [
     impact.futureStudyBlocks > 0 &&
       `${count(impact.futureStudyBlocks, "geplante Lernzeit wird", "geplante Lernzeiten werden")} entfernt`,
-    impact.responsibilities > 0 &&
-      `${count(impact.responsibilities, "laufender Auftrag an nunio wird", "laufende Aufträge an nunio werden")} pausiert`,
+    impact.agents > 0 &&
+      `${count(impact.agents, "laufender Auftrag an nunio wird", "laufende Aufträge an nunio werden")} pausiert`,
   ].filter((part): part is string => Boolean(part));
   const stops = "nunio plant und arbeitet nicht mehr für diesen Kurs.";
   return parts.length ? `${stops} ${parts.join(", und ")}.` : stops;

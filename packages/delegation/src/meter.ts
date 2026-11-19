@@ -123,30 +123,30 @@ export function createDelegation({
     async meter(p, estimate, call, { timeoutMs = 120_000 } = {}) {
       if (!aiEnabled()) return { status: "refused", reason: "ai_disabled" };
       const reservationId = randomUUID();
-      let responsibilityId: string | null = null;
+      let agentId: string | null = null;
       const refusal = await withOwner(db, p, async (tx, studentId) => {
         const denied = await accessRefusal(tx, studentId);
         if (denied) return denied;
         if (p.kind === "run") {
-          responsibilityId =
-            (await tx.run.findUnique({ where: { id: p.runId } }))
-              ?.responsibilityId ?? null;
+          agentId =
+            (await tx.run.findUnique({ where: { id: p.runId } }))?.agentId ??
+            null;
         }
-        if (responsibilityId) {
-          // One conditional UPDATE against the Budget too; its row lock serializes the Responsibility's Runs.
+        if (agentId) {
+          // One conditional UPDATE against the Budget too; its row lock serializes the Agent's Runs.
           const budgeted = await tx.$executeRaw`
-            UPDATE "responsibility" SET "heldMicroUsd" = "heldMicroUsd" + ${estimate.microUsd}
-            WHERE "id" = ${responsibilityId} AND "state" = 'active'
+            UPDATE "agent" SET "heldMicroUsd" = "heldMicroUsd" + ${estimate.microUsd}
+            WHERE "id" = ${agentId} AND "state" = 'active'
               AND "budgetMicroUsd" - "usedMicroUsd" - "heldMicroUsd" >= ${estimate.microUsd}`;
           if (budgeted === 0) {
-            const { state } = await tx.responsibility.findUniqueOrThrow({
-              where: { id: responsibilityId },
+            const { state } = await tx.agent.findUniqueOrThrow({
+              where: { id: agentId },
               select: { state: true },
             });
             if (state !== "active") return state;
             // Budget exhaustion pauses in the reserving transaction; only the student resumes it.
-            await tx.responsibility.update({
-              where: { id: responsibilityId },
+            await tx.agent.update({
+              where: { id: agentId },
               data: { state: "paused", pausedBy: "budget" },
             });
             return "budget_exhausted";
@@ -158,26 +158,26 @@ export function createDelegation({
           WHERE "studentId" = ${studentId}
             AND "limitMicroUsd" - "usedMicroUsd" - "heldMicroUsd" >= ${estimate.microUsd}`;
         if (reserved === 0) {
-          if (responsibilityId) {
-            await tx.responsibility.update({
-              where: { id: responsibilityId },
+          if (agentId) {
+            await tx.agent.update({
+              where: { id: agentId },
               data: { heldMicroUsd: { decrement: estimate.microUsd } },
             });
           }
           return "allowance_exhausted";
         }
         await tx.$executeRaw`
-          INSERT INTO "usage_reservation" ("id", "studentId", "estimateMicroUsd", "responsibilityId")
-          VALUES (${reservationId}, ${studentId}, ${estimate.microUsd}, ${responsibilityId})`;
+          INSERT INTO "usage_reservation" ("id", "studentId", "estimateMicroUsd", "agentId")
+          VALUES (${reservationId}, ${studentId}, ${estimate.microUsd}, ${agentId})`;
         return undefined;
       });
       if (refusal) return { status: "refused", reason: refusal };
       const settle = (usage: Usage, status: "settled" | "released") =>
         withOwner(db, p, async (tx, studentId) => {
-          // The Responsibility before the Allowance, in the order reserving locks them, so the two never deadlock.
-          if (responsibilityId) {
-            await tx.responsibility.update({
-              where: { id: responsibilityId },
+          // The Agent before the Allowance, in the order reserving locks them, so the two never deadlock.
+          if (agentId) {
+            await tx.agent.update({
+              where: { id: agentId },
               data: {
                 heldMicroUsd: { decrement: estimate.microUsd },
                 usedMicroUsd: { increment: usage.microUsd },

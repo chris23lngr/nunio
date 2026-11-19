@@ -59,7 +59,7 @@ Research date: 2026-10-29. Inputs: [product brief](../product-brief.md), [durabl
 These are **proposals and inferences** drawn from W1–W5. They are not tested.
 
 - **It fits these needs:** durable approval waits (hooks), arbitrary timers (`sleep`), cancellation (run-level plus cooperative `AbortSignal`), and stable step IDs for provider idempotency keys. Delivery underneath is at-least-once (V9), the same contract as Temporal Activities. The outbox, reconciliation, and `outcome_unknown` invariants in [durable-ai.md](durable-ai.md) still apply unchanged.
-- **Mismatch for long-lived responsibilities.** A run keeps executing its original deployment's code (W1). Semester-long runs would keep old code, including unfixed bugs, alive unless restarted at checkpoints or started with `deploymentId: 'latest'`. Temporal has the same problem, solved through patching or worker versioning.
+- **Mismatch for long-lived Agents.** A run keeps executing its original deployment's code (W1). Semester-long runs would keep old code, including unfixed bugs, alive unless restarted at checkpoints or started with `deploymentId: 'latest'`. Temporal has the same problem, solved through patching or worker versioning.
 - **EU residency caveats.**
   - Start every run with an EU `region` on v5.
   - Hook records default to `iad1`, and run metadata goes to observability systems that are not region-pinned (W2).
@@ -96,7 +96,7 @@ These are **proposals and inferences** drawn from W1–W5. They are not tested.
   - Inspect where hook records and metadata land (W2).
   - Cancel during an in-flight step.
   - Roll back and deploy while a run sleeps (W1).
-  - Count events for a realistic responsibility against the 25k cap (W3).
+  - Count events for a realistic Agent against the 25k cap (W3).
 - Confirm with Vercel where builds, runtime logs, and observability data are processed, and review the DPA. This was not established here.
 
 ## Confidence and gaps

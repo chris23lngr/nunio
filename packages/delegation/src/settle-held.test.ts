@@ -38,7 +38,7 @@ beforeAll(async () => {
     `GRANT SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd", "updatedAt") ON "allowance" TO ${user}`,
   );
   await admin.$executeRawUnsafe(
-    `GRANT SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd") ON "responsibility" TO ${user}`,
+    `GRANT SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd") ON "agent" TO ${user}`,
   );
   const url = new URL(db.connectionString);
   url.username = user;
@@ -100,20 +100,20 @@ async function studentWithHeldCall(): Promise<{
 }
 
 describe("settle-held under a least-privilege operator role", () => {
-  it("frees a held call's estimate from the Budget of the Responsibility whose Run made it", async () => {
+  it("frees a held call's estimate from the Budget of the Agent whose Run made it", async () => {
     const { id, p } = await studentWithHeldCall();
-    const responsibilityId = randomUUID(),
+    const agentId = randomUUID(),
       runId = randomUUID();
-    await admin.responsibility.create({
+    await admin.agent.create({
       data: {
-        id: responsibilityId,
+        id: agentId,
         studentId: id,
         preset: "keep_course_organized",
         budgetMicroUsd: 500,
       },
     });
     await admin.run.create({
-      data: { id: runId, studentId: id, responsibilityId },
+      data: { id: runId, studentId: id, agentId },
     });
     const sentThenHung = (signal: AbortSignal) =>
       new Promise<never>((_, reject) =>
@@ -131,8 +131,8 @@ describe("settle-held under a least-privilege operator role", () => {
     await settleHeld(id, held.id, "0.00015");
 
     expect(
-      await admin.responsibility.findUniqueOrThrow({
-        where: { id: responsibilityId },
+      await admin.agent.findUniqueOrThrow({
+        where: { id: agentId },
       }),
     ).toMatchObject({ usedMicroUsd: 150n, heldMicroUsd: 0n });
   });

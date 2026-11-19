@@ -3,8 +3,8 @@ model UsageReservation {
   id               String            @id @default(uuid())
   studentId        String
   allowance        Allowance         @relation(fields: [studentId], references: [studentId], onDelete: Cascade)
-  /// The Responsibility whose Budget the call also counts against; null outside a Responsibility's Run.
-  responsibilityId String?
+  /// The Agent whose Budget the call also counts against; null outside an Agent's Run.
+  agentId          String?
   estimateMicroUsd BigInt
   actualMicroUsd   BigInt?
   status           ReservationStatus @default(reserved)
@@ -28,16 +28,16 @@ enum ReservationStatus {
 }
 
 /// active: may act. paused: takes no further Actions but keeps its Grants. ended: Grants gone, history kept.
-enum ResponsibilityState {
+enum AgentState {
   active
   paused
   ended
 
-  @@map("responsibility_state")
+  @@map("agent_state")
 }
 
 /// An ongoing delegation the student owns: a record plus the Temporal Schedule that starts its Runs (ADR-0006).
-model Responsibility {
+model Agent {
   id             String              @id
   studentId      String
   student        User                @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -45,7 +45,7 @@ model Responsibility {
   /// Its scope, kept after End removes its Grants: a Course, or one exam (with the exam's Course).
   courseId       String?
   obligationId   String?
-  state          ResponsibilityState @default(active)
+  state          AgentState          @default(active)
   /// Why it was Paused: by the student, or by exhausting its Budget. Only the student resumes it.
   pausedBy       String?
   /// The Budget: its cap on AI usage in micro-USD, and what its Runs have used and hold.
@@ -62,20 +62,20 @@ model Responsibility {
 
   @@unique([id, studentId])
   @@index([studentId])
-  @@map("responsibility")
+  @@map("agent")
 }
 
-/// Standing authority for one kind of Action within one Course or Obligation; Grants exist only within a Responsibility.
+/// Standing authority for one kind of Action within one Course or Obligation; Grants exist only within an Agent.
 model Grant {
   id               String         @id
   studentId        String
-  responsibilityId String
-  responsibility   Responsibility @relation(fields: [responsibilityId, studentId], references: [id, studentId], onDelete: Cascade)
+  agentId          String
+  agent            Agent          @relation(fields: [agentId, studentId], references: [id, studentId], onDelete: Cascade)
   kind             String
   courseId         String?
   obligationId     String?
 
-  @@index([responsibilityId])
+  @@index([agentId])
   @@map("grant")
 }
 
@@ -85,8 +85,8 @@ model Run {
   studentId        String
   student          User            @relation(fields: [studentId], references: [id], onDelete: Cascade)
   /// Null for a Run the student started, which has no Grants.
-  responsibilityId String?
-  responsibility   Responsibility? @relation(fields: [responsibilityId, studentId], references: [id, studentId], onDelete: Cascade)
+  agentId          String?
+  agent            Agent?          @relation(fields: [agentId, studentId], references: [id, studentId], onDelete: Cascade)
   /// The Chat a student's Run was started from, if any.
   chatId           String?
   chat             Chat?           @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)

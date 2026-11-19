@@ -84,8 +84,8 @@ export interface ActionRecord {
   /** The key it was asked under, so a Chat Action can be performed again once approved. */
   key: string;
   runId: string | null;
-  /** The Responsibility whose Run asked; null for a Chat. */
-  responsibilityId: string | null;
+  /** The Agent whose Run asked; null for a Chat. */
+  agentId: string | null;
   /** The workflow running that Run, to wake it once the student decides. */
   workflowId: string | null;
   kind: Kind;
@@ -116,7 +116,7 @@ export interface HistoryQuery {
   /** The Actions asked under these keys, such as a Chat answer's `chatId:messageId:n`. */
   keys?: string[];
   runId?: string;
-  responsibilityId?: string;
+  agentId?: string;
   status?: ActionRecord["status"];
   limit?: number;
 }
@@ -154,7 +154,7 @@ type Job = {
 type Row = NonNullable<Awaited<ReturnType<typeof findAction>>>;
 const include = {
   approval: true,
-  run: { select: { responsibilityId: true, workflowId: true } },
+  run: { select: { agentId: true, workflowId: true } },
   attempts: { orderBy: { startedAt: "asc" } },
   events: { orderBy: { at: "asc" } },
 } as const;
@@ -210,7 +210,7 @@ function recordOf(a: Row): ActionRecord {
     id: a.id,
     key: a.key,
     runId: a.runId,
-    responsibilityId: a.run?.responsibilityId ?? null,
+    agentId: a.run?.agentId ?? null,
     workflowId: a.run?.workflowId ?? null,
     kind: a.kind as Kind,
     args: a.args,
@@ -581,16 +581,16 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
                 where: { id: p.runId },
               })
             : null;
-        if (run?.responsibilityId)
-          await tx.$executeRaw`SELECT 1 FROM "responsibility" WHERE "id" = ${run.responsibilityId} FOR UPDATE`;
+        if (run?.agentId)
+          await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${run.agentId} FOR UPDATE`;
         // Read authority only after the lock, including changes committed while we waited.
-        const current = run?.responsibilityId
-          ? await tx.responsibility.findUniqueOrThrow({
-              where: { id: run.responsibilityId },
+        const current = run?.agentId
+          ? await tx.agent.findUniqueOrThrow({
+              where: { id: run.agentId },
               include: { grants: true },
             })
           : null;
-        const responsibility = current
+        const agent = current
           ? {
               state: current.state,
               grants: current.grants.map((g) => ({
@@ -616,7 +616,7 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
           subject,
           fingerprint,
           now,
-          responsibility,
+          agent,
           // Removing a block places nothing, and a Task Action has no time, so neither enters Protected Time.
           intoProtectedTime:
             intent.kind !== "studyBlock.remove" &&
@@ -855,8 +855,8 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
             ...(q.keys && { key: { in: q.keys } }),
             ...(q.runId && { runId: q.runId }),
             ...(q.status && { status: q.status }),
-            ...(q.responsibilityId && {
-              run: { responsibilityId: q.responsibilityId },
+            ...(q.agentId && {
+              run: { agentId: q.agentId },
             }),
           },
           include,

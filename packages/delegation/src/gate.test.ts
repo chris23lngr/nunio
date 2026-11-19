@@ -144,16 +144,16 @@ async function student() {
   };
 }
 
-/** A Run of a Responsibility holding the given Grants on the student's Course. */
+/** A Run of an Agent holding the given Grants on the student's Course. */
 async function run(
   s: Awaited<ReturnType<typeof student>>,
   { grants = ["studyBlock.create", "studyBlock.move"] as string[] } = {},
 ) {
-  const responsibilityId = randomUUID(),
+  const agentId = randomUUID(),
     runId = randomUUID();
-  await admin.responsibility.create({
+  await admin.agent.create({
     data: {
-      id: responsibilityId,
+      id: agentId,
       studentId: s.studentId,
       preset: "keep_course_organized",
       budgetMicroUsd: 100_000,
@@ -163,15 +163,15 @@ async function run(
     data: grants.map((kind) => ({
       id: randomUUID(),
       studentId: s.studentId,
-      responsibilityId,
+      agentId,
       kind,
       courseId: s.courseId,
     })),
   });
   await admin.run.create({
-    data: { id: runId, studentId: s.studentId, responsibilityId },
+    data: { id: runId, studentId: s.studentId, agentId },
   });
-  return { responsibilityId, runId, p: principal.fromRun(runId) };
+  return { agentId, runId, p: principal.fromRun(runId) };
 }
 
 const move = (s: { blockId: string }, startHour = 14) => ({
@@ -182,7 +182,7 @@ const move = (s: { blockId: string }, startHour = 14) => ({
 });
 
 describe("perform", () => {
-  it("acts at once on a Grant of the Run's Responsibility that covers the Action", async () => {
+  it("acts at once on a Grant of the Run's Agent that covers the Action", async () => {
     const s = await student();
     const r = await run(s);
     const { executor, dispatched } = fakeExecutor();
@@ -493,7 +493,7 @@ describe("Approval", () => {
 });
 
 describe("rechecks at dispatch", () => {
-  it("stops the next Action once the Responsibility is Paused between two", async () => {
+  it("stops the next Action once the Agent is Paused between two", async () => {
     const s = await student();
     const r = await run(s);
     const { executor, dispatched } = fakeExecutor();
@@ -502,8 +502,8 @@ describe("rechecks at dispatch", () => {
     expect(
       await g.perform(r.p, { key: `${r.runId}:1`, intent: move(s, 14) }),
     ).toMatchObject({ status: "done" });
-    await admin.responsibility.update({
-      where: { id: r.responsibilityId },
+    await admin.agent.update({
+      where: { id: r.agentId },
       data: { state: "paused", pausedBy: "student" },
     });
 
@@ -532,8 +532,8 @@ describe("rechecks at dispatch", () => {
           const [backend] = await tx.$queryRaw<
             { pid: number }[]
           >`SELECT pg_backend_pid() AS pid`;
-          await tx.responsibility.update({
-            where: { id: r.responsibilityId },
+          await tx.agent.update({
+            where: { id: r.agentId },
             data:
               change === "paused" || change === "ended"
                 ? { state: change }
@@ -544,7 +544,7 @@ describe("rechecks at dispatch", () => {
           });
           if (change === "revoked") {
             await tx.grant.deleteMany({
-              where: { responsibilityId: r.responsibilityId },
+              where: { agentId: r.agentId },
             });
           }
           markLocked(backend!.pid);
@@ -582,11 +582,11 @@ describe("rechecks at dispatch", () => {
     },
   );
 
-  it("stops a Run whose Responsibility Ended", async () => {
+  it("stops a Run whose Agent Ended", async () => {
     const s = await student();
     const r = await run(s);
-    await admin.responsibility.update({
-      where: { id: r.responsibilityId },
+    await admin.agent.update({
+      where: { id: r.agentId },
       data: { state: "ended", endedAt: now },
     });
 
@@ -768,13 +768,13 @@ describe("rechecks at dispatch", () => {
   it("lets a Restriction turn a Grant into asking, never the reverse", async () => {
     const s = await student();
     const asking = await run(s);
-    await admin.responsibility.update({
-      where: { id: asking.responsibilityId },
+    await admin.agent.update({
+      where: { id: asking.agentId },
       data: { restrictions: { alwaysAsk: ["studyBlock.move"] } },
     });
     const ungranted = await run(s, { grants: [] });
-    await admin.responsibility.update({
-      where: { id: ungranted.responsibilityId },
+    await admin.agent.update({
+      where: { id: ungranted.agentId },
       data: { restrictions: { allowedKinds: ["studyBlock.move"] } },
     });
     const g = gate(fakeExecutor().executor);
@@ -972,18 +972,18 @@ describe("history", () => {
     const r = await run(s);
     const g = gate(fakeExecutor().executor);
     await g.perform(r.p, { key: `${r.runId}:1`, intent: move(s, 14) });
-    await admin.responsibility.update({
-      where: { id: r.responsibilityId },
+    await admin.agent.update({
+      where: { id: r.agentId },
       data: { state: "paused", pausedBy: "student" },
     });
     await g.perform(r.p, { key: `${r.runId}:2`, intent: move(s, 16) });
 
     const history = await g.history(s.p, {
-      responsibilityId: r.responsibilityId,
+      agentId: r.agentId,
     });
 
     const grant = await admin.grant.findFirstOrThrow({
-      where: { responsibilityId: r.responsibilityId, kind: "studyBlock.move" },
+      where: { agentId: r.agentId, kind: "studyBlock.move" },
     });
     expect(
       history.map((a) => ({
@@ -1040,7 +1040,7 @@ describe("meter in a Run", () => {
     return { value: "ok", usage: { microUsd } };
   };
 
-  it("charges a Run's model call to its Responsibility's Budget and to the Allowance", async () => {
+  it("charges a Run's model call to its Agent's Budget and to the Allowance", async () => {
     const s = await student();
     const r = await run(s);
     const g = gate(fakeExecutor().executor);
@@ -1050,8 +1050,8 @@ describe("meter in a Run", () => {
     });
 
     expect(
-      await admin.responsibility.findUniqueOrThrow({
-        where: { id: r.responsibilityId },
+      await admin.agent.findUniqueOrThrow({
+        where: { id: r.agentId },
       }),
     ).toMatchObject({ usedMicroUsd: 1_200n, heldMicroUsd: 0n });
     expect(await g.allowance(s.p)).toEqual({
@@ -1061,7 +1061,7 @@ describe("meter in a Run", () => {
     });
   });
 
-  it("pauses the Responsibility and asks once its Budget would be exceeded, never drawing further on the Allowance", async () => {
+  it("pauses the Agent and asks once its Budget would be exceeded, never drawing further on the Allowance", async () => {
     const s = await student();
     const r = await run(s);
     const g = gate(fakeExecutor().executor);
@@ -1077,7 +1077,7 @@ describe("meter in a Run", () => {
     );
 
     expect(results.filter((result) => result.status === "ok")).toHaveLength(10);
-    // The first call over Budget pauses the Responsibility; the calls after it find it Paused.
+    // The first call over Budget pauses the Agent; the calls after it find it Paused.
     const refusals = results
       .flatMap((result) => (result.status === "refused" ? [result.reason] : []))
       .sort();
@@ -1090,8 +1090,8 @@ describe("meter in a Run", () => {
     ]);
     expect(calls).toBe(10);
     expect(
-      await admin.responsibility.findUniqueOrThrow({
-        where: { id: r.responsibilityId },
+      await admin.agent.findUniqueOrThrow({
+        where: { id: r.agentId },
       }),
     ).toMatchObject({
       state: "paused",
@@ -1104,11 +1104,11 @@ describe("meter in a Run", () => {
     ).toMatchObject({ status: "refused", reason: "paused" });
   });
 
-  it("refuses a model call in a Paused Responsibility's Run", async () => {
+  it("refuses a model call in a Paused Agent's Run", async () => {
     const s = await student();
     const r = await run(s);
-    await admin.responsibility.update({
-      where: { id: r.responsibilityId },
+    await admin.agent.update({
+      where: { id: r.agentId },
       data: { state: "paused", pausedBy: "student" },
     });
 

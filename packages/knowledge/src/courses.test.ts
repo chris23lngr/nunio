@@ -3,8 +3,8 @@ import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
-import type { Principal, Responsibilities } from "@nunio/delegation";
-import { createResponsibilities, principal } from "@nunio/delegation";
+import type { Agents, Principal } from "@nunio/delegation";
+import { createAgents, principal } from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { Courses } from "./courses.js";
@@ -18,7 +18,7 @@ let admin: PrismaClient;
 let runtime: PrismaClient;
 let courses: Courses;
 let facts: Facts;
-let responsibilities: Responsibilities;
+let agents: Agents;
 const scheduled: string[] = [];
 const now = new Date("2026-11-10T10:00:00Z");
 
@@ -35,7 +35,7 @@ beforeAll(async () => {
     }),
     clock,
   });
-  responsibilities = createResponsibilities({
+  agents = createAgents({
     db: runtime,
     clock,
     schedules: {
@@ -45,7 +45,7 @@ beforeAll(async () => {
       delete: async (id) => void scheduled.push(`delete ${id}`),
     },
   });
-  courses = createCourses({ db: runtime, clock, facts, responsibilities });
+  courses = createCourses({ db: runtime, clock, facts, agents });
 }, 180_000);
 afterAll(async () => {
   await runtime?.$disconnect();
@@ -437,7 +437,7 @@ async function block(
 }
 
 async function keepOrganized(p: Principal, courseId: string) {
-  const result = await responsibilities.create(p, {
+  const result = await agents.create(p, {
     preset: "keep_course_organized",
     courseId,
     budgetMicroUsd: 1_000_000,
@@ -446,21 +446,21 @@ async function keepOrganized(p: Principal, courseId: string) {
   return result.id;
 }
 
-it("archives a Course: its future Study Blocks go, Locked ones too, and its Responsibility is Paused until the student resumes it", async () => {
+it("archives a Course: its future Study Blocks go, Locked ones too, and its Agent is Paused until the student resumes it", async () => {
   const p = await student();
   const id = await created(p, { title: "Statistik II" });
   const exam = await entered(p, id, "exam", "Klausur", "2027-02-12");
   await block(p, exam, "2026-11-09T09:00:00Z");
   await block(p, exam, "2026-11-12T09:00:00Z");
   await block(p, exam, "2026-11-19T09:00:00Z", true);
-  const responsibility = await keepOrganized(p, id);
+  const agent = await keepOrganized(p, id);
 
   expect(await courses.impact(p, id)).toEqual({
     obligations: 1,
     tasks: 0,
     studyBlocks: 3,
     futureStudyBlocks: 2,
-    responsibilities: 1,
+    agents: 1,
   });
   expect(await courses.archive(p, id)).toEqual({ status: "ok" });
 
@@ -470,27 +470,25 @@ it("archives a Course: its future Study Blocks go, Locked ones too, and its Resp
   expect(await courses.impact(p, id)).toEqual(
     expect.objectContaining({ studyBlocks: 1, futureStudyBlocks: 0 }),
   );
-  expect(await responsibilities.view(p, responsibility)).toEqual(
+  expect(await agents.view(p, agent)).toEqual(
     expect.objectContaining({ state: "paused", pausedBy: "course_archived" }),
   );
-  expect(scheduled).toContain(`pause ${responsibility}`);
+  expect(scheduled).toContain(`pause ${agent}`);
 
   expect(await courses.unarchive(p, id)).toEqual({ status: "ok" });
   expect((await courses.list(p)).courses[0]).toEqual(
     expect.objectContaining({ archived: false }),
   );
-  expect((await responsibilities.view(p, responsibility))?.state).toBe(
-    "paused",
-  );
+  expect((await agents.view(p, agent))?.state).toBe("paused");
 });
 
-it("deletes a Course with everything only in it, ending its Responsibilities; Projects stay without it", async () => {
+it("deletes a Course with everything only in it, ending its Agents; Projects stay without it", async () => {
   const p = await student();
   const id = await created(p, { title: "Statistik II" });
   const kept = await created(p, { title: "Analysis I" });
   const exam = await entered(p, id, "exam", "Klausur", "2027-02-12");
   await block(p, exam, "2026-11-12T09:00:00Z");
-  const responsibility = await keepOrganized(p, id);
+  const agent = await keepOrganized(p, id);
   const projects = createProjects({ db: runtime });
   const project = await projects.create(p, {
     name: "Prüfungsphase",
@@ -503,7 +501,7 @@ it("deletes a Course with everything only in it, ending its Responsibilities; Pr
 
   expect((await courses.list(p)).courses.map((c) => c.id)).toEqual([kept]);
   expect(await courses.impact(p, id)).toBeNull();
-  expect((await responsibilities.view(p, responsibility))?.state).toBe("ended");
+  expect((await agents.view(p, agent))?.state).toBe("ended");
   expect(await projects.list(p)).toEqual([
     expect.objectContaining({
       id: project.id,

@@ -35,19 +35,19 @@ try {
       {
         estimateMicroUsd: bigint;
         settledAt: Date;
-        responsibilityId: string | null;
+        agentId: string | null;
       }[]
     >`
       UPDATE "usage_reservation"
       SET "status" = ${status}::"reservation_status", "actualMicroUsd" = ${actualMicroUsd},
           "settledAt" = now(), "settledBy" = ${operator}
       WHERE "id" = ${reservationId} AND "studentId" = ${studentId} AND "status" = 'held'
-      RETURNING "estimateMicroUsd", "settledAt", "responsibilityId"`;
+      RETURNING "estimateMicroUsd", "settledAt", "agentId"`;
     if (!reservation) return null;
-    // A Run's call also counts against its Responsibility's Budget; locked before the Allowance, as meter does.
-    if (reservation.responsibilityId) {
-      await tx.responsibility.update({
-        where: { id: reservation.responsibilityId },
+    // A Run's call also counts against its Agent's Budget; locked before the Allowance, as meter does.
+    if (reservation.agentId) {
+      await tx.agent.update({
+        where: { id: reservation.agentId },
         data: {
           heldMicroUsd: { decrement: reservation.estimateMicroUsd },
           usedMicroUsd: { increment: actualMicroUsd },

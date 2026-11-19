@@ -5,11 +5,7 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import type { Delegation, Principal } from "@nunio/delegation";
-import {
-  createDelegation,
-  createResponsibilities,
-  principal,
-} from "@nunio/delegation";
+import { createAgents, createDelegation, principal } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import { createSourceKeys } from "@nunio/keys";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
@@ -920,8 +916,8 @@ async function pinnedRun(
   from: Parameters<KnowledgeReader["pin"]>[1]["from"],
 ) {
   const runId = randomUUID();
-  const responsibilities = createResponsibilities({ db: runtime, clock });
-  const started = await responsibilities.startStudentRun(p, {
+  const agents = createAgents({ db: runtime, clock });
+  const started = await agents.startStudentRun(p, {
     runId,
     workflowId: `artifactRun/${runId}`,
     ...("chatId" in from ? { chatId: from.chatId } : {}),
@@ -1049,7 +1045,7 @@ it("pins a selection chosen without a Chat, once, and only from the student's ow
   ]);
 
   const unpinned = randomUUID();
-  await createResponsibilities({ db: runtime, clock }).startStudentRun(p, {
+  await createAgents({ db: runtime, clock }).startStudentRun(p, {
     runId: unpinned,
     workflowId: `artifactRun/${unpinned}`,
   });
@@ -1072,7 +1068,7 @@ it("pins a selection chosen without a Chat, once, and only from the student's ow
 it("lets only the Run itself read its scope, refuses it until pinned, and never lets a Run pin", async () => {
   const p = await student();
   const runId = randomUUID();
-  await createResponsibilities({ db: runtime, clock }).startStudentRun(p, {
+  await createAgents({ db: runtime, clock }).startStudentRun(p, {
     runId,
     workflowId: `artifactRun/${runId}`,
   });

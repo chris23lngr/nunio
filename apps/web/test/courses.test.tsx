@@ -409,7 +409,7 @@ test("archives after showing what stops, and restores without asking", async () 
       tasks: 2,
       studyBlocks: 6,
       futureStudyBlocks: 4,
-      responsibilities: 1,
+      agents: 1,
     }),
   );
   for (const action of ["archive", "unarchive"])
@@ -453,7 +453,7 @@ test("deletes after saying what goes and that the Sources stay, and rejects afte
       tasks: 2,
       studyBlocks: 6,
       futureStudyBlocks: 4,
-      responsibilities: 0,
+      agents: 0,
     }),
   );
   api.route("DELETE", `/api/me/courses/${analysis.id}`, () => {
@@ -546,7 +546,7 @@ test("says when a proposal cannot be decided, or what archiving touches cannot b
           tasks: 0,
           studyBlocks: 0,
           futureStudyBlocks: 0,
-          responsibilities: 0,
+          agents: 0,
         }),
   );
   renderScreen();
