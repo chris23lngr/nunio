@@ -238,6 +238,61 @@ const courseArtifacts = [
   lastPractisedAt: null,
   shaky: false,
 }));
+// This week's Plan: Study Blocks for an exam and one lecture, from Monday.
+const monday = -((new Date().getDay() + 6) % 7);
+const plan = {
+  obligations: [
+    {
+      id: "ob-1",
+      courseId,
+      course: coursePage.course.title,
+      title: "Klausur Operations Management",
+      kind: "exam",
+      state: "confirmed",
+      reportedSubmittedAt: null,
+      due: at(monday + 9, 9),
+      estimate: { minutes: 1200, estimatedBy: "nunio", rationale: null },
+    },
+  ],
+  tasks: [],
+  studyBlocks: [
+    [0, 14, 16],
+    [2, 9, 11],
+    [4, 16, 17],
+  ].map(([day, from, to], i) => ({
+    id: `block-${i}`,
+    work: { kind: "obligation", id: "ob-1" },
+    start: at(monday + day!, from!),
+    end: at(monday + day!, to!),
+    placedBy: "nunio",
+    locked: false,
+  })),
+  fixedEvents: [
+    {
+      id: "event-1",
+      title: "Vorlesung Analysis II",
+      start: at(monday, 10),
+      end: at(monday, 12),
+      calendarId: null,
+      seriesId: null,
+      courseId: null,
+    },
+  ],
+  eventSeries: [],
+  calendars: [],
+  priorities: [],
+  limits: {
+    preferences: {
+      timeZone: "Europe/Berlin",
+      studyFromMinute: 8 * 60,
+      studyToMinute: 20 * 60,
+      maxMinutesPerDay: 240,
+    },
+    courses: [],
+    protectedTime: [],
+  },
+  proposal: { moves: [], unplanned: [], shortfalls: [], overlaps: [] },
+};
 
 // A controlled auth boundary for browser checks; no database or live account.
 createServer((request, response) => {
@@ -313,6 +368,8 @@ createServer((request, response) => {
     response.end(JSON.stringify(graded));
   } else if (request.url === `/api/me/courses/${courseId}`) {
     response.end(JSON.stringify(coursePage));
+  } else if (request.url === "/api/me/plan") {
+    response.end(JSON.stringify(plan));
   } else if (request.url === "/api/me/artifacts") {
     response.end(JSON.stringify(courseArtifacts));
   } else if (request.url === "/health") {

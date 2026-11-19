@@ -21,11 +21,9 @@ import { planQuery } from "./api/plan-queries";
 import { CalendarEntry } from "./components/calendar-entry";
 import { DayHeader } from "./components/day-header";
 import { EntryDetails, FixedEventDetails } from "./components/entry-details";
-import { PlanLegend } from "./components/plan-legend";
 import { ProtectedTimeBlock } from "./components/protected-time-block";
 import { SuggestionsButton } from "./components/suggestions-button";
 import { SuggestionsSheet } from "./components/suggestions-sheet";
-import { TaskList } from "./components/task-list";
 import { WeekGrid } from "./components/week-grid";
 import type { DisplayOptions } from "./components/week-toolbar";
 import { WeekToolbar } from "./components/week-toolbar";
@@ -100,30 +98,6 @@ export function PlanScreen({
     ? (courses.data?.courses.find((c) => c.id === event.courseId)?.title ??
       null)
     : null;
-  const task = useMutation({
-    mutationFn: async (
-      change:
-        | { complete: string }
-        | { add: { title: string; courseId: string | null } },
-    ) => {
-      const client = createApiClient(apiOrigin);
-      const { response } =
-        "complete" in change
-          ? await client.POST("/api/me/tasks/{id}/done", {
-              params: { path: { id: change.complete } },
-              body: { done: true },
-            })
-          : await client.POST("/api/me/tasks", {
-              body: { ...change.add, obligationId: null },
-            });
-      if (!response.ok)
-        throw new Error("Die Aufgabe konnte nicht gespeichert werden.");
-    },
-    onSettled: () =>
-      queryClient.invalidateQueries({
-        queryKey: planQuery(apiOrigin).queryKey,
-      }),
-  });
   const detach = useMutation({
     mutationFn: async (id: string) => {
       const { response } = await createApiClient(apiOrigin).POST(
@@ -161,9 +135,11 @@ export function PlanScreen({
   });
 
   return (
-    <main className="relative min-h-dvh bg-white font-sans text-base-800">
-      <PageHeader>
-        <Breadcrumb>
+    // The navbar stays put; the grid fills the rest of the screen and scrolls itself.
+    <main className="flex h-dvh flex-col bg-white font-sans text-base-800">
+      <h1 className="sr-only">Dein Plan</h1>
+      <PageHeader className="static shrink-0 px-4 md:px-8">
+        <Breadcrumb className="mr-4 max-md:hidden">
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink render={<Link href="/" />}>
@@ -176,138 +152,97 @@ export function PlanScreen({
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
+        <WeekToolbar
+          week={week}
+          today={today}
+          onWeekChange={setWeek}
+          display={display}
+          onDisplayChange={setDisplay}
+        />
+        <SuggestionsButton
+          count={suggestions.length}
+          onClick={() => setSheetOpen(true)}
+        />
       </PageHeader>
-      {/* Title, toolbar and legend keep a 32px margin; the grid runs edge to edge up to 80rem. */}
-      <div className="flex flex-col items-center pt-22 pb-6">
-        <div className="flex w-full max-w-[calc(64rem+4rem)] items-center justify-between px-8">
-          <h1 className="text-2xl font-medium text-base-800">Dein Plan</h1>
-          <SuggestionsButton
-            count={suggestions.length}
-            onClick={() => setSheetOpen(true)}
+      {plan.isPending && (
+        <p className="px-4 text-sm text-base-500 md:px-8">
+          Dein Plan wird geladen …
+        </p>
+      )}
+      {plan.isError && (
+        <p role="alert" className="px-4 text-sm text-base-700 md:px-8">
+          {plan.error.message}
+        </p>
+      )}
+      {plan.data && (
+        <div className="min-h-0 flex-1 border-t border-base-200">
+          <WeekGrid
+            days={days}
+            // One shaded hour on either side of the study window.
+            fromHour={Math.max(
+              0,
+              Math.floor(plan.data.limits.preferences.studyFromMinute / 60) - 1,
+            )}
+            toHour={Math.min(
+              24,
+              Math.ceil(plan.data.limits.preferences.studyToMinute / 60) + 1,
+            )}
+            header={(day) => (
+              <DayHeader
+                date={day}
+                plannedMinutes={plannedMinutes(plan.data, day)}
+                goalMinutes={plan.data.limits.preferences.maxMinutesPerDay}
+                today={isSameDay(day, today)}
+              />
+            )}
+            background={
+              display.protectedTime
+                ? protectedRanges(plan.data, days).map((range) => ({
+                    ...range,
+                    node: <ProtectedTimeBlock />,
+                  }))
+                : []
+            }
+            entries={planEntries(plan.data, colors)
+              .filter(
+                (entry) =>
+                  (entry.kind !== "proposal" || display.suggestions) &&
+                  (entry.kind !== "fixed" || display.calendar),
+              )
+              .map((entry) => ({
+                id: entry.id,
+                start: entry.start,
+                end: entry.end,
+                render: (form) => (
+                  <div
+                    className="h-full w-full"
+                    ref={(element) => {
+                      if (element) cards.current.set(entry.id, element);
+                      else cards.current.delete(entry.id);
+                    }}
+                  >
+                    <CalendarEntry
+                      kind={entry.kind}
+                      title={entry.title}
+                      start={entry.start}
+                      end={entry.end}
+                      course={entry.course}
+                      placedByStudent={entry.placedByStudent}
+                      locked={entry.locked}
+                      selected={entry.id === selected}
+                      onSelect={
+                        entry.kind === "proposal"
+                          ? undefined
+                          : () => setSelected(entry.id)
+                      }
+                      {...form}
+                    />
+                  </div>
+                ),
+              }))}
           />
         </div>
-        <div className="h-8" />
-        <div className="w-full max-w-[calc(64rem+4rem)] px-8">
-          <WeekToolbar
-            week={week}
-            today={today}
-            onWeekChange={setWeek}
-            display={display}
-            onDisplayChange={setDisplay}
-          />
-        </div>
-        <div className="h-6" />
-        {plan.isPending && (
-          <p className="px-8 text-sm text-base-500">Dein Plan wird geladen …</p>
-        )}
-        {plan.isError && (
-          <p role="alert" className="px-8 text-sm text-base-700">
-            {plan.error.message}
-          </p>
-        )}
-        {plan.data && (
-          <div className="w-full max-w-7xl">
-            <WeekGrid
-              days={days}
-              // One shaded hour on either side of the study window.
-              fromHour={Math.max(
-                0,
-                Math.floor(plan.data.limits.preferences.studyFromMinute / 60) -
-                  1,
-              )}
-              toHour={Math.min(
-                24,
-                Math.ceil(plan.data.limits.preferences.studyToMinute / 60) + 1,
-              )}
-              header={(day) => (
-                <DayHeader
-                  date={day}
-                  plannedMinutes={plannedMinutes(plan.data, day)}
-                  goalMinutes={plan.data.limits.preferences.maxMinutesPerDay}
-                  today={isSameDay(day, today)}
-                />
-              )}
-              background={
-                display.protectedTime
-                  ? protectedRanges(plan.data, days).map((range) => ({
-                      ...range,
-                      node: <ProtectedTimeBlock />,
-                    }))
-                  : []
-              }
-              entries={planEntries(plan.data, colors)
-                .filter(
-                  (entry) =>
-                    (entry.kind !== "proposal" || display.suggestions) &&
-                    (entry.kind !== "fixed" || display.calendar),
-                )
-                .map((entry) => ({
-                  id: entry.id,
-                  start: entry.start,
-                  end: entry.end,
-                  render: (form) => (
-                    <div
-                      className="h-full w-full"
-                      ref={(element) => {
-                        if (element) cards.current.set(entry.id, element);
-                        else cards.current.delete(entry.id);
-                      }}
-                    >
-                      <CalendarEntry
-                        kind={entry.kind}
-                        title={entry.title}
-                        start={entry.start}
-                        end={entry.end}
-                        course={entry.course}
-                        placedByStudent={entry.placedByStudent}
-                        locked={entry.locked}
-                        selected={entry.id === selected}
-                        onSelect={
-                          entry.kind === "proposal"
-                            ? undefined
-                            : () => setSelected(entry.id)
-                        }
-                        {...form}
-                      />
-                    </div>
-                  ),
-                }))}
-            />
-          </div>
-        )}
-        {plan.data && (
-          <div className="mt-6 w-full max-w-[calc(64rem+4rem)] px-8">
-            <PlanLegend />
-          </div>
-        )}
-        {plan.data && (
-          <div className="mt-10 w-full max-w-[calc(64rem+4rem)] px-8">
-            <TaskList
-              tasks={plan.data.tasks
-                .filter((t) => !t.done)
-                .map((t) => {
-                  const obligation = plan.data.obligations.find(
-                    (o) => o.id === t.obligationId,
-                  );
-                  const due = t.window?.end ?? obligation?.due ?? null;
-                  return {
-                    id: t.id,
-                    title: t.title,
-                    course: t.course ?? obligation?.course ?? null,
-                    due: due ? new Date(due) : null,
-                  };
-                })}
-              courses={(courses.data?.courses ?? []).filter(
-                (c) => c.status === "accepted" && !c.archived,
-              )}
-              error={task.error?.message ?? null}
-              busy={task.isPending}
-              onComplete={(id) => task.mutate({ complete: id })}
-              onAdd={(added) => task.mutateAsync({ add: added })}
-            />
-          </div>
-        )}
-      </div>
+      )}
       <Popover
         open={details !== null || event !== null}
         onOpenChange={(open) => {
