@@ -70,3 +70,24 @@ export function agentCourseQueries(apiOrigin: string) {
     },
   });
 }
+
+export type Capability =
+  paths["/api/me/agents/capabilities"]["get"]["responses"][200]["content"]["application/json"][number];
+export type AgentCapability = Agent["capabilities"][number];
+export type ApprovalMode = AgentCapability["mode"];
+
+/** Every Capability an Agent can have, in drawer order, with the modes each allows. */
+export function capabilityQueries(apiOrigin: string) {
+  return queryOptions({
+    queryKey: [apiOrigin, "agent-capabilities"],
+    queryFn: async ({ signal }) => {
+      const result = await createApiClient(apiOrigin).GET(
+        "/api/me/agents/capabilities",
+        { signal },
+      );
+      if (!result.data)
+        throw new Error("Die Fähigkeiten konnten nicht geladen werden.");
+      return result.data;
+    },
+  });
+}
