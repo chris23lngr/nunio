@@ -84,6 +84,28 @@ export const intentOf = (call: { intent: Record<string, unknown> }) =>
 
 const maxBlockMs = 14 * 24 * 60 * 60_000;
 
+/** A local YYYY-MM-DDTHH:MM in the student's time zone as an instant; null unless it names a day and time that exist. */
+function instantOf(local: string, timeZone: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local);
+  if (!match) return null;
+  const [year, month, date, hour, minute] = match.slice(1).map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  const day = new Date(Date.UTC(year, month - 1, date));
+  if (
+    day.getUTCMonth() !== month - 1 ||
+    day.getUTCDate() !== date ||
+    hour > 23 ||
+    minute > 59
+  )
+    return null;
+  return deadline(local.slice(0, 10), local.slice(11, 16), timeZone);
+}
+
 /**
  * Reads one Action call into the Action it asks for, naming work and blocks by the handles the Run's tools gave out.
  * A call that names nothing the Run read, or a span that cannot be, asks for nothing, and the model is told why.
@@ -98,12 +120,6 @@ export async function readCall(
   call: { toolCallId: string; toolName: string; input: unknown },
 ): Promise<StoredCall> {
   const { toolCallId, toolName } = call;
-  const input = call.input as {
-    work?: string;
-    block?: string;
-    start?: string;
-    end?: string;
-  };
   const invalid = (reason: string): StoredCall => ({
     toolCallId,
     toolName,
@@ -113,20 +129,34 @@ export async function readCall(
     ? capabilities[toolName as CapabilityId].kind
     : null;
   if (!kind) return invalid("you have no such tool.");
-  const instant = (local: string) =>
-    deadline(local.slice(0, 10), local.slice(11, 16), timeZone);
-  const times =
-    input.start && input.end
-      ? { start: instant(input.start), end: instant(input.end) }
-      : null;
-  if (
-    times &&
-    !(
-      times.end > times.start &&
-      times.end.getTime() - times.start.getTime() <= maxBlockMs
-    )
-  )
-    return invalid("its end must come after its start, at most 14 days later.");
+  // The model's arguments are checked here, never trusted: a malformed call asks for nothing.
+  const fields = Object.keys(inputs[kind].properties ?? {});
+  const given =
+    call.input && typeof call.input === "object"
+      ? (call.input as Record<string, unknown>)
+      : {};
+  if (fields.some((field) => typeof given[field] !== "string"))
+    return invalid(`give ${fields.join(", ")}, each as text.`);
+  const input = given as {
+    work?: string;
+    block?: string;
+    start?: string;
+    end?: string;
+  };
+  let times: { start: Date; end: Date } | null = null;
+  if (input.start !== undefined && input.end !== undefined) {
+    const start = instantOf(input.start, timeZone);
+    const end = instantOf(input.end, timeZone);
+    if (!start || !end)
+      return invalid(
+        "give start and end as YYYY-MM-DDTHH:MM, each a day and time that exist.",
+      );
+    if (!(end > start && end.getTime() - start.getTime() <= maxBlockMs))
+      return invalid(
+        "its end must come after its start, at most 14 days later.",
+      );
+    times = { start, end };
+  }
   const intent = (value: object): StoredCall => ({
     toolCallId,
     toolName,
