@@ -290,6 +290,10 @@ _Avoid_: Notification center, feed, activity
 An ongoing delegation the student owns, such as "keep this course organized", with its own Courses, Budget, and pause control, carried out in Runs. One-off requests are never Agents.
 _Avoid_: Responsibility, automation, bot, assistant, job
 
+**Instructions**:
+The student's free-text account of what one Agent should do, the only text its Runs follow as a request. Instructions never widen what the Agent may do.
+_Avoid_: Prompt, rules, description
+
 **Template**:
 A starting point nunio curates for creating an Agent, such as "Klausur vorbereiten". Students cannot publish Templates.
 _Avoid_: Preset, Vorlage, blueprint
