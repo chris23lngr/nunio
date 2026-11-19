@@ -273,8 +273,8 @@ A daily window in the student's time zone in which nunio sends them nothing outs
 _Avoid_: Do not disturb, mute, quiet time
 
 **Briefing**:
-A scheduled summary nunio delivers that bundles the current Interventions, unread Notices, ready Artifacts, and ongoing work, as they stood when it was made. A Briefing is not an Intervention and cannot be dismissed; nothing to bundle means no Briefing.
-_Avoid_: Digest, daily summary, report
+A summary an Agent writes for the student in a Run, together with the open Interventions, pending Approvals, unread Notices and ready Artifacts it bundles, shown as they stand. A Briefing is not an Intervention and cannot be dismissed; nothing to bundle means no Briefing.
+_Avoid_: Digest, daily summary, report, Update
 
 **Notice**:
 A message an Agent writes to the student during a Run, shown as the Agent's own words, never as nunio's. A Notice has no cause, so it never lapses and is neither acknowledged nor dismissed; it is unread until the student opens it.

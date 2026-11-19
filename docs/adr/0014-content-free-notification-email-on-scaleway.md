@@ -22,3 +22,12 @@ An Agent with the Capability "Dich benachrichtigen" may write the student a Noti
 - **Quiet Hours.** A Notice written in them is announced afterwards only if it is still unread.
 - **Briefings** bundle the Notices still unread when they are made.
 - **Pause.** A Paused or Ended Agent sends no Notice; Notices it sent before stay in the Inbox.
+
+## Amendment (2026-11-19): Briefings from Agents
+
+nunio no longer makes Briefings itself: an Agent with the Capability "Briefing erstellen" writes them in its Runs ([Whether Briefings become Agents](https://github.com/chris23lngr/nunio/issues/146)). A Briefing is the Agent's plain text, never rendered as a link or formatting, plus the Inbox items it bundles, which nunio shows itself. Its announcements follow the Notice rules above instead of the Briefing rules in this ADR:
+
+- **Email.** It names only the kind and number of items, such as "nunio: 1 neues Briefing", and carries neither the model's text nor the Agent's name.
+- **How often.** Its announcements count against the student's daily limit together with Interventions and Notices; past it, the Briefing reaches only the Inbox.
+- **Quiet Hours.** A Briefing made in them is announced afterwards.
+- **No Briefing setting.** The separate Briefing email setting and its RFC 8058 one-click unsubscribe go away; the student controls Briefings through the Agent's schedule, Pause and Capabilities. Briefing emails are still sent on a schedule the student chose, so the TEM risk above is unchanged.
