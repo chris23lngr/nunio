@@ -199,9 +199,20 @@ const { agentStep } = proxyActivities<AgentRunActivities>({
   startToCloseTimeout: "5 minutes",
   retry: { initialInterval: "5 seconds", maximumAttempts: 3 },
 });
+// A step's Actions go through the gate under `runId:step:call`, so a retry returns what it recorded and never acts twice.
+const { agentActions } = proxyActivities<AgentRunActivities>({
+  startToCloseTimeout: "2 minutes",
+  retry: {
+    initialInterval: "5 seconds",
+    maximumInterval: "1 minute",
+    maximumAttempts: 10,
+    nonRetryableErrorTypes: ["InvalidIntentError", "KeyConflictError"],
+  },
+});
 
 /**
- * Runs the Agent's model step by step until it answers; the step cap lives with the steps, whose last must answer.
+ * Runs the Agent's model step by step until it answers, performing each step's Action calls through the gate before the
+ * next; the step cap lives with the steps, whose last must answer.
  * A refused step, such as a Paused Agent or an exhausted Budget, stops the Run; a failed one, or an error after its
  * retries, fails it. However it ends, cancelled included, the Run is ended, so it never stays under way.
  */
@@ -220,6 +231,19 @@ export async function agentRun(ref: AgentRunRef) {
     for (let n = 1; ; n++) {
       const step = await agentStep({ runId, n });
       if (step.status === "answered") break;
+      // Performed after the step, without waiting for any Approval; the next step tells the model what became of them.
+      if (
+        step.status === "continue" &&
+        step.actions > 0 &&
+        patched("agent-run-actions")
+      ) {
+        const acted = await agentActions({ runId, n });
+        // Only the student resolves an Unconfirmed Action; the Run acts on nothing after it.
+        if (acted.unconfirmed) {
+          end = { status: "stopped", reason: "unconfirmed" };
+          break;
+        }
+      }
       if (step.status === "refused") {
         end = { status: "stopped", reason: step.reason };
         break;

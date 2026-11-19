@@ -7,15 +7,24 @@ import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
-import type { CatalogModel } from "@nunio/delegation";
-import { createAgents, createDelegation, principal } from "@nunio/delegation";
+import type {
+  AgentCapability,
+  CatalogModel,
+  Executor,
+} from "@nunio/delegation";
+import {
+  capabilities,
+  createAgents,
+  createDelegation,
+  principal,
+} from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import {
   createFacts,
   createKnowledgeReader,
   createSources,
 } from "@nunio/knowledge";
-import { createPlan } from "@nunio/planning";
+import { createPlan, createPlanExecutor, planRules } from "@nunio/planning";
 import { ApplicationFailure } from "@temporalio/common";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import type { WorkflowBundle } from "@temporalio/worker";
@@ -25,6 +34,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createAgentRunActivities } from "./agent-run-activities.js";
 
 const taskQueue = "agent-runs-test";
+const day = (offset: number) =>
+  new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 let env: TestWorkflowEnvironment;
 let workflowBundle: WorkflowBundle;
 let db: TestDatabase;
@@ -83,6 +94,8 @@ type Scripted = (prompt: unknown, toolChoice: string) => Step | Promise<Step>;
 let script: Scripted[] = [];
 const prompts: unknown[] = [];
 const toolChoices: string[] = [];
+/** The names of the tools each step offered the model. */
+const toolNames: string[][] = [];
 const calls = (toolName: string, input: unknown): unknown[] => [
   {
     type: "tool-call",
@@ -97,11 +110,14 @@ const model = new MockLanguageModelV4({
   doGenerate: async ({
     prompt,
     toolChoice,
+    tools,
   }: {
     prompt: unknown;
     toolChoice?: { type: string };
+    tools?: { name: string }[];
   }) => {
     prompts.push(prompt);
+    toolNames.push((tools ?? []).map((t) => t.name).sort());
     const choice = toolChoice?.type ?? "auto";
     toolChoices.push(choice);
     const step = await (script.shift() ?? (() => says("Fertig.")))(
@@ -125,6 +141,19 @@ const model = new MockLanguageModelV4({
     };
   },
 } as never);
+/** The Plan executor the gate dispatches to: a fake recording each dispatch, unless a test puts in the real one. */
+let executor: Executor;
+let dispatched: string[] = [];
+const fakeExecutor: Executor = {
+  async execute(_, { idempotencyKey }) {
+    dispatched.push(idempotencyKey);
+    return { status: "done", effect: { studyBlockId: randomUUID() } };
+  },
+  async lookup() {
+    return { status: "unknown" };
+  },
+};
+let delegation: ReturnType<typeof createDelegation>;
 const testModels = createModels({
   apiKey: "test",
   baseURL: "https://provider.invalid",
@@ -141,7 +170,18 @@ beforeAll(async () => {
   ]);
   admin = createPrismaClient(createPool(db.connectionString));
   runtime = createPrismaClient(createPool(db.runtimeConnectionString));
-  const delegation = createDelegation({ db: runtime, aiEnabled: () => true });
+  delegation = createDelegation({
+    db: runtime,
+    aiEnabled: () => true,
+    clock,
+    executors: {
+      plan: {
+        execute: (...args) => executor.execute(...args),
+        lookup: (...args) => executor.lookup(...args),
+      },
+    },
+    planRules,
+  });
   const facts = createFacts({ db: runtime, keys, clock });
   agents = createAgents({ db: runtime, clock });
   sources = createSources({
@@ -200,10 +240,20 @@ beforeEach(() => {
   script = [];
   prompts.length = 0;
   toolChoices.length = 0;
+  toolNames.length = 0;
+  executor = fakeExecutor;
+  dispatched = [];
 });
 
-/** A student whose free-text Agent has one Course with one ready Source, and who started a Run of it now. */
-async function started() {
+/**
+ * A student whose free-text Agent has one Course with one ready Source and an exam due in ten days, holding the given
+ * Capabilities, and who started a Run of it now.
+ */
+async function started({
+  held = [] as AgentCapability[],
+}: {
+  held?: AgentCapability[];
+} = {}) {
   const studentId = randomUUID();
   const courseId = randomUUID();
   await admin.user.create({
@@ -251,22 +301,46 @@ async function started() {
   await admin.sourceCourse.create({
     data: { sourceId: upload.source.id, courseId, studentId },
   });
+  const obligationId = randomUUID();
+  await admin.obligation.create({
+    data: {
+      id: obligationId,
+      studentId,
+      courseId,
+      matchKey: "klausur",
+      kind: "exam",
+      enteredAt: new Date(),
+      correctedAt: new Date(),
+      correctedTitle: "Klausur Statistik II",
+      correctedDueDate: new Date(`${day(10)}T00:00:00Z`),
+      correctedDueTime: "10:00",
+      correctedTimeZone: "Europe/Berlin",
+    },
+  });
   const created = await agents.create(p, {
     name: "Klausur Statistik",
     description: "",
     emoji: "🤖",
     instructions: "Sag mir, wann meine Klausur in Statistik ist.",
     courseIds: [courseId],
-    capabilities: [],
+    capabilities: held,
     budgetMicroUsd: 1_000_000,
   });
   if (created.status !== "ok") throw new Error(created.status);
-  const requested = await agents.requestRun(p, created.id);
+  return { ...(await requested(p, created.id)), studentId, obligationId };
+}
+
+/** Starts another Run of the student's Agent now. */
+async function requested(
+  p: ReturnType<typeof principal.fromSession>,
+  agentId: string,
+) {
+  const requested = await agents.requestRun(p, agentId);
   if (requested.status !== "ok") throw new Error(requested.status);
   return {
     p,
-    studentId,
-    agentId: created.id,
+    studentId: (p as { studentId: string }).studentId,
+    agentId,
     runId: requested.runId,
     workflowId: requested.workflowId,
   };
@@ -274,7 +348,7 @@ async function started() {
 
 /** Runs the Run's workflow to its end on a worker with the given Activities. */
 async function run(
-  s: Awaited<ReturnType<typeof started>>,
+  s: Awaited<ReturnType<typeof requested>>,
   activities: ReturnType<
     typeof createAgentRunActivities
   > = createAgentRunActivities(runs),
@@ -293,9 +367,6 @@ async function run(
     }),
   );
 }
-
-const day = (offset: number) =>
-  new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 
 describe("an Agent's Run", () => {
   it("reads its Courses and the Plan in metered model steps, then ends with the model's summary", async () => {
@@ -579,5 +650,266 @@ describe("an Agent's Run", () => {
       reason: "model_unavailable",
     });
     expect(prompts).toHaveLength(0);
+  });
+});
+
+/** The four Lernblöcke Capabilities, each on the given mode or its default. */
+const lernbloecke = (
+  modes: Partial<
+    Record<keyof typeof capabilities, AgentCapability["mode"]>
+  > = {},
+): AgentCapability[] =>
+  (Object.keys(capabilities) as (keyof typeof capabilities)[]).map((id) => ({
+    id,
+    mode: modes[id] ?? capabilities[id].modes[0],
+  }));
+/** The model's call to create a Study Block for the exam it read as O1, `offset` days ahead at `hour` local time. */
+const createBlock = (offset: number, hour = 10) =>
+  calls("createStudyBlocks", {
+    work: "O1",
+    start: `${day(offset)}T${String(hour).padStart(2, "0")}:00`,
+    end: `${day(offset)}T${String(hour + 1).padStart(2, "0")}:00`,
+  });
+const readPlan = () => calls("agenda", { from: day(0), to: day(13) });
+/** What the model was last given as the results of its Action calls, in order. */
+const actionResults = (prompt: unknown) =>
+  (prompt as { role: string; content: unknown }[])
+    .filter((message) => message.role === "tool")
+    .flatMap(
+      (message) =>
+        message.content as { toolName: string; output: { value?: string } }[],
+    )
+    .filter((part) => part.toolName === "createStudyBlocks")
+    .map((part) => part.output.value ?? JSON.stringify(part.output));
+/** The Run's Actions, oldest first, as the gate recorded them. */
+const actionsOf = (runId: string) =>
+  admin.action.findMany({
+    where: { runId },
+    orderBy: { key: "asc" },
+    select: { key: true, status: true, refusal: true },
+  });
+const statuses = async (runId: string) =>
+  (await actionsOf(runId)).map((a) => a.refusal ?? a.status);
+
+describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
+  it("offers exactly the Agent's Capabilities as Action tools beside its read tools", async () => {
+    const reads = ["agenda", "courseFacts", "searchMaterial"];
+    const all = await started({ held: lernbloecke() });
+    await run(all);
+    const none = await started();
+    await run(none);
+    const some = await started({
+      held: [{ id: "createStudyBlocks", mode: "ask" }],
+    });
+    await run(some);
+
+    expect(toolNames).toEqual([
+      [...reads, ...Object.keys(capabilities)].sort(),
+      reads,
+      [...reads, "createStudyBlocks"].sort(),
+    ]);
+    // Nothing on ADR-0026's "no tool" list: every Action tool only creates, moves or removes a Study Block.
+    expect(new Set(Object.values(capabilities).map((c) => c.kind))).toEqual(
+      new Set(["studyBlock.create", "studyBlock.move", "studyBlock.remove"]),
+    );
+  });
+
+  it("acts at once on a Grant, through the gate under runId:step:call, and tells the model", async () => {
+    const s = await started({ held: lernbloecke() });
+    script = [
+      readPlan,
+      () => createBlock(3),
+      () => says("Ich habe einen Lernblock eingetragen."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect(await actionsOf(s.runId)).toEqual([
+      { key: `${s.runId}:2:1`, status: "done", refusal: null },
+    ]);
+    expect(dispatched).toHaveLength(1);
+    expect(actionResults(prompts[2])).toEqual([expect.stringMatching(/^Done/)]);
+  });
+
+  it("records the Agent as the creator of a Study Block it creates", async () => {
+    executor = createPlanExecutor({ db: runtime });
+    const s = await started({ held: lernbloecke() });
+    script = [readPlan, () => createBlock(3)];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect(
+      await admin.studyBlock.findMany({
+        where: { obligationId: s.obligationId },
+        select: { createdByAgentId: true, placedBy: true },
+      }),
+    ).toEqual([{ createdByAgentId: s.agentId, placedBy: "nunio" }]);
+  });
+
+  it("asks for Approval without waiting, tells the model it has not happened, and leaves the Approval open", async () => {
+    const s = await started({
+      held: lernbloecke({ createStudyBlocks: "ask" }),
+    });
+    script = [
+      readPlan,
+      () => createBlock(3),
+      () => says("Ich habe dich um Freigabe gebeten."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect(await statuses(s.runId)).toEqual(["awaiting_approval"]);
+    expect(dispatched).toHaveLength(0);
+    expect(actionResults(prompts[2])).toEqual([
+      expect.stringMatching(/^Asked, not happened/),
+    ]);
+    expect(await runs.view(s.p, s.runId)).toMatchObject({ status: "done" });
+    expect(
+      await admin.approval.findMany({
+        where: { action: { runId: s.runId } },
+        select: { decision: true },
+      }),
+    ).toEqual([{ decision: null }]);
+  });
+
+  it("refuses a sixth Action call in one step with run_cap and carries on", async () => {
+    const s = await started({ held: lernbloecke() });
+    script = [
+      readPlan,
+      () => [3, 4, 5, 6, 7, 8].flatMap((offset) => createBlock(offset)),
+      () => says("Fertig."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect(await statuses(s.runId)).toEqual([
+      ...Array(5).fill("done"),
+      "run_cap",
+    ]);
+    expect(dispatched).toHaveLength(5);
+    expect(actionResults(prompts[2]).at(-1)).toMatch(/^Refused/);
+  });
+
+  it("refuses a 21st Action call in the Run with run_cap, counting refused calls, and carries on", async () => {
+    const s = await started({ held: lernbloecke() });
+    script = [
+      readPlan,
+      // Six calls: the sixth is refused, and counts.
+      () => [3, 4, 5, 6, 7, 8].flatMap((offset) => createBlock(offset)),
+      ...[9, 10, 11].map(
+        (hour) => () =>
+          [3, 4, 5, 6, 7].flatMap((offset) => createBlock(offset, hour)),
+      ),
+      () => createBlock(3, 15),
+      () => says("Fertig."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    const recorded = await actionsOf(s.runId);
+    expect(recorded).toHaveLength(22);
+    expect(recorded.filter((a) => a.status === "done")).toHaveLength(19);
+    expect(recorded.at(-1)).toMatchObject({
+      key: `${s.runId}:6:1`,
+      refusal: "run_cap",
+    });
+    expect(recorded.at(-2)).toMatchObject({ refusal: "run_cap" });
+    expect(await runs.view(s.p, s.runId)).toMatchObject({ status: "done" });
+  });
+
+  it("refuses asking a sixth Approval in the Run with run_cap, while Grants still act", async () => {
+    // On Automatisch a block outside the study window asks; one inside it acts on the Grant.
+    const s = await started({ held: lernbloecke() });
+    script = [
+      readPlan,
+      () => [3, 4, 5, 6, 7].flatMap((offset) => createBlock(offset, 3)),
+      async () => {
+        // One of them is denied, so the Agent has only four open: the Run's own cap refuses the sixth.
+        const [first] = await actionsOf(s.runId);
+        await delegation.decide(s.p, {
+          kind: "deny",
+          actionId: (
+            await admin.action.findFirstOrThrow({ where: { key: first!.key } })
+          ).id,
+        });
+        return [...createBlock(8, 3), ...createBlock(8, 10)];
+      },
+      () => says("Fertig."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect(await statuses(s.runId)).toEqual([
+      "approval_denied",
+      ...Array(4).fill("awaiting_approval"),
+      "run_cap",
+      "done",
+    ]);
+    expect(actionResults(prompts[3]).slice(5)).toEqual([
+      expect.stringMatching(/^Refused/),
+      expect.stringMatching(/^Done/),
+    ]);
+  });
+
+  it("refuses asking past five open Approvals of the Agent with open_approvals_cap, while Grants still act", async () => {
+    const s = await started({ held: lernbloecke() });
+    script = [
+      readPlan,
+      () => [3, 4, 5, 6, 7].flatMap((offset) => createBlock(offset, 3)),
+    ];
+    await run(s);
+    expect(await statuses(s.runId)).toEqual(Array(5).fill("awaiting_approval"));
+
+    // The Approvals outlive their Run, so the next Run may ask none of its own.
+    const next = await requested(s.p, s.agentId);
+    script = [
+      readPlan,
+      () => [...createBlock(8, 3), ...createBlock(8, 10)],
+      () => says("Fertig."),
+    ];
+
+    expect(await run(next)).toEqual({ status: "done" });
+
+    expect(await statuses(next.runId)).toEqual(["open_approvals_cap", "done"]);
+    expect(actionResults(prompts.at(-1))).toEqual([
+      expect.stringMatching(/^Refused/),
+      expect.stringMatching(/^Done/),
+    ]);
+  });
+
+  it("never performs an Action twice when the worker loses the completion of the step or of its Actions", async () => {
+    const s = await started({ held: lernbloecke() });
+    script = [
+      readPlan,
+      () => [3, 4].flatMap((offset) => createBlock(offset)),
+      () => says("Fertig."),
+    ];
+    const activities = createAgentRunActivities(runs);
+    const lost = { step: false, actions: false };
+    const step = activities.agentStep;
+    activities.agentStep = async (ref) => {
+      const outcome = await step(ref);
+      if (ref.n === 2 && !lost.step) {
+        lost.step = true;
+        throw new Error("lost Activity completion");
+      }
+      return outcome;
+    };
+    const act = activities.agentActions;
+    activities.agentActions = async (ref) => {
+      const outcome = await act(ref);
+      if (!lost.actions) {
+        lost.actions = true;
+        throw new Error("lost Activity completion");
+      }
+      return outcome;
+    };
+
+    expect(await run(s, activities)).toEqual({ status: "done" });
+
+    expect(lost).toEqual({ step: true, actions: true });
+    expect(prompts).toHaveLength(3);
+    expect(dispatched).toHaveLength(2);
+    expect(await statuses(s.runId)).toEqual(["done", "done"]);
   });
 });

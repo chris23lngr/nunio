@@ -3,12 +3,18 @@ import type { Artifacts } from "@nunio/artifacts";
 import type { PrismaClient } from "@nunio/db";
 import type {
   Agents,
+  CapabilityId,
   CatalogModel,
   Delegation,
   ModelCatalog,
   Principal,
 } from "@nunio/delegation";
-import { DefiniteFailure, principal, withOwner } from "@nunio/delegation";
+import {
+  capabilities,
+  DefiniteFailure,
+  principal,
+  withOwner,
+} from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type { KnowledgeReader, Sealed } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
@@ -20,7 +26,10 @@ import { chatContext } from "./context.js";
 import { courseFactsTool } from "./course-facts.js";
 import type { ChatPart } from "./parts.js";
 import { retryRateLimited } from "./retry.js";
+import type { StoredCall } from "./run-actions.js";
+import { actionTools, intentOf, readCall, resultOf } from "./run-actions.js";
 import { searchTool } from "./search.js";
+import type { Handled } from "./turn.js";
 import { createTurn } from "./turn.js";
 
 /** At most this many model steps make one Run; the last must answer (ADR-0026). */
@@ -35,12 +44,12 @@ export type RunStepPart = Extract<
 >;
 
 /**
- * How a step went: the model called tools or answered; the Run must stop for a refusal, such as paused,
- * budget_exhausted or model_unavailable; or it fails, as when the model's step ended early or an earlier attempt at
- * the step may have paid for a model call it never stored (step_interrupted).
+ * How a step went: the model called tools, `actions` of them Action tools for the gate to perform, or answered; the
+ * Run must stop for a refusal, such as paused, budget_exhausted or model_unavailable; or it fails, as when the model's
+ * step ended early or an earlier attempt at the step may have paid for a model call it never stored (step_interrupted).
  */
 export type StepOutcome =
-  | { status: "continue" }
+  | { status: "continue"; actions: number }
   | { status: "answered" }
   | { status: "refused"; reason: string }
   | { status: "failed"; reason: string };
@@ -163,9 +172,13 @@ export function createAgentRuns({
       if (!Number.isInteger(n) || n < 1 || n > maxSteps)
         throw new Error(`A Run has no step ${n}`);
       const p = principal.fromRun(runId);
-      const outcome = (answered: boolean): StepOutcome => ({
-        status: answered ? "answered" : "continue",
-      });
+      const outcome = (answered: boolean, calls: unknown): StepOutcome =>
+        answered
+          ? { status: "answered" }
+          : {
+              status: "continue",
+              actions: ((calls as StoredCall[] | null) ?? []).length,
+            };
       const loaded = await withOwner(db, p, async (tx) => {
         const done = await tx.runStep.findUnique({
           where: { runId_n: { runId, n } },
@@ -181,6 +194,10 @@ export function createAgentRuns({
         if (run.status !== "running") return { ended: true };
         if (run.steps.length !== n - 1)
           throw new Error(`Step ${n} of Run ${runId} comes too early`);
+        // What the gate made of the previous step's Action calls, which this step tells the model.
+        const performed = await tx.action.findMany({
+          where: { runId, key: { startsWith: `${runId}:${n - 1}:` } },
+        });
         const transcripts = await Promise.all(
           run.steps.map((step) =>
             step.transcriptContent
@@ -196,14 +213,14 @@ export function createAgentRuns({
               : null,
           ),
         );
-        return { run, transcripts };
+        return { run, transcripts, performed };
       });
       if ("done" in loaded)
         return loaded.done!.partsContent
-          ? outcome(loaded.done!.answered)
+          ? outcome(loaded.done!.answered, loaded.done!.calls)
           : { status: "failed", reason: "step_interrupted" };
       if ("ended" in loaded) return { status: "refused", reason: "run_ended" };
-      const { run, transcripts } = loaded;
+      const { run, transcripts, performed } = loaded;
       // A Source deleted since takes the earlier steps with it, so the Run cannot go on from them.
       if (transcripts.some((transcript) => transcript === null))
         return { status: "refused", reason: "source_deleted" };
@@ -221,7 +238,15 @@ export function createAgentRuns({
           .map(({ course }) => course)
           .sort((a, b) => a.title.localeCompare(b.title, "de")),
       );
-      const turn = createTurn();
+      const previous = run.steps.at(-1);
+      // The handles earlier steps gave out, so the model names work and blocks by them across steps.
+      const turn = createTurn(
+        (previous?.handles as [string, Handled][] | null) ?? [],
+      );
+      // The Capabilities the Run started with; the gate still decides each call by those the Agent holds now.
+      const held = ((run.capabilities as { id: string }[] | null) ?? [])
+        .map(({ id }) => id)
+        .filter((id): id is CapabilityId => Object.hasOwn(capabilities, id));
       const tools = {
         searchMaterial: searchTool(
           turn,
@@ -245,7 +270,31 @@ export function createAgentRuns({
           timeZone,
           courses: context.courses,
         }),
+        ...actionTools(held),
       };
+      const called = (previous?.calls as StoredCall[] | null) ?? [];
+      const results: ModelMessage[] = called.length
+        ? [
+            {
+              role: "tool",
+              content: called.map((call, i) => ({
+                type: "tool-result" as const,
+                toolCallId: call.toolCallId,
+                toolName: call.toolName,
+                output: {
+                  type: "text" as const,
+                  value: resultOf(
+                    turn,
+                    call,
+                    performed.find(
+                      (a) => a.key === `${runId}:${n - 1}:${i + 1}`,
+                    ) ?? null,
+                  ),
+                },
+              })),
+            },
+          ]
+        : [];
       const input = {
         instructions: run.instructions ?? "",
         messages: [
@@ -256,6 +305,7 @@ export function createAgentRuns({
           ...transcripts.flatMap(
             (transcript) => JSON.parse(transcript!) as ModelMessage[],
           ),
+          ...results,
         ],
         tools,
         last: n === maxSteps,
@@ -313,6 +363,11 @@ export function createAgentRuns({
         ...new Set([...(run.steps.at(-1)?.derivedFrom ?? []), ...turn.sources]),
       ];
       const answered = stepped.value.finishReason === "stop";
+      // Read in order, so a block created by one call keeps its handle for the next; an answer acts on nothing.
+      const calls: StoredCall[] = [];
+      if (!answered)
+        for (const call of stepped.value.actionCalls)
+          calls.push(await readCall(turn, { plan, p, timeZone }, call));
       const stored = await withOwner(db, p, async (tx) => {
         // Serialised with ending the Run: a step that returns after the Run ended keeps nothing.
         await tx.$executeRaw`SELECT 1 FROM "run" WHERE "id" = ${runId} FOR UPDATE`;
@@ -327,11 +382,12 @@ export function createAgentRuns({
           derivedFrom,
           JSON.stringify(parts),
         );
+        // The results of the previous step's Actions go with this step's messages, so later steps are given them too.
         const transcript = await derived.seal(
           tx,
           `${runId}:${n}:transcript`,
           derivedFrom,
-          JSON.stringify(stepped.value.messages),
+          JSON.stringify([...results, ...stepped.value.messages]),
         );
         if (!sealedParts || !transcript) return null;
         await tx.runStep.update({
@@ -343,6 +399,8 @@ export function createAgentRuns({
             transcriptContent: transcript.content,
             transcriptKey: transcript.contentKey,
             derivedFrom,
+            calls: calls as object[],
+            handles: turn.handled(),
           },
         });
         return answered;
@@ -350,7 +408,33 @@ export function createAgentRuns({
       if (stored === "ended") return { status: "refused", reason: "run_ended" };
       if (stored === null)
         return { status: "refused", reason: "source_deleted" };
-      return outcome(stored);
+      return outcome(stored, calls);
+    },
+
+    /**
+     * Performs step `n`'s Action calls through the gate, in order, each under the key `runId:n:call`, so a repeat
+     * returns what the gate recorded and never acts twice. Stops at an Unconfirmed one: only the student resolves it,
+     * and the Run acts on nothing after it.
+     */
+    async act(runId: string, n: number): Promise<{ unconfirmed: boolean }> {
+      const p = principal.fromRun(runId);
+      const step = await withOwner(db, p, (tx) =>
+        tx.runStep.findUniqueOrThrow({
+          where: { runId_n: { runId, n } },
+          select: { calls: true },
+        }),
+      );
+      for (const [i, call] of (
+        (step.calls as StoredCall[] | null) ?? []
+      ).entries()) {
+        if (!("intent" in call)) continue;
+        const outcome = await delegation.perform(p, {
+          key: `${runId}:${n}:${i + 1}`,
+          intent: intentOf(call),
+        });
+        if (outcome.status === "unconfirmed") return { unconfirmed: true };
+      }
+      return { unconfirmed: false };
     },
 
     /**
