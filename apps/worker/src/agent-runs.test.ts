@@ -912,4 +912,112 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
     expect(dispatched).toHaveLength(2);
     expect(await statuses(s.runId)).toEqual(["done", "done"]);
   });
+
+  it.each([
+    ["without an end", { work: "O1", start: "2026-12-01T10:00" }],
+    ["with a start that is no time", { work: "O1", start: 5, end: 7 }],
+    [
+      "with a day that does not exist",
+      { work: "O1", start: "2026-02-30T10:00", end: "2026-02-30T11:00" },
+    ],
+    ["naming no work", { start: "2026-12-01T10:00", end: "2026-12-01T11:00" }],
+  ])(
+    "refuses a call %s without asking, telling the model, and still acts on the step's other calls",
+    async (_, input) => {
+      const s = await started({ held: lernbloecke() });
+      script = [
+        readPlan,
+        () => [...createBlock(3), ...calls("createStudyBlocks", input)],
+        () => says("Fertig."),
+      ];
+
+      expect(await run(s)).toEqual({ status: "done" });
+
+      expect(await actionsOf(s.runId)).toEqual([
+        { key: `${s.runId}:2:1`, status: "done", refusal: null },
+      ]);
+      expect(actionResults(prompts[2])).toEqual([
+        expect.stringMatching(/^Done/),
+        expect.stringMatching(/^Refused, nothing was asked/),
+      ]);
+    },
+  );
+
+  /** A Run that creates one block with the real Plan executor, then the student's own block beside it. */
+  async function withOwnBlock() {
+    executor = createPlanExecutor({ db: runtime });
+    const s = await started({ held: lernbloecke() });
+    script = [readPlan, () => createBlock(3)];
+    await run(s);
+    const [own] = await admin.studyBlock.findMany({
+      where: { obligationId: s.obligationId },
+    });
+    const theirs = randomUUID();
+    await admin.studyBlock.create({
+      data: {
+        id: theirs,
+        studentId: s.studentId,
+        obligationId: s.obligationId,
+        placedBy: "student",
+        start: new Date(`${day(5)}T09:00:00Z`),
+        end: new Date(`${day(5)}T10:00:00Z`),
+      },
+    });
+    return { s, own: own!, theirs };
+  }
+
+  it("sees which blocks are its own in a later Run, and moves its own on its Grant", async () => {
+    const { s, own } = await withOwnBlock();
+    const next = await requested(s.p, s.agentId);
+    script = [
+      readPlan,
+      () =>
+        calls("moveOwnStudyBlocks", {
+          block: "B1",
+          start: `${day(4)}T10:00`,
+          end: `${day(4)}T11:00`,
+        }),
+      () => says("Fertig."),
+    ];
+
+    expect(await run(next)).toEqual({ status: "done" });
+
+    const plan = JSON.stringify(prompts.at(-2));
+    expect(plan).toMatch(/B1 · [^"\\]*· yours/);
+    expect(plan).not.toMatch(/B2 · [^"\\]*· yours/);
+    expect(await statuses(next.runId)).toEqual(["done"]);
+    const moved = await admin.studyBlock.findUniqueOrThrow({
+      where: { id: own.id },
+    });
+    expect(moved.start.getTime() - own.start.getTime()).toBe(86_400_000);
+    expect(moved.createdByAgentId).toBe(s.agentId);
+  });
+
+  it("removes its own block on its Grant, and asks to move the student's", async () => {
+    const { s, own, theirs } = await withOwnBlock();
+    const next = await requested(s.p, s.agentId);
+    script = [
+      readPlan,
+      () => [
+        ...calls("removeOwnStudyBlocks", { block: "B1" }),
+        ...calls("moveStudyBlocks", {
+          block: "B2",
+          start: `${day(6)}T10:00`,
+          end: `${day(6)}T11:00`,
+        }),
+      ],
+      () => says("Fertig."),
+    ];
+
+    expect(await run(next)).toEqual({ status: "done" });
+
+    expect(await statuses(next.runId)).toEqual(["done", "awaiting_approval"]);
+    expect(
+      await admin.studyBlock.findMany({
+        where: { obligationId: s.obligationId },
+        select: { id: true },
+      }),
+    ).toEqual([{ id: theirs }]);
+    expect(own.createdByAgentId).toBe(s.agentId);
+  });
 });

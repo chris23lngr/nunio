@@ -98,6 +98,7 @@ describe("the Plan executor", () => {
         ...span(9),
         placedBy: "nunio",
         locked: false,
+        createdByAgentId: null,
       },
     ]);
   });

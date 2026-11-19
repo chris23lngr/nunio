@@ -269,6 +269,7 @@ export function createAgentRuns({
           p,
           timeZone,
           courses: context.courses,
+          agentId: run.agentId ?? undefined,
         }),
         ...actionTools(held),
       };
