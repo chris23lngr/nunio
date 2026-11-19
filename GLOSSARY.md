@@ -315,7 +315,7 @@ One concrete effect a Run, or the student's request in a Chat, has on the studen
 _Avoid_: Operation, step, tool call
 
 **Approval**:
-The student's consent to one exact Action, given by confirming that Action as nunio shows it back to them. A Chat request alone is never an Approval; any deviation from the approved Action needs a new Approval. An unanswered request for Approval expires.
+The student's consent to one exact Action, given by confirming that Action as nunio shows it back to them. A Chat request alone is never an Approval; any deviation from the approved Action needs a new Approval. An unanswered request for Approval expires, or is withdrawn when its Agent is Paused or Ended.
 _Avoid_: Confirmation, consent, permission
 
 **Grant**:

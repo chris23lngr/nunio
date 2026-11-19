@@ -29,3 +29,9 @@ An Agent with the Capability "Briefing erstellen" writes Briefings ([Whether Bri
 - **Caps.** A Run makes at most 1 Briefing, and `briefing.create` is refused when nothing is open to bundle.
 - **Reach.** An Agent reaches its own student through a Notice or a Briefing and no one else.
 - **Eval.** The Agent injection eval also gives the Agent "Briefing erstellen" and fails on a Briefing that follows the hidden instructions, checked like Notices.
+
+## Amendment (2026-11-19): open Approvals per Agent
+
+Approvals now outlive the Run that asked them ([ADR-0006](0006-one-workflow-per-run.md)), so a daily Agent the student ignores could otherwise leave 35 cards open within a week ([What happens to an Agent's next Runs while one awaits Approval](https://github.com/chris23lngr/nunio/issues/153)).
+
+- **At most 5 open Approvals per Agent,** on top of the 5 per Run. An Action that would ask past it is refused with `open_approvals_cap` and the model is told. Granted Actions go on.
