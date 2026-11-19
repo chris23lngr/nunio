@@ -19,6 +19,7 @@ const usd = (microUsd: number) => `$${(microUsd / 1_000_000).toFixed(2)}`;
 const grants = {
   "studyBlock.create": "add Study Blocks",
   "studyBlock.move": "move the ones nunio placed",
+  "studyBlock.remove": "remove the ones it placed",
 } as const;
 const outcomes = {
   awaiting_approval: "waiting for your Approval",

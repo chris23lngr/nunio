@@ -593,13 +593,16 @@ export function createGate({ db, clock, executors, deadlineOf }: GateDeps) {
         const agent = current
           ? {
               state: current.state,
-              grants: current.grants.map((g) => ({
-                id: g.id,
-                kind: g.kind as Kind,
-                scope: (g.courseId
-                  ? { courseId: g.courseId }
-                  : { obligationId: g.obligationId! }) as GrantScope,
-              })),
+              // A free-text Agent's Grants are unscoped: they act only once the gate checks the Agent's Courses.
+              grants: current.grants
+                .filter((g) => g.courseId || g.obligationId)
+                .map((g) => ({
+                  id: g.id,
+                  kind: g.kind as Kind,
+                  scope: (g.courseId
+                    ? { courseId: g.courseId }
+                    : { obligationId: g.obligationId! }) as GrantScope,
+                })),
               restrictions: current.restrictions as Restrictions,
             }
           : null;

@@ -6623,12 +6623,16 @@ describe("a free-text Agent's form", () => {
       });
     return { id, call };
   }
-  const form = (courseIds: string[]) => ({
+  const form = (
+    courseIds: string[],
+    capabilities: { id: string; mode: string }[] = [],
+  ) => ({
     name: "Klausur Statistik",
     description: "Hält meine Klausurvorbereitung auf Kurs.",
     emoji: "🤖",
     instructions: "Bereite mich auf die Klausur in Statistics II vor.",
     courseIds,
+    capabilities,
     budgetMicroUsd: 5_000_000,
   });
 
@@ -6822,7 +6826,184 @@ describe("a free-text Agent's form", () => {
           headers: { cookie: s.cookie },
         })
       ).json(),
-    ).toMatchObject({ preset: "keep_course_organized", courses: [] });
+    ).toMatchObject({
+      preset: "keep_course_organized",
+      courses: [],
+      capabilities: [],
+      grants: ["studyBlock.create", "studyBlock.move"],
+    });
+  });
+
+  /** The Agent's Grants as stored: kind and scope. */
+  const grantsOf = async (agentId: string) =>
+    (
+      await admin.grant.findMany({
+        where: { agentId },
+        orderBy: { kind: "asc" },
+      })
+    ).map(({ kind, courseId, obligationId }) => ({
+      kind,
+      courseId,
+      obligationId,
+    }));
+
+  it("saves the Agent's Capabilities with their modes, holding an unscoped Grant exactly for each on Immer erlaubt or Automatisch", async () => {
+    const s = await student("agent-capabilities");
+    const statistics = await course(s.id, "Statistics II");
+
+    const created = await s.call(
+      "POST",
+      "",
+      form(
+        [statistics],
+        [
+          { id: "removeOwnStudyBlocks", mode: "ask" },
+          { id: "moveStudyBlocks", mode: "ask" },
+          { id: "createStudyBlocks", mode: "automatic" },
+          { id: "moveOwnStudyBlocks", mode: "always" },
+        ],
+      ),
+    );
+    const { id } = (await created.json()) as { id: string };
+
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      capabilities: [
+        { id: "createStudyBlocks", mode: "automatic" },
+        { id: "moveOwnStudyBlocks", mode: "always" },
+        { id: "moveStudyBlocks", mode: "ask" },
+        { id: "removeOwnStudyBlocks", mode: "ask" },
+      ],
+      grants: ["studyBlock.create", "studyBlock.move"],
+    });
+    // No scope of its own: each covers its kind across the Agent's current Courses.
+    expect(await grantsOf(id)).toEqual([
+      { kind: "studyBlock.create", courseId: null, obligationId: null },
+      { kind: "studyBlock.move", courseId: null, obligationId: null },
+    ]);
+
+    // A mode changed to Nachfragen, a Capability removed and one turned on: the Grants follow.
+    const updated = await s.call(
+      "PUT",
+      `/${id}`,
+      form(
+        [statistics],
+        [
+          { id: "createStudyBlocks", mode: "ask" },
+          { id: "removeOwnStudyBlocks", mode: "automatic" },
+        ],
+      ),
+    );
+
+    expect(updated.status).toBe(200);
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      capabilities: [
+        { id: "createStudyBlocks", mode: "ask" },
+        { id: "removeOwnStudyBlocks", mode: "automatic" },
+      ],
+      grants: ["studyBlock.remove"],
+    });
+    expect(await grantsOf(id)).toEqual([
+      { kind: "studyBlock.remove", courseId: null, obligationId: null },
+    ]);
+    await s.call("PUT", `/${id}`, form([statistics]));
+    expect(await grantsOf(id)).toEqual([]);
+  });
+
+  it("keeps Lernblöcke verschieben fixed on Nachfragen and refuses unknown, repeated or unset Capabilities", async () => {
+    const s = await student("agent-capabilities-fixed");
+    const statistics = await course(s.id, "Statistics II");
+    const { id } = (await (
+      await s.call("POST", "", form([statistics]))
+    ).json()) as { id: string };
+
+    for (const capabilities of [
+      [{ id: "moveStudyBlocks", mode: "automatic" }],
+      [{ id: "moveStudyBlocks", mode: "always" }],
+      [{ id: "createFlashcards", mode: "automatic" }],
+      [{ id: "createStudyBlocks", mode: "sometimes" }],
+      [
+        { id: "createStudyBlocks", mode: "automatic" },
+        { id: "createStudyBlocks", mode: "ask" },
+      ],
+    ]) {
+      expect(
+        (await s.call("POST", "", form([statistics], capabilities))).status,
+      ).toBe(400);
+      expect(
+        (await s.call("PUT", `/${id}`, form([statistics], capabilities)))
+          .status,
+      ).toBe(400);
+    }
+    const { capabilities: _, ...withoutCapabilities } = form([statistics]);
+    expect((await s.call("PUT", `/${id}`, withoutCapabilities)).status).toBe(
+      400,
+    );
+
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      capabilities: [],
+      grants: [],
+    });
+    expect(await (await s.call("GET", "")).json()).toHaveLength(1);
+  });
+
+  it("gives an Ended Agent no Grants back when its form is saved", async () => {
+    const s = await student("agent-capabilities-ended");
+    const statistics = await course(s.id, "Statistics II");
+    const granted = form(
+      [statistics],
+      [{ id: "createStudyBlocks", mode: "automatic" }],
+    );
+    const { id } = (await (await s.call("POST", "", granted)).json()) as {
+      id: string;
+    };
+    await s.call("POST", `/${id}/end`);
+
+    expect((await s.call("PUT", `/${id}`, granted)).status).toBe(200);
+
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      state: "ended",
+      capabilities: [{ id: "createStudyBlocks", mode: "automatic" }],
+      grants: [],
+    });
+    expect(await grantsOf(id)).toEqual([]);
+  });
+
+  it("lists the capability set the drawer offers, with each Capability's modes and default", async () => {
+    const s = await student("agent-capabilities-set");
+
+    const listed = await s.call("GET", "/capabilities");
+
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual([
+      {
+        id: "createStudyBlocks",
+        section: "Lernblöcke",
+        title: "Lernblöcke erstellen",
+        description: "Neue Lernzeit in freie Zeitfenster eintragen.",
+        modes: ["automatic", "always", "ask"],
+      },
+      {
+        id: "moveOwnStudyBlocks",
+        section: "Lernblöcke",
+        title: "Eigene Lernblöcke verschieben",
+        description: "Nur Blöcke, die dieser Agent erstellt hat.",
+        modes: ["automatic", "always", "ask"],
+      },
+      {
+        id: "moveStudyBlocks",
+        section: "Lernblöcke",
+        title: "Lernblöcke verschieben",
+        description: "Auch Blöcke, die du oder andere geplant haben.",
+        modes: ["ask"],
+      },
+      {
+        id: "removeOwnStudyBlocks",
+        section: "Lernblöcke",
+        title: "Eigene Lernblöcke entfernen",
+        description: "Nur Blöcke, die dieser Agent erstellt hat.",
+        modes: ["automatic", "always", "ask"],
+      },
+    ]);
   });
 });
 

@@ -18,7 +18,17 @@ import {
 } from "@nunio/ui/components/input-group/input-group";
 import { Textarea } from "@nunio/ui/components/textarea/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Goal, NotepadText, Pencil, Save, Workflow } from "lucide-react";
+import {
+  CalendarMinus,
+  CalendarPlus,
+  CalendarSync,
+  Goal,
+  NotepadText,
+  Pencil,
+  Plus,
+  Save,
+  Workflow,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
@@ -27,8 +37,16 @@ import { CourseDot } from "@/features/shared/components/course-dot";
 import { PageHeader } from "@/features/shared/components/page-header";
 import { courseSize, unavailable } from "./agent-course";
 import { saveAgent } from "./api/agent-mutations";
-import type { Agent, AgentCourse } from "./api/agent-queries";
-import { agentCourseQueries } from "./api/agent-queries";
+import type {
+  Agent,
+  AgentCapability,
+  AgentCourse,
+  Capability,
+} from "./api/agent-queries";
+import { agentCourseQueries, capabilityQueries } from "./api/agent-queries";
+import { modeOf } from "./capability-mode";
+import { CapabilityMenu } from "./components/capability-menu";
+import { EditCapabilitiesSheet } from "./components/edit-capabilities-sheet";
 import { EditCoursesSheet } from "./components/edit-courses-sheet";
 
 type Draft = {
@@ -38,6 +56,8 @@ type Draft = {
   instructions: string;
   /** Its Courses as last read, so one that is no longer on offer still shows and can be taken off. */
   courses: AgentCourse[];
+  /** Its Capabilities in the capability set's order, each with its mode. */
+  capabilities: AgentCapability[];
   /** In USD, as typed. */
   budget: string;
 };
@@ -49,6 +69,7 @@ const blank: Draft = {
   emoji: "🤖",
   instructions: "",
   courses: [],
+  capabilities: [],
   budget: "5",
 };
 /** The API's cap on a monthly Budget, in USD. */
@@ -62,6 +83,7 @@ type Saved = Pick<
   | "emoji"
   | "instructions"
   | "courses"
+  | "capabilities"
   | "budget"
 >;
 
@@ -71,6 +93,7 @@ const draftOf = (agent: Saved): Draft => ({
   emoji: agent.emoji,
   instructions: agent.instructions,
   courses: agent.courses,
+  capabilities: agent.capabilities,
   budget: String(agent.budget.limitMicroUsd / 1_000_000),
 });
 
@@ -111,6 +134,14 @@ function FieldError({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
+/** Each Capability's icon on the form, by the Action it takes. */
+const capabilityIcons: Record<Capability["id"], typeof CalendarPlus> = {
+  createStudyBlocks: CalendarPlus,
+  moveOwnStudyBlocks: CalendarSync,
+  moveStudyBlocks: CalendarSync,
+  removeOwnStudyBlocks: CalendarMinus,
+};
+
 const tabs = [
   { key: "activity", label: "Aktivität", Icon: NotepadText },
   { key: "goal", label: "Auftrag", Icon: Goal },
@@ -136,8 +167,10 @@ export function AgentFormScreen({
   // A new Agent has no Runs yet, so it opens on its Auftrag.
   const [tab, setTab] = useState<"activity" | "goal">("goal");
   const [editingCourses, setEditingCourses] = useState(false);
+  const [editingCapabilities, setEditingCapabilities] = useState(false);
   const [tried, setTried] = useState(false);
   const offered = useQuery(agentCourseQueries(apiOrigin));
+  const capabilitySet = useQuery(capabilityQueries(apiOrigin));
   const save = useMutation(saveAgent(apiOrigin, agent?.id, queryClient));
   const change = (next: Partial<Draft>) => {
     setDraft((current) => ({ ...current, ...next }));
@@ -166,6 +199,7 @@ export function AgentFormScreen({
         emoji: draft.emoji,
         instructions: draft.instructions.trim(),
         courseIds: draft.courses.map((course) => course.id),
+        capabilities: draft.capabilities,
         budgetMicroUsd: Math.round(budget * 1_000_000),
       })
       .catch(() => {
@@ -400,6 +434,97 @@ export function AgentFormScreen({
               </Section>
               <div aria-hidden="true" className="h-px bg-base-200" />
               <Section
+                title="Fähigkeiten"
+                description="Bestimme, was der Agent machen darf und was nicht."
+              >
+                <div className="flex flex-col">
+                  {capabilitySet.error && (
+                    <p role="alert" className="text-sm text-destructive-600">
+                      {capabilitySet.error.message}
+                    </p>
+                  )}
+                  {!!draft.capabilities.length && capabilitySet.data && (
+                    <ul
+                      aria-label="Fähigkeiten"
+                      className="mb-3 flex flex-col gap-3"
+                    >
+                      {draft.capabilities.map(({ id: capabilityId, mode }) => {
+                        const capability = capabilitySet.data.find(
+                          (each) => each.id === capabilityId,
+                        );
+                        if (!capability) return null;
+                        const Icon = capabilityIcons[capabilityId];
+                        const shownMode = modeOf(mode);
+                        return (
+                          <li
+                            key={capabilityId}
+                            className="flex items-start gap-3 rounded-lg border border-base-200 px-4 py-3"
+                          >
+                            <span className="flex pt-0.5">
+                              <Icon
+                                aria-hidden="true"
+                                className="size-4 text-primary-500"
+                              />
+                            </span>
+                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <span className="text-sm font-medium text-base-800">
+                                  {capability.title}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "rounded-sm px-1.5 text-xs leading-5 font-medium",
+                                    shownMode.badge,
+                                  )}
+                                >
+                                  {shownMode.label}
+                                </span>
+                              </span>
+                              <span className="text-sm text-base-500">
+                                {capability.description}
+                              </span>
+                            </span>
+                            <CapabilityMenu
+                              capability={capability}
+                              mode={mode}
+                              onMode={(next) =>
+                                change({
+                                  capabilities: draft.capabilities.map(
+                                    (each) =>
+                                      each.id === capabilityId
+                                        ? { id: capabilityId, mode: next }
+                                        : each,
+                                  ),
+                                })
+                              }
+                              onRemove={() =>
+                                change({
+                                  capabilities: draft.capabilities.filter(
+                                    (each) => each.id !== capabilityId,
+                                  ),
+                                })
+                              }
+                            />
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEditingCapabilities(true)}
+                    className="flex items-center gap-2 self-start text-sm font-medium text-primary-600 hover:text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-500"
+                  >
+                    <Plus
+                      aria-hidden="true"
+                      className="size-4 text-primary-500"
+                    />
+                    Fähigkeit hinzufügen
+                  </button>
+                </div>
+              </Section>
+              <div aria-hidden="true" className="h-px bg-base-200" />
+              <Section
                 title="Budget"
                 description="Wie viel dein Agent pro Monat ausgeben darf."
                 descriptionId={`${id}-budget-description`}
@@ -450,6 +575,18 @@ export function AgentFormScreen({
           setEditingCourses(false);
         }}
         onClose={() => setEditingCourses(false)}
+      />
+      <EditCapabilitiesSheet
+        open={editingCapabilities}
+        offered={capabilitySet.data ?? []}
+        loading={capabilitySet.isPending}
+        error={capabilitySet.error?.message}
+        selected={draft.capabilities}
+        onSave={(capabilities) => {
+          change({ capabilities });
+          setEditingCapabilities(false);
+        }}
+        onClose={() => setEditingCapabilities(false)}
       />
     </main>
   );

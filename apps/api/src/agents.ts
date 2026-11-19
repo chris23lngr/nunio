@@ -1,6 +1,12 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import type { AgentScope } from "@nunio/delegation";
+import {
+  approvalModes,
+  capabilities,
+  capabilityIds,
+  capabilitySections,
+} from "@nunio/delegation";
 import { courseColors } from "@nunio/knowledge";
 import { deadline } from "@nunio/planning";
 import type { AppBindings } from "./app.js";
@@ -35,6 +41,19 @@ const AgentCourse = z
   })
   .openapi("AgentCourse");
 
+/** One of an Agent's Capabilities, with its mode. */
+const AgentCapability = z
+  .object({
+    id: z.enum(capabilityIds),
+    mode: z
+      .enum(approvalModes)
+      .describe(
+        "always and automatic hold a Grant; ask asks for every Action. Lernblöcke verschieben allows only ask.",
+      ),
+  })
+  .strict()
+  .openapi("AgentCapability");
+
 /** A free-text Agent's form, saved whole. */
 const AgentForm = z
   .object({
@@ -53,6 +72,10 @@ const AgentForm = z
       .describe(
         "Its Courses: accepted, unarchived ones, or ones it already has.",
       ),
+    capabilities: z
+      .array(AgentCapability)
+      .max(capabilityIds.length)
+      .describe("Its Capabilities, each at most once, on a mode it allows."),
     budgetMicroUsd: z
       .number()
       .int()
@@ -86,7 +109,14 @@ const Agent = z
       .describe("The one exam it prepares for; null for a Course."),
     state: z.enum(["active", "paused", "ended"]),
     pausedBy: z.enum(["student", "budget", "course_archived"]).nullable(),
-    grants: z.array(z.enum(["studyBlock.create", "studyBlock.move"])),
+    capabilities: z
+      .array(AgentCapability)
+      .describe(
+        "A free-text Agent's Capabilities in the capability set's order; none for a preset Agent.",
+      ),
+    grants: z.array(
+      z.enum(["studyBlock.create", "studyBlock.move", "studyBlock.remove"]),
+    ),
     budget: z.object({
       limitMicroUsd: z.number(),
       usedMicroUsd: z.number(),
@@ -260,6 +290,50 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
     createRoute({
       method: "get",
+      path: "/api/me/agents/capabilities",
+      responses: {
+        200: json(
+          z.array(
+            z
+              .object({
+                id: z.enum(capabilityIds),
+                section: z.string().describe("The drawer section it is in."),
+                title: z.string(),
+                description: z.string(),
+                modes: z
+                  .array(z.enum(approvalModes))
+                  .describe(
+                    "The modes it allows, the first its default when added; a single one is fixed.",
+                  ),
+              })
+              .openapi("Capability"),
+          ),
+          "Every Capability an Agent can have, in drawer order.",
+        ),
+        401: errors[401],
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return c.json(
+        capabilityIds.map((id) => {
+          const { section, title, description, modes } = capabilities[id];
+          return {
+            id,
+            section: capabilitySections[section],
+            title,
+            description,
+            modes: [...modes],
+          };
+        }),
+        200,
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "get",
       path: "/api/me/agents/{id}",
       request: { params: id },
       responses: {
@@ -302,6 +376,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
             color: course.color as (typeof courseColors)[number],
             ...sizes.get(course.id)!,
           })),
+          capabilities: r.capabilities,
           ...scopeNames(review, r.scope),
           state: r.state,
           pausedBy: r.pausedBy,

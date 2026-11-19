@@ -14,6 +14,9 @@ vi.mock("next/navigation", () => ({
 }));
 beforeEach(() => {
   replace.mockReset();
+  api.route("GET", "/api/me/agents/capabilities", () =>
+    Response.json(capabilitySet),
+  );
   vi.stubGlobal(
     "matchMedia",
     vi.fn(() => ({
@@ -23,6 +26,38 @@ beforeEach(() => {
     })),
   );
 });
+
+/** The capability set in code, as the API lists it. */
+const capabilitySet = [
+  {
+    id: "createStudyBlocks",
+    section: "Lernblöcke",
+    title: "Lernblöcke erstellen",
+    description: "Neue Lernzeit in freie Zeitfenster eintragen.",
+    modes: ["automatic", "always", "ask"],
+  },
+  {
+    id: "moveOwnStudyBlocks",
+    section: "Lernblöcke",
+    title: "Eigene Lernblöcke verschieben",
+    description: "Nur Blöcke, die dieser Agent erstellt hat.",
+    modes: ["automatic", "always", "ask"],
+  },
+  {
+    id: "moveStudyBlocks",
+    section: "Lernblöcke",
+    title: "Lernblöcke verschieben",
+    description: "Auch Blöcke, die du oder andere geplant haben.",
+    modes: ["ask"],
+  },
+  {
+    id: "removeOwnStudyBlocks",
+    section: "Lernblöcke",
+    title: "Eigene Lernblöcke entfernen",
+    description: "Nur Blöcke, die dieser Agent erstellt hat.",
+    modes: ["automatic", "always", "ask"],
+  },
+];
 
 const ids = {
   statistics: "c0000000-0000-4000-8000-000000000001",
@@ -145,6 +180,7 @@ test("'Neuer Agent' opens a blank form with 🤖 and 5 USD, and Speichern saves 
       emoji: "🤖",
       instructions: "Bereite mich auf die Klausur vor.",
       courseIds: [ids.statistics],
+      capabilities: [],
       budgetMicroUsd: 2_500_000,
     },
   ]);
@@ -184,11 +220,12 @@ const agent = {
     },
     { ...offered[1], topics: 12, sources: 3 },
   ],
+  capabilities: [{ id: "createStudyBlocks", mode: "automatic" }],
   course: null,
   exam: null,
   state: "active",
   pausedBy: null,
-  grants: [],
+  grants: ["studyBlock.create"],
   budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
   recentActions: [],
   next: { runAt: null, action: null },
@@ -225,6 +262,7 @@ test("a saved Agent's form shows its Courses, an Archived one as archived, and S
         emoji: "📊",
         instructions: "Bereite mich auf die Klausur vor.",
         courseIds: [ids.archived, ids.statistics],
+        capabilities: [{ id: "createStudyBlocks", mode: "automatic" }],
         budgetMicroUsd: 5_000_000,
       },
     ]),
@@ -360,4 +398,256 @@ test("Abbrechen closes 'Kurse verwalten' without changing the Agent's Courses", 
 
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.queryByRole("list", { name: "Kurse" })).toBeNull();
+});
+
+/** The form's Capabilities as listed: each title, its mode badge and its description. */
+const listedCapabilities = () =>
+  within(screen.getByRole("list", { name: "Fähigkeiten" }))
+    .getAllByRole("listitem")
+    .map((item) => item.textContent);
+
+test("'Fähigkeiten verwalten' adds Lernblöcke Capabilities on their default modes, Lernblöcke verschieben fixed on Nachfragen", async () => {
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("POST", "/api/me/agents", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ id: "a-1" }, { status: 201 });
+  });
+  renderScreen(<AgentFormScreen apiOrigin={api.origin} agent={null} />);
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Name" }),
+    "Statistik",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Kurse bearbeiten" }),
+  );
+  let sheet = await screen.findByRole("dialog", { name: "Kurse verwalten" });
+  await userEvent.click(
+    await within(sheet).findByRole("checkbox", { name: /Statistics II/ }),
+  );
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.queryByRole("list", { name: "Fähigkeiten" })).toBeNull();
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Fähigkeit hinzufügen" }),
+  );
+  sheet = await screen.findByRole("dialog", { name: "Fähigkeiten verwalten" });
+  const section = within(sheet).getByRole("button", { name: "Lernblöcke" });
+  expect(section.getAttribute("aria-expanded")).toBe("true");
+  const boxes = await within(sheet).findAllByRole("checkbox");
+  expect(
+    boxes.map((box) => [
+      box.closest("label")?.textContent,
+      box.getAttribute("aria-checked"),
+    ]),
+  ).toEqual([
+    [
+      "Lernblöcke erstellenNeue Lernzeit in freie Zeitfenster eintragen.",
+      "false",
+    ],
+    [
+      "Eigene Lernblöcke verschiebenNur Blöcke, die dieser Agent erstellt hat.",
+      "false",
+    ],
+    [
+      "Lernblöcke verschiebenAuch Blöcke, die du oder andere geplant haben.",
+      "false",
+    ],
+    [
+      "Eigene Lernblöcke entfernenNur Blöcke, die dieser Agent erstellt hat.",
+      "false",
+    ],
+  ]);
+  expect(within(sheet).queryAllByRole("combobox")).toEqual([]);
+  await userEvent.click(boxes[0]!);
+  await userEvent.click(boxes[2]!);
+  await userEvent.click(boxes[3]!);
+  const create = within(sheet).getByRole("combobox", {
+    name: "Freigabemodus für Lernblöcke erstellen",
+  });
+  expect(create.textContent).toContain("Automatisch");
+  const others = within(sheet).getByRole("combobox", {
+    name: "Freigabemodus für Lernblöcke verschieben",
+  });
+  expect(others.textContent).toContain("Nachfragen");
+  expect(
+    others.hasAttribute("disabled") ||
+      others.getAttribute("aria-disabled") === "true" ||
+      others.hasAttribute("data-disabled"),
+  ).toBe(true);
+  await userEvent.click(create);
+  await userEvent.click(
+    await screen.findByRole("option", { name: "Immer erlaubt" }),
+  );
+  await waitFor(() => expect(create.textContent).toContain("Immer erlaubt"));
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  expect(listedCapabilities()).toEqual([
+    "Lernblöcke erstellenImmer erlaubtNeue Lernzeit in freie Zeitfenster eintragen.",
+    "Lernblöcke verschiebenNachfragenAuch Blöcke, die du oder andere geplant haben.",
+    "Eigene Lernblöcke entfernenAutomatischNur Blöcke, die dieser Agent erstellt hat.",
+  ]);
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  await waitFor(() => expect(replace).toHaveBeenCalledWith("/agents/a-1"));
+  expect(saved).toEqual([
+    expect.objectContaining({
+      capabilities: [
+        { id: "createStudyBlocks", mode: "always" },
+        { id: "moveStudyBlocks", mode: "ask" },
+        { id: "removeOwnStudyBlocks", mode: "automatic" },
+      ],
+    }),
+  ]);
+});
+
+test("'Fähigkeiten verwalten' searches, keeps an added Capability's mode, and Abbrechen changes nothing", async () => {
+  api.route("GET", "/api/me/agents/a-1", () =>
+    Response.json({
+      ...agent,
+      capabilities: [{ id: "createStudyBlocks", mode: "ask" }],
+    }),
+  );
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Fähigkeit hinzufügen" }),
+  );
+  let sheet = await screen.findByRole("dialog", {
+    name: "Fähigkeiten verwalten",
+  });
+  expect(
+    (
+      await within(sheet).findByRole("combobox", {
+        name: "Freigabemodus für Lernblöcke erstellen",
+      })
+    ).textContent,
+  ).toContain("Nachfragen");
+  await userEvent.type(
+    within(sheet).getByRole("searchbox", { name: "Fähigkeiten durchsuchen" }),
+    "eigene",
+  );
+  expect(
+    within(sheet)
+      .getAllByRole("checkbox")
+      .map((box) => box.closest("label")?.textContent),
+  ).toEqual([
+    "Eigene Lernblöcke verschiebenNur Blöcke, die dieser Agent erstellt hat.",
+    "Eigene Lernblöcke entfernenNur Blöcke, die dieser Agent erstellt hat.",
+  ]);
+  await userEvent.click(within(sheet).getAllByRole("checkbox")[0]!);
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Abbrechen" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(listedCapabilities()).toEqual([
+    "Lernblöcke erstellenNachfragenNeue Lernzeit in freie Zeitfenster eintragen.",
+  ]);
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Fähigkeit hinzufügen" }),
+  );
+  sheet = await screen.findByRole("dialog", { name: "Fähigkeiten verwalten" });
+  await userEvent.type(
+    within(sheet).getByRole("searchbox", { name: "Fähigkeiten durchsuchen" }),
+    "Karteikarten",
+  );
+  expect(
+    within(sheet).getByText("Keine Fähigkeit passt zu deiner Suche."),
+  ).toBeTruthy();
+});
+
+test("a Capability's '⋯' menu changes its mode or removes it, and Lernblöcke verschieben stays on Nachfragen", async () => {
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/a-1", () =>
+    Response.json({
+      ...agent,
+      capabilities: [
+        { id: "createStudyBlocks", mode: "automatic" },
+        { id: "moveOwnStudyBlocks", mode: "automatic" },
+        { id: "moveStudyBlocks", mode: "ask" },
+      ],
+    }),
+  );
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  await userEvent.click(
+    await screen.findByRole("button", {
+      name: "Aktionen für Lernblöcke erstellen",
+    }),
+  );
+  let menu = await screen.findByRole("menu");
+  expect(within(menu).getByText("Freigabemodus")).toBeTruthy();
+  expect(
+    within(menu)
+      .getAllByRole("menuitemradio")
+      .map((item) => [item.textContent, item.getAttribute("aria-checked")]),
+  ).toEqual([
+    ["Immer erlaubt", "false"],
+    ["Automatisch", "true"],
+    ["Nachfragen", "false"],
+  ]);
+  expect(within(menu).getByRole("separator")).toBeTruthy();
+  await userEvent.click(
+    within(menu).getByRole("menuitemradio", { name: "Nachfragen" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  expect(listedCapabilities()).toEqual([
+    "Lernblöcke erstellenNachfragenNeue Lernzeit in freie Zeitfenster eintragen.",
+    "Eigene Lernblöcke verschiebenAutomatischNur Blöcke, die dieser Agent erstellt hat.",
+    "Lernblöcke verschiebenNachfragenAuch Blöcke, die du oder andere geplant haben.",
+  ]);
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Aktionen für Lernblöcke verschieben" }),
+  );
+  menu = await screen.findByRole("menu");
+  expect(
+    within(menu)
+      .getAllByRole("menuitemradio")
+      .map((item) => [item.textContent, item.getAttribute("aria-disabled")]),
+  ).toEqual([
+    ["Immer erlaubt", "true"],
+    ["Automatisch", "true"],
+    ["Nachfragen", null],
+  ]);
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+  await userEvent.click(
+    screen.getByRole("button", {
+      name: "Aktionen für Eigene Lernblöcke verschieben",
+    }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Löschen" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  expect(listedCapabilities()).toEqual([
+    "Lernblöcke erstellenNachfragenNeue Lernzeit in freie Zeitfenster eintragen.",
+    "Lernblöcke verschiebenNachfragenAuch Blöcke, die du oder andere geplant haben.",
+  ]);
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  expect(saved).toEqual([
+    expect.objectContaining({
+      capabilities: [
+        { id: "createStudyBlocks", mode: "ask" },
+        { id: "moveStudyBlocks", mode: "ask" },
+      ],
+    }),
+  ]);
 });
