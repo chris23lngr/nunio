@@ -16,6 +16,7 @@ import {
   settingsOf,
   unsubscribeToken,
 } from "./outreach.js";
+import { channels, raise, runsAwaitingApproval } from "./raise.js";
 
 type PlanView = Awaited<ReturnType<Plan["view"]>>;
 
@@ -84,7 +85,6 @@ export interface Pusher {
   ): Promise<"sent" | "gone">;
 }
 
-const channels = ["email", "push"] as const;
 type Channel = (typeof channels)[number];
 /** Long enough to reach a phone that was off overnight, never the library's four weeks. */
 const pushTtlSeconds = 12 * 60 * 60;
@@ -125,47 +125,29 @@ export function createOutreachSender({
     const pausedForArchivedCourse = (await agents.list(p))
       .filter((r) => r.pausedBy === "course_archived")
       .map((r) => r.id);
-    const current = causesOf({
-      shortfalls: proposal.shortfalls,
-      review,
-      actions: [...expired, ...unconfirmed],
-      pausedForArchivedCourse,
-    });
     const at = clock.now();
     await withOwner(db, p, async (tx, studentId) => {
       const live = await tx.intervention.findMany({
         where: { causeEndedAt: null },
         select: { id: true, dedupeKey: true, kind: true },
       });
+      // Read after `live`, so a Run that ends meanwhile is either in both or its Intervention is in neither.
+      const current = causesOf({
+        shortfalls: proposal.shortfalls,
+        review,
+        actions: [...expired, ...unconfirmed],
+        pausedForArchivedCourse,
+        runsAwaitingApproval: await runsAwaitingApproval(tx, at),
+      });
       const liveKeys = new Set(live.map((r) => r.dedupeKey));
       const currentKeys = new Set(current.map(keyOf));
-      const raised = current
-        .filter((c) => !liveKeys.has(keyOf(c)))
-        .map((c) => ({
-          id: randomUUID(),
-          studentId,
-          kind: c.kind,
-          dedupeKey: keyOf(c),
-          actionId: c.subject.kind === "action" ? c.subject.id : null,
-          createdAt: at,
-        }));
-      // A Run's raiseIntervention may insert the same cause meanwhile; only what was inserted here is announced.
-      const inserted = await tx.intervention.createManyAndReturn({
-        data: raised,
-        skipDuplicates: true,
-        select: { id: true },
-      });
-      await tx.delivery.createMany({
-        data: channels.flatMap((channel) =>
-          inserted.map((i) => ({
-            id: randomUUID(),
-            studentId,
-            channel,
-            interventionId: i.id,
-            dueAt: at,
-          })),
-        ),
-      });
+      // A Run may raise the same cause meanwhile; only what is inserted here is announced.
+      await raise(
+        tx,
+        studentId,
+        current.filter((c) => !liveKeys.has(keyOf(c))),
+        at,
+      );
       // An expired Approval stays expired, so its cause never ends by itself.
       const ended = live.filter(
         (r) => r.kind !== "approval_expired" && !currentKeys.has(r.dedupeKey),

@@ -159,6 +159,57 @@ async function dueTomorrow(p: Principal, minutes: number, date = "2026-11-10") {
   return work;
 }
 
+/** A free-text Agent's Run that ended an hour ago, having asked for `asked` Approvals still open for a week. */
+async function endedRunAsking(p: Principal, asked: number) {
+  if (p.kind !== "student") throw new Error("a student");
+  const { studentId } = p;
+  const agentId = randomUUID();
+  const runId = randomUUID();
+  await admin.agent.create({
+    data: {
+      id: agentId,
+      studentId,
+      name: "Klausur vorbereiten",
+      budgetMicroUsd: 1_000_000,
+    },
+  });
+  await admin.run.create({
+    data: {
+      id: runId,
+      studentId,
+      agentId,
+      status: "done",
+      trigger: "schedule",
+      startedAt: new Date(now.getTime() - 3_600_000),
+      endedAt: new Date(now.getTime() - 3_540_000),
+    },
+  });
+  const actionIds = Array.from({ length: asked }, () => randomUUID());
+  for (const [n, id] of actionIds.entries()) {
+    await admin.action.create({
+      data: {
+        id,
+        studentId,
+        runId,
+        key: `${runId}:1:${n + 1}`,
+        kind: "studyBlock.create",
+        args: createArgs,
+        status: "awaiting_approval",
+      },
+    });
+    await admin.approval.create({
+      data: {
+        id: randomUUID(),
+        studentId,
+        actionId: id,
+        fingerprint: "fingerprint",
+        expiresAt: new Date(now.getTime() + 7 * 86_400_000),
+      },
+    });
+  }
+  return { agentId, runId, actionIds };
+}
+
 const open = async (p: Principal) =>
   (await outreach.inbox(p)).interventions.filter((i) => i.state === "open");
 
@@ -307,6 +358,80 @@ describe("raising Interventions from their causes", () => {
       where: { studentId: p.studentId, interventionId: { not: null } },
     });
     expect(queued.filter((d) => d.interventionId !== raised!.id)).toEqual([]);
+  });
+
+  it("keeps one Intervention for an Agent Run that ended with Approvals open, emails it, and lapses it once none is open", async () => {
+    now = at("2026-11-09 08:00");
+    const p = await student();
+    const { runId, actionIds } = await endedRunAsking(p, 2);
+
+    // The Run's end missed raising it; the tick catches it, once however often it looks.
+    await sender.tick();
+    await sender.tick();
+    expect(await open(p)).toEqual([
+      expect.objectContaining({
+        kind: "run_approvals",
+        subject: { kind: "run", id: runId },
+      }),
+    ]);
+    expect(mailTo(p).map((m) => m.subject)).toContain(
+      "nunio: 1 item needs your attention",
+    );
+
+    await admin.approval.update({
+      where: { actionId: actionIds[0] },
+      data: { decision: "denied", decidedAt: now },
+    });
+    await admin.action.update({
+      where: { id: actionIds[0] },
+      data: { status: "refused", refusal: "approval_denied" },
+    });
+    await sender.tick();
+    expect(await open(p)).toHaveLength(1);
+
+    // The last one expires: no timer marks it, the next look finds it closed.
+    await admin.approval.update({
+      where: { actionId: actionIds[1] },
+      data: { expiresAt: now },
+    });
+    now = at("2026-11-09 08:05");
+    await sender.tick();
+
+    expect((await outreach.inbox(p)).interventions).toEqual([
+      expect.objectContaining({ kind: "run_approvals", state: "lapsed" }),
+    ]);
+  });
+
+  it("raises nothing for an Agent Run's Approval approved too late, which only a Chat's or a waiting Run's would", async () => {
+    now = at("2026-11-09 08:00");
+    const p = await student();
+    if (p.kind !== "student") throw new Error("a student");
+    const { actionIds } = await endedRunAsking(p, 1);
+    await admin.action.update({
+      where: { id: actionIds[0] },
+      data: { status: "refused", refusal: "approval_expired" },
+    });
+    const chatAction = randomUUID();
+    await admin.action.create({
+      data: {
+        id: chatAction,
+        studentId: p.studentId,
+        key: `chat:${chatAction}`,
+        kind: "studyBlock.create",
+        args: createArgs,
+        status: "refused",
+        refusal: "approval_expired",
+      },
+    });
+
+    await sender.tick();
+
+    expect(await open(p)).toEqual([
+      expect.objectContaining({
+        kind: "approval_expired",
+        subject: { kind: "action", id: chatAction },
+      }),
+    ]);
   });
 
   it("does not let the student close a lapsed Intervention", async () => {

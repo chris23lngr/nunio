@@ -24,6 +24,8 @@ import {
   createKnowledgeReader,
   createSources,
 } from "@nunio/knowledge";
+import type { Outreach } from "@nunio/outreach";
+import { createOutreach } from "@nunio/outreach";
 import { createPlan, createPlanExecutor, planRules } from "@nunio/planning";
 import { ApplicationFailure } from "@temporalio/common";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
@@ -45,6 +47,7 @@ let admin: PrismaClient;
 let runtime: PrismaClient;
 let runs: AgentRuns;
 let activity: Activity;
+let outreach: Outreach;
 let agents: ReturnType<typeof createAgents>;
 let sources: ReturnType<typeof createSources>;
 
@@ -229,6 +232,12 @@ beforeAll(async () => {
     clock,
   });
   activity = createActivity({ db: runtime, keys, facts, clock });
+  outreach = createOutreach({
+    db: runtime,
+    clock,
+    vapidPublicKey: "test-vapid-key",
+    unsubscribeSecret: "test-unsubscribe-secret",
+  });
 }, 180_000);
 
 afterAll(async () => {
@@ -846,6 +855,46 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
         select: { decision: true },
       }),
     ).toEqual([{ decision: null }]);
+  });
+
+  it("raises one Intervention when it ends with Approvals open, queued to be announced, and none when it asked nothing", async () => {
+    const s = await started({
+      held: lernbloecke({ createStudyBlocks: "ask" }),
+    });
+    script = [
+      readPlan,
+      () => [...createBlock(3), ...createBlock(4)],
+      () => says("Ich habe um zwei Freigaben gebeten."),
+    ];
+    await run(s);
+    const quiet = await requested(s.p, s.agentId);
+    await run(quiet);
+    // Ending it again raises nothing more.
+    await runs.finish(s, { status: "done" });
+
+    expect(
+      (await outreach.inbox(s.p)).interventions.map(
+        ({ kind, subject, state }) => ({ kind, subject, state }),
+      ),
+    ).toEqual([
+      {
+        kind: "run_approvals",
+        subject: { kind: "run", id: s.runId },
+        state: "open",
+      },
+    ]);
+    // One message per channel; the outreach tick sends it under Quiet Hours and the daily limit.
+    expect(
+      (
+        await admin.delivery.findMany({
+          where: { studentId: s.studentId },
+          select: { channel: true, sentAt: true },
+        })
+      ).sort((a, b) => a.channel.localeCompare(b.channel)),
+    ).toEqual([
+      { channel: "email", sentAt: null },
+      { channel: "push", sentAt: null },
+    ]);
   });
 
   it("shows each Action call and its outcome in the Verlauf, refusals, run_cap and a broken Preference included", async () => {

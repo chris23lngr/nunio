@@ -85,7 +85,7 @@ export interface Pusher {
 
 ### Invariants
 
-- **One open Intervention per cause.** A cause is `shortfall:<workId>`, `disagreement:<fact|obligation>:<id>`, `approval_expired:<actionId>` or `unconfirmed:<actionId>`. While a cause continues, no new Intervention is raised for it, even after an Acknowledgement or Dismissal. Once the cause ends and returns, a new one is raised.
+- **One open Intervention per cause.** A cause is `shortfall:<workId>`, `disagreement:<fact|obligation>:<id>`, `approval_expired:<actionId>`, `unconfirmed:<actionId>` or `run_approvals:<runId>` (an Agent Run that ended with Approvals open, raised as it ends; an Agent Run's expired Approval raises no `approval_expired`). While a cause continues, no new Intervention is raised for it, even after an Acknowledgement or Dismissal. Once the cause ends and returns, a new one is raised.
 - **Closing is exclusive.** An Intervention closes once, as acknowledged, dismissed or lapsed. `close` on a closed Intervention throws `NotOpenError`. Acknowledging never resolves the Unconfirmed Action or Disagreement behind it.
 - **Sending never closes anything.** No email or push result changes an Intervention or a Briefing.
 - **Content-free messages.** Subjects, bodies and push payloads name only the kind and count of items and link to `inboxUrl` (ADR-0014). Pushes are empty; the service worker shows fixed text.

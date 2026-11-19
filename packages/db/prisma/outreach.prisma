@@ -5,7 +5,7 @@ model Intervention {
   id             String    @id
   studentId      String
   student        User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  /// shortfall, disagreement, approval_expired or unconfirmed.
+  /// shortfall, disagreement, approval_expired, unconfirmed or run_approvals.
   kind           String
   /// Its cause, such as `shortfall:<workId>`; one open Intervention per cause (a partial unique index in SQL).
   dedupeKey      String

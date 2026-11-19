@@ -12,6 +12,8 @@ export type InterventionView = {
   raisedAt: Date;
   state: "open" | "acknowledged" | "dismissed" | "lapsed";
   closedAt: Date | null;
+  /** The Agent Run it is about, as it is now: its Agent and how many of its Approvals are open; null once deleted. */
+  run: { agentId: string; agentName: string; openApprovals: number } | null;
 };
 
 /** What a Briefing bundled when it was made; it is never edited afterwards. */
@@ -153,16 +155,67 @@ export function createOutreach({
       interventions: InterventionView[];
       briefings: BriefingView[];
     }> {
-      const [rows, briefings] = await withOwner(db, student, (tx) =>
-        Promise.all([
-          tx.intervention.findMany({ orderBy: { createdAt: "desc" } }),
-          tx.briefing.findMany({ orderBy: { createdAt: "desc" }, take: 7 }),
-        ]),
+      const at = clock.now();
+      const [rows, briefings, runs] = await withOwner(
+        db,
+        student,
+        async (tx) => {
+          const aboutRuns = (
+            await tx.intervention.findMany({
+              where: { kind: "run_approvals" },
+              select: { id: true, dedupeKey: true, causeEndedAt: true },
+            })
+          ).map((r) => ({ ...r, runId: causeOf(r.dedupeKey).subject.id }));
+          const runs = await tx.run.findMany({
+            where: { id: { in: aboutRuns.map((r) => r.runId) } },
+            select: {
+              id: true,
+              agent: { select: { id: true, name: true } },
+              actions: {
+                where: {
+                  status: "awaiting_approval",
+                  approval: { is: { decision: null, expiresAt: { gt: at } } },
+                },
+                select: { id: true },
+              },
+            },
+          });
+          // A Run's Intervention lapses lazily, once none of its Approvals is open; no timer marks it (ADR-0006).
+          const lapsed = aboutRuns.filter(
+            (r) =>
+              !r.causeEndedAt &&
+              !runs.some((run) => run.id === r.runId && run.actions.length),
+          );
+          if (lapsed.length)
+            await tx.intervention.updateMany({
+              where: { id: { in: lapsed.map((r) => r.id) } },
+              data: { causeEndedAt: at },
+            });
+          return Promise.all([
+            tx.intervention.findMany({ orderBy: { createdAt: "desc" } }),
+            tx.briefing.findMany({ orderBy: { createdAt: "desc" }, take: 7 }),
+            runs,
+          ]);
+        },
       );
+      const runOf = (subject: Subject): InterventionView["run"] => {
+        const run =
+          subject.kind === "run"
+            ? runs.find((r) => r.id === subject.id)
+            : undefined;
+        return run?.agent
+          ? {
+              agentId: run.agent.id,
+              agentName: run.agent.name,
+              openApprovals: run.actions.length,
+            }
+          : null;
+      };
       const views = rows.map(
         (r): InterventionView => ({
           id: r.id,
           ...causeOf(r.dedupeKey),
+          run: runOf(causeOf(r.dedupeKey).subject),
           raisedAt: r.createdAt,
           state: r.acknowledgedAt
             ? "acknowledged"
