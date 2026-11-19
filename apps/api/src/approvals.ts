@@ -30,6 +30,27 @@ const courseTitle = (plan: PlanView, courseId: string | null) =>
       plan.tasks.find((t) => t.courseId === courseId)?.course)) ||
   null;
 
+/** The block a Study Block Action names, and the work it is for, as the Plan shows them now; each undefined once gone. */
+export function workOf(
+  plan: PlanView,
+  args: unknown,
+): {
+  block: PlanView["studyBlocks"][number] | undefined;
+  task: PlanView["tasks"][number] | undefined;
+  obligation: PlanView["obligations"][number] | undefined;
+} {
+  const { workId, studyBlockId } = args as {
+    workId?: string;
+    studyBlockId?: string;
+  };
+  const block = plan.studyBlocks.find((b) => b.id === studyBlockId);
+  const task = plan.tasks.find((t) => t.id === (workId ?? block?.work.id));
+  const obligation = plan.obligations.find(
+    (o) => o.id === (task?.obligationId ?? workId ?? block?.work.id),
+  );
+  return { block, task, obligation };
+}
+
 /** One Action as the student sees it: which work, where its block is now, and where it would go. */
 export function describeAction(
   plan: PlanView,
@@ -67,17 +88,8 @@ export function describeAction(
           : null,
     };
   }
-  const { workId, studyBlockId, start, end } = args as {
-    workId?: string;
-    studyBlockId?: string;
-    start: string | Date;
-    end: string | Date;
-  };
-  const block = plan.studyBlocks.find((b) => b.id === studyBlockId);
-  const task = plan.tasks.find((t) => t.id === (workId ?? block?.work.id));
-  const obligation = plan.obligations.find(
-    (o) => o.id === (task?.obligationId ?? workId ?? block?.work.id),
-  );
+  const { start, end } = args as { start: string | Date; end: string | Date };
+  const { block, task, obligation } = workOf(plan, args);
   return {
     kind,
     work: {

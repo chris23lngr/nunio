@@ -10,8 +10,8 @@ import {
 } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
-import type { Chats } from "@nunio/chat";
-import { createChats } from "@nunio/chat";
+import type { Activity, Chats } from "@nunio/chat";
+import { createActivity, createChats } from "@nunio/chat";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { Agents, Delegation } from "@nunio/delegation";
@@ -78,6 +78,8 @@ export interface AppDeps {
   projects: Projects;
   courses: Courses;
   agents: Agents;
+  /** An Agent's Runs as the student reads them. */
+  activity: Activity;
   runWorkflows: RunWorkflows;
   outreach: Outreach;
   artifacts: Artifacts;
@@ -107,6 +109,7 @@ export function createApp({
   projects,
   courses,
   agents,
+  activity,
   runWorkflows,
   outreach,
   artifacts,
@@ -143,6 +146,7 @@ export function createApp({
     c.set("projects", projects);
     c.set("courses", courses);
     c.set("agents", agents);
+    c.set("activity", activity);
     c.set("runWorkflows", runWorkflows);
     c.set("outreach", outreach);
     c.set("artifacts", artifacts);
@@ -270,6 +274,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     prisma,
     delegation,
     agents,
+    activity: createActivity({ db: prisma, keys, clock }),
     runWorkflows,
     appOrigin,
     spike,

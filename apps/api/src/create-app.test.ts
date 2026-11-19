@@ -13,7 +13,7 @@ import type {
 import { createAnswerer, createModels } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
-import { createChats } from "@nunio/chat";
+import { createActivity, createChats } from "@nunio/chat";
 import type { Pool, PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -457,6 +457,11 @@ beforeAll(async () => {
     artifactWorkflows,
     understanding,
     agents,
+    activity: createActivity({
+      db: prisma,
+      keys,
+      clock: { now: () => new Date() },
+    }),
     runWorkflows,
     auth,
     prisma,
@@ -7085,6 +7090,311 @@ describe("a free-text Agent's form", () => {
       running: false,
     });
     expect((await s.call("POST", `/${id}/runs`)).status).toBe(201);
+  });
+
+  /** A Run of the Agent as the worker records it, started `minutesAgo`. */
+  async function recordedRun(
+    studentId: string,
+    agentId: string,
+    minutesAgo: number,
+    data: {
+      status?: "running" | "done" | "stopped" | "failed";
+      stopReason?: string;
+      summary?: string;
+    } = {},
+  ) {
+    const id = randomUUID();
+    const startedAt = new Date(Date.now() - minutesAgo * 60_000);
+    const status = data.status ?? "done";
+    await admin.run.create({
+      data: {
+        id,
+        studentId,
+        agentId,
+        workflowId: `agentRun/${id}`,
+        status,
+        trigger: "schedule",
+        startedAt,
+        endedAt:
+          status === "running"
+            ? null
+            : new Date(startedAt.getTime() + 2 * 60_000),
+        stopReason: data.stopReason ?? null,
+        summaryContent: data.summary ? Buffer.from(data.summary) : null,
+      },
+    });
+    return id;
+  }
+  /** An Action the Run asked the gate for, still waiting for the student's Approval until `expiresAt`. */
+  async function asked(
+    studentId: string,
+    runId: string,
+    expiresAt = new Date(Date.now() + 86_400_000),
+  ) {
+    const actionId = randomUUID();
+    await admin.action.create({
+      data: {
+        id: actionId,
+        studentId,
+        runId,
+        key: `${runId}:1:${actionId}`,
+        kind: "studyBlock.create",
+        args: {},
+        status: "awaiting_approval",
+      },
+    });
+    await admin.approval.create({
+      data: {
+        id: randomUUID(),
+        studentId,
+        actionId,
+        fingerprint: "f",
+        expiresAt,
+      },
+    });
+  }
+
+  it("lists an Agent's Runs newest first, a page at a time, each with its open Approvals", async () => {
+    const s = await student("agent-activity-list");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+    const oldest = await recordedRun(s.id, id, 300, {
+      status: "stopped",
+      stopReason: "budget_exhausted",
+    });
+    const asking = await recordedRun(s.id, id, 200);
+    await asked(s.id, asking);
+    // An expired Approval no longer needs the student.
+    await asked(s.id, asking, new Date(Date.now() - 1_000));
+    const newest = await recordedRun(s.id, id, 1, { status: "running" });
+
+    const first = await s.call("GET", `/${id}/runs?limit=2`);
+
+    expect(first.status).toBe(200);
+    const page = (await first.json()) as {
+      runs: unknown[];
+      nextCursor: string | null;
+    };
+    expect(page.runs).toEqual([
+      {
+        id: newest,
+        status: "running",
+        trigger: "schedule",
+        startedAt: expect.any(String),
+        endedAt: null,
+        stopReason: null,
+        openApprovals: 0,
+      },
+      expect.objectContaining({ id: asking, status: "done", openApprovals: 1 }),
+    ]);
+    const rest = (await (
+      await s.call("GET", `/${id}/runs?limit=2&cursor=${page.nextCursor}`)
+    ).json()) as typeof page;
+    expect(rest).toEqual({
+      runs: [
+        expect.objectContaining({
+          id: oldest,
+          status: "stopped",
+          stopReason: "budget_exhausted",
+        }),
+      ],
+      nextCursor: null,
+    });
+  });
+
+  it("shows a Run's cost against the Budget, its summary and its Verlauf, naming a deleted Course or Source gelöscht", async () => {
+    const s = await student("agent-activity-run");
+    const statistics = await course(s.id, "Statistics II");
+    const { id } = (await (
+      await s.call("POST", "", form([statistics]))
+    ).json()) as { id: string };
+    const entered = await facts.enterObligation(
+      principal.fromSession({ studentId: s.id }),
+      {
+        course: { id: statistics },
+        kind: "exam",
+        title: "Klausur Statistik",
+        due: { date: "2099-02-05", time: "10:00", timeZone: null },
+        destination: null,
+      },
+    );
+    if (entered.status !== "ok") throw new Error(entered.status);
+    const runId = await recordedRun(s.id, id, 10, {
+      summary: "Ich habe einen Lernblock für deine Klausur eingetragen.",
+    });
+    await admin.allowance.upsert({
+      where: { studentId: s.id },
+      create: { studentId: s.id, limitMicroUsd: 1_000_000 },
+      update: {},
+    });
+    // Settled usage, one call still in flight, and one released, which cost nothing.
+    await admin.usageReservation.createMany({
+      data: [
+        {
+          studentId: s.id,
+          agentId: id,
+          runId,
+          estimateMicroUsd: 200_000,
+          actualMicroUsd: 90_000,
+          status: "settled",
+        },
+        {
+          studentId: s.id,
+          agentId: id,
+          runId,
+          estimateMicroUsd: 30_000,
+          status: "reserved",
+        },
+        {
+          studentId: s.id,
+          agentId: id,
+          runId,
+          estimateMicroUsd: 50_000,
+          status: "released",
+        },
+      ],
+    });
+    const actionId = randomUUID();
+    const start = new Date("2099-02-01T09:00:00Z");
+    const end = new Date("2099-02-01T10:00:00Z");
+    await admin.action.create({
+      data: {
+        id: actionId,
+        studentId: s.id,
+        runId,
+        key: `${runId}:2:1`,
+        kind: "studyBlock.create",
+        args: { workId: entered.id, start, end },
+        status: "done",
+      },
+    });
+    const goneCourse = randomUUID();
+    const goneSource = randomUUID();
+    await admin.runEvent.createMany({
+      data: [
+        {
+          runId,
+          studentId: s.id,
+          key: "read:1",
+          type: "read",
+          detail: {
+            step: 1,
+            plan: true,
+            courseIds: [statistics, goneCourse],
+            sourceIds: [goneSource],
+          },
+        },
+        {
+          runId,
+          studentId: s.id,
+          key: "action:2:1",
+          type: "action",
+          detail: {
+            step: 2,
+            call: 1,
+            capability: "createStudyBlocks",
+            actionId,
+            outcome: "done",
+            refusal: null,
+            brokenPreferences: ["outside_study_window"],
+          },
+        },
+        {
+          runId,
+          studentId: s.id,
+          key: "action:2:2",
+          type: "action",
+          detail: {
+            step: 2,
+            call: 2,
+            capability: "createStudyBlocks",
+            actionId: null,
+            outcome: "refused",
+            refusal: "invalid",
+            brokenPreferences: [],
+          },
+        },
+      ],
+    });
+
+    const shown = await s.call("GET", `/${id}/runs/${runId}`);
+
+    expect(shown.status).toBe(200);
+    const run = (await shown.json()) as { verlauf: { at: string }[] };
+    expect(run).toMatchObject({
+      id: runId,
+      status: "done",
+      costMicroUsd: 120_000,
+      budgetMicroUsd: 5_000_000,
+      summary: "Ich habe einen Lernblock für deine Klausur eingetragen.",
+      openApprovals: 0,
+    });
+    expect(run.verlauf.map(({ at: _, ...entry }) => entry)).toEqual([
+      { type: "start", trigger: "schedule" },
+      {
+        type: "read",
+        step: 1,
+        plan: true,
+        courses: [
+          { id: statistics, title: "Statistics II" },
+          { id: goneCourse, title: null },
+        ],
+        sources: [{ id: goneSource, title: null }],
+      },
+      {
+        type: "action",
+        step: 2,
+        capability: "createStudyBlocks",
+        action: {
+          kind: "studyBlock.create",
+          work: { title: "Klausur Statistik", course: "Statistics II" },
+          start: start.toISOString(),
+          end: end.toISOString(),
+        },
+        outcome: "done",
+        refusal: null,
+        brokenPreferences: ["outside_study_window"],
+      },
+      {
+        type: "action",
+        step: 2,
+        capability: "createStudyBlocks",
+        action: null,
+        outcome: "refused",
+        refusal: "invalid",
+        brokenPreferences: [],
+      },
+      { type: "end", status: "done", reason: null },
+    ]);
+  });
+
+  it("shows no Activity of another student's Agent, nor a Run under another Agent", async () => {
+    const owner = await student("agent-activity-owner");
+    const statistics = await course(owner.id, "Statistics II");
+    const created = async () =>
+      (
+        (await (await owner.call("POST", "", form([statistics]))).json()) as {
+          id: string;
+        }
+      ).id;
+    const agent = await created();
+    const other = await created();
+    const runId = await recordedRun(owner.id, agent, 5);
+    const stranger = await student("agent-activity-stranger");
+
+    for (const [who, path] of [
+      [stranger, `/${agent}/runs?limit=10`],
+      [stranger, `/${agent}/runs/${runId}`],
+      [owner, `/${other}/runs/${runId}`],
+      [owner, `/${randomUUID()}/runs?limit=10`],
+    ] as const) {
+      const response = await who.call("GET", path);
+      expect([response.status, await response.json()]).toEqual([
+        404,
+        { error: "gone" },
+      ]);
+    }
   });
 
   it("lists the capability set the drawer offers, with each Capability's modes and default", async () => {
