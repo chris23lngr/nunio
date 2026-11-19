@@ -310,6 +310,10 @@ _Avoid_: Revoked, cancelled, deleted, archived, completed
 A single, bounded execution of study work on the student's behalf, started either by the student, such as from a Chat, or by an Agent. Reading or deleting a Source is never a Run.
 _Avoid_: Job, task, session
 
+**Activity**:
+The record of one Agent's Runs that the student reads: what each Run did, asked and was refused, what it cost, and the Agent's own summary of it. Activity stays after the Agent is Ended and goes only when the Agent is deleted.
+_Avoid_: Log, history, feed, audit trail
+
 **Action**:
 One concrete effect a Run, or the student's request in a Chat, has on the student's plan or outside world, such as creating a study block or submitting an artifact. Messages nunio sends the student, such as Interventions, Notices and Briefings, are not Actions, and neither is making an Artifact.
 _Avoid_: Operation, step, tool call

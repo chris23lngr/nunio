@@ -14,3 +14,7 @@ Agents replace Responsibilities, and a Run that waited up to 7 days for its Appr
 - **The next Run sees them.** Each Run reads its Agent's open Approvals and those decided or expired since its previous Run, so it does not ask twice and can build on the answers. Nothing deduplicates across Runs.
 - **One Run at a time.** The Schedule keeps skipping a start while the Agent's Run is still under way, and "Jetzt starten" is unavailable then. No start is queued.
 - **Rejected:** keeping the wait, which stalls the Agent; letting Runs overlap, which allows up to 7 live Runs asking the same things; and having each new Run supersede the last, which caps an Approval's life at the Agent's rhythm.
+
+## Amendment (2026-11-19): One Intervention per Agent Run with open Approvals
+
+The Approvals an Agent's Run leaves open reach the Inbox as one Intervention per Run ([What a Run records and shows in Activity](https://github.com/chris23lngr/nunio/issues/149)). It is raised when the Run ends with at least one Approval open, announced under the student's outreach settings, and lapses when the last of them is decided, expires or is withdrawn. Like expiry, lapsing needs no timer. Opening it leads to that Run's Approvals in the Agent's Activity. One Intervention per Run, rather than one per Approval, keeps a Run's up to five questions to a single announcement. Expiry and withdrawal still raise nothing of their own.
