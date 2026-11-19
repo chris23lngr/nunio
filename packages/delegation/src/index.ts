@@ -11,6 +11,15 @@ export {
   type Preset,
   type Schedules,
 } from "./agents.js";
+export {
+  type AgentCapability,
+  type ApprovalMode,
+  approvalModes,
+  type CapabilityId,
+  capabilities,
+  capabilityIds,
+  capabilitySections,
+} from "./capabilities.js";
 export type { Refusal, Restrictions } from "./decision.js";
 export {
   type ActionOutcome,

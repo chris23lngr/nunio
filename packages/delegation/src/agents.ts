@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
+import type { AgentCapability, ApprovalMode } from "./capabilities.js";
+import {
+  capabilityIds,
+  checkCapabilities,
+  grantedKinds,
+} from "./capabilities.js";
 import type { Clock } from "./gate.js";
 import type { Kind } from "./kinds.js";
 import type { Principal, Transaction } from "./principal.js";
@@ -49,8 +55,40 @@ export type AgentForm = {
   instructions: string;
   /** Its Courses, its scope: at least one. */
   courseIds: string[];
+  /** Its Capabilities, each with its mode. */
+  capabilities: { id: string; mode: string }[];
   budgetMicroUsd: number;
 };
+
+/**
+ * Stores an Agent's Capabilities and keeps its Grants in step: one, unscoped, for each kind a Capability on `always`
+ * or `automatic` takes, and none once the Agent is Ended. The gate reads them at each Action, so a change applies at
+ * the next one.
+ */
+async function saveCapabilities(
+  tx: Transaction,
+  agent: { id: string; studentId: string; state: string },
+  held: AgentCapability[],
+) {
+  const { id: agentId, studentId } = agent;
+  await tx.agentCapability.deleteMany({ where: { agentId } });
+  await tx.agentCapability.createMany({
+    data: held.map(({ id, mode }) => ({
+      agentId,
+      studentId,
+      capability: id,
+      mode,
+    })),
+  });
+  const kinds = agent.state === "ended" ? [] : grantedKinds(held);
+  await tx.grant.deleteMany({ where: { agentId, kind: { notIn: kinds } } });
+  const kept = await tx.grant.findMany({ where: { agentId } });
+  await tx.grant.createMany({
+    data: kinds
+      .filter((kind) => !kept.some((g) => g.kind === kind))
+      .map((kind) => ({ id: randomUUID(), studentId, agentId, kind })),
+  });
+}
 
 /**
  * The form's Courses, if each may be on the Agent: one of the student's accepted, unarchived Courses, or one the Agent
@@ -151,12 +189,16 @@ export function createAgents({
       if (p.kind !== "student") return { status: "gone" } as const;
       if (!("preset" in input))
         return withOwner(db, p, async (tx, studentId) => {
+          const held = checkCapabilities(input.capabilities);
+          if (!held) return { status: "invalid" } as const;
           const courseIds = await checkCourses(tx, input.courseIds);
           if (typeof courseIds === "string")
             return { status: courseIds } as const;
           const id = randomUUID();
-          const { courseIds: _, ...fields } = input;
-          await tx.agent.create({ data: { id, studentId, ...fields } });
+          const { courseIds: _, capabilities: __, ...fields } = input;
+          const agent = await tx.agent.create({
+            data: { id, studentId, ...fields },
+          });
           await tx.agentCourse.createMany({
             data: courseIds.map((courseId) => ({
               agentId: id,
@@ -164,6 +206,7 @@ export function createAgents({
               studentId,
             })),
           });
+          await saveCapabilities(tx, agent, held);
           return { status: "ok", id } as const;
         });
       return withOwner(db, p, async (tx, studentId) => {
@@ -231,12 +274,16 @@ export function createAgents({
     async update(p: Principal, id: string, form: AgentForm) {
       if (p.kind !== "student") return { status: "gone" } as const;
       return withOwner(db, p, async (tx, studentId) => {
+        // Serialises saves, and the gate's read of the Grants, on the Agent.
+        await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
         const r = await tx.agent.findUnique({
           where: { id },
           include: { courses: true },
         });
         if (!r) return { status: "gone" } as const;
         if (r.preset) return { status: "invalid" } as const;
+        const held = checkCapabilities(form.capabilities);
+        if (!held) return { status: "invalid" } as const;
         const courseIds = await checkCourses(
           tx,
           form.courseIds,
@@ -244,8 +291,9 @@ export function createAgents({
         );
         if (typeof courseIds === "string")
           return { status: courseIds } as const;
-        const { courseIds: _, ...fields } = form;
+        const { courseIds: _, capabilities: __, ...fields } = form;
         await tx.agent.update({ where: { id }, data: fields });
+        await saveCapabilities(tx, r, held);
         await tx.agentCourse.deleteMany({
           where: { agentId: id, courseId: { notIn: courseIds } },
         });
@@ -355,7 +403,11 @@ export function createAgents({
       return withOwner(db, p, async (tx) => {
         const r = await tx.agent.findUnique({
           where: { id },
-          include: { grants: true, courses: { include: { course: true } } },
+          include: {
+            grants: true,
+            courses: { include: { course: true } },
+            capabilities: true,
+          },
         });
         if (!r) return null;
         return {
@@ -373,6 +425,12 @@ export function createAgents({
               archived: course.archivedAt !== null,
             }))
             .sort((a, b) => a.title.localeCompare(b.title, "de")),
+          // In the capability set's order. One no longer in code is left out.
+          capabilities: capabilityIds.flatMap((capability) =>
+            r.capabilities
+              .filter((c) => c.capability === capability)
+              .map((c) => ({ id: capability, mode: c.mode as ApprovalMode })),
+          ),
           scope: scopeOf(r),
           state: r.state as "active" | "paused" | "ended",
           pausedBy: r.pausedBy as PausedBy | null,

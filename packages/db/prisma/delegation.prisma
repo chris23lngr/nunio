@@ -64,9 +64,10 @@ model Agent {
   createdAt      DateTime            @default(now())
   endedAt        DateTime?
 
-  grants  Grant[]
-  runs    Run[]
-  courses AgentCourse[]
+  grants       Grant[]
+  runs         Run[]
+  courses      AgentCourse[]
+  capabilities AgentCapability[]
 
   @@unique([id, studentId])
   @@index([studentId])
@@ -84,6 +85,27 @@ model AgentCourse {
   @@id([agentId, courseId])
   @@index([studentId, courseId])
   @@map("agent_course")
+}
+
+/// How an Action Capability is authorised: always asked (ask), or held as a Grant that asks in fixed cases (automatic) or never (always).
+enum ApprovalMode {
+  always
+  automatic
+  ask
+
+  @@map("approval_mode")
+}
+
+/// One of an Agent's Capabilities, by its id in the capability set in code. An Action Capability has a mode; any other has none.
+model AgentCapability {
+  agentId    String
+  capability String
+  studentId  String
+  mode       ApprovalMode?
+  agent      Agent         @relation(fields: [agentId, studentId], references: [id, studentId], onDelete: Cascade)
+
+  @@id([agentId, capability])
+  @@map("agent_capability")
 }
 
 /// Standing authority for one kind of Action within one Course or Obligation; Grants exist only within an Agent.

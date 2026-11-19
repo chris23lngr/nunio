@@ -4139,6 +4139,14 @@
             "maxItems": 50,
             "description": "Its Courses: accepted, unarchived ones, or ones it already has."
           },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCapability"
+            },
+            "maxItems": 4,
+            "description": "Its Capabilities, each at most once, on a mode it allows."
+          },
           "budgetMicroUsd": {
             "type": "integer",
             "exclusiveMinimum": 0,
@@ -4152,7 +4160,36 @@
           "emoji",
           "instructions",
           "courseIds",
+          "capabilities",
           "budgetMicroUsd"
+        ],
+        "additionalProperties": false
+      },
+      "AgentCapability": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "createStudyBlocks",
+              "moveOwnStudyBlocks",
+              "moveStudyBlocks",
+              "removeOwnStudyBlocks"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "always",
+              "automatic",
+              "ask"
+            ],
+            "description": "always and automatic hold a Grant; ask asks for every Action. Lernblöcke verschieben allows only ask."
+          }
+        },
+        "required": [
+          "id",
+          "mode"
         ],
         "additionalProperties": false
       },
@@ -4198,6 +4235,49 @@
           "archived",
           "topics",
           "sources"
+        ]
+      },
+      "Capability": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "createStudyBlocks",
+              "moveOwnStudyBlocks",
+              "moveStudyBlocks",
+              "removeOwnStudyBlocks"
+            ]
+          },
+          "section": {
+            "type": "string",
+            "description": "The drawer section it is in."
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "always",
+                "automatic",
+                "ask"
+              ]
+            },
+            "description": "The modes it allows, the first its default when added; a single one is fixed."
+          }
+        },
+        "required": [
+          "id",
+          "section",
+          "title",
+          "description",
+          "modes"
         ]
       },
       "Agent": {
@@ -4295,13 +4375,21 @@
               null
             ]
           },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCapability"
+            },
+            "description": "A free-text Agent's Capabilities in the capability set's order; none for a preset Agent."
+          },
           "grants": {
             "type": "array",
             "items": {
               "type": "string",
               "enum": [
                 "studyBlock.create",
-                "studyBlock.move"
+                "studyBlock.move",
+                "studyBlock.remove"
               ]
             }
           },
@@ -4411,6 +4499,7 @@
           "exam",
           "state",
           "pausedBy",
+          "capabilities",
           "grants",
           "budget",
           "recentActions",
@@ -14116,6 +14205,43 @@
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/AgentCourse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/agents/capabilities": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Every Capability an Agent can have, in drawer order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Capability"
                   }
                 }
               }

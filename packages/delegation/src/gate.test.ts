@@ -713,6 +713,44 @@ describe("rechecks at dispatch", () => {
     ).toMatchObject({ status: "done" });
   });
 
+  it("asks, until the gate checks an Agent's Courses, under an unscoped Grant from a Capability's mode", async () => {
+    const s = await student();
+    const r = await run(s, { grants: [] });
+    await admin.grant.create({
+      data: {
+        id: randomUUID(),
+        studentId: s.studentId,
+        agentId: r.agentId,
+        kind: "studyBlock.create",
+      },
+    });
+    const taskId = randomUUID();
+    await admin.task.create({
+      data: {
+        id: taskId,
+        studentId: s.studentId,
+        title: "Bewerbung schreiben",
+      },
+    });
+    const g = gate(fakeExecutor().executor);
+    const block = (workId: string) => ({
+      kind: "studyBlock.create" as const,
+      workId,
+      start: new Date("2026-11-11T09:00:00Z"),
+      end: new Date("2026-11-11T10:00:00Z"),
+    });
+
+    expect(
+      await g.perform(r.p, { key: `${r.runId}:1`, intent: block(taskId) }),
+    ).toMatchObject({ status: "awaiting_approval" });
+    expect(
+      await g.perform(r.p, {
+        key: `${r.runId}:2`,
+        intent: block(s.obligationId),
+      }),
+    ).toMatchObject({ status: "awaiting_approval" });
+  });
+
   it("asks before adding or reopening a Task, even in a Run whose Grant covers its Course", async () => {
     const s = await student();
     const r = await run(s);
