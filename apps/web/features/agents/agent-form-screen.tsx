@@ -25,6 +25,7 @@ import {
   Goal,
   NotepadText,
   Pencil,
+  Play,
   Plus,
   Save,
   Workflow,
@@ -36,7 +37,7 @@ import { useId, useState } from "react";
 import { CourseDot } from "@/features/shared/components/course-dot";
 import { PageHeader } from "@/features/shared/components/page-header";
 import { courseSize, unavailable } from "./agent-course";
-import { saveAgent } from "./api/agent-mutations";
+import { saveAgent, startAgentRun } from "./api/agent-mutations";
 import type {
   Agent,
   AgentCapability,
@@ -85,6 +86,8 @@ type Saved = Pick<
   | "courses"
   | "capabilities"
   | "budget"
+  | "state"
+  | "running"
 >;
 
 const draftOf = (agent: Saved): Draft => ({
@@ -172,6 +175,10 @@ export function AgentFormScreen({
   const offered = useQuery(agentCourseQueries(apiOrigin));
   const capabilitySet = useQuery(capabilityQueries(apiOrigin));
   const save = useMutation(saveAgent(apiOrigin, agent?.id, queryClient));
+  const start = useMutation(
+    startAgentRun(apiOrigin, agent?.id ?? "", queryClient),
+  );
+  const running = Boolean(agent?.running) || start.isPending;
   const change = (next: Partial<Draft>) => {
     setDraft((current) => ({ ...current, ...next }));
     save.reset();
@@ -234,6 +241,16 @@ export function AgentFormScreen({
           </span>
         )}
         <Button
+          variant="outline"
+          // A new Agent has nothing saved to run; a Paused or Ended one takes no Run.
+          disabled={agent?.state !== "active" || running}
+          onClick={() => start.mutate()}
+          className="pr-2"
+        >
+          {running ? "Läuft gerade…" : "Jetzt starten"}
+          {!running && <Play aria-hidden="true" />}
+        </Button>
+        <Button
           disabled={save.isPending}
           onClick={() => void submit()}
           className="pr-2"
@@ -285,12 +302,12 @@ export function AgentFormScreen({
           id={`${id}-panel`}
           aria-labelledby={`${id}-tab-${tab}`}
         >
-          {save.error && (
+          {(save.error ?? start.error) && (
             <p
               role="alert"
               className="mx-8 mt-6 max-w-[30.5rem] text-sm text-destructive-600"
             >
-              {save.error.message}
+              {(save.error ?? start.error)!.message}
             </p>
           )}
           {tab === "activity" ? (

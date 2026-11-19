@@ -50,6 +50,8 @@ export function agentQueries(apiOrigin: string, id: string) {
       if (!result.data) throw new Error("Could not load this Agent.");
       return result.data;
     },
+    // A Run under way ends within minutes; reading the Agent again shows when.
+    refetchInterval: (query) => (query.state.data?.running ? 2_000 : false),
   });
 }
 

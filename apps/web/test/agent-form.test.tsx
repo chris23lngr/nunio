@@ -225,6 +225,7 @@ const agent = {
   exam: null,
   state: "active",
   pausedBy: null,
+  running: false,
   grants: ["studyBlock.create"],
   budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
   recentActions: [],
@@ -267,6 +268,63 @@ test("a saved Agent's form shows its Courses, an Archived one as archived, and S
       },
     ]),
   );
+});
+
+test("'Jetzt starten' is disabled until the Agent is first saved", () => {
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  renderScreen(<AgentFormScreen apiOrigin={api.origin} agent={null} />);
+
+  const start = screen.getByRole("button", { name: "Jetzt starten" });
+  expect((start as HTMLButtonElement).disabled).toBe(true);
+});
+
+test("'Jetzt starten' runs the saved configuration, leaving unsaved edits, and shows 'Läuft gerade…' until the Run ends", async () => {
+  let shown = agent;
+  const started: string[] = [];
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(shown));
+  api.route("POST", "/api/me/agents/a-1/runs", async (request) => {
+    started.push(await request.text());
+    shown = { ...agent, running: true };
+    return Response.json({ id: "r-1" }, { status: 201 });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const name = await screen.findByRole("textbox", { name: "Name" });
+  await userEvent.type(name, " neu");
+
+  await userEvent.click(screen.getByRole("button", { name: "Jetzt starten" }));
+
+  const running = await screen.findByRole("button", {
+    name: "Läuft gerade…",
+  });
+  expect((running as HTMLButtonElement).disabled).toBe(true);
+  // Nothing was saved: the Run reads the saved configuration, and the edit stays in the form.
+  expect(started).toEqual([""]);
+  expect((name as HTMLInputElement).value).toBe("Klausur Statistik neu");
+
+  shown = { ...agent, running: false };
+  const again = await screen.findByRole(
+    "button",
+    { name: "Jetzt starten" },
+    { timeout: 5_000 },
+  );
+  expect((again as HTMLButtonElement).disabled).toBe(false);
+});
+
+test("'Jetzt starten' is disabled while the Agent is Paused or Ended", async () => {
+  for (const state of ["paused", "ended"]) {
+    api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+    api.route("GET", `/api/me/agents/a-${state}`, () =>
+      Response.json({ ...agent, id: `a-${state}`, state }),
+    );
+    const { unmount } = renderScreen(
+      <AgentDetailScreen apiOrigin={api.origin} id={`a-${state}`} />,
+    );
+
+    const start = await screen.findByRole("button", { name: "Jetzt starten" });
+    expect((start as HTMLButtonElement).disabled).toBe(true);
+    unmount();
+  }
 });
 
 test("'Kurse verwalten' searches, reflects the Agent's Courses, and lists an Archived one only to remove it", async () => {
