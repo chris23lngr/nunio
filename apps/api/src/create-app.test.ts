@@ -6189,6 +6189,7 @@ describe("Approvals", () => {
         agent: {
           id: asked.agentId,
           preset: "keep_course_organized",
+          name: "",
         },
       },
     ]);
@@ -6645,7 +6646,7 @@ describe("a free-text Agent's form", () => {
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
       });
-    return { id, call };
+    return { id, call, headers };
   }
   const form = (
     courseIds: string[],
@@ -7353,6 +7354,7 @@ describe("a free-text Agent's form", () => {
         type: "read",
         step: 1,
         plan: true,
+        approvals: false,
         courses: [
           { id: statistics, title: "Statistics II" },
           { id: removed, title: null },
@@ -7457,6 +7459,314 @@ describe("a free-text Agent's form", () => {
         { error: "gone" },
       ]);
     }
+  });
+
+  describe("a Run's Approvals (Freigaben)", () => {
+    const asks = {
+      start: "2099-02-02T09:00:00.000Z",
+      end: "2099-02-02T10:00:00.000Z",
+    };
+    /**
+     * A free-text Agent that asks before each Action of `capability`, with its exam's Course and any `more` Courses,
+     * and a Run of it that ended after asking for one: a new block for the exam, or a move of the student's block.
+     */
+    async function askedByRun(
+      name: string,
+      capability: "createStudyBlocks" | "moveStudyBlocks",
+      more: string[] = [],
+    ) {
+      const s = await student(name);
+      const statistics = await course(s.id, "Statistics II");
+      const others = await Promise.all(
+        more.map((title) => course(s.id, title)),
+      );
+      const { id: agentId } = (await (
+        await s.call(
+          "POST",
+          "",
+          form([statistics, ...others], [{ id: capability, mode: "ask" }]),
+        )
+      ).json()) as { id: string };
+      const exam = await facts.enterObligation(
+        principal.fromSession({ studentId: s.id }),
+        {
+          course: { id: statistics },
+          kind: "exam",
+          title: "Klausur Statistik",
+          due: { date: "2099-02-05", time: "10:00", timeZone: null },
+          destination: null,
+        },
+      );
+      if (exam.status !== "ok") throw new Error(exam.status);
+      const blockId = randomUUID();
+      await admin.studyBlock.create({
+        data: {
+          id: blockId,
+          studentId: s.id,
+          obligationId: exam.id,
+          placedBy: "student",
+          start: new Date("2099-02-01T09:00:00Z"),
+          end: new Date("2099-02-01T10:00:00Z"),
+        },
+      });
+      const runId = await recordedRun(s.id, agentId, 10);
+      const outcome = await delegation.perform(principal.fromRun(runId), {
+        key: `${runId}:1:1`,
+        intent:
+          capability === "createStudyBlocks"
+            ? {
+                kind: "studyBlock.create",
+                workId: exam.id,
+                start: new Date(asks.start),
+                end: new Date(asks.end),
+              }
+            : {
+                kind: "studyBlock.move",
+                studyBlockId: blockId,
+                start: new Date(asks.start),
+                end: new Date(asks.end),
+              },
+      });
+      if (outcome.status !== "awaiting_approval")
+        throw new Error(outcome.status);
+      const decide = (body: object) =>
+        app.request(`${apiOrigin}/api/me/approvals/${outcome.actionId}`, {
+          method: "POST",
+          headers: s.headers,
+          body: JSON.stringify(body),
+        });
+      const shown = async () =>
+        (await (await s.call("GET", `/${agentId}/runs/${runId}`)).json()) as {
+          openApprovals: number;
+          approvals: { actionId: string }[];
+          verlauf: { type: string; at: string }[];
+        };
+      return {
+        s,
+        agentId,
+        runId,
+        blockId,
+        others,
+        asking: outcome,
+        decide,
+        shown,
+      };
+    }
+    /** The Verlauf's entries for the Run's decided or expired Approvals, without their times. */
+    const decisions = (verlauf: { type: string; at: string }[]) =>
+      verlauf
+        .filter((entry) => entry.type === "approval")
+        .map(({ at: _, ...entry }) => entry);
+
+    it("shows each open Approval as nunio renders it, then applies an approved one through the gate as the Run's Action", async () => {
+      const a = await askedByRun("run-approval-approve", "createStudyBlocks");
+
+      const before = await a.shown();
+      expect(before.openApprovals).toBe(1);
+      expect(before.approvals).toEqual([
+        {
+          actionId: a.asking.actionId,
+          action: {
+            kind: "studyBlock.create",
+            work: { title: "Klausur Statistik", course: "Statistics II" },
+            from: null,
+            to: asks,
+            task: null,
+          },
+          fingerprint: a.asking.fingerprint,
+          expiresAt: a.asking.expiresAt.toISOString(),
+          agent: { id: a.agentId, preset: "", name: "Klausur Statistik" },
+        },
+      ]);
+
+      const decided = await a.decide({
+        decision: "approve",
+        fingerprint: a.asking.fingerprint,
+      });
+
+      expect([decided.status, await decided.json()]).toEqual([
+        200,
+        { status: "ok" },
+      ]);
+      // The Action stays the Run's, and the block is the Agent's own, as one made on a Grant is.
+      expect(
+        await admin.action.findUniqueOrThrow({
+          where: { id: a.asking.actionId },
+          select: { runId: true, status: true },
+        }),
+      ).toEqual({ runId: a.runId, status: "done" });
+      expect(
+        await admin.studyBlock.findMany({
+          where: { studentId: a.s.id, start: new Date(asks.start) },
+          select: { createdByAgentId: true },
+        }),
+      ).toEqual([{ createdByAgentId: a.agentId }]);
+      // The Run ended without waiting, so there is no workflow to wake, now or on reconciliation.
+      await delegation.reconcile(({ workflowId, runId, actionId }) =>
+        runWorkflows.signalDecided({ workflowId, runId }, actionId),
+      );
+      expect(signalled).not.toContainEqual(
+        expect.objectContaining({ actionId: a.asking.actionId }),
+      );
+      const after = await a.shown();
+      expect(after).toMatchObject({ openApprovals: 0, approvals: [] });
+      expect(decisions(after.verlauf)).toEqual([
+        {
+          type: "approval",
+          action: {
+            kind: "studyBlock.create",
+            work: { title: "Klausur Statistik", course: "Statistics II" },
+            ...asks,
+          },
+          decision: "approved",
+          outcome: "done",
+          refusal: null,
+        },
+      ]);
+      // Decided after the Run ended, it follows the Run's end.
+      expect(after.verlauf.at(-1)).toMatchObject({ type: "approval" });
+    });
+
+    it("takes no Action the student declined, and shows it declined", async () => {
+      const a = await askedByRun("run-approval-deny", "createStudyBlocks");
+
+      const decided = await a.decide({ decision: "deny" });
+
+      expect(decided.status).toBe(200);
+      expect(
+        await admin.studyBlock.count({
+          where: { studentId: a.s.id, start: new Date(asks.start) },
+        }),
+      ).toBe(0);
+      const after = await a.shown();
+      expect(after).toMatchObject({ openApprovals: 0, approvals: [] });
+      expect(decisions(after.verlauf)).toEqual([
+        expect.objectContaining({
+          decision: "denied",
+          outcome: null,
+          refusal: null,
+        }),
+      ]);
+    });
+
+    it("answers that the Action changed, and moves nothing, once the block was moved since it was asked", async () => {
+      const a = await askedByRun("run-approval-changed", "moveStudyBlocks");
+      // The student moved the block after the Run asked to move it.
+      const moved = {
+        start: new Date("2099-02-01T15:00:00Z"),
+        end: new Date("2099-02-01T16:00:00Z"),
+      };
+      await admin.studyBlock.update({ where: { id: a.blockId }, data: moved });
+
+      const decided = await a.decide({
+        decision: "approve",
+        fingerprint: a.asking.fingerprint,
+      });
+
+      expect([decided.status, await decided.json()]).toEqual([
+        409,
+        { error: "changed" },
+      ]);
+      expect(
+        await admin.studyBlock.findUniqueOrThrow({
+          where: { id: a.blockId },
+          select: { start: true, end: true },
+        }),
+      ).toEqual(moved);
+      // The card goes; the next Run may ask again for the block where it is now.
+      const after = await a.shown();
+      expect(after).toMatchObject({ openApprovals: 0, approvals: [] });
+      expect(decisions(after.verlauf)).toEqual([
+        expect.objectContaining({
+          outcome: "refused",
+          refusal: "approval_mismatch",
+        }),
+      ]);
+    });
+
+    it("refuses an approved Action for a Course the Agent no longer has", async () => {
+      const a = await askedByRun(
+        "run-approval-removed-course",
+        "createStudyBlocks",
+        ["Microeconomics"],
+      );
+      expect(
+        (
+          await a.s.call(
+            "PUT",
+            `/${a.agentId}`,
+            form(a.others, [{ id: "createStudyBlocks", mode: "ask" }]),
+          )
+        ).status,
+      ).toBe(200);
+
+      const decided = await a.decide({
+        decision: "approve",
+        fingerprint: a.asking.fingerprint,
+      });
+
+      expect(decided.status).toBe(200);
+      expect(
+        await admin.action.findUniqueOrThrow({
+          where: { id: a.asking.actionId },
+          select: { status: true, refusal: true },
+        }),
+      ).toEqual({ status: "refused", refusal: "out_of_scope" });
+      expect(
+        await admin.studyBlock.count({
+          where: { studentId: a.s.id, start: new Date(asks.start) },
+        }),
+      ).toBe(0);
+      expect(decisions((await a.shown()).verlauf)).toEqual([
+        expect.objectContaining({
+          decision: "approved",
+          outcome: "refused",
+          refusal: "out_of_scope",
+        }),
+      ]);
+    });
+
+    it("lets an unanswered Approval expire lazily: no longer open, shown expired, refused when approved late, and raising nothing", async () => {
+      const a = await askedByRun("run-approval-expired", "createStudyBlocks");
+      const expiredAt = new Date(Date.now() - 60_000);
+      await admin.approval.update({
+        where: { actionId: a.asking.actionId },
+        data: { expiresAt: expiredAt },
+      });
+
+      const shown = await a.shown();
+      expect(shown).toMatchObject({ openApprovals: 0, approvals: [] });
+      expect(shown.verlauf.find((entry) => entry.type === "approval")).toEqual({
+        type: "approval",
+        at: expiredAt.toISOString(),
+        action: expect.objectContaining({ kind: "studyBlock.create" }),
+        decision: "expired",
+        outcome: null,
+        refusal: null,
+      });
+      const late = await a.decide({
+        decision: "approve",
+        fingerprint: a.asking.fingerprint,
+      });
+      expect([late.status, await late.json()]).toEqual([
+        409,
+        { error: "expired" },
+      ]);
+      const denied = await a.decide({ decision: "deny" });
+      expect(denied.status).toBe(409);
+      expect(
+        await admin.studyBlock.count({
+          where: { studentId: a.s.id, start: new Date(asks.start) },
+        }),
+      ).toBe(0);
+      expect(decisions((await a.shown()).verlauf)).toEqual([
+        expect.objectContaining({ decision: "expired" }),
+      ]);
+      // No timer, no Intervention and no email.
+      expect(
+        await admin.intervention.count({ where: { studentId: a.s.id } }),
+      ).toBe(0);
+    });
   });
 
   it("lists the capability set the drawer offers, with each Capability's modes and default", async () => {

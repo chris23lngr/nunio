@@ -111,6 +111,11 @@ export interface ActionRecord {
   agentId: string | null;
   /** The workflow running that Run, to wake it once the student decides. */
   workflowId: string | null;
+  /**
+   * Whether its Run's workflow waits for the student's decision, as a preset's does. A free-text Agent's Run ends
+   * without waiting, so its decided Approval is applied by the API, as a Chat's is (ADR-0006).
+   */
+  runWaits: boolean;
   kind: Kind;
   args: unknown;
   /** `kind` and `args` as `perform` takes them. */
@@ -179,7 +184,7 @@ type Job = {
 type Row = NonNullable<Awaited<ReturnType<typeof findAction>>>;
 const include = {
   approval: true,
-  run: { select: { agentId: true, workflowId: true } },
+  run: { select: { agentId: true, workflowId: true, status: true } },
   attempts: { orderBy: { startedAt: "asc" } },
   events: { orderBy: { at: "asc" } },
 } as const;
@@ -237,6 +242,7 @@ function recordOf(a: Row): ActionRecord {
     runId: a.runId,
     agentId: a.run?.agentId ?? null,
     workflowId: a.run?.workflowId ?? null,
+    runWaits: Boolean(a.run) && a.run!.status === null,
     kind: a.kind as Kind,
     args: a.args,
     intent: revive(a.kind, a.args),
@@ -598,6 +604,8 @@ export function createGate({
       !action?.approval?.decision ||
       !action.runId ||
       !action.run?.workflowId ||
+      // A free-text Agent's Run waits for no decision: the API applies it.
+      action.run.status !== null ||
       action.events.some((e) => e.type === "decision_notified")
     )
       return false;
@@ -886,7 +894,12 @@ export function createGate({
               `Action ${action.id} was shown with another fingerprint`,
             );
           }
-          if (d.kind === "approve" && now >= approval.expiresAt) {
+          // A free-text Agent's Approval expires lazily (ADR-0006), so any late decision is refused; a preset's Run
+          // closes its own on its timer, and a late denial of it is still recorded.
+          if (
+            now >= approval.expiresAt &&
+            (d.kind === "approve" || action.run?.status != null)
+          ) {
             await tx.action.update({
               where: { id: action.id },
               data: { status: "refused", refusal: "approval_expired" },

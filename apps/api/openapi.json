@@ -4090,11 +4090,15 @@
               },
               "preset": {
                 "type": "string"
+              },
+              "name": {
+                "type": "string"
               }
             },
             "required": [
               "id",
-              "preset"
+              "preset",
+              "name"
             ]
           }
         },
@@ -4599,6 +4603,13 @@
                 "items": {
                   "$ref": "#/components/schemas/VerlaufEntry"
                 }
+              },
+              "approvals": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Approval"
+                },
+                "description": "Its open, unexpired Approvals (Freigaben), each as nunio renders the Action, never as the model put it."
               }
             },
             "required": [
@@ -4606,7 +4617,8 @@
               "budgetMicroUsd",
               "summary",
               "summaryGone",
-              "verlauf"
+              "verlauf",
+              "approvals"
             ]
           }
         ]
@@ -4660,6 +4672,10 @@
                 "type": "boolean",
                 "description": "It read the Plan."
               },
+              "approvals": {
+                "type": "boolean",
+                "description": "It read its Agent's Approvals."
+              },
               "courses": {
                 "type": "array",
                 "items": {
@@ -4712,6 +4728,7 @@
               "at",
               "step",
               "plan",
+              "approvals",
               "courses",
               "sources"
             ]
@@ -4841,6 +4858,121 @@
               "outcome",
               "refusal",
               "brokenPreferences"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "approval"
+                ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the student decided, or when it expired unanswered."
+              },
+              "action": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "studyBlock.create",
+                      "studyBlock.move",
+                      "studyBlock.remove",
+                      "task.create",
+                      "task.reopen"
+                    ]
+                  },
+                  "work": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "title": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "course": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "course"
+                    ],
+                    "description": "As in an action entry; null once deleted (gelöscht)."
+                  },
+                  "start": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "end": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "work",
+                  "start",
+                  "end"
+                ]
+              },
+              "decision": {
+                "type": "string",
+                "enum": [
+                  "approved",
+                  "denied",
+                  "expired"
+                ],
+                "description": "The student's answer, or expired when none came in time; expiry writes nothing, it shows once it passed."
+              },
+              "outcome": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "done",
+                  "refused",
+                  "failed",
+                  "unconfirmed",
+                  "pending",
+                  null
+                ],
+                "description": "What the gate made of an approved Action, pending while it is performed; null unless approved."
+              },
+              "refusal": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why the gate refused the approved Action, such as out_of_scope or approval_mismatch (it changed since it was asked)."
+              }
+            },
+            "required": [
+              "type",
+              "at",
+              "action",
+              "decision",
+              "outcome",
+              "refusal"
             ]
           },
           {
@@ -13911,7 +14043,7 @@
             }
           },
           "409": {
-            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "description": "Nothing was approved: the Action changed since the student was shown it (error changed), the request expired (error expired), or it was already answered or shown with another fingerprint (error stale).",
             "content": {
               "application/json": {
                 "schema": {
@@ -14892,7 +15024,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The Run, with its cost, summary and Verlauf.",
+            "description": "The Run, with its cost, summary, Verlauf and open Approvals.",
             "content": {
               "application/json": {
                 "schema": {
