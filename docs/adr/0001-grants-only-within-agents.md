@@ -23,3 +23,10 @@ Agents replace Responsibilities, and the student sets a mode on each of an Agent
 - **Changes apply at the next Action.** The gate reads the current mode for each Action, even in a Run under way. An Approval already asked stays asked: switching to Immer erlaubt approves nothing retroactively (ADR-0010).
 
 We kept three modes rather than two because a student who wants their Agent to act freely should not be asked about short-notice changes they never care about, while the default still surfaces them. Moving the student's own blocks without asking was rejected: it would let an instruction hidden in a Source rearrange their week.
+
+## Amendment (2026-11-18): an Agent's Courses are its scope
+
+An Agent's scope is the Courses the student lists for it, at least one, never all by default ([Whether an Agent's Courses bound its Grants](https://github.com/chris23lngr/nunio/issues/145)). Every Action it takes, granted or asked, may touch only work of those Courses: their Obligations, Tasks in them or toward their Obligations, and Study Blocks for such work. Anything else is refused, even with Approval. A Grant therefore has no scope of its own and covers its kind across the Agent's Courses. Agents scoped to one Obligation are gone; focusing on an exam belongs in the Agent's instructions, because the authority it would withhold is only the rest of the same Course, whose student-placed blocks are asked anyway.
+
+- **Archived Courses.** The Agent takes no Action for an Archived Course's work but still reads it as knowledge, and the Course stays on its list, returning to scope when unarchived. Only when all its Courses are Archived is the Agent Paused. The Course picker offers no Archived Course.
+- **Changes apply at the next Action.** The gate checks the Agent's current Courses for each Action, so an Approval asked for a Course since removed is refused when approved.
