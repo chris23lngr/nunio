@@ -17,6 +17,11 @@ beforeEach(() => {
   api.route("GET", "/api/me/agents/capabilities", () =>
     Response.json(capabilitySet),
   );
+  // These Agents never ran, so they open on their Auftrag.
+  for (const id of ["a-1", "a-paused", "a-ended"])
+    api.route("GET", `/api/me/agents/${id}/runs`, () =>
+      Response.json({ runs: [], nextCursor: null }),
+    );
   vi.stubGlobal(
     "matchMedia",
     vi.fn(() => ({

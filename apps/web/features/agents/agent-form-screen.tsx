@@ -46,6 +46,7 @@ import type {
 } from "./api/agent-queries";
 import { agentCourseQueries, capabilityQueries } from "./api/agent-queries";
 import { modeOf } from "./capability-mode";
+import { AgentActivity } from "./components/agent-activity";
 import { CapabilityMenu } from "./components/capability-menu";
 import { EditCapabilitiesSheet } from "./components/edit-capabilities-sheet";
 import { EditCoursesSheet } from "./components/edit-courses-sheet";
@@ -158,17 +159,22 @@ const tabs = [
 export function AgentFormScreen({
   apiOrigin,
   agent,
+  hasRuns = false,
 }: {
   apiOrigin: string;
   /** Null for a "Neuer Agent" not saved yet. */
   agent: Saved | null;
+  /** It ran before, so it opens on its Aktivität with the newest Run. */
+  hasRuns?: boolean;
 }) {
   const id = useId();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState(() => (agent ? draftOf(agent) : blank));
-  // A new Agent has no Runs yet, so it opens on its Auftrag.
-  const [tab, setTab] = useState<"activity" | "goal">("goal");
+  // An Agent with no Runs yet, such as a new one, opens on its Auftrag.
+  const [tab, setTab] = useState<"activity" | "goal">(
+    agent && hasRuns ? "activity" : "goal",
+  );
   const [editingCourses, setEditingCourses] = useState(false);
   const [editingCapabilities, setEditingCapabilities] = useState(false);
   const [tried, setTried] = useState(false);
@@ -311,14 +317,18 @@ export function AgentFormScreen({
             </p>
           )}
           {tab === "activity" ? (
-            <div className="flex flex-col gap-1 p-8">
-              <p className="text-sm font-medium text-base-800">
-                Noch keine Läufe
-              </p>
-              <p className="text-sm text-base-500">
-                Sobald dein Agent läuft, siehst du hier, was er getan hat.
-              </p>
-            </div>
+            agent ? (
+              <AgentActivity apiOrigin={apiOrigin} agentId={agent.id} />
+            ) : (
+              <div className="flex flex-col gap-1 p-8">
+                <p className="text-sm font-medium text-base-800">
+                  Noch keine Läufe
+                </p>
+                <p className="text-sm text-base-500">
+                  Sobald dein Agent läuft, siehst du hier, was er getan hat.
+                </p>
+              </div>
+            )
           ) : (
             <form
               id={`${id}-form`}
