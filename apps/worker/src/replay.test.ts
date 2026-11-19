@@ -29,6 +29,7 @@ describe("replay", () => {
     "responsibility-run",
     "responsibility-run-approval-wakes",
     "agent-run",
+    "agent-run-actions",
   ])(
     "replays the recorded %s history with the current workflow code",
     async (name) => {

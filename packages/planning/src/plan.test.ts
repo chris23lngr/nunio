@@ -141,6 +141,7 @@ it("applies a move only while it matches a fresh proposal", async () => {
       end: at("2026-11-09 11:00"),
       placedBy: "nunio",
       locked: false,
+      createdByAgentId: null,
     },
   ]);
   expect(view.proposal.moves).toEqual([]);
@@ -248,6 +249,7 @@ it("lets the student place, move, Lock and delete Study Blocks, which a Rebalanc
       end: at("2026-11-10 17:00"),
       placedBy: "student",
       locked: true,
+      createdByAgentId: null,
     },
   ]);
 

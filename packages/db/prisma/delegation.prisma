@@ -198,6 +198,10 @@ model RunStep {
   transcriptContent Bytes?
   transcriptKey     Bytes?
   derivedFrom       String[] @default([])
+  /// Its Action calls in order, each the Action the gate performs under `runId:step:call`, or why none was asked.
+  calls             Json?
+  /// The handles the step's tools gave out so far, such as O1 or B1, which later steps name work and blocks by.
+  handles           Json?
   createdAt         DateTime @default(now())
 
   @@id([runId, n])

@@ -44,6 +44,7 @@ const base: Snapshot = {
   intoProtectedTime: false,
   planCheck: null,
   approval: null,
+  runUse: null,
 };
 const dispatchByGrant = {
   outcome: "dispatch",
@@ -336,6 +337,15 @@ describe("a free-text Agent's Actions (ADR-0001)", () => {
     outcome: "dispatch",
     authority: { approvalId: "approval-1" },
   };
+  const uses = (counts: Partial<NonNullable<Snapshot["runUse"]>>) => ({
+    runUse: {
+      calls: 0,
+      stepCalls: 0,
+      approvals: 0,
+      openApprovals: 0,
+      ...counts,
+    },
+  });
   const situation = (...parts: Partial<Snapshot>[]): Partial<Snapshot> =>
     Object.assign({ agent: agent(), ...verdict() }, ...parts);
 
@@ -547,6 +557,57 @@ describe("a free-text Agent's Actions (ADR-0001)", () => {
       "refuses moving its own block once it has started, even when approved",
       situation(move({ start: now }), { approval: approved }),
       refuse("started"),
+    ],
+    // Caps per Run (ADR-0026) and open Approvals per Agent, counted before this new call
+    [
+      "acts as its 20th call in the Run",
+      situation(create(), uses({ calls: 19 })),
+      byGrant("grant-create"),
+    ],
+    [
+      "refuses a 21st call in the Run, even one it holds a Grant for",
+      situation(create(), uses({ calls: 20 })),
+      refuse("run_cap"),
+    ],
+    [
+      "refuses a sixth call in one step",
+      situation(create(), uses({ stepCalls: 5 })),
+      refuse("run_cap"),
+    ],
+    [
+      "refuses past the call cap before anything else, even out of scope",
+      situation(move({ courseId: "course-2" }), uses({ calls: 20 })),
+      refuse("run_cap"),
+    ],
+    [
+      "asks its fifth Approval in the Run",
+      situation(create(soon), uses({ approvals: 4 })),
+      ask,
+    ],
+    [
+      "refuses asking a sixth Approval in the Run",
+      situation(create(soon), uses({ approvals: 5 })),
+      refuse("run_cap"),
+    ],
+    [
+      "still acts on a Grant once the Run asked five Approvals",
+      situation(create(), uses({ approvals: 5 })),
+      byGrant("grant-create"),
+    ],
+    [
+      "refuses asking while its Agent has five Approvals open",
+      situation(create(soon), uses({ openApprovals: 5 })),
+      refuse("open_approvals_cap"),
+    ],
+    [
+      "still acts on a Grant while its Agent has five Approvals open",
+      situation(create(), uses({ openApprovals: 5 })),
+      byGrant("grant-create"),
+    ],
+    [
+      "still refuses what the Plan's rules refuse rather than counting it as asked",
+      situation(create(soon), verdict(["past"]), uses({ approvals: 5 })),
+      refuse("past"),
     ],
   ])("%s", (_, change, expected) => {
     expect(decideAction({ ...base, ...change })).toEqual(expected);

@@ -278,6 +278,8 @@ export function createPlan({
       end: block.end,
       placedBy: block.placedBy as Actor,
       locked: Boolean(block.lockedAt),
+      /** The Agent whose own block it is: the one that created it, until the student moves it. */
+      createdByAgentId: block.createdByAgentId,
     }));
 
     const rankOf = (kind: PriorityRef["kind"], id: string) =>

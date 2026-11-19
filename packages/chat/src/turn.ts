@@ -23,14 +23,15 @@ export function fenced(name: string, lines: readonly string[]) {
 
 /**
  * What one turn's tools share (ADR-0019): Citation tags that run on across all of them, the Sources their results
- * drew on, what each call gave the model, and whether a read was refused.
+ * drew on, what each call gave the model, and whether a read was refused. An Agent's Run carries the handles its earlier
+ * steps gave out into each next step.
  */
-export function createTurn() {
+export function createTurn(given: readonly [string, Handled][] = []) {
   const tags = new Map<CitationRef, string>();
   const citations: Citation[] = [];
   const sources = new Set<string>();
   const results = new Map<string, string>();
-  const handles = new Map<string, Handled>();
+  const handles = new Map<string, Handled>(given);
   let refusal: Refusal | undefined;
   return {
     /** A short handle for a work, Study Block or Course Event, such as O1, T1, B1 or E1, which proposals name it by. */
@@ -46,6 +47,8 @@ export function createTurn() {
     },
     /** What a handle this turn gave out names. */
     lookup: (handle: string) => handles.get(handle),
+    /** Every handle given out so far, with what it names. */
+    handled: () => [...handles],
     /** Every tag the turn's tools returned, in order. */
     citations: citations as readonly Citation[],
     /** Every Source whose wording a tool returned, so the answer is withdrawn with any of them. */

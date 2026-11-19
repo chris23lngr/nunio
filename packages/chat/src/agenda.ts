@@ -45,6 +45,7 @@ export function agendaTool(
     p,
     timeZone,
     courses,
+    agentId,
   }: {
     reader: KnowledgeReader;
     plan: Pick<Plan, "view">;
@@ -52,6 +53,8 @@ export function agendaTool(
     timeZone: string;
     /** The student's Courses by handle, as the context message lists them. */
     courses: ReadonlyMap<string, ContextCourse>;
+    /** The Agent whose Run reads the Plan, which is shown which blocks are its own; absent in a Chat. */
+    agentId?: string;
   },
 ): Tool<{ from: string; to: string }, AgendaOutput> {
   const handleOf = new Map(
@@ -69,7 +72,7 @@ export function agendaTool(
   const at = (instant: Date) => local.format(instant).replace(",", "");
   const time = (instant: Date) => at(instant).slice(11);
   return tool({
-    description: `Reads the student's Plan for a range of days: the Obligations due in it, each with its Shortfall and tradeoffs or why it cannot be planned, its Tasks and the tag to cite it by, the open Tasks toward no Obligation, then Study Blocks and Fixed Events, and finally every current Shortfall, also beyond the range. A Fixed Event that is a Course Event names its Course and its Preparation and Follow-up, if any. Obligations, Tasks, Study Blocks and Course Events carry a handle such as O1, T1, B1 or E1, which proposals name them by. Dates are YYYY-MM-DD in the student's time zone, at most ${maxDays} days apart, both included.`,
+    description: `Reads the student's Plan for a range of days: the Obligations due in it, each with its Shortfall and tradeoffs or why it cannot be planned, its Tasks and the tag to cite it by, the open Tasks toward no Obligation, then Study Blocks and Fixed Events, and finally every current Shortfall, also beyond the range. A Fixed Event that is a Course Event names its Course and its Preparation and Follow-up, if any. Obligations, Tasks, Study Blocks and Course Events carry a handle such as O1, T1, B1 or E1, which proposals name them by. Dates are YYYY-MM-DD in the student's time zone, at most ${maxDays} days apart, both included.${agentId ? " A Study Block you created that the student has not moved since is marked yours." : ""}`,
     inputSchema: jsonSchema<{ from: string; to: string }>({
       type: "object",
       properties: { from: date, to: date },
@@ -174,7 +177,7 @@ export function agendaTool(
         ...(blocks.length ? [] : ["none"]),
         ...blocks.map(
           (b) =>
-            `${turn.handleFor("block", b.id)} · ${at(b.start)}–${time(b.end)} · for ${titleOf(b.work) ?? "work that is gone"}${b.locked ? " · locked" : ""}`,
+            `${turn.handleFor("block", b.id)} · ${at(b.start)}–${time(b.end)} · for ${titleOf(b.work) ?? "work that is gone"}${b.locked ? " · locked" : ""}${agentId && b.createdByAgentId === agentId ? " · yours" : ""}`,
         ),
         "Fixed Events:",
         ...(events.length ? [] : ["none"]),

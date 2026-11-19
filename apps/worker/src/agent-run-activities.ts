@@ -16,10 +16,11 @@ import {
   createAgents,
   createDelegation,
   createModelCatalog,
+  principal,
 } from "@nunio/delegation";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createFacts, createKnowledgeReader } from "@nunio/knowledge";
-import { createPlan } from "@nunio/planning";
+import { createPlan, createPlanExecutor, planRules } from "@nunio/planning";
 import { createUnderstanding } from "@nunio/understanding";
 import { Context } from "@temporalio/activity";
 
@@ -34,7 +35,7 @@ export interface AgentRunRef {
 }
 
 export function createAgentRunActivities(
-  runs: Pick<AgentRuns, "start" | "step" | "finish">,
+  runs: Pick<AgentRuns, "start" | "step" | "act" | "finish">,
 ) {
   return {
     /** Records the Run, or takes up the one the API recorded, and snapshots the Agent's configuration. */
@@ -50,6 +51,9 @@ export function createAgentRunActivities(
     /** One metered model step, idempotent on `(runId, n)`. */
     agentStep: ({ runId, n }: { runId: string; n: number }) =>
       runs.step(runId, n),
+    /** Step `n`'s Action calls through the gate, each under `runId:n:call`, so a retry never acts twice. */
+    agentActions: ({ runId, n }: { runId: string; n: number }) =>
+      runs.act(runId, n),
     /** Ends the Run, if it was recorded; safe to repeat. */
     finishAgentRun: ({
       run,
@@ -87,10 +91,18 @@ export function agentRunActivitiesFromEnv(
     baseURL: env.OPENROUTER_BASE_URL!,
   };
   const models = createModels({ ...provider, catalog });
+  const facts = createFacts({ db, keys, clock });
+  const plan = createPlan({ db, facts, clock });
   const delegation = createDelegation({
     db,
     aiEnabled: () => env.AI_DISABLED !== "true",
     clock,
+    executors: { plan: createPlanExecutor({ db }) },
+    planRules,
+    deadlineOf: async (studentId, obligationId) =>
+      (await plan.view(principal.fromSession({ studentId }))).obligations.find(
+        (o) => o.id === obligationId,
+      )?.due ?? null,
   });
   const reader = createKnowledgeReader({
     db,
@@ -99,7 +111,6 @@ export function agentRunActivitiesFromEnv(
     delegation,
     clock,
   });
-  const facts = createFacts({ db, keys, clock });
   const agents = createAgents({ db, clock });
   const artifacts = createArtifacts({
     db,
@@ -115,7 +126,7 @@ export function agentRunActivitiesFromEnv(
     db,
     keys,
     reader,
-    plan: createPlan({ db, facts, clock }),
+    plan,
     understanding: createUnderstanding({
       db,
       keys,

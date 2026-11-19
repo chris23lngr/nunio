@@ -290,7 +290,17 @@ export function registerPlanRoutes(routes: OpenAPIHono<AppBindings>) {
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
-      return c.json(await c.get("plan").view(p), 200);
+      const view = await c.get("plan").view(p);
+      // Which Agent created a block is the gate's and the Agent's concern; the Plan's response stays as documented.
+      return c.json(
+        {
+          ...view,
+          studyBlocks: view.studyBlocks.map(
+            ({ createdByAgentId: _, ...block }) => block,
+          ),
+        },
+        200,
+      );
     },
   );
   routes.openapi(
