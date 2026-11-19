@@ -9,6 +9,7 @@ import type {
   PresetAgent,
   Refusal,
   Restrictions,
+  RunUse,
 } from "./decision.js";
 import { decideAction } from "./decision.js";
 import type { ActionIntent, Args, GrantScope, Kind, Subject } from "./kinds.js";
@@ -677,6 +678,33 @@ export function createGate({
             );
           planCheck = await planRules.check(tx, parsed, now);
         }
+        // Counted under the Agent's lock, for a new call only: an Action already asked was counted when it was.
+        const runUse: RunUse | null =
+          run && agent && "capabilities" in agent && !existing
+            ? {
+                calls: await tx.action.count({ where: { runId: run.id } }),
+                // Its key is `runId:step:call`, so a step's calls share the key up to the call.
+                stepCalls: await tx.action.count({
+                  where: {
+                    runId: run.id,
+                    key: { startsWith: key.slice(0, key.lastIndexOf(":") + 1) },
+                  },
+                }),
+                approvals: await tx.approval.count({
+                  where: { action: { runId: run.id } },
+                }),
+                openApprovals: await tx.approval.count({
+                  where: {
+                    decision: null,
+                    expiresAt: { gt: now },
+                    action: {
+                      status: "awaiting_approval",
+                      run: { agentId: agent.id },
+                    },
+                  },
+                }),
+              }
+            : null;
         const fingerprint = subject
           ? (definition.fingerprint as (a: Args, s: Subject) => string)(
               args,
@@ -694,6 +722,7 @@ export function createGate({
             intent.kind !== "studyBlock.remove" &&
             (await intoProtectedTime(tx, args as { start?: Date; end?: Date })),
           planCheck,
+          runUse,
           approval: existing?.approval
             ? {
                 id: existing.approval.id,

@@ -26,7 +26,9 @@ export type Refusal =
   | "fixed_event"
   | "study_block"
   | "out_of_scope"
-  | "no_capability";
+  | "no_capability"
+  | "run_cap"
+  | "open_approvals_cap";
 
 /** What the Plan's rules (`plan.check`) refuse a Study Block for: an Agent is refused these in every mode. */
 export type PlanRefusal = Extract<
@@ -66,6 +68,26 @@ export interface CapableAgent {
   courseIds: string[];
 }
 
+/**
+ * What a free-text Agent's Run may do at most (ADR-0026): Action calls, counting granted, asked and refused ones, in the
+ * Run and in one model step, and Approvals asked. Past one, a call is refused with `run_cap`.
+ */
+export const runCaps = { calls: 20, stepCalls: 5, approvals: 5 } as const;
+/** At most this many of an Agent's Approvals are open at once, across its Runs (ADR-0026); past it, `open_approvals_cap`. */
+export const maxOpenApprovals = 5;
+
+/** What a free-text Agent's Run and its Agent already used, counted before a new call of the Run. */
+export interface RunUse {
+  /** The Run's Action calls so far. */
+  calls: number;
+  /** Those in the same model step. */
+  stepCalls: number;
+  /** The Approvals the Run asked. */
+  approvals: number;
+  /** The Agent's open, unexpired Approvals, from any of its Runs. */
+  openApprovals: number;
+}
+
 /** Everything the gate re-read for one Action at dispatch, in the transaction that decides it. */
 export interface Snapshot<K extends Kind = Kind> {
   intent: { kind: K; args: Args<K> };
@@ -87,6 +109,8 @@ export interface Snapshot<K extends Kind = Kind> {
     fingerprint: string;
     expiresAt: Date;
   } | null;
+  /** For a new call of a free-text Agent's Run, what it used so far; null otherwise, such as for an Action already asked. */
+  runUse: RunUse | null;
 }
 
 export type Decision =
@@ -166,10 +190,30 @@ function answered(s: Snapshot): Decision | null {
 }
 
 /**
- * A free-text Agent's Action (ADR-0001): within its Courses, under a Capability it holds, never into what the Plan's
- * rules refuse, then by the Capability's mode. A block it did not create is covered only by a Capability for any block.
+ * A free-text Agent's Action (ADR-0001): within its Run's caps (ADR-0026), then by its Courses, Capabilities and modes;
+ * what would be asked is refused once the Run asked its share of Approvals or the Agent has too many open.
  */
 function decideForAgent<K extends Kind>(
+  s: Snapshot<K> & { subject: Subject<K> },
+  agent: CapableAgent,
+): Decision {
+  const use = s.runUse;
+  // Every call counts, whatever becomes of it, so a Run cannot probe the gate in a loop.
+  if (use && (use.calls >= runCaps.calls || use.stepCalls >= runCaps.stepCalls))
+    return refuse("run_cap");
+  const decision = decideByMode(s, agent);
+  if (decision.outcome !== "await_approval" || !use) return decision;
+  if (use.approvals >= runCaps.approvals) return refuse("run_cap");
+  if (use.openApprovals >= maxOpenApprovals)
+    return refuse("open_approvals_cap");
+  return decision;
+}
+
+/**
+ * Within its Courses, under a Capability it holds, never into what the Plan's rules refuse, then by the Capability's
+ * mode. A block it did not create is covered only by a Capability for any block.
+ */
+function decideByMode<K extends Kind>(
   s: Snapshot<K> & { subject: Subject<K> },
   agent: CapableAgent,
 ): Decision {

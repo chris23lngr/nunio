@@ -20,12 +20,15 @@ export {
   capabilityIds,
   capabilitySections,
 } from "./capabilities.js";
-export type {
-  BrokenPreference,
-  PlanRefusal,
-  PlanVerdict,
-  Refusal,
-  Restrictions,
+export {
+  type BrokenPreference,
+  maxOpenApprovals,
+  type PlanRefusal,
+  type PlanVerdict,
+  type Refusal,
+  type Restrictions,
+  type RunUse,
+  runCaps,
 } from "./decision.js";
 export {
   type ActionOutcome,
