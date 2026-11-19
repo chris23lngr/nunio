@@ -46,3 +46,5 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON "run_step" TO nunio_runtime;
 ALTER TABLE "run_step" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "run_step" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "owner" ON "run_step" USING ("studentId" = current_setting('app.owner_id', true));
+-- On top of the owner policy: only a claim whose step never finished may be deleted, so a stored step stays.
+CREATE POLICY "unfinished_claims" ON "run_step" AS RESTRICTIVE FOR DELETE USING ("partsContent" IS NULL);

@@ -8,7 +8,7 @@ import type {
   ModelCatalog,
   Principal,
 } from "@nunio/delegation";
-import { principal, withOwner } from "@nunio/delegation";
+import { DefiniteFailure, principal, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type { KnowledgeReader, Sealed } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
@@ -156,8 +156,8 @@ export function createAgentRuns({
     /**
      * Runs model step `n` of the Run, metered against the Agent's Budget and the Allowance, and persists it. A step
      * already persisted returns how it went. The step is claimed before its model call and released only when the
-     * call certainly did not complete, so an attempt that finds it claimed but never stored fails instead of calling
-     * the model again. The last allowed step must answer.
+     * call certainly cost nothing (a refusal, or a provider's rejection), so an attempt that finds it claimed but never
+     * stored fails instead of calling the model again. The last allowed step must answer.
      */
     async step(runId: string, n: number): Promise<StepOutcome> {
       if (!Number.isInteger(n) || n < 1 || n > maxSteps)
@@ -285,8 +285,9 @@ export function createAgentRuns({
             definitely(() => model.step(input, { signal: deadline })),
         ),
       ).catch(async (error: unknown) => {
-        // The call threw rather than returned, so Temporal may retry it; a held reservation counts its estimate.
-        await release();
+        // Only a call that certainly cost nothing may be called again; any other failure, such as a timeout after the
+        // request was sent, keeps the claim, so the next attempt fails the Run instead of paying twice.
+        if (error instanceof DefiniteFailure) await release();
         throw error;
       });
       if (stepped.status === "refused") {

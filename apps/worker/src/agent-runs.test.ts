@@ -425,6 +425,12 @@ describe("an Agent's Run", () => {
       stopReason: "paused",
       summary: null,
     });
+    // The refused step cost nothing, so its claim was released.
+    expect(
+      await admin.runStep.count({
+        where: { runId: s.runId, partsContent: null },
+      }),
+    ).toBe(0);
   });
 
   it("never calls the model again for a step a lost worker may have paid for, and fails the Run", async () => {
@@ -475,6 +481,31 @@ describe("an Agent's Run", () => {
         where: { runId: s.runId, transcriptContent: { not: null } },
       }),
     ).toBe(0);
+  });
+
+  it("never calls the model again after a call that failed once it may have been sent, and fails the Run", async () => {
+    const s = await started();
+    script = [
+      () => calls("agenda", { from: day(0), to: day(6) }),
+      () => {
+        throw new Error("socket hang up");
+      },
+    ];
+
+    expect(await run(s)).toEqual({
+      status: "failed",
+      reason: "step_interrupted",
+    });
+
+    expect(prompts).toHaveLength(2);
+    // The lost call keeps its estimate held; no second call was reserved.
+    expect(
+      await admin.usageReservation.findMany({
+        where: { runId: s.runId },
+        orderBy: { reservedAt: "asc" },
+        select: { status: true },
+      }),
+    ).toEqual([{ status: "settled" }, { status: "held" }]);
   });
 
   it("fails without retrying when the model's step ends early, settling what it cost", async () => {

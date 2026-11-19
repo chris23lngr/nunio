@@ -194,7 +194,7 @@ const { startAgentRun, finishAgentRun } = proxyActivities<AgentRunActivities>({
   },
 });
 // A step is paid, but claimed per (runId, n) before its model call: a retry calls the model again only after an
-// attempt whose call threw, never after one whose call may have completed.
+// attempt whose call certainly cost nothing, never after one whose call may have been sent.
 const { agentStep } = proxyActivities<AgentRunActivities>({
   startToCloseTimeout: "5 minutes",
   retry: { initialInterval: "5 seconds", maximumAttempts: 3 },
