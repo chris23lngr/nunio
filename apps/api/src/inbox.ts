@@ -95,7 +95,15 @@ const Briefing = z
     agents: z.array(
       z.object({
         id: z.string(),
-        preset: z.enum(["keep_course_organized", "prepare_for_exam"]),
+        preset: z
+          .enum(["keep_course_organized", "prepare_for_exam"])
+          .nullable()
+          .describe("Null for a free-text Agent."),
+        name: z
+          .string()
+          .describe(
+            "Empty for a preset Agent, which is named after its scope.",
+          ),
         course: z.string().nullable(),
         exam: z.string().nullable(),
       }),
@@ -223,6 +231,7 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
                 {
                   id,
                   preset: r.preset,
+                  name: r.name,
                   course: course?.title ?? null,
                   exam: exam?.title ?? null,
                 },

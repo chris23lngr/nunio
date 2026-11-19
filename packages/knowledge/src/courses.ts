@@ -264,6 +264,44 @@ export function createCourses({
       });
     },
 
+    /** How many Topics and Sources each of these Courses has, counted as its page shows them. */
+    async sizes(p: Principal, ids: string[]) {
+      return withOwner(db, p, async (tx) => {
+        const topics = await tx.fact.groupBy({
+          by: ["courseId"],
+          where: {
+            courseId: { in: ids },
+            type: "topic",
+            state: { not: "rejected" },
+          },
+          _count: true,
+        });
+        // A Source counts once per Course, whether bound to it or matched to it.
+        const sources = await tx.source.findMany({
+          where: {
+            deletedAt: null,
+            OR: [
+              { courseId: { in: ids } },
+              { courses: { some: { courseId: { in: ids } } } },
+            ],
+          },
+          select: { courseId: true, courses: { select: { courseId: true } } },
+        });
+        return new Map(
+          ids.map((id) => [
+            id,
+            {
+              topics: topics.find((t) => t.courseId === id)?._count ?? 0,
+              sources: sources.filter(
+                (s) =>
+                  s.courseId === id || s.courses.some((c) => c.courseId === id),
+              ).length,
+            },
+          ]),
+        );
+      });
+    },
+
     /**
      * One proposed or accepted Course for its page: its Sources, those bound to it and those nunio matched to it, the
      * deleted ones left out. Null when it is rejected, merged or not the student's.

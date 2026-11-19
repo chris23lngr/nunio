@@ -52,3 +52,21 @@ export function agentQueries(apiOrigin: string, id: string) {
     },
   });
 }
+
+export type AgentCourse = Agent["courses"][number];
+
+/** The Courses an Agent can be given: the student's accepted, unarchived ones, with their Topic and Source counts. */
+export function agentCourseQueries(apiOrigin: string) {
+  return queryOptions({
+    queryKey: [apiOrigin, "agent-courses"],
+    queryFn: async ({ signal }) => {
+      const result = await createApiClient(apiOrigin).GET(
+        "/api/me/agents/courses",
+        { signal },
+      );
+      if (!result.data)
+        throw new Error("Deine Kurse konnten nicht geladen werden.");
+      return result.data;
+    },
+  });
+}

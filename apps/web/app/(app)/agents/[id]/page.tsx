@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AgentScreen } from "@/features/agents/agent-screen";
+import { AgentDetailScreen } from "@/features/agents/agent-detail-screen";
 import { apiOrigin, getSession } from "@/lib/session";
 
 export default async function AgentPage({
@@ -12,10 +11,5 @@ export default async function AgentPage({
   if (!session) redirect("/sign-in");
   const { id } = await params;
 
-  return (
-    <main>
-      <Link href="/agents">All Agents</Link>
-      <AgentScreen apiOrigin={apiOrigin()} id={id} />
-    </main>
-  );
+  return <AgentDetailScreen apiOrigin={apiOrigin()} id={id} />;
 }

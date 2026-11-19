@@ -63,6 +63,7 @@ export function AgentsScreen({ apiOrigin }: { apiOrigin: string }) {
   return (
     <section aria-label="Agents">
       <h1>Agents</h1>
+      <Link href="/agents/new">Neuer Agent</Link>
       <ul>
         {delegated.map((r) => (
           <li key={r.id}>

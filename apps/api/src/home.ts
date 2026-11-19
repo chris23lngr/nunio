@@ -73,7 +73,15 @@ const HomeView = z
           z.object({
             kind: z.literal("agent"),
             id: z.string(),
-            preset: z.enum(["keep_course_organized", "prepare_for_exam"]),
+            preset: z
+              .enum(["keep_course_organized", "prepare_for_exam"])
+              .nullable()
+              .describe("Null for a free-text Agent."),
+            name: z
+              .string()
+              .describe(
+                "Empty for a preset Agent, which is named after its scope.",
+              ),
             course: z.string().nullable(),
             exam: z
               .string()
@@ -126,6 +134,7 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
             kind: "agent" as const,
             id: r.id,
             preset: r.preset,
+            name: r.name,
             course: course?.title ?? null,
             exam: exam?.title ?? null,
             state: r.state,
