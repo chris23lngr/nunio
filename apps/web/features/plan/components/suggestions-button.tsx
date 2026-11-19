@@ -1,4 +1,5 @@
 import { Button } from "@nunio/ui/components/button/button";
+import { Sparkles } from "lucide-react";
 
 /** Opens nunio's suggested changes to the plan, flagging how many are new. */
 export function SuggestionsButton({
@@ -16,7 +17,9 @@ export function SuggestionsButton({
         aria-label={hasNew ? `Vorschläge anzeigen, ${count} neu` : undefined}
         onClick={onClick}
       >
-        Vorschläge anzeigen
+        {/* On mobile the navbar has room for the icon and count only. */}
+        <Sparkles aria-hidden="true" className="md:hidden" />
+        <span className="max-md:sr-only">Vorschläge anzeigen</span>
         {hasNew && (
           <span className="bg-primary-300 text-primary-900 inline-flex size-4.5 items-center justify-center rounded-full text-xs font-medium">
             {count}

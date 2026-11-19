@@ -10,8 +10,8 @@ const entry = (id: string, from: number, to: number) => ({
 const lanesOf = (entries: ReturnType<typeof entry>[]) =>
   assignLanes(entries).map(({ id, lane, lanes }) => ({ id, lane, lanes }));
 
-test("a 10:00–12:00 entry on an 08:00 grid sits 64px down and is 64px tall", () => {
-  expect(entryGeometry(8, at(10), at(12))).toEqual({ top: 64, height: 64 });
+test("a 10:00–12:00 entry on an 08:00–18:00 grid sits 20% down and is 20% tall", () => {
+  expect(entryGeometry(8, 18, at(10), at(12))).toEqual({ top: 20, height: 20 });
 });
 
 test("two entries at the same time share the column in two lanes", () => {
@@ -29,13 +29,13 @@ test("partly overlapping entries split into two lanes but keep their own positio
     { id: "early", lane: 0, lanes: 2 },
     { id: "late", lane: 1, lanes: 2 },
   ]);
-  expect(entryGeometry(8, early.start, early.end)).toEqual({
-    top: 96,
-    height: 64,
+  expect(entryGeometry(8, 18, early.start, early.end)).toEqual({
+    top: 30,
+    height: 20,
   });
-  expect(entryGeometry(8, late.start, late.end)).toEqual({
-    top: 128,
-    height: 64,
+  expect(entryGeometry(8, 18, late.start, late.end)).toEqual({
+    top: 40,
+    height: 20,
   });
 });
 
