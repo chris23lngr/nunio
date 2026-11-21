@@ -1,7 +1,13 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Flashcard, Maker, PracticeItem, Written } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
-import type { Agents, Delegation, Metered, Principal } from "@nunio/delegation";
+import type {
+  Agents,
+  CapabilityId,
+  Delegation,
+  Metered,
+  Principal,
+} from "@nunio/delegation";
 import { principal, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type {
@@ -128,6 +134,12 @@ type Made =
   | { title: string; cards: Flashcard[] }
   | { written: Written };
 const notHandedIn = ["exam", "registration"];
+/** A UUID that is always the same for the same key, so a repeated start finds what the first one recorded. */
+function idOf(key: string) {
+  const hex = createHash("sha256").update(key).digest("hex");
+  const variant = ((Number.parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-8${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
 
 /** Artifacts: made in Runs the student starts, from material pinned at the start, and shredded with their Sources. */
 export function createArtifacts({
@@ -426,6 +438,85 @@ export function createArtifacts({
       );
       return { status: "started", artifactId, runId };
     },
+    /**
+     * Starts the Artifact Run an Agent's Run asks for with call `key`, under one of its Capabilities: flashcards or a
+     * practice set for Topics of that Run's Courses only, at most one per Run (ADR-0026), its cost charged to that Run.
+     * Pins the Topics' Courses; the caller starts the Artifact Run's workflow, which calls `make`. Idempotent on `key`.
+     */
+    async startFromRun(
+      agentRunId: string,
+      req: {
+        key: string;
+        capability: CapabilityId;
+        kind: "flashcards" | "practice_set";
+        topicIds: string[];
+      },
+    ): Promise<
+      | { status: "started"; artifactId: string; runId: string }
+      | {
+          status: "refused";
+          reason:
+            | "gone"
+            | "run_ended"
+            | "paused"
+            | "ended"
+            | "no_capability"
+            | "run_cap";
+        }
+    > {
+      const runId = idOf(`${req.key}:run`),
+        artifactId = idOf(`${req.key}:artifact`);
+      const { studentId, courseIds } = await withOwner(
+        db,
+        principal.fromRun(agentRunId),
+        async (tx, studentId) => ({
+          studentId,
+          courseIds: (
+            await tx.runPinCourse.findMany({
+              where: { runId: agentRunId },
+              select: { courseId: true },
+            })
+          ).map((c) => c.courseId),
+        }),
+      );
+      const student = principal.fromSession({ studentId });
+      const topics = await topicsOf(student, req.topicIds);
+      if (
+        !topics?.length ||
+        topics.some((topic) => !courseIds.includes(topic.courseId))
+      )
+        return { status: "refused", reason: "gone" };
+      const started = await agents.startArtifactRun(agentRunId, {
+        runId,
+        workflowId: `artifactRun/${runId}`,
+        capability: req.capability,
+      });
+      if (started.status !== "ok") return started;
+      const selection = {
+        courseIds: [...new Set(topics.map((topic) => topic.courseId))],
+        sourceIds: [],
+      };
+      if (
+        (await reader.pin(student, { runId, from: { selection } })).status !==
+        "ok"
+      )
+        return { status: "refused", reason: "gone" };
+      await withOwner(db, student, (tx) =>
+        tx.artifact.createMany({
+          data: [
+            {
+              id: artifactId,
+              studentId,
+              kind: req.kind,
+              runId,
+              request: { topicIds: req.topicIds } satisfies StoredRequest,
+            },
+          ],
+          skipDuplicates: true,
+        }),
+      );
+      return { status: "started", artifactId, runId };
+    },
     /** The Run's one step: makes the Artifact from its pinned material and stores version 1. */
     async make(runId: string): Promise<"ready" | "failed"> {
       const run = principal.fromRun(runId);
@@ -472,7 +563,24 @@ export function createArtifacts({
       } catch {
         return fail("maker_failed");
       }
-      if (made.status !== "ok") return fail(made.reason);
+      if (made.status !== "ok") {
+        // An Agent's Budget this Run is charged to Paused it in the worker, where nothing pauses its Schedule.
+        if (made.reason === "budget_exhausted") {
+          const agentId = await withOwner(
+            db,
+            run,
+            async (tx) =>
+              (
+                await tx.run.findUnique({
+                  where: { id: runId },
+                  select: { startedBy: { select: { agentId: true } } },
+                })
+              )?.startedBy?.agentId,
+          );
+          if (agentId) await agents.syncBudgetPause(run, agentId);
+        }
+        return fail(made.reason);
+      }
       const cite = <R extends { cited: string[] }>({ cited, ...row }: R) => ({
         ...row,
         citations: cited.flatMap((tag) =>

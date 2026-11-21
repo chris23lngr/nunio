@@ -43,6 +43,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useId, useState } from "react";
+import { kinds } from "@/features/artifacts/artifact-kinds";
 import { CourseDot } from "@/features/shared/components/course-dot";
 import { ModelLogo } from "@/features/shared/components/model-logo";
 import { PageHeader } from "@/features/shared/components/page-header";
@@ -189,13 +190,15 @@ function FieldError({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
-/** Each Capability's icon on the form, by the Action it takes. */
+/** Each Capability's icon on the form, by the Action it takes or the Artifact it starts. */
 const capabilityIcons: Record<Capability["id"], typeof CalendarPlus> = {
   createStudyBlocks: CalendarPlus,
   moveOwnStudyBlocks: CalendarSync,
   moveStudyBlocks: CalendarSync,
   removeOwnStudyBlocks: CalendarMinus,
   createTasks: ListPlus,
+  createFlashcards: kinds.flashcards.icon,
+  createPracticeSets: kinds.practice_set.icon,
 };
 
 const tabs = [
@@ -718,7 +721,7 @@ export function AgentFormScreen({
                         );
                         if (!capability) return null;
                         const Icon = capabilityIcons[capabilityId];
-                        const shownMode = modeOf(mode);
+                        const shownMode = mode && modeOf(mode);
                         return (
                           <li
                             key={capabilityId}
@@ -735,14 +738,16 @@ export function AgentFormScreen({
                                 <span className="text-sm font-medium text-base-800">
                                   {capability.title}
                                 </span>
-                                <span
-                                  className={cn(
-                                    "rounded-sm px-1.5 text-xs leading-5 font-medium",
-                                    shownMode.badge,
-                                  )}
-                                >
-                                  {shownMode.label}
-                                </span>
+                                {shownMode && (
+                                  <span
+                                    className={cn(
+                                      "rounded-sm px-1.5 text-xs leading-5 font-medium",
+                                      shownMode.badge,
+                                    )}
+                                  >
+                                    {shownMode.label}
+                                  </span>
+                                )}
                               </span>
                               <span className="text-sm text-base-500">
                                 {capability.description}

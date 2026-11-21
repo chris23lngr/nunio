@@ -41,6 +41,7 @@ import { modes } from "../capability-mode";
 /**
  * "Fähigkeiten verwalten": picks the Agent's Capabilities from the capability set, by section. A checked Action
  * Capability shows its mode, starting on its default; one with a single mode, such as Lernblöcke verschieben, is fixed.
+ * One that is no Action, such as Karteikarten erstellen, is simply on.
  */
 export function EditCapabilitiesSheet({
   open,
@@ -105,7 +106,10 @@ function CapabilityChoice({
     setChecked((current) =>
       current.some((each) => each.id === capability.id)
         ? current.filter((each) => each.id !== capability.id)
-        : [...current, { id: capability.id, mode: capability.modes[0]! }],
+        : [
+            ...current,
+            { id: capability.id, mode: capability.modes[0] ?? null },
+          ],
     );
   const setMode = (id: Capability["id"], mode: ApprovalMode) =>
     setChecked((current) =>

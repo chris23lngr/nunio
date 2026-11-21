@@ -744,3 +744,57 @@ test("the Verlauf shows each Approval decided, expired or withdrawn, and what be
     ),
   ]);
 });
+
+test("the Verlauf shows the flashcards or practice set a Run started, and why one did not start", async () => {
+  const run = listed("r-1", 60, "done");
+  const entry = (more: object) => ({
+    type: "artifact",
+    at: run.endedAt,
+    step: 2,
+    capability: "createFlashcards",
+    kind: "flashcards",
+    topics: [
+      { id: "t-1", title: "Konfidenzintervalle" },
+      { id: "t-2", title: null },
+    ],
+    outcome: "started",
+    refusal: null,
+    ...more,
+  });
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [run], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-1", () =>
+    Response.json(
+      detail(run, {
+        verlauf: [
+          entry({
+            capability: "createPracticeSets",
+            kind: "practice_set",
+            topics: [{ id: "t-1", title: "Konfidenzintervalle" }],
+          }),
+          entry({ outcome: "refused", refusal: "run_cap" }),
+          entry({ outcome: "refused", refusal: "invalid", topics: [] }),
+        ],
+      }),
+    ),
+  );
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+
+  const verlauf = await screen.findByRole("list", { name: "Verlauf" });
+  expect(
+    within(verlauf)
+      .getAllByRole("listitem")
+      .map((entry) => entry.textContent),
+  ).toEqual([
+    expect.stringMatching(
+      /\dÜbungsaufgaben gestartetThemen: Konfidenzintervalle$/,
+    ),
+    expect.stringMatching(
+      /\dNicht gestartet: KarteikartenThemen: Konfidenzintervalle, gelöschtGrund: Limit dieses Laufs erreicht$/,
+    ),
+    expect.stringMatching(
+      /\dNicht gestartet: KarteikartenGrund: Ungültige Angaben, nichts wurde gestartet$/,
+    ),
+  ]);
+});

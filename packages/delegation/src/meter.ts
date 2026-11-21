@@ -129,13 +129,22 @@ export function createDelegation({
       if (!aiEnabled()) return { status: "refused", reason: "ai_disabled" };
       const reservationId = randomUUID();
       let agentId: string | null = null;
+      // The Run whose cost the call is: the Run itself, or the Agent's Run that started this Artifact Run.
+      let runId: string | null = p.kind === "run" ? p.runId : null;
       const refusal = await withOwner(db, p, async (tx, studentId) => {
         const denied = await accessRefusal(tx, studentId);
         if (denied) return denied;
         if (p.kind === "run") {
-          agentId =
-            (await tx.run.findUnique({ where: { id: p.runId } }))?.agentId ??
-            null;
+          const run = await tx.run.findUnique({
+            where: { id: p.runId },
+            select: {
+              agentId: true,
+              startedByRunId: true,
+              startedBy: { select: { agentId: true } },
+            },
+          });
+          agentId = run?.agentId ?? run?.startedBy?.agentId ?? null;
+          runId = run?.startedByRunId ?? p.runId;
         }
         if (agentId) {
           await renewBudget(tx, agentId, clock.now());
@@ -177,7 +186,7 @@ export function createDelegation({
         }
         await tx.$executeRaw`
           INSERT INTO "usage_reservation" ("id", "studentId", "estimateMicroUsd", "agentId", "runId")
-          VALUES (${reservationId}, ${studentId}, ${estimate.microUsd}, ${agentId}, ${p.kind === "run" ? p.runId : null})`;
+          VALUES (${reservationId}, ${studentId}, ${estimate.microUsd}, ${agentId}, ${runId})`;
         return undefined;
       });
       if (refusal) return { status: "refused", reason: refusal };

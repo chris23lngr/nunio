@@ -4131,7 +4131,7 @@
             "items": {
               "$ref": "#/components/schemas/AgentCapability"
             },
-            "maxItems": 5,
+            "maxItems": 7,
             "description": "Its Capabilities, each at most once, on a mode it allows."
           },
           "budgetMicroUsd": {
@@ -4173,17 +4173,23 @@
               "moveOwnStudyBlocks",
               "moveStudyBlocks",
               "removeOwnStudyBlocks",
-              "createTasks"
+              "createTasks",
+              "createFlashcards",
+              "createPracticeSets"
             ]
           },
           "mode": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "enum": [
               "always",
               "automatic",
-              "ask"
+              "ask",
+              null
             ],
-            "description": "always and automatic hold a Grant; ask asks for every Action. Lernblöcke verschieben allows only ask."
+            "description": "always and automatic hold a Grant; ask asks for every Action. Lernblöcke verschieben allows only ask. Null for a Capability that is no Action, such as Karteikarten erstellen, which is simply on."
           }
         },
         "required": [
@@ -4305,7 +4311,9 @@
               "moveOwnStudyBlocks",
               "moveStudyBlocks",
               "removeOwnStudyBlocks",
-              "createTasks"
+              "createTasks",
+              "createFlashcards",
+              "createPracticeSets"
             ]
           },
           "section": {
@@ -4328,7 +4336,7 @@
                 "ask"
               ]
             },
-            "description": "The modes it allows, the first its default when added; a single one is fixed."
+            "description": "The modes it allows, the first its default when added; a single one is fixed, and none means it is no Action and simply on or off."
           }
         },
         "required": [
@@ -4949,6 +4957,83 @@
               "outcome",
               "refusal",
               "brokenPreferences"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "artifact"
+                ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "step": {
+                "type": "integer"
+              },
+              "capability": {
+                "type": "string",
+                "description": "The Lernmaterial Capability whose tool was called, such as createFlashcards."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "flashcards",
+                  "practice_set"
+                ]
+              },
+              "topics": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Null once it is deleted (gelöscht)."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title"
+                  ]
+                },
+                "description": "The Topics it was for; none when the call named no Topic of the Agent's Courses."
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "started",
+                  "refused"
+                ],
+                "description": "Whether its Artifact Run started."
+              },
+              "refusal": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why none started, such as run_cap (the Run already started one); invalid when the call named no Topic it read."
+              }
+            },
+            "required": [
+              "type",
+              "at",
+              "step",
+              "capability",
+              "kind",
+              "topics",
+              "outcome",
+              "refusal"
             ]
           },
           {

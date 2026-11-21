@@ -74,9 +74,14 @@ export interface CapableAgent {
 
 /**
  * What a free-text Agent's Run may do at most (ADR-0026): Action calls, counting granted, asked and refused ones, in the
- * Run and in one model step, and Approvals asked. Past one, a call is refused with `run_cap`.
+ * Run and in one model step, Approvals asked, and Artifact Runs started. Past one, a call is refused with `run_cap`.
  */
-export const runCaps = { calls: 20, stepCalls: 5, approvals: 5 } as const;
+export const runCaps = {
+  calls: 20,
+  stepCalls: 5,
+  approvals: 5,
+  artifactRuns: 1,
+} as const;
 /** At most this many of an Agent's Approvals are open at once, across its Runs (ADR-0026); past it, `open_approvals_cap`. */
 export const maxOpenApprovals = 5;
 
@@ -236,19 +241,19 @@ function decideByMode<K extends Kind>(
   // The most permissive of the Capabilities that cover it. A mode the Capability does not allow, such as a stale row
   // putting Lernblöcke verschieben on a Grant-holding mode, authorises nothing.
   const mode = agent.capabilities
-    .filter(({ id, mode }) => {
+    .flatMap(({ id, mode }) => {
       const capability: {
-        kind: Kind;
+        kind?: Kind;
         ownBlocks?: true;
         modes: readonly string[];
       } = capabilities[id];
-      return (
+      return mode &&
         capability.kind === intent.kind &&
         (own || !capability.ownBlocks) &&
         capability.modes.includes(mode)
-      );
+        ? [mode]
+        : [];
     })
-    .map((c) => c.mode)
     .sort((a, b) => approvalModes.indexOf(a) - approvalModes.indexOf(b))[0];
   if (!mode) return refuse("no_capability");
   const refusal =

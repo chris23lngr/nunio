@@ -23,12 +23,17 @@ export function fenced(name: string, lines: readonly string[]) {
 
 /**
  * What one turn's tools share (ADR-0019): Citation tags that run on across all of them, the Sources their results
- * drew on, what each call gave the model, and whether a read was refused. An Agent's Run carries the handles its earlier
- * steps gave out into each next step.
+ * drew on, what each call gave the model, and whether a read was refused. An Agent's Run carries the handles and tags
+ * its earlier steps gave out into each next step.
  */
-export function createTurn(given: readonly [string, Handled][] = []) {
-  const tags = new Map<CitationRef, string>();
-  const citations: Citation[] = [];
+export function createTurn(
+  given: readonly [string, Handled][] = [],
+  cited: readonly Citation[] = [],
+) {
+  const tags = new Map<CitationRef, string>(
+    cited.map(({ tag, cite }) => [cite, tag]),
+  );
+  const citations: Citation[] = [...cited];
   const sources = new Set<string>();
   const results = new Map<string, string>();
   const handles = new Map<string, Handled>(given);

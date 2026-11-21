@@ -7,23 +7,33 @@ import type { Kind } from "./kinds.js";
 export const approvalModes = ["always", "automatic", "ask"] as const;
 export type ApprovalMode = (typeof approvalModes)[number];
 
-/** The drawer's sections, in order. Lernmaterial, Benachrichtigungen and Briefings come with their tools. */
+/** The drawer's sections, in order. Benachrichtigungen and Briefings come with their tools. */
 export const capabilitySections = {
   studyBlocks: "Lernblöcke",
   tasks: "Aufgaben",
+  material: "Lernmaterial",
 } as const;
 
 type Capability = {
   section: keyof typeof capabilitySections;
   title: string;
   description: string;
-  /** The Action it takes. */
-  kind: Kind;
-  /** It covers only Study Blocks this Agent created and the student has not moved since (ADR-0001). */
-  ownBlocks?: true;
-  /** The modes the student may pick, the first being its default when added. */
-  modes: readonly [ApprovalMode, ...ApprovalMode[]];
-};
+} & (
+  | {
+      /** The Action it takes. */
+      kind: Kind;
+      /** It covers only Study Blocks this Agent created and the student has not moved since (ADR-0001). */
+      ownBlocks?: true;
+      /** The modes the student may pick, the first being its default when added. */
+      modes: readonly [ApprovalMode, ...ApprovalMode[]];
+    }
+  | {
+      /** No Action: it starts an Artifact Run of this kind, so the gate is not involved (#143). */
+      artifact: "flashcards" | "practice_set";
+      /** None: it is simply on or off (ADR-0001). */
+      modes: readonly [];
+    }
+);
 
 /**
  * Every Capability an Agent can have, in drawer order: the single source for the drawer, the builder and the
@@ -70,6 +80,21 @@ export const capabilities = {
     kind: "task.create",
     modes: ["ask", "automatic", "always"],
   },
+  // Each starts at most one Artifact Run per Run, for Topics of the Agent's Courses; Drafts and Critiques are never offered.
+  createFlashcards: {
+    section: "material",
+    title: "Karteikarten erstellen",
+    description: "Karteikarten zu Themen deiner Kurse erstellen.",
+    artifact: "flashcards",
+    modes: [],
+  },
+  createPracticeSets: {
+    section: "material",
+    title: "Übungsaufgaben erstellen",
+    description: "Übungsaufgaben zu Themen deiner Kurse erstellen.",
+    artifact: "practice_set",
+    modes: [],
+  },
 } as const satisfies Record<string, Capability>;
 export type CapabilityId = keyof typeof capabilities;
 export const capabilityIds = Object.keys(capabilities) as [
@@ -77,28 +102,39 @@ export const capabilityIds = Object.keys(capabilities) as [
   ...CapabilityId[],
 ];
 
-/** One Capability on an Agent, with its mode. */
-export type AgentCapability = { id: CapabilityId; mode: ApprovalMode };
+/** One Capability on an Agent, with its mode; null for one that is no Action, which is simply on. */
+export type AgentCapability = { id: CapabilityId; mode: ApprovalMode | null };
 
-/** The Capabilities as given, if each is known, given once, and on a mode it allows; null otherwise. */
+/**
+ * The Capabilities as given, if each is known, given once, and on a mode it allows, or without one if it allows none;
+ * null otherwise.
+ */
 export function checkCapabilities(
-  given: { id: string; mode: string }[],
+  given: { id: string; mode: string | null }[],
 ): AgentCapability[] | null {
   const ids = new Set(given.map((c) => c.id));
   if (ids.size !== given.length) return null;
   for (const { id, mode } of given) {
     if (!Object.hasOwn(capabilities, id)) return null;
     const allowed: readonly string[] = capabilities[id as CapabilityId].modes;
-    if (!allowed.includes(mode)) return null;
+    if (mode === null ? allowed.length > 0 : !allowed.includes(mode))
+      return null;
   }
   return given as AgentCapability[];
 }
 
-/** The kinds an Agent holds a Grant for: one for each Capability on `always` or `automatic`. */
+/** The Action a Capability takes; null for one that is no Action. */
+export const kindOf = (id: CapabilityId): Kind | null => {
+  const capability = capabilities[id];
+  return "kind" in capability ? capability.kind : null;
+};
+
+/** The kinds an Agent holds a Grant for: one for each Action Capability on `always` or `automatic`. */
 export const grantedKinds = (held: AgentCapability[]): Kind[] => [
   ...new Set(
-    held
-      .filter((c) => c.mode !== "ask")
-      .map((c) => capabilities[c.id].kind as Kind),
+    held.flatMap((c) => {
+      const kind = kindOf(c.id);
+      return kind && c.mode && c.mode !== "ask" ? [kind] : [];
+    }),
   ),
 ];

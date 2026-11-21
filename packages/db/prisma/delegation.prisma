@@ -150,6 +150,10 @@ model Run {
   chat             Chat?           @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
   /// The Temporal workflow running it, which the API signals once the student decides on one of its Actions.
   workflowId       String?
+  /// The Agent's Run that started this Artifact Run, which its cost is charged to; null for any other Run, and once
+  /// that Run is deleted with its Agent, which keeps the Artifact.
+  startedByRunId   String?
+  startedBy        Run?            @relation("ArtifactRuns", fields: [startedByRunId], references: [id], onDelete: SetNull)
   startedAt        DateTime        @default(now())
   /// A free-text Agent's Run records the rest; null for preset, Chat and Artifact Runs.
   status           RunStatus?
@@ -171,10 +175,13 @@ model Run {
   artifact Artifact?
   steps    RunStep[]
   events   RunEvent[]
+  /// The Artifact Runs it started: at most one (ADR-0026).
+  started  Run[]           @relation("ArtifactRuns")
 
   @@unique([id, studentId])
   @@index([studentId])
   @@index([agentId, status])
+  @@index([startedByRunId])
   @@map("run")
 }
 
@@ -215,13 +222,15 @@ model RunStep {
   calls             Json?
   /// The handles the step's tools gave out so far, such as O1 or B1, which later steps name work and blocks by.
   handles           Json?
+  /// The Citation tags its tools gave out so far, such as S1, each with what it cites, which later steps name Topics by.
+  citations         Json?
   createdAt         DateTime @default(now())
 
   @@id([runId, n])
   @@map("run_step")
 }
 
-/// One Activity event of a Run's Verlauf (#149): what a step read, or what became of one of its Action calls. Append-only
+/// One Activity event of a Run's Verlauf (#149): what a step read, or what became of one of its Action or Artifact calls. Append-only
 /// and structured, never model text; it lives as long as its Run. The Verlauf's start and end come from the Run itself.
 model RunEvent {
   /// Orders the Run's events as they were written.
@@ -232,7 +241,7 @@ model RunEvent {
   /// Unique within the Run, so an Activity repeated after a lost completion writes nothing twice.
   key       String
   at        DateTime @default(now())
-  /// read or action.
+  /// read, action or artifact.
   type      String
   /// Ids, counts and outcomes only; names are looked up when shown.
   detail    Json

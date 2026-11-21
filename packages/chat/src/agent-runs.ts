@@ -16,13 +16,13 @@ import {
   withOwner,
 } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
-import type { KnowledgeReader, Sealed } from "@nunio/knowledge";
+import type { Citation, KnowledgeReader, Sealed } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
 import { raiseForEndedRun } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
 import type { ModelMessage } from "ai";
-import type { ActionEvent } from "./activity.js";
+import type { ActionEvent, ArtifactEvent } from "./activity.js";
 import { recordEvents } from "./activity.js";
 import { agendaTool } from "./agenda.js";
 import type { ApprovalsOutput } from "./approvals.js";
@@ -32,7 +32,14 @@ import { courseFactsTool } from "./course-facts.js";
 import type { ChatPart } from "./parts.js";
 import { retryRateLimited } from "./retry.js";
 import type { StoredCall } from "./run-actions.js";
-import { actionTools, intentOf, readCall, resultOf } from "./run-actions.js";
+import {
+  artifactResultOf,
+  capabilityTools,
+  intentOf,
+  readCall,
+  resultOf,
+  startsArtifact,
+} from "./run-actions.js";
 import { searchTool } from "./search.js";
 import type { Handled } from "./turn.js";
 import { createTurn } from "./turn.js";
@@ -112,6 +119,7 @@ export function createAgentRuns({
   artifacts,
   delegation,
   agents,
+  startArtifactRun,
   catalog,
   modelFor,
   clock,
@@ -121,9 +129,11 @@ export function createAgentRuns({
   reader: KnowledgeReader;
   plan: Pick<Plan, "view" | "timeZone">;
   understanding: Pick<Understanding, "levels">;
-  artifacts: Pick<Artifacts, "list">;
+  artifacts: Pick<Artifacts, "list" | "startFromRun">;
   delegation: Delegation;
   agents: Pick<Agents, "startRun" | "syncBudgetPause">;
+  /** Starts an Artifact Run's workflow, which then makes its Artifact; safe to repeat. */
+  startArtifactRun: (runId: string) => Promise<void>;
   catalog: Pick<ModelCatalog, "chatModels">;
   /** The Model a Run's steps run on, from the catalog's offered row. */
   modelFor: (model: CatalogModel) => AgentModel;
@@ -135,6 +145,59 @@ export function createAgentRuns({
     contentKey: Uint8Array<ArrayBuffer> | null,
     derivedFrom: string[],
   ): Sealed => ({ content, contentKey, derivedFrom });
+  /**
+   * Starts the Artifact Run that call `i` of step `n` asks for, at most one per Run, and records it in the Verlauf. A
+   * call already recorded is left as it was, so a repeat starts nothing twice.
+   */
+  async function startArtifact(
+    run: { runId: string; studentId: string },
+    n: number,
+    i: number,
+    call: StoredCall,
+  ) {
+    const { runId } = run;
+    const p = principal.fromRun(runId);
+    const key = `artifact:${n}:${i + 1}`;
+    const recorded = await withOwner(db, p, (tx) =>
+      tx.runEvent.findUnique({ where: { runId_key: { runId, key } } }),
+    );
+    if (recorded) return;
+    const capability = capabilities[call.toolName as CapabilityId] as {
+      artifact: ArtifactEvent["kind"];
+    };
+    const named = {
+      step: n,
+      call: i + 1,
+      capability: call.toolName,
+      kind: capability.artifact,
+    };
+    let detail: ArtifactEvent;
+    if ("artifact" in call) {
+      const started = await artifacts.startFromRun(runId, {
+        key: `${runId}:${n}:${i + 1}`,
+        capability: call.toolName as CapabilityId,
+        ...call.artifact,
+      });
+      if (started.status === "started") await startArtifactRun(started.runId);
+      detail = {
+        ...named,
+        topicIds: call.artifact.topicIds,
+        artifactId: started.status === "started" ? started.artifactId : null,
+        outcome: started.status,
+        refusal: started.status === "refused" ? started.reason : null,
+      };
+    } else
+      detail = {
+        ...named,
+        topicIds: [],
+        artifactId: null,
+        outcome: "refused",
+        refusal: "invalid",
+      };
+    await withOwner(db, p, (tx) =>
+      recordEvents(tx, run, [{ key, type: "artifact", detail }]),
+    );
+  }
   return {
     /**
      * Records the Run, or takes up the one the student started, with the Agent's Instructions, Capabilities and Model
@@ -202,9 +265,13 @@ export function createAgentRuns({
         if (run.status !== "running") return { ended: true };
         if (run.steps.length !== n - 1)
           throw new Error(`Step ${n} of Run ${runId} comes too early`);
-        // What the gate made of the previous step's Action calls, which this step tells the model.
+        // What the gate made of the previous step's Action calls, and which Artifact Runs its calls started, which this
+        // step tells the model.
         const performed = await tx.action.findMany({
           where: { runId, key: { startsWith: `${runId}:${n - 1}:` } },
+        });
+        const started = await tx.runEvent.findMany({
+          where: { runId, key: { startsWith: `artifact:${n - 1}:` } },
         });
         const transcripts = await Promise.all(
           run.steps.map((step) =>
@@ -221,14 +288,14 @@ export function createAgentRuns({
               : null,
           ),
         );
-        return { run, transcripts, performed };
+        return { run, transcripts, performed, started };
       });
       if ("done" in loaded)
         return loaded.done!.partsContent
           ? outcome(loaded.done!.answered, loaded.done!.calls)
           : { status: "failed", reason: "step_interrupted" };
       if ("ended" in loaded) return { status: "refused", reason: "run_ended" };
-      const { run, transcripts, performed } = loaded;
+      const { run, transcripts, performed, started } = loaded;
       // A Source deleted since takes the earlier steps with it, so the Run cannot go on from them.
       if (transcripts.some((transcript) => transcript === null))
         return { status: "refused", reason: "source_deleted" };
@@ -247,9 +314,10 @@ export function createAgentRuns({
           .sort((a, b) => a.title.localeCompare(b.title, "de")),
       );
       const previous = run.steps.at(-1);
-      // The handles earlier steps gave out, so the model names work and blocks by them across steps.
+      // The handles and tags earlier steps gave out, so the model names work, blocks and Topics by them across steps.
       const turn = createTurn(
         (previous?.handles as [string, Handled][] | null) ?? [],
+        (previous?.citations as Citation[] | null) ?? [],
       );
       // The Capabilities the Run started with; the gate still decides each call by those the Agent holds now.
       const held = ((run.capabilities as { id: string }[] | null) ?? [])
@@ -280,7 +348,7 @@ export function createAgentRuns({
           agentId: run.agentId ?? undefined,
         }),
         approvals: approvalsTool(turn, { db, p, runId, timeZone, clock }),
-        ...actionTools(held),
+        ...capabilityTools(held),
       };
       const called = (previous?.calls as StoredCall[] | null) ?? [];
       const results: ModelMessage[] = called.length
@@ -293,13 +361,20 @@ export function createAgentRuns({
                 toolName: call.toolName,
                 output: {
                   type: "text" as const,
-                  value: resultOf(
-                    turn,
-                    call,
-                    performed.find(
-                      (a) => a.key === `${runId}:${n - 1}:${i + 1}`,
-                    ) ?? null,
-                  ),
+                  value: startsArtifact(call)
+                    ? artifactResultOf(
+                        call,
+                        (started.find(
+                          (e) => e.key === `artifact:${n - 1}:${i + 1}`,
+                        )?.detail as ArtifactEvent | undefined) ?? null,
+                      )
+                    : resultOf(
+                        turn,
+                        call,
+                        performed.find(
+                          (a) => a.key === `${runId}:${n - 1}:${i + 1}`,
+                        ) ?? null,
+                      ),
                 },
               })),
             },
@@ -399,7 +474,7 @@ export function createAgentRuns({
           calls.push(
             await readCall(
               turn,
-              { plan, p, timeZone, courses: context.courses },
+              { plan, reader, p, timeZone, courses: context.courses },
               call,
             ),
           );
@@ -436,6 +511,7 @@ export function createAgentRuns({
             derivedFrom,
             calls: calls as object[],
             handles: turn.handled(),
+            citations: [...turn.citations],
           },
         });
         if (stepped.value.toolResults.length)
@@ -477,6 +553,10 @@ export function createAgentRuns({
       for (const [i, call] of (
         (step.calls as StoredCall[] | null) ?? []
       ).entries()) {
+        if (startsArtifact(call)) {
+          await startArtifact({ runId, studentId: step.studentId }, n, i, call);
+          continue;
+        }
         if (!("intent" in call)) {
           await record(i, {
             capability: call.toolName,

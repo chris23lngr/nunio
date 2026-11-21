@@ -12,7 +12,10 @@ import { Client, Connection } from "@temporalio/client";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import { createActivities } from "./activities.js";
 import { agentRunActivitiesFromEnv } from "./agent-run-activities.js";
-import { createArtifactActivities } from "./artifact-activities.js";
+import {
+  artifactRunStarter,
+  createArtifactActivities,
+} from "./artifact-activities.js";
 import { createDecisionNotifier } from "./decision-notifier.js";
 import { log } from "./log.js";
 import { createModelCatalogActivities } from "./model-catalog-activities.js";
@@ -51,7 +54,6 @@ const workflows = existsSync(here("./workflow-bundle.js"))
 const modelCatalog = createModelCatalogActivities(process.env);
 const taskModels = await modelCatalog.taskModels();
 const sourceActivities = createSourceActivities(process.env, taskModels);
-const artifactActivities = createArtifactActivities(process.env, taskModels);
 
 // The reconcile, outreach and model price Schedules live in Temporal; creating them again on each start is a no-op.
 const clientConnection = await Connection.connect({
@@ -71,11 +73,18 @@ await ensureReconcileSchedule(client, taskQueue);
 await ensureOutreachSchedule(client, taskQueue);
 await ensureModelPriceSchedule(client, taskQueue);
 await ensureRoutineSchedule(client, taskQueue);
+const agentSchedules = createAgentSchedules({ client, taskQueue });
+const artifactActivities = createArtifactActivities(
+  process.env,
+  taskModels,
+  agentSchedules,
+);
 const agentRunActivities = agentRunActivitiesFromEnv(
   process.env,
   taskModels,
-  createAgentSchedules({ client, taskQueue }),
+  agentSchedules,
   workflowAlive(client),
+  artifactRunStarter(client, taskQueue),
 );
 // Free-text Agents saved before they had a trigger have no Schedule yet; each start brings every one in line.
 await agentRunActivities.saveSchedules();

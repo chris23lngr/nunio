@@ -79,13 +79,15 @@ const settings = [
 /**
  * The Agent Run Activities as the worker runs them. `catalog` is the Model Catalog's task Models, read once at start;
  * `schedules` are the Agents' Schedules, which the worker brings in line with their triggers as it starts; `runAlive`
- * asks Temporal whether a Run's workflow still runs, so a Run whose workflow is gone skips no later one.
+ * asks Temporal whether a Run's workflow still runs, so a Run whose workflow is gone skips no later one;
+ * `startArtifactRun` starts the workflow of an Artifact Run a Run started.
  */
 export function agentRunActivitiesFromEnv(
   env: NodeJS.ProcessEnv,
   catalog: readonly ModelConfig[],
   schedules: Schedules,
   runAlive: (workflowId: string) => Promise<boolean>,
+  startArtifactRun: (runId: string) => Promise<void>,
 ) {
   const missing = settings.filter((name) => !env[name]);
   if (missing.length)
@@ -147,6 +149,7 @@ export function agentRunActivitiesFromEnv(
     artifacts,
     delegation,
     agents,
+    startArtifactRun,
     catalog: createModelCatalog({ db, clock }),
     modelFor: (model) => createAgentModel(models.fromConfig(model)),
     clock,

@@ -20,6 +20,7 @@ export {
   capabilities,
   capabilityIds,
   capabilitySections,
+  kindOf,
 } from "./capabilities.js";
 export {
   type BrokenPreference,
