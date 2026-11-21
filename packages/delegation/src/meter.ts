@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
+import { renewBudget } from "./budget.js";
 import type {
   ActionOutcome,
   ActionRecord,
@@ -12,7 +13,7 @@ import type {
   PlanRules,
   Resolve,
 } from "./gate.js";
-import { createGate } from "./gate.js";
+import { createGate, withdrawApprovals } from "./gate.js";
 import type { ActionIntent } from "./kinds.js";
 import type { Principal, Transaction } from "./principal.js";
 import { withOwner } from "./principal.js";
@@ -137,22 +138,26 @@ export function createDelegation({
             null;
         }
         if (agentId) {
+          await renewBudget(tx, agentId, clock.now());
           // One conditional UPDATE against the Budget too; its row lock serializes the Agent's Runs.
           const budgeted = await tx.$executeRaw`
             UPDATE "agent" SET "heldMicroUsd" = "heldMicroUsd" + ${estimate.microUsd}
             WHERE "id" = ${agentId} AND "state" = 'active'
               AND "budgetMicroUsd" - "usedMicroUsd" - "heldMicroUsd" >= ${estimate.microUsd}`;
           if (budgeted === 0) {
-            const { state } = await tx.agent.findUniqueOrThrow({
+            const { state, pausedBy } = await tx.agent.findUniqueOrThrow({
               where: { id: agentId },
-              select: { state: true },
+              select: { state: true, pausedBy: true },
             });
-            if (state !== "active") return state;
-            // Budget exhaustion pauses in the reserving transaction; only the student resumes it.
+            if (state !== "active")
+              return pausedBy === "budget" ? "budget_exhausted" : state;
+            // Budget exhaustion pauses in the reserving transaction; only the student resumes it. Like any Pause, it
+            // withdraws the Agent's open Approvals (ADR-0006), here under the Agent's lock as Pause's second pass does.
             await tx.agent.update({
               where: { id: agentId },
               data: { state: "paused", pausedBy: "budget" },
             });
+            await withdrawApprovals(tx, { studentId, agentId }, clock.now());
             return "budget_exhausted";
           }
         }
@@ -180,6 +185,8 @@ export function createDelegation({
         withOwner(db, p, async (tx, studentId) => {
           // The Agent before the Allowance, in the order reserving locks them, so the two never deadlock.
           if (agentId) {
+            // A call that began last month counts against the month it ends in.
+            await renewBudget(tx, agentId, clock.now());
             await tx.agent.update({
               where: { id: agentId },
               data: {
