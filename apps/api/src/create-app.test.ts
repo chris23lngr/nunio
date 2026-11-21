@@ -45,7 +45,7 @@ import {
   createSources,
   createTopicAreas,
 } from "@nunio/knowledge";
-import { createOutreach, sendNotice } from "@nunio/outreach";
+import { createOutreach, sendBriefing, sendNotice } from "@nunio/outreach";
 import {
   createPlan,
   createPlanExecutor,
@@ -478,6 +478,7 @@ beforeAll(async () => {
     db: prisma,
     keys,
     reader,
+    facts,
     plan,
     understanding,
     artifacts,
@@ -7807,6 +7808,7 @@ describe("a free-text Agent's form", () => {
         step: 1,
         plan: true,
         approvals: false,
+        inbox: false,
         courses: [
           { id: statistics, title: "Statistics II" },
           { id: removed, title: null },
@@ -8959,6 +8961,14 @@ describe("a free-text Agent's form", () => {
           "Dir eine kurze Nachricht in deine Inbox schreiben, höchstens eine pro Lauf.",
         modes: [],
       },
+      {
+        id: "createBriefing",
+        section: "Briefings",
+        title: "Briefing erstellen",
+        description:
+          "Offene Hinweise, Freigaben, ungelesene Nachrichten und fertiges Lernmaterial zu einem Briefing in deiner Inbox zusammenfassen.",
+        modes: [],
+      },
     ]);
   });
 
@@ -9093,6 +9103,293 @@ describe("a free-text Agent's form", () => {
         refusal: null,
       });
       expect(JSON.stringify(verlauf)).not.toContain("Geheim");
+    });
+  });
+
+  describe("its Briefings in the Inbox (#188)", () => {
+    it("shows an Agent's Briefing with live Approvals, Notices, and Artifacts, and keeps past nunio Briefings readable", async () => {
+      const asked = await askedForApproval("agent-briefing-inbox");
+      const sid = await studentId(asked.cookie);
+      const statsCourse = await course(sid, "Statistics II");
+      const created = await app.request(`${apiOrigin}/api/me/agents`, {
+        method: "POST",
+        headers: asked.headers,
+        body: JSON.stringify(
+          form(
+            [statsCourse],
+            [
+              { id: "createBriefing", mode: null },
+              { id: "notifyStudent", mode: null },
+            ],
+          ),
+        ),
+      });
+      expect(created.status).toBe(201);
+      const { id: agentId } = (await created.json()) as { id: string };
+      const runId = await recordedRun(sid, agentId, 1, { status: "running" });
+
+      // An unread Notice and a ready Artifact, plus the open Approval from askedForApproval.
+      const notice = await withOwner(prisma, principal.fromRun(runId), (tx) =>
+        sendNotice(
+          tx,
+          runId,
+          {
+            content: Uint8Array.from(Buffer.from("Kurze Erinnerung.")),
+            contentKey: null,
+            derivedFrom: [],
+          },
+          new Date(),
+        ),
+      );
+      if (notice.status !== "sent") throw new Error(notice.reason);
+
+      const artifactId = randomUUID();
+      const artifactRunId = randomUUID();
+      await admin.run.create({
+        data: {
+          id: artifactRunId,
+          studentId: sid,
+          status: "done",
+          startedAt: new Date(),
+          endedAt: new Date(),
+        },
+      });
+      await admin.artifact.create({
+        data: {
+          id: artifactId,
+          studentId: sid,
+          runId: artifactRunId,
+          kind: "flashcards",
+          status: "ready",
+          request: {},
+        },
+      });
+      await admin.artifactVersion.create({
+        data: {
+          artifactId,
+          studentId: sid,
+          version: 1,
+          content: Uint8Array.from(
+            Buffer.from(
+              JSON.stringify({
+                title: "Stochastik Karten",
+                items: [
+                  {
+                    id: "c1",
+                    topicIds: [],
+                    front: "F",
+                    back: "B",
+                    citations: [],
+                  },
+                ],
+              }),
+            ),
+          ),
+          derivedFrom: [],
+        },
+      });
+
+      // Past nunio Briefing stays readable alongside the Agent's Briefing.
+      await admin.briefing.create({
+        data: {
+          id: randomUUID(),
+          studentId: sid,
+          localDate: "2025-01-01",
+          createdAt: new Date("2025-01-01T07:00:00Z"),
+          items: { interventions: [], approvals: [], agents: [] },
+        },
+      });
+
+      const written = await withOwner(prisma, principal.fromRun(runId), (tx) =>
+        sendBriefing(
+          tx,
+          runId,
+          {
+            text: {
+              content: Uint8Array.from(
+                Buffer.from("Morgenbriefing: Alles offen."),
+              ),
+              contentKey: null,
+              derivedFrom: [],
+            },
+            items: {
+              interventions: [],
+              approvals: [asked.asking.actionId],
+              notices: [notice.noticeId],
+              artifacts: [artifactId],
+            },
+          },
+          new Date(),
+        ),
+      );
+      expect(written.status).toBe("written");
+      if (written.status !== "written") throw new Error("unreachable");
+
+      const loadInbox = async () => {
+        const response = await app.request(`${apiOrigin}/api/me/inbox`, {
+          headers: { cookie: asked.cookie },
+        });
+        expect(response.status).toBe(200);
+        return (await response.json()) as {
+          notices: { id: string; readAt: string | null }[];
+          briefings: {
+            id: string;
+            agentId: string | null;
+            agentName: string | null;
+            runId: string | null;
+            text: string | null;
+            announcement: string;
+            approvals: {
+              actionId: string;
+              fingerprint: string | null;
+              expiresAt: string | null;
+              state: string;
+            }[];
+            notices: string[];
+            artifacts: {
+              id: string;
+              kind: string | null;
+              title: string | null;
+              state: string;
+            }[];
+          }[];
+        };
+      };
+
+      const first = await loadInbox();
+      expect(first.briefings).toHaveLength(2);
+      const [agentBriefing, legacyBriefing] = first.briefings;
+      expect(agentBriefing).toMatchObject({
+        id: written.briefingId,
+        agentId,
+        agentName: "Klausur Statistik",
+        runId,
+        text: "Morgenbriefing: Alles offen.",
+        announcement: "pending",
+        notices: [notice.noticeId],
+        artifacts: [
+          expect.objectContaining({
+            id: artifactId,
+            kind: "flashcards",
+            title: "Stochastik Karten",
+            state: "ready",
+          }),
+        ],
+      });
+      expect(agentBriefing!.approvals).toEqual([
+        expect.objectContaining({
+          actionId: asked.asking.actionId,
+          fingerprint: expect.any(String),
+          expiresAt: expect.any(String),
+          state: "waiting",
+        }),
+      ]);
+      // Bundling a Notice never marks it read.
+      expect(
+        first.notices.find((n) => n.id === notice.noticeId)?.readAt,
+      ).toBeNull();
+      // Legacy nunio Briefing stays readable.
+      expect(legacyBriefing).toMatchObject({
+        agentId: null,
+        agentName: null,
+        runId: null,
+        text: null,
+        notices: [],
+        artifacts: [],
+      });
+
+      // Deciding the Approval via the real endpoint updates live status in the Briefing.
+      const decided = await app.request(
+        `${apiOrigin}/api/me/approvals/${asked.asking.actionId}`,
+        {
+          method: "POST",
+          headers: asked.headers,
+          body: JSON.stringify({ decision: "deny" }),
+        },
+      );
+      expect(decided.status).toBe(200);
+      await admin.artifact.update({
+        where: { id: artifactId },
+        data: { openedAt: new Date() },
+      });
+
+      const after = await loadInbox();
+      expect(after.briefings[0]!.approvals[0]).toMatchObject({
+        actionId: asked.asking.actionId,
+        fingerprint: null,
+        state: "denied",
+      });
+      expect(after.briefings[0]!.artifacts[0]).toMatchObject({
+        id: artifactId,
+        state: "opened",
+      });
+    });
+
+    it("shows inbox read and Briefing written in the Run's Verlauf without leaking text", async () => {
+      const s = await student("agent-briefing-verlauf");
+      const statsCourse = await course(s.id, "Statistics II");
+      const created = await s.call(
+        "POST",
+        "",
+        form([statsCourse], [{ id: "createBriefing", mode: null }]),
+      );
+      expect(created.status).toBe(201);
+      const { id: agentId } = (await created.json()) as { id: string };
+      const runId = await recordedRun(s.id, agentId, 1, { status: "running" });
+      await admin.runEvent.createMany({
+        data: [
+          {
+            runId,
+            studentId: s.id,
+            key: "read:1",
+            type: "read",
+            detail: {
+              step: 1,
+              plan: false,
+              approvals: false,
+              inbox: true,
+              courseIds: [],
+              sourceIds: [],
+            },
+          },
+          {
+            runId,
+            studentId: s.id,
+            key: "briefing:1:1",
+            type: "briefing",
+            detail: {
+              step: 1,
+              call: 1,
+              capability: "createBriefing",
+              briefingId: randomUUID(),
+              outcome: "written",
+              refusal: null,
+            },
+          },
+        ],
+      });
+
+      const shown = await s.call("GET", `/${agentId}/runs/${runId}`);
+      expect(shown.status).toBe(200);
+      const { verlauf } = (await shown.json()) as { verlauf: unknown[] };
+      expect(verlauf).toContainEqual({
+        type: "read",
+        at: expect.any(String),
+        step: 1,
+        plan: false,
+        approvals: false,
+        inbox: true,
+        courses: [],
+        sources: [],
+      });
+      expect(verlauf).toContainEqual({
+        type: "briefing",
+        at: expect.any(String),
+        step: 1,
+        capability: "createBriefing",
+        outcome: "written",
+        refusal: null,
+      });
     });
   });
 });

@@ -93,6 +93,14 @@ const capabilitySet = [
       "Dir eine kurze Nachricht in deine Inbox schreiben, höchstens eine pro Lauf.",
     modes: [],
   },
+  {
+    id: "createBriefing",
+    section: "Briefings",
+    title: "Briefing erstellen",
+    description:
+      "Offene Hinweise, Freigaben, ungelesene Nachrichten und fertiges Lernmaterial zu einem Briefing in deiner Inbox zusammenfassen.",
+    modes: [],
+  },
 ];
 
 const dataHandling = {
@@ -1054,6 +1062,10 @@ test("'Fähigkeiten verwalten' adds Lernblöcke Capabilities on their default mo
       "Dich benachrichtigenDir eine kurze Nachricht in deine Inbox schreiben, höchstens eine pro Lauf.",
       "false",
     ],
+    [
+      "Briefing erstellenOffene Hinweise, Freigaben, ungelesene Nachrichten und fertiges Lernmaterial zu einem Briefing in deiner Inbox zusammenfassen.",
+      "false",
+    ],
   ]);
   expect(within(sheet).queryAllByRole("combobox")).toEqual([]);
   await userEvent.click(boxes[0]!);
@@ -1271,6 +1283,51 @@ test("'Fähigkeiten verwalten' offers Dich benachrichtigen under Benachrichtigun
   expect(saved).toEqual([
     expect.objectContaining({
       capabilities: [{ id: "notifyStudent", mode: null }],
+    }),
+  ]);
+});
+
+test("'Fähigkeiten verwalten' offers Briefing erstellen under Briefings, simply on without a mode", async () => {
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/a-1", () =>
+    Response.json({ ...agent, capabilities: [] }),
+  );
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Fähigkeit hinzufügen" }),
+  );
+  const sheet = await screen.findByRole("dialog", {
+    name: "Fähigkeiten verwalten",
+  });
+  const section = within(sheet).getByRole("button", { name: "Briefings" });
+  if (section.getAttribute("aria-expanded") !== "true")
+    await userEvent.click(section);
+  await userEvent.click(
+    await within(sheet).findByRole("checkbox", {
+      name: /Briefing erstellen/,
+    }),
+  );
+  expect(within(sheet).queryAllByRole("combobox")).toEqual([]);
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  expect(listedCapabilities()).toEqual([
+    "Briefing erstellenOffene Hinweise, Freigaben, ungelesene Nachrichten und fertiges Lernmaterial zu einem Briefing in deiner Inbox zusammenfassen.",
+  ]);
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  expect(saved).toEqual([
+    expect.objectContaining({
+      capabilities: [{ id: "createBriefing", mode: null }],
     }),
   ]);
 });

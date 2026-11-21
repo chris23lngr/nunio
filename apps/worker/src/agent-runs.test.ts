@@ -302,6 +302,7 @@ beforeAll(async () => {
     db: runtime,
     keys,
     reader,
+    facts,
     plan: createPlan({ db: runtime, facts, clock }),
     understanding: { levels: async () => [] },
     artifacts,
@@ -987,6 +988,7 @@ describe("an Agent's Run", () => {
         step: 1,
         plan: true,
         approvals: true,
+        inbox: false,
         courses: [],
         sources: [],
       },
@@ -995,6 +997,7 @@ describe("an Agent's Run", () => {
         step: 2,
         plan: false,
         approvals: false,
+        inbox: false,
         courses: [{ id: course.id, title: "Statistik II" }],
         sources: [{ id: source.id, title: "Skript.pdf" }],
       },
@@ -1080,17 +1083,23 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
     await run(some);
 
     expect(toolNames).toEqual([
-      [...reads, ...Object.keys(capabilities)].sort(),
+      [...reads, "inbox", ...Object.keys(capabilities)].sort(),
       reads,
       [...reads, "createStudyBlocks"].sort(),
     ]);
     // Nothing on ADR-0026's "no tool" list: every Capability tool only creates, moves or removes a Study Block,
-    // creates a Task, starts flashcards or a practice set, or writes the student a Notice. None reopens or completes a
-    // Task, changes an Estimate, drafts or critiques, or reaches anyone but the student.
+    // creates a Task, starts flashcards or a practice set, writes a Notice, or writes a Briefing. None reopens or
+    // completes a Task, changes an Estimate, drafts or critiques, or reaches anyone but the student.
     expect(
       new Set(
         Object.values(capabilities).map((c) =>
-          "kind" in c ? c.kind : "artifact" in c ? c.artifact : "notice",
+          "kind" in c
+            ? c.kind
+            : "artifact" in c
+              ? c.artifact
+              : "briefing" in c
+                ? "briefing"
+                : "notice",
         ),
       ),
     ).toEqual(
@@ -1102,6 +1111,7 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
         "flashcards",
         "practice_set",
         "notice",
+        "briefing",
       ]),
     );
   });
@@ -2416,4 +2426,301 @@ describe("an Agent's Run sending a Notice (#155)", () => {
       { agentName: "Klausur Statistik", text: null },
     ]);
   });
+});
+
+describe("an Agent's Run writing a Briefing (#188)", () => {
+  const briefingEntries = async (s: Awaited<ReturnType<typeof requested>>) =>
+    (await activity.run(s.p, s.agentId, s.runId))!.verlauf.flatMap((entry) =>
+      entry.type === "briefing"
+        ? [[entry.step, entry.outcome, entry.refusal] as const]
+        : [],
+    );
+
+  const inboxRead = (prompt: unknown) =>
+    (prompt as { role: string; content: unknown }[])
+      .filter((message) => message.role === "tool")
+      .flatMap(
+        (message) =>
+          message.content as {
+            toolName: string;
+            output: { value?: string };
+          }[],
+      )
+      .filter((part) => part.toolName === "inbox")
+      .map((part) => part.output.value ?? "")
+      .join("\n");
+
+  it("reads the whole Inbox fenced (leaving Notices unread), writes a Briefing bundling items across Courses, refuses a second with run_cap, and records Verlauf without leaking text", async () => {
+    // Another Agent leaves an open Approval and an unread Notice (from a Source) in the student's Inbox.
+    const other = await started({
+      held: [
+        { id: "createStudyBlocks", mode: "ask" },
+        { id: "notifyStudent", mode: null },
+      ],
+    });
+    script = [
+      readPlan,
+      () => createBlock(3),
+      () => calls("searchMaterial", { query: "Klausur" }),
+      () => calls("notifyStudent", { text: "Klausur ist am 3. März." }),
+      () => says("Fertig."),
+    ];
+    expect(await run(other)).toEqual({ status: "done" });
+    const [notice] = (await outreach.inbox(other.p)).notices;
+    const [intervention] = (await outreach.inbox(other.p)).interventions;
+    const [approvalAction] = await admin.action.findMany({
+      where: { runId: other.runId },
+    });
+
+    // Also create a ready Artifact in the student's workspace.
+    const artifactId = randomUUID();
+    const artifactRunId = randomUUID();
+    await admin.run.create({
+      data: {
+        id: artifactRunId,
+        studentId: other.studentId,
+        workflowId: `artifactRun/${artifactRunId}`,
+        startedAt: clock.now(),
+      },
+    });
+    await admin.artifact.create({
+      data: {
+        id: artifactId,
+        studentId: other.studentId,
+        kind: "flashcards",
+        runId: artifactRunId,
+        request: { topicIds: [] },
+        status: "ready",
+        versions: {
+          create: {
+            version: 1,
+            content: Buffer.from(
+              JSON.stringify({
+                title: "Statistik-Karten",
+                cards: [
+                  {
+                    id: "c1",
+                    topicIds: [],
+                    front: "A",
+                    back: "B",
+                    citations: [],
+                  },
+                ],
+              }),
+            ),
+            contentKey: null,
+            derivedFrom: [],
+          },
+        },
+      },
+    });
+
+    // Now a second Agent assigned only to a DIFFERENT Course ("Analysis I") runs with createBriefing and bundles
+    // items from "Statistik II" and the first Agent across all Courses.
+    const otherCourseId = randomUUID();
+    await admin.course.create({
+      data: {
+        id: otherCourseId,
+        studentId: other.studentId,
+        title: "Analysis I",
+        matchTitle: "analysis i",
+        semester: "WS 2026",
+        color: "sky",
+        status: "accepted",
+      },
+    });
+    const briefingAgent = await agents.create(other.p, {
+      name: "Morgen-Briefing",
+      description: "Fasst die Inbox zusammen.",
+      emoji: "🗞️",
+      instructions: "Lies die Inbox und erstelle ein Briefing.",
+      courseIds: [otherCourseId],
+      capabilities: [{ id: "createBriefing", mode: null }],
+      budgetMicroUsd: 1_000_000,
+      trigger: { rhythm: "daily", minute: 420 },
+      modelKey: offered[0]!.key,
+    });
+    if (briefingAgent.status !== "ok") throw new Error(briefingAgent.status);
+    const s = await requested(other.p, briefingAgent.id);
+    script = [
+      () => calls("inbox", {}),
+      () =>
+        calls("createBriefing", {
+          text: "Guten Morgen, eine Freigabe und eine Nachricht warten.",
+          interventions: ["I1"],
+          approvals: ["A1"],
+          notices: ["N1"],
+          artifacts: ["R1"],
+        }),
+      () =>
+        calls("createBriefing", {
+          text: "Ein zweites Briefing.",
+          approvals: ["A1"],
+        }),
+      () => says("Briefing geschrieben."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    // inbox output was fenced and listed all four categories.
+    const read = inboxRead(prompts.at(-1)!);
+    expect(read).toMatch(/^<<<BEGIN inbox [0-9a-f]+>>>/);
+    expect(read).toContain("I1");
+    expect(read).toContain("A1");
+    expect(read).toContain("N1");
+    expect(read).toContain("R1");
+    expect(read).toContain("Klausur ist am 3. März.");
+    expect(read).toContain("Statistik-Karten");
+
+    // The unread Notice STAYS unread even though inbox read it and createBriefing bundled it!
+    expect((await outreach.inbox(other.p)).notices).toMatchObject([
+      { id: notice!.id, readAt: null },
+    ]);
+
+    // Briefing is stored with its Agent, Run, text, bundled ids, and queued for announcement.
+    expect((await outreach.inbox(other.p)).briefings).toEqual([
+      {
+        id: expect.any(String),
+        madeAt: expect.any(Date),
+        agentId: briefingAgent.id,
+        agentName: "Morgen-Briefing",
+        runId: s.runId,
+        text: "Guten Morgen, eine Freigabe und eine Nachricht warten.",
+        announcement: "pending",
+        interventions: [intervention!.id],
+        approvals: [approvalAction!.id],
+        agents: [],
+        notices: [notice!.id],
+        artifacts: [artifactId],
+      },
+    ]);
+    expect(
+      await admin.delivery.findMany({
+        where: { studentId: s.studentId, briefingId: { not: null } },
+        select: { channel: true, sentAt: true },
+        orderBy: { channel: "asc" },
+      }),
+    ).toEqual([
+      { channel: "email", sentAt: null },
+      { channel: "push", sentAt: null },
+    ]);
+    expect(actionResults(prompts.at(-1), "createBriefing")).toEqual([
+      expect.stringMatching(/^Written: the student finds the Briefing/),
+      expect.stringMatching(
+        /^Not written: this Run has already written a Briefing/,
+      ),
+    ]);
+
+    // Verlauf records inbox read and briefing written/refused, never leaking the Briefing text.
+    const detail = await activity.run(other.p, briefingAgent.id, s.runId);
+    expect(detail!.verlauf).toContainEqual(
+      expect.objectContaining({ type: "read", step: 1, inbox: true }),
+    );
+    expect(await briefingEntries(s)).toEqual([
+      [2, "written", null],
+      [3, "refused", "run_cap"],
+    ]);
+    expect(JSON.stringify(detail!.verlauf)).not.toContain("Guten Morgen");
+
+    // Repeating runs.act for step 2 is idempotent: writes nothing twice.
+    await runs.act(s.runId, 2);
+    expect((await outreach.inbox(other.p)).briefings).toHaveLength(1);
+    expect(await briefingEntries(s)).toEqual([
+      [2, "written", null],
+      [3, "refused", "run_cap"],
+    ]);
+
+    // Deleting the Source behind the unread Notice read via inbox shreds the Briefing's text too (ADR-0007)!
+    const source = await admin.sourceCourse.findFirstOrThrow({
+      where: { studentId: other.studentId },
+    });
+    await sources.remove(other.p, source.sourceId);
+    expect((await outreach.inbox(other.p)).briefings).toMatchObject([
+      { agentName: "Morgen-Briefing", text: null },
+    ]);
+  });
+
+  it("refuses createBriefing with nothing_open when nothing open is bundled, and with invalid for links, >1500 chars or unknown handles", async () => {
+    const s = await started({ held: [{ id: "createBriefing", mode: null }] });
+    script = [
+      () => calls("createBriefing", { text: "Alles ruhig." }),
+      () =>
+        calls("createBriefing", {
+          text: "Klick hier: https://evil.test/x",
+        }),
+      () => calls("createBriefing", { text: "x".repeat(1501) }),
+      () =>
+        calls("createBriefing", {
+          text: "Unbekanntes Handle.",
+          approvals: ["A99"],
+        }),
+      () => says("Fertig."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect((await outreach.inbox(s.p)).briefings).toEqual([]);
+    expect(actionResults(prompts[4], "createBriefing")).toEqual([
+      expect.stringMatching(/^Not written: nothing open was bundled/),
+      expect.stringMatching(/^Refused, nothing was written: .*no links/),
+      expect.stringMatching(/^Refused, nothing was written: .*1500 characters/),
+      expect.stringMatching(
+        /^Refused, nothing was written: no approval has the handle A99/,
+      ),
+    ]);
+    expect(await briefingEntries(s)).toEqual([
+      [1, "refused", "nothing_open"],
+      [2, "refused", "invalid"],
+      [3, "refused", "invalid"],
+      [4, "refused", "invalid"],
+    ]);
+  });
+
+  it.each([
+    ["paused", { state: "paused", pausedBy: "student" }],
+    ["ended", { state: "ended", pausedBy: null }],
+  ] as const)(
+    "writes no Briefing once its Agent is %s, and keeps those it wrote before",
+    async (state, update) => {
+      const earlier = await started({
+        held: [
+          { id: "notifyStudent", mode: null },
+          { id: "createBriefing", mode: null },
+        ],
+      });
+      script = [
+        () => calls("notifyStudent", { text: "Etwas Wichtiges." }),
+        () => calls("inbox", {}),
+        () =>
+          calls("createBriefing", {
+            text: "Vorher geschrieben.",
+            notices: ["N1"],
+          }),
+        () => says("Fertig."),
+      ];
+      expect(await run(earlier)).toEqual({ status: "done" });
+
+      const s = await requested(earlier.p, earlier.agentId);
+      script = [
+        () => calls("inbox", {}),
+        async () => {
+          await admin.agent.update({
+            where: { id: s.agentId },
+            data: update,
+          });
+          return calls("createBriefing", {
+            text: "Nachher geschrieben.",
+            notices: ["N1"],
+          });
+        },
+      ];
+
+      expect(await run(s)).toEqual({ status: "stopped", reason: state });
+
+      expect(
+        (await outreach.inbox(s.p)).briefings.map((briefing) => briefing.text),
+      ).toEqual(["Vorher geschrieben."]);
+      expect(await briefingEntries(s)).toEqual([[2, "refused", state]]);
+    },
+  );
 });

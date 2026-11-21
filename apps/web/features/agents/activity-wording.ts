@@ -134,6 +134,7 @@ const refusals: Record<string, string> = {
   study_block: "Überschneidet einen anderen Lernblock",
   not_owner: "Die Arbeit oder der Block ist weg",
   gone: "Ein Thema ist nicht mehr da",
+  nothing_open: "Nichts Offenes zum Bündeln",
   paused: "Agent pausiert",
   ended: "Agent beendet",
   restricted: "Nicht erlaubt",
@@ -161,6 +162,7 @@ export function describeEntry(entry: VerlaufEntry): {
       const done = [
         ...(entry.plan ? ["den Plan gelesen"] : []),
         ...(entry.approvals ? ["deine Freigaben gelesen"] : []),
+        ...(entry.inbox ? ["die Inbox gelesen"] : []),
         ...(entry.courses.length
           ? [
               `${entry.courses.length} ${entry.courses.length === 1 ? "Kurs" : "Kurse"} gelesen`,
@@ -190,6 +192,8 @@ export function describeEntry(entry: VerlaufEntry): {
       return describeArtifact(entry);
     case "notice":
       return describeNotice(entry);
+    case "briefing":
+      return describeBriefing(entry);
     case "approval":
       return describeApproval(entry);
     case "end":
@@ -284,6 +288,23 @@ function describeNotice(entry: Extract<VerlaufEntry, { type: "notice" }>) {
     details: entry.refusal
       ? [
           `Grund: ${entry.refusal === "invalid" ? "Ungültiger Text, nichts wurde gesendet" : (refusals[entry.refusal] ?? entry.refusal)}`,
+        ]
+      : [],
+  };
+}
+
+/** The Briefing a call wrote, read in the Inbox and never shown here, or why none was written. */
+function describeBriefing(entry: Extract<VerlaufEntry, { type: "briefing" }>) {
+  if (entry.outcome === "written")
+    return {
+      title: "Briefing erstellt",
+      details: ["In deiner Inbox"],
+    };
+  return {
+    title: "Kein Briefing erstellt",
+    details: entry.refusal
+      ? [
+          `Grund: ${entry.refusal === "invalid" ? "Ungültige Angaben, nichts wurde erstellt" : (refusals[entry.refusal] ?? entry.refusal)}`,
         ]
       : [],
   };

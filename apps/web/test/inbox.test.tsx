@@ -412,3 +412,189 @@ test("a Notice drawn from a Source deleted since says it can no longer be read",
     ),
   ).toBeTruthy();
 });
+
+test("an Agent Briefing shows plain text, live RunApprovalCard, unread Notice, and live Artifacts", async () => {
+  const decidedCalls: unknown[] = [];
+  const openedNotices: string[] = [];
+  let approvalState: "waiting" | "approved" = "waiting";
+  let noticeReadAt: string | null = null;
+  const briefingText =
+    "Morgenbriefing: **Alles** unter https://example.test\nZweite Zeile";
+
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [{ ...expired, state: "acknowledged" }],
+      notices: [
+        {
+          ...notice,
+          readAt: noticeReadAt,
+        },
+      ],
+      briefings: [
+        {
+          id: "b-agent-1",
+          madeAt: "2026-11-10T06:05:00.000Z",
+          agentId: "agent-briefing",
+          agentName: "Morgen-Briefing",
+          runId: "run-briefing-1",
+          text: briefingText,
+          announcement: "pending",
+          interventions: [expired.id],
+          approvals: [
+            {
+              actionId: "a-waiting",
+              action: expired.action,
+              fingerprint: approvalState === "waiting" ? "fp-123" : null,
+              expiresAt: "2026-11-12T07:00:00.000Z",
+              agent: { id: "agent-3", preset: "", name: "Klausur vorbereiten" },
+              state: approvalState,
+            },
+            {
+              actionId: "a-withdrawn",
+              action: expired.action,
+              fingerprint: null,
+              expiresAt: "2026-11-12T07:00:00.000Z",
+              agent: { id: "agent-3", preset: "", name: "Klausur vorbereiten" },
+              state: "withdrawn",
+            },
+          ],
+          agents: [],
+          notices: [notice.id],
+          artifacts: [
+            {
+              id: "art-1",
+              kind: "flashcards",
+              title: "Stochastik Karten",
+              course: "Statistik II",
+              count: 12,
+              state: "ready",
+            },
+            {
+              id: "art-2",
+              kind: "practice_set",
+              title: "Altes Set",
+              course: "Analysis I",
+              count: null,
+              state: "withdrawn",
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  api.route("POST", "/api/me/approvals/a-waiting", async (request) => {
+    decidedCalls.push(await request.json());
+    approvalState = "approved";
+    return Response.json({ status: "ok" });
+  });
+  api.route("POST", `/api/me/notices/${notice.id}/read`, () => {
+    openedNotices.push(notice.id);
+    noticeReadAt = "2026-11-10T08:00:00.000Z";
+    return Response.json({ status: "ok" });
+  });
+
+  render(
+    <TestProviders>
+      <InboxScreen apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  const briefings = await screen.findByRole("region", { name: "Briefings" });
+  const card = within(briefings).getByRole("article", {
+    name: "Briefing von Morgen-Briefing",
+  });
+
+  // Plain text: never rendered as a link or formatting.
+  expect(
+    within(card).getByText((_, el) => el?.textContent === briefingText, {
+      selector: "p",
+    }),
+  ).toBeTruthy();
+  expect(card.querySelector("strong, b")).toBeNull();
+  expect(
+    within(card).queryByRole("link", { name: /example\.test/ }),
+  ).toBeNull();
+
+  // Live Intervention status and withdrawn Approval status.
+  expect(within(card).getByText(/Acknowledged/)).toBeTruthy();
+  expect(within(card).getByText(/Withdrawn: Problem sheet 1/)).toBeTruthy();
+
+  // Bundled Artifacts: ready one links to /artifacts/art-1, withdrawn one has no link.
+  expect(
+    within(card)
+      .getByRole("link", { name: "Stochastik Karten" })
+      .getAttribute("href"),
+  ).toBe("/artifacts/art-1");
+  expect(
+    within(card).getByText(/Altes Set · Analysis I · Nicht mehr lesbar/),
+  ).toBeTruthy();
+  expect(within(card).queryByRole("link", { name: "Altes Set" })).toBeNull();
+
+  // Bundled Notice stays unread until opened explicitly.
+  const bundledNotice = within(card).getByRole("article", {
+    name: "Nachricht von Klausur vorbereiten",
+  });
+  expect(within(bundledNotice).getByText("Ungelesen")).toBeTruthy();
+  expect(openedNotices).toEqual([]);
+
+  // Real RunApprovalCard: clicking Akzeptieren sends fingerprint and updates live status.
+  await userEvent.click(
+    within(card).getByRole("button", { name: "Akzeptieren" }),
+  );
+  expect(decidedCalls).toEqual([
+    { decision: "approve", fingerprint: "fp-123" },
+  ]);
+  expect(
+    await within(card).findByText(/Approved: Problem sheet 1/),
+  ).toBeTruthy();
+
+  // Opening the bundled Notice marks only that Notice read.
+  await userEvent.click(
+    within(bundledNotice).getByRole("button", { name: "Öffnen" }),
+  );
+  expect(openedNotices).toEqual([notice.id]);
+  expect(
+    await within(bundledNotice).findByText("Deine Klausur ist am 5. Februar."),
+  ).toBeTruthy();
+});
+
+test("an Agent Briefing drawn from a deleted Source says it can no longer be read", async () => {
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [],
+      notices: [],
+      briefings: [
+        {
+          id: "b-agent-shredded",
+          madeAt: "2026-11-10T06:05:00.000Z",
+          agentId: "agent-briefing",
+          agentName: "Morgen-Briefing",
+          runId: "run-briefing-2",
+          text: null,
+          announcement: "inbox_only",
+          interventions: [],
+          approvals: [],
+          agents: [],
+          notices: [],
+          artifacts: [],
+        },
+      ],
+    }),
+  );
+
+  render(
+    <TestProviders>
+      <InboxScreen apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  const card = await screen.findByRole("article", {
+    name: "Briefing von Morgen-Briefing",
+  });
+  expect(
+    within(card).getByText(
+      "Nicht mehr lesbar: Eine Quelle, die der Agent gelesen hatte, wurde gelöscht.",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText("Nothing needs your attention.")).toBeNull();
+});

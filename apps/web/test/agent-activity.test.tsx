@@ -841,3 +841,61 @@ test("the Verlauf shows the Notice a Run sent, and why one was not sent, never i
     ),
   ]);
 });
+
+test("the Verlauf shows when a Run read the Inbox and wrote or refused a Briefing, never its text", async () => {
+  const run = listed("r-1", 60, "done");
+  const entry = (more: object) => ({
+    type: "briefing",
+    at: run.endedAt,
+    step: 1,
+    capability: "createBriefing",
+    outcome: "written",
+    refusal: null,
+    ...more,
+  });
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [run], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-1", () =>
+    Response.json(
+      detail(run, {
+        verlauf: [
+          {
+            type: "read",
+            at: run.startedAt,
+            step: 1,
+            plan: false,
+            approvals: false,
+            inbox: true,
+            courses: [],
+            sources: [],
+          },
+          entry({}),
+          entry({ outcome: "refused", refusal: "nothing_open" }),
+          entry({ outcome: "refused", refusal: "run_cap" }),
+          entry({ outcome: "refused", refusal: "invalid" }),
+        ],
+      }),
+    ),
+  );
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+
+  const verlauf = await screen.findByRole("list", { name: "Verlauf" });
+  expect(
+    within(verlauf)
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toEqual([
+    expect.stringMatching(/\dHat die Inbox gelesen$/),
+    expect.stringMatching(/\dBriefing erstelltIn deiner Inbox$/),
+    expect.stringMatching(
+      /\dKein Briefing erstelltGrund: Nichts Offenes zum Bündeln$/,
+    ),
+    expect.stringMatching(
+      /\dKein Briefing erstelltGrund: Limit dieses Laufs erreicht$/,
+    ),
+    expect.stringMatching(
+      /\dKein Briefing erstelltGrund: Ungültige Angaben, nichts wurde erstellt$/,
+    ),
+  ]);
+});

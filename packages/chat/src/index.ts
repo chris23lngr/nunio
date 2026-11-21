@@ -26,5 +26,6 @@ export {
   createChats,
 } from "./chats.js";
 export type { CourseFactsOutput } from "./course-facts.js";
+export type { InboxOutput } from "./inbox-tool.js";
 export type { ChatPart } from "./parts.js";
 export type { SearchOutput } from "./search.js";

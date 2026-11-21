@@ -33,6 +33,7 @@ import {
   CalendarSync,
   Goal,
   ListPlus,
+  Newspaper,
   NotepadText,
   Pencil,
   Play,
@@ -201,6 +202,7 @@ const capabilityIcons: Record<Capability["id"], typeof CalendarPlus> = {
   createFlashcards: kinds.flashcards.icon,
   createPracticeSets: kinds.practice_set.icon,
   notifyStudent: BellRing,
+  createBriefing: Newspaper,
 };
 
 const tabs = [

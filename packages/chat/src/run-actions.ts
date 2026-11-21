@@ -84,7 +84,34 @@ const noticeInput: JSONSchema7 = {
   required: ["text"],
   additionalProperties: false,
 };
-/** Anything that reads as a link, which a Notice may not carry (ADR-0014). */
+/** A Briefing's length at most (#146). */
+const maxBriefing = 1500;
+/** What Briefing erstellen's tool takes: plain text and the handles of bundled Inbox items from `inbox`. */
+const briefingInput: JSONSchema7 = {
+  type: "object",
+  properties: {
+    text: { type: "string", minLength: 1, maxLength: maxBriefing },
+    interventions: {
+      type: "array",
+      items: { type: "string", pattern: "^I\\d+$" },
+    },
+    approvals: {
+      type: "array",
+      items: { type: "string", pattern: "^A\\d+$" },
+    },
+    notices: {
+      type: "array",
+      items: { type: "string", pattern: "^N\\d+$" },
+    },
+    artifacts: {
+      type: "array",
+      items: { type: "string", pattern: "^R\\d+$" },
+    },
+  },
+  required: ["text"],
+  additionalProperties: false,
+};
+/** Anything that reads as a link, which a Notice or Briefing may not carry (ADR-0014). */
 const link = /\b(?:https?:\/\/|www\.|mailto:)/i;
 
 /** What the model is told of each Capability's tool; how the tool reads its call follows from the Capability's Action. */
@@ -97,6 +124,7 @@ const descriptions: Record<CapabilityId, string> = {
   createFlashcards: `Starts making flashcards on Topics of your Courses, which the student finds under Study once made. ${artifactCap}`,
   createPracticeSets: `Starts making a practice set on Topics of your Courses, which the student finds under Study once made. ${artifactCap}`,
   notifyStudent: `Writes the student a short Notice in their Inbox, shown as yours: plain text of at most ${maxNotice} characters, with no links or formatting. Only one may be sent per Run, so send it only when something needs the student's attention, and say all of it at once.`,
+  createBriefing: `Writes the student a Briefing in their Inbox bundling open Inbox items: plain text of at most ${maxBriefing} characters, with no links or formatting, plus the handles (I1, A1, N1, R1) from inbox of the open items you are bundling. Read the Inbox with inbox first. Only write a Briefing when at least one open item is bundled; at most one may be written per Run.`,
   createTasks:
     "Creates a Task in one of your Courses. Name exactly one of: a Course by its handle, such as K1; an Obligation the Plan showed, such as O1, which the Task works toward; or a Course Event the Plan showed, such as E1, with role preparation or follow_up, only if it has no Task in that role yet. Give a short title and, if you can tell, the minutes it needs. Read the Plan with agenda first, so you add no Task it already has.",
 };
@@ -104,7 +132,8 @@ const descriptions: Record<CapabilityId, string> = {
 /**
  * The Agent's Capability tools: exactly its Capabilities, one tool each, named by the Capability (ADR-0026). None has
  * an `execute`: the step hands its calls back, and they are performed after it, under `runId:step:call`, an Action's
- * through the gate, a Lernmaterial one's by starting its Artifact Run, and Dich benachrichtigen's by sending a Notice.
+ * through the gate, a Lernmaterial one's by starting its Artifact Run, Dich benachrichtigen's by sending a Notice, and
+ * Briefing erstellen's by writing a Briefing.
  */
 export function capabilityTools(held: readonly CapabilityId[]): ToolSet {
   return Object.fromEntries(
@@ -119,7 +148,9 @@ export function capabilityTools(held: readonly CapabilityId[]): ToolSet {
               ? inputs[capability.kind]!
               : "artifact" in capability
                 ? artifactInput
-                : noticeInput,
+                : "briefing" in capability
+                  ? briefingInput
+                  : noticeInput,
           ),
         }),
       ];
@@ -130,17 +161,27 @@ export function capabilityTools(held: readonly CapabilityId[]): ToolSet {
 /** The kind of Artifact a Lernmaterial Capability starts. */
 export type ArtifactKind = "flashcards" | "practice_set";
 /**
- * A Notice's text as its call is stored: sealed for `noticeTextId(runId)` under every Source the Run had read, as
- * base64, so the model's words are never kept in the clear.
+ * A Notice's or Briefing's text as its call is stored: sealed under every Source the Run had read, as base64, so the
+ * model's words are never kept in the clear.
  */
 export type SealedNotice = {
   content: string;
   contentKey: string | null;
   derivedFrom: string[];
 };
+/** A Briefing as its call is stored: its sealed text and the Inbox item IDs it bundles. */
+export type SealedBriefing = {
+  text: SealedNotice;
+  items: {
+    interventions: string[];
+    approvals: string[];
+    notices: string[];
+    artifacts: string[];
+  };
+};
 /**
  * One Capability call of a step as stored: the Action the gate performs, the Artifact Run it starts, the Notice it
- * sends, or why none could be. Dates as ISO strings.
+ * sends, the Briefing it writes, or why none could be. Dates as ISO strings.
  */
 export type StoredCall = {
   toolCallId: string;
@@ -149,15 +190,29 @@ export type StoredCall = {
   | { intent: Record<string, unknown> }
   | { artifact: { kind: ArtifactKind; topicIds: string[] } }
   | { notice: SealedNotice }
+  | { briefing: SealedBriefing }
   | { invalid: string }
 );
-/** A call as read, before it is stored: a Notice's text is still plain until it is sealed with the step. */
+/** A call as read, before it is stored: a Notice's or Briefing's text is still plain until it is sealed with the step. */
 export type ReadCall =
   | StoredCall
-  | { toolCallId: string; toolName: string; noticeText: string };
+  | { toolCallId: string; toolName: string; noticeText: string }
+  | {
+      toolCallId: string;
+      toolName: string;
+      briefingDraft: {
+        text: string;
+        items: {
+          interventions: string[];
+          approvals: string[];
+          notices: string[];
+          artifacts: string[];
+        };
+      };
+    };
 
 /** Whether a call was to a Capability of this sort, valid or not. */
-const callTo = (call: StoredCall, sort: "artifact" | "notice") =>
+const callTo = (call: StoredCall, sort: "artifact" | "notice" | "briefing") =>
   sort in call ||
   ("invalid" in call &&
     Object.hasOwn(capabilities, call.toolName) &&
@@ -166,6 +221,8 @@ const callTo = (call: StoredCall, sort: "artifact" | "notice") =>
 export const startsArtifact = (call: StoredCall) => callTo(call, "artifact");
 /** Whether a call was to Dich benachrichtigen, which sends a Notice instead of asking the gate. */
 export const sendsNotice = (call: StoredCall) => callTo(call, "notice");
+/** Whether a call was to Briefing erstellen, which writes a Briefing instead of asking the gate. */
+export const writesBriefing = (call: StoredCall) => callTo(call, "briefing");
 
 /** A stored intent with its dates revived, as the gate takes it; a Task Action has none. */
 export const intentOf = (call: { intent: Record<string, unknown> }) => {
@@ -248,6 +305,52 @@ export async function readCall(
         "write plain text with no links: the student is never sent anywhere from a Notice.",
       );
     return { toolCallId, toolName, noticeText: text.trim() };
+  }
+  if ("briefing" in capability) {
+    const { text } = given;
+    if (typeof text !== "string" || !text.trim())
+      return invalid("give the Briefing's text.");
+    if (text.trim().length > maxBriefing)
+      return invalid(`write at most ${maxBriefing} characters.`);
+    if (link.test(text))
+      return invalid(
+        "write plain text with no links: the student is never sent anywhere from a Briefing.",
+      );
+    const resolve = (
+      field: string,
+      kind: "intervention" | "approval" | "notice" | "artifact",
+    ): string[] | StoredCall => {
+      const value = given[field];
+      if (value === undefined) return [];
+      if (!Array.isArray(value) || value.some((v) => typeof v !== "string"))
+        return invalid(`give ${field} as a list of handles from inbox.`);
+      const ids: string[] = [];
+      for (const handle of value as string[]) {
+        const found = turn.lookup(handle);
+        if (found?.kind !== kind)
+          return invalid(
+            `no ${kind} has the handle ${handle}. Read the Inbox with inbox first.`,
+          );
+        ids.push(found.id);
+      }
+      return [...new Set(ids)];
+    };
+    const interventions = resolve("interventions", "intervention");
+    if (!Array.isArray(interventions)) return interventions;
+    const approvals = resolve("approvals", "approval");
+    if (!Array.isArray(approvals)) return approvals;
+    const notices = resolve("notices", "notice");
+    if (!Array.isArray(notices)) return notices;
+    const artifacts = resolve("artifacts", "artifact");
+    if (!Array.isArray(artifacts)) return artifacts;
+    return {
+      toolCallId,
+      toolName,
+      briefingDraft: {
+        text: text.trim(),
+        items: { interventions, approvals, notices, artifacts },
+      },
+    };
   }
   if ("artifact" in capability)
     return readArtifact(
@@ -548,6 +651,30 @@ export function noticeResultOf(
   if (recorded.outcome === "sent")
     return "Sent: the student finds it in their Inbox. Send no other in this Run.";
   return `Not sent: ${notSent[recorded.refusal ?? ""] ?? recorded.refusal}.`;
+}
+
+/** Why a Briefing was not written, as the model is told. */
+const notWritten: Record<string, string> = {
+  run_ended: why.run_ended,
+  paused: why.paused,
+  ended: why.ended,
+  no_capability: "the student no longer lets you write Briefings",
+  run_cap:
+    "this Run has already written a Briefing, and only one may be written per Run, so write no more",
+  nothing_open:
+    "nothing open was bundled: bundle at least one open Intervention, pending Approval, unread Notice or ready Artifact from inbox",
+};
+
+/** What the model is told became of one call of Briefing erstellen: the Briefing it wrote, or why none was. */
+export function briefingResultOf(
+  call: StoredCall,
+  recorded: { outcome: "written" | "refused"; refusal: string | null } | null,
+): string {
+  if ("invalid" in call) return `Refused, nothing was written: ${call.invalid}`;
+  if (!recorded) throw new Error(`Call ${call.toolCallId} was never performed`);
+  if (recorded.outcome === "written")
+    return "Written: the student finds the Briefing in their Inbox. Write no other in this Run.";
+  return `Not written: ${notWritten[recorded.refusal ?? ""] ?? recorded.refusal}.`;
 }
 
 /** What the model is told became of one Action call: what the gate recorded for it, or why none was asked. */

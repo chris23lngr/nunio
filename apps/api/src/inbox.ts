@@ -123,6 +123,35 @@ const Briefing = z
   .object({
     id: z.string(),
     madeAt: z.date(),
+    agentId: z
+      .string()
+      .nullable()
+      .describe(
+        "The Agent that wrote the Briefing; null for a past Briefing nunio wrote itself.",
+      ),
+    agentName: z
+      .string()
+      .nullable()
+      .describe(
+        "Shown as \"Briefing von <Agent>\": the Agent's words, never nunio's; null for a past Briefing nunio wrote itself.",
+      ),
+    runId: z
+      .string()
+      .nullable()
+      .describe(
+        "The Run that wrote it; null for a past Briefing nunio wrote itself.",
+      ),
+    text: z
+      .string()
+      .nullable()
+      .describe(
+        "Plain text of at most 1,500 characters, never rendered as a link or formatting; null on past nunio Briefings or once a Source the Run had read is deleted.",
+      ),
+    announcement: z
+      .enum(["pending", "announced", "inbox_only"])
+      .describe(
+        "Whether a content-free email or push about it may still go out (pending), went out (announced), or never will (inbox_only).",
+      ),
     interventions: z
       .array(z.string())
       .describe("The Interventions it bundled, by their id in this Inbox."),
@@ -130,10 +159,26 @@ const Briefing = z
       z.object({
         actionId: z.string(),
         action: z.lazy(() => ActionShown).nullable(),
-        state: z
-          .enum(["waiting", "approved", "denied", "expired"])
+        fingerprint: z
+          .string()
+          .nullable()
           .describe(
-            "The Approval as it stands now; expired once it can no longer be given.",
+            "Sent back unchanged to approve the Action while waiting; null once closed or gone.",
+          ),
+        expiresAt: z
+          .date()
+          .nullable()
+          .describe("When the Approval request expires; null once gone."),
+        agent: z
+          .object({ id: z.string(), preset: z.string(), name: z.string() })
+          .nullable()
+          .describe(
+            "The Agent that asked for Approval, or null for Chat or once deleted.",
+          ),
+        state: z
+          .enum(["waiting", "approved", "denied", "expired", "withdrawn"])
+          .describe(
+            "The Approval as it stands now; expired once it can no longer be given, withdrawn when its Agent was paused or ended.",
           ),
       }),
     ),
@@ -153,6 +198,29 @@ const Briefing = z
         exam: z.string().nullable(),
       }),
     ),
+    notices: z
+      .array(z.string())
+      .describe("The Notices it bundled, by their id in this Inbox."),
+    artifacts: z
+      .array(
+        z.object({
+          id: z.string(),
+          kind: z
+            .enum(["practice_set", "flashcards", "draft", "critique"])
+            .nullable(),
+          title: z.string().nullable(),
+          course: z.string().nullable(),
+          count: z.number().int().nullable(),
+          state: z
+            .enum(["ready", "opened", "making", "failed", "withdrawn", "gone"])
+            .describe(
+              "The Artifact as it stands now; withdrawn once a Source it drew from is deleted, gone once the Artifact itself is deleted.",
+            ),
+        }),
+      )
+      .describe(
+        "The Artifacts it bundled, each with its state as it stands now.",
+      ),
   })
   .openapi("Briefing");
 
@@ -172,7 +240,7 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
               .describe("The Notices the student's Agents sent, newest first."),
             briefings: z
               .array(Briefing)
-              .describe("The last seven, newest first."),
+              .describe("Recent Briefings, newest first."),
           }),
           "The student's Interventions, open ones first, their Agents' Notices, and recent Briefings.",
         ),
@@ -193,15 +261,21 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
         ),
         ...briefings.flatMap((b) => b.approvals),
       ];
-      const [plan, review, actions, delegated] = await Promise.all([
-        c.get("plan").view(p),
-        interventions.some((i) => i.kind === "disagreement") ||
-        briefings.some((b) => b.agents.length)
-          ? c.get("facts").review(p)
-          : null,
-        ids.length ? c.get("delegation").history(p, { ids }) : [],
-        briefings.some((b) => b.agents.length) ? c.get("agents").list(p) : [],
-      ]);
+      const needsArtifacts = briefings.some((b) => b.artifacts.length);
+      const [plan, review, actions, delegated, listedArtifacts] =
+        await Promise.all([
+          c.get("plan").view(p),
+          interventions.some((i) => i.kind === "disagreement") ||
+          briefings.some((b) => b.agents.length) ||
+          needsArtifacts
+            ? c.get("facts").review(p)
+            : null,
+          ids.length ? c.get("delegation").history(p, { ids }) : [],
+          briefings.some((b) => b.agents.length || b.approvals.length)
+            ? c.get("agents").list(p)
+            : [],
+          needsArtifacts ? c.get("artifacts").list(p, {}) : [],
+        ]);
       const shown = (actionId: string) => {
         const a = actions.find((x) => x.id === actionId);
         return a ? describeAction(plan, a.kind, a.args) : null;
@@ -210,11 +284,45 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
       const approvalState = (actionId: string) => {
         const a = actions.find((x) => x.id === actionId);
         if (a?.approval?.decision) return a.approval.decision;
+        if (a?.refusal === "approval_withdrawn") return "withdrawn" as const;
         return a?.status === "awaiting_approval" &&
           a.approval &&
           now < a.approval.expiresAt
           ? ("waiting" as const)
           : ("expired" as const);
+      };
+      const courseTitleById = new Map(
+        (review?.courses ?? []).map((course) => [course.id, course.title]),
+      );
+      const artifactById = new Map(listedArtifacts.map((a) => [a.id, a]));
+      const artifactView = (artifactId: string) => {
+        const a = artifactById.get(artifactId);
+        if (!a)
+          return {
+            id: artifactId,
+            kind: null,
+            title: null,
+            course: null,
+            count: null,
+            state: "gone" as const,
+          };
+        const state = a.withdrawn
+          ? ("withdrawn" as const)
+          : a.status === "failed"
+            ? ("failed" as const)
+            : a.status === "making"
+              ? ("making" as const)
+              : a.openedAt !== null
+                ? ("opened" as const)
+                : ("ready" as const);
+        return {
+          id: a.id,
+          kind: a.kind,
+          title: a.title,
+          course: a.courseId ? (courseTitleById.get(a.courseId) ?? null) : null,
+          count: a.count,
+          state,
+        };
       };
       const work = new Map([
         ...plan.obligations.map(
@@ -275,11 +383,30 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
           }),
           briefings: briefings.map((b) => ({
             ...b,
-            approvals: b.approvals.map((actionId) => ({
-              actionId,
-              action: shown(actionId),
-              state: approvalState(actionId),
-            })),
+            approvals: b.approvals.map((actionId) => {
+              const a = actions.find((x) => x.id === actionId);
+              const state = approvalState(actionId);
+              const ag = a?.agentId
+                ? delegated.find((x) => x.id === a.agentId)
+                : undefined;
+              return {
+                actionId,
+                action: shown(actionId),
+                fingerprint:
+                  state === "waiting"
+                    ? (a?.approval?.fingerprint ?? null)
+                    : null,
+                expiresAt: a?.approval?.expiresAt ?? null,
+                agent: a?.agentId
+                  ? {
+                      id: a.agentId,
+                      preset: ag?.preset ?? "",
+                      name: ag?.name ?? "",
+                    }
+                  : null,
+                state,
+              };
+            }),
             agents: b.agents.flatMap((id) => {
               const r = delegated.find((x) => x.id === id);
               if (!r || !review) return [];
@@ -294,6 +421,7 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
                 },
               ];
             }),
+            artifacts: b.artifacts.map(artifactView),
           })),
           notices,
         },

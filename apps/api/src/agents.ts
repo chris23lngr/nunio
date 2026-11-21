@@ -277,6 +277,9 @@ const VerlaufEntrySchema = z
       step: z.number().int(),
       plan: z.boolean().describe("It read the Plan."),
       approvals: z.boolean().describe("It read its Agent's Approvals."),
+      inbox: z
+        .boolean()
+        .describe("It read the Inbox across the student's Courses."),
       courses: z.array(Named).describe("The Courses whose Facts it read."),
       sources: z.array(Named).describe("The Sources it drew on."),
     }),
@@ -378,6 +381,25 @@ const VerlaufEntrySchema = z
         .nullable()
         .describe(
           "Why none was sent, such as run_cap (the Run already sent one) or paused; invalid when its text was empty, too long or held a link.",
+        ),
+    }),
+    z.object({
+      type: z.literal("briefing"),
+      at: z.date(),
+      step: z.number().int(),
+      capability: z
+        .string()
+        .describe("The Capability whose tool was called: createBriefing."),
+      outcome: z
+        .enum(["written", "refused"])
+        .describe(
+          "Whether the Briefing was written; its text is read in the Inbox, never here.",
+        ),
+      refusal: z
+        .string()
+        .nullable()
+        .describe(
+          "Why none was written, such as run_cap (the Run already wrote one), nothing_open (nothing open to bundle), or paused; invalid when its text was empty, too long, held a link, or named nothing from the Inbox.",
         ),
     }),
     z.object({
