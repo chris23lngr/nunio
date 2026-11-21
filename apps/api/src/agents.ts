@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import type { ActivityCursor } from "@nunio/chat";
-import type { AgentScope } from "@nunio/delegation";
+import type { AgentScope, AgentTrigger } from "@nunio/delegation";
 import {
   approvalModes,
   capabilities,
@@ -9,7 +9,7 @@ import {
   capabilitySections,
 } from "@nunio/delegation";
 import { courseColors } from "@nunio/knowledge";
-import { deadline } from "@nunio/planning";
+import { deadline, hhmm } from "@nunio/planning";
 import type { AppBindings } from "./app.js";
 import {
   ActionShown,
@@ -61,6 +61,37 @@ const AgentCapability = z
   .strict()
   .openapi("AgentCapability");
 
+/** A minute of the day, as the Uhrzeit. */
+const Minute = z
+  .number()
+  .int()
+  .min(0)
+  .max(24 * 60 - 1);
+
+/** When its Schedule starts a Run, in the Plan's time zone: the v1 rhythms only. */
+const Trigger = z
+  .discriminatedUnion("rhythm", [
+    z.object({ rhythm: z.literal("daily"), minute: Minute }).strict(),
+    z
+      .object({
+        rhythm: z.literal("weekdays"),
+        weekdays: z
+          .array(z.number().int().min(1).max(7))
+          .min(1)
+          .max(7)
+          .refine((days) => new Set(days).size === days.length, {
+            message: "Each Wochentag at most once.",
+          })
+          .describe("Its Wochentage, ISO: 1 is Monday, 7 is Sunday."),
+        minute: Minute,
+      })
+      .strict(),
+  ])
+  .describe(
+    "Täglich (daily) or on chosen Wochentage (weekdays), at a minute of the day (Uhrzeit) in the Plan's time zone.",
+  )
+  .openapi("AgentTrigger");
+
 /** A free-text Agent's form, saved whole. */
 const AgentForm = z
   .object({
@@ -89,6 +120,7 @@ const AgentForm = z
       .positive()
       .max(100_000_000)
       .describe("Its monthly Budget."),
+    trigger: Trigger,
   })
   .strict()
   .openapi("AgentForm");
@@ -114,6 +146,9 @@ const Agent = z
       .object({ id: z.string(), title: z.string() })
       .nullable()
       .describe("The one exam it prepares for; null for a Course."),
+    trigger: Trigger.describe(
+      "When its Schedule starts a Run; a preset Agent's is Täglich at 06:00.",
+    ),
     state: z.enum(["active", "paused", "ended"]),
     pausedBy: z.enum(["student", "budget", "course_archived"]).nullable(),
     running: z
@@ -347,14 +382,22 @@ export function scopeNames(review: Review, scope: AgentScope | null) {
   };
 }
 
-/** The next 06:00 in the student's time zone, when the Schedule starts a Run. */
-function nextRun(now: Date, timeZone: string) {
+/** The trigger's next Uhrzeit on one of its days, in the student's time zone, when the Schedule starts a Run. */
+function nextRun(now: Date, timeZone: string, trigger: AgentTrigger) {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone }).format(now);
-  const atSix = deadline(today, "06:00", timeZone);
-  if (atSix > now) return atSix;
-  const tomorrow = new Date(`${today}T12:00:00Z`);
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  return deadline(tomorrow.toISOString().slice(0, 10), "06:00", timeZone);
+  for (let offset = 0; ; offset++) {
+    const day = new Date(`${today}T12:00:00Z`);
+    day.setUTCDate(day.getUTCDate() + offset);
+    const weekday = day.getUTCDay() || 7;
+    if (trigger.rhythm === "weekdays" && !trigger.weekdays.includes(weekday))
+      continue;
+    const at = deadline(
+      day.toISOString().slice(0, 10),
+      hhmm(trigger.minute),
+      timeZone,
+    );
+    if (at > now) return at;
+  }
 }
 
 export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
@@ -524,11 +567,11 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
         p,
         r.courses.map((course) => course.id),
       );
-      // Only a preset Agent runs yet, on its daily Schedule.
-      const scheduled = r.state === "active" && r.scope;
-      const [next] = scheduled
-        ? await c.get("plan").intentsFor(p, r.scope!)
-        : [];
+      // Only a preset Agent's next Action can be told in advance.
+      const [next] =
+        r.state === "active" && r.scope
+          ? await c.get("plan").intentsFor(p, r.scope)
+          : [];
       return c.json(
         {
           id: r.id,
@@ -543,6 +586,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
             ...sizes.get(course.id)!,
           })),
           capabilities: r.capabilities,
+          trigger: r.trigger,
           ...scopeNames(review, r.scope),
           state: r.state,
           pausedBy: r.pausedBy,
@@ -557,9 +601,14 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
             action: describeAction(plan, a.kind, a.args),
           })),
           next: {
-            runAt: scheduled
-              ? nextRun(new Date(), plan.limits.preferences.timeZone)
-              : null,
+            runAt:
+              r.state === "active"
+                ? nextRun(
+                    new Date(),
+                    plan.limits.preferences.timeZone,
+                    r.trigger,
+                  )
+                : null,
             action: next ? describeAction(plan, next.kind, next) : null,
           },
         },

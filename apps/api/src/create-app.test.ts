@@ -164,6 +164,10 @@ const runWorkflows: RunWorkflows = {
 };
 const schedules: Schedules = {
   create: async ({ agentId }) => void scheduled.push(`create ${agentId}`),
+  save: async ({ agentId, trigger, timeZone, paused }) =>
+    void scheduled.push(
+      `save ${agentId} ${JSON.stringify(trigger)} ${timeZone}${paused ? " paused" : ""}`,
+    ),
   pause: async (id) => void scheduled.push(`pause ${id}`),
   unpause: async (id) => void scheduled.push(`unpause ${id}`),
   delete: async (id) => void scheduled.push(`delete ${id}`),
@@ -6677,6 +6681,7 @@ describe("a free-text Agent's form", () => {
     courseIds,
     capabilities,
     budgetMicroUsd: 5_000_000,
+    trigger: { rhythm: "daily", minute: 360 } as Record<string, unknown>,
   });
 
   it("creates an Agent from the whole form and reads it back, each Course with its Topic and Source counts", async () => {
@@ -6735,15 +6740,108 @@ describe("a free-text Agent's form", () => {
         },
       ],
       budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
+      trigger: { rhythm: "daily", minute: 360 },
       state: "active",
       grants: [],
-      next: { runAt: null, action: null },
+      next: { action: null },
     });
-    // Its trigger is not built yet, so nothing starts its Runs.
-    expect(scheduled).not.toContain(`create ${id}`);
+    expect(scheduled).toContain(
+      `save ${id} {"rhythm":"daily","minute":360} Europe/Berlin`,
+    );
     expect(await (await s.call("GET", "")).json()).toEqual([
       expect.objectContaining({ id, preset: null, name: "Klausur Statistik" }),
     ]);
+  });
+
+  it("runs on the Schedule of its trigger: saved with the form, paused with the Agent and removed on End", async () => {
+    const s = await student("agent-trigger");
+    const statistics = await course(s.id, "Statistics II");
+    await admin.planPreference.create({
+      data: { studentId: s.id, timeZone: "Europe/Vienna" },
+    });
+    const weekdays = { rhythm: "weekdays", weekdays: [5, 1], minute: 1170 };
+
+    const created = await s.call("POST", "", {
+      ...form([statistics]),
+      trigger: weekdays,
+    });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      trigger: { rhythm: "weekdays", weekdays: [1, 5], minute: 1170 },
+    });
+    const updated = await s.call("PUT", `/${id}`, {
+      ...form([statistics]),
+      trigger: { rhythm: "daily", minute: 450 },
+    });
+    expect(updated.status).toBe(200);
+    expect((await s.call("POST", `/${id}/pause`)).status).toBe(200);
+    expect((await s.call("POST", `/${id}/resume`)).status).toBe(200);
+    expect((await s.call("POST", `/${id}/end`)).status).toBe(200);
+
+    expect(scheduled.filter((call) => call.includes(id))).toEqual([
+      `save ${id} {"rhythm":"weekdays","weekdays":[1,5],"minute":1170} Europe/Vienna`,
+      `save ${id} {"rhythm":"daily","minute":450} Europe/Vienna`,
+      `save ${id} {"rhythm":"daily","minute":450} Europe/Vienna paused`,
+      `save ${id} {"rhythm":"daily","minute":450} Europe/Vienna`,
+      `delete ${id}`,
+    ]);
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      trigger: { rhythm: "daily", minute: 450 },
+      state: "ended",
+      next: { runAt: null },
+    });
+  });
+
+  it("accepts only Täglich or one or more Wochentage at a minute of the day", async () => {
+    const s = await student("agent-trigger-invalid");
+    const statistics = await course(s.id, "Statistics II");
+    const { trigger: _, ...untriggered } = form([statistics]);
+
+    expect((await s.call("POST", "", untriggered)).status).toBe(400);
+    for (const trigger of [
+      { rhythm: "weekdays", weekdays: [], minute: 360 },
+      { rhythm: "weekdays", weekdays: [0], minute: 360 },
+      { rhythm: "weekdays", weekdays: [1, 1], minute: 360 },
+      { rhythm: "daily", minute: 1440 },
+      { rhythm: "daily", minute: 6.5 },
+      { rhythm: "daily", weekdays: [1], minute: 360 },
+      { rhythm: "hourly", minute: 0 },
+    ])
+      expect(
+        (await s.call("POST", "", { ...form([statistics]), trigger })).status,
+      ).toBe(400);
+    expect(await (await s.call("GET", "")).json()).toEqual([]);
+  });
+
+  it("shows when its next Run starts: the next Uhrzeit on one of its Wochentage, in the Plan's time zone", async () => {
+    const s = await student("agent-trigger-next");
+    const statistics = await course(s.id, "Statistics II");
+    await admin.planPreference.create({
+      data: { studentId: s.id, timeZone: "America/New_York" },
+    });
+    const { id } = (await (
+      await s.call("POST", "", {
+        ...form([statistics]),
+        trigger: { rhythm: "weekdays", weekdays: [3], minute: 1170 },
+      })
+    ).json()) as { id: string };
+
+    const { next } = (await (await s.call("GET", `/${id}`)).json()) as {
+      next: { runAt: string };
+    };
+
+    const runAt = new Date(next.runAt);
+    expect(runAt.getTime()).toBeGreaterThan(Date.now());
+    expect(runAt.getTime() - Date.now()).toBeLessThanOrEqual(7 * 86_400_000);
+    expect(
+      runAt.toLocaleString("en-GB", {
+        timeZone: "America/New_York",
+        weekday: "long",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    ).toBe("Wednesday 19:30");
   });
 
   it("updates the whole form, keeping a Course that was Archived since and showing it as archived", async () => {

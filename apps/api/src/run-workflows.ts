@@ -1,7 +1,7 @@
 import type { Schedules } from "@nunio/delegation";
+import { createAgentSchedules } from "@nunio/delegation/temporal-schedules";
 import { payloadCodecFromEnv } from "@nunio/keys";
 import { Client, Connection } from "@temporalio/client";
-import { createAgentSchedules } from "./agent-schedules.js";
 
 /** The Temporal side of Runs as the API needs it: waking a Run once the student decided on one of its Actions. */
 export interface RunWorkflows {
@@ -87,6 +87,7 @@ export function runWorkflowsFromEnv(env: NodeJS.ProcessEnv) {
   };
   const schedules: Schedules = {
     create: (r) => withClient((client) => schedulesOf(client).create(r)),
+    save: (r) => withClient((client) => schedulesOf(client).save(r)),
     pause: (id) => withClient((client) => schedulesOf(client).pause(id)),
     unpause: (id) => withClient((client) => schedulesOf(client).unpause(id)),
     delete: (id) => withClient((client) => schedulesOf(client).delete(id)),

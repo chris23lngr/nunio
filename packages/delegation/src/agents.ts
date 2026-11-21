@@ -12,14 +12,69 @@ import type { Principal, Transaction } from "./principal.js";
 import { principal as mint, withOwner } from "./principal.js";
 
 /**
+ * When an Agent's Schedule starts its Runs, in the Plan's time zone: Täglich, or on chosen Wochentage, at a minute of
+ * the day (Uhrzeit). The only rhythms of v1.
+ */
+export type AgentTrigger =
+  | { rhythm: "daily"; minute: number }
+  /** ISO weekdays: 1 is Monday, 7 is Sunday. */
+  | { rhythm: "weekdays"; weekdays: number[]; minute: number };
+
+/** The trigger, Wochentage in order, if it is one of the v1 rhythms; otherwise null. */
+function checkTrigger(trigger: AgentTrigger): AgentTrigger | null {
+  const { minute } = trigger;
+  if (!Number.isInteger(minute) || minute < 0 || minute >= 24 * 60) return null;
+  if (trigger.rhythm === "daily")
+    return "weekdays" in trigger ? null : { rhythm: "daily", minute };
+  if (trigger.rhythm !== "weekdays" || !Array.isArray(trigger.weekdays))
+    return null;
+  const weekdays = [...new Set(trigger.weekdays)].sort((a, b) => a - b);
+  if (
+    !weekdays.length ||
+    weekdays.length !== trigger.weekdays.length ||
+    weekdays.some((day) => !Number.isInteger(day) || day < 1 || day > 7)
+  )
+    return null;
+  return { rhythm: "weekdays", weekdays, minute };
+}
+
+/** The trigger as stored on the Agent's row. */
+const triggerOf = (r: {
+  triggerRhythm: string;
+  triggerWeekdays: number[];
+  triggerMinute: number;
+}): AgentTrigger =>
+  r.triggerRhythm === "weekdays"
+    ? {
+        rhythm: "weekdays",
+        weekdays: r.triggerWeekdays,
+        minute: r.triggerMinute,
+      }
+    : { rhythm: "daily", minute: r.triggerMinute };
+const triggerColumns = (trigger: AgentTrigger) => ({
+  triggerRhythm: trigger.rhythm,
+  triggerWeekdays: trigger.rhythm === "weekdays" ? trigger.weekdays : [],
+  triggerMinute: trigger.minute,
+});
+
+/**
  * The Temporal Schedules that start an Agent's Runs (ADR-0006). A port, because `delegation` never imports
  * Temporal; each call must be idempotent, so a repeated pause or end is harmless.
  */
 export interface Schedules {
+  /** A preset Agent's Schedule: daily at 06:00. */
   create(r: {
     agentId: string;
     studentId: string;
     timeZone: string;
+  }): Promise<void>;
+  /** A free-text Agent's Schedule, created or brought in line with its trigger, time zone and Paused state. */
+  save(r: {
+    agentId: string;
+    studentId: string;
+    timeZone: string;
+    trigger: AgentTrigger;
+    paused: boolean;
   }): Promise<void>;
   pause(agentId: string): Promise<void>;
   unpause(agentId: string): Promise<void>;
@@ -58,7 +113,12 @@ export type AgentForm = {
   /** Its Capabilities, each with its mode. */
   capabilities: { id: string; mode: string }[];
   budgetMicroUsd: number;
+  trigger: AgentTrigger;
 };
+
+/** The Plan's time zone, which an Agent's trigger is in. */
+const timeZoneOf = async (tx: Transaction) =>
+  (await tx.planPreference.findFirst())?.timeZone ?? "Europe/Berlin";
 
 /**
  * Stores an Agent's Capabilities and keeps its Grants in step: one, unscoped, for each kind a Capability on `always`
@@ -139,16 +199,37 @@ export function createAgents({
       throw new Error("createAgents needs schedules to change an Agent");
     return schedules;
   };
+  /** Brings a free-text Agent's Schedule in line with its row, read under its lock: gone once it is Ended. */
+  const saveSchedule = async (
+    tx: Transaction,
+    r: {
+      id: string;
+      studentId: string;
+      state: string;
+      triggerRhythm: string;
+      triggerWeekdays: number[];
+      triggerMinute: number;
+    },
+  ) => {
+    if (r.state === "ended") return scheduled().delete(r.id);
+    await scheduled().save({
+      agentId: r.id,
+      studentId: r.studentId,
+      timeZone: await timeZoneOf(tx),
+      trigger: triggerOf(r),
+      paused: r.state === "paused",
+    });
+  };
   // Re-read committed authority under a lock so a delayed command cannot overwrite a newer Schedule state.
   const syncSchedule = (p: Principal, id: string) =>
     withOwner(db, p, async (tx) => {
       await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
       const r = await tx.agent.findUnique({ where: { id } });
-      // Until Agents get their trigger, only a preset Agent has a Schedule.
-      if (!r?.preset) return;
-      if (r?.state === "paused") await scheduled().pause(id);
-      else if (r?.state === "active") await scheduled().unpause(id);
-      else if (r?.state === "ended") await scheduled().delete(id);
+      if (!r) return;
+      if (!r.preset) await saveSchedule(tx, r);
+      else if (r.state === "paused") await scheduled().pause(id);
+      else if (r.state === "active") await scheduled().unpause(id);
+      else if (r.state === "ended") await scheduled().delete(id);
     });
   /** Moves a Course's Agents in `from` to a new state, then syncs each one's Schedule after the commit. */
   const changeForCourse = async (
@@ -176,7 +257,10 @@ export function createAgents({
     for (const id of ids) await syncSchedule(p, id);
   };
   return {
-    /** A pilot preset with its Grants and Schedule, or a free-text Agent from its form, which has neither yet. */
+    /**
+     * A pilot preset with its Grants and Schedule, or a free-text Agent from its form, with its Grants and the Schedule
+     * of its trigger. If the Schedule cannot be saved, no Agent is recorded.
+     */
     async create(
       p: Principal,
       input:
@@ -190,14 +274,20 @@ export function createAgents({
       if (!("preset" in input))
         return withOwner(db, p, async (tx, studentId) => {
           const held = checkCapabilities(input.capabilities);
-          if (!held) return { status: "invalid" } as const;
+          const trigger = checkTrigger(input.trigger);
+          if (!held || !trigger) return { status: "invalid" } as const;
           const courseIds = await checkCourses(tx, input.courseIds);
           if (typeof courseIds === "string")
             return { status: courseIds } as const;
           const id = randomUUID();
-          const { courseIds: _, capabilities: __, ...fields } = input;
+          const {
+            courseIds: _,
+            capabilities: __,
+            trigger: ___,
+            ...fields
+          } = input;
           const agent = await tx.agent.create({
-            data: { id, studentId, ...fields },
+            data: { id, studentId, ...fields, ...triggerColumns(trigger) },
           });
           await tx.agentCourse.createMany({
             data: courseIds.map((courseId) => ({
@@ -207,6 +297,7 @@ export function createAgents({
             })),
           });
           await saveCapabilities(tx, agent, held);
+          await saveSchedule(tx, agent);
           return { status: "ok", id } as const;
         });
       return withOwner(db, p, async (tx, studentId) => {
@@ -259,17 +350,20 @@ export function createAgents({
             ...scope,
           })),
         });
-        const timeZone =
-          (await tx.planPreference.findFirst())?.timeZone ?? "Europe/Berlin";
         // Inside the transaction: if the Schedule cannot be created, no Agent is recorded.
-        await scheduled().create({ agentId: id, studentId, timeZone });
+        await scheduled().create({
+          agentId: id,
+          studentId,
+          timeZone: await timeZoneOf(tx),
+        });
         return { status: "ok", id } as const;
       });
     },
 
     /**
-     * Saves a free-text Agent's whole form; its next Run reads it. Its Courses may keep one that was Archived since.
-     * A preset Agent has no form until the Agents cutover converts it, so it is "invalid".
+     * Saves a free-text Agent's whole form; its next Run reads it, and its Schedule follows its trigger. Its Courses may
+     * keep one that was Archived since. A preset Agent has no form until the Agents cutover converts it, so it is
+     * "invalid".
      */
     async update(p: Principal, id: string, form: AgentForm) {
       if (p.kind !== "student") return { status: "gone" } as const;
@@ -283,7 +377,8 @@ export function createAgents({
         if (!r) return { status: "gone" } as const;
         if (r.preset) return { status: "invalid" } as const;
         const held = checkCapabilities(form.capabilities);
-        if (!held) return { status: "invalid" } as const;
+        const trigger = checkTrigger(form.trigger);
+        if (!held || !trigger) return { status: "invalid" } as const;
         const courseIds = await checkCourses(
           tx,
           form.courseIds,
@@ -291,8 +386,16 @@ export function createAgents({
         );
         if (typeof courseIds === "string")
           return { status: courseIds } as const;
-        const { courseIds: _, capabilities: __, ...fields } = form;
-        await tx.agent.update({ where: { id }, data: fields });
+        const {
+          courseIds: _,
+          capabilities: __,
+          trigger: ___,
+          ...fields
+        } = form;
+        const saved = await tx.agent.update({
+          where: { id },
+          data: { ...fields, ...triggerColumns(trigger) },
+        });
         await saveCapabilities(tx, r, held);
         await tx.agentCourse.deleteMany({
           where: { agentId: id, courseId: { notIn: courseIds } },
@@ -305,8 +408,27 @@ export function createAgents({
           })),
           skipDuplicates: true,
         });
+        // Under the Agent's lock, so a concurrent Pause or End saves its Schedule after this one.
+        await saveSchedule(tx, saved);
         return { status: "ok" } as const;
       });
+    },
+
+    /**
+     * Brings the Schedule of every free-text Agent not Ended in line with its trigger, as the worker starts: Agents
+     * saved before they had a trigger have none yet. Safe to repeat; one Agent's failure leaves the others' to go on.
+     */
+    async saveSchedules() {
+      const found = await db.$queryRaw<
+        { agentId: string; studentId: string }[]
+      >`SELECT "agentId", "studentId" FROM scheduled_agents()`;
+      for (const { agentId, studentId } of found) {
+        try {
+          await syncSchedule(mint.fromSession({ studentId }), agentId);
+        } catch (error) {
+          console.error("Could not save an Agent's Schedule", error);
+        }
+      }
     },
 
     /** Takes no further Actions, including in a Run under way, while keeping its Grants. */
@@ -435,6 +557,7 @@ export function createAgents({
               .filter((c) => c.capability === capability)
               .map((c) => ({ id: capability, mode: c.mode as ApprovalMode })),
           ),
+          trigger: triggerOf(r),
           scope: scopeOf(r),
           state: r.state as "active" | "paused" | "ended",
           pausedBy: r.pausedBy as PausedBy | null,

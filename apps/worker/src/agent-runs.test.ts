@@ -187,7 +187,18 @@ beforeAll(async () => {
     planRules,
   });
   const facts = createFacts({ db: runtime, keys, clock });
-  agents = createAgents({ db: runtime, clock });
+  const noSchedule = async () => {};
+  agents = createAgents({
+    db: runtime,
+    clock,
+    schedules: {
+      create: noSchedule,
+      save: noSchedule,
+      pause: noSchedule,
+      unpause: noSchedule,
+      delete: noSchedule,
+    },
+  });
   sources = createSources({
     db: runtime,
     keys,
@@ -336,6 +347,7 @@ async function started({
     courseIds: [courseId],
     capabilities: held,
     budgetMicroUsd: 1_000_000,
+    trigger: { rhythm: "daily", minute: 360 },
   });
   if (created.status !== "ok") throw new Error(created.status);
   return { ...(await requested(p, created.id)), studentId, obligationId };

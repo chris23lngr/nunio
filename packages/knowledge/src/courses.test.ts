@@ -40,6 +40,7 @@ beforeAll(async () => {
     clock,
     schedules: {
       create: async () => {},
+      save: async () => {},
       pause: async (id) => void scheduled.push(`pause ${id}`),
       unpause: async (id) => void scheduled.push(`unpause ${id}`),
       delete: async (id) => void scheduled.push(`delete ${id}`),

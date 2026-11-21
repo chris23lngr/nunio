@@ -4156,6 +4156,9 @@
             "exclusiveMinimum": 0,
             "maximum": 100000000,
             "description": "Its monthly Budget."
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/AgentTrigger"
           }
         },
         "required": [
@@ -4165,7 +4168,8 @@
           "instructions",
           "courseIds",
           "capabilities",
-          "budgetMicroUsd"
+          "budgetMicroUsd",
+          "trigger"
         ],
         "additionalProperties": false
       },
@@ -4196,6 +4200,65 @@
           "mode"
         ],
         "additionalProperties": false
+      },
+      "AgentTrigger": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "rhythm": {
+                "type": "string",
+                "enum": [
+                  "daily"
+                ]
+              },
+              "minute": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1439
+              }
+            },
+            "required": [
+              "rhythm",
+              "minute"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "rhythm": {
+                "type": "string",
+                "enum": [
+                  "weekdays"
+                ]
+              },
+              "weekdays": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 7
+                },
+                "minItems": 1,
+                "maxItems": 7,
+                "description": "Its Wochentage, ISO: 1 is Monday, 7 is Sunday."
+              },
+              "minute": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1439
+              }
+            },
+            "required": [
+              "rhythm",
+              "weekdays",
+              "minute"
+            ],
+            "additionalProperties": false
+          }
+        ],
+        "description": "Täglich (daily) or on chosen Wochentage (weekdays), at a minute of the day (Uhrzeit) in the Plan's time zone."
       },
       "AgentCourse": {
         "type": "object",
@@ -4359,6 +4422,16 @@
             ],
             "description": "The one exam it prepares for; null for a Course."
           },
+          "trigger": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AgentTrigger"
+              },
+              {
+                "description": "When its Schedule starts a Run; a preset Agent's is Täglich at 06:00."
+              }
+            ]
+          },
           "state": {
             "type": "string",
             "enum": [
@@ -4505,6 +4578,7 @@
           "courses",
           "course",
           "exam",
+          "trigger",
           "state",
           "pausedBy",
           "running",
