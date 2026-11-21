@@ -157,29 +157,17 @@ routes.openapi(
   },
 );
 
-const DeletionRequestSchema = z
-  .object({ password: z.string() })
-  .openapi("DeletionRequest");
 const DeletionPendingSchema = z
   .object({ status: z.literal("pending") })
   .openapi("DeletionPending");
-const InvalidPasswordSchema = z
-  .object({ error: z.literal("invalid_password") })
-  .openapi("InvalidPassword");
-const TooManyRequestsSchema = z
-  .object({ error: z.literal("too_many_requests") })
-  .openapi("TooManyRequests");
+const SignInAgainSchema = z
+  .object({ error: z.literal("sign_in_again") })
+  .openapi("SignInAgain");
 
 routes.openapi(
   createRoute({
     method: "post",
     path: "/api/me/deletion-request",
-    request: {
-      body: {
-        content: { "application/json": { schema: DeletionRequestSchema } },
-        required: true,
-      },
-    },
     responses: {
       202: {
         content: { "application/json": { schema: DeletionPendingSchema } },
@@ -191,27 +179,18 @@ routes.openapi(
         description: "A current, verified session is required.",
       },
       403: {
-        content: { "application/json": { schema: InvalidPasswordSchema } },
+        content: { "application/json": { schema: SignInAgainSchema } },
         description:
-          "The password does not match; nothing was recorded and sessions remain.",
-      },
-      429: {
-        content: { "application/json": { schema: TooManyRequestsSchema } },
-        description:
-          "Too many password attempts for this student; the password was not checked. Retry after 10 seconds.",
+          "The session was created more than ten minutes ago; the student must sign in again. Nothing was recorded and sessions remain.",
       },
     },
   }),
   async (c) => {
-    const result = await c
-      .get("auth")
-      .requestDeletion(c.req.raw, c.req.valid("json").password);
+    const result = await c.get("auth").requestDeletion(c.req.raw);
     if (result === "unauthorized")
       return c.json({ error: "unauthorized" as const }, 401);
-    if (result === "invalid_password")
-      return c.json({ error: "invalid_password" as const }, 403);
-    if (result === "too_many_requests")
-      return c.json({ error: "too_many_requests" as const }, 429);
+    if (result === "sign_in_again")
+      return c.json({ error: "sign_in_again" as const }, 403);
     return c.json({ status: "pending" as const }, 202);
   },
 );

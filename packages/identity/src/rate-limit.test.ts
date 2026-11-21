@@ -26,13 +26,21 @@ beforeAll(async () => {
         secret: "rate-limit-test-secret-that-is-long-enough",
         email: { projectId: "test-project", secretKey: "test-key", from: "accounts@nunio.test" },
       });
-      parentPort.on("message", async ({ ip, count }) => {
-        const responses = await Promise.all(Array.from({ length: count }, () =>
-          auth.handler(new Request("https://api.nunio.test/api/auth/sign-in/email", {
-            method: "POST",
-            headers: { origin, "content-type": "application/json", "x-forwarded-for": ip },
-            body: JSON.stringify({ email: "unknown@example.com", password: "incorrect password" }),
-          }))
+      parentPort.on("message", async ({ ip, count, email }) => {
+        const responses = await Promise.all(Array.from({ length: count }, (_, i) =>
+          email
+            // One address from many IPs, so only the limits per address apply.
+            ? auth.handler(new Request("https://api.nunio.test/api/auth/email-otp/send-verification-otp", {
+                method: "POST",
+                headers: { origin, "content-type": "application/json", "x-forwarded-for": \`\${ip}.\${i}\` },
+                body: JSON.stringify({ email, type: "sign-in" }),
+              }))
+            // A fresh address per attempt, so only the limit per IP applies.
+            : auth.handler(new Request("https://api.nunio.test/api/auth/sign-in/email-otp", {
+                method: "POST",
+                headers: { origin, "content-type": "application/json", "x-forwarded-for": ip },
+                body: JSON.stringify({ email: \`\${crypto.randomUUID()}@example.com\`, otp: "000000" }),
+              }))
         ));
         parentPort.postMessage(responses.map(response => response.status));
       });
@@ -59,29 +67,44 @@ async function attempts(
   instance: Worker,
   ip: string,
   count: number,
+  email?: string,
 ): Promise<number[]> {
   const response = once(instance, "message");
-  instance.postMessage({ ip, count });
+  instance.postMessage({ ip, count, email });
   const [statuses] = await response;
   return statuses;
 }
 
 describe("shared authentication rate limits", () => {
-  it("limits combined sign-in attempts across independent API instances", async () => {
+  it("limits combined code sign-in attempts across independent API instances", async () => {
     const ip = "198.51.100.10";
-    expect(await attempts(instances[0]!, ip, 2)).toEqual([401, 401]);
-    expect(await attempts(instances[1]!, ip, 1)).toEqual([401]);
+    expect(await attempts(instances[0]!, ip, 2)).toEqual([400, 400]);
+    expect(await attempts(instances[1]!, ip, 1)).toEqual([400]);
     expect(await attempts(instances[0]!, ip, 1)).toEqual([429]);
   });
 
-  it("admits only three concurrent sign-in attempts across API instances", async () => {
+  it("admits only three concurrent code sign-in attempts across API instances", async () => {
     const responses = (
       await Promise.all(
         instances.map((instance) => attempts(instance, "198.51.100.20", 12)),
       )
     ).flat();
 
-    expect(responses.filter((status) => status === 401)).toHaveLength(3);
+    expect(responses.filter((status) => status === 400)).toHaveLength(3);
     expect(responses.filter((status) => status === 429)).toHaveLength(21);
+  });
+
+  it("sends one code per address at a time across API instances", async () => {
+    // The address has no account or Invitation, so nothing reaches Scaleway.
+    const responses = (
+      await Promise.all(
+        instances.map((instance, i) =>
+          attempts(instance, `198.51.${100 + i}`, 6, "concurrent@example.com"),
+        ),
+      )
+    ).flat();
+
+    expect(responses.filter((status) => status === 200)).toHaveLength(1);
+    expect(responses.filter((status) => status === 429)).toHaveLength(11);
   });
 });

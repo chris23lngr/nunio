@@ -6,29 +6,16 @@ export interface ScalewayEmailOptions {
   fetch?: typeof globalThis.fetch;
 }
 
-export async function sendVerificationEmail(
+export async function sendSignInCode(
   options: ScalewayEmailOptions,
   to: string,
-  url: string,
+  code: string,
 ) {
   await sendEmail(
     options,
     to,
-    "Verify your email address for nunio",
-    `Confirm your email address to finish setting up nunio:\n\n${url}\n\nIf you did not request this, you can ignore this email.`,
-  );
-}
-
-export async function sendPasswordResetEmail(
-  options: ScalewayEmailOptions,
-  to: string,
-  url: string,
-) {
-  await sendEmail(
-    options,
-    to,
-    "Reset your password for nunio",
-    `Choose a new password for your nunio account:\n\n${url}\n\nIf you did not request this, you can ignore this email.`,
+    "Dein Anmeldecode für nunio",
+    `Dein Anmeldecode für nunio lautet:\n\n${code}\n\nDer Code ist 10 Minuten gültig. Gib ihn auf der Anmeldeseite ein. Wenn du keinen Code angefordert hast, kannst du diese E-Mail ignorieren.`,
   );
 }
 
