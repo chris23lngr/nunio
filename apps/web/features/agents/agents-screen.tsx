@@ -100,8 +100,10 @@ function AgentListItem({
       {/* Above the row's link, so the menu opens instead of the Agent. */}
       <span className="relative shrink-0">
         <AgentMenu
+          apiOrigin={apiOrigin}
           agent={agent}
           name={name}
+          row
           onControl={(next) => control.mutate(next)}
         />
       </span>

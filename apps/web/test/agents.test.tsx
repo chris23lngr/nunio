@@ -313,6 +313,7 @@ const listed = (overrides: Record<string, unknown>) => ({
   state: "active",
   pausedBy: null,
   badge: null,
+  approvalRunId: null,
   ...overrides,
 });
 
@@ -422,6 +423,113 @@ test("Agenten durchsuchen narrows the list to Agents whose name or Beschreibung 
   expect(screen.getByText("Kein Agent passt zu deiner Suche.")).toBeTruthy();
 });
 
+test("a row's menu offers Freigaben bestätigen while an Approval is open, then Bearbeiten, the lifecycle and, apart, Löschen", async () => {
+  api.route("GET", "/api/me/review", () => Response.json({ courses: [] }));
+  api.route("GET", "/api/me/agents", () =>
+    Response.json([
+      listed({ badge: "approval_needed", approvalRunId: "r-oldest" }),
+      listed({
+        id: "a-2",
+        name: "Beendeter",
+        state: "ended",
+        badge: "ended",
+      }),
+    ]),
+  );
+  render(
+    <Providers>
+      <AgentsScreen apiOrigin={api.origin} />
+    </Providers>,
+  );
+
+  await userEvent.click(
+    await screen.findByRole("button", {
+      name: "Aktionen für Klausur Statistik",
+    }),
+  );
+  const menu = await screen.findByRole("menu");
+  expect(
+    within(menu)
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent),
+  ).toEqual([
+    "Freigaben bestätigen",
+    "Bearbeiten",
+    "Pausieren",
+    "Beenden",
+    "Löschen",
+  ]);
+  // It opens the oldest Run awaiting the student's Approval.
+  expect(
+    within(menu)
+      .getByRole("menuitem", { name: "Freigaben bestätigen" })
+      .getAttribute("href"),
+  ).toBe("/agents/a-1?run=r-oldest");
+  expect(within(menu).getByRole("separator")).toBeTruthy();
+  await userEvent.keyboard("{Escape}");
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Aktionen für Beendeter" }),
+  );
+  expect(
+    within(await screen.findByRole("menu"))
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent),
+  ).toEqual(["Bearbeiten", "Löschen"]);
+});
+
+test("Löschen in a row's menu asks first, and deletes the Agent only once the student confirms", async () => {
+  let agents = [listed({}), listed({ id: "a-2", name: "Anderer" })];
+  const deleted: string[] = [];
+  api.route("GET", "/api/me/review", () => Response.json({ courses: [] }));
+  api.route("GET", "/api/me/agents", () => Response.json(agents));
+  api.route("DELETE", "/api/me/agents/a-1", () => {
+    deleted.push("a-1");
+    agents = agents.filter((agent) => agent.id !== "a-1");
+    return Response.json({ status: "ok" });
+  });
+  render(
+    <Providers>
+      <AgentsScreen apiOrigin={api.origin} />
+    </Providers>,
+  );
+  const remove = async () => {
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Aktionen für Klausur Statistik",
+      }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("menu")).getByRole("menuitem", {
+        name: "Löschen",
+      }),
+    );
+    return screen.findByRole("dialog", {
+      name: "„Klausur Statistik“ löschen?",
+    });
+  };
+
+  await userEvent.click(
+    within(await remove()).getByRole("button", { name: "Abbrechen" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(deleted).toEqual([]);
+
+  const dialog = await remove();
+  expect(dialog.textContent).toContain("endgültig gelöscht");
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: "Löschen" }),
+  );
+
+  await waitFor(() =>
+    expect(
+      agentRows().map((row) => within(row).getByRole("link").textContent),
+    ).toEqual(["Anderer"]),
+  );
+  expect(deleted).toEqual(["a-1"]);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
 test("a row's menu pauses, resumes and ends its Agent, and opens its Auftrag to edit it", async () => {
   let agent = listed({});
   const controls: string[] = [];
@@ -485,6 +593,6 @@ test("a row's menu pauses, resumes and ends its Agent, and opens its Auftrag to 
     within(ended)
       .getAllByRole("menuitem")
       .map((item) => item.textContent),
-  ).toEqual(["Bearbeiten"]);
+  ).toEqual(["Bearbeiten", "Löschen"]);
   expect(controls).toEqual(["pause", "resume", "end"]);
 });

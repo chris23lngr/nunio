@@ -533,7 +533,7 @@ test("an Approval whose Action changed says so and reloads instead of approving"
   );
 });
 
-test("the Verlauf shows each Approval decided or expired, and what became of an approved one", async () => {
+test("the Verlauf shows each Approval decided, expired or withdrawn, and what became of an approved one", async () => {
   const run = listed("r-1", 60, "done");
   const action = {
     kind: "studyBlock.create",
@@ -568,6 +568,7 @@ test("the Verlauf shows each Approval decided or expired, and what became of an 
           }),
           decided({ decision: "denied" }),
           decided({ decision: "expired" }),
+          decided({ decision: "withdrawn" }),
         ],
       }),
     ),
@@ -591,5 +592,8 @@ test("the Verlauf shows each Approval decided or expired, and what became of an 
     ),
     expect.stringMatching(/Von dir abgelehnt: Lernblock erstellen„Klausur/),
     expect.stringMatching(/Freigabe abgelaufen: Lernblock erstellen„Klausur/),
+    expect.stringMatching(
+      /Freigabe zurückgezogen: Lernblock erstellen„Klausur/,
+    ),
   ]);
 });
