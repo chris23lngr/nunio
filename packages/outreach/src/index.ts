@@ -12,6 +12,7 @@ export {
   type PushSubscriptionJson,
   UnknownInterventionError,
 } from "./outreach.js";
+export { raiseForEndedRun } from "./raise.js";
 export {
   createOutreachSender,
   type Mailer,

@@ -57,7 +57,9 @@ const Intervention = z
     kind: z.enum(interventionKinds),
     title: z
       .string()
-      .describe("What it is about: the work, Fact or Action, as it is now."),
+      .describe(
+        "What it is about: the work, Fact or Action, or the Agent whose Run it is, as it is now.",
+      ),
     course: z.string().nullable(),
     action: z
       .lazy(() => ActionShown)
@@ -68,6 +70,19 @@ const Intervention = z
       .int()
       .nullable()
       .describe("A Shortfall's current size; null once it is gone."),
+    run: z
+      .object({
+        id: z.string(),
+        agentId: z.string(),
+        openApprovals: z
+          .number()
+          .int()
+          .describe("Its Approvals still open; it lapses once none is."),
+      })
+      .nullable()
+      .describe(
+        "The Agent Run whose open Approvals it is about, to open in the Agent's Activity; null for other kinds or once the Agent is deleted.",
+      ),
     raisedAt: z.date(),
     state: z.enum(["open", "acknowledged", "dismissed", "lapsed"]),
     closedAt: z.date().nullable(),
@@ -195,19 +210,26 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
       );
       return c.json(
         {
-          interventions: interventions.map(({ subject, ...i }) => {
+          interventions: interventions.map(({ subject, run, ...i }) => {
             const action = subject.kind === "action" ? shown(subject.id) : null;
             const about =
               subject.kind === "work"
                 ? work.get(subject.id)
                 : subject.kind === "action"
                   ? action?.work
-                  : flagged.get(subject.id);
+                  : subject.kind === "run"
+                    ? run && { title: run.agentName, course: null }
+                    : flagged.get(subject.id);
             return {
               ...i,
               title: about?.title ?? goneTitle,
               course: about?.course ?? null,
               action,
+              run: run && {
+                id: subject.id,
+                agentId: run.agentId,
+                openApprovals: run.openApprovals,
+              },
               shortMinutes:
                 subject.kind === "work"
                   ? (plan.proposal.shortfalls.find(

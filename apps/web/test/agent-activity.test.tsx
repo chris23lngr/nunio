@@ -249,6 +249,28 @@ test("an Agent that ran opens on Aktivität with its newest Run: Datum, Kosten, 
   expect(stat("Status")).toBe("Abgeschlossen");
 });
 
+test("opened on one of its Runs, as the Inbox does, an Agent shows that Run in Aktivität", async () => {
+  const newest = listed("r-2", 60, "done");
+  const asking = listed("r-1", 1_500, "done", { openApprovals: 1 });
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [newest, asking], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-1", () =>
+    Response.json(detail(asking)),
+  );
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" run="r-1" />);
+
+  const tab = await screen.findByRole("tab", { name: "Aktivität" });
+  expect(tab.getAttribute("aria-selected")).toBe("true");
+  const list = await screen.findByRole("navigation", { name: "Läufe" });
+  expect(
+    within(list)
+      .getAllByRole("button")
+      .map((row) => row.getAttribute("aria-current")),
+  ).toEqual([null, "true"]);
+});
+
 test("an Agent that never ran opens on Auftrag", async () => {
   api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
   api.route("GET", "/api/me/agents/a-1/runs", () =>

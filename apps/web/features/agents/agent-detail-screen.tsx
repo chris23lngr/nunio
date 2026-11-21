@@ -11,9 +11,12 @@ import { agentQueries } from "./api/agent-queries";
 export function AgentDetailScreen({
   apiOrigin,
   id,
+  run,
 }: {
   apiOrigin: string;
   id: string;
+  /** The Run its Aktivität opens on, as from the Inbox. */
+  run?: string;
 }) {
   const query = useQuery(agentQueries(apiOrigin, id));
   const agent = query.data;
@@ -38,6 +41,7 @@ export function AgentDetailScreen({
         apiOrigin={apiOrigin}
         agent={agent}
         hasRuns={Boolean(runs.data?.pages[0]?.runs.length)}
+        run={run}
       />
     );
   }
