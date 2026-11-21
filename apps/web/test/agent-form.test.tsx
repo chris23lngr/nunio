@@ -71,6 +71,20 @@ const capabilitySet = [
       "Neue Aufgaben in deinen Kursen anlegen, auch zu Prüfungen und Abgaben oder zur Vor- und Nachbereitung.",
     modes: ["ask", "automatic", "always"],
   },
+  {
+    id: "createFlashcards",
+    section: "Lernmaterial",
+    title: "Karteikarten erstellen",
+    description: "Karteikarten zu Themen deiner Kurse erstellen.",
+    modes: [],
+  },
+  {
+    id: "createPracticeSets",
+    section: "Lernmaterial",
+    title: "Übungsaufgaben erstellen",
+    description: "Übungsaufgaben zu Themen deiner Kurse erstellen.",
+    modes: [],
+  },
 ];
 
 const dataHandling = {
@@ -1020,6 +1034,14 @@ test("'Fähigkeiten verwalten' adds Lernblöcke Capabilities on their default mo
       "Aufgaben erstellenNeue Aufgaben in deinen Kursen anlegen, auch zu Prüfungen und Abgaben oder zur Vor- und Nachbereitung.",
       "false",
     ],
+    [
+      "Karteikarten erstellenKarteikarten zu Themen deiner Kurse erstellen.",
+      "false",
+    ],
+    [
+      "Übungsaufgaben erstellenÜbungsaufgaben zu Themen deiner Kurse erstellen.",
+      "false",
+    ],
   ]);
   expect(within(sheet).queryAllByRole("combobox")).toEqual([]);
   await userEvent.click(boxes[0]!);
@@ -1131,6 +1153,69 @@ test("'Fähigkeiten verwalten' offers Aufgaben erstellen under Aufgaben, on Nach
   ]);
 });
 
+test("'Fähigkeiten verwalten' offers Karteikarten and Übungsaufgaben erstellen under Lernmaterial, simply on without a mode", async () => {
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/a-1", () =>
+    Response.json({
+      ...agent,
+      capabilities: [{ id: "createPracticeSets", mode: null }],
+    }),
+  );
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Fähigkeit hinzufügen" }),
+  );
+  const sheet = await screen.findByRole("dialog", {
+    name: "Fähigkeiten verwalten",
+  });
+  expect(
+    within(sheet)
+      .getByRole("button", { name: "Lernmaterial" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  await userEvent.click(
+    await within(sheet).findByRole("checkbox", {
+      name: /Karteikarten erstellen/,
+    }),
+  );
+  expect(within(sheet).queryAllByRole("combobox")).toEqual([]);
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  expect(listedCapabilities()).toEqual([
+    "Karteikarten erstellenKarteikarten zu Themen deiner Kurse erstellen.",
+    "Übungsaufgaben erstellenÜbungsaufgaben zu Themen deiner Kurse erstellen.",
+  ]);
+  await userEvent.click(
+    screen.getByRole("button", {
+      name: "Aktionen für Übungsaufgaben erstellen",
+    }),
+  );
+  const menu = await screen.findByRole("menu");
+  expect(within(menu).queryByText("Freigabemodus")).toBeNull();
+  expect(within(menu).queryAllByRole("menuitemradio")).toEqual([]);
+  await userEvent.click(
+    within(menu).getByRole("menuitem", { name: "Löschen" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  expect(saved).toEqual([
+    expect.objectContaining({
+      capabilities: [{ id: "createFlashcards", mode: null }],
+    }),
+  ]);
+});
+
 test("'Fähigkeiten verwalten' searches, keeps an added Capability's mode, and Abbrechen changes nothing", async () => {
   api.route("GET", "/api/me/agents/a-1", () =>
     Response.json({
@@ -1181,7 +1266,7 @@ test("'Fähigkeiten verwalten' searches, keeps an added Capability's mode, and A
   sheet = await screen.findByRole("dialog", { name: "Fähigkeiten verwalten" });
   await userEvent.type(
     within(sheet).getByRole("searchbox", { name: "Fähigkeiten durchsuchen" }),
-    "Karteikarten",
+    "Konnektoren",
   );
   expect(
     within(sheet).getByText("Keine Fähigkeit passt zu deiner Suche."),

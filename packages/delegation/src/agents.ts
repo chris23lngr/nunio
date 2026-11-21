@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import { budgetMonth, usedIn } from "./budget.js";
-import type { AgentCapability, ApprovalMode } from "./capabilities.js";
+import type {
+  AgentCapability,
+  ApprovalMode,
+  CapabilityId,
+} from "./capabilities.js";
 import {
   capabilityIds,
   checkCapabilities,
   grantedKinds,
 } from "./capabilities.js";
+import { runCaps } from "./decision.js";
 import type { Clock } from "./gate.js";
 import { openApprovalAt, withdrawApprovals } from "./gate.js";
 import type { Kind } from "./kinds.js";
@@ -113,8 +118,8 @@ export type AgentForm = {
   instructions: string;
   /** Its Courses, its scope: at least one. */
   courseIds: string[];
-  /** Its Capabilities, each with its mode. */
-  capabilities: { id: string; mode: string }[];
+  /** Its Capabilities, each with its mode; null for one that is no Action. */
+  capabilities: { id: string; mode: string | null }[];
   budgetMicroUsd: number;
   trigger: AgentTrigger;
   /** The Model its Runs run on: one Chat offers, or the one it already has. */
@@ -875,7 +880,10 @@ export function createAgents({
           capabilities: capabilityIds.flatMap((capability) =>
             r.capabilities
               .filter((c) => c.capability === capability)
-              .map((c) => ({ id: capability, mode: c.mode as ApprovalMode })),
+              .map((c) => ({
+                id: capability,
+                mode: c.mode as ApprovalMode | null,
+              })),
           ),
           trigger: triggerOf(r),
           modelKey: r.modelKey,
@@ -1051,6 +1059,94 @@ export function createAgents({
               ? "ok"
               : "gone",
         };
+      });
+    },
+
+    /**
+     * Records the Artifact Run an Agent's Run starts under one of its Capabilities, charged to that Run, for work of
+     * `courseIds`: only while the Run is under way, its Agent active and still holding the Capability, each Course one
+     * of its current, accepted, unarchived Courses (ADR-0001: an Archived Course is only read), and at most one per
+     * Run (ADR-0026). The Artifact Run has no Agent of its own. Idempotent on `runId`.
+     */
+    async startArtifactRun(
+      agentRunId: string,
+      {
+        runId,
+        workflowId,
+        capability,
+        courseIds,
+      }: {
+        runId: string;
+        workflowId: string;
+        capability: CapabilityId;
+        courseIds: string[];
+      },
+    ): Promise<
+      | { status: "ok" }
+      | {
+          status: "refused";
+          reason:
+            | "run_ended"
+            | "paused"
+            | "ended"
+            | "no_capability"
+            | "out_of_scope"
+            | "run_cap";
+        }
+    > {
+      return withOwner(db, mint.fromRun(agentRunId), async (tx, studentId) => {
+        // Serialised with the Run's other starts and with ending it.
+        await tx.$executeRaw`SELECT 1 FROM "run" WHERE "id" = ${agentRunId} FOR UPDATE`;
+        const existing = await tx.run.findUnique({ where: { id: runId } });
+        if (existing) {
+          if (existing.startedByRunId !== agentRunId)
+            throw new Error(`Run ${runId} is not started by ${agentRunId}`);
+          return { status: "ok" };
+        }
+        const run = await tx.run.findUniqueOrThrow({
+          where: { id: agentRunId },
+          include: {
+            agent: {
+              include: {
+                capabilities: true,
+                courses: { include: { course: true } },
+              },
+            },
+          },
+        });
+        type Reason =
+          | "run_ended"
+          | "paused"
+          | "ended"
+          | "no_capability"
+          | "out_of_scope"
+          | "run_cap";
+        const refuse = (reason: Reason) =>
+          ({ status: "refused", reason }) as const;
+        if (run.status !== "running" || !run.agent) return refuse("run_ended");
+        if (run.agent.state !== "active") return refuse(run.agent.state);
+        if (!run.agent.capabilities.some((c) => c.capability === capability))
+          return refuse("no_capability");
+        const scope = run.agent.courses
+          .filter(
+            ({ course }) => course.status === "accepted" && !course.archivedAt,
+          )
+          .map(({ courseId }) => courseId);
+        if (!courseIds.length || courseIds.some((id) => !scope.includes(id)))
+          return refuse("out_of_scope");
+        const started = await tx.run.count({
+          where: { startedByRunId: agentRunId },
+        });
+        if (started >= runCaps.artifactRuns) return refuse("run_cap");
+        await tx.run.create({
+          data: {
+            id: runId,
+            studentId,
+            workflowId,
+            startedByRunId: agentRunId,
+          },
+        });
+        return { status: "ok" };
       });
     },
   };

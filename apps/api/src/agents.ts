@@ -63,8 +63,9 @@ const AgentCapability = z
     id: z.enum(capabilityIds),
     mode: z
       .enum(approvalModes)
+      .nullable()
       .describe(
-        "always and automatic hold a Grant; ask asks for every Action. Lernblöcke verschieben allows only ask.",
+        "always and automatic hold a Grant; ask asks for every Action. Lernblöcke verschieben allows only ask. Null for a Capability that is no Action, such as Karteikarten erstellen, which is simply on.",
       ),
   })
   .strict()
@@ -336,6 +337,31 @@ const VerlaufEntrySchema = z
         .describe("Preferences it broke under Immer erlaubt."),
     }),
     z.object({
+      type: z.literal("artifact"),
+      at: z.date(),
+      step: z.number().int(),
+      capability: z
+        .string()
+        .describe(
+          "The Lernmaterial Capability whose tool was called, such as createFlashcards.",
+        ),
+      kind: z.enum(["flashcards", "practice_set"]),
+      topics: z
+        .array(Named)
+        .describe(
+          "The Topics it was for; none when the call named no Topic of the Agent's Courses.",
+        ),
+      outcome: z
+        .enum(["started", "refused"])
+        .describe("Whether its Artifact Run started."),
+      refusal: z
+        .string()
+        .nullable()
+        .describe(
+          "Why none started, such as run_cap (the Run already started one); invalid when the call named no Topic it read.",
+        ),
+    }),
+    z.object({
       type: z.literal("approval"),
       at: z
         .date()
@@ -576,7 +602,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
                 modes: z
                   .array(z.enum(approvalModes))
                   .describe(
-                    "The modes it allows, the first its default when added; a single one is fixed.",
+                    "The modes it allows, the first its default when added; a single one is fixed, and none means it is no Action and simply on or off.",
                   ),
               })
               .openapi("Capability"),

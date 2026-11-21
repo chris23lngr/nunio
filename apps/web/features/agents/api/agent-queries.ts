@@ -76,7 +76,7 @@ export function agentCourseQueries(apiOrigin: string) {
 export type Capability =
   paths["/api/me/agents/capabilities"]["get"]["responses"][200]["content"]["application/json"][number];
 export type AgentCapability = Agent["capabilities"][number];
-export type ApprovalMode = AgentCapability["mode"];
+export type ApprovalMode = NonNullable<AgentCapability["mode"]>;
 
 /** Every Capability an Agent can have, in drawer order, with the modes each allows. */
 export function capabilityQueries(apiOrigin: string) {

@@ -44,6 +44,33 @@ export type ActionEvent = {
   brokenPreferences: BrokenPreference[];
 };
 
+/**
+ * What became of one call of a Lernmaterial Capability: the Artifact Run it started, or why none was, `invalid` when
+ * the call named no Topic the Run had read.
+ */
+export type ArtifactEvent = {
+  step: number;
+  call: number;
+  /** The Capability whose tool the model called. */
+  capability: string;
+  kind: "flashcards" | "practice_set";
+  /** The Topics it named, by id; none for an invalid call. */
+  topicIds: string[];
+  /** The Artifact it started; null when none. */
+  artifactId: string | null;
+  outcome: "started" | "refused";
+  refusal:
+    | "invalid"
+    | "gone"
+    | "run_ended"
+    | "paused"
+    | "ended"
+    | "no_capability"
+    | "out_of_scope"
+    | "run_cap"
+    | null;
+};
+
 /** The arguments of a `task.create` Action that name it. */
 type NewTask = {
   title: string;
@@ -58,6 +85,7 @@ export async function recordEvents(
   events: (
     | { key: string; type: "read"; detail: ReadEvent }
     | { key: string; type: "action"; detail: ActionEvent }
+    | { key: string; type: "artifact"; detail: ArtifactEvent }
   )[],
 ) {
   if (!events.length) return;
@@ -122,6 +150,17 @@ export type VerlaufEntry =
       outcome: ActionEvent["outcome"];
       refusal: ActionEvent["refusal"];
       brokenPreferences: BrokenPreference[];
+    }
+  | {
+      type: "artifact";
+      at: Date;
+      step: number;
+      capability: string;
+      kind: ArtifactEvent["kind"];
+      /** The Topics it was for, by their names now; null once rejected or deleted. */
+      topics: { id: string; title: string | null }[];
+      outcome: ArtifactEvent["outcome"];
+      refusal: ArtifactEvent["refusal"];
     }
   | {
       type: "approval";
@@ -393,12 +432,22 @@ export function createActivity({
       });
       if (!read) return null;
       const { run, sources, obligations, tasks, courses } = read;
-      // An Obligation's title is read the way the student reviews it.
-      const reviewed = obligations.length
-        ? (await facts.review(p)).courses.flatMap((course) =>
-            course.obligations.map((o) => ({ id: o.id, title: o.title })),
-          )
-        : [];
+      const started = run.events
+        .filter((event) => event.type === "artifact")
+        .map((event) => event.detail as ArtifactEvent);
+      // An Obligation's title, and a Topic's name, are read the way the student reviews them.
+      const review =
+        obligations.length || started.some((e) => e.topicIds.length)
+          ? (await facts.review(p)).courses
+          : [];
+      const reviewed = review.flatMap((course) =>
+        course.obligations.map((o) => ({ id: o.id, title: o.title })),
+      );
+      const topics = review.flatMap((course) =>
+        course.facts
+          .filter((fact) => fact.type === "topic" && fact.state !== "rejected")
+          .map((fact) => ({ id: fact.id, title: fact.value })),
+      );
       const titled = (ids: string[], rows: { id: string; title: string }[]) =>
         ids.map((id) => ({
           id,
@@ -527,6 +576,19 @@ export function createActivity({
               approvals: read.approvals ?? false,
               courses: titled(read.courseIds, courses),
               sources: titled(read.sourceIds, sources),
+            };
+          }
+          if (event.type === "artifact") {
+            const call = event.detail as ArtifactEvent;
+            return {
+              type: "artifact",
+              at: event.at,
+              step: call.step,
+              capability: call.capability,
+              kind: call.kind,
+              topics: titled(call.topicIds, topics),
+              outcome: call.outcome,
+              refusal: call.refusal,
             };
           }
           const call = event.detail as ActionEvent;

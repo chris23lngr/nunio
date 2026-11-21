@@ -18,3 +18,7 @@ Agents replace Responsibilities, and a Run that waited up to 7 days for its Appr
 ## Amendment (2026-11-19): One Intervention per Agent Run with open Approvals
 
 The Approvals an Agent's Run leaves open reach the Inbox as one Intervention per Run ([What a Run records and shows in Activity](https://github.com/chris23lngr/nunio/issues/149)). It is raised when the Run ends with at least one Approval open, announced under the student's outreach settings, and lapses when the last of them is decided, expires or is withdrawn. Like expiry, lapsing needs no timer. Opening it leads to that Run's Approvals in the Agent's Activity. One Intervention per Run, rather than one per Approval, keeps a Run's up to five questions to a single announcement. Expiry and withdrawal still raise nothing of their own.
+
+## Amendment (2026-11-21): An Agent's Artifacts outlive deleting it
+
+An Agent's Run may start one Artifact Run with "Karteikarten erstellen" or "Übungsaufgaben erstellen" ([Karteikarten and Übungsaufgaben erstellen](https://github.com/chris23lngr/nunio/issues/186)). The Artifact Run is its own Run, its cost charged to the Run that started it. Deleting the Agent removes its Runs and their Activity, but keeps the flashcards and practice sets it made, and the student's Attempts on them, as for Artifacts started in a Chat. Deleting them too was rejected: it would quietly take study material and Evidence the student relies on.

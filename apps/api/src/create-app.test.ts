@@ -482,6 +482,9 @@ beforeAll(async () => {
     artifacts,
     delegation,
     agents,
+    startArtifactRun: async () => {
+      throw new Error("No Run starts an Artifact Run in the API");
+    },
     catalog: { chatModels: async () => [] },
     modelFor: () => {
       throw new Error("No model step runs in the API");
@@ -6581,7 +6584,7 @@ describe("a free-text Agent's form", () => {
   }
   const form = (
     courseIds: string[],
-    capabilities: { id: string; mode: string }[] = [],
+    capabilities: { id: string; mode: string | null }[] = [],
   ) => ({
     name: "Klausur Statistik",
     description: "Hält meine Klausurvorbereitung auf Kurs.",
@@ -7089,6 +7092,44 @@ describe("a free-text Agent's form", () => {
       grants: [],
     });
     expect(await (await s.call("GET", "")).json()).toHaveLength(1);
+  });
+
+  it("saves Karteikarten and Übungsaufgaben erstellen simply on, without a mode or a Grant, and refuses a mode for them", async () => {
+    const s = await student("agent-capabilities-material");
+    const statistics = await course(s.id, "Statistics II");
+
+    const created = await s.call(
+      "POST",
+      "",
+      form(
+        [statistics],
+        [
+          { id: "createPracticeSets", mode: null },
+          { id: "createFlashcards", mode: null },
+          { id: "createStudyBlocks", mode: "automatic" },
+        ],
+      ),
+    );
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      capabilities: [
+        { id: "createStudyBlocks", mode: "automatic" },
+        { id: "createFlashcards", mode: null },
+        { id: "createPracticeSets", mode: null },
+      ],
+      grants: ["studyBlock.create"],
+    });
+    for (const capabilities of [
+      [{ id: "createFlashcards", mode: "ask" }],
+      [{ id: "createPracticeSets", mode: "always" }],
+      [{ id: "createStudyBlocks", mode: null }],
+    ])
+      expect(
+        (await s.call("PUT", `/${id}`, form([statistics], capabilities)))
+          .status,
+      ).toBe(400);
   });
 
   it("gives an Ended Agent no Grants back when its form is saved", async () => {
@@ -8892,6 +8933,21 @@ describe("a free-text Agent's form", () => {
         description:
           "Neue Aufgaben in deinen Kursen anlegen, auch zu Prüfungen und Abgaben oder zur Vor- und Nachbereitung.",
         modes: ["ask", "automatic", "always"],
+      },
+      // No Action, so no mode: simply on or off (#143).
+      {
+        id: "createFlashcards",
+        section: "Lernmaterial",
+        title: "Karteikarten erstellen",
+        description: "Karteikarten zu Themen deiner Kurse erstellen.",
+        modes: [],
+      },
+      {
+        id: "createPracticeSets",
+        section: "Lernmaterial",
+        title: "Übungsaufgaben erstellen",
+        description: "Übungsaufgaben zu Themen deiner Kurse erstellen.",
+        modes: [],
       },
     ]);
   });

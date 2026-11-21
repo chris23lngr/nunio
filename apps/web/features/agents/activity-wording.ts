@@ -133,6 +133,7 @@ const refusals: Record<string, string> = {
   fixed_event: "Überschneidet einen festen Termin",
   study_block: "Überschneidet einen anderen Lernblock",
   not_owner: "Die Arbeit oder der Block ist weg",
+  gone: "Ein Thema ist nicht mehr da",
   paused: "Agent pausiert",
   ended: "Agent beendet",
   restricted: "Nicht erlaubt",
@@ -185,6 +186,8 @@ export function describeEntry(entry: VerlaufEntry): {
     }
     case "action":
       return describeAction(entry);
+    case "artifact":
+      return describeArtifact(entry);
     case "approval":
       return describeApproval(entry);
     case "end":
@@ -240,6 +243,29 @@ function describeAction(entry: ActionEntry) {
       ...entry.brokenPreferences.map(
         (broken) => `Immer erlaubt, obwohl: ${noted[broken]}`,
       ),
+    ],
+  };
+}
+
+/** The flashcards or practice set a call started, for its Topics, or why none started. */
+function describeArtifact(entry: Extract<VerlaufEntry, { type: "artifact" }>) {
+  const named = entry.kind === "flashcards" ? "Karteikarten" : "Übungsaufgaben";
+  return {
+    title:
+      entry.outcome === "started"
+        ? `${named} gestartet`
+        : `Nicht gestartet: ${named}`,
+    details: [
+      ...(entry.topics.length
+        ? [
+            `Themen: ${entry.topics.map((topic) => topic.title ?? "gelöscht").join(", ")}`,
+          ]
+        : []),
+      ...(entry.refusal
+        ? [
+            `Grund: ${entry.refusal === "invalid" ? "Ungültige Angaben, nichts wurde gestartet" : (refusals[entry.refusal] ?? entry.refusal)}`,
+          ]
+        : []),
     ],
   };
 }

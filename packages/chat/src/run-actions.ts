@@ -1,10 +1,12 @@
 import type {
   ActionIntent,
   CapabilityId,
+  Kind,
   Principal,
   Refusal,
 } from "@nunio/delegation";
-import { capabilities } from "@nunio/delegation";
+import { capabilities, kindOf } from "@nunio/delegation";
+import type { KnowledgeReader } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
 import { deadline } from "@nunio/planning";
 import type { JSONSchema7, ToolSet } from "ai";
@@ -24,40 +26,55 @@ const block = { type: "string", pattern: "^B\\d+$" } as const;
  * What each Action's tool takes: work or a block by its handle, and where it goes in the student's time zone; or for a
  * Task, its title, what it is for by handle, and the minutes it needs.
  */
-const inputs: Record<(typeof capabilities)[CapabilityId]["kind"], JSONSchema7> =
-  {
-    "studyBlock.create": {
-      type: "object",
-      properties: { work: { type: "string", pattern: "^[OT]\\d+$" }, ...span },
-      required: ["work", "start", "end"],
-      additionalProperties: false,
+const inputs: Partial<Record<Kind, JSONSchema7>> = {
+  "studyBlock.create": {
+    type: "object",
+    properties: { work: { type: "string", pattern: "^[OT]\\d+$" }, ...span },
+    required: ["work", "start", "end"],
+    additionalProperties: false,
+  },
+  "studyBlock.move": {
+    type: "object",
+    properties: { block, ...span },
+    required: ["block", "start", "end"],
+    additionalProperties: false,
+  },
+  "studyBlock.remove": {
+    type: "object",
+    properties: { block },
+    required: ["block"],
+    additionalProperties: false,
+  },
+  "task.create": {
+    type: "object",
+    properties: {
+      title: { type: "string", minLength: 1, maxLength: 200 },
+      course: { type: "string", pattern: "^K\\d+$" },
+      obligation: { type: "string", pattern: "^O\\d+$" },
+      event: { type: "string", pattern: "^E\\d+$" },
+      role: { type: "string", enum: ["preparation", "follow_up"] },
+      minutes: { type: "integer", minimum: 15, maximum: 1440 },
     },
-    "studyBlock.move": {
-      type: "object",
-      properties: { block, ...span },
-      required: ["block", "start", "end"],
-      additionalProperties: false,
+    required: ["title"],
+    additionalProperties: false,
+  },
+};
+/** What a Lernmaterial Capability's tool takes: the Topics, by the tags courseFacts gave them. */
+const artifactInput: JSONSchema7 = {
+  type: "object",
+  properties: {
+    topics: {
+      type: "array",
+      items: { type: "string", pattern: "^S\\d+$" },
+      minItems: 1,
+      maxItems: 10,
     },
-    "studyBlock.remove": {
-      type: "object",
-      properties: { block },
-      required: ["block"],
-      additionalProperties: false,
-    },
-    "task.create": {
-      type: "object",
-      properties: {
-        title: { type: "string", minLength: 1, maxLength: 200 },
-        course: { type: "string", pattern: "^K\\d+$" },
-        obligation: { type: "string", pattern: "^O\\d+$" },
-        event: { type: "string", pattern: "^E\\d+$" },
-        role: { type: "string", enum: ["preparation", "follow_up"] },
-        minutes: { type: "integer", minimum: 15, maximum: 1440 },
-      },
-      required: ["title"],
-      additionalProperties: false,
-    },
-  };
+  },
+  required: ["topics"],
+  additionalProperties: false,
+};
+const artifactCap =
+  "Read the Topics with courseFacts first, and name them by the tags it gave them, such as S3. Only one practice set or set of flashcards may start per Run.";
 
 /** What the model is told of each Capability's tool; how the tool reads its call follows from the Capability's Action. */
 const descriptions: Record<CapabilityId, string> = {
@@ -66,31 +83,53 @@ const descriptions: Record<CapabilityId, string> = {
   moveStudyBlocks: `Moves any Study Block the Plan showed, also one the student or someone else placed; the student is always asked first. Name it by its handle, such as B1, and ${when}.`,
   removeOwnStudyBlocks:
     "Removes a Study Block you created that the student has not moved since. Name it by its handle, such as B1. A Locked block, or one that has started, cannot be removed.",
+  createFlashcards: `Starts making flashcards on Topics of your Courses, which the student finds under Study once made. ${artifactCap}`,
+  createPracticeSets: `Starts making a practice set on Topics of your Courses, which the student finds under Study once made. ${artifactCap}`,
   createTasks:
     "Creates a Task in one of your Courses. Name exactly one of: a Course by its handle, such as K1; an Obligation the Plan showed, such as O1, which the Task works toward; or a Course Event the Plan showed, such as E1, with role preparation or follow_up, only if it has no Task in that role yet. Give a short title and, if you can tell, the minutes it needs. Read the Plan with agenda first, so you add no Task it already has.",
 };
 
 /**
- * The Agent's Action tools: exactly its Capabilities, one tool each, named by the Capability (ADR-0026). None has an
- * `execute`: the step hands its calls back, and the gate performs them after it, under `runId:step:call`.
+ * The Agent's Capability tools: exactly its Capabilities, one tool each, named by the Capability (ADR-0026). None has
+ * an `execute`: the step hands its calls back, and they are performed after it, under `runId:step:call`, an Action's
+ * through the gate, a Lernmaterial one's by starting its Artifact Run.
  */
-export function actionTools(held: readonly CapabilityId[]): ToolSet {
+export function capabilityTools(held: readonly CapabilityId[]): ToolSet {
   return Object.fromEntries(
-    held.map((id) => [
-      id,
-      tool({
-        description: descriptions[id],
-        inputSchema: jsonSchema(inputs[capabilities[id].kind]),
-      }),
-    ]),
+    held.map((id) => {
+      const kind = kindOf(id);
+      return [
+        id,
+        tool({
+          description: descriptions[id],
+          inputSchema: jsonSchema(kind ? inputs[kind]! : artifactInput),
+        }),
+      ];
+    }),
   );
 }
 
-/** One Action call of a step as stored: the Action the gate performs, or why none could be asked. Dates as ISO strings. */
+/** The kind of Artifact a Lernmaterial Capability starts. */
+export type ArtifactKind = "flashcards" | "practice_set";
+/**
+ * One Capability call of a step as stored: the Action the gate performs, the Artifact Run it starts, or why neither
+ * could be. Dates as ISO strings.
+ */
 export type StoredCall = {
   toolCallId: string;
   toolName: string;
-} & ({ intent: Record<string, unknown> } | { invalid: string });
+} & (
+  | { intent: Record<string, unknown> }
+  | { artifact: { kind: ArtifactKind; topicIds: string[] } }
+  | { invalid: string }
+);
+
+/** Whether a call was to a Lernmaterial Capability, which starts an Artifact Run instead of asking the gate. */
+export const startsArtifact = (call: StoredCall) =>
+  "artifact" in call ||
+  ("invalid" in call &&
+    Object.hasOwn(capabilities, call.toolName) &&
+    !kindOf(call.toolName as CapabilityId));
 
 /** A stored intent with its dates revived, as the gate takes it; a Task Action has none. */
 export const intentOf = (call: { intent: Record<string, unknown> }) => {
@@ -134,11 +173,13 @@ export async function readCall(
   turn: Turn,
   {
     plan,
+    reader,
     p,
     timeZone,
     courses,
   }: {
     plan: Pick<Plan, "view">;
+    reader: Pick<KnowledgeReader, "retrieve">;
     p: Principal;
     timeZone: string;
     /** The Agent's Courses by handle, as the context message lists them. */
@@ -152,15 +193,22 @@ export async function readCall(
     toolName,
     invalid: reason,
   });
-  const kind = Object.hasOwn(capabilities, toolName)
-    ? capabilities[toolName as CapabilityId].kind
-    : null;
-  if (!kind) return invalid("you have no such tool.");
+  if (!Object.hasOwn(capabilities, toolName))
+    return invalid("you have no such tool.");
+  const capability = capabilities[toolName as CapabilityId];
   // The model's arguments are checked here, never trusted: a malformed call asks for nothing.
   const given =
     call.input && typeof call.input === "object"
       ? (call.input as Record<string, unknown>)
       : {};
+  if ("artifact" in capability)
+    return readArtifact(
+      turn,
+      { reader, p, courses },
+      { toolCallId, toolName, kind: capability.artifact },
+      given,
+    );
+  const { kind } = capability;
   const intent = (value: object): StoredCall => ({
     toolCallId,
     toolName,
@@ -168,7 +216,7 @@ export async function readCall(
   });
   if (kind === "task.create")
     return readTask(turn, { plan, p, courses }, given, { invalid, intent });
-  const fields = Object.keys(inputs[kind].properties ?? {});
+  const fields = Object.keys(inputs[kind]!.properties ?? {});
   if (fields.some((field) => typeof given[field] !== "string"))
     return invalid(`give ${fields.join(", ")}, each as text.`);
   const input = given as {
@@ -311,6 +359,71 @@ async function readTask(
   });
 }
 
+/**
+ * Reads a call of a Lernmaterial Capability into the Artifact Run it starts: on Topics of the Run's Courses, named by
+ * the tags courseFacts gave out in this or an earlier step. Whether each is of the Agent's current, unarchived Courses
+ * is decided as it starts.
+ */
+async function readArtifact(
+  turn: Turn,
+  {
+    reader,
+    p,
+    courses,
+  }: {
+    reader: Pick<KnowledgeReader, "retrieve">;
+    p: Principal;
+    courses: ReadonlyMap<string, { id: string }>;
+  },
+  call: { toolCallId: string; toolName: string; kind: ArtifactKind },
+  given: Record<string, unknown>,
+): Promise<StoredCall> {
+  const { toolCallId, toolName, kind } = call;
+  const invalid = (reason: string): StoredCall => ({
+    toolCallId,
+    toolName,
+    invalid: reason,
+  });
+  const { topics } = given;
+  if (
+    !Array.isArray(topics) ||
+    !topics.length ||
+    topics.length > 10 ||
+    topics.some((tag) => typeof tag !== "string")
+  )
+    return invalid("name 1 to 10 Topics by the tags courseFacts gave them.");
+  // The Topics of the Agent's Courses as courseFacts reads them, Archived Courses included as knowledge.
+  const retrieval = await reader.retrieve(
+    p,
+    { planning: true },
+    {
+      kind: "facts",
+      types: ["topic"],
+      narrow: { courseIds: [...courses.values()].map((course) => course.id) },
+    },
+  );
+  const ofCourses = new Map(
+    retrieval.status === "ok"
+      ? retrieval.items.flatMap((item) =>
+          item.kind === "fact" ? [[item.cite, item.factId] as const] : [],
+        )
+      : [],
+  );
+  const topicIds = (topics as string[]).map((tag) => {
+    const cite = turn.citations.find((c) => c.tag === tag)?.cite;
+    return cite && ofCourses.get(cite);
+  });
+  if (topicIds.some((id) => !id))
+    return invalid(
+      "name only Topics of your Courses, by the tags courseFacts gave them. Read them with courseFacts first.",
+    );
+  return {
+    toolCallId,
+    toolName,
+    artifact: { kind, topicIds: [...new Set(topicIds as string[])] },
+  };
+}
+
 /** Why the gate refused an Action, as the model is told. */
 export const why: Record<Refusal, string> = {
   not_owner: "the work or block is gone",
@@ -337,6 +450,35 @@ export const why: Record<Refusal, string> = {
   open_approvals_cap:
     "the student has too many of your requests open already, so ask nothing more until they decide",
 };
+
+/** Why an Artifact Run was not started, as the model is told. */
+const notStarted: Record<string, string> = {
+  gone: "a Topic is gone, or no longer of your Courses",
+  run_ended: why.run_ended,
+  paused: why.paused,
+  ended: why.ended,
+  no_capability: "the student no longer lets you make these",
+  out_of_scope:
+    "a Topic is not of your current Courses: you make nothing for a Course that is Archived or no longer yours",
+  run_cap:
+    "this Run has already started a practice set or flashcards, and only one may start per Run, so make no more such calls",
+};
+
+/** What the model is told became of one Lernmaterial call: the Artifact Run it started, or why none was. */
+export function artifactResultOf(
+  call: StoredCall,
+  recorded: {
+    kind: ArtifactKind;
+    outcome: "started" | "refused";
+    refusal: string | null;
+  } | null,
+): string {
+  if ("invalid" in call) return `Refused, nothing was started: ${call.invalid}`;
+  if (!recorded) throw new Error(`Call ${call.toolCallId} was never performed`);
+  if (recorded.outcome === "started")
+    return `Started: the ${recorded.kind === "flashcards" ? "flashcards are" : "practice set is"} being made, and the student finds ${recorded.kind === "flashcards" ? "them" : "it"} under Study once made. Do not start it again.`;
+  return `Not started: ${notStarted[recorded.refusal ?? ""] ?? recorded.refusal}.`;
+}
 
 /** What the model is told became of one Action call: what the gate recorded for it, or why none was asked. */
 export function resultOf(

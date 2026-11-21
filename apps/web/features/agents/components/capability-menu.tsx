@@ -14,7 +14,10 @@ import { Ellipsis, Trash2 } from "lucide-react";
 import type { ApprovalMode, Capability } from "../api/agent-queries";
 import { modes } from "../capability-mode";
 
-/** One of the Agent's Capabilities: its Freigabemodus, the modes it does not allow disabled, then Löschen. */
+/**
+ * One of the Agent's Capabilities: its Freigabemodus, the modes it does not allow disabled, then Löschen. One that is
+ * no Action has no mode, only Löschen.
+ */
 export function CapabilityMenu({
   capability,
   mode,
@@ -22,7 +25,7 @@ export function CapabilityMenu({
   onRemove,
 }: {
   capability: Capability;
-  mode: ApprovalMode;
+  mode: ApprovalMode | null;
   onMode: (mode: ApprovalMode) => void;
   onRemove: () => void;
 }) {
@@ -41,24 +44,28 @@ export function CapabilityMenu({
         <Ellipsis aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-62">
-        <DropdownMenuRadioGroup
-          value={mode}
-          onValueChange={(value: ApprovalMode) => onMode(value)}
-        >
-          <DropdownMenuLabel>Freigabemodus</DropdownMenuLabel>
-          {modes.map(({ mode: each, label, Icon }) => (
-            <DropdownMenuRadioItem
-              key={each}
-              value={each}
-              disabled={!capability.modes.includes(each)}
-              closeOnClick
+        {mode && (
+          <>
+            <DropdownMenuRadioGroup
+              value={mode}
+              onValueChange={(value: ApprovalMode) => onMode(value)}
             >
-              <Icon aria-hidden="true" />
-              {label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
+              <DropdownMenuLabel>Freigabemodus</DropdownMenuLabel>
+              {modes.map(({ mode: each, label, Icon }) => (
+                <DropdownMenuRadioItem
+                  key={each}
+                  value={each}
+                  disabled={!capability.modes.includes(each)}
+                  closeOnClick
+                >
+                  <Icon aria-hidden="true" />
+                  {label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuGroup>
           <DropdownMenuItem variant="destructive" onClick={onRemove}>
             <Trash2 aria-hidden="true" />
