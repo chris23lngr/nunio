@@ -20,22 +20,6 @@ export function agentListQueries(apiOrigin: string) {
   });
 }
 
-/** The student's accepted Courses, which an Agent can be scoped to. */
-export function delegableCourseQueries(apiOrigin: string) {
-  return queryOptions({
-    queryKey: [apiOrigin, "delegable-courses"],
-    queryFn: async ({ signal }) => {
-      const result = await createApiClient(apiOrigin).GET("/api/me/review", {
-        signal,
-      });
-      if (!result.data) throw new Error("Could not load your Courses.");
-      return result.data.courses.filter(
-        (course) => course.status === "accepted",
-      );
-    },
-  });
-}
-
 export function agentQueries(apiOrigin: string, id: string) {
   return queryOptions({
     queryKey: [apiOrigin, "agents", id],

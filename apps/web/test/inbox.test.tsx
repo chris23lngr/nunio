@@ -246,9 +246,7 @@ test("a Briefing lists what it bundled when it was made", async () => {
           agents: [
             {
               id: "r-1",
-              preset: "keep_course_organized",
-              course: "Analysis I",
-              exam: null,
+              name: "Kurs organisieren · Analysis I",
             },
           ],
         },
@@ -268,7 +266,9 @@ test("a Briefing lists what it bundled when it was made", async () => {
       "An approval expired: move the block for Problem sheet 1",
     ),
   ).toBeTruthy();
-  expect(within(briefing!).getByText("Keep Analysis I organized")).toBeTruthy();
+  expect(
+    within(briefing!).getByText("Kurs organisieren · Analysis I"),
+  ).toBeTruthy();
 });
 
 test("acknowledging and dismissing do not look alike", async () => {
@@ -446,7 +446,7 @@ test("an Agent Briefing shows plain text, live RunApprovalCard, unread Notice, a
               action: expired.action,
               fingerprint: approvalState === "waiting" ? "fp-123" : null,
               expiresAt: "2026-11-12T07:00:00.000Z",
-              agent: { id: "agent-3", preset: "", name: "Klausur vorbereiten" },
+              agent: { id: "agent-3", name: "Klausur vorbereiten" },
               state: approvalState,
             },
             {
@@ -454,7 +454,7 @@ test("an Agent Briefing shows plain text, live RunApprovalCard, unread Notice, a
               action: expired.action,
               fingerprint: null,
               expiresAt: "2026-11-12T07:00:00.000Z",
-              agent: { id: "agent-3", preset: "", name: "Klausur vorbereiten" },
+              agent: { id: "agent-3", name: "Klausur vorbereiten" },
               state: "withdrawn",
             },
           ],

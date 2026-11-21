@@ -25,14 +25,8 @@ model Intervention {
 model OutreachSettings {
   studentId        String  @id
   student          User    @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  /// Retired in #189 (Briefings are now written by Agents); kept until the #192 contract migration drops it.
-  briefingAtMinute Int?    @default(420)
-  /// Retired in #189; kept until the #192 contract migration drops it.
-  lastBriefingOn   String?
   /// Whether nunio emails the student; the Inbox has everything either way.
   email            Boolean @default(true)
-  /// Retired in #189; kept until the #192 contract migration drops it.
-  briefingEmail    Boolean @default(true)
   /// Quiet Hours in minutes after local midnight, in the Plan's time zone; both null when off. May wrap midnight.
   quietFromMinute  Int?
   quietToMinute    Int?

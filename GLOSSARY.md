@@ -157,7 +157,7 @@ The student's ranking of how much their Courses, Projects, or Obligations matter
 _Avoid_: Importance, weight, urgency
 
 **Rebalance**:
-nunio's automatic rearrangement of the Plan within an Agent's Grants and the student's Preferences. A Rebalance never moves a Locked Study Block, and moves one the Agent did not create, or that the student has moved since, only with Approval.
+nunio's proposed rearrangement of the Plan within the student's Preferences, which the student applies move by move as their own decisions. A Rebalance never moves a Locked Study Block.
 _Avoid_: Reschedule, replan, optimize
 
 **Lock**:

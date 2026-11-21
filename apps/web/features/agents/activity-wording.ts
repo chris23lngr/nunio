@@ -30,6 +30,7 @@ const reasons: Record<string, string> = {
   cancelled: "Lauf angehalten",
   model_ended_early: "Das Modell hat vorzeitig aufgehört",
   step_interrupted: "Ein Schritt wurde unterbrochen",
+  conversion: "In einen Agenten übernommen",
 };
 
 /** The line nunio shows for a Run that stopped or failed, such as "Abgebrochen: Budget aufgebraucht". */

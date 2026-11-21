@@ -108,7 +108,6 @@ describe("settle-held under a least-privilege operator role", () => {
       data: {
         id: agentId,
         studentId: id,
-        preset: "keep_course_organized",
         budgetMicroUsd: 500,
       },
     });

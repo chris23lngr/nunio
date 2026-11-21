@@ -1,9 +1,6 @@
 import { Approval as ApprovalPresentation } from "@nunio/ui/components/approval/approval";
 import type { Approval } from "../api/approval-queries";
 
-const presets: Record<string, string> = {
-  keep_course_organized: "Keep this course organized",
-};
 const when = (value: string) =>
   new Date(value).toLocaleString([], {
     weekday: "short",
@@ -66,9 +63,7 @@ export function ApprovalCard({
       denyLabel="Don't"
       description={
         <>
-          {approval.agent
-            ? `${presets[approval.agent.preset] ?? "An Agent"} asks`
-            : "nunio asks"}
+          {approval.agent ? `${approval.agent.name} asks` : "nunio asks"}
           {action.work.course && ` for ${action.work.course}`}
           {time}.
         </>

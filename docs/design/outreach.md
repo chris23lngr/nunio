@@ -123,7 +123,7 @@ All tables are owned by the student under the same row-level security policy as 
 - `Pusher`: a `web-push` adapter (version chosen by a spike, see Accepted limits) with the VAPID key from the environment, and a fake for tests.
 - `plan`, `facts`, `delegation`, `agents`: the existing modules, passed in as `createPlan` already takes `facts`. No new port: tests run them over real Postgres.
 - The worker runs `tick` from an `outreachTick` workflow on a five-minute Temporal Schedule ensured at start, like `reconcile-actions`. No per-student workflow or Schedule.
-- Phase 9's `raiseIntervention` activity stays so that recorded Run histories still replay. Its rows use the same cause keys, so sync adopts them; a missed raise is caught on the next tick.
+- Phase 9's `raiseIntervention` activity went with the preset Runs at the Agents cutover (#192); the rows it raised use the same cause keys, so sync adopted them.
 
 ## API and web
 

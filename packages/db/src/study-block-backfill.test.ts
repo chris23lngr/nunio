@@ -69,7 +69,6 @@ describe("the createdByAgentId backfill", () => {
       data: {
         id: agentId,
         studentId,
-        preset: "keep_course_organized",
         budgetMicroUsd: 100_000,
       },
     });

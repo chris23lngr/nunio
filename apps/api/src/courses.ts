@@ -274,7 +274,7 @@ export function registerCourseRoutes(routes: OpenAPIHono<AppBindings>) {
       method: "delete",
       path: "/api/me/courses/{id}",
       description:
-        "Removes the Course and everything only in it; it leaves its Agents, and one left with none is Paused (a preset Agent is Ended). Its Sources stay.",
+        "Removes the Course and everything only in it; it leaves its Agents, and one left with none is Paused. Its Sources stay.",
       request: { params: id },
       responses: { 200: Done, ...outcomes },
     }),

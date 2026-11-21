@@ -7,7 +7,6 @@ import { useState } from "react";
 import { hours } from "@/app/(app)/plan-wording";
 import type { RunApproval } from "@/features/agents/api/activity-mutations";
 import { RunApprovalCard } from "@/features/agents/components/run-approval-card";
-import { nameOf } from "@/features/agents/name";
 import { kinds as artifactKinds } from "@/features/artifacts/artifact-kinds";
 import {
   closeIntervention,
@@ -349,13 +348,7 @@ export function InboxScreen({ apiOrigin }: { apiOrigin: string }) {
                     </li>
                   ))}
                   {b.agents.map((r) => (
-                    <li key={r.id}>
-                      {nameOf({
-                        name: r.name,
-                        course: r.course === null ? null : { title: r.course },
-                        exam: r.exam === null ? null : { title: r.exam },
-                      })}
-                    </li>
+                    <li key={r.id}>{r.name}</li>
                   ))}
                 </ul>
               </article>

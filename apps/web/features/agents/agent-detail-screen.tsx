@@ -1,13 +1,11 @@
 "use client";
 
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import Link from "next/link";
 import { AgentFormScreen } from "./agent-form-screen";
-import { AgentScreen } from "./agent-screen";
 import { agentRunListQueries } from "./api/activity-queries";
 import { agentQueries } from "./api/agent-queries";
 
-/** A saved Agent: a free-text one opens its form; a pilot preset keeps its own screen until the Agents cutover. */
+/** A saved Agent: its form, opened on its Aktivität once it ran. */
 export function AgentDetailScreen({
   apiOrigin,
   id,
@@ -18,16 +16,13 @@ export function AgentDetailScreen({
   id: string;
   /** The Run its Aktivität opens on, as from the Inbox. */
   run?: string;
-  /** "auftrag" opens a free-text Agent on its Auftrag, as the list's Bearbeiten does, even when it ran. */
+  /** "auftrag" opens it on its Auftrag, as the list's Bearbeiten does, even when it ran. */
   tab?: string;
 }) {
   const query = useQuery(agentQueries(apiOrigin, id));
   const agent = query.data;
   // Read before the form opens: an Agent that ran opens on its Aktivität.
-  const runs = useInfiniteQuery({
-    ...agentRunListQueries(apiOrigin, id),
-    enabled: agent?.preset === null,
-  });
+  const runs = useInfiniteQuery(agentRunListQueries(apiOrigin, id));
   if (!agent)
     return query.error ? (
       <main className="p-8">
@@ -36,22 +31,14 @@ export function AgentDetailScreen({
         </p>
       </main>
     ) : null;
-  if (!agent.preset) {
-    if (!runs.data && !runs.error) return null;
-    return (
-      <AgentFormScreen
-        key={agent.id}
-        apiOrigin={apiOrigin}
-        agent={agent}
-        hasRuns={tab !== "auftrag" && Boolean(runs.data?.pages[0]?.runs.length)}
-        run={run}
-      />
-    );
-  }
+  if (!runs.data && !runs.error) return null;
   return (
-    <main>
-      <Link href="/agents">All Agents</Link>
-      <AgentScreen apiOrigin={apiOrigin} id={id} />
-    </main>
+    <AgentFormScreen
+      key={agent.id}
+      apiOrigin={apiOrigin}
+      agent={agent}
+      hasRuns={tab !== "auftrag" && Boolean(runs.data?.pages[0]?.runs.length)}
+      run={run}
+    />
   );
 }

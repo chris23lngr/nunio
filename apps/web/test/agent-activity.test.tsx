@@ -37,15 +37,12 @@ beforeEach(() => {
 
 const agent = {
   id: "a-1",
-  preset: null,
   name: "Klausur Statistik",
   description: "",
   emoji: "📊",
   instructions: "Bereite mich auf die Klausur vor.",
   courses: [],
   capabilities: [],
-  course: null,
-  exam: null,
   state: "active",
   pausedBy: null,
   running: false,
@@ -53,8 +50,7 @@ const agent = {
   budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
   trigger: { rhythm: "daily", minute: 360 },
   modelKey: "sonnet-5.5-reasoning-high",
-  recentActions: [],
-  next: { runAt: null, action: null },
+  next: { runAt: null },
 };
 
 const minutesAgo = (minutes: number) =>
@@ -435,7 +431,7 @@ const card = (
   },
   fingerprint: `fp-${actionId}`,
   expiresAt: "2099-02-09T08:00:00.000Z",
-  agent: { id: "a-1", preset: "", name: "Klausurhelfer" },
+  agent: { id: "a-1", name: "Klausurhelfer" },
 });
 const at = {
   monday: {
@@ -543,7 +539,7 @@ test("a Task's Approval toward an Obligation names that Obligation, on the card 
             },
             fingerprint: "fp-x-1",
             expiresAt: "2099-02-09T08:00:00.000Z",
-            agent: { id: "a-1", preset: "", name: "Klausurhelfer" },
+            agent: { id: "a-1", name: "Klausurhelfer" },
           },
         ],
         verlauf: [
@@ -615,7 +611,7 @@ test("a Task's Approval shows its title, Course, Course Event and Estimate, and 
             },
             fingerprint: "fp-x-1",
             expiresAt: "2099-02-09T08:00:00.000Z",
-            agent: { id: "a-1", preset: "", name: "Klausurhelfer" },
+            agent: { id: "a-1", name: "Klausurhelfer" },
           },
         ],
         verlauf: [
@@ -905,5 +901,73 @@ test("the Verlauf shows when a Run read the Inbox and wrote or refused a Briefin
     expect.stringMatching(
       /\dKein Briefing erstelltGrund: Ungültige Angaben, nichts wurde erstellt$/,
     ),
+  ]);
+});
+
+test("a Run under way when nunio made its Agent from an earlier delegation reads as stopped by that, its Actions and expired Approval still shown", async () => {
+  const old = listed("r-old", 2_000, "stopped", { stopReason: "conversion" });
+  const block = (day: number) => ({
+    start: `2099-01-0${day}T09:00:00.000Z`,
+    end: `2099-01-0${day}T10:00:00.000Z`,
+  });
+  api.route("GET", "/api/me/agents/a-1", () =>
+    Response.json({ ...agent, state: "paused", pausedBy: "conversion" }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [old], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-old", () =>
+    Response.json(
+      detail(old, {
+        verlauf: [
+          { type: "start", at: old.startedAt, trigger: "schedule" },
+          {
+            type: "action",
+            at: old.startedAt,
+            step: 1,
+            capability: "createStudyBlocks",
+            action: {
+              kind: "studyBlock.create",
+              work: { title: "Klausur Analysis", course: "Analysis I" },
+              ...block(1),
+            },
+            outcome: "done",
+            refusal: null,
+            brokenPreferences: [],
+          },
+          {
+            type: "end",
+            at: old.endedAt,
+            status: "stopped",
+            reason: "conversion",
+          },
+          {
+            type: "approval",
+            at: old.endedAt,
+            action: {
+              kind: "studyBlock.move",
+              work: { title: "Klausur Analysis", course: "Analysis I" },
+              ...block(2),
+            },
+            decision: "expired",
+            outcome: null,
+            refusal: null,
+          },
+        ],
+      }),
+    ),
+  );
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  await screen.findByText("Kosten", { selector: "dt" });
+  expect(screen.getByText("Übernommen: prüfen und fortsetzen")).toBeTruthy();
+  const verlauf = within(screen.getByRole("list", { name: "Verlauf" }))
+    .getAllByRole("listitem")
+    .map((entry) => entry.textContent);
+  expect(verlauf).toEqual([
+    expect.stringContaining("Zur geplanten Zeit gestartet"),
+    expect.stringContaining("Lernblock erstellt„Klausur Analysis“"),
+    expect.stringMatching(/Abgebrochen: In einen Agenten übernommen$/),
+    expect.stringContaining("Freigabe abgelaufen"),
   ]);
 });

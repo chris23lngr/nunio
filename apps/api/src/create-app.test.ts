@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type {
@@ -33,6 +34,7 @@ import type {
   Schedules,
 } from "@nunio/delegation";
 import {
+  agentTemplates,
   capabilityIds,
   createAgents,
   createDelegation,
@@ -148,9 +150,8 @@ const grader: Grader = {
     usage: { microUsd: 1 },
   }),
 };
-/** What the API asked of Agent Schedules, and which Runs it woke, in order. */
+/** What the API asked of Agent Schedules, in order. */
 const scheduled: string[] = [];
-const signalled: { workflowId: string; runId: string; actionId: string }[] = [];
 /** The Agent Runs the API started now, in order; the worker would then run each. */
 const agentRunsStarted: {
   studentId: string;
@@ -166,8 +167,6 @@ const goneWorkflows = new Set<string>();
 const workflowsAsked: string[] = [];
 const runsCancelled: string[] = [];
 const runWorkflows: RunWorkflows = {
-  signalDecided: async (run, actionId) =>
-    void signalled.push({ ...run, actionId }),
   startAgentRun: async (run) => {
     if (agentRunsDown) throw new Error("Temporal unavailable");
     agentRunsStarted.push(run);
@@ -184,13 +183,10 @@ const runWorkflows: RunWorkflows = {
   cancelRun: async (workflowId) => void runsCancelled.push(workflowId),
 };
 const schedules: Schedules = {
-  create: async ({ agentId }) => void scheduled.push(`create ${agentId}`),
   save: async ({ agentId, trigger, timeZone, paused }) =>
     void scheduled.push(
       `save ${agentId} ${JSON.stringify(trigger)} ${timeZone}${paused ? " paused" : ""}`,
     ),
-  pause: async (id) => void scheduled.push(`pause ${id}`),
-  unpause: async (id) => void scheduled.push(`unpause ${id}`),
   delete: async (id) => void scheduled.push(`delete ${id}`),
 };
 /** The Chat model's input for each step, in order (`JSON.stringify` it to search it). */
@@ -5896,9 +5892,15 @@ it("refuses Obligations and Agents on an Archived Course with a conflict", async
     method: "POST",
     headers,
     body: JSON.stringify({
-      preset: "keep_course_organized",
-      courseId: id,
+      name: "Statistik organisieren",
+      description: "",
+      emoji: "📚",
+      instructions: "Halte Statistik II organisiert.",
+      courseIds: [id],
+      capabilities: [],
       budgetMicroUsd: 100_000,
+      trigger: { rhythm: "daily", minute: 360 },
+      modelKey: "sonnet-5.5-reasoning-high",
     }),
   });
   expect(agent.status).toBe(409);
@@ -5991,7 +5993,8 @@ const executor: Executor = {
 };
 
 /**
- * A student whose "keep this course organized" Run asked to move a block they placed: the Run's workflow is waiting.
+ * A student whose Agent's Run asked to move a block they placed, under Lernblöcke verschieben, or moved its own block
+ * nunio placed for it under Eigene Lernblöcke verschieben on Immer erlaubt.
  */
 async function askedForApproval(
   name: string,
@@ -6020,27 +6023,41 @@ async function askedForApproval(
   const { courseId } = await admin.obligation.findUniqueOrThrow({
     where: { id: obligationId },
   });
+  await admin.course.update({
+    where: { id: courseId },
+    data: { status: "accepted" },
+  });
+  const created = await agents.create(
+    principal.fromSession({ studentId: id }),
+    {
+      name: "Analysis organisieren",
+      description: "",
+      emoji: "📚",
+      instructions: "Halte Analysis I organisiert.",
+      courseIds: [courseId],
+      capabilities: [
+        { id: "moveOwnStudyBlocks", mode: "always" },
+        { id: "moveStudyBlocks", mode: "ask" },
+      ],
+      budgetMicroUsd: 1_000_000,
+      trigger: { rhythm: "daily", minute: 360 },
+      modelKey: "sonnet-5.5-reasoning-high",
+    },
+  );
+  if (created.status !== "ok") throw new Error(created.status);
   await admin.studyBlock.create({
     data: {
       id: blockId,
       studentId: id,
       obligationId,
       placedBy,
+      createdByAgentId: placedBy === "nunio" ? created.id : null,
       start: new Date("2099-01-01T09:00:00Z"),
       end: new Date("2099-01-01T10:00:00Z"),
     },
   });
-  const created = await agents.create(
-    principal.fromSession({ studentId: id }),
-    {
-      preset: "keep_course_organized",
-      courseId,
-      budgetMicroUsd: 1_000_000,
-    },
-  );
-  if (created.status !== "ok") throw new Error(created.status);
   const runId = randomUUID(),
-    workflowId = `run/${created.id}-2099-01-01T06:00:00Z`;
+    workflowId = `agentRun/${created.id}-2099-01-01T06:00:00Z`;
   await agents.startRun({
     studentId: id,
     agentId: created.id,
@@ -6057,9 +6074,10 @@ async function askedForApproval(
     db: prisma,
     aiEnabled: () => true,
     executors: { plan: executes },
+    planRules,
   });
   const outcome = await gate.perform(principal.fromRun(runId), {
-    key: `${runId}:1`,
+    key: `${runId}:1:1`,
     intent,
   });
   const asking = outcome as Extract<
@@ -6080,53 +6098,6 @@ async function askedForApproval(
 }
 
 describe("Approvals", () => {
-  it.each(["approve", "deny"] as const)(
-    "saves %s while Temporal is unavailable and later delivers its wake without another click",
-    async (decision) => {
-      const asked = await askedForApproval(`approval-unavailable-${decision}`);
-      const signal = vi
-        .spyOn(runWorkflows, "signalDecided")
-        .mockRejectedValueOnce(new Error("Temporal unavailable"));
-      const log = vi.spyOn(console, "error").mockImplementation(() => {});
-      try {
-        const response = await app.request(
-          `${apiOrigin}/api/me/approvals/${asked.asking.actionId}`,
-          {
-            method: "POST",
-            headers: asked.headers,
-            body: JSON.stringify(
-              decision === "approve"
-                ? { decision, fingerprint: asked.asking.fingerprint }
-                : { decision },
-            ),
-          },
-        );
-        expect(response.status).toBe(200);
-        expect(signal).toHaveBeenCalledTimes(1);
-        expect(log).toHaveBeenCalled();
-        expect(signalled).not.toContainEqual(
-          expect.objectContaining({ actionId: asked.asking.actionId }),
-        );
-        await delegation.reconcile(({ workflowId, runId, actionId }) =>
-          runWorkflows.signalDecided({ workflowId, runId }, actionId),
-        );
-        expect(signalled).toContainEqual({
-          workflowId: asked.workflowId,
-          runId: asked.runId,
-          actionId: asked.asking.actionId,
-        });
-        expect(signal).toHaveBeenCalledTimes(2);
-        await delegation.reconcile(({ workflowId, runId, actionId }) =>
-          runWorkflows.signalDecided({ workflowId, runId }, actionId),
-        );
-        expect(signal).toHaveBeenCalledTimes(2);
-      } finally {
-        signal.mockRestore();
-        log.mockRestore();
-      }
-    },
-  );
-
   it("shows the student the exact Action a Run asked about, with its fingerprint and expiry", async () => {
     const asked = await askedForApproval("approval-list");
 
@@ -6153,16 +6124,12 @@ describe("Approvals", () => {
         },
         fingerprint: asked.asking.fingerprint,
         expiresAt: asked.asking.expiresAt.toISOString(),
-        agent: {
-          id: asked.agentId,
-          preset: "keep_course_organized",
-          name: "",
-        },
+        agent: { id: asked.agentId, name: "Analysis organisieren" },
       },
     ]);
   });
 
-  it("records an Approval of the fingerprint the student was shown, then wakes the Run", async () => {
+  it("records an Approval of the fingerprint the student was shown, then performs it as the Run's", async () => {
     const asked = await askedForApproval("approval-approve");
 
     const response = await app.request(
@@ -6178,11 +6145,6 @@ describe("Approvals", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(signalled).toContainEqual({
-      workflowId: asked.workflowId,
-      runId: asked.runId,
-      actionId: asked.asking.actionId,
-    });
     expect(
       (
         await delegation.history(
@@ -6190,12 +6152,15 @@ describe("Approvals", () => {
           {},
         )
       )[0],
-    ).toMatchObject({ approval: { decision: "approved" } });
+    ).toMatchObject({
+      runId: asked.runId,
+      status: "done",
+      approval: { decision: "approved" },
+    });
   });
 
-  it("refuses an Approval of any other fingerprint and wakes no Run", async () => {
+  it("refuses an Approval of any other fingerprint", async () => {
     const asked = await askedForApproval("approval-stale");
-    const before = signalled.length;
 
     const response = await app.request(
       `${apiOrigin}/api/me/approvals/${asked.asking.actionId}`,
@@ -6210,7 +6175,6 @@ describe("Approvals", () => {
     );
 
     expect(response.status).toBe(409);
-    expect(signalled).toHaveLength(before);
   });
 
   it("answers another student's Action as gone", async () => {
@@ -6236,7 +6200,7 @@ describe("Approvals", () => {
     expect(response.status).toBe(404);
   });
 
-  it("records a denial and wakes the Run, which then takes no Action", async () => {
+  it("records a denial, which takes no Action", async () => {
     const asked = await askedForApproval("approval-deny");
 
     const response = await app.request(
@@ -6249,11 +6213,6 @@ describe("Approvals", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(signalled).toContainEqual({
-      workflowId: asked.workflowId,
-      runId: asked.runId,
-      actionId: asked.asking.actionId,
-    });
     const listed = await app.request(`${apiOrigin}/api/me/approvals`, {
       headers: { cookie: asked.cookie },
     });
@@ -6363,161 +6322,6 @@ async function withCourse(name: string) {
 }
 
 describe("Agents", () => {
-  it("keeps an empty Course identifiable in its Agent detail, list and Home", async () => {
-    const cookie = await signUp("agent-empty-course");
-    const courseId = randomUUID();
-    await admin.course.create({
-      data: {
-        id: courseId,
-        studentId: await studentId(cookie),
-        title: "Analysis I",
-        matchTitle: "analysis i",
-        semester: "2026-ws",
-        color: "rose",
-        status: "accepted",
-      },
-    });
-    const response = await app.request(`${apiOrigin}/api/me/agents`, {
-      method: "POST",
-      headers: {
-        cookie,
-        origin: appOrigin,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ preset: "keep_course_organized", courseId }),
-    });
-    expect(response.status).toBe(201);
-    const { id } = (await response.json()) as { id: string };
-    const course = { id: courseId, title: "Analysis I" };
-    const detail = await app.request(`${apiOrigin}/api/me/agents/${id}`, {
-      headers: { cookie },
-    });
-    const list = await app.request(`${apiOrigin}/api/me/agents`, {
-      headers: { cookie },
-    });
-    const home = await app.request(`${apiOrigin}/api/me/home`, {
-      headers: { cookie },
-    });
-    expect(await detail.json()).toMatchObject({ id, course });
-    expect(await list.json()).toEqual([
-      expect.objectContaining({ id, course }),
-    ]);
-    expect(await home.json()).toMatchObject({
-      agentWork: [expect.objectContaining({ id, course: "Analysis I" })],
-    });
-  });
-
-  it("delegates 'keep this course organized' and shows its scope, Grants, Budget and next planned Action", async () => {
-    const s = await withCourse("agent-create");
-
-    const created = await app.request(`${apiOrigin}/api/me/agents`, {
-      method: "POST",
-      headers: s.headers,
-      body: JSON.stringify({
-        preset: "keep_course_organized",
-        courseId: s.courseId,
-      }),
-    });
-    expect(created.status).toBe(201);
-    const { id } = (await created.json()) as { id: string };
-    const shown = await app.request(`${apiOrigin}/api/me/agents/${id}`, {
-      headers: { cookie: s.cookie },
-    });
-
-    expect(scheduled).toContain(`create ${id}`);
-    expect(shown.status).toBe(200);
-    const body = (await shown.json()) as { next: { runAt: string } };
-    expect(body).toMatchObject({
-      id,
-      preset: "keep_course_organized",
-      course: { id: s.courseId, title: "Analysis I" },
-      state: "active",
-      pausedBy: null,
-      grants: ["studyBlock.create", "studyBlock.move"],
-      budget: { limitMicroUsd: 1_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
-      recentActions: [],
-      next: {
-        action: {
-          kind: "studyBlock.create",
-          work: { title: "Problem sheet 1", course: "Analysis I" },
-        },
-      },
-    });
-    // The next Run starts at 06:00 in the student's time zone, within a day.
-    const runAt = new Date(body.next.runAt);
-    expect(runAt.getTime() - Date.now()).toBeGreaterThan(0);
-    expect(runAt.getTime() - Date.now()).toBeLessThanOrEqual(24 * 60 * 60_000);
-    expect(
-      runAt.toLocaleTimeString("en-GB", {
-        timeZone: "Europe/Berlin",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    ).toBe("06:00");
-  });
-
-  it("pauses, resumes and ends through its Schedule, and lists it with its state", async () => {
-    const s = await withCourse("agent-control");
-    const { id } = (await (
-      await app.request(`${apiOrigin}/api/me/agents`, {
-        method: "POST",
-        headers: s.headers,
-        body: JSON.stringify({
-          preset: "keep_course_organized",
-          courseId: s.courseId,
-        }),
-      })
-    ).json()) as { id: string };
-    const control = (action: string) =>
-      app.request(`${apiOrigin}/api/me/agents/${id}/${action}`, {
-        method: "POST",
-        headers: s.headers,
-      });
-    const shown = async () =>
-      (await (
-        await app.request(`${apiOrigin}/api/me/agents/${id}`, {
-          headers: { cookie: s.cookie },
-        })
-      ).json()) as object;
-
-    expect((await control("pause")).status).toBe(200);
-    expect(await shown()).toMatchObject({
-      state: "paused",
-      pausedBy: "student",
-      next: { runAt: null, action: null },
-    });
-    expect((await control("resume")).status).toBe(200);
-    expect(await shown()).toMatchObject({ state: "active", pausedBy: null });
-    expect((await control("end")).status).toBe(200);
-    expect(await shown()).toMatchObject({ state: "ended", grants: [] });
-    expect((await control("resume")).status).toBe(404);
-
-    expect(scheduled.filter((call) => call.endsWith(id))).toEqual([
-      `create ${id}`,
-      `pause ${id}`,
-      `unpause ${id}`,
-      `delete ${id}`,
-    ]);
-    const listed = await app.request(`${apiOrigin}/api/me/agents`, {
-      headers: { cookie: s.cookie },
-    });
-    expect(await listed.json()).toEqual([
-      {
-        id,
-        preset: "keep_course_organized",
-        name: "",
-        description: "",
-        emoji: "🤖",
-        course: { id: s.courseId, title: "Analysis I" },
-        exam: null,
-        state: "ended",
-        pausedBy: null,
-        badge: "ended",
-        approvalRunId: null,
-      },
-    ]);
-  });
-
   it("show on Home as Agent work: the Approvals waiting first, then each Agent", async () => {
     const asked = await askedForApproval("agent-home");
 
@@ -6536,51 +6340,37 @@ describe("Agents", () => {
         {
           kind: "agent",
           id: asked.agentId,
-          preset: "keep_course_organized",
-          name: "",
-          course: "Analysis I",
-          exam: null,
+          name: "Analysis organisieren",
           state: "active",
         },
       ],
     );
   });
 
-  it("shows its recent Actions on its screen, each as the exact Action", async () => {
-    const asked = await askedForApproval("agent-recent");
+  it("shows when its next Run starts: its Uhrzeit in the student's time zone, within a day", async () => {
+    const asked = await askedForApproval("agent-next-run");
 
     const shown = await app.request(
       `${apiOrigin}/api/me/agents/${asked.agentId}`,
       { headers: { cookie: asked.cookie } },
     );
 
+    const runAt = new Date(
+      ((await shown.json()) as { next: { runAt: string } }).next.runAt,
+    );
+    expect(runAt.getTime() - Date.now()).toBeGreaterThan(0);
+    expect(runAt.getTime() - Date.now()).toBeLessThanOrEqual(24 * 60 * 60_000);
     expect(
-      ((await shown.json()) as { recentActions: unknown[] }).recentActions,
-    ).toEqual([
-      {
-        id: asked.asking.actionId,
-        status: "awaiting_approval",
-        refusal: null,
-        at: expect.any(String),
-        action: {
-          kind: "studyBlock.move",
-          work: { title: "Problem sheet 1", course: "Analysis I" },
-          from: {
-            start: "2099-01-01T09:00:00.000Z",
-            end: "2099-01-01T10:00:00.000Z",
-          },
-          to: {
-            start: "2099-01-02T14:00:00.000Z",
-            end: "2099-01-02T15:00:00.000Z",
-          },
-          task: null,
-        },
-      },
-    ]);
+      runAt.toLocaleTimeString("en-GB", {
+        timeZone: "Europe/Berlin",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    ).toBe("06:00");
   });
 });
 
-describe("a free-text Agent's form", () => {
+describe("an Agent's form", () => {
   /** A Course of the student's, accepted unless told otherwise. */
   async function course(
     studentId: string,
@@ -6673,7 +6463,6 @@ describe("a free-text Agent's form", () => {
     expect(shown.status).toBe(200);
     expect(await shown.json()).toMatchObject({
       id,
-      preset: null,
       name: "Klausur Statistik",
       description: "Hält meine Klausurvorbereitung auf Kurs.",
       emoji: "🤖",
@@ -6692,13 +6481,12 @@ describe("a free-text Agent's form", () => {
       trigger: { rhythm: "daily", minute: 360 },
       state: "active",
       grants: [],
-      next: { action: null },
     });
     expect(scheduled).toContain(
       `save ${id} {"rhythm":"daily","minute":360} Europe/Berlin`,
     );
     expect(await (await s.call("GET", "")).json()).toEqual([
-      expect.objectContaining({ id, preset: null, name: "Klausur Statistik" }),
+      expect.objectContaining({ id, name: "Klausur Statistik" }),
     ]);
   });
 
@@ -6981,52 +6769,14 @@ describe("a free-text Agent's form", () => {
     });
   });
 
-  it("leaves a preset Agent's form alone until the cutover", async () => {
-    const s = await withCourse("agent-form-preset");
-    const { id } = (await (
-      await app.request(`${apiOrigin}/api/me/agents`, {
-        method: "POST",
-        headers: s.headers,
-        body: JSON.stringify({
-          preset: "keep_course_organized",
-          courseId: s.courseId,
-        }),
-      })
-    ).json()) as { id: string };
-
-    const updated = await app.request(`${apiOrigin}/api/me/agents/${id}`, {
-      method: "PUT",
-      headers: s.headers,
-      body: JSON.stringify(form([s.courseId])),
-    });
-
-    expect(updated.status).toBe(400);
-    expect(
-      await (
-        await app.request(`${apiOrigin}/api/me/agents/${id}`, {
-          headers: { cookie: s.cookie },
-        })
-      ).json(),
-    ).toMatchObject({
-      preset: "keep_course_organized",
-      courses: [],
-      capabilities: [],
-      grants: ["studyBlock.create", "studyBlock.move"],
-    });
-  });
-
-  /** The Agent's Grants as stored: kind and scope. */
+  /** The Agent's Grants as stored, by kind. */
   const grantsOf = async (agentId: string) =>
     (
       await admin.grant.findMany({
         where: { agentId },
         orderBy: { kind: "asc" },
       })
-    ).map(({ kind, courseId, obligationId }) => ({
-      kind,
-      courseId,
-      obligationId,
-    }));
+    ).map(({ kind }) => ({ kind }));
 
   it("saves the Agent's Capabilities with their modes, holding an unscoped Grant exactly for each on Immer erlaubt or Automatisch", async () => {
     const s = await student("agent-capabilities");
@@ -7058,8 +6808,8 @@ describe("a free-text Agent's form", () => {
     });
     // No scope of its own: each covers its kind across the Agent's current Courses.
     expect(await grantsOf(id)).toEqual([
-      { kind: "studyBlock.create", courseId: null, obligationId: null },
-      { kind: "studyBlock.move", courseId: null, obligationId: null },
+      { kind: "studyBlock.create" },
+      { kind: "studyBlock.move" },
     ]);
 
     // A mode changed to Nachfragen, a Capability removed and one turned on: the Grants follow.
@@ -7086,8 +6836,8 @@ describe("a free-text Agent's form", () => {
       grants: ["studyBlock.remove", "task.create"],
     });
     expect(await grantsOf(id)).toEqual([
-      { kind: "studyBlock.remove", courseId: null, obligationId: null },
-      { kind: "task.create", courseId: null, obligationId: null },
+      { kind: "studyBlock.remove" },
+      { kind: "task.create" },
     ]);
     await s.call("PUT", `/${id}`, form([statistics]));
     expect(await grantsOf(id)).toEqual([]);
@@ -7227,7 +6977,7 @@ describe("a free-text Agent's form", () => {
     expect((await s.call("POST", `/${id}/runs`)).status).toBe(201);
   });
 
-  it("refuses to start a Run of a Paused or Ended Agent, or of a preset", async () => {
+  it("refuses to start a Run of a Paused or Ended Agent", async () => {
     const s = await student("agent-run-refused");
     const statistics = await course(s.id, "Statistics II");
     const created = async () =>
@@ -7240,20 +6990,11 @@ describe("a free-text Agent's form", () => {
     await s.call("POST", `/${paused}/pause`);
     const ended = await created();
     await s.call("POST", `/${ended}/end`);
-    const preset = (
-      (await (
-        await s.call("POST", "", {
-          preset: "keep_course_organized",
-          courseId: statistics,
-        })
-      ).json()) as { id: string }
-    ).id;
     const before = agentRunsStarted.length;
 
     for (const [agent, status, error] of [
       [paused, 409, "paused"],
       [ended, 409, "ended"],
-      [preset, 400, "invalid"],
       [randomUUID(), 404, "gone"],
     ] as const) {
       const refused = await s.call("POST", `/${agent}/runs`);
@@ -7458,40 +7199,6 @@ describe("a free-text Agent's form", () => {
     expect((await s.call("DELETE", `/${id}`)).status).toBe(404);
   });
 
-  it("cancels a deleted preset Agent's Run that waits on an Approval", async () => {
-    const s = await student("agent-delete-preset");
-    const { id } = (await (
-      await s.call("POST", "", {
-        preset: "keep_course_organized",
-        courseId: await course(s.id, "Statistics II"),
-      })
-    ).json()) as { id: string };
-    const runId = randomUUID();
-    await admin.run.create({
-      data: {
-        id: runId,
-        studentId: s.id,
-        agentId: id,
-        workflowId: `run/${runId}`,
-      },
-    });
-    await asked(s.id, runId);
-    const done = randomUUID();
-    await admin.run.create({
-      data: {
-        id: done,
-        studentId: s.id,
-        agentId: id,
-        workflowId: `run/${done}`,
-      },
-    });
-
-    expect((await s.call("DELETE", `/${id}`)).status).toBe(200);
-
-    expect(runsCancelled).toContain(`run/${runId}`);
-    expect(runsCancelled).not.toContain(`run/${done}`);
-  });
-
   it("keeps the Agent when its Schedule cannot be deleted, so Löschen can be asked again", async () => {
     const s = await student("agent-delete-down");
     const { id } = (await (
@@ -7628,12 +7335,9 @@ describe("a free-text Agent's form", () => {
     ]);
     expect(agents[0]).toEqual({
       id: paused,
-      preset: null,
       name: "Pausiert",
       description: "Hält meine Klausurvorbereitung auf Kurs.",
       emoji: "🤖",
-      course: null,
-      exam: null,
       state: "paused",
       pausedBy: "student",
       badge: "paused",
@@ -8069,7 +7773,7 @@ describe("a free-text Agent's form", () => {
           },
           fingerprint: a.asking.fingerprint,
           expiresAt: a.asking.expiresAt.toISOString(),
-          agent: { id: a.agentId, preset: "", name: "Klausur Statistik" },
+          agent: { id: a.agentId, name: "Klausur Statistik" },
         },
       ]);
 
@@ -8095,13 +7799,6 @@ describe("a free-text Agent's form", () => {
           select: { createdByAgentId: true },
         }),
       ).toEqual([{ createdByAgentId: a.agentId }]);
-      // The Run ended without waiting, so there is no workflow to wake, now or on reconciliation.
-      await delegation.reconcile(({ workflowId, runId, actionId }) =>
-        runWorkflows.signalDecided({ workflowId, runId }, actionId),
-      );
-      expect(signalled).not.toContainEqual(
-        expect.objectContaining({ actionId: a.asking.actionId }),
-      );
       const after = await a.shown();
       expect(after).toMatchObject({ openApprovals: 0, approvals: [] });
       expect(decisions(after.verlauf)).toEqual([
@@ -8588,38 +8285,6 @@ describe("a free-text Agent's form", () => {
       expect(decisions((await a.shown()).verlauf)).toEqual([
         expect.objectContaining({ decision: "approved" }),
       ]);
-    });
-
-    it("leaves a preset Agent's Approvals to its Run, which waits on them, when it is Paused", async () => {
-      const s = await student("run-approval-preset-paused");
-      const { id: agentId } = (await (
-        await s.call("POST", "", {
-          preset: "keep_course_organized",
-          courseId: await course(s.id, "Statistics II"),
-        })
-      ).json()) as { id: string };
-      const runId = randomUUID();
-      await admin.run.create({
-        data: {
-          id: runId,
-          studentId: s.id,
-          agentId,
-          workflowId: `run/${runId}`,
-        },
-      });
-      await asked(s.id, runId);
-
-      expect((await s.call("POST", `/${agentId}/pause`)).status).toBe(200);
-
-      expect(
-        await admin.action.findMany({
-          where: { runId },
-          select: { status: true },
-        }),
-      ).toEqual([{ status: "awaiting_approval" }]);
-      expect(agentRunsStopped).not.toContainEqual(
-        expect.objectContaining({ workflowId: `run/${runId}` }),
-      );
     });
 
     describe("the Run's Intervention in the Inbox", () => {
@@ -9427,70 +9092,6 @@ describe("a free-text Agent's form", () => {
   });
 });
 
-describe("'prepare me for this exam'", () => {
-  it("is delegated for one exam, which its screen and the list name, and never for other work", async () => {
-    const s = await withCourse("agent-exam");
-    const exam = await facts.enterObligation(
-      principal.fromSession({ studentId: await studentId(s.cookie) }),
-      {
-        course: { id: s.courseId },
-        kind: "exam",
-        title: "Klausur",
-        due: { date: "2099-02-01", time: "10:00", timeZone: null },
-        destination: null,
-      },
-    );
-    if (exam.status !== "ok") throw new Error(exam.status);
-    const delegate = (obligationId: string) =>
-      app.request(`${apiOrigin}/api/me/agents`, {
-        method: "POST",
-        headers: s.headers,
-        body: JSON.stringify({ preset: "prepare_for_exam", obligationId }),
-      });
-
-    expect((await delegate(s.obligationId)).status).toBe(404);
-    const created = await delegate(exam.id);
-    expect(created.status).toBe(201);
-    const { id } = (await created.json()) as { id: string };
-
-    const shown = await app.request(`${apiOrigin}/api/me/agents/${id}`, {
-      headers: { cookie: s.cookie },
-    });
-    expect(await shown.json()).toMatchObject({
-      preset: "prepare_for_exam",
-      course: { id: s.courseId, title: "Analysis I" },
-      exam: { id: exam.id, title: "Klausur" },
-      grants: ["studyBlock.create", "studyBlock.move"],
-    });
-    const listed = await app.request(`${apiOrigin}/api/me/agents`, {
-      headers: { cookie: s.cookie },
-    });
-    expect(await listed.json()).toEqual([
-      expect.objectContaining({
-        id,
-        preset: "prepare_for_exam",
-        exam: { id: exam.id, title: "Klausur" },
-      }),
-    ]);
-    const home = await app.request(`${apiOrigin}/api/me/home`, {
-      headers: { cookie: s.cookie },
-    });
-    expect(((await home.json()) as { agentWork: unknown[] }).agentWork).toEqual(
-      [
-        {
-          kind: "agent",
-          id,
-          preset: "prepare_for_exam",
-          name: "",
-          course: "Analysis I",
-          exam: "Klausur",
-          state: "active",
-        },
-      ],
-    );
-  });
-});
-
 describe("outreach settings after retiring nunio's own Briefing (#189)", () => {
   it("returns and updates Outreach settings without Briefing fields", async () => {
     const cookie = await signUp("outreach-settings-no-briefing");
@@ -9571,7 +9172,8 @@ describe("a Briefing's Approvals", () => {
       data: { expiresAt: new Date("2000-01-01T00:00:00Z") },
     });
     expect(await stateNow()).toBe("expired");
-    await app.request(
+    // An Agent's Approval expires lazily, so a late answer changes nothing (ADR-0006).
+    const late = await app.request(
       `${apiOrigin}/api/me/approvals/${asked.asking.actionId}`,
       {
         method: "POST",
@@ -9579,7 +9181,8 @@ describe("a Briefing's Approvals", () => {
         body: JSON.stringify({ decision: "deny" }),
       },
     );
-    expect(await stateNow()).toBe("denied");
+    expect(late.status).toBe(409);
+    expect(await stateNow()).toBe("expired");
   });
 });
 
@@ -11104,5 +10707,315 @@ describe("the AI builder", () => {
     );
     expect(chunks.some((chunk) => chunk.type === "data-form")).toBe(false);
     expect(prompts.length).toBe(before);
+  });
+});
+
+describe("the Agents cutover", () => {
+  const migration = readFileSync(
+    new URL(
+      "../../../packages/db/prisma/migrations/20261213100000_agent_cutover/migration.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  it("turns each seeded Responsibility into a Paused Agent with its history, keeping only the authority it had", async () => {
+    const cookie = await signUp("agent-cutover");
+    const id = await studentId(cookie);
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const call = (method: string, path: string) =>
+      app.request(`${apiOrigin}/api/me${path}`, { method, headers });
+    const course = async (title: string, status = "accepted") => {
+      const courseId = randomUUID();
+      await admin.course.create({
+        data: {
+          id: courseId,
+          studentId: id,
+          title,
+          matchTitle: title.toLowerCase(),
+          semester: "2026-ws",
+          color: "violet",
+          status: status as "accepted",
+        },
+      });
+      return courseId;
+    };
+    const analysis = await course("Analysis I");
+    const statistics = await course("Statistics II");
+    const rejected = await course("Verworfen", "rejected");
+    const entered = await facts.enterObligation(
+      principal.fromSession({ studentId: id }),
+      {
+        course: { id: analysis },
+        kind: "exam",
+        title: "Klausur Analysis",
+        due: { date: "2027-02-12", time: null, timeZone: null },
+        destination: null,
+      },
+    );
+    if (entered.status !== "ok") throw new Error(entered.status);
+    const exam = entered.id;
+    /** A preset as the Responsibilities left it: scoped Grants, a lifetime Budget and its `restrictions`. */
+    const preset = async (
+      kind: "keep_course_organized" | "prepare_for_exam",
+      scope: { courseId: string; obligationId?: string },
+      data: {
+        state?: "active" | "paused" | "ended";
+        pausedBy?: string;
+        restrictions?: object;
+      } = {},
+    ) => {
+      const agentId = randomUUID();
+      await admin.$executeRaw`
+        INSERT INTO "agent" ("id", "studentId", "preset", "courseId", "obligationId", "state", "pausedBy",
+          "budgetMicroUsd", "usedMicroUsd", "restrictions", "triggerMinute")
+        VALUES (${agentId}, ${id}, ${kind}, ${scope.courseId}, ${scope.obligationId ?? null},
+          ${data.state ?? "active"}::"agent_state", ${data.pausedBy ?? null}, 1000000, 300000,
+          ${JSON.stringify(data.restrictions ?? {})}::jsonb, 420)`;
+      for (const grant of ["studyBlock.create", "studyBlock.move"])
+        await admin.$executeRaw`
+          INSERT INTO "grant" ("id", "studentId", "agentId", "kind", "courseId", "obligationId")
+          VALUES (${randomUUID()}, ${id}, ${agentId}, ${grant},
+            ${scope.obligationId ? null : scope.courseId}, ${scope.obligationId ?? null})`;
+      return agentId;
+    };
+    const organize = await preset("keep_course_organized", {
+      courseId: analysis,
+    });
+    const examAgent = await preset(
+      "prepare_for_exam",
+      { courseId: analysis, obligationId: exam },
+      {
+        state: "paused",
+        pausedBy: "budget",
+        restrictions: { alwaysAsk: ["studyBlock.move"] },
+      },
+    );
+    const restricted = await preset(
+      "keep_course_organized",
+      { courseId: statistics },
+      { restrictions: { allowedKinds: ["studyBlock.create"] } },
+    );
+    const ended = await preset(
+      "keep_course_organized",
+      { courseId: statistics },
+      { state: "ended" },
+    );
+    const courseless = await preset("keep_course_organized", {
+      courseId: rejected,
+    });
+
+    // Its Run waiting on an Approval, after adding one block.
+    const runId = randomUUID();
+    const startedAt = new Date("2026-11-20T05:00:00Z");
+    await admin.run.create({
+      data: {
+        id: runId,
+        studentId: id,
+        agentId: organize,
+        workflowId: `run/${organize}-2026-11-20T05:00:00Z`,
+        startedAt,
+      },
+    });
+    const obligationId = exam;
+    const action = async (
+      n: number,
+      kind: string,
+      args: object,
+      status: "done" | "awaiting_approval",
+    ) => {
+      const actionId = randomUUID();
+      await admin.action.create({
+        data: {
+          id: actionId,
+          studentId: id,
+          runId,
+          key: `${runId}:${n}`,
+          kind,
+          args,
+          status,
+          createdAt: new Date(startedAt.getTime() + n * 1000),
+        },
+      });
+      await admin.actionEvent.create({
+        data: {
+          studentId: id,
+          actionId,
+          at: new Date(startedAt.getTime() + n * 1000),
+          type: status === "done" ? "done" : "approval_requested",
+        },
+      });
+      return actionId;
+    };
+    await action(
+      1,
+      "studyBlock.create",
+      {
+        workId: obligationId,
+        start: "2099-01-01T09:00:00.000Z",
+        end: "2099-01-01T10:00:00.000Z",
+      },
+      "done",
+    );
+    const asked = await action(
+      2,
+      "studyBlock.move",
+      {
+        studyBlockId: randomUUID(),
+        start: "2099-01-02T09:00:00.000Z",
+        end: "2099-01-02T10:00:00.000Z",
+      },
+      "awaiting_approval",
+    );
+    await admin.approval.create({
+      data: {
+        id: randomUUID(),
+        studentId: id,
+        actionId: asked,
+        fingerprint: "f",
+        expiresAt: new Date(Date.now() + 86_400_000),
+      },
+    });
+
+    await admin.$executeRawUnsafe(migration);
+    // Safe to repeat: a second pass changes nothing.
+    await admin.$executeRawUnsafe(migration);
+
+    const listed = (await (await call("GET", "/agents")).json()) as {
+      id: string;
+    }[];
+    expect(
+      [organize, examAgent, restricted, ended, courseless].map((agentId) =>
+        listed.find((r) => r.id === agentId),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        name: "Kurs organisieren · Analysis I",
+        emoji: "📚",
+        state: "paused",
+        pausedBy: "conversion",
+        badge: "paused",
+      }),
+      expect.objectContaining({
+        name: "Klausur vorbereiten · Klausur Analysis",
+        emoji: "🎯",
+        state: "paused",
+        pausedBy: "conversion",
+      }),
+      expect.objectContaining({
+        name: "Kurs organisieren · Statistics II",
+        state: "paused",
+        pausedBy: "conversion",
+      }),
+      expect.objectContaining({ state: "ended", pausedBy: null }),
+      expect.objectContaining({ state: "ended", pausedBy: null }),
+    ]);
+
+    const shown = async (agentId: string) =>
+      (await call("GET", `/agents/${agentId}`)).json();
+    expect(await shown(organize)).toMatchObject({
+      templateId: null,
+      name: "Kurs organisieren · Analysis I",
+      description: agentTemplates.organizeCourse.description,
+      instructions: agentTemplates.organizeCourse.instructions,
+      courses: [{ id: analysis, title: "Analysis I", archived: false }],
+      capabilities: [
+        { id: "createStudyBlocks", mode: "automatic" },
+        { id: "moveOwnStudyBlocks", mode: "automatic" },
+      ],
+      grants: expect.arrayContaining(["studyBlock.create", "studyBlock.move"]),
+      budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0 },
+      trigger: { rhythm: "daily", minute: 360 },
+      modelKey: "sonnet-5.5-reasoning-high",
+      running: false,
+      approvalRunId: null,
+    });
+    expect(await shown(examAgent)).toMatchObject({
+      description: agentTemplates.prepareExam.description,
+      instructions: agentTemplates.prepareExam.instructions,
+      courses: [{ id: analysis }],
+      capabilities: [
+        { id: "createStudyBlocks", mode: "automatic" },
+        { id: "moveOwnStudyBlocks", mode: "ask" },
+      ],
+      grants: ["studyBlock.create"],
+    });
+    expect(await shown(restricted)).toMatchObject({
+      courses: [{ id: statistics }],
+      capabilities: [{ id: "createStudyBlocks", mode: "automatic" }],
+      grants: ["studyBlock.create"],
+    });
+    expect(await shown(ended)).toMatchObject({
+      name: "Kurs organisieren · Statistics II",
+      courses: [{ id: statistics }],
+      grants: [],
+    });
+    expect(await shown(courseless)).toMatchObject({
+      name: "Kurs organisieren · Verworfen",
+      courses: [],
+      grants: [],
+    });
+    expect(
+      (await admin.agent.findMany({ where: { studentId: id } })).map(
+        (r) => r.templateId,
+      ),
+    ).toEqual([null, null, null, null, null]);
+
+    // Its Run under way stopped, its pending Approval expired, and its Verlauf shows the Actions it took.
+    expect(await (await call("GET", "/approvals")).json()).toEqual([]);
+    expect(
+      await (await call("GET", `/agents/${organize}/runs?limit=10`)).json(),
+    ).toEqual({
+      runs: [
+        expect.objectContaining({
+          id: runId,
+          status: "stopped",
+          trigger: "schedule",
+          stopReason: "conversion",
+          openApprovals: 0,
+        }),
+      ],
+      nextCursor: null,
+    });
+    const detail = (await (
+      await call("GET", `/agents/${organize}/runs/${runId}`)
+    ).json()) as { verlauf: { type: string }[]; approvals: unknown[] };
+    expect(detail.approvals).toEqual([]);
+    expect(detail.verlauf).toEqual([
+      expect.objectContaining({ type: "start", trigger: "schedule" }),
+      expect.objectContaining({
+        type: "action",
+        step: 1,
+        capability: "createStudyBlocks",
+        action: expect.objectContaining({
+          kind: "studyBlock.create",
+          work: { title: "Klausur Analysis", course: "Analysis I" },
+          start: "2099-01-01T09:00:00.000Z",
+        }),
+        outcome: "done",
+      }),
+      expect.objectContaining({
+        type: "action",
+        capability: "moveOwnStudyBlocks",
+        outcome: "awaiting_approval",
+      }),
+      expect.objectContaining({
+        type: "end",
+        status: "stopped",
+        reason: "conversion",
+      }),
+      expect.objectContaining({ type: "approval", decision: "expired" }),
+    ]);
+
+    // Only the student resumes it, and then it acts again.
+    expect((await call("POST", `/agents/${organize}/resume`)).status).toBe(200);
+    expect(await shown(organize)).toMatchObject({
+      state: "active",
+      pausedBy: null,
+    });
   });
 });

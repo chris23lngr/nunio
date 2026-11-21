@@ -1,4 +1,4 @@
-// Records awaitApproval, ingestSource, responsibilityRun and agentRun (reading only, acting, started by its Schedule, and
+// Records awaitApproval, ingestSource and agentRun (reading only, acting, started by its Schedule, and
 // told to stop) histories for the replay test (src/replay.test.ts). Usage, from apps/worker:
 //   node scripts/record-history.ts [workflows file] [ingestSource history name]
 // RECORD_ONLY=agent-run-stopped (comma-separated names) writes only those, keeping the others as recorded before.
@@ -8,7 +8,7 @@ import { Context } from "@temporalio/activity";
 import { historyToJSON } from "@temporalio/common/proto-utils";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { Worker } from "@temporalio/worker";
-import { approvalDecidedSignal, approvalSignal } from "../src/workflows.ts";
+import { approvalSignal } from "../src/workflows.ts";
 
 const workflowsPath = new URL(
   process.argv[2] ?? "../src/workflows.ts",
@@ -24,7 +24,6 @@ const write = (name: string, history: Parameters<typeof historyToJSON>[0]) => {
   );
   console.log(`wrote ${path.pathname}`);
 };
-let performed = 0;
 const env = await TestWorkflowEnvironment.createLocal();
 try {
   const taskQueue = "record-history";
@@ -40,29 +39,6 @@ try {
           status: "done",
           dropped: { ungrounded: 0, noCourse: 0, aiUseRule: 0 },
         }),
-        // A Run that asks once, is approved, and acts.
-        startRun: async () => "run",
-        proposeActions: async () => [
-          {
-            kind: "studyBlock.move",
-            studyBlockId: "block",
-            start: "2026-12-01T14:00:00.000Z",
-            end: "2026-12-01T15:00:00.000Z",
-          },
-        ],
-        performAction: async () =>
-          performed++ === 0
-            ? {
-                status: "awaiting_approval",
-                actionId: "action",
-                fingerprint: "fingerprint",
-                expiresAt: "2099-01-01T00:00:00.000Z",
-              }
-            : {
-                status: "done",
-                actionId: "action",
-                effect: { studyBlockId: "block" },
-              },
         // An Agent's Run that reads twice, then answers; with Actions, its first step also calls two Action tools.
         // A Run its Schedule starts has no runId from the API.
         startAgentRun: async ({ runId }: { runId?: string }) =>
@@ -111,23 +87,6 @@ try {
   write(
     process.argv[3] ?? "ingest-source",
     await env.client.workflow.getHandle(sourceWorkflowId).fetchHistory(),
-  );
-  const runWorkflowId = `run-${randomUUID()}`;
-  await (await worker()).runUntil(async () => {
-    const handle = await env.client.workflow.start("responsibilityRun", {
-      taskQueue,
-      workflowId: runWorkflowId,
-      args: [{ studentId: "student", responsibilityId: "responsibility" }],
-    });
-    // Signalled once the Run waits, as the API does after the student decides.
-    while (performed === 0)
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    await handle.signal(approvalDecidedSignal, "action");
-    await handle.result();
-  });
-  write(
-    "responsibility-run",
-    await env.client.workflow.getHandle(runWorkflowId).fetchHistory(),
   );
   const agentRunWorkflowId = `agentRun/${randomUUID()}`;
   await (await worker()).runUntil(

@@ -6,7 +6,6 @@ import {
   UnknownInterventionError,
   UnknownNoticeError,
 } from "@nunio/outreach";
-import { scopeNames } from "./agents.js";
 import type { AppBindings } from "./app.js";
 import { ActionShown, describeAction } from "./approvals.js";
 import { body, Done, errors, json, outcomes, student } from "./outcomes.js";
@@ -156,7 +155,7 @@ const Briefing = z
           .nullable()
           .describe("When the Approval request expires; null once gone."),
         agent: z
-          .object({ id: z.string(), preset: z.string(), name: z.string() })
+          .object({ id: z.string(), name: z.string() })
           .nullable()
           .describe(
             "The Agent that asked for Approval, or null for Chat or once deleted.",
@@ -171,17 +170,7 @@ const Briefing = z
     agents: z.array(
       z.object({
         id: z.string(),
-        preset: z
-          .enum(["keep_course_organized", "prepare_for_exam"])
-          .nullable()
-          .describe("Null for a free-text Agent."),
-        name: z
-          .string()
-          .describe(
-            "Empty for a preset Agent, which is named after its scope.",
-          ),
-        course: z.string().nullable(),
-        exam: z.string().nullable(),
+        name: z.string(),
       }),
     ),
     notices: z
@@ -388,28 +377,14 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
                     : null,
                 expiresAt: a?.approval?.expiresAt ?? null,
                 agent: a?.agentId
-                  ? {
-                      id: a.agentId,
-                      preset: ag?.preset ?? "",
-                      name: ag?.name ?? "",
-                    }
+                  ? { id: a.agentId, name: ag?.name ?? "" }
                   : null,
                 state,
               };
             }),
             agents: b.agents.flatMap((id) => {
               const r = delegated.find((x) => x.id === id);
-              if (!r || !review) return [];
-              const { course, exam } = scopeNames(review, r.scope);
-              return [
-                {
-                  id,
-                  preset: r.preset,
-                  name: r.name,
-                  course: course?.title ?? null,
-                  exam: exam?.title ?? null,
-                },
-              ];
+              return r ? [{ id, name: r.name }] : [];
             }),
             artifacts: b.artifacts.map(artifactView),
           })),

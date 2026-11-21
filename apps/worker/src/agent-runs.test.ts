@@ -257,11 +257,8 @@ beforeAll(async () => {
     clock,
     runAlive: workflowAlive(env.client),
     schedules: {
-      create: noSchedule,
       save: async ({ agentId, paused }) =>
         void saved.push(`${agentId}${paused ? " paused" : ""}`),
-      pause: noSchedule,
-      unpause: noSchedule,
       delete: noSchedule,
     },
   });

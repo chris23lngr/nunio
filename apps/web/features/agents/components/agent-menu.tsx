@@ -37,7 +37,6 @@ export function AgentMenu({
   apiOrigin: string;
   agent: {
     id: string;
-    preset: string | null;
     state: "active" | "paused" | "ended";
     /** The oldest of its Runs still awaiting Approval; null when none is. */
     approvalRunId: string | null;
@@ -83,16 +82,7 @@ export function AgentMenu({
             )}
             {row && (
               <DropdownMenuItem
-                // A preset Agent has no Auftrag; its own screen is all there is.
-                render={
-                  <Link
-                    href={
-                      agent.preset
-                        ? `/agents/${agent.id}`
-                        : `/agents/${agent.id}?tab=auftrag`
-                    }
-                  />
-                }
+                render={<Link href={`/agents/${agent.id}?tab=auftrag`} />}
               >
                 <Pencil aria-hidden="true" />
                 Bearbeiten

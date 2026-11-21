@@ -90,8 +90,6 @@ export function causesOf({
     refusal: string | null;
     agentId?: string | null;
     runId?: string | null;
-    /** Its Run waits for its Approval itself, as a preset Agent's does. */
-    runWaits?: boolean;
   }[];
   /** Agents Paused because their Course is Archived; their Actions raise nothing. */
   pausedForArchivedCourse: readonly string[];
@@ -125,7 +123,7 @@ export function causesOf({
         if (
           a.status === "refused" &&
           a.refusal === "approval_expired" &&
-          (!a.runId || a.runWaits)
+          !a.runId
         )
           return [
             { kind: "approval_expired", subject: { kind: "action", id: a.id } },

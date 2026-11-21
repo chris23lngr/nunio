@@ -9,7 +9,7 @@ Standing authority (a Grant) is always attached to a single Agent; there are no 
 
 ## Amendment (2026-11-18): approval modes
 
-Agents replace Responsibilities, and the student sets a mode on each of an Agent's Capabilities that is an Action ([How the approval modes map onto Grants and Approvals](https://github.com/chris23lngr/nunio/issues/144)).
+Agents run on the student's free-text Instructions, and the student sets a mode on each of an Agent's Capabilities that is an Action ([How the approval modes map onto Grants and Approvals](https://github.com/chris23lngr/nunio/issues/144)).
 
 - **Modes.**
   - **Nachfragen:** the Agent holds no Grant for the kind, so every such Action is asked as an Approval.

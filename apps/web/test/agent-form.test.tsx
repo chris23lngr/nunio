@@ -318,7 +318,6 @@ test("Speichern asks for a name and at least one Course before saving", async ()
 
 const agent = {
   id: "a-1",
-  preset: null,
   name: "Klausur Statistik",
   description: "Hält mich auf Kurs.",
   emoji: "📊",
@@ -335,8 +334,6 @@ const agent = {
     { ...offered[1], topics: 12, sources: 3 },
   ],
   capabilities: [{ id: "createStudyBlocks", mode: "automatic" }],
-  course: null,
-  exam: null,
   state: "active",
   pausedBy: null,
   running: false,
@@ -344,8 +341,7 @@ const agent = {
   budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
   trigger: { rhythm: "daily", minute: 360 },
   modelKey: "sonnet-5.5-reasoning-high",
-  recentActions: [],
-  next: { runAt: null, action: null },
+  next: { runAt: null },
 };
 
 test("a saved Agent's form shows its Courses, an Archived one as archived, and Speichern updates the whole form", async () => {
@@ -755,8 +751,9 @@ test("the header's menu pauses, resumes and ends the Agent, and a Paused one sho
 test.each([
   ["course_archived", "Pausiert: Alle Kurse archiviert"],
   ["no_course", "Pausiert: Kein Kurs mehr"],
+  ["conversion", "Übernommen: prüfen und fortsetzen"],
 ])(
-  "a Paused Agent says why under the header when it has no Course left to act for (%s)",
+  "a Paused Agent says why under the header, as when it has no Course left to act for or nunio made it (%s)",
   async (pausedBy, line) => {
     api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
     api.route("GET", "/api/me/agents/a-paused", () =>
@@ -769,31 +766,39 @@ test.each([
   },
 );
 
-test("Fortsetzen says what to do when the Agent has no Course to act for", async () => {
-  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
-  api.route("GET", "/api/me/agents/a-paused", () =>
-    Response.json({
-      ...agent,
-      id: "a-paused",
-      state: "paused",
-      pausedBy: "no_course",
-    }),
-  );
-  api.route("POST", "/api/me/agents/a-paused/resume", () =>
-    Response.json({ error: "no_course" }, { status: 409 }),
-  );
-  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-paused" />);
+test.each([
+  [
+    "no_course",
+    "Dein Agent hat keinen Kurs mehr. Gib ihm einen Kurs, dann setze ihn fort.",
+  ],
+  [
+    "course_archived",
+    "Alle Kurse deines Agenten sind archiviert. Hebe eine Archivierung auf oder gib ihm einen aktiven Kurs, dann setze ihn fort.",
+  ],
+])(
+  "Fortsetzen says what to do when the Agent cannot be resumed (%s)",
+  async (error, message) => {
+    api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+    api.route("GET", "/api/me/agents/a-paused", () =>
+      Response.json({
+        ...agent,
+        id: "a-paused",
+        state: "paused",
+        pausedBy: error,
+      }),
+    );
+    api.route("POST", "/api/me/agents/a-paused/resume", () =>
+      Response.json({ error }, { status: 409 }),
+    );
+    renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-paused" />);
 
-  await userEvent.click(
-    await screen.findByRole("button", { name: "Fortsetzen" }),
-  );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Fortsetzen" }),
+    );
 
-  expect(
-    await screen.findByText(
-      "Dein Agent hat keinen aktiven Kurs, für den er arbeiten kann. Gib ihm einen Kurs oder hebe eine Archivierung auf, dann setze ihn fort.",
-    ),
-  ).toBeTruthy();
-});
+    expect(await screen.findByText(message)).toBeTruthy();
+  },
+);
 
 test("a Paused Agent says it ran out of Budget under the header", async () => {
   api.route("GET", "/api/me/agents/courses", () => Response.json(offered));

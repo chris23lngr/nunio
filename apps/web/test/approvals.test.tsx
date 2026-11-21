@@ -19,7 +19,7 @@ const approval = {
   fingerprint:
     "ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12",
   expiresAt: "2026-11-24T08:00:00.000Z",
-  agent: { id: "r-1", preset: "keep_course_organized" },
+  agent: { id: "r-1", name: "Kurs organisieren · Analysis I" },
 };
 
 test("an Approval card shows the exact Action, and approving confirms exactly the fingerprint shown", async () => {
@@ -47,7 +47,7 @@ test("an Approval card shows the exact Action, and approving confirms exactly th
   });
   expect(within(card).getByText(/Analysis I/)).toBeTruthy();
   expect(
-    within(card).getByText(/Keep this course organized asks/),
+    within(card).getByText(/Kurs organisieren · Analysis I asks/),
   ).toBeTruthy();
   expect(within(card).getByText(/ab12cd34/)).toBeTruthy();
   await userEvent.click(

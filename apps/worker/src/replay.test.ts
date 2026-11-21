@@ -26,8 +26,6 @@ describe("replay", () => {
   it.each([
     "ingest-source-before-extraction",
     "ingest-source",
-    "responsibility-run",
-    "responsibility-run-approval-wakes",
     "agent-run",
     "agent-run-actions",
     "agent-run-scheduled",

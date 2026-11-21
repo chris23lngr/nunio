@@ -71,13 +71,7 @@ const triggerColumns = (trigger: AgentTrigger) => ({
  * Temporal; each call must be idempotent, so a repeated pause or end is harmless.
  */
 export interface Schedules {
-  /** A preset Agent's Schedule: daily at 06:00. */
-  create(r: {
-    agentId: string;
-    studentId: string;
-    timeZone: string;
-  }): Promise<void>;
-  /** A free-text Agent's Schedule, created or brought in line with its trigger, time zone and Paused state. */
+  /** An Agent's Schedule, created or brought in line with its trigger, time zone and Paused state. */
   save(r: {
     agentId: string;
     studentId: string;
@@ -85,33 +79,10 @@ export interface Schedules {
     trigger: AgentTrigger;
     paused: boolean;
   }): Promise<void>;
-  pause(agentId: string): Promise<void>;
-  unpause(agentId: string): Promise<void>;
   delete(agentId: string): Promise<void>;
 }
 
-/** The pilot presets and the Grants each holds on its scope. */
-const presets = {
-  keep_course_organized: ["studyBlock.create", "studyBlock.move"] as Kind[],
-  prepare_for_exam: ["studyBlock.create", "studyBlock.move"] as Kind[],
-};
-export type Preset = keyof typeof presets;
-
-/** What a preset Agent covers: one Course, or one exam. Its Grants and its Runs' proposals take exactly this. */
-export type AgentScope = { courseId: string } | { obligationId: string };
-/** The scope as stored: an exam's row also keeps the exam's Course, for showing. Null for a free-text Agent. */
-const scopeOf = (r: {
-  preset: string | null;
-  courseId: string | null;
-  obligationId: string | null;
-}): AgentScope | null =>
-  !r.preset
-    ? null
-    : r.obligationId
-      ? { obligationId: r.obligationId }
-      : { courseId: r.courseId! };
-
-/** The form a free-text Agent is created and edited with: all of it is saved at once. */
+/** The form an Agent is created and edited with: all of it is saved at once. */
 export type AgentForm = {
   name: string;
   description: string;
@@ -183,13 +154,18 @@ async function checkCourses(
 }
 
 /**
- * Why an Agent is Paused: by the student, by exhausting its Budget, by all its Courses (a preset's one Course) being
- * Archived, or by losing its last Course.
+ * Why an Agent is Paused: by the student, by exhausting its Budget, by all its Courses being Archived, by losing its
+ * last Course, or by nunio when it made the Agent from one of the student's earlier delegations (decision #160).
  */
-export type PausedBy = "student" | "budget" | "course_archived" | "no_course";
+export type PausedBy =
+  | "student"
+  | "budget"
+  | "course_archived"
+  | "no_course"
+  | "conversion";
 
 /**
- * Why a free-text Agent with these Courses has none left to act for: all are Archived, `archiving` counting as Archived
+ * Why an Agent with these Courses has none left to act for: all are Archived, `archiving` counting as Archived
  * already, or it has none. Null while one is in scope.
  */
 function outOfCourses(
@@ -204,15 +180,6 @@ function outOfCourses(
     return null;
   return accepted.length ? "course_archived" : "no_course";
 }
-
-/** nunio no longer acts for an Archived Course, so no Agent on it may run. */
-const isCourseArchived = async (tx: Transaction, courseId: string | null) =>
-  Boolean(
-    courseId &&
-      (await tx.course.findFirst({
-        where: { id: courseId, archivedAt: { not: null } },
-      })),
-  );
 
 /**
  * The one badge an Agent's row shows: Pausiert, Freigabe benötigt (one of its Runs has an open Approval), Läuft
@@ -250,7 +217,6 @@ const runsUnderWay = async (tx: Transaction, agentId: string) =>
     r.workflowId ? [{ runId: r.id, workflowId: r.workflowId }] : [],
   );
 
-/** Ongoing delegations the student owns: records plus the Schedules that start their Runs. */
 /** A Run under way this long may have lost its workflow, such as one terminated, so Temporal is asked about it. */
 const staleRunMs = 10 * 60_000;
 
@@ -261,7 +227,7 @@ export function createAgents({
   runAlive,
 }: {
   db: PrismaClient;
-  /** Needed only to create, pause, resume or end; the worker only starts Runs. */
+  /** Needed only to create, save, pause, resume, end or delete; the worker only starts Runs. */
   schedules?: Schedules;
   clock: Clock;
   /**
@@ -343,7 +309,7 @@ export function createAgents({
       map.set(run.agentId!, run.id);
     return map;
   };
-  /** Brings a free-text Agent's Schedule in line with its row, read under its lock: gone once it is Ended. */
+  /** Brings an Agent's Schedule in line with its row, read under its lock: gone once it is Ended. */
   const saveSchedule = async (
     tx: Transaction,
     r: {
@@ -369,39 +335,10 @@ export function createAgents({
     withOwner(db, p, async (tx) => {
       await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
       const r = await tx.agent.findUnique({ where: { id } });
-      if (!r) return;
-      if (!r.preset) await saveSchedule(tx, r);
-      else if (r.state === "paused") await scheduled().pause(id);
-      else if (r.state === "active") await scheduled().unpause(id);
-      else if (r.state === "ended") await scheduled().delete(id);
+      if (r) await saveSchedule(tx, r);
     });
-  /** Moves a Course's Agents in `from` to a new state, then syncs each one's Schedule after the commit. */
-  const changeForCourse = async (
-    p: Principal,
-    courseId: string,
-    from: "active" | { not: "ended" },
-    to: () =>
-      | { state: "paused"; pausedBy: PausedBy }
-      | { state: "ended"; endedAt: Date },
-  ) => {
-    if (p.kind !== "student") return;
-    const ids = await withOwner(db, p, async (tx) => {
-      const ids = (
-        await tx.agent.findMany({
-          where: { courseId, state: from },
-          select: { id: true },
-        })
-      ).map((r) => r.id);
-      const data = to();
-      await tx.agent.updateMany({ where: { id: { in: ids } }, data });
-      if (data.state === "ended")
-        await tx.grant.deleteMany({ where: { agentId: { in: ids } } });
-      return ids;
-    });
-    for (const id of ids) await syncSchedule(p, id);
-  };
   /**
-   * Brings the student's free-text Agents in line with their Courses (#145): an entry on a merged Course moves to the
+   * Brings the student's Agents in line with their Courses (#145): an entry on a merged Course moves to the
    * Course it went into, one on a Rejected Course or on `dropping` goes, and an active Agent left with no Course to act
    * for is Paused, `course_archived` when all its Courses are Archived (`archiving` counting as Archived already) and
    * `no_course` when it has none. Its open Approvals are withdrawn and, after the commit, its Schedule paused. Only the
@@ -439,7 +376,7 @@ export function createAgents({
       const idle = async (ids?: string[]) =>
         (
           await tx.agent.findMany({
-            where: { preset: null, state: "active", id: { in: ids } },
+            where: { state: "active", id: { in: ids } },
             include: { courses: { include: { course: true } } },
           })
         ).flatMap((r) => {
@@ -466,127 +403,62 @@ export function createAgents({
   };
   return {
     /**
-     * A pilot preset with its Grants and Schedule, or a free-text Agent from its form, with its Grants and the Schedule
-     * of its trigger. If the Schedule cannot be saved, no Agent is recorded.
+     * An Agent from its form, with its Grants and the Schedule of its trigger. If the Schedule cannot be saved, no Agent
+     * is recorded.
      */
     async create(
       p: Principal,
-      input:
-        | ((
-            | { preset: "keep_course_organized"; courseId: string }
-            | { preset: "prepare_for_exam"; obligationId: string }
-          ) & { budgetMicroUsd: number })
-        | (AgentForm & { templateId?: string | null }),
+      input: AgentForm & { templateId?: string | null },
     ) {
       if (p.kind !== "student") return { status: "gone" } as const;
-      if (!("preset" in input))
-        return withOwner(db, p, async (tx, studentId) => {
-          const held = checkCapabilities(input.capabilities);
-          const trigger = checkTrigger(input.trigger);
-          const templateId = input.templateId ?? null;
-          if (
-            !held ||
-            !trigger ||
-            (templateId !== null && !isTemplateId(templateId))
-          )
-            return { status: "invalid" } as const;
-          if (!(await checkModel(input.modelKey)))
-            return { status: "model_unavailable" } as const;
-          const courseIds = await checkCourses(tx, input.courseIds);
-          if (typeof courseIds === "string")
-            return { status: courseIds } as const;
-          const id = randomUUID();
-          const {
-            courseIds: _,
-            capabilities: __,
-            trigger: ___,
-            templateId: ____,
-            ...fields
-          } = input;
-          const agent = await tx.agent.create({
-            data: {
-              id,
-              studentId,
-              templateId,
-              ...fields,
-              ...triggerColumns(trigger),
-            },
-          });
-          await tx.agentCourse.createMany({
-            data: courseIds.map((courseId) => ({
-              agentId: id,
-              courseId,
-              studentId,
-            })),
-          });
-          await saveCapabilities(tx, agent, held);
-          await saveSchedule(tx, agent);
-          return { status: "ok", id } as const;
-        });
       return withOwner(db, p, async (tx, studentId) => {
-        // The scope, and the Course stored beside it: the Course itself, or the exam's.
-        const found =
-          input.preset === "keep_course_organized"
-            ? (await tx.course.findFirst({
-                where: { id: input.courseId, status: { not: "merged" } },
-              }))
-              ? {
-                  scope: { courseId: input.courseId },
-                  courseId: input.courseId,
-                }
-              : null
-            : await tx.obligation
-                .findFirst({
-                  where: {
-                    id: input.obligationId,
-                    kind: "exam",
-                    state: { not: "rejected" },
-                    course: { status: { notIn: ["merged", "rejected"] } },
-                  },
-                })
-                .then((o) =>
-                  o
-                    ? { scope: { obligationId: o.id }, courseId: o.courseId }
-                    : null,
-                );
-        if (!found) return { status: "gone" } as const;
-        if (await isCourseArchived(tx, found.courseId))
-          return { status: "course_archived" } as const;
-        const { scope } = found;
+        const held = checkCapabilities(input.capabilities);
+        const trigger = checkTrigger(input.trigger);
+        const templateId = input.templateId ?? null;
+        if (
+          !held ||
+          !trigger ||
+          (templateId !== null && !isTemplateId(templateId))
+        )
+          return { status: "invalid" } as const;
+        if (!(await checkModel(input.modelKey)))
+          return { status: "model_unavailable" } as const;
+        const courseIds = await checkCourses(tx, input.courseIds);
+        if (typeof courseIds === "string")
+          return { status: courseIds } as const;
         const id = randomUUID();
-        await tx.agent.create({
+        const {
+          courseIds: _,
+          capabilities: __,
+          trigger: ___,
+          templateId: ____,
+          ...fields
+        } = input;
+        const agent = await tx.agent.create({
           data: {
             id,
             studentId,
-            preset: input.preset,
-            courseId: found.courseId,
-            obligationId: "obligationId" in scope ? scope.obligationId : null,
-            budgetMicroUsd: input.budgetMicroUsd,
+            templateId,
+            ...fields,
+            ...triggerColumns(trigger),
           },
         });
-        await tx.grant.createMany({
-          data: presets[input.preset].map((kind) => ({
-            id: randomUUID(),
-            studentId,
+        await tx.agentCourse.createMany({
+          data: courseIds.map((courseId) => ({
             agentId: id,
-            kind,
-            ...scope,
+            courseId,
+            studentId,
           })),
         });
-        // Inside the transaction: if the Schedule cannot be created, no Agent is recorded.
-        await scheduled().create({
-          agentId: id,
-          studentId,
-          timeZone: await timeZoneOf(tx),
-        });
+        await saveCapabilities(tx, agent, held);
+        await saveSchedule(tx, agent);
         return { status: "ok", id } as const;
       });
     },
 
     /**
-     * Saves a free-text Agent's whole form; its next Run reads it, and its Schedule follows its trigger. Its Courses may
-     * keep one that was Archived since, pausing it once all are, and it may keep a Model Chat no longer offers. A preset
-     * Agent has no form until the Agents cutover converts it, so it is "invalid".
+     * Saves an Agent's whole form; its next Run reads it, and its Schedule follows its trigger. Its Courses may keep one
+     * that was Archived since, pausing it once all are, and it may keep a Model Chat no longer offers.
      */
     async update(p: Principal, id: string, form: AgentForm) {
       if (p.kind !== "student") return { status: "gone" } as const;
@@ -598,7 +470,6 @@ export function createAgents({
           include: { courses: true },
         });
         if (!r) return { status: "gone" } as const;
-        if (r.preset) return { status: "invalid" } as const;
         const held = checkCapabilities(form.capabilities);
         const trigger = checkTrigger(form.trigger);
         if (!held || !trigger) return { status: "invalid" } as const;
@@ -643,20 +514,28 @@ export function createAgents({
     },
 
     /**
-     * Brings the Schedule of every free-text Agent not Ended in line with its trigger, as the worker starts: Agents
-     * saved before they had a trigger have none yet. Safe to repeat; one Agent's failure leaves the others' to go on.
+     * Brings the Schedule of every Agent not Ended in line with its trigger, as the worker starts: one whose Schedule is
+     * missing or out of date gets it. Safe to repeat. One Agent's failure leaves the others' to go on, and then it
+     * rejects, so the worker does not start while an Agent may have no Schedule.
      */
     async saveSchedules() {
       const found = await db.$queryRaw<
         { agentId: string; studentId: string }[]
       >`SELECT "agentId", "studentId" FROM scheduled_agents()`;
+      const failed: unknown[] = [];
       for (const { agentId, studentId } of found) {
         try {
           await syncSchedule(mint.fromSession({ studentId }), agentId);
         } catch (error) {
           console.error("Could not save an Agent's Schedule", error);
+          failed.push(error);
         }
       }
+      if (failed.length)
+        throw new AggregateError(
+          failed,
+          `Could not save ${failed.length} Agents' Schedules`,
+        );
     },
 
     /**
@@ -698,7 +577,7 @@ export function createAgents({
 
     /**
      * Only the student resumes a Paused Agent, whoever paused it, and only while it has a Course to act for: not while
-     * all its Courses (a preset's one) are Archived, nor while it has none.
+     * all its Courses are Archived, nor while it has none.
      */
     async resume(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
@@ -707,10 +586,7 @@ export function createAgents({
           where: { id },
           include: { courses: { include: { course: true } } },
         });
-        if (r && (await isCourseArchived(tx, r.courseId)))
-          return "course_archived";
-        const out =
-          r?.state === "paused" && !r.preset && outOfCourses(r.courses);
+        const out = r?.state === "paused" && outOfCourses(r.courses);
         if (out) return out;
         await tx.agent.updateMany({
           where: { id, state: "paused" },
@@ -753,8 +629,8 @@ export function createAgents({
 
     /**
      * Removes the Agent for good, with its Grants, Courses, Capabilities and Activity (its Runs and their Actions), and
-     * its Schedule. If the Schedule cannot be deleted, nothing is. Returns the workflows that may still run for it, a
-     * free-text Run under way or a preset's Run waiting on an Approval, for the caller to cancel.
+     * its Schedule. If the Schedule cannot be deleted, nothing is. Returns the workflows of its Runs under way, for the
+     * caller to cancel.
      */
     async delete(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
@@ -767,13 +643,7 @@ export function createAgents({
             where: {
               agentId: id,
               workflowId: { not: null },
-              OR: [
-                { status: "running" },
-                {
-                  status: null,
-                  actions: { some: { status: "awaiting_approval" } },
-                },
-              ],
+              status: "running",
             },
             select: { workflowId: true },
           })
@@ -786,33 +656,19 @@ export function createAgents({
     },
 
     /**
-     * As a Course is being Archived: a preset Agent on it is Paused, and a free-text Agent only once all its Courses
-     * are Archived; until then it keeps working for the others. Only the student resumes them.
+     * As a Course is being Archived: an Agent on it is Paused only once all its Courses are Archived; until then it
+     * keeps working for the others. Only the student resumes it.
      */
-    async pauseForCourse(p: Principal, courseId: string) {
-      await changeForCourse(p, courseId, "active", () => ({
-        state: "paused",
-        pausedBy: "course_archived",
-      }));
-      await settleCourses(p, { archiving: courseId });
-    },
+    pauseForCourse: (p: Principal, courseId: string) =>
+      settleCourses(p, { archiving: courseId }),
+
+    /** As a Course is being deleted: it leaves every Agent's Courses, and one left with none is Paused (ADR-0015). */
+    dropCourse: (p: Principal, courseId: string) =>
+      settleCourses(p, { dropping: courseId }),
 
     /**
-     * As a Course is being deleted: it leaves every free-text Agent's Courses, and one left with none is Paused. A
-     * preset Agent on it is Ended until the Agents cutover: its Grants go and its history remains.
-     */
-    async dropCourse(p: Principal, courseId: string) {
-      await changeForCourse(p, courseId, { not: "ended" }, () => ({
-        state: "ended",
-        endedAt: clock.now(),
-      }));
-      await settleCourses(p, { dropping: courseId });
-    },
-
-    /**
-     * Once a Course is Rejected or merged: it leaves every free-text Agent's Courses, a merged one for the Course it
-     * went into, and an Agent left with no Course to act for is Paused. A preset Agent keeps its Course until the
-     * Agents cutover.
+     * Once a Course is Rejected or merged: it leaves every Agent's Courses, a merged one for the Course it went into,
+     * and an Agent left with no Course to act for is Paused.
      */
     followCourses: (p: Principal) => settleCourses(p),
 
@@ -841,11 +697,9 @@ export function createAgents({
             const state = r.state as "active" | "paused" | "ended";
             return {
               id: r.id,
-              preset: r.preset as Preset | null,
               name: r.name,
               description: r.description,
               emoji: r.emoji,
-              scope: scopeOf(r),
               state,
               pausedBy: r.pausedBy as PausedBy | null,
               badge: badgeOf(state, asking.has(r.id), running.has(r.id)),
@@ -879,7 +733,7 @@ export function createAgents({
       }));
     },
 
-    /** Its form, scope, state, Grants, and usage against its Budget; null when it is not the student's. */
+    /** Its form, state, Grants, and usage against its Budget; null when it is not the student's. */
     async view(p: Principal, id: string) {
       await failDeadRuns(p, id);
       return withOwner(db, p, async (tx) => {
@@ -899,7 +753,6 @@ export function createAgents({
         const asking = await oldestAsking(tx, id);
         return {
           id: r.id,
-          preset: r.preset as Preset | null,
           templateId: r.templateId,
           name: r.name,
           description: r.description,
@@ -924,18 +777,13 @@ export function createAgents({
           ),
           trigger: triggerOf(r),
           modelKey: r.modelKey,
-          scope: scopeOf(r),
           state: r.state as "active" | "paused" | "ended",
           pausedBy: r.pausedBy as PausedBy | null,
           /** One of its Runs is under way. */
           running: Boolean(running),
           /** The oldest of its Runs still awaiting Approval, which Freigaben bestätigen opens; null when none. */
           approvalRunId: asking.get(id) ?? null,
-          grants: r.grants.map((g) => ({
-            kind: g.kind as Kind,
-            courseId: g.courseId,
-            obligationId: g.obligationId,
-          })),
+          grants: r.grants.map((g) => ({ kind: g.kind as Kind })),
           /** This month's: what it used is counted from 00:00 on the 1st in the Plan's time zone. */
           budget: {
             limitMicroUsd: Number(r.budgetMicroUsd),
@@ -946,21 +794,10 @@ export function createAgents({
       });
     },
 
-    /** The scope of the Agent a Run belongs to; null for a Run without one. */
-    async scopeOfRun(runId: string): Promise<AgentScope | null> {
-      return withOwner(db, mint.fromRun(runId), async (tx) => {
-        const run = await tx.run.findUnique({
-          where: { id: runId },
-          include: { agent: true },
-        });
-        return run?.agent ? scopeOf(run.agent) : null;
-      });
-    },
-
     /**
      * Records a Run of an active Agent as its Schedule fires, or takes up the one the student started now, and
-     * snapshots a free-text Agent's configuration for it. Null when the Agent is not active, or when a free-text
-     * Agent's other Run is still running: one Run at a time.
+     * snapshots the Agent's configuration for it. Null when the Agent is not active, or when its other Run is still
+     * running: one Run at a time.
      */
     async startRun({
       studentId,
@@ -972,7 +809,7 @@ export function createAgents({
       agentId: string;
       /** Stable across retries of the workflow's startup Activity. */
       runId: string;
-      /** The workflow to signal once the student decides on one of the Run's Actions. */
+      /** The workflow running it, which the API stops or cancels. */
       workflowId: string;
     }) {
       const p = mint.fromSession({ studentId });
@@ -1006,10 +843,7 @@ export function createAgents({
           return existing.id;
         }
         if (agent?.state !== "active") return null;
-        if (
-          !agent.preset &&
-          (await tx.run.findFirst({ where: { agentId, status: "running" } }))
-        )
+        if (await tx.run.findFirst({ where: { agentId, status: "running" } }))
           return null;
         const run = await tx.run.create({
           data: {
@@ -1017,9 +851,9 @@ export function createAgents({
             studentId,
             agentId,
             workflowId,
-            ...(agent.preset
-              ? {}
-              : { status: "running", trigger: "schedule", ...snapshot }),
+            status: "running",
+            trigger: "schedule",
+            ...snapshot,
           },
         });
         return run.id;
@@ -1027,22 +861,21 @@ export function createAgents({
     },
 
     /**
-     * Records a Run of a free-text Agent that the student starts now, for the caller to start its workflow. Refused
-     * while one of its Runs is running, or while it is Paused or Ended; a preset Agent has no such Run ("invalid").
+     * Records a Run of an Agent that the student starts now, for the caller to start its workflow. Refused while one of
+     * its Runs is running, or while it is Paused or Ended.
      */
     async requestRun(
       p: Principal,
       id: string,
     ): Promise<
       | { status: "ok"; runId: string; workflowId: string }
-      | { status: "gone" | "invalid" | "running" | "paused" | "ended" }
+      | { status: "gone" | "running" | "paused" | "ended" }
     > {
       if (p.kind !== "student") return { status: "gone" };
       return withOwner(db, p, async (tx, studentId) => {
         await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
         const agent = await tx.agent.findUnique({ where: { id } });
         if (!agent) return { status: "gone" };
-        if (agent.preset) return { status: "invalid" };
         if (agent.state !== "active") return { status: agent.state };
         if (
           await tx.run.findFirst({ where: { agentId: id, status: "running" } })

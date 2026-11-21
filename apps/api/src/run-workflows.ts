@@ -6,16 +6,8 @@ import {
 import { payloadCodecFromEnv } from "@nunio/keys";
 import { Client, Connection, WorkflowNotFoundError } from "@temporalio/client";
 
-/**
- * The Temporal side of Runs as the API needs it: waking a Run once the student decided on one of its Actions, and
- * starting, stopping and checking on a free-text Agent's Runs.
- */
+/** The Temporal side of Runs as the API needs it: starting, stopping and checking on an Agent's Runs. */
 export interface RunWorkflows {
-  /** Carries no authority: the decision is already recorded through the gate; the Run only asks the gate again. */
-  signalDecided(
-    run: { workflowId: string; runId: string },
-    actionId: string,
-  ): Promise<void>;
   /** Starts the workflow of a free-text Agent's Run that the student started now and the API already recorded. */
   startAgentRun(run: {
     studentId: string;
@@ -37,7 +29,6 @@ export interface RunWorkflows {
   cancelRun(workflowId: string): Promise<void>;
 }
 
-/** Signals by workflow and run ID, so a decision never reaches another Run of the same Agent. */
 export function createRunWorkflows({
   client,
   taskQueue,
@@ -46,11 +37,6 @@ export function createRunWorkflows({
   taskQueue: string;
 }): RunWorkflows {
   return {
-    async signalDecided({ workflowId, runId }, actionId) {
-      await client.workflow
-        .getHandle(workflowId, runId)
-        .signal("approvalDecided", actionId);
-    },
     // One workflow per Run (ADR-0006), under the ID the Run was recorded with.
     async startAgentRun({ studentId, agentId, runId, workflowId }) {
       await client.workflow.start("agentRun", {
@@ -116,10 +102,6 @@ export function runWorkflowsFromEnv(env: NodeJS.ProcessEnv) {
   const runWorkflowsOf = (client: Client) =>
     createRunWorkflows({ client, taskQueue: required("TEMPORAL_TASK_QUEUE") });
   const runWorkflows: RunWorkflows = {
-    signalDecided: (run, actionId) =>
-      withClient((client) =>
-        runWorkflowsOf(client).signalDecided(run, actionId),
-      ),
     startAgentRun: (run) =>
       withClient((client) => runWorkflowsOf(client).startAgentRun(run)),
     stopAgentRun: (workflowId, reason) =>
@@ -132,10 +114,7 @@ export function runWorkflowsFromEnv(env: NodeJS.ProcessEnv) {
       withClient((client) => runWorkflowsOf(client).cancelRun(workflowId)),
   };
   const schedules: Schedules = {
-    create: (r) => withClient((client) => schedulesOf(client).create(r)),
     save: (r) => withClient((client) => schedulesOf(client).save(r)),
-    pause: (id) => withClient((client) => schedulesOf(client).pause(id)),
-    unpause: (id) => withClient((client) => schedulesOf(client).unpause(id)),
     delete: (id) => withClient((client) => schedulesOf(client).delete(id)),
   };
   return { runWorkflows, schedules };

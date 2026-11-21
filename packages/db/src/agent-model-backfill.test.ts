@@ -39,13 +39,15 @@ describe("the Agent Model backfill", () => {
         email: `${studentId}@example.com`,
       },
     });
-    const agent = (data: { preset?: string; state?: "ended" }) =>
+    const agent = (data: { state?: "ended" }) =>
       admin.agent.create({
         data: { id: randomUUID(), studentId, budgetMicroUsd: 1, ...data },
       });
     const freeText = await agent({});
     const ended = await agent({ state: "ended" });
-    const preset = await agent({ preset: "keep_course_organized" });
+    const preset = await agent({});
+    // The column the Agents cutover empties, as a preset had it then.
+    await admin.$executeRaw`UPDATE "agent" SET "preset" = 'keep_course_organized' WHERE "id" = ${preset.id}`;
 
     await admin.$executeRawUnsafe(backfill);
 

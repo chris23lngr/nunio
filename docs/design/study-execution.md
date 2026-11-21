@@ -397,7 +397,7 @@ Through the `Artifacts`, `Understanding` and `Facts` interfaces over real Postgr
 
 - Attempts and Own Work are typed text. A photo of handwritten work needs a vision model and the Source quarantine path, and waits for pilot demand.
 - nunio cannot tell an old exam from a problem sheet still to be handed in. A practice set quoting from a graded sheet whose AI-use Rule forbids AI gets no check; the request UI says so.
-- The exam preset (Phase 9) still proposes only the Rebalance. Practice sets inside an Agent's Runs, and Topic coverage, are left for later.
+- An Agent's Run may start one Artifact Run with Karteikarten or Übungsaufgaben erstellen (#186). Topic coverage is left for later.
 - External grades are Evidence for a Course (GLOSSARY.md) but are not recorded yet.
 - Feedback is a model's judgment. The student can answer the item again, but can't set a verdict aside.
 - _Solid_ needs two correct Attempts in a row, so one good answer still shows _shaky_.

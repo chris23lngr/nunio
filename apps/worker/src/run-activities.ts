@@ -1,125 +1,31 @@
-// Run Activities: all I/O of an Agent's Run. Every Action goes through the gate, never around it.
-import { randomUUID } from "node:crypto";
-import type { PrismaClient } from "@nunio/db";
+// Run Activities: the reconcile, outreach and Routine ticks. Every Action goes through the gate, never around it.
 import { createPool, createPrismaClient } from "@nunio/db";
-import type {
-  ActionIntent,
-  ActionOutcome,
-  Agents,
-  DecisionNotifier,
-  Delegation,
-} from "@nunio/delegation";
-import {
-  createAgents,
-  createDelegation,
-  principal,
-  withOwner,
-} from "@nunio/delegation";
+import type { Delegation } from "@nunio/delegation";
+import { createAgents, createDelegation, principal } from "@nunio/delegation";
 // The mailer alone: the package root also loads Better Auth, which the worker image does not carry.
 import { createScalewayMailer } from "@nunio/identity/email";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import { createFacts } from "@nunio/knowledge";
-import { createOutreachSender, createWebPusher, keyOf } from "@nunio/outreach";
+import { createOutreachSender, createWebPusher } from "@nunio/outreach";
 import { createPlan, createPlanExecutor, planRules } from "@nunio/planning";
-import { Context } from "@temporalio/activity";
-
-// What an Agent's Schedule passes its Run. The field keeps the old name until the Agents cutover reschedules every Agent.
-export interface RunRef {
-  studentId: string;
-  responsibilityId: string;
-}
-
-/** Dates cross Temporal as ISO strings; the gate takes Dates. Runs propose only Study Blocks, which have them. */
-const revive = (intent: ActionIntent): ActionIntent =>
-  "start" in intent
-    ? { ...intent, start: new Date(intent.start), end: new Date(intent.end) }
-    : intent;
 
 export function createRunActivities({
-  db,
   delegation,
-  agents,
-  propose,
-  notifyDecision,
 }: {
-  db: PrismaClient;
-  notifyDecision: DecisionNotifier;
   delegation: Delegation;
-  agents: Agents;
-  /** The Agent's preset: the Actions this Run should take now. */
-  propose: (runId: string) => Promise<ActionIntent[]>;
 }) {
   return {
-    async startRun({
-      studentId,
-      responsibilityId,
-    }: RunRef): Promise<string | null> {
-      return agents.startRun({
-        studentId,
-        agentId: responsibilityId,
-        runId: Context.current().info.workflowExecution!.runId,
-        workflowId: Context.current().info.workflowExecution!.workflowId,
-      });
-    },
-    async proposeActions(runId: string): Promise<ActionIntent[]> {
-      return propose(runId);
-    },
-    async performAction({
-      runId,
-      key,
-      intent,
-    }: {
-      runId: string;
-      key: string;
-      intent: ActionIntent;
-    }): Promise<ActionOutcome> {
-      return delegation.perform(principal.fromRun(runId), {
-        key,
-        intent: revive(intent),
-      });
-    },
-    /** Recovers in-flight dispatches and decision wakes a dead API or worker left behind. */
+    /** Recovers in-flight dispatches a dead API or worker left behind. */
     async reconcileActions(): Promise<number> {
-      return delegation.reconcile(notifyDecision);
-    },
-    /** Interventions are not Actions: raised outside the gate, once per Action however often this is retried. */
-    async raiseIntervention({
-      runId,
-      actionId,
-      kind,
-    }: {
-      runId: string;
-      actionId: string;
-      kind: "approval_expired" | "unconfirmed";
-    }) {
-      await withOwner(db, principal.fromRun(runId), (tx, studentId) =>
-        tx.intervention.createMany({
-          data: [
-            {
-              id: randomUUID(),
-              studentId,
-              kind,
-              actionId,
-              dedupeKey: keyOf({
-                kind,
-                subject: { kind: "action", id: actionId },
-              }),
-            },
-          ],
-          skipDuplicates: true,
-        }),
-      );
+      return delegation.reconcile();
     },
   };
 }
 
 export type RunActivities = ReturnType<typeof createRunActivities>;
 
-/** The Run Activities as the worker runs them: the real gate over the Plan executor, and the presets over the Plan. */
-export function runActivitiesFromEnv(
-  env: NodeJS.ProcessEnv,
-  notifyDecision: DecisionNotifier,
-) {
+/** The Run Activities as the worker runs them: the real gate over the Plan executor, and the ticks over the Plan. */
+export function runActivitiesFromEnv(env: NodeJS.ProcessEnv) {
   const missing = [
     "DATABASE_URL",
     "SOURCE_KEY_VERSION",
@@ -170,21 +76,10 @@ export function runActivitiesFromEnv(
     }),
     inboxUrl: `${env.APP_ORIGIN}/inbox`,
   });
-  /** Each preset's Actions: the Rebalance of the Agent's Course, or of its one exam. */
-  const propose = async (runId: string) => {
-    const scope = await agents.scopeOfRun(runId);
-    return scope ? plan.intentsFor(principal.fromRun(runId), scope) : [];
-  };
 
   return {
     activities: {
-      ...createRunActivities({
-        db,
-        delegation,
-        agents,
-        propose,
-        notifyDecision,
-      }),
+      ...createRunActivities({ delegation }),
       /** Interventions are not Actions: raised and lapsed from their causes, outside the gate. */
       tickOutreach: () => outreach.tick(),
       /** A Routine's Tasks are the student's own planning, not Actions, so they are added outside the gate (ADR-0022). */

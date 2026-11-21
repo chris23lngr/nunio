@@ -24,7 +24,7 @@ We decided to close this gap for all Course work without an Obligation, with lec
 - **Routines.** The student sets a Routine for each Event Series, either when confirming the series or later on the Course page. A Routine gives the minutes for Preparation, Follow-up or both.
   - Every day, and whenever a Routine or series changes, nunio adds Preparations and Follow-ups for Course Events in the next 14 days. Their Estimates come from the Routine and count as the student's own.
   - Adding these Tasks is the student's own planning, not an Action.
-  - Their Study Blocks are planned like any other: by Rebalance within the Grants of `keep_course_organized`, or else as proposals for Approval.
+  - Their Study Blocks are planned like any other: by an Agent within its Grants, or else as proposals for Approval.
 - **Changes.**
   - **Changing a Routine:** only open Tasks with no past Study Block follow the change, and a Task whose Estimate the student set themselves keeps it.
   - **Moving a Course Event:** its Tasks' windows move with it.
@@ -53,7 +53,7 @@ We decided to close this gap for all Course work without an Obligation, with lec
 
 ## Amendment (2026-11-18): Agents create Tasks
 
-Agents replace Responsibilities, and an Agent may now create Tasks ([Which Task tools an Agent gets](https://github.com/chris23lngr/nunio/issues/154)). This lifts "asked from a Chat only" for `task.create`. `task.reopen` stays as decided above.
+An Agent may now create Tasks ([Which Task tools an Agent gets](https://github.com/chris23lngr/nunio/issues/154)). This lifts "asked from a Chat only" for `task.create`. `task.reopen` stays as decided above.
 
 - **Aufgaben erstellen** (`task.create`) is an Agent's only Task tool. It creates one of the following:
   - a Task in one of the Agent's Courses, such as "Thema X wiederholen";

@@ -60,12 +60,22 @@ describe("bringing existing Agents in line with their Courses", () => {
     };
     const agent = async (
       courseIds: string[],
-      data: { preset?: string; state?: "paused"; pausedBy?: string } = {},
+      {
+        preset,
+        ...data
+      }: {
+        preset?: string;
+        state?: "paused";
+        pausedBy?: string;
+      } = {},
     ) => {
       const id = randomUUID();
       await admin.agent.create({
         data: { id, studentId, budgetMicroUsd: 1_000_000, ...data },
       });
+      // The column the Agents cutover empties, as a preset had it then.
+      if (preset)
+        await admin.$executeRaw`UPDATE "agent" SET "preset" = ${preset} WHERE "id" = ${id}`;
       await admin.agentCourse.createMany({
         data: courseIds.map((courseId) => ({
           agentId: id,

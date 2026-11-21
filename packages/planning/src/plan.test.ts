@@ -1608,64 +1608,6 @@ it("serves Fixed Events to the planning scope as operational Facts, apart from c
   expect((await reader.cite(p, [ref])).get(ref)).toBe("gone");
 });
 
-it("proposes, for one Course, the Rebalance of that Course's work as Actions for the gate", async () => {
-  now = at("2026-11-09 08:00");
-  const p = await student();
-  const analysis = await obligation(p, "Blatt 3", "2026-11-11", "12:00");
-  const other = await facts.enterObligation(p, {
-    course: { title: "Physik I", code: "PH-101" },
-    kind: "assignment",
-    title: "Übung 2",
-    due: { date: "2026-11-12", time: "12:00", timeZone: null },
-    destination: null,
-  });
-  if (other.status !== "ok") throw new Error(other.status);
-  await plan.estimate(p, { kind: "obligation", id: analysis }, 60);
-  await plan.estimate(p, { kind: "obligation", id: other.id }, 60);
-  const courseId = (await plan.view(p)).obligations.find(
-    (o) => o.id === analysis,
-  )!.courseId;
-
-  expect(await plan.intentsFor(p, { courseId })).toEqual([
-    {
-      kind: "studyBlock.create",
-      workId: analysis,
-      start: at("2026-11-09 09:00"),
-      end: at("2026-11-09 10:00"),
-    },
-  ]);
-});
-
-it("proposes, for one exam, the Rebalance of that exam and its Tasks only", async () => {
-  now = at("2026-11-09 08:00");
-  const p = await student();
-  const sheet = await obligation(p, "Blatt 3", "2026-11-11", "12:00");
-  const klausur = await facts.enterObligation(p, {
-    course: { title: "Analysis I", code: "MA-101" },
-    kind: "exam",
-    title: "Klausur",
-    due: { date: "2026-11-13", time: "10:00", timeZone: null },
-    destination: null,
-  });
-  if (klausur.status !== "ok") throw new Error(klausur.status);
-  const task = await plan.addTask(p, {
-    title: "Altklausur 2025",
-    obligationId: klausur.id,
-  });
-  if (task.status !== "ok") throw new Error(task.status);
-  await plan.estimate(p, { kind: "obligation", id: sheet }, 60);
-  await plan.estimate(p, { kind: "task", id: task.id }, 60);
-
-  expect(await plan.intentsFor(p, { obligationId: klausur.id })).toEqual([
-    {
-      kind: "studyBlock.create",
-      workId: task.id,
-      start: expect.any(Date),
-      end: expect.any(Date),
-    },
-  ]);
-});
-
 it("stops planning work the student reported as handed in, while still showing it", async () => {
   now = at("2026-11-09 08:00");
   const p = await student();
@@ -1789,41 +1731,6 @@ it("keeps a Task in a Course, which the Course's daily limit, Archiving and dele
 
   await courses.delete(p, courseId);
   expect(await admin.task.findUnique({ where: { id: task.id } })).toBeNull();
-});
-
-it("proposes, for one Course, moving the block of a Task in that Course as an Action for the gate", async () => {
-  now = at("2026-11-09 08:00");
-  const p = await student();
-  const sheet = await obligation(p, "Blatt 3", "2026-11-20", "12:00");
-  const { courseId } = await admin.obligation.findUniqueOrThrow({
-    where: { id: sheet },
-  });
-  const task = await plan.addTask(p, {
-    title: "VL 3 nacharbeiten",
-    obligationId: null,
-    courseId,
-  });
-  if (task.status !== "ok") throw new Error(task.status);
-  const placed = await plan.placeBlock(p, {
-    work: { kind: "task", id: task.id },
-    start: at("2026-11-10 09:00"),
-    end: at("2026-11-10 10:00"),
-  });
-  if (placed.status !== "ok") throw new Error(placed.status);
-  await plan.addFixedEvent(p, {
-    title: "Sprechstunde",
-    start: at("2026-11-10 09:00"),
-    end: at("2026-11-10 10:00"),
-  });
-
-  expect(await plan.intentsFor(p, { courseId })).toEqual([
-    {
-      kind: "studyBlock.move",
-      studyBlockId: placed.id,
-      start: expect.any(Date),
-      end: expect.any(Date),
-    },
-  ]);
 });
 
 it("refuses a proposed Study Block in the past, in Protected Time, over a Fixed Event or another block, and a move of a Locked one", async () => {

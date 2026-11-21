@@ -4,7 +4,6 @@ import type { paths } from "@nunio/api-client";
 import { createApiClient } from "@nunio/api-client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { nameOf } from "@/features/agents/name";
 import {
   hours,
   overlapReasons,
@@ -192,14 +191,8 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
                 </li>
               ) : (
                 <li key={item.id}>
-                  <Link href={`/agents/${item.id}`}>
-                    {nameOf({
-                      name: item.name,
-                      course: item.course ? { title: item.course } : null,
-                      exam: item.exam ? { title: item.exam } : null,
-                    })}
-                  </Link>{" "}
-                  ({item.state})
+                  <Link href={`/agents/${item.id}`}>{item.name}</Link> (
+                  {item.state})
                 </li>
               ),
             )}
