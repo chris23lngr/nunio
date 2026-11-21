@@ -707,6 +707,49 @@ test("the header's menu pauses, resumes and ends the Agent, and a Paused one sho
   expect(controls).toEqual(["pause", "resume", "end"]);
 });
 
+test.each([
+  ["course_archived", "Pausiert: Alle Kurse archiviert"],
+  ["no_course", "Pausiert: Kein Kurs mehr"],
+])(
+  "a Paused Agent says why under the header when it has no Course left to act for (%s)",
+  async (pausedBy, line) => {
+    api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+    api.route("GET", "/api/me/agents/a-paused", () =>
+      Response.json({ ...agent, id: "a-paused", state: "paused", pausedBy }),
+    );
+    renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-paused" />);
+
+    expect(await screen.findByText(line)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Fortsetzen" })).toBeTruthy();
+  },
+);
+
+test("Fortsetzen says what to do when the Agent has no Course to act for", async () => {
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("GET", "/api/me/agents/a-paused", () =>
+    Response.json({
+      ...agent,
+      id: "a-paused",
+      state: "paused",
+      pausedBy: "no_course",
+    }),
+  );
+  api.route("POST", "/api/me/agents/a-paused/resume", () =>
+    Response.json({ error: "no_course" }, { status: 409 }),
+  );
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-paused" />);
+
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Fortsetzen" }),
+  );
+
+  expect(
+    await screen.findByText(
+      "Dein Agent hat keinen aktiven Kurs, für den er arbeiten kann. Gib ihm einen Kurs oder hebe eine Archivierung auf, dann setze ihn fort.",
+    ),
+  ).toBeTruthy();
+});
+
 test("a Paused Agent says it ran out of Budget under the header", async () => {
   api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
   api.route("GET", "/api/me/agents/a-paused", () =>
