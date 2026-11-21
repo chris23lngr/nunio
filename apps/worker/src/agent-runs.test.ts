@@ -664,6 +664,81 @@ describe("an Agent's Run", () => {
     ).toBe(0);
   });
 
+  /** Runs a Run of the Agent as its Schedule starts one: with no Run recorded beforehand. */
+  async function fromSchedule(
+    s: Awaited<ReturnType<typeof requested>>,
+    activities = createAgentRunActivities(runs),
+    workflowId = `agentRun/${s.agentId}-${randomUUID()}`,
+  ) {
+    const worker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities,
+    });
+    return worker.runUntil(
+      env.client.workflow.execute("agentRun", {
+        taskQueue,
+        workflowId,
+        args: [{ studentId: s.studentId, agentId: s.agentId }],
+      }),
+    );
+  }
+  const scheduledRuns = (agentId: string) =>
+    admin.run.findMany({
+      where: { agentId, trigger: "schedule" },
+      select: { status: true, stopReason: true },
+    });
+
+  it("records a Run its Schedule starts with the trigger schedule, and runs it to its end", async () => {
+    const s = await started();
+    await agents.failRun(s.p, s.runId);
+
+    expect(await fromSchedule(s)).toEqual({ status: "done" });
+
+    expect(await scheduledRuns(s.agentId)).toEqual([
+      { status: "done", stopReason: null },
+    ]);
+  });
+
+  it("records no Run when its Schedule fires while another Run is under way, or while the Agent is Paused", async () => {
+    const s = await started();
+
+    expect(await fromSchedule(s)).toEqual({ status: "skipped" });
+    await agents.failRun(s.p, s.runId);
+    await agents.pause(s.p, s.agentId);
+    expect(await fromSchedule(s)).toEqual({ status: "skipped" });
+
+    expect(await scheduledRuns(s.agentId)).toEqual([]);
+    expect(prompts).toHaveLength(0);
+  });
+
+  it("ends a Run its Schedule started as stopped when its workflow is cancelled while the Run is recorded", async () => {
+    const s = await started();
+    await agents.failRun(s.p, s.runId);
+    const workflowId = `agentRun/${s.agentId}-${randomUUID()}`;
+    const activities = createAgentRunActivities(runs);
+    const start = activities.startAgentRun;
+    activities.startAgentRun = async (ref) => {
+      const handle = env.client.workflow.getHandle(workflowId);
+      await handle.cancel();
+      // Gives a workflow that would not wait for its start the time to end first.
+      await Promise.race([
+        handle.result().catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 2_000)),
+      ]);
+      return start(ref);
+    };
+
+    await expect(fromSchedule(s, activities, workflowId)).rejects.toThrow();
+
+    expect(await scheduledRuns(s.agentId)).toEqual([
+      { status: "stopped", stopReason: "cancelled" },
+    ]);
+    expect((await agents.view(s.p, s.agentId))!.running).toBe(false);
+    expect(prompts).toHaveLength(0);
+  });
+
   it("stops when its Model is no longer offered", async () => {
     const s = await started();
     offered = [];

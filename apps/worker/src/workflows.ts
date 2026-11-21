@@ -226,7 +226,11 @@ export async function agentRun(ref: AgentRunRef) {
     CancellationScope.nonCancellable(() => finishAgentRun({ run, end }));
   let end: RunEnd = { status: "done" };
   try {
-    const runId = await startAgentRun(ref);
+    // Not cancellable: a Run its Schedule starts is recorded only here, and a cancel that did not wait for it would end
+    // the workflow before the Run exists, leaving it running. Once recorded, the next step sees the cancel.
+    const runId = patched("agent-run-start-uncancellable")
+      ? await CancellationScope.nonCancellable(() => startAgentRun(ref))
+      : await startAgentRun(ref);
     if (!runId) return { status: "skipped" as const };
     for (let n = 1; ; n++) {
       const step = await agentStep({ runId, n });
