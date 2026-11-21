@@ -7,6 +7,8 @@ import {
   capabilities,
   capabilityIds,
   capabilitySections,
+  isTemplateId,
+  templateIds,
 } from "@nunio/delegation";
 import { courseColors } from "@nunio/knowledge";
 import { deadline, hhmm } from "@nunio/planning";
@@ -142,6 +144,47 @@ const AgentForm = z
   .strict()
   .openapi("AgentForm");
 
+/** Creating a free-text Agent also records which curated Template it was copied from, if any. */
+const CreateAgentForm = AgentForm.extend({
+  templateId: z
+    .enum(templateIds)
+    .nullable()
+    .optional()
+    .describe(
+      "The curated Template this Agent was copied from, if any; immutable once saved.",
+    ),
+})
+  .strict()
+  .openapi("CreateAgentForm");
+
+/** A curated Template in code, with how many distinct other students have an Agent saved from it. */
+const AgentTemplate = z
+  .object({
+    id: z.enum(templateIds),
+    name: z.string(),
+    description: z.string().describe("Its Beschreibung."),
+    emoji: z.string(),
+    instructions: z.string(),
+    trigger: Trigger,
+    courses: z
+      .enum(["none", "all_active"])
+      .describe(
+        "Which Courses Template verwenden preselects: none, or all accepted, unarchived Courses.",
+      ),
+    capabilities: z.array(AgentCapability),
+    createdOn: z
+      .string()
+      .describe('ISO date (YYYY-MM-DD) shown as "Erstellt am …".'),
+    othersCount: z
+      .number()
+      .int()
+      .min(0)
+      .describe(
+        "Distinct other students with an Agent saved from this Template, Ended included; hidden when 0.",
+      ),
+  })
+  .openapi("AgentTemplate");
+
 const Agent = z
   .object({
     id: z.string(),
@@ -149,6 +192,12 @@ const Agent = z
       .enum(["keep_course_organized", "prepare_for_exam"])
       .nullable()
       .describe("Null for a free-text Agent."),
+    templateId: z
+      .string()
+      .nullable()
+      .describe(
+        "The curated Template this Agent was copied from; null for a blank, preset or converted Agent.",
+      ),
     name: z
       .string()
       .describe("Empty for a preset Agent, which is named after its scope."),
@@ -550,7 +599,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
               obligationId: z.string().uuid(),
             }),
           ]),
-          AgentForm,
+          CreateAgentForm,
         ]),
       ),
       responses: { 201: Created, ...archivedOutcomes, ...modelUnavailable },
@@ -592,7 +641,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
       return done(c, result);
     },
   );
-  // Before "/api/me/agents/{id}", which would otherwise take "courses" for an id.
+  // Before "/api/me/agents/{id}", which would otherwise take "courses", "capabilities" or "templates" for an id.
   routes.openapi(
     createRoute({
       method: "get",
@@ -674,6 +723,62 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
     createRoute({
       method: "get",
+      path: "/api/me/agents/templates",
+      responses: {
+        200: json(
+          z.array(AgentTemplate),
+          "The curated Templates in code, each with how many distinct other students have an Agent saved from it.",
+        ),
+        401: errors[401],
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const list = await c.get("agents").templates(p);
+      return c.json(
+        list.map((t) => ({
+          ...t,
+          capabilities: [...t.capabilities],
+        })),
+        200,
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/agents/templates/{id}",
+      request: { params: z.object({ id: z.string().min(1) }) },
+      responses: {
+        200: json(
+          AgentTemplate,
+          "One curated Template, with how many distinct other students have an Agent saved from it.",
+        ),
+        ...errors,
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const templateId = c.req.valid("param").id;
+      if (!isTemplateId(templateId)) return c.json({ error: "gone" }, 404);
+      const found = (await c.get("agents").templates(p)).find(
+        (t) => t.id === templateId,
+      );
+      if (!found) return c.json({ error: "gone" }, 404);
+      return c.json(
+        {
+          ...found,
+          capabilities: [...found.capabilities],
+        },
+        200,
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "get",
       path: "/api/me/agents/{id}",
       request: { params: id },
       responses: {
@@ -707,6 +812,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
         {
           id: r.id,
           preset: r.preset,
+          templateId: r.templateId,
           name: r.name,
           description: r.description,
           emoji: r.emoji,

@@ -80,4 +80,70 @@ describe("the runtime role's auth grants", () => {
       }),
     ).toEqual({ email: `${id}@example.com`, emailVerified: true });
   });
+
+  it("counts distinct other students per Template without exposing other students' Agents, and fails closed without app.owner_id", async () => {
+    const alice = await user();
+    const bob = await user();
+    const carol = await user();
+    await admin.agent.createMany({
+      data: [
+        {
+          id: randomUUID(),
+          studentId: alice,
+          templateId: "prepareExam",
+          budgetMicroUsd: 5_000_000,
+        },
+        {
+          id: randomUUID(),
+          studentId: alice,
+          templateId: "prepareExam",
+          budgetMicroUsd: 5_000_000,
+        },
+        {
+          id: randomUUID(),
+          studentId: bob,
+          templateId: "prepareExam",
+          state: "ended",
+          budgetMicroUsd: 5_000_000,
+        },
+        {
+          id: randomUUID(),
+          studentId: bob,
+          templateId: null,
+          budgetMicroUsd: 5_000_000,
+        },
+      ],
+    });
+
+    // Without app.owner_id set (or empty), the function fails closed and returns no counts.
+    expect(
+      await runtime.$queryRaw<
+        { templateId: string; othersCount: number }[]
+      >`SELECT "templateId", "othersCount" FROM template_other_users()`,
+    ).toEqual([]);
+
+    const asOwner = (ownerId: string) =>
+      runtime.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.owner_id', ${ownerId}, true)`;
+        // Direct reads on agent stay strictly tenant-isolated.
+        const visibleAgents = await tx.agent.findMany({
+          select: { studentId: true },
+        });
+        expect(visibleAgents.every((a) => a.studentId === ownerId)).toBe(true);
+        return tx.$queryRaw<
+          { templateId: string; othersCount: number }[]
+        >`SELECT "templateId", "othersCount" FROM template_other_users()`;
+      });
+
+    // Alice has 2 Agents from prepareExam; Bob has 1 Ended Agent from prepareExam.
+    expect(await asOwner(alice)).toEqual([
+      { templateId: "prepareExam", othersCount: 1 },
+    ]);
+    expect(await asOwner(bob)).toEqual([
+      { templateId: "prepareExam", othersCount: 1 },
+    ]);
+    expect(await asOwner(carol)).toEqual([
+      { templateId: "prepareExam", othersCount: 2 },
+    ]);
+  });
 });

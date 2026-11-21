@@ -1,10 +1,15 @@
 import { redirect } from "next/navigation";
-import { AgentFormScreen } from "@/features/agents/agent-form-screen";
+import { NewAgentScreen } from "@/features/agents/new-agent-screen";
 import { apiOrigin, getSession } from "@/lib/session";
 
-export default async function NewAgentPage() {
+export default async function NewAgentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ template?: string }>;
+}) {
   const session = await getSession();
   if (!session) redirect("/sign-in");
+  const { template } = await searchParams;
 
-  return <AgentFormScreen apiOrigin={apiOrigin()} agent={null} />;
+  return <NewAgentScreen apiOrigin={apiOrigin()} templateId={template} />;
 }

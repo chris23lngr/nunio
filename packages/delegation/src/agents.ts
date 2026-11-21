@@ -18,6 +18,7 @@ import type { Kind } from "./kinds.js";
 import { createModelCatalog } from "./model-catalog.js";
 import type { Principal, Transaction } from "./principal.js";
 import { principal as mint, withOwner } from "./principal.js";
+import { agentTemplates, isTemplateId, templateIds } from "./templates.js";
 
 /**
  * When an Agent's Schedule starts its Runs, in the Plan's time zone: Täglich, or on chosen Wochentage, at a minute of
@@ -475,14 +476,20 @@ export function createAgents({
             | { preset: "keep_course_organized"; courseId: string }
             | { preset: "prepare_for_exam"; obligationId: string }
           ) & { budgetMicroUsd: number })
-        | AgentForm,
+        | (AgentForm & { templateId?: string | null }),
     ) {
       if (p.kind !== "student") return { status: "gone" } as const;
       if (!("preset" in input))
         return withOwner(db, p, async (tx, studentId) => {
           const held = checkCapabilities(input.capabilities);
           const trigger = checkTrigger(input.trigger);
-          if (!held || !trigger) return { status: "invalid" } as const;
+          const templateId = input.templateId ?? null;
+          if (
+            !held ||
+            !trigger ||
+            (templateId !== null && !isTemplateId(templateId))
+          )
+            return { status: "invalid" } as const;
           if (!(await checkModel(input.modelKey)))
             return { status: "model_unavailable" } as const;
           const courseIds = await checkCourses(tx, input.courseIds);
@@ -493,10 +500,17 @@ export function createAgents({
             courseIds: _,
             capabilities: __,
             trigger: ___,
+            templateId: ____,
             ...fields
           } = input;
           const agent = await tx.agent.create({
-            data: { id, studentId, ...fields, ...triggerColumns(trigger) },
+            data: {
+              id,
+              studentId,
+              templateId,
+              ...fields,
+              ...triggerColumns(trigger),
+            },
           });
           await tx.agentCourse.createMany({
             data: courseIds.map((courseId) => ({
@@ -843,6 +857,28 @@ export function createAgents({
       });
     },
 
+    /**
+     * The curated Templates in code, each with how many distinct other students have an Agent saved from it (Ended
+     * included; deleted Agents leave the count). Reads only aggregate counts via the SECURITY DEFINER SQL function.
+     */
+    async templates(p: Principal) {
+      if (p.kind !== "student") return [];
+      const counts = await withOwner(
+        db,
+        p,
+        (tx) =>
+          tx.$queryRaw<{ templateId: string; othersCount: number }[]>`
+            SELECT "templateId", "othersCount" FROM template_other_users()
+          `,
+      );
+      const byId = new Map(counts.map((c) => [c.templateId, c.othersCount]));
+      return templateIds.map((id) => ({
+        ...agentTemplates[id],
+        id,
+        othersCount: byId.get(id) ?? 0,
+      }));
+    },
+
     /** Its form, scope, state, Grants, and usage against its Budget; null when it is not the student's. */
     async view(p: Principal, id: string) {
       await failDeadRuns(p, id);
@@ -864,6 +900,7 @@ export function createAgents({
         return {
           id: r.id,
           preset: r.preset as Preset | null,
+          templateId: r.templateId,
           name: r.name,
           description: r.description,
           emoji: r.emoji,

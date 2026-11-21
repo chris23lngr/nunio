@@ -56,6 +56,7 @@ import type {
   Agent,
   AgentCapability,
   AgentCourse,
+  AgentTemplate,
   Capability,
 } from "./api/agent-queries";
 import {
@@ -155,6 +156,25 @@ const draftOf = (agent: Saved): Draft => ({
   modelKey: agent.modelKey,
 });
 
+/** Prefills a new Agent's form from a curated Template; sets no Model or Budget (#147). */
+const draftOfTemplate = (
+  template: AgentTemplate,
+  initialCourses: AgentCourse[],
+): Draft => ({
+  name: template.name,
+  description: template.description,
+  emoji: template.emoji,
+  instructions: template.instructions,
+  courses: initialCourses,
+  capabilities: template.capabilities,
+  budget: blank.budget,
+  rhythm: template.trigger.rhythm,
+  weekdays:
+    template.trigger.rhythm === "weekdays" ? template.trigger.weekdays : [],
+  time: timeOf(template.trigger.minute),
+  modelKey: null,
+});
+
 /** A form section: its title, what it is for, and its fields. */
 function Section({
   title,
@@ -218,12 +238,18 @@ const tabs = [
 export function AgentFormScreen({
   apiOrigin,
   agent,
+  template = null,
+  initialCourses = [],
   hasRuns = false,
   run,
 }: {
   apiOrigin: string;
   /** Null for a "Neuer Agent" not saved yet. */
   agent: Saved | null;
+  /** The curated Template prefilling a new Agent ("Template verwenden"); null when blank or already saved. */
+  template?: AgentTemplate | null;
+  /** Preselected Courses for a Template with `courses: "all_active"`. */
+  initialCourses?: AgentCourse[];
   /** It ran before and is not opened to edit, so it opens on its Aktivität with the newest Run. */
   hasRuns?: boolean;
   /** The Run Aktivität opens on instead of the newest, as from the Inbox. */
@@ -232,7 +258,13 @@ export function AgentFormScreen({
   const id = useId();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [draft, setDraft] = useState(() => (agent ? draftOf(agent) : blank));
+  const [draft, setDraft] = useState(() =>
+    agent
+      ? draftOf(agent)
+      : template
+        ? draftOfTemplate(template, initialCourses)
+        : blank,
+  );
   // An Agent with no Runs yet, such as a new one, opens on its Auftrag.
   const [tab, setTab] = useState<"activity" | "goal">(
     agent && hasRuns ? "activity" : "goal",
@@ -298,6 +330,7 @@ export function AgentFormScreen({
                 minute: minuteOf(draft.time),
               },
         modelKey: modelKey!,
+        ...(!agent && template ? { templateId: template.id } : {}),
       })
       .catch(() => {
         // Query owns the mutation error, rendered in the header.

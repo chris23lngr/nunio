@@ -30,9 +30,15 @@ import { useId, useState } from "react";
 import { PageHeader } from "@/features/shared/components/page-header";
 import { useAppForm } from "@/lib/form";
 import { controlAgent, delegateAgent } from "./api/agent-mutations";
-import type { AgentRow } from "./api/agent-queries";
-import { agentListQueries, delegableCourseQueries } from "./api/agent-queries";
+import type { AgentRow, AgentTemplate } from "./api/agent-queries";
+import {
+  agentListQueries,
+  agentTemplatesQueries,
+  delegableCourseQueries,
+} from "./api/agent-queries";
 import { AgentMenu } from "./components/agent-menu";
+import { TemplateCard } from "./components/template-card";
+import { TemplateDetailsDialog } from "./components/template-details-dialog";
 import { nameOf, pausedLine } from "./name";
 
 /** Each badge's words and colours; an Agent with none shows nothing. */
@@ -122,6 +128,9 @@ export function AgentsScreen({ apiOrigin }: { apiOrigin: string }) {
   const id = useId();
   const queryClient = useQueryClient();
   const agents = useQuery(agentListQueries(apiOrigin));
+  const templates = useQuery(agentTemplatesQueries(apiOrigin));
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<AgentTemplate | null>(null);
   const [search, setSearch] = useState("");
   const words = search.trim().toLocaleLowerCase("de");
   const shown = (agents.data ?? []).filter((agent) =>
@@ -193,6 +202,28 @@ export function AgentsScreen({ apiOrigin }: { apiOrigin: string }) {
             <Plus aria-hidden="true" />
           </Link>
         </div>
+        <section aria-label="Templates" className="mt-8 flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-sm font-medium text-base-700">Templates</h2>
+            <Link
+              href="/agents/templates"
+              className="text-sm font-medium text-primary-600 hover:underline"
+            >
+              Alle Templates
+            </Link>
+          </div>
+          {templates.data && templates.data.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {templates.data.slice(0, 3).map((template) => (
+                <TemplateCard
+                  key={template.id}
+                  template={template}
+                  onSelect={() => setSelectedTemplate(template)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
         <InputGroup className="mt-8 max-w-96">
           <InputGroupAddon>
             <Search aria-hidden="true" />
@@ -367,6 +398,11 @@ export function AgentsScreen({ apiOrigin }: { apiOrigin: string }) {
           {prepare.error && <p role="alert">{prepare.error.message}</p>}
         </form>
       </section>
+      <TemplateDetailsDialog
+        apiOrigin={apiOrigin}
+        template={selectedTemplate}
+        onClose={() => setSelectedTemplate(null)}
+      />
     </main>
   );
 }
