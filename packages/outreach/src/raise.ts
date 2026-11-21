@@ -42,6 +42,12 @@ export async function raise(
   });
 }
 
+/** An Action whose Approval is still open at `at`: unanswered, not withdrawn and not yet expired, which no timer marks. */
+export const openApprovalAt = (at: Date) => ({
+  status: "awaiting_approval" as const,
+  approval: { is: { decision: null, expiresAt: { gt: at } } },
+});
+
 /**
  * Those of the student's Agent Runs, all or only `runIds`, that have ended with an Approval still open: unanswered,
  * not withdrawn and not yet expired, which no timer marks (ADR-0006).
@@ -55,12 +61,7 @@ export async function runsAwaitingApproval(
     where: {
       ...(runIds && { id: { in: [...runIds] } }),
       status: { in: ["done", "stopped", "failed"] },
-      actions: {
-        some: {
-          status: "awaiting_approval",
-          approval: { is: { decision: null, expiresAt: { gt: at } } },
-        },
-      },
+      actions: { some: openApprovalAt(at) },
     },
     select: { id: true },
   });

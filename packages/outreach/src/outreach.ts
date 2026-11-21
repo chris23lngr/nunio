@@ -4,6 +4,7 @@ import type { Clock, Principal } from "@nunio/delegation";
 import { principal, withOwner } from "@nunio/delegation";
 import type { Kind, Subject } from "./causes.js";
 import { causeOf } from "./causes.js";
+import { openApprovalAt } from "./raise.js";
 
 export type InterventionView = {
   id: string;
@@ -171,13 +172,7 @@ export function createOutreach({
             select: {
               id: true,
               agent: { select: { id: true, name: true } },
-              actions: {
-                where: {
-                  status: "awaiting_approval",
-                  approval: { is: { decision: null, expiresAt: { gt: at } } },
-                },
-                select: { id: true },
-              },
+              actions: { where: openApprovalAt(at), select: { id: true } },
             },
           });
           // A Run's Intervention lapses lazily, once none of its Approvals is open; no timer marks it (ADR-0006).
@@ -211,11 +206,12 @@ export function createOutreach({
             }
           : null;
       };
-      const views = rows.map(
-        (r): InterventionView => ({
+      const views = rows.map((r): InterventionView => {
+        const cause = causeOf(r.dedupeKey);
+        return {
           id: r.id,
-          ...causeOf(r.dedupeKey),
-          run: runOf(causeOf(r.dedupeKey).subject),
+          ...cause,
+          run: runOf(cause.subject),
           raisedAt: r.createdAt,
           state: r.acknowledgedAt
             ? "acknowledged"
@@ -225,8 +221,8 @@ export function createOutreach({
                 ? "lapsed"
                 : "open",
           closedAt: r.acknowledgedAt ?? r.dismissedAt ?? r.causeEndedAt,
-        }),
-      );
+        };
+      });
       return {
         interventions: [
           ...views.filter((v) => v.state === "open"),

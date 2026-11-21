@@ -30,7 +30,8 @@ export type Subject = Cause["subject"];
  * The cause's key, stored as the Intervention's `dedupeKey`: `shortfall:<workId>`,
  * `disagreement:<fact|obligation>:<id>`, `approval_expired:<actionId>`, `unconfirmed:<actionId>` or
  * `run_approvals:<runId>`.
- * Phase 9 Runs wrote the last two already, so the format must not change.
+ * Phase 9 Runs wrote `approval_expired` and `unconfirmed` keys already, and Agent Runs write `run_approvals` keys, so
+ * the format must not change.
  */
 export function keyOf(cause: Cause): string {
   return cause.kind === "disagreement"

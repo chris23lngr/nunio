@@ -7852,8 +7852,8 @@ describe("a free-text Agent's form", () => {
         ],
       ])(
         "lapses once no Approval of the Run is open, the last one %s, with no timer",
-        async (_, close) => {
-          const a = await asking(`run-intervention-lapses-${_}`);
+        async (how, close) => {
+          const a = await asking(`run-intervention-lapses-${how}`);
           await a.end();
 
           await close(a);

@@ -12,8 +12,8 @@ import { inboxQueries } from "./api/inbox-queries";
 function headingOf({ kind, action, title, shortMinutes, run }: Intervention) {
   if (kind === "run_approvals")
     return run?.openApprovals
-      ? `${title} braucht deine Freigabe (${run.openApprovals})`
-      : `${title} braucht deine Freigabe`;
+      ? `${title} needs your Approval (${run.openApprovals})`
+      : `${title} needs your Approval`;
   if (kind === "shortfall")
     return shortMinutes === null
       ? `No longer short for ${title}`
@@ -71,7 +71,7 @@ export function InboxScreen({ apiOrigin }: { apiOrigin: string }) {
               <h3>{headingOf(i)}</h3>
               {i.run && (
                 <Link href={`/agents/${i.run.agentId}?run=${i.run.id}`}>
-                  Freigaben öffnen
+                  Open its Approvals
                 </Link>
               )}
               <Button

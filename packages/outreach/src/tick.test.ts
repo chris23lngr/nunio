@@ -389,7 +389,7 @@ describe("raising Interventions from their causes", () => {
     await sender.tick();
     expect(await open(p)).toHaveLength(1);
 
-    // The last one expires: no timer marks it, the next look finds it closed.
+    // The last one expires: no timer marks it, the next tick ends its cause before the Inbox is read.
     await admin.approval.update({
       where: { actionId: actionIds[1] },
       data: { expiresAt: now },
@@ -397,9 +397,12 @@ describe("raising Interventions from their causes", () => {
     now = at("2026-11-09 08:05");
     await sender.tick();
 
-    expect((await outreach.inbox(p)).interventions).toEqual([
-      expect.objectContaining({ kind: "run_approvals", state: "lapsed" }),
-    ]);
+    expect(
+      await admin.intervention.findMany({
+        where: { dedupeKey: `run_approvals:${runId}` },
+        select: { causeEndedAt: true },
+      }),
+    ).toEqual([{ causeEndedAt: now }]);
   });
 
   it("raises nothing for an Agent Run's Approval approved too late, which only a Chat's or a waiting Run's would", async () => {

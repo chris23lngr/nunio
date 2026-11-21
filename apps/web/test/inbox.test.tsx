@@ -189,17 +189,17 @@ test("an Agent Run's Intervention names its Agent and how many Approvals wait, a
 
   const open = await screen.findByRole("region", { name: "Needs attention" });
   const item = within(open).getByRole("article", {
-    name: "Klausur vorbereiten braucht deine Freigabe (2)",
+    name: "Klausur vorbereiten needs your Approval (2)",
   });
   expect(
     within(item)
-      .getByRole("link", { name: "Freigaben öffnen" })
+      .getByRole("link", { name: "Open its Approvals" })
       .getAttribute("href"),
   ).toBe("/agents/agent-3?run=run-7");
   const closed = screen.getByRole("region", { name: "Closed" });
   expect(
     within(closed).getByRole("article", {
-      name: "Kurs aufräumen braucht deine Freigabe",
+      name: "Kurs aufräumen needs your Approval",
     }),
   ).toBeTruthy();
 });
