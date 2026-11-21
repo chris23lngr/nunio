@@ -144,6 +144,22 @@ test("'Neuer Agent' opens a blank form with 🤖 and 5 USD, and Speichern saves 
   expect(
     screen.getByText("Was soll der Agent für dich übernehmen?"),
   ).toBeTruthy();
+  // Täglich at 06:00, and a schedule is the only Auslöser of v1.
+  const trigger = screen.getByRole("region", { name: "Auslöser" });
+  const kind = within(trigger).getByRole("combobox", { name: "Auslöser" });
+  expect(kind.textContent).toContain("Zu einer Uhrzeit");
+  expect(
+    kind.hasAttribute("disabled") || kind.hasAttribute("data-disabled"),
+  ).toBe(true);
+  expect(
+    within(trigger).getByRole("combobox", { name: "Rhythmus" }).textContent,
+  ).toContain("Täglich");
+  expect(
+    within(trigger).queryByRole("group", { name: "Wochentage" }),
+  ).toBeNull();
+  expect(
+    (within(trigger).getByLabelText("Uhrzeit") as HTMLInputElement).value,
+  ).toBe("06:00");
 
   await userEvent.type(
     screen.getByRole("textbox", { name: "Name" }),
@@ -187,6 +203,7 @@ test("'Neuer Agent' opens a blank form with 🤖 and 5 USD, and Speichern saves 
       courseIds: [ids.statistics],
       capabilities: [],
       budgetMicroUsd: 2_500_000,
+      trigger: { rhythm: "daily", minute: 360 },
     },
   ]);
 });
@@ -233,6 +250,7 @@ const agent = {
   running: false,
   grants: ["studyBlock.create"],
   budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
+  trigger: { rhythm: "daily", minute: 360 },
   recentActions: [],
   next: { runAt: null, action: null },
 };
@@ -270,8 +288,119 @@ test("a saved Agent's form shows its Courses, an Archived one as archived, and S
         courseIds: [ids.archived, ids.statistics],
         capabilities: [{ id: "createStudyBlocks", mode: "automatic" }],
         budgetMicroUsd: 5_000_000,
+        trigger: { rhythm: "daily", minute: 360 },
       },
     ]),
+  );
+});
+
+test("Auslöser shows a saved Agent's Wochentage and Uhrzeit, and saves the ones chosen", async () => {
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/a-1", () =>
+    Response.json({
+      ...agent,
+      trigger: { rhythm: "weekdays", weekdays: [1, 3], minute: 1170 },
+    }),
+  );
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  const trigger = await screen.findByRole("region", { name: "Auslöser" });
+  expect(
+    within(trigger).getByRole("combobox", { name: "Rhythmus" }).textContent,
+  ).toContain("Wochentage");
+  const days = within(trigger).getByRole("group", { name: "Wochentage" });
+  expect(
+    within(days)
+      .getAllByRole("button")
+      .map((day) => [day.textContent, day.getAttribute("aria-pressed")]),
+  ).toEqual([
+    ["Mo", "true"],
+    ["Di", "false"],
+    ["Mi", "true"],
+    ["Do", "false"],
+    ["Fr", "false"],
+    ["Sa", "false"],
+    ["So", "false"],
+  ]);
+  const time = within(trigger).getByLabelText("Uhrzeit") as HTMLInputElement;
+  expect(time.value).toBe("19:30");
+
+  await userEvent.click(within(days).getByRole("button", { name: "Fr" }));
+  await userEvent.click(within(days).getByRole("button", { name: "Mo" }));
+  await userEvent.clear(time);
+  await userEvent.type(time, "07:15");
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  await waitFor(() =>
+    expect(saved).toEqual([
+      expect.objectContaining({
+        trigger: { rhythm: "weekdays", weekdays: [3, 5], minute: 435 },
+      }),
+    ]),
+  );
+});
+
+test("Auslöser switches between Täglich and Wochentage, and asks for at least one Wochentag and an Uhrzeit", async () => {
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const trigger = await screen.findByRole("region", { name: "Auslöser" });
+
+  await userEvent.click(
+    within(trigger).getByRole("combobox", { name: "Rhythmus" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("option", { name: "Wochentage" }),
+  );
+  const days = await within(trigger).findByRole("group", {
+    name: "Wochentage",
+  });
+  expect(
+    within(days)
+      .getAllByRole("button")
+      .filter((day) => day.getAttribute("aria-pressed") === "true"),
+  ).toEqual([]);
+  await userEvent.clear(within(trigger).getByLabelText("Uhrzeit"));
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(screen.getByText("Wähle mindestens einen Wochentag.")).toBeTruthy();
+  expect(screen.getByText("Gib eine Uhrzeit an.")).toBeTruthy();
+  expect(saved).toEqual([]);
+
+  await userEvent.click(within(days).getByRole("button", { name: "So" }));
+  await userEvent.type(within(trigger).getByLabelText("Uhrzeit"), "21:00");
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+  await waitFor(() =>
+    expect(saved).toEqual([
+      expect.objectContaining({
+        trigger: { rhythm: "weekdays", weekdays: [7], minute: 1260 },
+      }),
+    ]),
+  );
+
+  await userEvent.click(
+    within(trigger).getByRole("combobox", { name: "Rhythmus" }),
+  );
+  await userEvent.click(await screen.findByRole("option", { name: "Täglich" }));
+  expect(
+    within(trigger).queryByRole("group", { name: "Wochentage" }),
+  ).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+  await waitFor(() =>
+    expect(saved.at(-1)).toEqual(
+      expect.objectContaining({ trigger: { rhythm: "daily", minute: 1260 } }),
+    ),
   );
 });
 
