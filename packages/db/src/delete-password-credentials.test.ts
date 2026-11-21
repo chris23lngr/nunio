@@ -22,7 +22,7 @@ afterAll(async () => {
 
 const migration = readFileSync(
   new URL(
-    "../prisma/migrations/20261204100000_delete_password_credentials/migration.sql",
+    "../prisma/migrations/20261207100000_delete_password_credentials/migration.sql",
     import.meta.url,
   ),
   "utf8",
