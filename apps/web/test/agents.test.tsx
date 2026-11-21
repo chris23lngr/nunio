@@ -1,10 +1,31 @@
+import { SidebarProvider } from "@nunio/ui/components/sidebar/sidebar";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import type { ReactNode } from "react";
+import { beforeEach, expect, test, vi } from "vitest";
 import { AgentScreen } from "@/features/agents/agent-screen";
 import { AgentsScreen } from "@/features/agents/agents-screen";
 import { api } from "./api";
 import { TestProviders } from "./providers";
+
+/** The list's page header needs the app's sidebar. */
+function Providers({ children }: { children: ReactNode }) {
+  return (
+    <TestProviders>
+      <SidebarProvider>{children}</SidebarProvider>
+    </TestProviders>
+  );
+}
+beforeEach(() => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+});
 
 const courses = [
   {
@@ -44,9 +65,9 @@ test("the student delegates 'keep this course organized' for one of their accept
     return Response.json({ id: "r-1" }, { status: 201 });
   });
   render(
-    <TestProviders>
+    <Providers>
       <AgentsScreen apiOrigin={api.origin} />
-    </TestProviders>,
+    </Providers>,
   );
 
   const course = await screen.findByRole("combobox", { name: "Course" });
@@ -62,7 +83,6 @@ test("the student delegates 'keep this course organized' for one of their accept
     name: /Keep Analysis I organized/,
   });
   expect(row.getAttribute("href")).toBe("/agents/r-1");
-  expect(within(row.closest("li")!).getByText(/active/i)).toBeTruthy();
   await waitFor(() =>
     expect(created).toEqual([
       { preset: "keep_course_organized", courseId: courses[0]!.id },
@@ -122,9 +142,9 @@ test("an Agent's screen shows its scope, Grants, recent and next Actions and Bud
     return Response.json({ status: "ok" });
   });
   render(
-    <TestProviders>
+    <Providers>
       <AgentScreen apiOrigin={api.origin} id="r-1" />
-    </TestProviders>,
+    </Providers>,
   );
 
   expect(
@@ -150,25 +170,29 @@ test("an Agent's screen shows its scope, Grants, recent and next Actions and Bud
 test("pausing refreshes the list even while its cached state is fresh", async () => {
   let state: "active" | "paused" = "active";
   api.route("GET", "/api/me/review", () => Response.json({ courses }));
-  api.route("GET", "/api/me/agents", () => Response.json([shown(state)]));
+  api.route("GET", "/api/me/agents", () =>
+    Response.json([
+      { ...shown(state), badge: state === "paused" ? "paused" : null },
+    ]),
+  );
   api.route("GET", "/api/me/agents/r-1", () => Response.json(shown(state)));
   api.route("POST", "/api/me/agents/r-1/pause", () => {
     state = "paused";
     return Response.json({ status: "ok" });
   });
   render(
-    <TestProviders>
+    <Providers>
       <AgentsScreen apiOrigin={api.origin} />
       <AgentScreen apiOrigin={api.origin} id="r-1" />
-    </TestProviders>,
+    </Providers>,
   );
   const row = (
     await screen.findByRole("link", { name: "Keep Analysis I organized" })
   ).closest("li")!;
-  expect(row.textContent).toContain("active");
+  expect(row.textContent).not.toContain("Pausiert");
   await userEvent.click(await screen.findByRole("button", { name: "Pause" }));
   await screen.findByRole("button", { name: "Resume" });
-  await waitFor(() => expect(row.textContent).toContain("paused"));
+  await waitFor(() => expect(row.textContent).toContain("Pausiert"));
 });
 
 test("the student delegates 'prepare me for this exam' for one of their exams", async () => {
@@ -207,9 +231,9 @@ test("the student delegates 'prepare me for this exam' for one of their exams", 
     return Response.json({ id: "r-2" }, { status: 201 });
   });
   render(
-    <TestProviders>
+    <Providers>
       <AgentsScreen apiOrigin={api.origin} />
-    </TestProviders>,
+    </Providers>,
   );
 
   const exam = await screen.findByRole("combobox", { name: "Exam" });
@@ -259,10 +283,10 @@ test("an exam's Agent is named for the exam in the list and on its screen", asyn
     }),
   );
   render(
-    <TestProviders>
+    <Providers>
       <AgentsScreen apiOrigin={api.origin} />
       <AgentScreen apiOrigin={api.origin} id="r-2" />
-    </TestProviders>,
+    </Providers>,
   );
 
   expect(
@@ -275,4 +299,192 @@ test("an exam's Agent is named for the exam in the list and on its screen", asyn
       name: "Prepare for Klausur (Analysis I)",
     }),
   ).toBeTruthy();
+});
+
+/** A free-text Agent as the list returns it. */
+const listed = (overrides: Record<string, unknown>) => ({
+  id: "a-1",
+  preset: null,
+  name: "Klausur Statistik",
+  description: "Hält meine Klausurvorbereitung auf Kurs.",
+  emoji: "📊",
+  course: null,
+  exam: null,
+  state: "active",
+  pausedBy: null,
+  badge: null,
+  ...overrides,
+});
+
+const agentRows = () =>
+  within(screen.getByRole("list", { name: "Agenten" })).getAllByRole(
+    "listitem",
+  );
+
+test("lists each Agent with its emoji, name, Beschreibung and one badge, in the order the API sorts them", async () => {
+  api.route("GET", "/api/me/review", () => Response.json({ courses: [] }));
+  api.route("GET", "/api/me/agents", () =>
+    Response.json([
+      listed({
+        id: "a-1",
+        name: "Pausierter",
+        state: "paused",
+        pausedBy: "student",
+        badge: "paused",
+      }),
+      listed({
+        id: "a-2",
+        name: "Fragender",
+        emoji: "🙋",
+        badge: "approval_needed",
+      }),
+      listed({ id: "a-3", name: "Laufender", badge: "running" }),
+      listed({ id: "a-4", name: "Ruhiger", description: "" }),
+      listed({ id: "a-5", name: "Beendeter", state: "ended", badge: "ended" }),
+    ]),
+  );
+  render(
+    <Providers>
+      <AgentsScreen apiOrigin={api.origin} />
+    </Providers>,
+  );
+
+  await screen.findByRole("link", { name: "Fragender" });
+  expect(
+    agentRows().map((row) => [
+      within(row).getByRole("link").textContent,
+      row.textContent,
+    ]),
+  ).toEqual([
+    ["Pausierter", expect.stringContaining("Pausiert")],
+    ["Fragender", expect.stringContaining("Freigabe benötigt")],
+    ["Laufender", expect.stringContaining("Läuft gerade")],
+    ["Ruhiger", expect.not.stringMatching(/Pausiert|Freigabe|Läuft|Beendet/)],
+    ["Beendeter", expect.stringContaining("Beendet")],
+  ]);
+  const asking = agentRows()[1]!;
+  expect(within(asking).getByText("🙋")).toBeTruthy();
+  expect(
+    within(asking).getByText("Hält meine Klausurvorbereitung auf Kurs."),
+  ).toBeTruthy();
+  // An Ended Agent stays, and opens on its Activity like any other.
+  expect(
+    screen.getByRole("link", { name: "Beendeter" }).getAttribute("href"),
+  ).toBe("/agents/a-5");
+  expect(
+    screen.getByRole("link", { name: "Neuer Agent" }).getAttribute("href"),
+  ).toBe("/agents/new");
+});
+
+test("Agenten durchsuchen narrows the list to Agents whose name or Beschreibung matches", async () => {
+  api.route("GET", "/api/me/review", () => Response.json({ courses: [] }));
+  api.route("GET", "/api/me/agents", () =>
+    Response.json([
+      listed({ id: "a-1", name: "Klausur Statistik", description: "" }),
+      listed({
+        id: "a-2",
+        name: "Kurs organisieren",
+        description: "Räumt Analysis I auf.",
+      }),
+      listed({
+        id: "a-3",
+        preset: "keep_course_organized",
+        name: "",
+        description: "",
+        course: { id: "c-1", title: "Lineare Algebra" },
+      }),
+    ]),
+  );
+  render(
+    <Providers>
+      <AgentsScreen apiOrigin={api.origin} />
+    </Providers>,
+  );
+  const search = await screen.findByRole("searchbox", {
+    name: "Agenten durchsuchen",
+  });
+  await screen.findByRole("link", { name: "Klausur Statistik" });
+
+  await userEvent.type(search, "analysis");
+  expect(
+    agentRows().map((row) => within(row).getByRole("link").textContent),
+  ).toEqual(["Kurs organisieren"]);
+
+  await userEvent.clear(search);
+  await userEvent.type(search, "lineare");
+  expect(
+    agentRows().map((row) => within(row).getByRole("link").textContent),
+  ).toEqual(["Keep Lineare Algebra organized"]);
+
+  await userEvent.clear(search);
+  await userEvent.type(search, "Briefing");
+  expect(screen.queryByRole("list", { name: "Agenten" })).toBeNull();
+  expect(screen.getByText("Kein Agent passt zu deiner Suche.")).toBeTruthy();
+});
+
+test("a row's menu pauses, resumes and ends its Agent, and opens its Auftrag to edit it", async () => {
+  let agent = listed({});
+  const controls: string[] = [];
+  api.route("GET", "/api/me/review", () => Response.json({ courses: [] }));
+  api.route("GET", "/api/me/agents", () => Response.json([agent]));
+  for (const [control, state] of [
+    ["pause", "paused"],
+    ["resume", "active"],
+    ["end", "ended"],
+  ] as const)
+    api.route("POST", `/api/me/agents/a-1/${control}`, () => {
+      controls.push(control);
+      agent = listed({
+        state,
+        pausedBy: state === "paused" ? "student" : null,
+        badge: state === "active" ? null : state,
+      });
+      return Response.json({ status: "ok" });
+    });
+  render(
+    <Providers>
+      <AgentsScreen apiOrigin={api.origin} />
+    </Providers>,
+  );
+  const menu = async () => {
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Aktionen für Klausur Statistik",
+      }),
+    );
+    return screen.findByRole("menu");
+  };
+
+  expect(
+    within(await menu())
+      .getByRole("menuitem", { name: "Bearbeiten" })
+      .getAttribute("href"),
+  ).toBe("/agents/a-1?tab=auftrag");
+  await userEvent.click(
+    within(screen.getByRole("menu")).getByRole("menuitem", {
+      name: "Pausieren",
+    }),
+  );
+  await waitFor(() =>
+    expect(agentRows()[0]!.textContent).toContain("Pausiert"),
+  );
+
+  await userEvent.click(
+    within(await menu()).getByRole("menuitem", { name: "Fortsetzen" }),
+  );
+  await waitFor(() =>
+    expect(agentRows()[0]!.textContent).not.toContain("Pausiert"),
+  );
+
+  await userEvent.click(
+    within(await menu()).getByRole("menuitem", { name: "Beenden" }),
+  );
+  await waitFor(() => expect(agentRows()[0]!.textContent).toContain("Beendet"));
+  const ended = await menu();
+  expect(
+    within(ended)
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent),
+  ).toEqual(["Bearbeiten"]);
+  expect(controls).toEqual(["pause", "resume", "end"]);
 });
