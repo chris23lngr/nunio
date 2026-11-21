@@ -10,7 +10,7 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import type { Delegation, Principal } from "@nunio/delegation";
-import { createDelegation, principal } from "@nunio/delegation";
+import { createDelegation, principal, withOwner } from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import type { Facts } from "@nunio/knowledge";
 import {
@@ -22,7 +22,7 @@ import {
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createPlanExecutor } from "./executor.js";
 import type { Plan } from "./plan.js";
-import { createPlan } from "./plan.js";
+import { createPlan, planRules } from "./plan.js";
 
 let database: TestDatabase;
 let admin: PrismaClient;
@@ -924,6 +924,34 @@ it("adds a Preparation and a Follow-up for each Course Event in the next 14 days
 
   await plan.applyRoutines(p);
   expect((await plan.view(p)).tasks).toHaveLength(4);
+});
+
+it("tells the gate when a Course Event's new Preparation or Follow-up would be due: the end of its window", async () => {
+  now = at("2026-11-01 08:00");
+  const { p, analysisId, lecture } = await studentWithCalendar();
+  await plan.decideSeries(p, lecture.id, { courseId: analysisId });
+  const events = (await plan.view(p)).fixedEvents.filter(
+    (e) => e.seriesId === lecture.id,
+  );
+  const due = (
+    fixedEventId: string | null,
+    role: "preparation" | "follow_up" | null,
+  ) =>
+    withOwner(runtime, p, (tx) =>
+      planRules.taskDue(tx, { fixedEventId, role }),
+    );
+
+  // The lectures are on Mondays 10:00–12:00, from 2 to 23 November.
+  expect(await due(events[0]!.id, "preparation")).toEqual(
+    at("2026-11-02 10:00"),
+  );
+  expect(await due(events[0]!.id, "follow_up")).toEqual(at("2026-11-09 10:00"));
+  // The last one has none after it, so its Follow-up has a week.
+  expect(await due(events.at(-1)!.id, "follow_up")).toEqual(
+    at("2026-11-30 12:00"),
+  );
+  expect(await due(events[0]!.id, null)).toBeNull();
+  expect(await due(null, null)).toBeNull();
 });
 
 it("adds only a Follow-up for a past Course Event whose window is open, and rolls on with the days", async () => {

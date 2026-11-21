@@ -7032,6 +7032,7 @@ describe("a free-text Agent's form", () => {
         [
           { id: "createStudyBlocks", mode: "ask" },
           { id: "removeOwnStudyBlocks", mode: "automatic" },
+          { id: "createTasks", mode: "automatic" },
         ],
       ),
     );
@@ -7041,11 +7042,13 @@ describe("a free-text Agent's form", () => {
       capabilities: [
         { id: "createStudyBlocks", mode: "ask" },
         { id: "removeOwnStudyBlocks", mode: "automatic" },
+        { id: "createTasks", mode: "automatic" },
       ],
-      grants: ["studyBlock.remove"],
+      grants: ["studyBlock.remove", "task.create"],
     });
     expect(await grantsOf(id)).toEqual([
       { kind: "studyBlock.remove", courseId: null, obligationId: null },
+      { kind: "task.create", courseId: null, obligationId: null },
     ]);
     await s.call("PUT", `/${id}`, form([statistics]));
     expect(await grantsOf(id)).toEqual([]);
@@ -8040,6 +8043,118 @@ describe("a free-text Agent's form", () => {
       expect(after.verlauf.at(-1)).toMatchObject({ type: "approval" });
     });
 
+    it("shows an asked Task by its title, its Obligation and that Obligation's Course, then adds it once approved, its Estimate as nunio's", async () => {
+      const s = await student("run-approval-task");
+      const statistics = await course(s.id, "Statistics II");
+      const { id: agentId } = (await (
+        await s.call(
+          "POST",
+          "",
+          form([statistics], [{ id: "createTasks", mode: "ask" }]),
+        )
+      ).json()) as { id: string };
+      const exam = await facts.enterObligation(
+        principal.fromSession({ studentId: s.id }),
+        {
+          course: { id: statistics },
+          kind: "exam",
+          title: "Klausur Statistik",
+          due: { date: "2099-02-05", time: "10:00", timeZone: null },
+          destination: null,
+        },
+      );
+      if (exam.status !== "ok") throw new Error(exam.status);
+      const runId = await recordedRun(s.id, agentId, 10, { status: "running" });
+      const asking = await delegation.perform(principal.fromRun(runId), {
+        key: `${runId}:1:1`,
+        intent: {
+          kind: "task.create",
+          title: "Altklausur 2024 rechnen",
+          courseId: null,
+          obligationId: exam.id,
+          fixedEventId: null,
+          role: null,
+          estimateMinutes: 90,
+        },
+      });
+      if (asking.status !== "awaiting_approval") throw new Error(asking.status);
+      await admin.run.update({
+        where: { id: runId },
+        data: { status: "done", endedAt: new Date() },
+      });
+      const shown = async () =>
+        (await (await s.call("GET", `/${agentId}/runs/${runId}`)).json()) as {
+          approvals: { action: unknown }[];
+          verlauf: { type: string; at: string }[];
+        };
+
+      expect((await shown()).approvals.map((a) => a.action)).toEqual([
+        {
+          kind: "task.create",
+          work: { title: "Altklausur 2024 rechnen", course: "Statistics II" },
+          from: null,
+          to: null,
+          task: {
+            role: null,
+            minutes: 90,
+            event: null,
+            obligation: "Klausur Statistik",
+          },
+        },
+      ]);
+      const decided = await app.request(
+        `${apiOrigin}/api/me/approvals/${asking.actionId}`,
+        {
+          method: "POST",
+          headers: s.headers,
+          body: JSON.stringify({
+            decision: "approve",
+            fingerprint: asking.fingerprint,
+          }),
+        },
+      );
+
+      expect(decided.status).toBe(200);
+      expect(
+        await admin.task.findMany({
+          where: { studentId: s.id },
+          select: {
+            title: true,
+            obligationId: true,
+            courseId: true,
+            estimateMinutes: true,
+            estimatedBy: true,
+          },
+        }),
+      ).toEqual([
+        {
+          title: "Altklausur 2024 rechnen",
+          obligationId: exam.id,
+          courseId: null,
+          estimateMinutes: 90,
+          estimatedBy: "nunio",
+        },
+      ]);
+      expect(decisions((await shown()).verlauf)).toEqual([
+        {
+          type: "approval",
+          action: {
+            kind: "task.create",
+            work: {
+              title: "Altklausur 2024 rechnen",
+              course: "Statistics II",
+              obligation: "Klausur Statistik",
+            },
+            start: null,
+            end: null,
+          },
+          decision: "approved",
+          outcome: "done",
+          refusal: null,
+        },
+      ]);
+    });
+
     it("takes no Action the student declined, and shows it declined", async () => {
       const a = await askedByRun("run-approval-deny", "createStudyBlocks");
 
@@ -8768,6 +8883,15 @@ describe("a free-text Agent's form", () => {
         title: "Eigene Lernblöcke entfernen",
         description: "Nur Blöcke, die dieser Agent erstellt hat.",
         modes: ["automatic", "always", "ask"],
+      },
+      // Grantable like Lernblöcke erstellen, but asking until the student says otherwise (#154).
+      {
+        id: "createTasks",
+        section: "Aufgaben",
+        title: "Aufgaben erstellen",
+        description:
+          "Neue Aufgaben in deinen Kursen anlegen, auch zu Prüfungen und Abgaben oder zur Vor- und Nachbereitung.",
+        modes: ["ask", "automatic", "always"],
       },
     ]);
   });

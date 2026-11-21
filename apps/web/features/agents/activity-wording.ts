@@ -115,6 +115,7 @@ const actions: Record<string, { asked: string; done: string }> = {
     asked: "Lernblock entfernen",
     done: "Lernblock entfernt",
   },
+  createTasks: { asked: "Aufgabe anlegen", done: "Aufgabe angelegt" },
 };
 
 /** Why the gate refused an Action, as the Verlauf names it. */
@@ -206,6 +207,10 @@ function workLine(action: NonNullable<ActionEntry["action"]>) {
         ? quoted(action.work.title)
         : "Ohne Titel"
       : "gelöscht",
+    // A new Task names the Obligation it counts toward.
+    ...(action.work?.obligation
+      ? [`für ${quoted(action.work.obligation)}`]
+      : []),
     ...(action.work?.course ? [action.work.course] : []),
     ...(action.start && action.end
       ? [shortSpan({ start: action.start, end: action.end })]

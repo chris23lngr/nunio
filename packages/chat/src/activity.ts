@@ -44,6 +44,13 @@ export type ActionEvent = {
   brokenPreferences: BrokenPreference[];
 };
 
+/** The arguments of a `task.create` Action that name it. */
+type NewTask = {
+  title: string;
+  courseId: string | null;
+  obligationId?: string;
+};
+
 /** Adds Activity events to a Run's Verlauf; one already written under its key stays as it was. */
 export async function recordEvents(
   tx: Transaction,
@@ -77,6 +84,16 @@ export type ActivityRun = {
   openApprovals: number;
 };
 
+/**
+ * The work an Action was for, by its title now; null title once it can no longer be read. A new Task toward an
+ * Obligation also names that Obligation, as nunio shows it.
+ */
+export type VerlaufWork = {
+  title: string | null;
+  course: string | null;
+  obligation?: string | null;
+};
+
 /** One entry of a Run's Verlauf, with the Courses and Sources it names looked up now: null once deleted. */
 export type VerlaufEntry =
   | { type: "start"; at: Date; trigger: ActivityRun["trigger"] }
@@ -98,7 +115,7 @@ export type VerlaufEntry =
       action: {
         kind: string;
         /** Its work by its title now; null once deleted. A null title is one that can no longer be read. */
-        work: { title: string | null; course: string | null } | null;
+        work: VerlaufWork | null;
         start: Date | null;
         end: Date | null;
       } | null;
@@ -112,7 +129,7 @@ export type VerlaufEntry =
       /** The Action the Approval was asked for, named as in an `action` entry. */
       action: {
         kind: string;
-        work: { title: string | null; course: string | null } | null;
+        work: VerlaufWork | null;
         start: Date | null;
         end: Date | null;
       };
@@ -297,12 +314,33 @@ export function createActivity({
           (action.args as { workId?: string }).workId ??
           calls.find((call) => call.actionId === action.id)?.workId ??
           null;
+        // A new Task is named by its own arguments: its title, and its Course or Obligation (ADR-0022).
+        const newTasks = [
+          ...(await tx.action.findMany({
+            where: {
+              id: {
+                in: calls.flatMap((call) =>
+                  call.kind === "task.create" && call.actionId
+                    ? [call.actionId]
+                    : [],
+                ),
+              },
+            },
+            select: { id: true, args: true },
+          })),
+          ...approvals
+            .map(({ action }) => action)
+            .filter((action) => action.kind === "task.create"),
+        ].map(({ id, args }) => ({ id, ...(args as NewTask) }));
         const workIds = [
           ...calls.flatMap((call) => (call.workId ? [call.workId] : [])),
           ...approvals.flatMap(({ action }) => {
             const workId = workOfAction(action);
             return workId ? [workId] : [];
           }),
+          ...newTasks.flatMap((task) =>
+            task.obligationId ? [task.obligationId] : [],
+          ),
         ];
         const [sources, obligations, tasks] = await Promise.all([
           tx.source.findMany({
@@ -333,6 +371,7 @@ export function createActivity({
                 ...reads.flatMap((read) => read.courseIds),
                 ...obligations.map((o) => o.courseId),
                 ...tasks.flatMap((t) => (t.courseId ? [t.courseId] : [])),
+                ...newTasks.flatMap((t) => (t.courseId ? [t.courseId] : [])),
               ],
             },
           },
@@ -344,6 +383,7 @@ export function createActivity({
           summary,
           approvals,
           workOfAction,
+          newTasks,
           open: await openApprovals(tx, [runId]),
           sources,
           obligations,
@@ -382,6 +422,22 @@ export function createActivity({
           course: courseTitle(obligation.courseId),
         };
       };
+      /** The Task a `task.create` Action adds, by its own title, in its Course or toward its Obligation. */
+      const newTaskOf = (actionId: string): VerlaufWork | null => {
+        const task = read.newTasks.find((t) => t.id === actionId);
+        if (!task) return null;
+        const obligation = task.obligationId
+          ? obligations.find((o) => o.id === task.obligationId)
+          : undefined;
+        return {
+          title: task.title,
+          course: courseTitle(task.courseId ?? obligation?.courseId),
+          ...(task.obligationId && {
+            obligation:
+              reviewed.find((o) => o.id === task.obligationId)?.title || null,
+          }),
+        };
+      };
       const now = clock.now();
       const decided = read.approvals
         .flatMap(
@@ -392,7 +448,10 @@ export function createActivity({
             };
             const shown = {
               kind: action.kind,
-              work: workOf(read.workOfAction(action)),
+              work:
+                action.kind === "task.create"
+                  ? newTaskOf(action.id)
+                  : workOf(read.workOfAction(action)),
               start: start ? new Date(start) : null,
               end: end ? new Date(end) : null,
             };
@@ -480,7 +539,10 @@ export function createActivity({
               call.actionId && call.kind
                 ? {
                     kind: call.kind,
-                    work: workOf(call.workId),
+                    work:
+                      call.kind === "task.create"
+                        ? newTaskOf(call.actionId)
+                        : workOf(call.workId),
                     start: call.start ? new Date(call.start) : null,
                     end: call.end ? new Date(call.end) : null,
                   }

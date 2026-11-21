@@ -1445,7 +1445,7 @@ async function checkBlock(
   return { status: "ok", notes };
 }
 
-/** The Plan's rules as the gate applies them to an Agent's Study Block Actions, in the gate's own transaction. */
+/** The Plan's rules as the gate applies them to an Agent's Study Block and Task Actions, in the gate's own transaction. */
 export const planRules: PlanRules = {
   async check(tx, intent, now) {
     const checked = await checkBlock(
@@ -1484,6 +1484,18 @@ export const planRules: PlanRules = {
           ),
           brokenPreferences: [],
         };
+  },
+  async taskDue(tx, task) {
+    const event = task.fixedEventId
+      ? await tx.fixedEvent.findUnique({ where: { id: task.fixedEventId } })
+      : null;
+    if (!event) return null;
+    // Its window follows from its neighbors in the series, as a Routine's Task's does.
+    const series = await tx.fixedEvent.findMany({
+      where: event.seriesId ? { seriesId: event.seriesId } : { id: event.id },
+      orderBy: [{ start: "asc" }, { end: "asc" }],
+    });
+    return windowOf(task, series)?.end ?? null;
   },
 };
 

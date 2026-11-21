@@ -7,8 +7,11 @@ import type { Kind } from "./kinds.js";
 export const approvalModes = ["always", "automatic", "ask"] as const;
 export type ApprovalMode = (typeof approvalModes)[number];
 
-/** The drawer's sections, in order. Aufgaben, Lernmaterial, Benachrichtigungen and Briefings come with their tools. */
-export const capabilitySections = { studyBlocks: "Lernblöcke" } as const;
+/** The drawer's sections, in order. Lernmaterial, Benachrichtigungen and Briefings come with their tools. */
+export const capabilitySections = {
+  studyBlocks: "Lernblöcke",
+  tasks: "Aufgaben",
+} as const;
 
 type Capability = {
   section: keyof typeof capabilitySections;
@@ -57,6 +60,15 @@ export const capabilities = {
     kind: "studyBlock.remove",
     ownBlocks: true,
     modes: ["automatic", "always", "ask"],
+  },
+  // An Agent's only Task tool: it never completes or reopens a Task or changes an Estimate (ADR-0022).
+  createTasks: {
+    section: "tasks",
+    title: "Aufgaben erstellen",
+    description:
+      "Neue Aufgaben in deinen Kursen anlegen, auch zu Prüfungen und Abgaben oder zur Vor- und Nachbereitung.",
+    kind: "task.create",
+    modes: ["ask", "automatic", "always"],
   },
 } as const satisfies Record<string, Capability>;
 export type CapabilityId = keyof typeof capabilities;

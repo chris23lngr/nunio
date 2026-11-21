@@ -2176,14 +2176,22 @@
                   "title",
                   "start"
                 ]
+              },
+              "obligation": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The title of the Obligation it counts toward, as nunio shows it; null for none."
               }
             },
             "required": [
               "role",
               "minutes",
-              "event"
+              "event",
+              "obligation"
             ],
-            "description": "What a new Task is for: its Course Event and role, and the minutes it needs; null for any other Action."
+            "description": "What a new Task is for: its Course Event and role or its Obligation, and the minutes it needs; null for any other Action."
           }
         },
         "required": [
@@ -4123,7 +4131,7 @@
             "items": {
               "$ref": "#/components/schemas/AgentCapability"
             },
-            "maxItems": 4,
+            "maxItems": 5,
             "description": "Its Capabilities, each at most once, on a mode it allows."
           },
           "budgetMicroUsd": {
@@ -4164,7 +4172,8 @@
               "createStudyBlocks",
               "moveOwnStudyBlocks",
               "moveStudyBlocks",
-              "removeOwnStudyBlocks"
+              "removeOwnStudyBlocks",
+              "createTasks"
             ]
           },
           "mode": {
@@ -4295,7 +4304,8 @@
               "createStudyBlocks",
               "moveOwnStudyBlocks",
               "moveStudyBlocks",
-              "removeOwnStudyBlocks"
+              "removeOwnStudyBlocks",
+              "createTasks"
             ]
           },
           "section": {
@@ -4861,6 +4871,13 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "obligation": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "For a new Task toward an Obligation, that Obligation's title now; null when it can no longer be read."
                       }
                     },
                     "required": [
@@ -4974,6 +4991,12 @@
                         ]
                       },
                       "course": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "obligation": {
                         "type": [
                           "string",
                           "null"

@@ -396,7 +396,13 @@ export function createAgentRuns({
       const calls: StoredCall[] = [];
       if (!answered)
         for (const call of stepped.value.actionCalls)
-          calls.push(await readCall(turn, { plan, p, timeZone }, call));
+          calls.push(
+            await readCall(
+              turn,
+              { plan, p, timeZone, courses: context.courses },
+              call,
+            ),
+          );
       const stored = await withOwner(db, p, async (tx) => {
         // Serialised with ending the Run: a step that returns after the Run ended keeps nothing.
         await tx.$executeRaw`SELECT 1 FROM "run" WHERE "id" = ${runId} FOR UPDATE`;

@@ -23,14 +23,24 @@ const schemas = {
       end: z.date(),
     })
     .refine(ordered, message),
-  /** A Task in a Course, or a Course Event's Preparation or Follow-up (ADR-0022). */
-  "task.create": z.strictObject({
-    title: z.string().trim().min(1).max(500),
-    courseId: z.string().min(1).nullable(),
-    fixedEventId: z.string().min(1).nullable(),
-    role: z.enum(["preparation", "follow_up"]).nullable(),
-    estimateMinutes: z.number().int().positive().max(60_000).nullable(),
-  }),
+  /**
+   * A Task in a Course, toward an Obligation, or a Course Event's Preparation or Follow-up (ADR-0022). Toward an
+   * Obligation it is in the Obligation's Course and names no Course or event. Only an Agent names an Obligation, and
+   * Actions asked before it could have none, so their arguments and fingerprints stay as they were.
+   */
+  "task.create": z
+    .strictObject({
+      title: z.string().trim().min(1).max(500),
+      courseId: z.string().min(1).nullable(),
+      obligationId: z.string().min(1).optional(),
+      fixedEventId: z.string().min(1).nullable(),
+      role: z.enum(["preparation", "follow_up"]).nullable(),
+      estimateMinutes: z.number().int().positive().max(60_000).nullable(),
+    })
+    .refine(
+      (task) => !task.obligationId || (!task.courseId && !task.fixedEventId),
+      "a Task toward an Obligation names no Course or Course Event",
+    ),
   "task.reopen": z.strictObject({ taskId: z.string().min(1) }),
   // The block as the student was shown it, so a removed one can still be named (ADR-0021).
   "studyBlock.remove": z
@@ -83,7 +93,7 @@ const covers = {
   // A Rebalance moves a block the student placed or moved only with their Approval.
   "studyBlock.move": (scope: GrantScope, _: unknown, block: BlockSubject) =>
     inScope(scope, block) && block.placedBy === "nunio",
-  // No Agent adds or reopens Tasks: only the student, from a Chat, with their Approval (ADR-0022).
+  // A preset's scoped Grants never add a Task; a free-text Agent's Grant for it is matched by kind (ADR-0022).
   "task.create": () => false,
   "task.reopen": () => false,
   // Only the student removes a block: no Grant covers it (ADR-0021).

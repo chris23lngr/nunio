@@ -108,6 +108,11 @@ export interface Snapshot<K extends Kind = Kind> {
   intoProtectedTime: boolean;
   /** For a free-text Agent's Study Block Action, the Plan's rules on it; null otherwise. */
   planCheck: PlanVerdict | null;
+  /**
+   * For a free-text Agent's new Task, when it would be due: its Obligation's deadline, or the end of its Preparation's or
+   * Follow-up's window; null otherwise, as for a Task in a Course, which has no deadline.
+   */
+  taskDue: Date | null;
   /** The request for the student's Approval of this Action, once one was made. */
   approval: {
     id: string;
@@ -253,6 +258,13 @@ function decideByMode<K extends Kind>(
     "start" in subject &&
     subject.start <= s.now
       ? "started"
+      : undefined) ??
+    // A Preparation for a Course Event that has begun, or a Follow-up whose window has closed, is for the past.
+    (intent.kind === "task.create" &&
+    (intent.args as Args<"task.create">).fixedEventId &&
+    s.taskDue &&
+    s.taskDue <= s.now
+      ? "past"
       : undefined);
   if (refusal) return refuse(refusal);
 
@@ -263,11 +275,14 @@ function decideByMode<K extends Kind>(
   if (!grant) return { outcome: "await_approval" };
   const broken = s.planCheck?.brokenPreferences ?? [];
   if (mode === "automatic") {
-    // A block placed, moved or removed within the next 24 hours: where it is now, and where it would go.
+    // A block placed, moved or removed within the next 24 hours: where it is now, and where it would go. A new Task
+    // due within them changes the next 24 hours too.
     const horizon = s.now.getTime() + dayMs;
-    const soon = [intent.args, subject].some(
-      (at) => "start" in at && at.start.getTime() < horizon,
-    );
+    const soon =
+      [intent.args, subject].some(
+        (at) => "start" in at && at.start.getTime() < horizon,
+      ) ||
+      (s.taskDue !== null && s.taskDue.getTime() < horizon);
     if (broken.length || soon) return { outcome: "await_approval" };
   }
   return {

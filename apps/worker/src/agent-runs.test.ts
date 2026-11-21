@@ -964,10 +964,12 @@ const lernbloecke = (
     Record<keyof typeof capabilities, AgentCapability["mode"]>
   > = {},
 ): AgentCapability[] =>
-  (Object.keys(capabilities) as (keyof typeof capabilities)[]).map((id) => ({
-    id,
-    mode: modes[id] ?? capabilities[id].modes[0],
-  }));
+  (Object.keys(capabilities) as (keyof typeof capabilities)[])
+    .filter((id) => capabilities[id].section === "studyBlocks")
+    .map((id) => ({
+      id,
+      mode: modes[id] ?? capabilities[id].modes[0],
+    }));
 /** The model's call to create a Study Block for the exam it read as O1, `offset` days ahead at `hour` local time. */
 const createBlock = (offset: number, hour = 10) =>
   calls("createStudyBlocks", {
@@ -976,15 +978,15 @@ const createBlock = (offset: number, hour = 10) =>
     end: `${day(offset)}T${String(hour + 1).padStart(2, "0")}:00`,
   });
 const readPlan = () => calls("agenda", { from: day(0), to: day(13) });
-/** What the model was last given as the results of its Action calls, in order. */
-const actionResults = (prompt: unknown) =>
+/** What the model was last given as the results of its calls of one Action tool, in order. */
+const actionResults = (prompt: unknown, toolName = "createStudyBlocks") =>
   (prompt as { role: string; content: unknown }[])
     .filter((message) => message.role === "tool")
     .flatMap(
       (message) =>
         message.content as { toolName: string; output: { value?: string } }[],
     )
-    .filter((part) => part.toolName === "createStudyBlocks")
+    .filter((part) => part.toolName === toolName)
     .map((part) => part.output.value ?? JSON.stringify(part.output));
 /** The Run's Actions, oldest first, as the gate recorded them. */
 const actionsOf = (runId: string) =>
@@ -999,7 +1001,11 @@ const statuses = async (runId: string) =>
 describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
   it("offers exactly the Agent's Capabilities as Action tools beside its read tools", async () => {
     const reads = ["agenda", "approvals", "courseFacts", "searchMaterial"];
-    const all = await started({ held: lernbloecke() });
+    const all = await started({
+      held: (Object.keys(capabilities) as (keyof typeof capabilities)[]).map(
+        (id) => ({ id, mode: capabilities[id].modes[0] }),
+      ),
+    });
     await run(all);
     const none = await started();
     await run(none);
@@ -1013,9 +1019,15 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
       reads,
       [...reads, "createStudyBlocks"].sort(),
     ]);
-    // Nothing on ADR-0026's "no tool" list: every Action tool only creates, moves or removes a Study Block.
+    // Nothing on ADR-0026's "no tool" list: every Action tool only creates, moves or removes a Study Block, or creates
+    // a Task. None reopens or completes a Task or changes an Estimate.
     expect(new Set(Object.values(capabilities).map((c) => c.kind))).toEqual(
-      new Set(["studyBlock.create", "studyBlock.move", "studyBlock.remove"]),
+      new Set([
+        "studyBlock.create",
+        "studyBlock.move",
+        "studyBlock.remove",
+        "task.create",
+      ]),
     );
   });
 
@@ -1721,5 +1733,216 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
       }),
     ).toEqual([{ id: theirs }]);
     expect(own.createdByAgentId).toBe(s.agentId);
+  });
+});
+
+describe("an Agent's Run creating Tasks (#154)", () => {
+  const createTask = (input: object) => calls("createTasks", input);
+  /** The Course of the student's exam. */
+  const courseOf = async (obligationId: string) =>
+    (await admin.obligation.findUniqueOrThrow({ where: { id: obligationId } }))
+      .courseId;
+  /** A Course Event of the Course, `offset` days ahead at 10:00 UTC, from a confirmed series. */
+  async function courseEvent(
+    studentId: string,
+    courseId: string,
+    offset: number,
+  ) {
+    const calendarId = randomUUID(),
+      seriesId = randomUUID(),
+      eventId = randomUUID();
+    await admin.calendarSource.create({
+      data: { id: calendarId, studentId, name: "Stundenplan.ics" },
+    });
+    await admin.eventSeries.create({
+      data: {
+        id: seriesId,
+        studentId,
+        calendarId,
+        title: "Statistik II Vorlesung",
+        courseId,
+        confirmedAt: new Date(),
+      },
+    });
+    await admin.fixedEvent.create({
+      data: {
+        id: eventId,
+        studentId,
+        calendarId,
+        seriesId,
+        title: "Statistik II Vorlesung",
+        start: new Date(`${day(offset)}T10:00:00Z`),
+        end: new Date(`${day(offset)}T12:00:00Z`),
+      },
+    });
+    return eventId;
+  }
+
+  it("creates Tasks in its Course, toward the exam it read and for a Course Event it read on Automatisch, its Estimates counting as nunio's", async () => {
+    executor = createPlanExecutor({ db: runtime });
+    const s = await started({
+      held: [{ id: "createTasks", mode: "automatic" }],
+    });
+    const courseId = await courseOf(s.obligationId);
+    const eventId = await courseEvent(s.studentId, courseId, 3);
+    script = [
+      readPlan,
+      () => [
+        ...createTask({ title: "Formelsammlung anlegen", course: "K1" }),
+        ...createTask({
+          title: "Altklausur rechnen",
+          obligation: "O1",
+          minutes: 90,
+        }),
+        ...createTask({
+          title: "Kapitel 3 lesen",
+          event: "E1",
+          role: "preparation",
+          minutes: 30,
+        }),
+      ],
+      () => says("Fertig."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect(await statuses(s.runId)).toEqual(["done", "done", "done"]);
+    expect(
+      await admin.task.findMany({
+        where: { studentId: s.studentId },
+        orderBy: { title: "asc" },
+        select: {
+          title: true,
+          courseId: true,
+          obligationId: true,
+          fixedEventId: true,
+          role: true,
+          estimateMinutes: true,
+          estimatedBy: true,
+        },
+      }),
+    ).toEqual([
+      {
+        title: "Altklausur rechnen",
+        courseId: null,
+        obligationId: s.obligationId,
+        fixedEventId: null,
+        role: null,
+        estimateMinutes: 90,
+        estimatedBy: "nunio",
+      },
+      {
+        title: "Formelsammlung anlegen",
+        courseId,
+        obligationId: null,
+        fixedEventId: null,
+        role: null,
+        estimateMinutes: null,
+        estimatedBy: null,
+      },
+      {
+        title: "Kapitel 3 lesen",
+        courseId,
+        obligationId: null,
+        fixedEventId: eventId,
+        role: "preparation",
+        estimateMinutes: 30,
+        estimatedBy: "nunio",
+      },
+    ]);
+    expect(actionResults(prompts[2], "createTasks")).toEqual([
+      expect.stringMatching(/^Done: the Task was created as T\d+\.$/),
+      expect.stringMatching(/^Done: the Task was created as T\d+\.$/),
+      expect.stringMatching(/^Done: the Task was created as T\d+\.$/),
+    ]);
+    const verlauf = (await activity.run(s.p, s.agentId, s.runId))!.verlauf;
+    expect(
+      verlauf
+        .filter((entry) => entry.type === "action")
+        .map((entry) => entry.type === "action" && entry.action),
+    ).toEqual(
+      [
+        { title: "Formelsammlung anlegen" },
+        // The Obligation it counts toward, by its title as nunio shows it.
+        { title: "Altklausur rechnen", obligation: "Klausur Statistik II" },
+        { title: "Kapitel 3 lesen" },
+      ].map((work) => ({
+        kind: "task.create",
+        work: { ...work, course: "Statistik II" },
+        start: null,
+        end: null,
+      })),
+    );
+  });
+
+  it("asks on Nachfragen, refuses another Course's work, and asks nothing for a call that names nothing it read, no single target or a Preparation the event has", async () => {
+    const s = await started({ held: [{ id: "createTasks", mode: "ask" }] });
+    const courseId = await courseOf(s.obligationId);
+    const eventId = await courseEvent(s.studentId, courseId, 3);
+    await admin.task.create({
+      data: {
+        id: randomUUID(),
+        studentId: s.studentId,
+        courseId,
+        fixedEventId: eventId,
+        role: "preparation",
+        title: "Vorbereitung: Statistik II",
+      },
+    });
+    // The same student's other Course, not one of the Agent's, with an exam after the Agent's.
+    const otherId = randomUUID();
+    await admin.course.create({
+      data: {
+        id: otherId,
+        studentId: s.studentId,
+        title: "Mikroökonomik",
+        matchTitle: "mikrooekonomik",
+        semester: "2026-ws",
+        color: "sky",
+        status: "accepted",
+      },
+    });
+    await admin.obligation.create({
+      data: {
+        id: randomUUID(),
+        studentId: s.studentId,
+        courseId: otherId,
+        matchKey: "klausur",
+        kind: "exam",
+        enteredAt: new Date(),
+        correctedAt: new Date(),
+        correctedTitle: "Klausur Mikroökonomik",
+        correctedDueDate: new Date(`${day(12)}T00:00:00Z`),
+        correctedDueTime: "10:00",
+        correctedTimeZone: "Europe/Berlin",
+      },
+    });
+    script = [
+      readPlan,
+      () => [
+        ...createTask({ title: "Formelsammlung anlegen", course: "K1" }),
+        ...createTask({ title: "Altklausur rechnen", obligation: "O2" }),
+        ...createTask({ title: "Lernen", obligation: "O9" }),
+        ...createTask({ title: "Lernen", course: "K1", obligation: "O1" }),
+        ...createTask({ title: "Lernen", event: "E1", role: "preparation" }),
+      ],
+      () => says("Fertig."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect(await statuses(s.runId)).toEqual([
+      "awaiting_approval",
+      "out_of_scope",
+    ]);
+    expect(actionResults(prompts[2], "createTasks")).toEqual([
+      expect.stringMatching(/^Asked, not happened/),
+      expect.stringMatching(/^Refused: it is not work of your Courses/),
+      expect.stringMatching(/^Refused, nothing was asked: no Obligation/),
+      expect.stringMatching(/^Refused, nothing was asked: name exactly one/),
+      expect.stringMatching(
+        /^Refused, nothing was asked: E1 already has a Preparation/,
+      ),
+    ]);
   });
 });

@@ -413,6 +413,7 @@ describe("an Agent's Study Block Actions through the gate", () => {
       createStudyBlocks: "studyBlock.create",
       moveOwnStudyBlocks: "studyBlock.move",
       moveStudyBlocks: "studyBlock.move",
+      createTasks: "task.create",
     };
     await admin.agent.create({
       data: {
@@ -469,6 +470,52 @@ describe("an Agent's Study Block Actions through the gate", () => {
     moveOwnStudyBlocks: "automatic",
     moveStudyBlocks: "ask",
   } as const;
+
+  it("adds an Agent's Task toward an Obligation, its Estimate counting as nunio's, while a Chat's stays the student's", async () => {
+    const s = await student();
+    const agent = await agentRun(s, { createTasks: "automatic" });
+    const task = {
+      kind: "task.create" as const,
+      title: "Aufgabe 2 rechnen",
+      courseId: null,
+      obligationId: s.obligationId,
+      fixedEventId: null,
+      role: null,
+      estimateMinutes: 90,
+    };
+
+    const done = await agent.perform(task);
+    if (done.status !== "done") throw new Error(done.status);
+    const asked = await gate.perform(s.p, {
+      key: "chat-1:message-1:0",
+      intent: { ...task, title: "Aufgabe 3 rechnen" },
+    });
+    if (asked.status !== "awaiting_approval") throw new Error(asked.status);
+    await gate.decide(s.p, {
+      kind: "approve",
+      actionId: asked.actionId,
+      fingerprint: asked.fingerprint,
+    });
+    await gate.perform(s.p, {
+      key: "chat-1:message-1:0",
+      intent: { ...task, title: "Aufgabe 3 rechnen" },
+    });
+
+    const toward = { obligationId: s.obligationId, courseId: null };
+    expect((await plan.view(s.p)).tasks).toEqual([
+      expect.objectContaining({
+        ...toward,
+        id: (done.effect as { taskId: string }).taskId,
+        title: "Aufgabe 2 rechnen",
+        estimate: { minutes: 90, estimatedBy: "nunio", rationale: null },
+      }),
+      expect.objectContaining({
+        ...toward,
+        title: "Aufgabe 3 rechnen",
+        estimate: { minutes: 90, estimatedBy: "student", rationale: null },
+      }),
+    ]);
+  });
 
   it("lets an Agent move the block it created, until the student moves it", async () => {
     const s = await student();
