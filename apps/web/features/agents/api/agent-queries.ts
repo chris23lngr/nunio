@@ -112,3 +112,22 @@ export function agentModelQueries(apiOrigin: string) {
     },
   });
 }
+
+export type AgentTemplate =
+  paths["/api/me/agents/templates"]["get"]["responses"][200]["content"]["application/json"][number];
+
+/** The curated Agent Templates, each with how many distinct other students saved an Agent from it. */
+export function agentTemplatesQueries(apiOrigin: string) {
+  return queryOptions({
+    queryKey: [apiOrigin, "agent-templates"],
+    queryFn: async ({ signal }) => {
+      const result = await createApiClient(apiOrigin).GET(
+        "/api/me/agents/templates",
+        { signal },
+      );
+      if (!result.data)
+        throw new Error("Die Templates konnten nicht geladen werden.");
+      return result.data;
+    },
+  });
+}

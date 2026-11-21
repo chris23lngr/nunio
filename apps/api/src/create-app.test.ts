@@ -10567,3 +10567,218 @@ describe("the course page", () => {
     expect((await proposed.page()).status).toBe(404);
   });
 });
+
+describe("Agent Templates API (#190)", () => {
+  async function studentWithCourse(slug: string) {
+    const cookie = await signUp(slug);
+    const id = await studentId(cookie);
+    const courseId = randomUUID();
+    await admin.course.create({
+      data: {
+        id: courseId,
+        studentId: id,
+        title: "Statistik I",
+        matchTitle: "statistik i",
+        semester: "2026-ws",
+        color: "rose",
+        status: "accepted",
+      },
+    });
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const body = (overrides: Record<string, unknown> = {}) => ({
+      name: "Klausur vorbereiten",
+      description: "Plant deine Vorbereitung bis zum Prüfungstag.",
+      emoji: "🎯",
+      instructions:
+        "Bereite mich auf die nächste Klausur in meinen Kursen vor.",
+      courseIds: [courseId],
+      capabilities: [
+        { id: "createStudyBlocks", mode: "automatic" },
+        { id: "moveOwnStudyBlocks", mode: "automatic" },
+        { id: "removeOwnStudyBlocks", mode: "automatic" },
+        { id: "notifyStudent", mode: null },
+      ],
+      budgetMicroUsd: 5_000_000,
+      trigger: { rhythm: "daily", minute: 360 },
+      modelKey: "sonnet-5.5-reasoning-high",
+      ...overrides,
+    });
+    return {
+      cookie,
+      headers,
+      courseId,
+      body,
+      templates: () =>
+        app.request(`${apiOrigin}/api/me/agents/templates`, {
+          headers: { cookie },
+        }),
+      template: (templateId: string) =>
+        app.request(`${apiOrigin}/api/me/agents/templates/${templateId}`, {
+          headers: { cookie },
+        }),
+      create: (payload: Record<string, unknown>) =>
+        app.request(`${apiOrigin}/api/me/agents`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+        }),
+    };
+  }
+
+  it("requires authentication and lists the three curated Templates and their details", async () => {
+    expect(
+      (await app.request(`${apiOrigin}/api/me/agents/templates`)).status,
+    ).toBe(401);
+    expect(
+      (await app.request(`${apiOrigin}/api/me/agents/templates/prepareExam`))
+        .status,
+    ).toBe(401);
+
+    const s = await studentWithCourse("templates-list");
+    const response = await s.templates();
+    expect(response.status).toBe(200);
+    const list = (await response.json()) as {
+      id: string;
+      name: string;
+      emoji: string;
+      courses: string;
+      createdOn: string;
+      othersCount: number;
+    }[];
+    expect(list.map((t) => [t.id, t.emoji, t.name, t.courses])).toEqual([
+      ["prepareExam", "🎯", "Klausur vorbereiten", "none"],
+      ["organizeCourse", "📚", "Kurs organisieren", "none"],
+      ["createBriefings", "📧", "Briefings erstellen", "all_active"],
+    ]);
+    for (const item of list) {
+      expect(item.createdOn).toBe("2026-11-19");
+      expect(item.othersCount).toBeGreaterThanOrEqual(0);
+    }
+
+    const detail = await s.template("createBriefings");
+    expect(detail.status).toBe(200);
+    expect(await detail.json()).toMatchObject({
+      id: "createBriefings",
+      emoji: "📧",
+      courses: "all_active",
+      trigger: { rhythm: "daily", minute: 420 },
+      capabilities: [{ id: "createBriefing", mode: null }],
+    });
+    expect((await s.template("unknown")).status).toBe(404);
+  });
+
+  it("saves templateId on POST, rejects unknown templateId, preserves it on PUT, and computes N across distinct other students", async () => {
+    const alice = await studentWithCourse("templates-alice");
+    const bob = await studentWithCourse("templates-bob");
+    const carol = await studentWithCourse("templates-carol");
+
+    // Reject unknown templateId cleanly.
+    expect(
+      (await alice.create(alice.body({ templateId: "not_a_template" }))).status,
+    ).toBe(400);
+
+    const othersFor = async (
+      s: typeof alice,
+      templateId: string,
+    ): Promise<number> => {
+      const list = (await (await s.templates()).json()) as {
+        id: string;
+        othersCount: number;
+      }[];
+      return list.find((t) => t.id === templateId)!.othersCount;
+    };
+
+    const baseExam = await othersFor(bob, "prepareExam");
+    const baseBriefing = await othersFor(bob, "createBriefings");
+
+    // Alice saves an Agent from prepareExam.
+    const a1Res = await alice.create(alice.body({ templateId: "prepareExam" }));
+    expect(a1Res.status).toBe(201);
+    const { id: a1 } = (await a1Res.json()) as { id: string };
+
+    // Saved Agent records its templateId, and editing it keeps templateId intact.
+    expect(
+      await (
+        await app.request(`${apiOrigin}/api/me/agents/${a1}`, {
+          headers: { cookie: alice.cookie },
+        })
+      ).json(),
+    ).toMatchObject({ templateId: "prepareExam" });
+    expect(
+      (
+        await app.request(`${apiOrigin}/api/me/agents/${a1}`, {
+          method: "PUT",
+          headers: alice.headers,
+          body: JSON.stringify(alice.body({ name: "Umbenannt" })),
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      await (
+        await app.request(`${apiOrigin}/api/me/agents/${a1}`, {
+          headers: { cookie: alice.cookie },
+        })
+      ).json(),
+    ).toMatchObject({ name: "Umbenannt", templateId: "prepareExam" });
+
+    // Alice's own Agent is NOT counted in Alice's N, but IS counted in Bob's N.
+    expect(await othersFor(alice, "prepareExam")).toBe(baseExam);
+    expect(await othersFor(bob, "prepareExam")).toBe(baseExam + 1);
+    expect(
+      (
+        (await (await bob.template("prepareExam")).json()) as {
+          othersCount: number;
+        }
+      ).othersCount,
+    ).toBe(baseExam + 1);
+
+    // Alice creates a second Agent from prepareExam: still counted once for Bob.
+    const a2Res = await alice.create(alice.body({ templateId: "prepareExam" }));
+    expect(a2Res.status).toBe(201);
+    const { id: a2 } = (await a2Res.json()) as { id: string };
+    expect(await othersFor(bob, "prepareExam")).toBe(baseExam + 1);
+
+    // Carol saves from createBriefings and Ends it: Ended Agents stay counted.
+    const c1Res = await carol.create(
+      carol.body({
+        name: "Briefings erstellen",
+        emoji: "📧",
+        capabilities: [{ id: "createBriefing", mode: null }],
+        trigger: { rhythm: "daily", minute: 420 },
+        templateId: "createBriefings",
+      }),
+    );
+    expect(c1Res.status).toBe(201);
+    const { id: c1 } = (await c1Res.json()) as { id: string };
+    await app.request(`${apiOrigin}/api/me/agents/${c1}/end`, {
+      method: "POST",
+      headers: carol.headers,
+    });
+    expect(await othersFor(bob, "createBriefings")).toBe(baseBriefing + 1);
+
+    // Deleting Alice's Agents removes her from Bob's count once none remain.
+    await app.request(`${apiOrigin}/api/me/agents/${a1}`, {
+      method: "DELETE",
+      headers: alice.headers,
+    });
+    expect(await othersFor(bob, "prepareExam")).toBe(baseExam + 1);
+    await app.request(`${apiOrigin}/api/me/agents/${a2}`, {
+      method: "DELETE",
+      headers: alice.headers,
+    });
+    expect(await othersFor(bob, "prepareExam")).toBe(baseExam);
+
+    // RLS isolation: Bob still cannot view Carol's Agent, even though N counted Carol.
+    expect(
+      (
+        await app.request(`${apiOrigin}/api/me/agents/${c1}`, {
+          headers: { cookie: bob.cookie },
+        })
+      ).status,
+    ).toBe(404);
+  });
+});

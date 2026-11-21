@@ -46,6 +46,8 @@ model Agent {
   student        User                @relation(fields: [studentId], references: [id], onDelete: Cascade)
   /// A pilot preset's name; null for a free-text Agent. The Agents cutover removes it.
   preset         String?
+  /// The curated Template this Agent was copied from, if any; null for a blank, preset or converted Agent.
+  templateId     String?
   name           String              @default("")
   /// Its Beschreibung, for telling it apart from the student's other Agents.
   description    String              @default("")
@@ -88,6 +90,7 @@ model Agent {
 
   @@unique([id, studentId])
   @@index([studentId])
+  @@index([templateId])
   @@map("agent")
 }
 

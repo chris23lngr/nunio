@@ -4093,7 +4093,7 @@
           "agent"
         ]
       },
-      "AgentForm": {
+      "CreateAgentForm": {
         "type": "object",
         "properties": {
           "name": {
@@ -4148,6 +4148,19 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "The Model its Runs run on: one of the Models Chat offers (GET /api/me/models), or the one it already has."
+          },
+          "templateId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "prepareExam",
+              "organizeCourse",
+              "createBriefings",
+              null
+            ],
+            "description": "The curated Template this Agent was copied from, if any; immutable once saved."
           }
         },
         "required": [
@@ -4259,6 +4272,76 @@
         ],
         "description": "Täglich (daily) or on chosen Wochentage (weekdays), at a minute of the day (Uhrzeit) in the Plan's time zone."
       },
+      "AgentForm": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Its Beschreibung."
+          },
+          "emoji": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "What it should do, in the student's words."
+          },
+          "courseIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Its Courses: accepted, unarchived ones, or ones it already has."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCapability"
+            },
+            "maxItems": 9,
+            "description": "Its Capabilities, each at most once, on a mode it allows."
+          },
+          "budgetMicroUsd": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 100000000,
+            "description": "Its monthly Budget."
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/AgentTrigger"
+          },
+          "modelKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The Model its Runs run on: one of the Models Chat offers (GET /api/me/models), or the one it already has."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "emoji",
+          "instructions",
+          "courseIds",
+          "capabilities",
+          "budgetMicroUsd",
+          "trigger",
+          "modelKey"
+        ],
+        "additionalProperties": false
+      },
       "AgentCourse": {
         "type": "object",
         "properties": {
@@ -4351,6 +4434,70 @@
           "modes"
         ]
       },
+      "AgentTemplate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "prepareExam",
+              "organizeCourse",
+              "createBriefings"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "Its Beschreibung."
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/AgentTrigger"
+          },
+          "courses": {
+            "type": "string",
+            "enum": [
+              "none",
+              "all_active"
+            ],
+            "description": "Which Courses Template verwenden preselects: none, or all accepted, unarchived Courses."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCapability"
+            }
+          },
+          "createdOn": {
+            "type": "string",
+            "description": "ISO date (YYYY-MM-DD) shown as \"Erstellt am …\"."
+          },
+          "othersCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Distinct other students with an Agent saved from this Template, Ended included; hidden when 0."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "emoji",
+          "instructions",
+          "trigger",
+          "courses",
+          "capabilities",
+          "createdOn",
+          "othersCount"
+        ]
+      },
       "Agent": {
         "type": "object",
         "properties": {
@@ -4368,6 +4515,13 @@
               null
             ],
             "description": "Null for a free-text Agent."
+          },
+          "templateId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The curated Template this Agent was copied from; null for a blank, preset or converted Agent."
           },
           "name": {
             "type": "string",
@@ -4591,6 +4745,7 @@
         "required": [
           "id",
           "preset",
+          "templateId",
           "name",
           "description",
           "emoji",
@@ -14778,7 +14933,7 @@
                     ]
                   },
                   {
-                    "$ref": "#/components/schemas/AgentForm"
+                    "$ref": "#/components/schemas/CreateAgentForm"
                   }
                 ]
               }
@@ -15397,6 +15552,106 @@
           },
           "401": {
             "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/agents/templates": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "The curated Templates in code, each with how many distinct other students have an Agent saved from it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentTemplate"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/agents/templates/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One curated Template, with how many distinct other students have an Agent saved from it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTemplate"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
             "content": {
               "application/json": {
                 "schema": {

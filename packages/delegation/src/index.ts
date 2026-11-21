@@ -78,3 +78,11 @@ export {
   type Transaction,
   withOwner,
 } from "./principal.js";
+export {
+  type AgentTemplateDefinition,
+  agentTemplates,
+  type CoursePreselection,
+  isTemplateId,
+  type TemplateId,
+  templateIds,
+} from "./templates.js";

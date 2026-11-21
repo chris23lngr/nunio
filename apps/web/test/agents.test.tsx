@@ -17,6 +17,7 @@ function Providers({ children }: { children: ReactNode }) {
   );
 }
 beforeEach(() => {
+  api.route("GET", "/api/me/agents/templates", () => Response.json([]));
   vi.stubGlobal(
     "matchMedia",
     vi.fn(() => ({

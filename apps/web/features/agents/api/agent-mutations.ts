@@ -39,6 +39,10 @@ export function delegateAgent(apiOrigin: string, queryClient: QueryClient) {
 
 export type AgentForm =
   paths["/api/me/agents/{id}"]["put"]["requestBody"]["content"]["application/json"];
+export type CreateAgentForm = Extract<
+  paths["/api/me/agents"]["post"]["requestBody"]["content"]["application/json"],
+  { instructions: string }
+>;
 
 /** Saves a free-text Agent's whole form: creates it when it has no id yet. Resolves to its id. */
 export function saveAgent(
@@ -47,14 +51,17 @@ export function saveAgent(
   queryClient: QueryClient,
 ) {
   return mutationOptions({
-    mutationFn: async (body: AgentForm) => {
+    mutationFn: async (body: CreateAgentForm) => {
       const client = createApiClient(apiOrigin);
+      const { templateId, ...updateBody } = body;
       const result = id
         ? await client.PUT("/api/me/agents/{id}", {
             params: { path: { id } },
-            body,
+            body: updateBody,
           })
-        : await client.POST("/api/me/agents", { body });
+        : await client.POST("/api/me/agents", {
+            body: templateId ? body : updateBody,
+          });
       if (result.response.status === 409)
         throw new Error(
           "Einer deiner Kurse wurde inzwischen archiviert. Wähle ihn ab und speichere noch einmal.",

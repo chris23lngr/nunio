@@ -1063,3 +1063,98 @@ describe("a free-text Agent's Schedule", () => {
     expect(calls.filter((call) => call.includes(ids[1]!))).toHaveLength(1);
   });
 });
+
+describe("Agent Templates", () => {
+  async function withAcceptedCourse() {
+    const s = await student();
+    await admin.course.update({
+      where: { id: s.courseId },
+      data: { status: "accepted" },
+    });
+    return s;
+  }
+  const templateForm = (courseId: string, templateId?: string | null) => ({
+    name: "Klausur vorbereiten",
+    description: "Plant deine Vorbereitung bis zum Prüfungstag.",
+    emoji: "🎯",
+    instructions: "Bereite mich auf die nächste Klausur vor.",
+    courseIds: [courseId],
+    capabilities: [{ id: "createStudyBlocks", mode: "automatic" as const }],
+    budgetMicroUsd: 5_000_000,
+    trigger: { rhythm: "daily" as const, minute: 360 },
+    modelKey: "sonnet-5.5-reasoning-high",
+    ...(templateId !== undefined ? { templateId } : {}),
+  });
+
+  it("records a valid templateId on create, rejects unknown ones, and keeps it across edits", async () => {
+    const s = await withAcceptedCourse();
+    const { schedules } = fakeSchedules();
+    const agents = createAgents({ db: runtime, schedules, clock });
+
+    expect(
+      await agents.create(s.p, templateForm(s.courseId, "not_a_template")),
+    ).toEqual({ status: "invalid" });
+
+    const created = await agents.create(
+      s.p,
+      templateForm(s.courseId, "prepareExam"),
+    );
+    if (created.status !== "ok") throw new Error(created.status);
+    expect(await agents.view(s.p, created.id)).toMatchObject({
+      templateId: "prepareExam",
+    });
+
+    const edited = await agents.update(s.p, created.id, {
+      ...templateForm(s.courseId),
+      name: "Eigener Name",
+    });
+    expect(edited).toEqual({ status: "ok" });
+    expect(await agents.view(s.p, created.id)).toMatchObject({
+      name: "Eigener Name",
+      templateId: "prepareExam",
+    });
+  });
+
+  it("counts distinct other students per Template, including Ended Agents and excluding Deleted and own ones", async () => {
+    const alice = await withAcceptedCourse();
+    const bob = await withAcceptedCourse();
+    const carol = await withAcceptedCourse();
+    const { schedules } = fakeSchedules();
+    const agents = createAgents({ db: runtime, schedules, clock });
+
+    const countFor = async (p: typeof alice.p, id: string) =>
+      (await agents.templates(p)).find((t) => t.id === id)!.othersCount;
+
+    const baseline = await countFor(bob.p, "prepareExam");
+
+    // Alice saves two Agents from prepareExam: counted once for Bob, zero for Alice.
+    const a1 = await agents.create(
+      alice.p,
+      templateForm(alice.courseId, "prepareExam"),
+    );
+    const a2 = await agents.create(
+      alice.p,
+      templateForm(alice.courseId, "prepareExam"),
+    );
+    if (a1.status !== "ok" || a2.status !== "ok")
+      throw new Error("create failed");
+
+    expect(await countFor(alice.p, "prepareExam")).toBe(baseline);
+    expect(await countFor(bob.p, "prepareExam")).toBe(baseline + 1);
+
+    // Carol saves one from prepareExam and ends it: Ended Agents stay counted.
+    const c1 = await agents.create(
+      carol.p,
+      templateForm(carol.courseId, "prepareExam"),
+    );
+    if (c1.status !== "ok") throw new Error(c1.status);
+    await agents.end(carol.p, c1.id);
+    expect(await countFor(bob.p, "prepareExam")).toBe(baseline + 2);
+
+    // Deleting Alice's first Agent leaves her second; deleting both drops her from the count.
+    await agents.delete(alice.p, a1.id);
+    expect(await countFor(bob.p, "prepareExam")).toBe(baseline + 2);
+    await agents.delete(alice.p, a2.id);
+    expect(await countFor(bob.p, "prepareExam")).toBe(baseline + 1);
+  });
+});
