@@ -34,6 +34,14 @@ import {
 /** Every pilot Agent gets the same Budget; its presets make no model calls yet. */
 const defaultBudgetMicroUsd = 1_000_000;
 
+/** Saving the form with a Model Chat does not offer, other than the one the Agent has. */
+const modelUnavailable = {
+  422: json(
+    ErrorBody,
+    "Its Model is not offered in Chat (error model_unavailable); pick another.",
+  ),
+};
+
 /** One of an Agent's Courses, or one it could be given, with what the Agent will read of it. */
 const AgentCourse = z
   .object({
@@ -121,6 +129,13 @@ const AgentForm = z
       .max(100_000_000)
       .describe("Its monthly Budget."),
     trigger: Trigger,
+    modelKey: z
+      .string()
+      .min(1)
+      .max(200)
+      .describe(
+        "The Model its Runs run on: one of the Models Chat offers (GET /api/me/models), or the one it already has.",
+      ),
   })
   .strict()
   .openapi("AgentForm");
@@ -149,6 +164,12 @@ const Agent = z
     trigger: Trigger.describe(
       "When its Schedule starts a Run; a preset Agent's is Täglich at 06:00.",
     ),
+    modelKey: z
+      .string()
+      .nullable()
+      .describe(
+        "The Model its Runs run on, which Chat may have stopped offering since; null for a preset Agent.",
+      ),
     state: z.enum(["active", "paused", "ended"]),
     pausedBy: z.enum(["student", "budget", "course_archived"]).nullable(),
     running: z
@@ -422,23 +443,23 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
           AgentForm,
         ]),
       ),
-      responses: { 201: Created, ...archivedOutcomes },
+      responses: { 201: Created, ...archivedOutcomes, ...modelUnavailable },
     }),
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
       const input = c.req.valid("json");
-      return created(
-        c,
-        await c
-          .get("agents")
-          .create(
-            p,
-            "preset" in input
-              ? { ...input, budgetMicroUsd: defaultBudgetMicroUsd }
-              : input,
-          ),
-      );
+      const result = await c
+        .get("agents")
+        .create(
+          p,
+          "preset" in input
+            ? { ...input, budgetMicroUsd: defaultBudgetMicroUsd }
+            : input,
+        );
+      if (result.status === "model_unavailable")
+        return c.json({ error: "model_unavailable" }, 422);
+      return created(c, result);
     },
   );
   routes.openapi(
@@ -448,17 +469,17 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
       description:
         "Save a free-text Agent's whole form; its next Run reads it. A preset Agent has no form (400).",
       request: { params: id, ...body(AgentForm) },
-      responses: { 200: Done, ...archivedOutcomes },
+      responses: { 200: Done, ...archivedOutcomes, ...modelUnavailable },
     }),
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
-      return done(
-        c,
-        await c
-          .get("agents")
-          .update(p, c.req.valid("param").id, c.req.valid("json")),
-      );
+      const result = await c
+        .get("agents")
+        .update(p, c.req.valid("param").id, c.req.valid("json"));
+      if (result.status === "model_unavailable")
+        return c.json({ error: "model_unavailable" }, 422);
+      return done(c, result);
     },
   );
   // Before "/api/me/agents/{id}", which would otherwise take "courses" for an id.
@@ -587,6 +608,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
           })),
           capabilities: r.capabilities,
           trigger: r.trigger,
+          modelKey: r.modelKey,
           ...scopeNames(review, r.scope),
           state: r.state,
           pausedBy: r.pausedBy,

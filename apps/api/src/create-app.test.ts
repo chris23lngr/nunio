@@ -6682,6 +6682,7 @@ describe("a free-text Agent's form", () => {
     capabilities,
     budgetMicroUsd: 5_000_000,
     trigger: { rhythm: "daily", minute: 360 } as Record<string, unknown>,
+    modelKey: "sonnet-5.5-reasoning-high",
   });
 
   it("creates an Agent from the whole form and reads it back, each Course with its Topic and Source counts", async () => {
@@ -6939,6 +6940,97 @@ describe("a free-text Agent's form", () => {
         sources: 0,
       },
     ]);
+  });
+
+  it("runs on a Model the student picks from those Chat offers, and keeps its Model once no longer offered", async () => {
+    const s = await student("agent-model");
+    const statistics = await course(s.id, "Statistics II");
+    // Never offered: the founder has not enabled it in Chat.
+    await admin.catalogModel.create({
+      data: {
+        key: "agent-test-off",
+        providerModelId: "anthropic/claude-haiku-5.5",
+        reasoningEffort: "low",
+        maxOutputTokens: 8000,
+        name: "Aus",
+        provider: "Anthropic",
+        description: "Nicht angeboten.",
+      },
+    });
+    await admin.catalogModel.create({
+      data: {
+        key: "agent-test-model",
+        providerModelId: "anthropic/claude-haiku-5.5",
+        reasoningEffort: "medium",
+        maxOutputTokens: 8000,
+        name: "Agent-Testmodell",
+        provider: "Anthropic",
+        description: "Nur für diesen Test.",
+        position: 99,
+        chatEnabled: true,
+        prices: [
+          {
+            minPromptTokens: 0,
+            inputMicroUsdPerMTok: 1,
+            outputMicroUsdPerMTok: 1,
+          },
+        ],
+        zeroRetentionAvailable: true,
+        syncedAt: new Date(),
+      },
+    });
+
+    const { modelKey: _, ...unpicked } = form([statistics]);
+    expect((await s.call("POST", "", unpicked)).status).toBe(400);
+    for (const modelKey of ["agent-test-off", "no-such-model"]) {
+      const refused = await s.call("POST", "", {
+        ...form([statistics]),
+        modelKey,
+      });
+      expect(refused.status).toBe(422);
+      expect(await refused.json()).toEqual({ error: "model_unavailable" });
+    }
+    const created = await s.call("POST", "", {
+      ...form([statistics]),
+      modelKey: "agent-test-model",
+    });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      modelKey: "agent-test-model",
+    });
+
+    // The founder stops offering it: the Agent keeps it, and may change only to one offered.
+    await admin.catalogModel.update({
+      where: { key: "agent-test-model" },
+      data: { chatEnabled: false },
+    });
+    const kept = await s.call("PUT", `/${id}`, {
+      ...form([statistics]),
+      modelKey: "agent-test-model",
+      name: "Umbenannt",
+    });
+    expect(kept.status).toBe(200);
+    const elsewhere = await s.call("PUT", `/${id}`, {
+      ...form([statistics]),
+      modelKey: "agent-test-off",
+    });
+    expect(elsewhere.status).toBe(422);
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      name: "Umbenannt",
+      modelKey: "agent-test-model",
+    });
+    expect(
+      (
+        await s.call("PUT", `/${id}`, {
+          ...form([statistics]),
+          modelKey: "opus-5.5-reasoning-high",
+        })
+      ).status,
+    ).toBe(200);
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      modelKey: "opus-5.5-reasoning-high",
+    });
   });
 
   it("leaves a preset Agent's form alone until the cutover", async () => {

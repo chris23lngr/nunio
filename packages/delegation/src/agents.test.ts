@@ -832,6 +832,7 @@ describe("a free-text Agent's Schedule", () => {
     capabilities: [],
     budgetMicroUsd: 5_000_000,
     trigger: trigger as never,
+    modelKey: "sonnet-5.5-reasoning-high",
   });
 
   it("is saved from its trigger in the Plan's time zone, updated on every save, and removed on End", async () => {

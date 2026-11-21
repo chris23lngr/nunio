@@ -60,6 +60,9 @@ model Agent {
   triggerRhythm   String             @default("daily")
   triggerWeekdays Int[]              @default([])
   triggerMinute   Int                @default(360)
+  /// The Model its Runs run on, chosen from those Chat offers; null for a preset Agent, which makes no model calls.
+  modelKey        String?
+  model           CatalogModel?      @relation(fields: [modelKey], references: [key], onDelete: Restrict)
   state          AgentState          @default(active)
   /// Why it was Paused: by the student, or by exhausting its Budget. Only the student resumes it.
   pausedBy       String?

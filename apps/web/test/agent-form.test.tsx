@@ -17,6 +17,7 @@ beforeEach(() => {
   api.route("GET", "/api/me/agents/capabilities", () =>
     Response.json(capabilitySet),
   );
+  api.route("GET", "/api/me/models", () => Response.json(chatModels));
   // These Agents never ran, so they open on their Auftrag.
   for (const id of ["a-1", "a-paused", "a-ended"])
     api.route("GET", `/api/me/agents/${id}/runs`, () =>
@@ -63,6 +64,45 @@ const capabilitySet = [
     modes: ["automatic", "always", "ask"],
   },
 ];
+
+const dataHandling = {
+  provider: "OpenRouter",
+  upstream: ["Amazon Bedrock", "Google"],
+  routing: "international",
+  zeroRetention: true,
+};
+/** The Models Chat offers, as the API lists them. */
+const chatModels = {
+  models: [
+    {
+      key: "haiku-5.5-reasoning-high",
+      name: "Haiku 5.5",
+      provider: "Anthropic",
+      description: "Schnell und sparsam für kurze, klare Aufgaben.",
+      dataHandling,
+      cost: { relativeToDefault: 0.05, tier: "low" },
+    },
+    {
+      key: "sonnet-5.5-reasoning-high",
+      name: "Sonnet 5.5",
+      provider: "Anthropic",
+      description: "Ausgewogen für Erklärungen und alltägliches Lernen.",
+      dataHandling,
+      cost: { relativeToDefault: 1, tier: "medium" },
+    },
+    {
+      key: "opus-5.5-reasoning-high",
+      name: "Opus 5.5",
+      provider: "Anthropic",
+      description: "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
+      dataHandling,
+      cost: { relativeToDefault: 2, tier: "high" },
+    },
+  ],
+  default: "sonnet-5.5-reasoning-high",
+  // The student's choice for Chat, which a new Agent does not take.
+  selected: "haiku-5.5-reasoning-high",
+};
 
 const ids = {
   statistics: "c0000000-0000-4000-8000-000000000001",
@@ -190,6 +230,12 @@ test("'Neuer Agent' opens a blank form with 🤖 and 5 USD, and Speichern saves 
   expect(within(chosen).getByText("12 Themen · 3 Quellen")).toBeTruthy();
   await userEvent.clear(budget);
   await userEvent.type(budget, "2.5");
+  // The Chat default is preselected.
+  expect(
+    await within(screen.getByRole("region", { name: "Modell" })).findByText(
+      "Sonnet 5.5",
+    ),
+  ).toBeTruthy();
 
   await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
@@ -204,6 +250,7 @@ test("'Neuer Agent' opens a blank form with 🤖 and 5 USD, and Speichern saves 
       capabilities: [],
       budgetMicroUsd: 2_500_000,
       trigger: { rhythm: "daily", minute: 360 },
+      modelKey: "sonnet-5.5-reasoning-high",
     },
   ]);
 });
@@ -251,6 +298,7 @@ const agent = {
   grants: ["studyBlock.create"],
   budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
   trigger: { rhythm: "daily", minute: 360 },
+  modelKey: "sonnet-5.5-reasoning-high",
   recentActions: [],
   next: { runAt: null, action: null },
 };
@@ -289,9 +337,152 @@ test("a saved Agent's form shows its Courses, an Archived one as archived, and S
         capabilities: [{ id: "createStudyBlocks", mode: "automatic" }],
         budgetMicroUsd: 5_000_000,
         trigger: { rhythm: "daily", minute: 360 },
+        modelKey: "sonnet-5.5-reasoning-high",
       },
     ]),
   );
+});
+
+test("'Modell auswählen' lists Chat's Models with their logo and, on hover, the catalog's description, and saves the one picked", async () => {
+  const saved: { modelKey: string }[] = [];
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const section = await screen.findByRole("region", { name: "Modell" });
+  expect(await within(section).findByText("Sonnet 5.5")).toBeTruthy();
+
+  await userEvent.click(
+    within(section).getByRole("button", { name: "Modell ändern" }),
+  );
+  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
+  const choices = within(sheet).getByRole("radiogroup", { name: "Modelle" });
+  const radios = within(choices).getAllByRole("radio") as HTMLInputElement[];
+  expect(
+    radios.map((radio) => [radio.getAttribute("aria-label"), radio.checked]),
+  ).toEqual([
+    ["Haiku 5.5", false],
+    ["Sonnet 5.5", true],
+    ["Opus 5.5", false],
+  ]);
+  for (const radio of radios)
+    expect(
+      radio.closest("label")!.querySelector('img[src*="claude"]'),
+    ).toBeTruthy();
+  expect(
+    screen.queryByText("Am gründlichsten für anspruchsvolle, lange Aufgaben."),
+  ).toBeNull();
+  await userEvent.hover(radios[2]!.closest("label")!);
+  expect(
+    await screen.findByText(
+      "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
+    ),
+  ).toBeTruthy();
+  await userEvent.click(radios[2]!);
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Modell auswählen" }),
+    ).toBeNull(),
+  );
+  expect(within(section).getByText("Opus 5.5")).toBeTruthy();
+
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  expect(saved.map((form) => form.modelKey)).toEqual([
+    "opus-5.5-reasoning-high",
+  ]);
+});
+
+test("Abbrechen closes 'Modell auswählen' without changing the Agent's Model", async () => {
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const section = await screen.findByRole("region", { name: "Modell" });
+  await within(section).findByText("Sonnet 5.5");
+
+  await userEvent.click(
+    within(section).getByRole("button", { name: "Modell ändern" }),
+  );
+  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
+  await userEvent.click(
+    within(sheet).getByRole("radio", { name: "Haiku 5.5" }),
+  );
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Abbrechen" }),
+  );
+
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(within(section).getByText("Sonnet 5.5")).toBeTruthy();
+});
+
+test("a Model Chat stopped offering while the form was open is refused on Speichern, asking for another", async () => {
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", () =>
+    Response.json({ error: "model_unavailable" }, { status: 422 }),
+  );
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const section = await screen.findByRole("region", { name: "Modell" });
+  await userEvent.click(
+    await within(section).findByRole("button", { name: "Modell ändern" }),
+  );
+  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
+  await userEvent.click(within(sheet).getByRole("radio", { name: "Opus 5.5" }));
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Dieses Modell ist nicht mehr verfügbar. Wähle ein anderes und speichere noch einmal.",
+  );
+});
+
+test("an Agent whose Model Chat no longer offers says so, and keeps it until another is picked", async () => {
+  const saved: { modelKey: string }[] = [];
+  api.route("GET", "/api/me/agents/a-1", () =>
+    Response.json({ ...agent, modelKey: "sonnet-4-reasoning-high" }),
+  );
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  const section = await screen.findByRole("region", { name: "Modell" });
+  expect(
+    await within(section).findByText(
+      "Nicht mehr verfügbar. Wähle ein anderes Modell, sonst stoppen die Läufe deines Agenten.",
+    ),
+  ).toBeTruthy();
+  await userEvent.click(
+    within(section).getByRole("button", { name: "Modell ändern" }),
+  );
+  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
+  expect(
+    (within(sheet).getAllByRole("radio") as HTMLInputElement[]).some(
+      (radio) => radio.checked,
+    ),
+  ).toBe(false);
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Abbrechen" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  expect(saved.map((form) => form.modelKey)).toEqual([
+    "sonnet-4-reasoning-high",
+  ]);
 });
 
 test("Auslöser shows a saved Agent's Wochentage and Uhrzeit, and saves the ones chosen", async () => {

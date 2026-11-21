@@ -43,6 +43,7 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useId, useState } from "react";
 import { CourseDot } from "@/features/shared/components/course-dot";
+import { ModelLogo } from "@/features/shared/components/model-logo";
 import { PageHeader } from "@/features/shared/components/page-header";
 import { courseSize, unavailable } from "./agent-course";
 import { saveAgent, startAgentRun } from "./api/agent-mutations";
@@ -52,12 +53,17 @@ import type {
   AgentCourse,
   Capability,
 } from "./api/agent-queries";
-import { agentCourseQueries, capabilityQueries } from "./api/agent-queries";
+import {
+  agentCourseQueries,
+  agentModelQueries,
+  capabilityQueries,
+} from "./api/agent-queries";
 import { modeOf } from "./capability-mode";
 import { AgentActivity } from "./components/agent-activity";
 import { CapabilityMenu } from "./components/capability-menu";
 import { EditCapabilitiesSheet } from "./components/edit-capabilities-sheet";
 import { EditCoursesSheet } from "./components/edit-courses-sheet";
+import { SelectModelSheet } from "./components/select-model-sheet";
 
 type Draft = {
   name: string;
@@ -76,9 +82,11 @@ type Draft = {
   weekdays: number[];
   /** Its Uhrzeit as HH:MM, in the Plan's time zone. */
   time: string;
+  /** Its Model by key; null until picked, while the Chat default stands in. */
+  modelKey: string | null;
 };
 
-/** A blank "Neuer Agent": 🤖, 5 USD a month, Täglich at 06:00. */
+/** A blank "Neuer Agent": 🤖, 5 USD a month, Täglich at 06:00, on the Chat default. */
 const blank: Draft = {
   name: "",
   description: "",
@@ -90,6 +98,7 @@ const blank: Draft = {
   rhythm: "daily",
   weekdays: [],
   time: "06:00",
+  modelKey: null,
 };
 /** The API's cap on a monthly Budget, in USD. */
 const maxBudget = 100;
@@ -105,6 +114,7 @@ type Saved = Pick<
   | "capabilities"
   | "budget"
   | "trigger"
+  | "modelKey"
   | "state"
   | "running"
 >;
@@ -132,6 +142,7 @@ const draftOf = (agent: Saved): Draft => ({
   rhythm: agent.trigger.rhythm,
   weekdays: agent.trigger.rhythm === "weekdays" ? agent.trigger.weekdays : [],
   time: timeOf(agent.trigger.minute),
+  modelKey: agent.modelKey,
 });
 
 /** A form section: its title, what it is for, and its fields. */
@@ -213,9 +224,13 @@ export function AgentFormScreen({
   );
   const [editingCourses, setEditingCourses] = useState(false);
   const [editingCapabilities, setEditingCapabilities] = useState(false);
+  const [choosingModel, setChoosingModel] = useState(false);
   const [tried, setTried] = useState(false);
   const offered = useQuery(agentCourseQueries(apiOrigin));
   const capabilitySet = useQuery(capabilityQueries(apiOrigin));
+  const models = useQuery(agentModelQueries(apiOrigin));
+  const modelKey = draft.modelKey ?? models.data?.default ?? null;
+  const model = models.data?.models.find((each) => each.key === modelKey);
   const save = useMutation(saveAgent(apiOrigin, agent?.id, queryClient));
   const start = useMutation(
     startAgentRun(apiOrigin, agent?.id ?? "", queryClient),
@@ -239,6 +254,7 @@ export function AgentFormScreen({
         ? null
         : "Wähle mindestens einen Wochentag.",
     time: /^\d{2}:\d{2}$/.test(draft.time) ? null : "Gib eine Uhrzeit an.",
+    model: modelKey ? null : "Wähle ein Modell.",
   };
   const submit = async () => {
     setTried(true);
@@ -263,6 +279,7 @@ export function AgentFormScreen({
                 weekdays: draft.weekdays,
                 minute: minuteOf(draft.time),
               },
+        modelKey: modelKey!,
       })
       .catch(() => {
         // Query owns the mutation error, rendered in the header.
@@ -772,6 +789,56 @@ export function AgentFormScreen({
                   )}
                 </div>
               </Section>
+              <div aria-hidden="true" className="h-px bg-base-200" />
+              <Section
+                title="Modell"
+                description="Mit welchem Modell dein Agent arbeitet."
+              >
+                <div className="flex flex-col">
+                  {models.error && (
+                    <p role="alert" className="text-sm text-destructive-600">
+                      {models.error.message}
+                    </p>
+                  )}
+                  {model ? (
+                    <div className="flex items-center gap-3 rounded-lg border border-base-200 px-4 py-3">
+                      <ModelLogo provider={model.provider} />
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="truncate text-sm font-medium text-base-800">
+                          {model.name}
+                        </span>
+                        <span className="text-sm text-base-500">
+                          {model.provider}
+                        </span>
+                      </span>
+                    </div>
+                  ) : (
+                    modelKey &&
+                    models.data && (
+                      <p className="text-sm text-base-500">
+                        Nicht mehr verfügbar. Wähle ein anderes Modell, sonst
+                        stoppen die Läufe deines Agenten.
+                      </p>
+                    )
+                  )}
+                  {shown("model") && (
+                    <FieldError id={`${id}-model-error`}>
+                      {errors.model}
+                    </FieldError>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setChoosingModel(true)}
+                    className="mt-3 flex items-center gap-2 self-start text-sm font-medium text-primary-600 hover:text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-500"
+                  >
+                    <Pencil
+                      aria-hidden="true"
+                      className="size-4 text-primary-500"
+                    />
+                    Modell ändern
+                  </button>
+                </div>
+              </Section>
             </form>
           )}
         </div>
@@ -799,6 +866,18 @@ export function AgentFormScreen({
           setEditingCapabilities(false);
         }}
         onClose={() => setEditingCapabilities(false)}
+      />
+      <SelectModelSheet
+        open={choosingModel}
+        offered={models.data?.models ?? []}
+        loading={models.isPending}
+        error={models.error?.message}
+        selected={modelKey}
+        onSave={(key) => {
+          change({ modelKey: key });
+          setChoosingModel(false);
+        }}
+        onClose={() => setChoosingModel(false)}
       />
     </main>
   );

@@ -14,6 +14,9 @@ vi.mock("next/navigation", () => ({
 beforeEach(() => {
   api.route("GET", "/api/me/agents/capabilities", () => Response.json([]));
   api.route("GET", "/api/me/agents/courses", () => Response.json([]));
+  api.route("GET", "/api/me/models", () =>
+    Response.json({ models: [], default: null, selected: null }),
+  );
   vi.stubGlobal(
     "matchMedia",
     vi.fn(() => ({
@@ -41,6 +44,7 @@ const agent = {
   grants: [],
   budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
   trigger: { rhythm: "daily", minute: 360 },
+  modelKey: "sonnet-5.5-reasoning-high",
   recentActions: [],
   next: { runAt: null, action: null },
 };

@@ -8,6 +8,7 @@ import {
 } from "./capabilities.js";
 import type { Clock } from "./gate.js";
 import type { Kind } from "./kinds.js";
+import { createModelCatalog } from "./model-catalog.js";
 import type { Principal, Transaction } from "./principal.js";
 import { principal as mint, withOwner } from "./principal.js";
 
@@ -114,6 +115,8 @@ export type AgentForm = {
   capabilities: { id: string; mode: string }[];
   budgetMicroUsd: number;
   trigger: AgentTrigger;
+  /** The Model its Runs run on: one Chat offers, or the one it already has. */
+  modelKey: string;
 };
 
 /** The Plan's time zone, which an Agent's trigger is in. */
@@ -194,6 +197,11 @@ export function createAgents({
   schedules?: Schedules;
   clock: Clock;
 }) {
+  const catalog = createModelCatalog({ db, clock });
+  /** Whether the Agent may run on the Model: one Chat offers now, or `kept`, the one it has, offered or not. */
+  const checkModel = async (modelKey: string, kept?: string | null) =>
+    modelKey === kept ||
+    (await catalog.chatModels()).some((model) => model.key === modelKey);
   const scheduled = () => {
     if (!schedules)
       throw new Error("createAgents needs schedules to change an Agent");
@@ -276,6 +284,8 @@ export function createAgents({
           const held = checkCapabilities(input.capabilities);
           const trigger = checkTrigger(input.trigger);
           if (!held || !trigger) return { status: "invalid" } as const;
+          if (!(await checkModel(input.modelKey)))
+            return { status: "model_unavailable" } as const;
           const courseIds = await checkCourses(tx, input.courseIds);
           if (typeof courseIds === "string")
             return { status: courseIds } as const;
@@ -362,8 +372,8 @@ export function createAgents({
 
     /**
      * Saves a free-text Agent's whole form; its next Run reads it, and its Schedule follows its trigger. Its Courses may
-     * keep one that was Archived since. A preset Agent has no form until the Agents cutover converts it, so it is
-     * "invalid".
+     * keep one that was Archived since, and it may keep a Model Chat no longer offers. A preset Agent has no form until
+     * the Agents cutover converts it, so it is "invalid".
      */
     async update(p: Principal, id: string, form: AgentForm) {
       if (p.kind !== "student") return { status: "gone" } as const;
@@ -379,6 +389,8 @@ export function createAgents({
         const held = checkCapabilities(form.capabilities);
         const trigger = checkTrigger(form.trigger);
         if (!held || !trigger) return { status: "invalid" } as const;
+        if (!(await checkModel(form.modelKey, r.modelKey)))
+          return { status: "model_unavailable" } as const;
         const courseIds = await checkCourses(
           tx,
           form.courseIds,
@@ -558,6 +570,7 @@ export function createAgents({
               .map((c) => ({ id: capability, mode: c.mode as ApprovalMode })),
           ),
           trigger: triggerOf(r),
+          modelKey: r.modelKey,
           scope: scopeOf(r),
           state: r.state as "active" | "paused" | "ended",
           pausedBy: r.pausedBy as PausedBy | null,
@@ -598,7 +611,6 @@ export function createAgents({
       agentId,
       runId,
       workflowId,
-      modelKey = null,
     }: {
       studentId: string;
       agentId: string;
@@ -606,8 +618,6 @@ export function createAgents({
       runId: string;
       /** The workflow to signal once the student decides on one of the Run's Actions. */
       workflowId: string;
-      /** The Model a free-text Agent's Run runs on; null when none is offered. */
-      modelKey?: string | null;
     }) {
       return withOwner(db, mint.fromSession({ studentId }), async (tx) => {
         await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${agentId} FOR UPDATE`;
@@ -623,7 +633,7 @@ export function createAgents({
               .filter((c) => c.capability === capability)
               .map((c) => ({ id: capability, mode: c.mode })),
           ),
-          modelKey,
+          modelKey: agent.modelKey,
         };
         if (existing) {
           if (existing.agentId !== agentId) return null;
