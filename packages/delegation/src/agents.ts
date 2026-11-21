@@ -29,8 +29,8 @@ export type AgentTrigger =
   /** ISO weekdays: 1 is Monday, 7 is Sunday. */
   | { rhythm: "weekdays"; weekdays: number[]; minute: number };
 
-/** The trigger, Wochentage in order, if it is one of the v1 rhythms; otherwise null. */
-function checkTrigger(trigger: AgentTrigger): AgentTrigger | null {
+/** The trigger, Wochentage in order, if it is one of the v1 rhythms; otherwise null. The form and the builder hold to it. */
+export function checkTrigger(trigger: AgentTrigger): AgentTrigger | null {
   const { minute } = trigger;
   if (!Number.isInteger(minute) || minute < 0 || minute >= 24 * 60) return null;
   if (trigger.rhythm === "daily")

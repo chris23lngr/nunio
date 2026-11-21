@@ -7,6 +7,7 @@ export {
   type AgentScope,
   type Agents,
   type AgentTrigger,
+  checkTrigger,
   createAgents,
   type PausedBy,
   type Preset,
@@ -20,6 +21,7 @@ export {
   capabilities,
   capabilityIds,
   capabilitySections,
+  checkCapabilities,
   kindOf,
 } from "./capabilities.js";
 export {

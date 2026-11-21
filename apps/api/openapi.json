@@ -4434,6 +4434,125 @@
           "modes"
         ]
       },
+      "BuilderRequest": {
+        "type": "object",
+        "properties": {
+          "form": {
+            "$ref": "#/components/schemas/BuilderForm"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "student",
+                    "builder"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
+              },
+              "required": [
+                "role",
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 40,
+            "description": "The conversation so far, oldest first; nunio keeps none."
+          }
+        },
+        "required": [
+          "form",
+          "messages"
+        ],
+        "additionalProperties": false
+      },
+      "BuilderForm": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "courseIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 50
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCapability"
+            },
+            "maxItems": 9
+          },
+          "trigger": {
+            "type": "object",
+            "properties": {
+              "rhythm": {
+                "type": "string",
+                "enum": [
+                  "daily",
+                  "weekdays"
+                ]
+              },
+              "weekdays": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 7
+                },
+                "maxItems": 7
+              },
+              "minute": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1439,
+                "description": "Its Uhrzeit; null while the field holds no time."
+              }
+            },
+            "required": [
+              "rhythm",
+              "weekdays",
+              "minute"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "instructions",
+          "courseIds",
+          "capabilities",
+          "trigger"
+        ],
+        "additionalProperties": false,
+        "description": "The form as it stands; it has no Budget or Model."
+      },
       "AgentTemplate": {
         "type": "object",
         "properties": {
@@ -15546,6 +15665,69 @@
                   "items": {
                     "$ref": "#/components/schemas/Capability"
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/agents/builder": {
+      "post": {
+        "description": "The AI builder panel: answers the student's latest message and may fill the form, which the browser applies. It never saves, starts a Run, or touches the Budget or Model, and is paid from the Allowance.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuilderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "AI SDK UI message SSE: a start chunk, the reply's text chunks, then data-form with the fields to fill (only when it changes the form) and finish, or data-refused (such as allowance_exhausted) or error.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid, such as a form with a Budget.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }

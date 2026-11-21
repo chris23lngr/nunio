@@ -19,6 +19,13 @@ export {
   summaryOf,
 } from "./agent-runs.js";
 export {
+  type Builder,
+  type BuilderForm,
+  type BuilderMessage,
+  createBuilder,
+  type FormFill,
+} from "./builder.js";
+export {
   type AskStep,
   type ChatCursor,
   type ChatMessage,

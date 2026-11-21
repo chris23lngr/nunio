@@ -1,6 +1,7 @@
-import type { Estimator, SeriesAssigner } from "@nunio/ai";
+import type { Answerer, Estimator, SeriesAssigner } from "@nunio/ai";
 import {
   createAnswerer,
+  createBuilderModel,
   createEmbedder,
   createEstimator,
   createGrader,
@@ -10,8 +11,8 @@ import {
 } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
-import type { Activity, Chats } from "@nunio/chat";
-import { createActivity, createChats } from "@nunio/chat";
+import type { Activity, Builder, Chats } from "@nunio/chat";
+import { createActivity, createBuilder, createChats } from "@nunio/chat";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { Agents, Delegation } from "@nunio/delegation";
@@ -72,6 +73,9 @@ export interface AppDeps {
   sourceWorkflows: SourceWorkflows;
   chats: Chats;
   chatModels: ChatModels;
+  /** The AI builder panel, and its task Model (`taskModels.builder`). */
+  builder: Builder;
+  builderModel: Answerer;
   plan: Plan;
   estimator: Estimator;
   seriesAssigner: SeriesAssigner;
@@ -103,6 +107,8 @@ export function createApp({
   sourceWorkflows,
   chats,
   chatModels,
+  builder,
+  builderModel,
   plan,
   estimator,
   seriesAssigner,
@@ -140,6 +146,8 @@ export function createApp({
     c.set("sourceWorkflows", sourceWorkflows);
     c.set("chats", chats);
     c.set("chatModels", chatModels);
+    c.set("builder", builder);
+    c.set("builderModel", builderModel);
     c.set("plan", plan);
     c.set("estimator", estimator);
     c.set("seriesAssigner", seriesAssigner);
@@ -289,6 +297,8 @@ export async function appFromEnv(
       catalog,
       answererFor: (model) => createAnswerer(models.fromConfig(model)),
     }),
+    builder: createBuilder({ db: prisma, delegation }),
+    builderModel: createBuilderModel(models.forTask("builder")),
     plan,
     estimator: createEstimator(models),
     seriesAssigner: createSeriesAssigner(models),

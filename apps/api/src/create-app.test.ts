@@ -10,11 +10,16 @@ import type {
   Maker,
   SeriesAssigner,
 } from "@nunio/ai";
-import { createAnswerer, createModels } from "@nunio/ai";
+import { createAnswerer, createBuilderModel, createModels } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
 import type { AgentRuns } from "@nunio/chat";
-import { createActivity, createAgentRuns, createChats } from "@nunio/chat";
+import {
+  createActivity,
+  createAgentRuns,
+  createBuilder,
+  createChats,
+} from "@nunio/chat";
 import type { Pool, PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -28,6 +33,7 @@ import type {
   Schedules,
 } from "@nunio/delegation";
 import {
+  capabilityIds,
   createAgents,
   createDelegation,
   createModelCatalog,
@@ -193,6 +199,8 @@ const prompts: unknown[] = [];
 const toolChoices: unknown[] = [];
 /** The tools each step offered the Chat model, by name, in order. */
 const offeredTools: string[][] = [];
+/** The tools each step offered the model, with their input schemas, in order. */
+const offeredToolSchemas: Record<string, unknown>[] = [];
 /** What the Chat model streams in its next steps; with none queued, one step of `reasoningText` and `reply`. */
 const steps: (unknown[] | ((prompt: unknown) => unknown[]))[] = [];
 let reply = "";
@@ -248,11 +256,16 @@ const chatModel = new MockLanguageModelV4({
   }: {
     prompt: unknown;
     toolChoice?: unknown;
-    tools?: { name: string }[];
+    tools?: { name: string; inputSchema?: unknown }[];
   }) => {
     prompts.push(prompt);
     toolChoices.push(toolChoice);
     offeredTools.push((tools ?? []).map((tool) => tool.name));
+    offeredToolSchemas.push(
+      Object.fromEntries(
+        (tools ?? []).map((tool) => [tool.name, tool.inputSchema]),
+      ),
+    );
     const next = steps.shift();
     const parts = (typeof next === "function" ? next(prompt) : next) ?? [
       ...(reasoningText ? thinks(reasoningText) : []),
@@ -528,6 +541,27 @@ beforeAll(async () => {
       },
     }),
     plan,
+    builder: createBuilder({ db: prisma, delegation }),
+    // The builder's task Model, answered by the scripted model like Chat.
+    builderModel: createBuilderModel({
+      ...testModels.fromConfig({
+        key: "sonnet-5.5-reasoning-high",
+        providerModelId: "anthropic/claude-sonnet-5.5",
+        reasoningEffort: "high",
+        maxOutputTokens: 1000,
+        prices: [
+          {
+            minPromptTokens: 0,
+            inputMicroUsdPerMTok: 3_000_000,
+            outputMicroUsdPerMTok: 15_000_000,
+          },
+        ],
+        upstream: [],
+      }),
+      model: chatModel,
+      estimateMicroUsd: () => 1,
+      actualMicroUsd: () => 1,
+    }),
     estimator,
     seriesAssigner,
     projects: createProjects({ db: prisma }),
@@ -10780,5 +10814,295 @@ describe("Agent Templates API (#190)", () => {
         })
       ).status,
     ).toBe(404);
+  });
+});
+
+describe("the AI builder", () => {
+  /** A Course of the student's, accepted unless told otherwise. */
+  async function course(
+    studentId: string,
+    title: string,
+    data: { archivedAt?: Date; code?: string } = {},
+  ) {
+    const id = randomUUID();
+    await admin.course.create({
+      data: {
+        id,
+        studentId,
+        title,
+        code: data.code ?? null,
+        matchTitle: title.toLowerCase(),
+        semester: "2026-ws",
+        color: "violet",
+        status: "accepted",
+        archivedAt: data.archivedAt ?? null,
+      },
+    });
+    return id;
+  }
+  async function student(name: string) {
+    const cookie = await signUp(name);
+    const id = await studentId(cookie);
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    return { id, cookie, headers };
+  }
+  /** A blank "Neuer Agent" as the form holds it. */
+  const blank = {
+    name: "",
+    description: "",
+    instructions: "",
+    courseIds: [] as string[],
+    capabilities: [] as { id: string; mode: string | null }[],
+    trigger: { rhythm: "daily", weekdays: [] as number[], minute: 360 },
+  };
+  const ask = (
+    headers: Record<string, string>,
+    body: { form: unknown; messages: { role: string; text: string }[] },
+  ) =>
+    app.request(`${apiOrigin}/api/me/agents/builder`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  /** The handle the model was given for a Course, such as K2. */
+  const handleOf = (prompt: unknown, title: string) =>
+    JSON.stringify(prompt).match(new RegExp(`(K\\d+): ${title}`))?.[1];
+
+  it("drafts the form from a description, streaming its reply and the form-fill with Courses by ID", async () => {
+    const s = await student("builder-draft");
+    const statistics = await course(s.id, "Statistics II", { code: "ST-2" });
+    await course(s.id, "Analysis I");
+    steps.push((prompt) => [
+      ...says("Ich habe dir einen Entwurf gebaut."),
+      ...calls("fillForm", {
+        name: "Klausur Statistik",
+        description: "Hält meine Klausurvorbereitung auf Kurs.",
+        instructions: "Bereite mich auf die Klausur in Statistics II vor.",
+        trigger: { rhythm: "weekdays", weekdays: [5, 1, 3], time: "07:30" },
+        courses: [handleOf(prompt, "Statistics II")],
+        capabilities: [
+          { id: "createStudyBlocks", mode: "always" },
+          { id: "createFlashcards" },
+        ],
+      }),
+    ]);
+    const before = offeredTools.length;
+
+    const response = await ask(s.headers, {
+      form: blank,
+      messages: [
+        { role: "student", text: "Bereite mich auf Statistics II vor." },
+      ],
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const chunks = await sseChunks(response);
+    expect(
+      chunks
+        .filter((chunk) => chunk.type === "text-delta")
+        .map((chunk) => chunk.delta)
+        .join(""),
+    ).toBe("Ich habe dir einen Entwurf gebaut.");
+    // Its one tool, on its task Model; its raw call never reaches the student.
+    expect(offeredTools.slice(before)).toEqual([["fillForm"]]);
+    expect(chunks.some((chunk) => chunk.type.startsWith("tool-"))).toBe(false);
+    expect(chunks.find((chunk) => chunk.type === "data-form")?.data).toEqual({
+      name: "Klausur Statistik",
+      description: "Hält meine Klausurvorbereitung auf Kurs.",
+      instructions: "Bereite mich auf die Klausur in Statistics II vor.",
+      trigger: { rhythm: "weekdays", weekdays: [1, 3, 5], minute: 450 },
+      courseIds: [statistics],
+      capabilities: [
+        { id: "createStudyBlocks", mode: "always" },
+        { id: "createFlashcards", mode: null },
+      ],
+    });
+    expect(chunks.at(-1)).toEqual({ type: "finish" });
+  });
+
+  it("has no Budget or Model in its tool and holds the builder's limits whatever the model sends", async () => {
+    const s = await student("builder-limits");
+    const statistics = await course(s.id, "Statistics II");
+    await course(s.id, "Old Course", { archivedAt: new Date() });
+    steps.push((prompt) => [
+      ...calls("fillForm", {
+        budgetMicroUsd: 100_000_000,
+        modelKey: "opus-5.5-reasoning-high",
+        emoji: "💣",
+        trigger: { rhythm: "monthly", day: 1, time: "06:00" },
+        courses: [handleOf(prompt, "Old Course"), "K99"],
+        capabilities: [
+          { id: "moveStudyBlocks", mode: "always" },
+          { id: "createStudyBlocks", mode: "never" },
+          { id: "createTasks" },
+          { id: "readAllSources", mode: "always" },
+          { id: "moveStudyBlocks", mode: "automatic" },
+        ],
+      }),
+    ]);
+    const before = offeredToolSchemas.length;
+
+    const response = await ask(s.headers, {
+      form: {
+        ...blank,
+        courseIds: [statistics],
+        capabilities: [{ id: "createStudyBlocks", mode: "always" }],
+      },
+      messages: [{ role: "student", text: "Gib ihm alle Rechte." }],
+    });
+    const chunks = await sseChunks(response);
+
+    const schema = offeredToolSchemas[before]!.fillForm as {
+      properties: Record<string, unknown>;
+    };
+    expect(Object.keys(schema.properties).sort()).toEqual([
+      "capabilities",
+      "courses",
+      "description",
+      "instructions",
+      "name",
+      "trigger",
+    ]);
+    expect(JSON.stringify(schema)).not.toMatch(/budget|model/i);
+    expect(
+      (
+        schema.properties.capabilities as {
+          items: { properties: { id: { enum: string[] } } };
+        }
+      ).items.properties.id.enum,
+    ).toEqual(capabilityIds);
+    // Lernblöcke verschieben stays on Nachfragen; an unknown mode keeps the form's, and a missing one is the default.
+    expect(chunks.find((chunk) => chunk.type === "data-form")?.data).toEqual({
+      capabilities: [
+        { id: "createStudyBlocks", mode: "always" },
+        { id: "moveStudyBlocks", mode: "ask" },
+        { id: "createTasks", mode: "ask" },
+      ],
+    });
+  });
+
+  it("refuses a form with a Budget or Model before asking the model", async () => {
+    const s = await student("builder-no-budget");
+    const before = prompts.length;
+    for (const extra of [
+      { budgetMicroUsd: 5_000_000 },
+      { modelKey: "sonnet-5.5-reasoning-high" },
+    ]) {
+      const response = await ask(s.headers, {
+        form: { ...blank, ...extra },
+        messages: [{ role: "student", text: "Hallo" }],
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(prompts.length).toBe(before);
+  });
+
+  it("answers a question without changing anything, reading only the form and fenced Course names", async () => {
+    const s = await withCourse("builder-question");
+    steps.push(says("Für welchen Kurs soll dein Agent arbeiten?"));
+    const before = prompts.length;
+
+    const response = await ask(s.headers, {
+      form: { ...blank, instructions: "Plane meine Woche." },
+      messages: [
+        { role: "student", text: "Was kann ein Agent?" },
+        { role: "builder", text: "Er plant Lernzeit für dich." },
+        { role: "student", text: "Und was soll ich tun?" },
+      ],
+    });
+
+    const chunks = await sseChunks(response);
+    expect(chunks.some((chunk) => chunk.type === "data-form")).toBe(false);
+    expect(chunks.at(-1)).toEqual({ type: "finish" });
+    const prompt = JSON.stringify(prompts.slice(before));
+    // The Course list is fenced as data; the form says it has no Course, so the model asks which.
+    expect(prompt).toMatch(
+      /<<<BEGIN courses [0-9a-f]+>>>.*Analysis I \(MA-101\)/,
+    );
+    expect(prompt).toContain("Plane meine Woche.");
+    expect(prompt).toContain("no Course");
+    // The conversation as the browser sent it, with the form and Courses just before the latest message.
+    expect(conversation(prompts.at(-1))).toEqual([
+      ["user", "Was kann ein Agent?"],
+      ["assistant", "Er plant Lernzeit für dich."],
+      ["user", expect.stringContaining("The form as it stands:")],
+      ["user", "Und was soll ich tun?"],
+    ]);
+    // Never the student's Obligations or Plan.
+    expect(prompt).not.toContain("Problem sheet 1");
+  });
+
+  it("is paid from the Allowance, never an Agent's Budget, and keeps no conversation", async () => {
+    const s = await student("builder-metering");
+    const statistics = await course(s.id, "Statistics II");
+    const created = await app.request(`${apiOrigin}/api/me/agents`, {
+      method: "POST",
+      headers: s.headers,
+      body: JSON.stringify({
+        name: "Klausur Statistik",
+        description: "",
+        emoji: "🤖",
+        instructions: "Bereite mich vor.",
+        courseIds: [statistics],
+        capabilities: [],
+        budgetMicroUsd: 5_000_000,
+        trigger: { rhythm: "daily", minute: 360 },
+        modelKey: "sonnet-5.5-reasoning-high",
+      }),
+    });
+    const { id: agentId } = (await created.json()) as { id: string };
+    const chatsBefore = await admin.chatMessage.count();
+    steps.push(says("Gern."));
+
+    const response = await ask(s.headers, {
+      form: { ...blank, courseIds: [statistics] },
+      messages: [{ role: "student", text: "Danke!" }],
+    });
+    await response.text();
+
+    expect(
+      await admin.allowance.findUniqueOrThrow({ where: { studentId: s.id } }),
+    ).toMatchObject({ usedMicroUsd: 1n, heldMicroUsd: 0n });
+    expect(
+      await admin.agent.findUniqueOrThrow({ where: { id: agentId } }),
+    ).toMatchObject({ usedMicroUsd: 0n, heldMicroUsd: 0n });
+    expect(
+      await admin.usageReservation.findMany({ where: { studentId: s.id } }),
+    ).toEqual([
+      expect.objectContaining({
+        agentId: null,
+        runId: null,
+        status: "settled",
+        actualMicroUsd: 1n,
+      }),
+    ]);
+    expect(await admin.chatMessage.count()).toBe(chatsBefore);
+  });
+
+  it("is unavailable once the Allowance is exhausted, without asking the model", async () => {
+    const s = await student("builder-exhausted");
+    await admin.allowance.update({
+      where: { studentId: s.id },
+      data: { limitMicroUsd: 0 },
+    });
+    const before = prompts.length;
+
+    const response = await ask(s.headers, {
+      form: blank,
+      messages: [{ role: "student", text: "Bau mir einen Agenten." }],
+    });
+
+    expect(response.status).toBe(200);
+    const chunks = await sseChunks(response);
+    expect(chunks.find((chunk) => chunk.type === "data-refused")?.data).toEqual(
+      { error: "allowance_exhausted" },
+    );
+    expect(chunks.some((chunk) => chunk.type === "data-form")).toBe(false);
+    expect(prompts.length).toBe(before);
   });
 });

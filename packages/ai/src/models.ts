@@ -47,6 +47,7 @@ export const taskModels = {
   explanation: "sonnet-5.5-reasoning-high",
   feedback: "sonnet-5.5-reasoning-high",
   planning: "opus-5.5-reasoning-high",
+  builder: "sonnet-5.5-reasoning-high",
 } as const satisfies Record<string, string>;
 
 export type Task = keyof typeof taskModels;
@@ -114,7 +115,7 @@ export function createModels({
   function modelFor(
     config: ModelConfig,
     outputTokens: number,
-    /** Chat calls tools, so it is routed only to endpoints that support them (ADR-0018 amendment). */
+    /** Chat and the builder call tools, so they are routed only to endpoints that support them (ADR-0018 amendment). */
     { chat = false } = {},
   ): RegisteredModel {
     refuseCoveredModel(config);
@@ -171,7 +172,14 @@ export function createModels({
         throw new Error(
           `The Model Catalog has no model ${JSON.stringify(taskModels[task])} for the ${task} task`,
         );
-      return modelFor(config, taskOutputTokens[task] ?? config.maxOutputTokens);
+      return modelFor(
+        config,
+        taskOutputTokens[task] ?? config.maxOutputTokens,
+        {
+          // The builder calls its form-fill tool, so it is routed like Chat.
+          chat: task === "builder",
+        },
+      );
     },
   };
 }

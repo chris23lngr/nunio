@@ -8,6 +8,7 @@ export {
   createAgentModel,
 } from "./agent.js";
 export { type Answerer, type AnswerStep, createAnswerer } from "./answer.js";
+export { createBuilderModel } from "./builder.js";
 export {
   createEstimator,
   type EstimateRequest,
