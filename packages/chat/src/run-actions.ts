@@ -213,6 +213,7 @@ export const why: Record<Refusal, string> = {
     "you may not do this, such as moving or removing a block you did not create",
   run_cap:
     "this Run has reached its limit of Action calls or of Approvals asked, so make no more such calls",
+  run_ended: "this Run has already ended",
   open_approvals_cap:
     "the student has too many of your requests open already, so ask nothing more until they decide",
 };

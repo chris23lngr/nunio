@@ -5,6 +5,7 @@ import {
   ScheduleAlreadyRunning,
   ScheduleNotFoundError,
   ScheduleOverlapPolicy,
+  WorkflowNotFoundError,
 } from "@temporalio/client";
 import type { AgentTrigger, Schedules } from "./agents.js";
 
@@ -108,3 +109,19 @@ export function createAgentSchedules({
     },
   };
 }
+
+/**
+ * Whether the workflow of an Agent's Run still runs, for `createAgents`'s `runAlive`: one terminated, timed out or
+ * unknown to Temporal does not.
+ */
+export const workflowAlive =
+  (client: Client) =>
+  async (workflowId: string): Promise<boolean> => {
+    try {
+      const { status } = await client.workflow.getHandle(workflowId).describe();
+      return status.name === "RUNNING";
+    } catch (error) {
+      if (error instanceof WorkflowNotFoundError) return false;
+      throw error;
+    }
+  };

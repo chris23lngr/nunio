@@ -430,30 +430,6 @@ function nextRun(now: Date, timeZone: string, trigger: AgentTrigger) {
   }
 }
 
-/** A Run under way this long is checked on Temporal as its Agent is read: its workflow may have been terminated. */
-const staleRunMs = 10 * 60_000;
-
-/**
- * Whether the Agent's Run under way still runs. One under way a while is asked about on Temporal, and ended as failed
- * when its workflow no longer runs, so it holds up no other Run (#174).
- */
-async function stillRunning(
-  c: Context<AppBindings>,
-  p: Principal,
-  run: { id: string; workflowId: string | null; startedAt: Date },
-) {
-  if (!run.workflowId || Date.now() - run.startedAt.getTime() < staleRunMs)
-    return true;
-  try {
-    if (await c.get("runWorkflows").agentRunAlive(run.workflowId)) return true;
-  } catch (error) {
-    console.error("Could not ask Temporal about an Agent's Run", error);
-    return true;
-  }
-  await c.get("agents").failRun(p, run.id);
-  return false;
-}
-
 /**
  * Tells the Agent's Runs under way to stop at once; one whose workflow no longer runs is ended as failed (#174). The
  * database already refuses their next step and Action, so a Run Temporal cannot be reached about stops at that.
@@ -632,9 +608,6 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
       if (!p) return c.json({ error: "unauthorized" }, 401);
       const r = await c.get("agents").view(p, c.req.valid("param").id);
       if (!r) return c.json({ error: "gone" }, 404);
-      const running = r.runUnderWay
-        ? await stillRunning(c, p, r.runUnderWay)
-        : false;
       const plan = await c.get("plan").view(p);
       const review = await c.get("facts").review(p);
       const history = await c
@@ -668,7 +641,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
           ...scopeNames(review, r.scope),
           state: r.state,
           pausedBy: r.pausedBy,
-          running,
+          running: r.running,
           approvalRunId: r.approvalRunId,
           grants: r.grants.map((g) => g.kind),
           budget: r.budget,
@@ -947,7 +920,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
       method: "delete",
       path: "/api/me/agents/{id}",
       description:
-        "Delete the Agent for good (Löschen), with its Activity and its Schedule; its Run under way is stopped.",
+        "Delete the Agent for good (Löschen), with its Activity and its Schedule; its Runs' workflows still running are cancelled.",
       request: { params: id },
       responses: {
         200: Done,
@@ -971,7 +944,14 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
         return c.json({ error: "not_deleted" }, 503);
       }
       if (result.status !== "ok") return c.json({ error: "gone" }, 404);
-      await stopRuns(c, p, result.runs, "ended");
+      // Best effort: a workflow left running finds its Run gone and changes nothing.
+      for (const workflowId of result.workflows)
+        await c
+          .get("runWorkflows")
+          .cancelRun(workflowId)
+          .catch((error: unknown) =>
+            console.error("Could not cancel a deleted Agent's Run", error),
+          );
       return c.json({ status: "ok" as const }, 200);
     },
   );

@@ -122,6 +122,7 @@ const refusals: Record<string, string> = {
   invalid: "Ungültige Angaben, nichts wurde gefragt",
   run_cap: "Limit dieses Laufs erreicht",
   open_approvals_cap: "Zu viele offene Freigaben",
+  run_ended: "Der Lauf war schon beendet",
   out_of_scope: "Keine Arbeit seiner Kurse",
   no_capability: "Dazu hat er keine Fähigkeit",
   locked: "Der Block ist gesperrt",

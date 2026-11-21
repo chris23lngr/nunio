@@ -148,18 +148,29 @@ export const openApprovalAt = (at: Date) => ({
  * Withdraws every open Approval of an Agent's Runs for good, as Pausing or Ending it does (ADR-0006): each Action is
  * refused as `approval_withdrawn` at `at`, so the student can no longer approve it, it stops counting as open, and the
  * Agent's next Run reads what became of it. A preset's Run waits on its own Approvals, so they are left to it.
+ * Each Action is locked as deciding locks it and read again, so one the student answered meanwhile keeps its answer.
  */
 export async function withdrawApprovals(
   tx: Transaction,
   { studentId, agentId }: { studentId: string; agentId: string },
   at: Date,
 ) {
-  const open = await tx.action.findMany({
-    where: { ...openApprovalAt(at), run: { agentId, status: { not: null } } },
-    select: { id: true },
-  });
-  if (!open.length) return;
-  const ids = open.map((a) => a.id);
+  const where = {
+    ...openApprovalAt(at),
+    run: { agentId, status: { not: null } },
+  };
+  const found = (await tx.action.findMany({ where, select: { id: true } })).map(
+    (a) => a.id,
+  );
+  if (!found.length) return;
+  await tx.$executeRaw`SELECT 1 FROM "action" WHERE "id" = ANY(${found}) FOR UPDATE`;
+  const ids = (
+    await tx.action.findMany({
+      where: { ...where, id: { in: found } },
+      select: { id: true },
+    })
+  ).map((a) => a.id);
+  if (!ids.length) return;
   await tx.action.updateMany({
     where: { id: { in: ids } },
     data: { status: "refused", refusal: "approval_withdrawn" },
@@ -741,6 +752,8 @@ export function createGate({
                 openApprovals: await tx.action.count({
                   where: { ...openApprovalAt(now), run: { agentId: agent.id } },
                 }),
+                // An Approval it asked is still applied once it ended; only a new call is refused.
+                ended: run.status !== null && run.status !== "running",
               }
             : null;
         const fingerprint = subject

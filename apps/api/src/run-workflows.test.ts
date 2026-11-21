@@ -105,6 +105,24 @@ describe("stopping an Agent's Run on Temporal", () => {
     await handle.terminate();
   });
 
+  it("cancels a deleted Agent's Run workflow, and leaves one that no longer runs alone", async () => {
+    const workflowId = `run/${randomUUID()}`;
+    const handle = await env.client.workflow.start("responsibilityRun", {
+      taskQueue: "runs",
+      workflowId,
+      args: [{}],
+    });
+
+    await runs().cancelRun(workflowId);
+    await runs().cancelRun(`run/${randomUUID()}`);
+
+    const events = (await handle.fetchHistory()).events ?? [];
+    expect(
+      events.some((e) => e.workflowExecutionCancelRequestedEventAttributes),
+    ).toBe(true);
+    await handle.terminate();
+  });
+
   it("answers that a terminated or unknown workflow no longer runs", async () => {
     const workflowId = `agentRun/${randomUUID()}`;
     const handle = await env.client.workflow.start("agentRun", {

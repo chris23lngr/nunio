@@ -157,8 +157,9 @@ let agentRunsDown = false;
 /** The Agent Runs the API told to stop, in order, and the workflows that no longer run, as Temporal would say. */
 const agentRunsStopped: { workflowId: string; reason: string }[] = [];
 const goneWorkflows = new Set<string>();
-/** The workflows the API asked Temporal about, in order. */
+/** The workflows the API asked Temporal about, and those it cancelled, in order. */
 const workflowsAsked: string[] = [];
+const runsCancelled: string[] = [];
 const runWorkflows: RunWorkflows = {
   signalDecided: async (run, actionId) =>
     void signalled.push({ ...run, actionId }),
@@ -175,6 +176,7 @@ const runWorkflows: RunWorkflows = {
     workflowsAsked.push(workflowId);
     return !goneWorkflows.has(workflowId);
   },
+  cancelRun: async (workflowId) => void runsCancelled.push(workflowId),
 };
 const schedules: Schedules = {
   create: async ({ agentId }) => void scheduled.push(`create ${agentId}`),
@@ -451,6 +453,7 @@ beforeAll(async () => {
     db: prisma,
     schedules,
     clock: { now: () => new Date() },
+    runAlive: (workflowId) => runWorkflows.agentRunAlive(workflowId),
   });
   artifacts = createArtifacts({
     db: prisma,
@@ -7411,6 +7414,10 @@ describe("a free-text Agent's form", () => {
     const stale = await recordedRun(s.id, id, 30, { status: "running" });
     goneWorkflows.add(`agentRun/${stale}`);
 
+    // The list no longer reads "Läuft gerade" for it.
+    expect(await (await s.call("GET", "")).json()).toEqual([
+      expect.objectContaining({ id, badge: null }),
+    ]);
     expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
       running: false,
     });
@@ -7478,11 +7485,42 @@ describe("a free-text Agent's form", () => {
     expect(await admin.action.count({ where: { studentId: s.id } })).toBe(0);
     expect(await admin.grant.count({ where: { agentId: id } })).toBe(0);
     expect(scheduled.at(-1)).toBe(`delete ${id}`);
-    expect(agentRunsStopped).toContainEqual({
-      workflowId: `agentRun/${runId}`,
-      reason: "ended",
-    });
+    expect(runsCancelled).toContain(`agentRun/${runId}`);
     expect((await s.call("DELETE", `/${id}`)).status).toBe(404);
+  });
+
+  it("cancels a deleted preset Agent's Run that waits on an Approval", async () => {
+    const s = await student("agent-delete-preset");
+    const { id } = (await (
+      await s.call("POST", "", {
+        preset: "keep_course_organized",
+        courseId: await course(s.id, "Statistics II"),
+      })
+    ).json()) as { id: string };
+    const runId = randomUUID();
+    await admin.run.create({
+      data: {
+        id: runId,
+        studentId: s.id,
+        agentId: id,
+        workflowId: `run/${runId}`,
+      },
+    });
+    await asked(s.id, runId);
+    const done = randomUUID();
+    await admin.run.create({
+      data: {
+        id: done,
+        studentId: s.id,
+        agentId: id,
+        workflowId: `run/${done}`,
+      },
+    });
+
+    expect((await s.call("DELETE", `/${id}`)).status).toBe(200);
+
+    expect(runsCancelled).toContain(`run/${runId}`);
+    expect(runsCancelled).not.toContain(`run/${done}`);
   });
 
   it("keeps the Agent when its Schedule cannot be deleted, so Löschen can be asked again", async () => {
@@ -7939,7 +7977,8 @@ describe("a free-text Agent's form", () => {
           end: new Date("2099-02-01T10:00:00Z"),
         },
       });
-      const runId = await recordedRun(s.id, agentId, 10, run);
+      // Asked while under way; a Run that ended takes no new Action.
+      const runId = await recordedRun(s.id, agentId, 10, { status: "running" });
       const outcome = await delegation.perform(principal.fromRun(runId), {
         key: `${runId}:1:1`,
         intent:
@@ -7959,6 +7998,11 @@ describe("a free-text Agent's form", () => {
       });
       if (outcome.status !== "awaiting_approval")
         throw new Error(outcome.status);
+      if (run.status !== "running")
+        await admin.run.update({
+          where: { id: runId },
+          data: { status: "done", endedAt: new Date() },
+        });
       const decide = (body: object) =>
         app.request(`${apiOrigin}/api/me/approvals/${outcome.actionId}`, {
           method: "POST",
@@ -8266,6 +8310,47 @@ describe("a free-text Agent's form", () => {
         });
       },
     );
+
+    it("keeps the student's answer to an Approval decided while the Agent is being Paused", async () => {
+      const a = await askedByRun(
+        "run-approval-decided-while-paused",
+        "createStudyBlocks",
+      );
+      // The student's approval holds the Action, as deciding does, while Pause comes in.
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let locked!: () => void;
+      const lockTaken = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const deciding = admin.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT 1 FROM "action" WHERE "id" = ${a.asking.actionId} FOR UPDATE`;
+        await tx.approval.update({
+          where: { actionId: a.asking.actionId },
+          data: { decision: "approved", decidedAt: new Date() },
+        });
+        locked();
+        await held;
+      });
+      await lockTaken;
+      const pausing = a.s.call("POST", `/${a.agentId}/pause`);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      release();
+      await deciding;
+
+      expect((await pausing).status).toBe(200);
+      expect(
+        await admin.action.findUniqueOrThrow({
+          where: { id: a.asking.actionId },
+          select: { status: true, refusal: true },
+        }),
+      ).toEqual({ status: "awaiting_approval", refusal: null });
+      expect(decisions((await a.shown()).verlauf)).toEqual([
+        expect.objectContaining({ decision: "approved" }),
+      ]);
+    });
 
     it("leaves a preset Agent's Approvals to its Run, which waits on them, when it is Paused", async () => {
       const s = await student("run-approval-preset-paused");

@@ -18,6 +18,7 @@ import {
   createDelegation,
   principal,
 } from "@nunio/delegation";
+import { workflowAlive } from "@nunio/delegation/temporal-schedules";
 import { createSourceKeys } from "@nunio/keys";
 import {
   createFacts,
@@ -200,6 +201,7 @@ beforeAll(async () => {
   agents = createAgents({
     db: runtime,
     clock,
+    runAlive: workflowAlive(env.client),
     schedules: {
       create: noSchedule,
       save: noSchedule,
@@ -759,6 +761,35 @@ describe("an Agent's Run", () => {
     expect(prompts).toHaveLength(0);
   });
 
+  it("is not held up by an earlier Run whose workflow is gone, which ends as failed and no longer reads as running", async () => {
+    const s = await started();
+    // Under way a while, but its workflow never ran, as one terminated would not.
+    await admin.run.update({
+      where: { id: s.runId },
+      data: { startedAt: new Date(Date.now() - 30 * 60_000) },
+    });
+
+    expect(
+      (await agents.list(s.p)).find((agent) => agent.id === s.agentId)?.badge,
+    ).toBeNull();
+    // Under way again, as if nobody had read the list: the Schedule's next fire finds it too.
+    await admin.run.update({
+      where: { id: s.runId },
+      data: { status: "running", endedAt: null },
+    });
+    expect(await fromSchedule(s)).toEqual({ status: "done" });
+
+    expect(
+      await admin.run.findUniqueOrThrow({
+        where: { id: s.runId },
+        select: { status: true },
+      }),
+    ).toEqual({ status: "failed" });
+    expect(await scheduledRuns(s.agentId)).toEqual([
+      { status: "done", stopReason: null },
+    ]);
+  });
+
   it("ends a Run its Schedule started as stopped when its workflow is cancelled while the Run is recorded", async () => {
     const s = await started();
     await agents.failRun(s.p, s.runId);
@@ -1003,6 +1034,29 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
       status: "stopped",
       stopReason: "ended",
     });
+  });
+
+  it("acts on none of an abandoned step's calls once its Run has stopped, even after the Agent is resumed", async () => {
+    const s = await started({ held: lernbloecke() });
+    const handle = env.client.workflow.getHandle(s.workflowId);
+    executor = {
+      ...fakeExecutor,
+      async execute(req, opts) {
+        const done = await fakeExecutor.execute(req, opts);
+        await agents.pause(s.p, s.agentId);
+        await handle.signal("stopAgentRun", "paused");
+        await handle.result();
+        // The student resumes at once; the Run told to stop has stopped all the same.
+        await agents.resume(s.p, s.agentId);
+        return done;
+      },
+    };
+    script = [readPlan, () => [...createBlock(3), ...createBlock(4)]];
+
+    expect(await run(s)).toEqual({ status: "stopped", reason: "paused" });
+
+    await expect.poll(() => statuses(s.runId)).toEqual(["done", "run_ended"]);
+    expect(dispatched).toHaveLength(1);
   });
 
   it("records the Agent as the creator of a Study Block it creates", async () => {

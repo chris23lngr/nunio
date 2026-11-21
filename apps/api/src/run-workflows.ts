@@ -1,5 +1,8 @@
 import type { Schedules } from "@nunio/delegation";
-import { createAgentSchedules } from "@nunio/delegation/temporal-schedules";
+import {
+  createAgentSchedules,
+  workflowAlive,
+} from "@nunio/delegation/temporal-schedules";
 import { payloadCodecFromEnv } from "@nunio/keys";
 import { Client, Connection, WorkflowNotFoundError } from "@temporalio/client";
 
@@ -30,6 +33,8 @@ export interface RunWorkflows {
   ): Promise<boolean>;
   /** Whether the workflow of a free-text Agent's Run still runs. */
   agentRunAlive(workflowId: string): Promise<boolean>;
+  /** Cancels a Run's workflow, as its Agent is deleted; one that no longer runs is left as it is. */
+  cancelRun(workflowId: string): Promise<void>;
 }
 
 /** Signals by workflow and run ID, so a decision never reaches another Run of the same Agent. */
@@ -66,15 +71,12 @@ export function createRunWorkflows({
         throw error;
       }
     },
-    async agentRunAlive(workflowId) {
+    agentRunAlive: workflowAlive(client),
+    async cancelRun(workflowId) {
       try {
-        const { status } = await client.workflow
-          .getHandle(workflowId)
-          .describe();
-        return status.name === "RUNNING";
+        await client.workflow.getHandle(workflowId).cancel();
       } catch (error) {
-        if (error instanceof WorkflowNotFoundError) return false;
-        throw error;
+        if (!(error instanceof WorkflowNotFoundError)) throw error;
       }
     },
   };
@@ -126,6 +128,8 @@ export function runWorkflowsFromEnv(env: NodeJS.ProcessEnv) {
       ),
     agentRunAlive: (workflowId) =>
       withClient((client) => runWorkflowsOf(client).agentRunAlive(workflowId)),
+    cancelRun: (workflowId) =>
+      withClient((client) => runWorkflowsOf(client).cancelRun(workflowId)),
   };
   const schedules: Schedules = {
     create: (r) => withClient((client) => schedulesOf(client).create(r)),

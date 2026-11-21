@@ -14888,7 +14888,7 @@
         }
       },
       "delete": {
-        "description": "Delete the Agent for good (Löschen), with its Activity and its Schedule; its Run under way is stopped.",
+        "description": "Delete the Agent for good (Löschen), with its Activity and its Schedule; its Runs' workflows still running are cancelled.",
         "parameters": [
           {
             "schema": {
