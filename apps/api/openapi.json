@@ -4463,6 +4463,7 @@
               "student",
               "budget",
               "course_archived",
+              "no_course",
               null
             ]
           },
@@ -8179,7 +8180,7 @@
     },
     "/api/me/courses/{id}/merge": {
       "post": {
-        "description": "Merge this Course into another.",
+        "description": "Merge this Course into another, which takes its place on the student's Agents.",
         "parameters": [
           {
             "schema": {
@@ -13298,7 +13299,7 @@
         }
       },
       "delete": {
-        "description": "Removes the Course and everything only in it, ending its Agents; its Sources stay.",
+        "description": "Removes the Course and everything only in it; it leaves its Agents, and one left with none is Paused (a preset Agent is Ended). Its Sources stay.",
         "parameters": [
           {
             "schema": {
@@ -13561,7 +13562,7 @@
     },
     "/api/me/courses/{id}/archive": {
       "post": {
-        "description": "nunio stops planning and acting for the Course: its future Study Blocks go and its Agents are Paused.",
+        "description": "nunio stops planning and acting for the Course: its future Study Blocks go, and an Agent with no other Course to act for is Paused.",
         "parameters": [
           {
             "schema": {
@@ -14625,6 +14626,7 @@
                           "student",
                           "budget",
                           "course_archived",
+                          "no_course",
                           null
                         ]
                       },
@@ -15553,7 +15555,7 @@
             }
           },
           "409": {
-            "description": "It no longer matches what was read, or its Course is Archived (error course_archived): nunio does not act for it.",
+            "description": "It has no Course to act for: all its Courses are Archived (error course_archived), or it has none (error no_course).",
             "content": {
               "application/json": {
                 "schema": {

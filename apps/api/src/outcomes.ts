@@ -36,19 +36,19 @@ export const archivedOutcomes = {
 };
 export const id = z.object({ id: z.string().uuid() });
 export type Result = {
-  status: "ok" | "gone" | "invalid" | "stale" | "course_archived";
+  status: "ok" | "gone" | "invalid" | "stale" | "course_archived" | "no_course";
   id?: string;
 };
 
 /** Maps a failed change to its response the same way for every route. */
 export function failed(
   c: Context<AppBindings>,
-  status: "gone" | "invalid" | "stale" | "course_archived",
+  status: "gone" | "invalid" | "stale" | "course_archived" | "no_course",
 ) {
   if (status === "invalid") return c.json({ error: "invalid" }, 400);
   if (status === "gone") return c.json({ error: "gone" }, 404);
-  if (status === "course_archived")
-    return c.json({ error: "course_archived" }, 409);
+  if (status === "course_archived" || status === "no_course")
+    return c.json({ error: status }, 409);
   return c.json({ error: "stale" }, 409);
 }
 export const done = (c: Context<AppBindings>, result: Result) =>

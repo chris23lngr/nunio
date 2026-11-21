@@ -476,6 +476,30 @@ describe("an Agent's Run", () => {
     ).toEqual({ usedMicroUsd: 5n });
   });
 
+  it("still reads a Course of its Agent that was Archived, as knowledge", async () => {
+    const s = await started();
+    await admin.course.updateMany({
+      where: { studentId: s.studentId },
+      data: { archivedAt: new Date() },
+    });
+    script = [
+      () => calls("courseFacts", { course: "K1" }),
+      () => calls("searchMaterial", { query: "Klausur" }),
+      () => says("Die Klausur ist am 3. März [S1]."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    const shown = await runs.view(s.p, s.runId);
+    expect(shown!.steps[1]!.parts![0]!.output).toEqual({
+      found: 1,
+      sources: ["Skript.pdf"],
+    });
+    expect(JSON.stringify(prompts.at(-1))).toMatch(
+      /<<<BEGIN course_material [0-9a-f]+>>>[^<]*Die Klausur ist am 3\. März\./,
+    );
+  });
+
   it("takes at most 20 model steps, and the last one may call no tool", async () => {
     const s = await started();
     script = Array.from(

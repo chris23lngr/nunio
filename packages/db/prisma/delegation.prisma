@@ -64,7 +64,8 @@ model Agent {
   modelKey        String?
   model           CatalogModel?      @relation(fields: [modelKey], references: [key], onDelete: Restrict)
   state          AgentState          @default(active)
-  /// Why it was Paused: by the student, or by exhausting its Budget. Only the student resumes it.
+  /// Why it was Paused: by the student ("student"), by exhausting its Budget ("budget"), by all its Courses being Archived
+  /// ("course_archived") or by losing its last Course ("no_course"). Only the student resumes it.
   pausedBy       String?
   /// The Budget: its monthly cap on AI usage in micro-USD, and what its Runs have used and hold.
   budgetMicroUsd BigInt

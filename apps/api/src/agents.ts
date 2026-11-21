@@ -172,7 +172,9 @@ const Agent = z
         "The Model its Runs run on, which Chat may have stopped offering since; null for a preset Agent.",
       ),
     state: z.enum(["active", "paused", "ended"]),
-    pausedBy: z.enum(["student", "budget", "course_archived"]).nullable(),
+    pausedBy: z
+      .enum(["student", "budget", "course_archived", "no_course"])
+      .nullable(),
     running: z
       .boolean()
       .describe(
@@ -899,7 +901,17 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
           end: "End the Agent for good: its Grants go, its Run under way stops at its next step or Action, and its open Approvals are withdrawn. Its Activity stays.",
         }[control],
         request: { params: id },
-        responses: { 200: Done, ...archivedOutcomes },
+        responses: {
+          200: Done,
+          ...archivedOutcomes,
+          409:
+            control === "resume"
+              ? json(
+                  ErrorBody,
+                  "It has no Course to act for: all its Courses are Archived (error course_archived), or it has none (error no_course).",
+                )
+              : archivedOutcomes[409],
+        },
       }),
       async (c) => {
         const p = await student(c);

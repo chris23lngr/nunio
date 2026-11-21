@@ -150,7 +150,7 @@ export function createAgentRuns({
       const runId = await agents.startRun(ref);
       if (!runId) return null;
       const student = principal.fromSession({ studentId: ref.studentId });
-      // A merged Course went into another, which the Agent has only if the student gave it.
+      // A merged Course's entry moves to the Course it went into just after the merge; until then it is skipped.
       const courseIds = await withOwner(db, student, async (tx) =>
         (
           await tx.agentCourse.findMany({

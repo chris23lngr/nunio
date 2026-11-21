@@ -851,7 +851,7 @@ it("leaves an Event Series undecided once its Course is deleted, keeping its eve
     facts,
     agents: {
       pauseForCourse: async () => {},
-      endForCourse: async () => {},
+      dropCourse: async () => {},
     },
   });
 
@@ -1667,7 +1667,7 @@ it("leaves an Archived Course's work out of the Plan, and brings it back when un
     facts,
     agents: {
       pauseForCourse: async () => {},
-      endForCourse: async () => {},
+      dropCourse: async () => {},
     },
   });
   const [course] = (await courses.list(p)).courses;
@@ -1697,7 +1697,7 @@ it("keeps a Task in a Course, which the Course's daily limit, Archiving and dele
     facts,
     agents: {
       pauseForCourse: async () => {},
-      endForCourse: async () => {},
+      dropCourse: async () => {},
     },
   });
 

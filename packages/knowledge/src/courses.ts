@@ -216,7 +216,7 @@ export function createCourses({
   db: PrismaClient;
   clock: { now(): Date };
   facts: Pick<Facts, "review">;
-  agents: Pick<Agents, "pauseForCourse" | "endForCourse">;
+  agents: Pick<Agents, "pauseForCourse" | "dropCourse">;
 }) {
   /** The Course's Tasks: those toward its Obligations, and those in it. */
   const tasks = (courseId: string) => ({
@@ -538,7 +538,8 @@ export function createCourses({
 
     /**
      * nunio stops planning and acting for the Course: its future Study Blocks go, Locked ones too, since the student
-     * chose this, and its Agents are Paused. They are Paused first, so a failure leaves nunio doing less.
+     * chose this, and an Agent with no other Course to act for is Paused. They are Paused first, so a failure leaves
+     * nunio doing less.
      */
     async archive(p: Principal, id: string) {
       const accepted = await withOwner(db, p, (tx) =>
@@ -558,15 +559,16 @@ export function createCourses({
 
     /**
      * Removes the Course and everything only in it; Sources stay, so a later reading may propose it again (ADR 0015).
-     * Its Agents are Ended first, in their own transaction because each Schedule is deleted after that commit;
-     * a failure in between leaves them Ended on a Course that still exists, which the student asked to go anyway.
+     * It leaves its Agents first, pausing those left with none (a preset Agent is Ended), in their own transaction
+     * because each Schedule changes after that commit; a failure in between leaves them without a Course that still
+     * exists, which the student asked to go anyway.
      */
     async delete(p: Principal, id: string) {
       const accepted = await withOwner(db, p, (tx) =>
         tx.course.findFirst({ where: { id, status: "accepted" } }),
       );
       if (!accepted) return { status: "gone" } as const;
-      await agents.endForCourse(p, id);
+      await agents.dropCourse(p, id);
       return withOwner(db, p, async (tx) => {
         const { count } = await tx.course.deleteMany({ where: { id } });
         return { status: count ? "ok" : "gone" } as const;
