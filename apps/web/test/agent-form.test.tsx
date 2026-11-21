@@ -18,6 +18,13 @@ beforeEach(() => {
     Response.json(capabilitySet),
   );
   api.route("GET", "/api/me/models", () => Response.json(chatModels));
+  api.route("GET", "/api/me/allowance", () =>
+    Response.json({
+      limitMicroUsd: 5_000_000,
+      usedMicroUsd: 0,
+      heldMicroUsd: 0,
+    }),
+  );
   // These Agents never ran, so they open on their Auftrag.
   for (const id of ["a-1", "a-paused", "a-ended"])
     api.route("GET", `/api/me/agents/${id}/runs`, () =>
@@ -1475,4 +1482,274 @@ test("a Capability's '⋯' menu changes its mode or removes it, and Lernblöcke 
       ],
     }),
   ]);
+});
+
+/** The builder's answer as the API streams it: its reply, then what to fill, if anything. */
+function builderAnswer(text: string, fill?: object, refused?: string) {
+  const chunks = [
+    { type: "start", messageId: "m-1" },
+    { type: "text-start", id: "t" },
+    { type: "text-delta", id: "t", delta: text },
+    { type: "text-end", id: "t" },
+    ...(refused ? [{ type: "data-refused", data: { error: refused } }] : []),
+    ...(fill ? [{ type: "data-form", data: fill }] : []),
+    ...(refused ? [] : [{ type: "finish" }]),
+  ];
+  return new Response(
+    `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
+    {
+      headers: {
+        "content-type": "text/event-stream",
+        "x-vercel-ai-ui-message-stream": "v1",
+      },
+    },
+  );
+}
+
+test("the builder writes into the form, marking each field it changed with its own Rückgängig, and never saves", async () => {
+  const asked: unknown[] = [];
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("POST", "/api/me/agents", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ id: "a-1" }, { status: 201 });
+  });
+  api.route("POST", "/api/me/agents/builder", async (request) => {
+    asked.push(await request.json());
+    return builderAnswer("Ich habe dir einen Entwurf gebaut.", {
+      name: "Klausur Statistik",
+      instructions: "Bereite mich auf die Klausur in Statistics II vor.",
+      trigger: { rhythm: "weekdays", weekdays: [1, 3], minute: 450 },
+      courseIds: [ids.statistics],
+      capabilities: [{ id: "createStudyBlocks", mode: "always" }],
+    });
+  });
+  renderScreen(<AgentFormScreen apiOrigin={api.origin} agent={null} />);
+  const panel = screen.getByRole("complementary", { name: "nunio fragen" });
+  expect(
+    within(panel).getByRole("heading", { name: "Was soll dein Agent können?" }),
+  ).toBeTruthy();
+
+  await userEvent.type(
+    within(panel).getByRole("textbox", { name: "Nachricht an nunio" }),
+    "Bereite mich auf Statistics II vor.{Enter}",
+  );
+
+  expect(
+    await within(panel).findByText("Ich habe dir einen Entwurf gebaut."),
+  ).toBeTruthy();
+  // It reads the form without its Budget or Model, and the conversation.
+  expect(asked).toEqual([
+    {
+      form: {
+        name: "",
+        description: "",
+        instructions: "",
+        courseIds: [],
+        capabilities: [],
+        trigger: { rhythm: "daily", weekdays: [], minute: 360 },
+      },
+      messages: [
+        { role: "student", text: "Bereite mich auf Statistics II vor." },
+      ],
+    },
+  ]);
+  const name = screen.getByRole("textbox", { name: "Name" });
+  expect((name as HTMLInputElement).value).toBe("Klausur Statistik");
+  const instructions = screen.getByRole("textbox", { name: "Auftrag" });
+  expect((instructions as HTMLTextAreaElement).value).toBe(
+    "Bereite mich auf die Klausur in Statistics II vor.",
+  );
+  expect(
+    within(screen.getByRole("list", { name: "Kurse" })).getByText(
+      "Statistics II",
+    ),
+  ).toBeTruthy();
+  const capabilities = screen.getByRole("list", { name: "Fähigkeiten" });
+  expect(capabilities.textContent).toContain("Lernblöcke erstellen");
+  expect(capabilities.textContent).toContain("Immer erlaubt");
+  const trigger = screen.getByRole("region", { name: "Auslöser" });
+  expect(
+    (within(trigger).getByLabelText("Uhrzeit") as HTMLInputElement).value,
+  ).toBe("07:30");
+  // Each changed field is marked, Beschreibung (unchanged) is not.
+  expect(screen.getAllByText("von nunio geändert")).toHaveLength(5);
+  expect(
+    screen.queryByRole("button", { name: "Rückgängig: Beschreibung" }),
+  ).toBeNull();
+  // The builder's message lists its changes, each with "zeigen".
+  const changes = within(panel).getByRole("list", { name: "Änderungen" });
+  expect(
+    within(changes)
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toEqual([
+    "Namezeigen",
+    "Auftragzeigen",
+    "Auslöserzeigen",
+    "Kursezeigen",
+    "Fähigkeitenzeigen",
+  ]);
+  await userEvent.click(
+    within(changes).getByRole("button", { name: "Name zeigen" }),
+  );
+  expect(document.activeElement).toBe(name);
+
+  // Its own Rückgängig restores the value from before the change.
+  await userEvent.click(
+    screen.getByRole("button", { name: "Rückgängig: Name" }),
+  );
+  expect((name as HTMLInputElement).value).toBe("");
+  expect(screen.getAllByText("von nunio geändert")).toHaveLength(4);
+  // Editing a field by hand clears its mark, and keeps the edit.
+  await userEvent.type(instructions, " Bitte früh.");
+  expect(screen.getAllByText("von nunio geändert")).toHaveLength(3);
+
+  await userEvent.click(
+    within(panel).getByRole("button", { name: "Alle rückgängig" }),
+  );
+  expect(screen.queryByText("von nunio geändert")).toBeNull();
+  expect(screen.queryByRole("list", { name: "Kurse" })).toBeNull();
+  expect(screen.queryByRole("list", { name: "Fähigkeiten" })).toBeNull();
+  expect(
+    (within(trigger).getByLabelText("Uhrzeit") as HTMLInputElement).value,
+  ).toBe("06:00");
+  expect((instructions as HTMLTextAreaElement).value).toBe(
+    "Bereite mich auf die Klausur in Statistics II vor. Bitte früh.",
+  );
+  expect(saved).toEqual([]);
+});
+
+test("the builder answers a question without changing the form, and sends the conversation with the form as it stands", async () => {
+  const asked: { messages: unknown[] }[] = [];
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("POST", "/api/me/agents/builder", async (request) => {
+    asked.push(await request.json());
+    return builderAnswer(
+      asked.length === 1
+        ? "Er trägt Lernzeit in freie Zeitfenster ein."
+        : "Gern.",
+    );
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const panel = await screen.findByRole("complementary", {
+    name: "nunio fragen",
+  });
+  const message = within(panel).getByRole("textbox", {
+    name: "Nachricht an nunio",
+  });
+
+  await userEvent.type(message, "Was macht Lernblöcke erstellen?{Enter}");
+  await within(panel).findByText("Er trägt Lernzeit in freie Zeitfenster ein.");
+  await userEvent.type(message, "Danke!{Enter}");
+  await within(panel).findByText("Gern.");
+
+  expect(screen.queryByText("von nunio geändert")).toBeNull();
+  expect(within(panel).queryByRole("list", { name: "Änderungen" })).toBeNull();
+  expect(asked[1]).toEqual({
+    form: {
+      name: "Klausur Statistik",
+      description: "Hält mich auf Kurs.",
+      instructions: "Bereite mich auf die Klausur vor.",
+      courseIds: [ids.archived, ids.statistics],
+      capabilities: [{ id: "createStudyBlocks", mode: "automatic" }],
+      trigger: { rhythm: "daily", weekdays: [], minute: 360 },
+    },
+    messages: [
+      { role: "student", text: "Was macht Lernblöcke erstellen?" },
+      {
+        role: "builder",
+        text: "Er trägt Lernzeit in freie Zeitfenster ein.",
+      },
+      { role: "student", text: "Danke!" },
+    ],
+  });
+});
+
+test("the builder is unavailable once the Allowance is used up, while the form still works by hand", async () => {
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("GET", "/api/me/allowance", () =>
+    Response.json({
+      limitMicroUsd: 5_000_000,
+      usedMicroUsd: 4_900_000,
+      heldMicroUsd: 100_000,
+    }),
+  );
+  renderScreen(<AgentFormScreen apiOrigin={api.origin} agent={null} />);
+  const panel = screen.getByRole("complementary", { name: "nunio fragen" });
+
+  expect(
+    await within(panel).findByText(
+      "Dein KI-Kontingent ist aufgebraucht. Du kannst das Formular weiter selbst ausfüllen.",
+    ),
+  ).toBeTruthy();
+  expect(
+    (
+      within(panel).getByRole("textbox", {
+        name: "Nachricht an nunio",
+      }) as HTMLTextAreaElement
+    ).disabled,
+  ).toBe(true);
+  const name = screen.getByRole("textbox", { name: "Name" });
+  await userEvent.type(name, "Von Hand");
+  expect((name as HTMLInputElement).value).toBe("Von Hand");
+});
+
+test("the builder becomes unavailable when nunio refuses for an exhausted Allowance", async () => {
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("POST", "/api/me/agents/builder", () =>
+    builderAnswer("", undefined, "allowance_exhausted"),
+  );
+  renderScreen(<AgentFormScreen apiOrigin={api.origin} agent={null} />);
+  const panel = screen.getByRole("complementary", { name: "nunio fragen" });
+
+  await userEvent.type(
+    within(panel).getByRole("textbox", { name: "Nachricht an nunio" }),
+    "Bau mir einen Agenten.{Enter}",
+  );
+
+  expect(
+    await within(panel).findByText(
+      "Dein KI-Kontingent ist aufgebraucht. Du kannst das Formular weiter selbst ausfüllen.",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText("von nunio geändert")).toBeNull();
+});
+
+test("Rückgängig after two answers changed a field restores the student's own value, and a long reply goes back cut", async () => {
+  const asked: { messages: { role: string; text: string }[] }[] = [];
+  const long = `${"Lang. ".repeat(800)}Ende.`;
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("POST", "/api/me/agents/builder", async (request) => {
+    asked.push(await request.json());
+    return asked.length === 1
+      ? builderAnswer(long, { name: "Erster Entwurf" })
+      : builderAnswer("Umbenannt.", { name: "Zweiter Entwurf" });
+  });
+  renderScreen(<AgentFormScreen apiOrigin={api.origin} agent={null} />);
+  const panel = screen.getByRole("complementary", { name: "nunio fragen" });
+  const message = within(panel).getByRole("textbox", {
+    name: "Nachricht an nunio",
+  });
+  const name = screen.getByRole("textbox", { name: "Name" });
+  await userEvent.type(name, "Mein Agent");
+
+  await userEvent.type(message, "Gib ihm einen Namen.{Enter}");
+  await waitFor(() =>
+    expect((name as HTMLInputElement).value).toBe("Erster Entwurf"),
+  );
+  await userEvent.type(message, "Anders bitte.{Enter}");
+  await within(panel).findByText("Umbenannt.");
+  expect((name as HTMLInputElement).value).toBe("Zweiter Entwurf");
+
+  // The builder's long reply is sent back within the API's 4000 characters.
+  const reply = asked[1]!.messages[1]!;
+  expect(reply.role).toBe("builder");
+  expect(reply.text).toBe(long.slice(0, 4000));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Rückgängig: Name" }),
+  );
+  expect((name as HTMLInputElement).value).toBe("Mein Agent");
+  expect(screen.queryByText("von nunio geändert")).toBeNull();
 });

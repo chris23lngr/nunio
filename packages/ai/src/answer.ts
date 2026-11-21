@@ -54,6 +54,14 @@ const instructions = [
 
 /** Answers with `model`: the Model the student chose for Chat, resolved per request. */
 export function createAnswerer(model: RegisteredModel): Answerer {
+  return answererWith(model, instructions);
+}
+
+/** Streams one step at a time on `model`, following `instructions`; shared by Chat and the builder. */
+export function answererWith(
+  model: RegisteredModel,
+  instructions: string,
+): Answerer {
   return {
     modelKey: model.key,
     estimateMicroUsd: ({ messages, tools }) =>

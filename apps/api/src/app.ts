@@ -1,8 +1,8 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import type { Estimator, SeriesAssigner } from "@nunio/ai";
+import type { Answerer, Estimator, SeriesAssigner } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { pilotStatus } from "@nunio/billing";
-import type { Activity, Chats } from "@nunio/chat";
+import type { Activity, Builder, Chats } from "@nunio/chat";
 import type { PrismaClient } from "@nunio/db";
 import type { Agents, Delegation } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
@@ -49,6 +49,8 @@ export interface AppBindings {
     sourceWorkflows: SourceWorkflows;
     chats: Chats;
     chatModels: ChatModels;
+    builder: Builder;
+    builderModel: Answerer;
     plan: Plan;
     estimator: Estimator;
     seriesAssigner: SeriesAssigner;

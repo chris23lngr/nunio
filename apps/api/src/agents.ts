@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import type { ActivityCursor } from "@nunio/chat";
@@ -12,6 +13,7 @@ import {
 } from "@nunio/delegation";
 import { courseColors } from "@nunio/knowledge";
 import { deadline, hhmm } from "@nunio/planning";
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
 import {
@@ -143,6 +145,51 @@ const AgentForm = z
   })
   .strict()
   .openapi("AgentForm");
+
+/**
+ * What the AI builder reads (ADR-0026 amendment "The builder"): the form as it stands, unsaved and perhaps incomplete,
+ * without its Budget or Model, and the conversation, which only the browser keeps.
+ */
+const BuilderRequest = z
+  .object({
+    form: z
+      .object({
+        name: z.string().max(80),
+        description: z.string().max(500),
+        instructions: z.string().max(4000),
+        courseIds: z.array(z.string().uuid()).max(50),
+        capabilities: z.array(AgentCapability).max(capabilityIds.length),
+        trigger: z
+          .object({
+            rhythm: z.enum(["daily", "weekdays"]),
+            weekdays: z.array(z.number().int().min(1).max(7)).max(7),
+            minute: Minute.nullable().describe(
+              "Its Uhrzeit; null while the field holds no time.",
+            ),
+          })
+          .strict(),
+      })
+      .strict()
+      .describe("The form as it stands; it has no Budget or Model.")
+      .openapi("BuilderForm"),
+    messages: z
+      .array(
+        z
+          .object({
+            role: z.enum(["student", "builder"]),
+            text: z.string().trim().min(1).max(4000),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(40)
+      .refine((messages) => messages.at(-1)?.role === "student", {
+        message: "The last message is the student's.",
+      })
+      .describe("The conversation so far, oldest first; nunio keeps none."),
+  })
+  .strict()
+  .openapi("BuilderRequest");
 
 /** Creating a free-text Agent also records which curated Template it was copied from, if any. */
 const CreateAgentForm = AgentForm.extend({
@@ -718,6 +765,62 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
         }),
         200,
       );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/agents/builder",
+      description:
+        "The AI builder panel: answers the student's latest message and may fill the form, which the browser applies. It never saves, starts a Run, or touches the Budget or Model, and is paid from the Allowance.",
+      request: body(BuilderRequest),
+      responses: {
+        200: {
+          description:
+            "AI SDK UI message SSE: a start chunk, the reply's text chunks, then data-form with the fields to fill (only when it changes the form) and finish, or data-refused (such as allowance_exhausted) or error.",
+          content: { "text/event-stream": { schema: z.string() } },
+        },
+        400: json(ErrorBody, "Not valid, such as a form with a Budget."),
+        401: errors[401],
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const input = c.req.valid("json");
+      const stream = createUIMessageStream({
+        onError: () =>
+          "Die Antwort wurde unterbrochen. Bitte versuche es erneut.",
+        execute: async ({ writer }) => {
+          writer.write({ type: "start", messageId: randomUUID() });
+          const result = await c
+            .get("builder")
+            .answer(p, input, c.get("builderModel"), {
+              signal: c.req.raw.signal,
+              write: (chunk) => writer.write(chunk),
+            });
+          if (result.status !== "ok") {
+            writer.write({
+              type: "data-refused",
+              data: { error: result.reason },
+              transient: true,
+            });
+            return;
+          }
+          if (result.fill)
+            writer.write({
+              type: "data-form",
+              data: result.fill,
+              transient: true,
+            });
+          writer.write({ type: "finish" });
+        },
+      });
+      return createUIMessageStreamResponse({
+        stream,
+        keepAliveMs: 15_000,
+        headers: { "cache-control": "no-store", "x-accel-buffering": "no" },
+      });
     },
   );
   routes.openapi(

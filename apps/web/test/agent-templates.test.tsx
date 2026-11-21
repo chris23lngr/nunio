@@ -202,6 +202,14 @@ beforeEach(() => {
   api.route("GET", "/api/me/agents/courses", () =>
     Response.json(activeCourses),
   );
+  // The form's builder panel reads whether the Allowance is left.
+  api.route("GET", "/api/me/allowance", () =>
+    Response.json({
+      limitMicroUsd: 5_000_000,
+      usedMicroUsd: 0,
+      heldMicroUsd: 0,
+    }),
+  );
   vi.stubGlobal(
     "matchMedia",
     vi.fn(() => ({

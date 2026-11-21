@@ -31,6 +31,9 @@ export interface ModelConfig {
 const taskOutputTokens: Partial<Record<Task, number>> = {
   extraction: 32_000,
   scan: 8_000,
+  // Reasoning, a reply of a few sentences and one form-fill of at most ~4,600 characters; it keeps replies far below a
+  // full Chat answer, though the browser still cuts its replies to the API's message cap before sending them back.
+  builder: 8_000,
 };
 /** Generous per-text allowance for role markers and message framing around the text's own tokens. */
 const framingTokens = 200;
@@ -47,6 +50,7 @@ export const taskModels = {
   explanation: "sonnet-5.5-reasoning-high",
   feedback: "sonnet-5.5-reasoning-high",
   planning: "opus-5.5-reasoning-high",
+  builder: "sonnet-5.5-reasoning-high",
 } as const satisfies Record<string, string>;
 
 export type Task = keyof typeof taskModels;
@@ -114,7 +118,7 @@ export function createModels({
   function modelFor(
     config: ModelConfig,
     outputTokens: number,
-    /** Chat calls tools, so it is routed only to endpoints that support them (ADR-0018 amendment). */
+    /** Chat and the builder call tools, so they are routed only to endpoints that support them (ADR-0018 amendment). */
     { chat = false } = {},
   ): RegisteredModel {
     refuseCoveredModel(config);
@@ -171,7 +175,14 @@ export function createModels({
         throw new Error(
           `The Model Catalog has no model ${JSON.stringify(taskModels[task])} for the ${task} task`,
         );
-      return modelFor(config, taskOutputTokens[task] ?? config.maxOutputTokens);
+      return modelFor(
+        config,
+        taskOutputTokens[task] ?? config.maxOutputTokens,
+        {
+          // The builder calls its form-fill tool, so it is routed like Chat.
+          chat: task === "builder",
+        },
+      );
     },
   };
 }

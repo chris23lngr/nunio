@@ -7,6 +7,7 @@ export {
   type AgentScope,
   type Agents,
   type AgentTrigger,
+  checkTrigger,
   createAgents,
   type PausedBy,
   type Preset,
