@@ -215,8 +215,7 @@ export function createAuth({
                 },
                 select: { id: true },
               }));
-            if (!invitation)
-              throw invitationRequired();
+            if (!invitation) throw invitationRequired();
           },
           // Claim only once the account exists: email-code sign-in creates it outside a transaction.
           after: async (user, context) => {
