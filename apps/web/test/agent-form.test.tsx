@@ -63,6 +63,14 @@ const capabilitySet = [
     description: "Nur Blöcke, die dieser Agent erstellt hat.",
     modes: ["automatic", "always", "ask"],
   },
+  {
+    id: "createTasks",
+    section: "Aufgaben",
+    title: "Aufgaben erstellen",
+    description:
+      "Neue Aufgaben in deinen Kursen anlegen, auch zu Prüfungen und Abgaben oder zur Vor- und Nachbereitung.",
+    modes: ["ask", "automatic", "always"],
+  },
 ];
 
 const dataHandling = {
@@ -1008,6 +1016,10 @@ test("'Fähigkeiten verwalten' adds Lernblöcke Capabilities on their default mo
       "Eigene Lernblöcke entfernenNur Blöcke, die dieser Agent erstellt hat.",
       "false",
     ],
+    [
+      "Aufgaben erstellenNeue Aufgaben in deinen Kursen anlegen, auch zu Prüfungen und Abgaben oder zur Vor- und Nachbereitung.",
+      "false",
+    ],
   ]);
   expect(within(sheet).queryAllByRole("combobox")).toEqual([]);
   await userEvent.click(boxes[0]!);
@@ -1051,6 +1063,70 @@ test("'Fähigkeiten verwalten' adds Lernblöcke Capabilities on their default mo
         { id: "moveStudyBlocks", mode: "ask" },
         { id: "removeOwnStudyBlocks", mode: "automatic" },
       ],
+    }),
+  ]);
+});
+
+test("'Fähigkeiten verwalten' offers Aufgaben erstellen under Aufgaben, on Nachfragen until the student grants it", async () => {
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("POST", "/api/me/agents", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ id: "a-1" }, { status: 201 });
+  });
+  renderScreen(<AgentFormScreen apiOrigin={api.origin} agent={null} />);
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Name" }),
+    "Statistik",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Kurse bearbeiten" }),
+  );
+  let sheet = await screen.findByRole("dialog", { name: "Kurse verwalten" });
+  await userEvent.click(
+    await within(sheet).findByRole("checkbox", { name: /Statistics II/ }),
+  );
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Fähigkeit hinzufügen" }),
+  );
+  sheet = await screen.findByRole("dialog", { name: "Fähigkeiten verwalten" });
+  expect(
+    within(sheet)
+      .getByRole("button", { name: "Aufgaben" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  await userEvent.click(
+    await within(sheet).findByRole("checkbox", { name: /Aufgaben erstellen/ }),
+  );
+  const mode = within(sheet).getByRole("combobox", {
+    name: "Freigabemodus für Aufgaben erstellen",
+  });
+  expect(mode.textContent).toContain("Nachfragen");
+  await userEvent.click(mode);
+  expect(
+    (await screen.findAllByRole("option")).map((option) => option.textContent),
+  ).toEqual(["Immer erlaubt", "Automatisch", "Nachfragen"]);
+  await userEvent.click(screen.getByRole("option", { name: "Automatisch" }));
+  await waitFor(() => expect(mode.textContent).toContain("Automatisch"));
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  expect(listedCapabilities()).toEqual([
+    "Aufgaben erstellenAutomatischNeue Aufgaben in deinen Kursen anlegen, auch zu Prüfungen und Abgaben oder zur Vor- und Nachbereitung.",
+  ]);
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  await waitFor(() => expect(replace).toHaveBeenCalledWith("/agents/a-1"));
+  expect(saved).toEqual([
+    expect.objectContaining({
+      capabilities: [{ id: "createTasks", mode: "automatic" }],
     }),
   ]);
 });

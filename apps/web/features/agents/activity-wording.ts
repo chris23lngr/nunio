@@ -115,6 +115,7 @@ const actions: Record<string, { asked: string; done: string }> = {
     asked: "Lernblock entfernen",
     done: "Lernblock entfernt",
   },
+  createTasks: { asked: "Aufgabe anlegen", done: "Aufgabe angelegt" },
 };
 
 /** Why the gate refused an Action, as the Verlauf names it. */

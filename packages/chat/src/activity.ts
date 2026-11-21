@@ -44,6 +44,13 @@ export type ActionEvent = {
   brokenPreferences: BrokenPreference[];
 };
 
+/** The arguments of a `task.create` Action that name it. */
+type NewTask = {
+  title: string;
+  courseId: string | null;
+  obligationId?: string;
+};
+
 /** Adds Activity events to a Run's Verlauf; one already written under its key stays as it was. */
 export async function recordEvents(
   tx: Transaction,
@@ -297,12 +304,33 @@ export function createActivity({
           (action.args as { workId?: string }).workId ??
           calls.find((call) => call.actionId === action.id)?.workId ??
           null;
+        // A new Task is named by its own arguments: its title, and its Course or Obligation (ADR-0022).
+        const newTasks = [
+          ...(await tx.action.findMany({
+            where: {
+              id: {
+                in: calls.flatMap((call) =>
+                  call.kind === "task.create" && call.actionId
+                    ? [call.actionId]
+                    : [],
+                ),
+              },
+            },
+            select: { id: true, args: true },
+          })),
+          ...approvals
+            .map(({ action }) => action)
+            .filter((action) => action.kind === "task.create"),
+        ].map(({ id, args }) => ({ id, ...(args as NewTask) }));
         const workIds = [
           ...calls.flatMap((call) => (call.workId ? [call.workId] : [])),
           ...approvals.flatMap(({ action }) => {
             const workId = workOfAction(action);
             return workId ? [workId] : [];
           }),
+          ...newTasks.flatMap((task) =>
+            task.obligationId ? [task.obligationId] : [],
+          ),
         ];
         const [sources, obligations, tasks] = await Promise.all([
           tx.source.findMany({
@@ -333,6 +361,7 @@ export function createActivity({
                 ...reads.flatMap((read) => read.courseIds),
                 ...obligations.map((o) => o.courseId),
                 ...tasks.flatMap((t) => (t.courseId ? [t.courseId] : [])),
+                ...newTasks.flatMap((t) => (t.courseId ? [t.courseId] : [])),
               ],
             },
           },
@@ -344,6 +373,7 @@ export function createActivity({
           summary,
           approvals,
           workOfAction,
+          newTasks,
           open: await openApprovals(tx, [runId]),
           sources,
           obligations,
@@ -382,6 +412,18 @@ export function createActivity({
           course: courseTitle(obligation.courseId),
         };
       };
+      /** The Task a `task.create` Action adds, by its own title, in its Course or its Obligation's. */
+      const newTaskOf = (actionId: string) => {
+        const task = read.newTasks.find((t) => t.id === actionId);
+        if (!task) return null;
+        return {
+          title: task.title,
+          course: courseTitle(
+            task.courseId ??
+              obligations.find((o) => o.id === task.obligationId)?.courseId,
+          ),
+        };
+      };
       const now = clock.now();
       const decided = read.approvals
         .flatMap(
@@ -392,7 +434,10 @@ export function createActivity({
             };
             const shown = {
               kind: action.kind,
-              work: workOf(read.workOfAction(action)),
+              work:
+                action.kind === "task.create"
+                  ? newTaskOf(action.id)
+                  : workOf(read.workOfAction(action)),
               start: start ? new Date(start) : null,
               end: end ? new Date(end) : null,
             };
@@ -480,7 +525,10 @@ export function createActivity({
               call.actionId && call.kind
                 ? {
                     kind: call.kind,
-                    work: workOf(call.workId),
+                    work:
+                      call.kind === "task.create"
+                        ? newTaskOf(call.actionId)
+                        : workOf(call.workId),
                     start: call.start ? new Date(call.start) : null,
                     end: call.end ? new Date(call.end) : null,
                   }

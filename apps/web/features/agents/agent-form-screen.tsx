@@ -31,6 +31,7 @@ import {
   CalendarPlus,
   CalendarSync,
   Goal,
+  ListPlus,
   NotepadText,
   Pencil,
   Play,
@@ -194,6 +195,7 @@ const capabilityIcons: Record<Capability["id"], typeof CalendarPlus> = {
   moveOwnStudyBlocks: CalendarSync,
   moveStudyBlocks: CalendarSync,
   removeOwnStudyBlocks: CalendarMinus,
+  createTasks: ListPlus,
 };
 
 const tabs = [

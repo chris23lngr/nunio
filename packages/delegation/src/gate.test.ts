@@ -1256,6 +1256,7 @@ describe("a free-text Agent's Actions", () => {
       moveOwnStudyBlocks: "studyBlock.move",
       moveStudyBlocks: "studyBlock.move",
       removeOwnStudyBlocks: "studyBlock.remove",
+      createTasks: "task.create",
     } as Record<string, string>;
     await admin.grant.createMany({
       data: [
@@ -1276,15 +1277,19 @@ describe("a free-text Agent's Actions", () => {
     });
     return { agentId, runId, p: principal.fromRun(runId) };
   }
-  /** The Plan's rules, answering every Study Block Action with one verdict. */
+  /** The Plan's rules, answering every Study Block Action with one verdict, and every Preparation as due then. */
   function rules(
     verdict: PlanVerdict = { refusals: [], brokenPreferences: [] },
+    due: Date | null = null,
   ) {
     const checked: unknown[] = [];
     const planRules: PlanRules = {
       async check(_, intent) {
         checked.push(intent);
         return verdict;
+      },
+      async taskDue(_, task) {
+        return task.fixedEventId ? due : null;
       },
     };
     return { planRules, checked };
@@ -1429,6 +1434,176 @@ describe("a free-text Agent's Actions", () => {
     const [record] = await g.history(s.p, { runId: r.runId });
     expect(record!.events.find((e) => e.type === "dispatched")).toMatchObject({
       detail: { brokenPreferences: ["daily_limit"] },
+    });
+  });
+  describe("Tasks (#154)", () => {
+    const task = (
+      args: Partial<{
+        courseId: string | null;
+        obligationId: string;
+        fixedEventId: string;
+        role: "preparation" | "follow_up";
+      }>,
+    ) => ({
+      kind: "task.create" as const,
+      title: "Thema X wiederholen",
+      courseId: null,
+      fixedEventId: null,
+      role: null,
+      estimateMinutes: 45,
+      ...args,
+    });
+    /** A Course Event of the Course, from a confirmed series. */
+    async function courseEvent(studentId: string, courseId: string) {
+      const calendarId = randomUUID(),
+        seriesId = randomUUID(),
+        eventId = randomUUID();
+      await admin.calendarSource.create({
+        data: { id: calendarId, studentId, name: "Stundenplan.ics" },
+      });
+      await admin.eventSeries.create({
+        data: {
+          id: seriesId,
+          studentId,
+          calendarId,
+          title: `Vorlesung ${seriesId}`,
+          courseId,
+          confirmedAt: now,
+        },
+      });
+      await admin.fixedEvent.create({
+        data: {
+          id: eventId,
+          studentId,
+          calendarId,
+          seriesId,
+          title: "Vorlesung",
+          start: new Date("2026-11-12T10:00:00Z"),
+          end: new Date("2026-11-12T12:00:00Z"),
+        },
+      });
+      return eventId;
+    }
+
+    it("creates a Task in its Course, toward one of its Obligations, and for one of its Course Events on Automatisch", async () => {
+      const s = await student();
+      const r = await agentRun(s, { createTasks: "automatic" });
+      const eventId = await courseEvent(s.studentId, s.courseId);
+      const { executor, dispatched } = fakeExecutor();
+      const g = gate(executor, {}, rules().planRules);
+      const intents = [
+        task({ courseId: s.courseId }),
+        task({ obligationId: s.obligationId }),
+        task({
+          courseId: s.courseId,
+          fixedEventId: eventId,
+          role: "preparation",
+        }),
+      ];
+
+      for (const [i, intent] of intents.entries())
+        expect(
+          await g.perform(r.p, { key: `${r.runId}:1:${i + 1}`, intent }),
+        ).toMatchObject({ status: "done" });
+      expect(dispatched.map((d) => d.intent)).toEqual(intents);
+    });
+
+    it("asks on Nachfragen", async () => {
+      const s = await student();
+      const r = await agentRun(s, { createTasks: "ask" });
+
+      expect(
+        await gate(fakeExecutor().executor, {}, rules().planRules).perform(
+          r.p,
+          { key: `${r.runId}:1:1`, intent: task({ courseId: s.courseId }) },
+        ),
+      ).toMatchObject({ status: "awaiting_approval" });
+    });
+
+    it("asks on Automatisch for a Task due within the next 24 hours", async () => {
+      const s = await student();
+      const r = await agentRun(s, { createTasks: "automatic" });
+      const eventId = await courseEvent(s.studentId, s.courseId);
+      const soon = new Date(now.getTime() + 20 * hour);
+      const g = gate(
+        fakeExecutor().executor,
+        { [s.obligationId]: soon },
+        rules(undefined, soon).planRules,
+      );
+
+      expect(
+        await g.perform(r.p, {
+          key: `${r.runId}:1:1`,
+          intent: task({ obligationId: s.obligationId }),
+        }),
+      ).toMatchObject({ status: "awaiting_approval" });
+      expect(
+        await g.perform(r.p, {
+          key: `${r.runId}:1:2`,
+          intent: task({
+            courseId: s.courseId,
+            fixedEventId: eventId,
+            role: "preparation",
+          }),
+        }),
+      ).toMatchObject({ status: "awaiting_approval" });
+    });
+
+    it("refuses a Task in no Course, in another Course, toward another Course's Obligation, or for another Course's event", async () => {
+      const s = await student();
+      const other = await student();
+      // The other Course is the same student's, just not one of the Agent's.
+      const otherCourseId = randomUUID(),
+        otherObligationId = randomUUID();
+      await admin.course.create({
+        data: {
+          id: otherCourseId,
+          studentId: s.studentId,
+          title: "Lineare Algebra",
+          matchTitle: "lineare algebra",
+          semester: "2026-ws",
+          color: "sky",
+          status: "accepted",
+        },
+      });
+      await admin.obligation.create({
+        data: {
+          id: otherObligationId,
+          studentId: s.studentId,
+          courseId: otherCourseId,
+          matchKey: "sheet-1",
+          kind: "assignment",
+          enteredAt: now,
+          correctedTitle: "Blatt 1",
+        },
+      });
+      const otherEventId = await courseEvent(s.studentId, otherCourseId);
+      const r = await agentRun(s, { createTasks: "always" });
+      const { executor, dispatched } = fakeExecutor();
+      const g = gate(executor, {}, rules().planRules);
+      const intents = [
+        task({}),
+        task({ courseId: otherCourseId }),
+        task({ obligationId: otherObligationId }),
+        // Named with the Agent's Course, but the event is another Course's.
+        task({
+          courseId: s.courseId,
+          fixedEventId: otherEventId,
+          role: "follow_up",
+        }),
+      ];
+
+      for (const [i, intent] of intents.entries())
+        expect(
+          await g.perform(r.p, { key: `${r.runId}:1:${i + 1}`, intent }),
+        ).toMatchObject({ status: "refused", reason: "out_of_scope" });
+      expect(
+        await g.perform(r.p, {
+          key: `${r.runId}:2:1`,
+          intent: task({ obligationId: other.obligationId }),
+        }),
+      ).toMatchObject({ status: "refused", reason: "not_owner" });
+      expect(dispatched).toEqual([]);
     });
   });
 });

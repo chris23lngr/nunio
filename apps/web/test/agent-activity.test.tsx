@@ -502,6 +502,78 @@ test("Freigaben shows the selected Run's open Approvals as nunio renders them, a
   ]);
 });
 
+test("a Task's Approval shows its title, Course, Course Event and Estimate, and the Verlauf names the Task the Agent asked for", async () => {
+  const run = listed("r-1", 60, "done", { openApprovals: 1 });
+  const action = {
+    kind: "task.create",
+    work: { title: "Kapitel 3 lesen", course: "Statistics II" },
+  };
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [run], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-1", () =>
+    Response.json(
+      detail(run, {
+        approvals: [
+          {
+            actionId: "x-1",
+            action: {
+              ...action,
+              from: null,
+              to: null,
+              task: {
+                role: "preparation",
+                minutes: 45,
+                event: {
+                  title: "Statistik Vorlesung",
+                  start: at.monday.start,
+                },
+              },
+            },
+            fingerprint: "fp-x-1",
+            expiresAt: "2099-02-09T08:00:00.000Z",
+            agent: { id: "a-1", preset: "", name: "Klausurhelfer" },
+          },
+        ],
+        verlauf: [
+          {
+            type: "action",
+            at: run.startedAt,
+            step: 2,
+            capability: "createTasks",
+            action: { ...action, start: null, end: null },
+            outcome: "awaiting_approval",
+            refusal: null,
+            brokenPreferences: [],
+          },
+        ],
+      }),
+    ),
+  );
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+
+  const freigaben = await screen.findByRole("region", { name: "Freigaben" });
+  expect(
+    within(freigaben)
+      .getAllByRole("group")
+      .map((c) => c.textContent),
+  ).toEqual([
+    expect.stringMatching(
+      /^Aufgabe anlegen„Kapitel 3 lesen“ · Statistics IIVorbereitung auf „Statistik Vorlesung“ am Mo\., 2\. Feb\., \d\d:\d\d · 45 Min\. geschätztKlausurhelfer · Läuft ab am .+AblehnenAkzeptieren$/,
+    ),
+  ]);
+  const verlauf = screen.getByRole("list", { name: "Verlauf" });
+  expect(
+    within(verlauf)
+      .getAllByRole("listitem")
+      .map((entry) => entry.textContent),
+  ).toContainEqual(
+    expect.stringMatching(
+      /Freigabe angefragt: Aufgabe anlegen„Kapitel 3 lesen“ · Statistics II$/,
+    ),
+  );
+});
+
 test("an Approval whose Action changed says so and reloads instead of approving", async () => {
   const run = listed("r-1", 60, "done", { openApprovals: 1 });
   let approvals = [

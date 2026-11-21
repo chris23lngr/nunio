@@ -44,7 +44,7 @@ export function approvalsTool(
   const span = (start: Date, end: Date) => `${at(start)}–${at(end).slice(11)}`;
   return tool({
     description:
-      "Reads your requests for the student's Approval: those still open, which you must not ask for again, and those the student decided or that expired since your previous Run, with what became of each. Work and blocks carry handles such as O1 or B1, as agenda gives them.",
+      "Reads your requests for the student's Approval: those still open, which you must not ask for again, and those the student decided or that expired since your previous Run, with what became of each. Work, blocks and Course Events carry handles such as O1, B1 or E1, as agenda gives them.",
     inputSchema: jsonSchema<Record<string, never>>({
       type: "object",
       properties: {},
@@ -119,6 +119,10 @@ export function approvalsTool(
           studyBlockId?: string;
           start?: string;
           end?: string;
+          title?: string;
+          obligationId?: string;
+          fixedEventId?: string | null;
+          role?: "preparation" | "follow_up" | null;
         };
         const times =
           args.start && args.end
@@ -139,6 +143,14 @@ export function approvalsTool(
           return `move ${block} to ${times}`;
         if (action.kind === "studyBlock.remove")
           return `remove ${block} (${times})`;
+        if (action.kind === "task.create")
+          return `create the Task "${args.title}"${
+            args.obligationId
+              ? ` toward ${turn.handleFor("obligation", args.obligationId)}`
+              : args.fixedEventId
+                ? ` as the ${args.role === "preparation" ? "Preparation" : "Follow-up"} of ${turn.handleFor("event", args.fixedEventId)}`
+                : ""
+          }`;
         return action.kind;
       };
       const open: string[] = [];
@@ -165,7 +177,12 @@ export function approvalsTool(
                   "block",
                   (action.effect as { studyBlockId: string }).studyBlockId,
                 )}`
-              : "approved and done";
+              : action.kind === "task.create"
+                ? `approved and done: the Task is ${turn.handleFor(
+                    "task",
+                    (action.effect as { taskId: string }).taskId,
+                  )}`
+                : "approved and done";
         else if (action.status === "refused")
           outcome = `approved, but refused: ${why[action.refusal as Refusal] ?? action.refusal}`;
         else if (action.status === "failed")

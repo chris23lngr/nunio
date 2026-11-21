@@ -52,22 +52,36 @@ export function describeAction(
 ) {
   // A Task Action places nothing in time: it names the Task it adds or reopens (ADR-0022).
   if (kind === "task.create" || kind === "task.reopen") {
-    const { title, courseId, taskId, fixedEventId, role, estimateMinutes } =
-      args as {
-        title?: string;
-        courseId?: string | null;
-        taskId?: string;
-        fixedEventId?: string | null;
-        role?: "preparation" | "follow_up" | null;
-        estimateMinutes?: number | null;
-      };
+    const {
+      title,
+      courseId,
+      obligationId,
+      taskId,
+      fixedEventId,
+      role,
+      estimateMinutes,
+    } = args as {
+      title?: string;
+      courseId?: string | null;
+      obligationId?: string;
+      taskId?: string;
+      fixedEventId?: string | null;
+      role?: "preparation" | "follow_up" | null;
+      estimateMinutes?: number | null;
+    };
     const task = plan.tasks.find((t) => t.id === taskId);
     const event = plan.fixedEvents.find((e) => e.id === fixedEventId);
+    // A new Task toward an Obligation is in the Obligation's Course.
+    const obligation = obligationId
+      ? plan.obligations.find((o) => o.id === obligationId)
+      : undefined;
     return {
       kind,
       work: {
         title: title ?? task?.title ?? "Work that is gone",
-        course: courseTitle(plan, courseId ?? task?.courseId ?? null),
+        course:
+          obligation?.course ??
+          courseTitle(plan, courseId ?? task?.courseId ?? null),
       },
       from: null,
       to: null,

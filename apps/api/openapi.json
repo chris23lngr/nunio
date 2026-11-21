@@ -4123,7 +4123,7 @@
             "items": {
               "$ref": "#/components/schemas/AgentCapability"
             },
-            "maxItems": 4,
+            "maxItems": 5,
             "description": "Its Capabilities, each at most once, on a mode it allows."
           },
           "budgetMicroUsd": {
@@ -4164,7 +4164,8 @@
               "createStudyBlocks",
               "moveOwnStudyBlocks",
               "moveStudyBlocks",
-              "removeOwnStudyBlocks"
+              "removeOwnStudyBlocks",
+              "createTasks"
             ]
           },
           "mode": {
@@ -4295,7 +4296,8 @@
               "createStudyBlocks",
               "moveOwnStudyBlocks",
               "moveStudyBlocks",
-              "removeOwnStudyBlocks"
+              "removeOwnStudyBlocks",
+              "createTasks"
             ]
           },
           "section": {

@@ -20,7 +20,10 @@ const when =
   "give start and end as YYYY-MM-DDTHH:MM in the student's time zone";
 
 const block = { type: "string", pattern: "^B\\d+$" } as const;
-/** What each Action's tool takes: work or a block by its handle, and where it goes in the student's time zone. */
+/**
+ * What each Action's tool takes: work or a block by its handle, and where it goes in the student's time zone; or for a
+ * Task, its title, what it is for by handle, and the minutes it needs.
+ */
 const inputs: Record<(typeof capabilities)[CapabilityId]["kind"], JSONSchema7> =
   {
     "studyBlock.create": {
@@ -41,6 +44,19 @@ const inputs: Record<(typeof capabilities)[CapabilityId]["kind"], JSONSchema7> =
       required: ["block"],
       additionalProperties: false,
     },
+    "task.create": {
+      type: "object",
+      properties: {
+        title: { type: "string", minLength: 1, maxLength: 200 },
+        course: { type: "string", pattern: "^K\\d+$" },
+        obligation: { type: "string", pattern: "^O\\d+$" },
+        event: { type: "string", pattern: "^E\\d+$" },
+        role: { type: "string", enum: ["preparation", "follow_up"] },
+        minutes: { type: "integer", minimum: 15, maximum: 1440 },
+      },
+      required: ["title"],
+      additionalProperties: false,
+    },
   };
 
 /** What the model is told of each Capability's tool; how the tool reads its call follows from the Capability's Action. */
@@ -50,6 +66,8 @@ const descriptions: Record<CapabilityId, string> = {
   moveStudyBlocks: `Moves any Study Block the Plan showed, also one the student or someone else placed; the student is always asked first. Name it by its handle, such as B1, and ${when}.`,
   removeOwnStudyBlocks:
     "Removes a Study Block you created that the student has not moved since. Name it by its handle, such as B1. A Locked block, or one that has started, cannot be removed.",
+  createTasks:
+    "Creates a Task in one of your Courses. Name exactly one of: a Course by its handle, such as K1; an Obligation the Plan showed, such as O1, which the Task works toward; or a Course Event the Plan showed, such as E1, with role preparation or follow_up, only if it has no Task in that role yet. Give a short title and, if you can tell, the minutes it needs. Read the Plan with agenda first, so you add no Task it already has.",
 };
 
 /**
@@ -74,13 +92,15 @@ export type StoredCall = {
   toolName: string;
 } & ({ intent: Record<string, unknown> } | { invalid: string });
 
-/** A stored intent with its dates revived, as the gate takes it. */
-export const intentOf = (call: { intent: Record<string, unknown> }) =>
-  ({
+/** A stored intent with its dates revived, as the gate takes it; a Task Action has none. */
+export const intentOf = (call: { intent: Record<string, unknown> }) => {
+  const { start, end } = call.intent;
+  return {
     ...call.intent,
-    start: new Date(call.intent.start as string),
-    end: new Date(call.intent.end as string),
-  }) as ActionIntent;
+    ...(start === undefined ? {} : { start: new Date(start as string) }),
+    ...(end === undefined ? {} : { end: new Date(end as string) }),
+  } as ActionIntent;
+};
 
 const maxBlockMs = 14 * 24 * 60 * 60_000;
 
@@ -116,7 +136,14 @@ export async function readCall(
     plan,
     p,
     timeZone,
-  }: { plan: Pick<Plan, "view">; p: Principal; timeZone: string },
+    courses,
+  }: {
+    plan: Pick<Plan, "view">;
+    p: Principal;
+    timeZone: string;
+    /** The Agent's Courses by handle, as the context message lists them. */
+    courses: ReadonlyMap<string, { id: string }>;
+  },
   call: { toolCallId: string; toolName: string; input: unknown },
 ): Promise<StoredCall> {
   const { toolCallId, toolName } = call;
@@ -130,11 +157,18 @@ export async function readCall(
     : null;
   if (!kind) return invalid("you have no such tool.");
   // The model's arguments are checked here, never trusted: a malformed call asks for nothing.
-  const fields = Object.keys(inputs[kind].properties ?? {});
   const given =
     call.input && typeof call.input === "object"
       ? (call.input as Record<string, unknown>)
       : {};
+  const intent = (value: object): StoredCall => ({
+    toolCallId,
+    toolName,
+    intent: JSON.parse(JSON.stringify(value)),
+  });
+  if (kind === "task.create")
+    return readTask(turn, { plan, p, courses }, given, { invalid, intent });
+  const fields = Object.keys(inputs[kind].properties ?? {});
   if (fields.some((field) => typeof given[field] !== "string"))
     return invalid(`give ${fields.join(", ")}, each as text.`);
   const input = given as {
@@ -157,11 +191,6 @@ export async function readCall(
       );
     times = { start, end };
   }
-  const intent = (value: object): StoredCall => ({
-    toolCallId,
-    toolName,
-    intent: JSON.parse(JSON.stringify(value)),
-  });
   if (kind === "studyBlock.create") {
     const work = turn.lookup(input.work ?? "");
     if (work?.kind !== "obligation" && work?.kind !== "task")
@@ -188,6 +217,97 @@ export async function readCall(
     workId: block.work.id,
     start: block.start,
     end: block.end,
+  });
+}
+
+/**
+ * Reads a call of Aufgaben erstellen into the Task it asks for: in a Course by its handle, toward an Obligation, or as
+ * a Course Event's missing Preparation or Follow-up (ADR-0022). Whether that is work of the Agent's Courses is the
+ * gate's to decide.
+ */
+async function readTask(
+  turn: Turn,
+  {
+    plan,
+    p,
+    courses,
+  }: {
+    plan: Pick<Plan, "view">;
+    p: Principal;
+    courses: ReadonlyMap<string, { id: string }>;
+  },
+  given: Record<string, unknown>,
+  {
+    invalid,
+    intent,
+  }: {
+    invalid: (reason: string) => StoredCall;
+    intent: (value: object) => StoredCall;
+  },
+): Promise<StoredCall> {
+  const { title, course, obligation, event, role, minutes } = given;
+  if (typeof title !== "string" || !title.trim() || title.trim().length > 200)
+    return invalid("give a title of at most 200 characters.");
+  const named = [course, obligation, event].filter((v) => v !== undefined);
+  if (named.length !== 1 || typeof named[0] !== "string")
+    return invalid("name exactly one Course, Obligation or Course Event.");
+  if (
+    minutes !== undefined &&
+    !(
+      Number.isInteger(minutes) &&
+      Number(minutes) >= 15 &&
+      Number(minutes) <= 1440
+    )
+  )
+    return invalid("give the minutes as a whole number from 15 to 1440.");
+  if ((event === undefined) !== (role === undefined))
+    return invalid(
+      "give a role, preparation or follow_up, with a Course Event, and only then.",
+    );
+  if (role !== undefined && role !== "preparation" && role !== "follow_up")
+    return invalid("give the role as preparation or follow_up.");
+  const task = {
+    kind: "task.create",
+    title: title.trim(),
+    courseId: null as string | null,
+    fixedEventId: null as string | null,
+    role: null as "preparation" | "follow_up" | null,
+    estimateMinutes: (minutes as number | undefined) ?? null,
+  };
+  if (typeof course === "string") {
+    const known = courses.get(course);
+    if (!known)
+      return invalid(`none of your Courses has the handle ${course}.`);
+    return intent({ ...task, courseId: known.id });
+  }
+  if (typeof obligation === "string") {
+    const work = turn.lookup(obligation);
+    if (work?.kind !== "obligation")
+      return invalid(
+        `no Obligation has the handle ${obligation}. Read the Plan with agenda first.`,
+      );
+    return intent({ ...task, obligationId: work.id });
+  }
+  const handled = turn.lookup(event as string);
+  const view = await plan.view(p);
+  const found =
+    handled?.kind === "event"
+      ? view.fixedEvents.find((e) => e.id === handled.id)
+      : undefined;
+  if (!found?.courseId)
+    return invalid(
+      `no Course Event has the handle ${event}. Read the Plan with agenda first.`,
+    );
+  // A Course Event has at most one Task in each role, which a new one would only repeat.
+  if (view.tasks.some((t) => t.fixedEventId === found.id && t.role === role))
+    return invalid(
+      `${event} already has a ${role === "preparation" ? "Preparation" : "Follow-up"}, so add no other.`,
+    );
+  return intent({
+    ...task,
+    courseId: found.courseId,
+    fixedEventId: found.id,
+    role,
   });
 }
 
@@ -238,6 +358,10 @@ export function resultOf(
         return "Done: the Study Block was moved.";
       if (action.kind === "studyBlock.remove")
         return "Done: the Study Block was removed.";
+      if (action.kind === "task.create") {
+        const { taskId } = action.effect as { taskId: string };
+        return `Done: the Task was created as ${turn.handleFor("task", taskId)}.`;
+      }
       const { studyBlockId } = action.effect as { studyBlockId: string };
       return `Done: the Study Block was created as ${turn.handleFor("block", studyBlockId)}.`;
     }

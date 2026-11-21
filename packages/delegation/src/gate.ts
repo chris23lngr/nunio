@@ -76,6 +76,17 @@ export type BlockIntent = Extract<
  */
 export interface PlanRules {
   check(tx: Transaction, intent: BlockIntent, now: Date): Promise<PlanVerdict>;
+  /**
+   * When a Course Event's new Preparation or Follow-up would be due: the end of its window (ADR-0022); null for any
+   * other Task, or once the event is gone.
+   */
+  taskDue(
+    tx: Transaction,
+    task: {
+      fixedEventId: string | null;
+      role: "preparation" | "follow_up" | null;
+    },
+  ): Promise<Date | null>;
 }
 
 export type ActionOutcome =
@@ -208,7 +219,7 @@ export interface GateDeps {
   db: PrismaClient;
   clock: Clock;
   executors?: Executors;
-  /** Needed only to decide a free-text Agent's Study Block Actions. */
+  /** Needed only to decide a free-text Agent's Study Block and Task Actions. */
   planRules?: PlanRules;
   /** An Obligation's deadline, which caps how long a request for Approval stays open. */
   deadlineOf?: (
@@ -406,17 +417,39 @@ async function subjectOf(
     return null;
   }
   if (intent.kind === "task.create") {
-    // Its Course and Course Event must be the student's own.
+    // Its Obligation, Course and Course Event must be the student's own.
+    if (intent.obligationId) {
+      const obligation = await tx.obligation.findUnique({
+        where: { id: intent.obligationId },
+      });
+      return (
+        obligation && {
+          courseId: obligation.courseId,
+          obligationId: obligation.id,
+        }
+      );
+    }
     if (
-      (intent.courseId &&
-        !(await tx.course.findUnique({ where: { id: intent.courseId } }))) ||
-      (intent.fixedEventId &&
-        !(await tx.fixedEvent.findUnique({
-          where: { id: intent.fixedEventId },
-        })))
+      intent.courseId &&
+      !(await tx.course.findUnique({ where: { id: intent.courseId } }))
     )
       return null;
-    return { courseId: intent.courseId, obligationId: null };
+    if (!intent.fixedEventId)
+      return { courseId: intent.courseId, obligationId: null };
+    const event = await tx.fixedEvent.findUnique({
+      where: { id: intent.fixedEventId },
+      include: { series: true },
+    });
+    if (!event) return null;
+    // A Preparation or Follow-up is in the Course its event is a Course Event of: none once the event left it.
+    const ofEvent =
+      event.series?.confirmedAt && !event.detachedAt
+        ? event.series.courseId
+        : null;
+    return {
+      courseId: ofEvent === intent.courseId ? ofEvent : null,
+      obligationId: null,
+    };
   }
   if (intent.kind === "task.reopen") {
     const task = await tx.task.findUnique({ where: { id: intent.taskId } });
@@ -734,6 +767,22 @@ export function createGate({
             );
           planCheck = await planRules.check(tx, parsed, now);
         }
+        // When a free-text Agent's new Task would be due, which Automatisch asks for within the next 24 hours.
+        let taskDue: Date | null = null;
+        if (
+          agent &&
+          "capabilities" in agent &&
+          subject &&
+          parsed.kind === "task.create"
+        ) {
+          if (!planRules)
+            throw new Error(
+              "createDelegation needs planRules to decide an Agent's Task Actions",
+            );
+          taskDue = parsed.obligationId
+            ? ((await deadlineOf?.(studentId, parsed.obligationId)) ?? null)
+            : await planRules.taskDue(tx, parsed);
+        }
         // Counted under the Agent's lock, for a new call only: an Action already asked was counted when it was.
         const runUse: RunUse | null =
           run && agent && "capabilities" in agent && !existing
@@ -773,6 +822,7 @@ export function createGate({
             intent.kind !== "studyBlock.remove" &&
             (await intoProtectedTime(tx, args as { start?: Date; end?: Date })),
           planCheck,
+          taskDue,
           runUse,
           approval: existing?.approval
             ? {

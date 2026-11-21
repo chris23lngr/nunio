@@ -21,6 +21,14 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
           where: { studentId_idempotencyKey: { studentId, idempotencyKey } },
         });
         if (done) return { status: "done", effect: effectOf(done) };
+        // The Agent whose Run asked for it, approved or not; null for a Chat.
+        const agentId =
+          (
+            await tx.action.findUnique({
+              where: { id: actionId },
+              select: { run: { select: { agentId: true } } },
+            })
+          )?.run?.agentId ?? null;
         if (intent.kind === "task.create" || intent.kind === "task.reopen") {
           let taskId: string;
           if (intent.kind === "task.create") {
@@ -45,11 +53,18 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
                   id: taskId,
                   studentId,
                   title: intent.title,
+                  obligationId: intent.obligationId ?? null,
                   courseId: intent.courseId,
                   fixedEventId: intent.fixedEventId,
                   role: intent.role,
                   estimateMinutes: intent.estimateMinutes,
-                  estimatedBy: intent.estimateMinutes ? "student" : null,
+                  // An Agent's Estimate is nunio's, so the student can correct it; one asked from a Chat is their own
+                  // (ADR-0022). The Task records no creator: its Action names the Agent.
+                  estimatedBy: intent.estimateMinutes
+                    ? agentId
+                      ? "nunio"
+                      : "student"
+                    : null,
                 },
               });
             }
@@ -67,14 +82,6 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
           });
           return { status: "done", effect: { taskId } };
         }
-        // The Agent whose Run asked for it, approved or not; null for a Chat.
-        const agentId =
-          (
-            await tx.action.findUnique({
-              where: { id: actionId },
-              select: { run: { select: { agentId: true } } },
-            })
-          )?.run?.agentId ?? null;
         let studyBlockId: string = randomUUID();
         if (intent.kind === "studyBlock.move") {
           const { count } = await tx.studyBlock.updateMany({

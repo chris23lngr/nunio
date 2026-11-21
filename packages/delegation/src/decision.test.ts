@@ -43,6 +43,7 @@ const base: Snapshot = {
   agent: active,
   intoProtectedTime: false,
   planCheck: null,
+  taskDue: null,
   approval: null,
   runUse: null,
 };
@@ -301,11 +302,27 @@ describe("a free-text Agent's Actions (ADR-0001)", () => {
       subject: target,
     };
   };
+  /** A Task in one of its Courses, toward none of its Obligations, due when the snapshot says. */
+  const task = (due: Date | null = null): Partial<Snapshot> => ({
+    intent: {
+      kind: "task.create",
+      args: {
+        title: "Thema X wiederholen",
+        courseId: "course-1",
+        fixedEventId: null,
+        role: null,
+        estimateMinutes: null,
+      },
+    },
+    subject: { courseId: "course-1", obligationId: null },
+    taskDue: due,
+  });
   const modes = {
     createStudyBlocks: "automatic",
     moveOwnStudyBlocks: "automatic",
     moveStudyBlocks: "ask",
     removeOwnStudyBlocks: "automatic",
+    createTasks: "ask",
   } as const;
   type Held = Partial<Record<CapabilityId, ApprovalMode>>;
   const agent = (held: Held = modes) => ({
@@ -318,6 +335,7 @@ describe("a free-text Agent's Actions (ADR-0001)", () => {
       { id: "grant-create", kind: "studyBlock.create" as const },
       { id: "grant-move", kind: "studyBlock.move" as const },
       { id: "grant-remove", kind: "studyBlock.remove" as const },
+      { id: "grant-task", kind: "task.create" as const },
     ],
     courseIds: ["course-1"],
   });
@@ -414,6 +432,56 @@ describe("a free-text Agent's Actions (ADR-0001)", () => {
         agent: { ...agent(), grants: [] },
       }),
       ask,
+    ],
+    // Tasks (#154)
+    ["asks to create a Task on Nachfragen", situation(task()), ask],
+    [
+      "creates a Task on Automatisch",
+      situation(task(), withModes({ createTasks: "automatic" })),
+      byGrant("grant-task"),
+    ],
+    [
+      "asks on Automatisch for a Task due within the next 24 hours",
+      situation(
+        task(new Date("2026-11-11T07:59:00Z")),
+        withModes({ createTasks: "automatic" }),
+      ),
+      ask,
+    ],
+    [
+      "creates a Task due exactly 24 hours ahead on Automatisch",
+      situation(
+        task(new Date("2026-11-11T08:00:00Z")),
+        withModes({ createTasks: "automatic" }),
+      ),
+      byGrant("grant-task"),
+    ],
+    [
+      "creates a Task due within the next 24 hours on Immer erlaubt",
+      situation(
+        task(new Date("2026-11-10T20:00:00Z")),
+        withModes({ createTasks: "always" }),
+      ),
+      byGrant("grant-task"),
+    ],
+    [
+      "refuses a Task without Aufgaben erstellen",
+      situation(task(), { agent: agent({ createStudyBlocks: "always" }) }),
+      refuse("no_capability"),
+    ],
+    [
+      "refuses a Task outside the Agent's Courses",
+      situation(task(), {
+        subject: { courseId: "course-2", obligationId: null },
+      }),
+      refuse("out_of_scope"),
+    ],
+    [
+      "refuses a Task in no Course",
+      situation(task(), withModes({ createTasks: "always" }), {
+        subject: { courseId: null, obligationId: null },
+      }),
+      refuse("out_of_scope"),
     ],
     // Own and others' blocks
     [
