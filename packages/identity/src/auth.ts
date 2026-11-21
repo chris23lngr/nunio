@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { passkey } from "@better-auth/passkey";
 import { activatePilot, hasPilotEntitlement } from "@nunio/billing";
 import type { PrismaClient } from "@nunio/db";
@@ -102,20 +101,23 @@ export function createAuth({
     return Boolean(user || invitation);
   }
 
-  /** Counts an attempt in Better Auth's shared `rate_limit` table; false once the limit is reached. */
+  /**
+   * Counts an attempt against a per-address limit in a fixed window; false once the limit is reached.
+   * Better Auth prunes its own `rate_limit` rows after a minute, so these live in `sign_in_code_limit`.
+   */
   async function admit(
     key: string,
     rule: { windowMs: number; max: number },
   ): Promise<boolean> {
     const now = Date.now();
-    const windowStart = now - rule.windowMs;
+    const expired = now - rule.windowMs;
     // One statement: the upsert's row lock serialises concurrent attempts across API instances.
     const admitted = await prisma.$executeRaw`
-      INSERT INTO "rate_limit" ("id", "key", "count", "lastRequest") VALUES (${randomUUID()}, ${key}, 1, ${now})
+      INSERT INTO "sign_in_code_limit" ("key", "count", "windowStart") VALUES (${key}, 1, ${now})
       ON CONFLICT ("key") DO UPDATE SET
-        "count" = CASE WHEN "rate_limit"."lastRequest" <= ${windowStart} THEN 1 ELSE "rate_limit"."count" + 1 END,
-        "lastRequest" = ${now}
-      WHERE "rate_limit"."lastRequest" <= ${windowStart} OR "rate_limit"."count" < ${rule.max}`;
+        "count" = CASE WHEN "sign_in_code_limit"."windowStart" <= ${expired} THEN 1 ELSE "sign_in_code_limit"."count" + 1 END,
+        "windowStart" = CASE WHEN "sign_in_code_limit"."windowStart" <= ${expired} THEN ${now} ELSE "sign_in_code_limit"."windowStart" END
+      WHERE "sign_in_code_limit"."windowStart" <= ${expired} OR "sign_in_code_limit"."count" < ${rule.max}`;
     return admitted === 1;
   }
 
@@ -198,9 +200,9 @@ export function createAuth({
         }
         // Only wrong guesses count: a successful sign-in clears the address's count.
         if (context.path === "/sign-in/email-otp" && context.context.newSession)
-          await prisma.rateLimit.deleteMany({
+          await prisma.signInCodeLimit.deleteMany({
             where: {
-              key: `code-guesses:${context.context.newSession.user.email}`,
+              key: `code-guesses:${context.context.newSession.user.email.toLowerCase()}`,
             },
           });
       }),

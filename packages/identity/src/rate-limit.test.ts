@@ -27,21 +27,26 @@ beforeAll(async () => {
         secret: "rate-limit-test-secret-that-is-long-enough",
         email: { projectId: "test-project", secretKey: "test-key", from: "accounts@nunio.test" },
       });
-      parentPort.on("message", async ({ ip, count, email }) => {
+      // Lets a test move this instance's clock past the 60-second resend wait.
+      const realNow = Date.now;
+      let offsetMs = 0;
+      Date.now = () => realNow() + offsetMs;
+      parentPort.on("message", async ({ ip, count, email, guess, clockOffsetMs = 0 }) => {
+        offsetMs = clockOffsetMs;
+        const request = (path, body, forwardedFor) =>
+          auth.handler(new Request(\`https://api.nunio.test/api/auth\${path}\`, {
+            method: "POST",
+            headers: { origin, "content-type": "application/json", "x-forwarded-for": forwardedFor },
+            body: JSON.stringify(body),
+          }));
         const responses = await Promise.all(Array.from({ length: count }, (_, i) =>
-          email
-            // One address from many IPs, so only the limits per address apply.
-            ? auth.handler(new Request("https://api.nunio.test/api/auth/email-otp/send-verification-otp", {
-                method: "POST",
-                headers: { origin, "content-type": "application/json", "x-forwarded-for": \`\${ip}.\${i}\` },
-                body: JSON.stringify({ email, type: "sign-in" }),
-              }))
+          !email
             // A fresh address per attempt, so only the limit per IP applies.
-            : auth.handler(new Request("https://api.nunio.test/api/auth/sign-in/email-otp", {
-                method: "POST",
-                headers: { origin, "content-type": "application/json", "x-forwarded-for": ip },
-                body: JSON.stringify({ email: \`\${crypto.randomUUID()}@example.com\`, otp: "000000" }),
-              }))
+            ? request("/sign-in/email-otp", { email: \`\${crypto.randomUUID()}@example.com\`, otp: "000000" }, ip)
+            // One address from many IPs, so only the limits per address apply.
+            : guess
+              ? request("/sign-in/email-otp", { email, otp: guess }, \`\${ip}.\${i}\`)
+              : request("/email-otp/send-verification-otp", { email, type: "sign-in" }, \`\${ip}.\${i}\`)
         ));
         parentPort.postMessage(responses.map(response => response.status));
       });
@@ -69,9 +74,10 @@ async function attempts(
   ip: string,
   count: number,
   email?: string,
+  options: { guess?: string; clockOffsetMs?: number } = {},
 ): Promise<number[]> {
   const response = once(instance, "message");
-  instance.postMessage({ ip, count, email });
+  instance.postMessage({ ip, count, email, ...options });
   const [statuses] = await response;
   return statuses;
 }
@@ -107,5 +113,56 @@ describe("shared authentication rate limits", () => {
 
     expect(responses.filter((status) => status === 200)).toHaveLength(1);
     expect(responses.filter((status) => status === 429)).toHaveLength(11);
+  });
+
+  it("sends at most five codes an hour to one address across API instances", async () => {
+    const statuses: number[] = [];
+    for (let send = 0; send < 6; send++)
+      statuses.push(
+        ...(await attempts(
+          instances[send % 2]!,
+          `203.0.113.${send}`,
+          1,
+          "hourly@example.com",
+          { clockOffsetMs: (send + 1) * 61_000 },
+        )),
+      );
+
+    expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);
+  });
+
+  it("allows ten wrong guesses an hour for one address across API instances", async () => {
+    const guess = { guess: "000000" };
+    const address = "guesses@example.com";
+    expect(
+      await attempts(instances[0]!, "203.0.114", 5, address, guess),
+    ).toEqual(Array(5).fill(400));
+    expect(
+      await attempts(instances[1]!, "203.0.115", 5, address, guess),
+    ).toEqual(Array(5).fill(400));
+    expect(
+      await attempts(instances[0]!, "203.0.116", 1, address, guess),
+    ).toEqual([429]);
+  });
+
+  it("admits only ten concurrent wrong guesses for one address across API instances", async () => {
+    const responses = (
+      await Promise.all(
+        instances.map((instance, i) =>
+          attempts(
+            instance,
+            `203.0.${117 + i}`,
+            6,
+            "concurrent-guesses@example.com",
+            {
+              guess: "000000",
+            },
+          ),
+        ),
+      )
+    ).flat();
+
+    expect(responses.filter((status) => status === 400)).toHaveLength(10);
+    expect(responses.filter((status) => status === 429)).toHaveLength(2);
   });
 });

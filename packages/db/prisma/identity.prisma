@@ -124,6 +124,15 @@ model RateLimit {
   @@map("rate_limit")
 }
 
+/// Sign-in codes sent and wrong guesses per address in the current window (ADR-0027).
+model SignInCodeLimit {
+  key         String @id
+  count       Int
+  windowStart BigInt
+
+  @@map("sign_in_code_limit")
+}
+
 model Invitation {
   id         String    @id @default(uuid())
   tokenHash  String    @unique

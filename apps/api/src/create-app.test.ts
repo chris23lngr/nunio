@@ -566,7 +566,7 @@ async function signInWithCode(
   invitation?: string,
 ): Promise<Response> {
   // @nunio/identity tests the limits per address; each sign-in here starts with none used.
-  await admin.rateLimit.deleteMany({
+  await admin.signInCodeLimit.deleteMany({
     where: { key: { in: [`code-resend:${address}`, `code-sends:${address}`] } },
   });
   signInCodes.delete(address);
