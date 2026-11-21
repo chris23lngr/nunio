@@ -649,14 +649,22 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
               id: true,
               preset: true,
               name: true,
+              description: true,
               emoji: true,
               course: true,
               exam: true,
               state: true,
               pausedBy: true,
+            }).extend({
+              badge: z
+                .enum(["paused", "approval_needed", "running", "ended"])
+                .nullable()
+                .describe(
+                  "Its one badge: Pausiert, Freigabe benötigt (a Run has an open Approval), Läuft gerade (a Run is under way) or Beendet; null when none applies.",
+                ),
             }),
           ),
-          "The student's Agents, newest first.",
+          "The student's Agents, Ended ones included: Paused first, then those needing an Approval, then running ones, then those without a badge, Ended last; newest first within each.",
         ),
         401: errors[401],
       },
@@ -671,10 +679,12 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
           id: r.id,
           preset: r.preset,
           name: r.name,
+          description: r.description,
           emoji: r.emoji,
           ...scopeNames(review!, r.scope),
           state: r.state,
           pausedBy: r.pausedBy,
+          badge: r.badge,
         })),
         200,
       );

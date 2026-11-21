@@ -14528,7 +14528,7 @@
       "get": {
         "responses": {
           "200": {
-            "description": "The student's Agents, newest first.",
+            "description": "The student's Agents, Ended ones included: Paused first, then those needing an Approval, then running ones, then those without a badge, Ended last; newest first within each.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14554,6 +14554,9 @@
                       "name": {
                         "type": "string",
                         "description": "Empty for a preset Agent, which is named after its scope."
+                      },
+                      "description": {
+                        "type": "string"
                       },
                       "emoji": {
                         "type": "string"
@@ -14614,17 +14617,33 @@
                           "course_archived",
                           null
                         ]
+                      },
+                      "badge": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "enum": [
+                          "paused",
+                          "approval_needed",
+                          "running",
+                          "ended",
+                          null
+                        ],
+                        "description": "Its one badge: Pausiert, Freigabe benötigt (a Run has an open Approval), Läuft gerade (a Run is under way) or Beendet; null when none applies."
                       }
                     },
                     "required": [
                       "id",
                       "preset",
                       "name",
+                      "description",
                       "emoji",
                       "course",
                       "exam",
                       "state",
-                      "pausedBy"
+                      "pausedBy",
+                      "badge"
                     ]
                   }
                 }

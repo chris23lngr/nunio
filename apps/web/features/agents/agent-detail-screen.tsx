@@ -12,11 +12,14 @@ export function AgentDetailScreen({
   apiOrigin,
   id,
   run,
+  tab,
 }: {
   apiOrigin: string;
   id: string;
   /** The Run its Aktivität opens on, as from the Inbox. */
   run?: string;
+  /** "auftrag" opens a free-text Agent on its Auftrag, as the list's Bearbeiten does, even when it ran. */
+  tab?: string;
 }) {
   const query = useQuery(agentQueries(apiOrigin, id));
   const agent = query.data;
@@ -40,7 +43,7 @@ export function AgentDetailScreen({
         key={agent.id}
         apiOrigin={apiOrigin}
         agent={agent}
-        hasRuns={Boolean(runs.data?.pages[0]?.runs.length)}
+        hasRuns={tab !== "auftrag" && Boolean(runs.data?.pages[0]?.runs.length)}
         run={run}
       />
     );

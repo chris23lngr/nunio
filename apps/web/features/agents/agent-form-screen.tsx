@@ -209,7 +209,7 @@ export function AgentFormScreen({
   apiOrigin: string;
   /** Null for a "Neuer Agent" not saved yet. */
   agent: Saved | null;
-  /** It ran before, so it opens on its Aktivität with the newest Run. */
+  /** It ran before and is not opened to edit, so it opens on its Aktivität with the newest Run. */
   hasRuns?: boolean;
   /** The Run Aktivität opens on instead of the newest, as from the Inbox. */
   run?: string;

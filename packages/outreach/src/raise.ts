@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Transaction } from "@nunio/delegation";
+import { openApprovalAt } from "@nunio/delegation";
 import type { Cause } from "./causes.js";
 import { keyOf } from "./causes.js";
 
@@ -41,12 +42,6 @@ export async function raise(
     ),
   });
 }
-
-/** An Action whose Approval is still open at `at`: unanswered, not withdrawn and not yet expired, which no timer marks. */
-export const openApprovalAt = (at: Date) => ({
-  status: "awaiting_approval" as const,
-  approval: { is: { decision: null, expiresAt: { gt: at } } },
-});
 
 /**
  * Those of the student's Agent Runs, all or only `runIds`, that have ended with an Approval still open: unanswered,

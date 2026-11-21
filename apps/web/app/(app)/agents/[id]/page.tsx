@@ -7,11 +7,13 @@ export default async function AgentPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ run?: string }>;
+  searchParams: Promise<{ run?: string; tab?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/sign-in");
-  const [{ id }, { run }] = await Promise.all([params, searchParams]);
+  const [{ id }, { run, tab }] = await Promise.all([params, searchParams]);
 
-  return <AgentDetailScreen apiOrigin={apiOrigin()} id={id} run={run} />;
+  return (
+    <AgentDetailScreen apiOrigin={apiOrigin()} id={id} run={run} tab={tab} />
+  );
 }

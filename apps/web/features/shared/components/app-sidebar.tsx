@@ -39,7 +39,7 @@ const menuItems = [
   { title: "Artefakte", href: "/artifacts", icon: Files },
   { title: "Kurse", href: "/courses", icon: BookOpen },
   { title: "Projects", href: "/projects", icon: FolderKanban },
-  { title: "Agents", href: "/agents", icon: ListChecks },
+  { title: "Agenten", href: "/agents", icon: ListChecks },
 ];
 
 export function AppSidebar({ apiOrigin }: { apiOrigin: string }) {

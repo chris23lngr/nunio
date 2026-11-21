@@ -287,6 +287,19 @@ test("an Agent that never ran opens on Auftrag", async () => {
   expect(tab.getAttribute("aria-selected")).toBe("true");
 });
 
+test("opened to edit it, as the list's Bearbeiten does, an Agent that ran opens on Auftrag", async () => {
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [listed("r-1", 60, "done")], nextCursor: null }),
+  );
+  renderScreen(
+    <AgentDetailScreen apiOrigin={api.origin} id="a-1" tab="auftrag" />,
+  );
+
+  const tab = await screen.findByRole("tab", { name: "Auftrag" });
+  expect(tab.getAttribute("aria-selected")).toBe("true");
+});
+
 test("the Run list shows each start's duration, 'Seit …' while running, and badges, loading older Runs on scroll", async () => {
   let scrolledToEnd: (() => void) | undefined;
   vi.stubGlobal(
