@@ -10744,6 +10744,15 @@ describe("the Agents cutover", () => {
       });
       return courseId;
     };
+    // The columns the contract migration dropped, put back as the Responsibilities had them.
+    await admin.$executeRawUnsafe(`
+      ALTER TABLE "agent" ADD COLUMN IF NOT EXISTS "preset" TEXT,
+        ADD COLUMN IF NOT EXISTS "courseId" TEXT,
+        ADD COLUMN IF NOT EXISTS "obligationId" TEXT,
+        ADD COLUMN IF NOT EXISTS "restrictions" JSONB NOT NULL DEFAULT '{}';
+      ALTER TABLE "grant" ADD COLUMN IF NOT EXISTS "courseId" TEXT,
+        ADD COLUMN IF NOT EXISTS "obligationId" TEXT;
+    `);
     const analysis = await course("Analysis I");
     const statistics = await course("Statistics II");
     const rejected = await course("Verworfen", "rejected");
