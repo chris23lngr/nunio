@@ -5,6 +5,7 @@ import { createApiClient } from "@/lib/api-client";
 import {
   agentCourseQueries,
   agentListQueries,
+  agentModelQueries,
   agentQueries,
 } from "./agent-queries";
 
@@ -57,6 +58,10 @@ export function saveAgent(
         throw new Error(
           "Einer deiner Kurse wurde inzwischen archiviert. Wähle ihn ab und speichere noch einmal.",
         );
+      if (result.response.status === 422)
+        throw new Error(
+          "Dieses Modell ist nicht mehr verfügbar. Wähle ein anderes und speichere noch einmal.",
+        );
       if (!result.data)
         throw new Error(
           "Dein Agent wurde nicht gespeichert. Versuche es noch einmal.",
@@ -73,11 +78,16 @@ export function saveAgent(
           queryKey: agentQueries(apiOrigin, saved).queryKey,
         }),
       ]),
-    // A Course may have been Archived or deleted meanwhile: show which, so it can be taken off.
+    // A Course may have been Archived or deleted, or a Model no longer offered, meanwhile: show which.
     onError: () =>
-      queryClient.invalidateQueries({
-        queryKey: agentCourseQueries(apiOrigin).queryKey,
-      }),
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: agentCourseQueries(apiOrigin).queryKey,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: agentModelQueries(apiOrigin).queryKey,
+        }),
+      ]),
   });
 }
 
