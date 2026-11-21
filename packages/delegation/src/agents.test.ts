@@ -270,6 +270,87 @@ describe("Agents", () => {
     ).toEqual(expect.any(String));
   });
 
+  it("starts its Budget over at 00:00 on the 1st in the Plan's time zone, clearing used and keeping held, and never resumes it", async () => {
+    const s = await student();
+    await admin.planPreference.create({
+      data: { studentId: s.studentId, timeZone: "America/New_York" },
+    });
+    let at = new Date("2026-11-20T12:00:00Z");
+    const clock = { now: () => at };
+    const agents = createAgents({
+      db: runtime,
+      schedules: fakeSchedules().schedules,
+      clock,
+    });
+    const gate = createDelegation({
+      db: runtime,
+      aiEnabled: () => true,
+      clock,
+    });
+    const created = await agents.create(s.p, {
+      preset: "keep_course_organized",
+      courseId: s.courseId,
+      budgetMicroUsd: 1_000,
+    });
+    if (created.status !== "ok") throw new Error(created.status);
+    const run = principal.fromRun(
+      (await agents.startRun({
+        runId: randomUUID(),
+        workflowId: "run-workflow",
+        studentId: s.studentId,
+        agentId: created.id,
+      }))!,
+    );
+    const spend = (microUsd: number) =>
+      gate.meter(run, { microUsd }, async () => ({
+        value: "ok",
+        usage: { microUsd },
+      }));
+    const budget = async () => (await agents.view(s.p, created.id))!;
+    await spend(600);
+    // A call whose outcome is unknown keeps its estimate held.
+    await expect(
+      gate.meter(run, { microUsd: 400 }, async () => {
+        throw new Error("timeout");
+      }),
+    ).rejects.toThrow("timeout");
+    expect(await spend(1)).toEqual({
+      status: "refused",
+      reason: "budget_exhausted",
+    });
+
+    // 23:59 on 30 November in New York, though already December in UTC.
+    at = new Date("2026-12-01T04:59:00Z");
+    expect((await budget()).budget).toEqual({
+      limitMicroUsd: 1_000,
+      usedMicroUsd: 600,
+      heldMicroUsd: 400,
+    });
+
+    at = new Date("2026-12-01T05:00:00Z");
+    expect(await budget()).toMatchObject({
+      state: "paused",
+      pausedBy: "budget",
+      budget: { limitMicroUsd: 1_000, usedMicroUsd: 0, heldMicroUsd: 400 },
+    });
+    expect(await spend(1)).toEqual({
+      status: "refused",
+      reason: "budget_exhausted",
+    });
+    expect(await agents.resume(s.p, created.id)).toEqual({ status: "ok" });
+    // The held estimate still counts against the new month's Budget.
+    expect(await spend(600)).toMatchObject({ status: "ok" });
+    expect(await spend(1)).toEqual({
+      status: "refused",
+      reason: "budget_exhausted",
+    });
+    expect((await budget()).budget).toEqual({
+      limitMicroUsd: 1_000,
+      usedMicroUsd: 600,
+      heldMicroUsd: 400,
+    });
+  });
+
   it("stops Actions even when pausing the Schedule fails", async () => {
     const s = await student();
     const { schedules } = fakeSchedules();

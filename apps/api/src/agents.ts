@@ -192,11 +192,15 @@ const Agent = z
     grants: z.array(
       z.enum(["studyBlock.create", "studyBlock.move", "studyBlock.remove"]),
     ),
-    budget: z.object({
-      limitMicroUsd: z.number(),
-      usedMicroUsd: z.number(),
-      heldMicroUsd: z.number(),
-    }),
+    budget: z
+      .object({
+        limitMicroUsd: z.number(),
+        usedMicroUsd: z.number(),
+        heldMicroUsd: z.number(),
+      })
+      .describe(
+        "Its monthly Budget: what it used this month, counted from 00:00 on the 1st in the Plan's time zone, and what calls still in flight hold.",
+      ),
     recentActions: z.array(
       z.object({
         id: z.string(),

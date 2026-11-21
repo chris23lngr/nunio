@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
+import { budgetMonth, usedIn } from "./budget.js";
 import type { AgentCapability, ApprovalMode } from "./capabilities.js";
 import {
   capabilityIds,
@@ -577,6 +578,18 @@ export function createAgents({
       return { status: "ok", runs } as const;
     },
 
+    /**
+     * Pauses the Schedule of an Agent its Budget Paused, as a Run of it ends: `meter` pauses the Agent in the worker,
+     * where nothing pauses its Schedule. Does nothing for any other Agent; safe to repeat.
+     */
+    async syncBudgetPause(p: Principal, id: string) {
+      const r = await withOwner(db, p, (tx) =>
+        tx.agent.findUnique({ where: { id } }),
+      );
+      if (r?.state === "paused" && r.pausedBy === "budget")
+        await syncSchedule(p, id);
+    },
+
     /** Only the student resumes a Paused Agent, whoever paused it, and not while its Course is Archived. */
     async resume(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
@@ -767,9 +780,10 @@ export function createAgents({
             courseId: g.courseId,
             obligationId: g.obligationId,
           })),
+          /** This month's: what it used is counted from 00:00 on the 1st in the Plan's time zone. */
           budget: {
             limitMicroUsd: Number(r.budgetMicroUsd),
-            usedMicroUsd: Number(r.usedMicroUsd),
+            usedMicroUsd: Number(usedIn(r, await budgetMonth(tx, clock.now()))),
             heldMicroUsd: Number(r.heldMicroUsd),
           },
         };

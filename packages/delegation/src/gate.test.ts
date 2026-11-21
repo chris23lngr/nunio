@@ -1123,17 +1123,11 @@ describe("meter in a Run", () => {
     );
 
     expect(results.filter((result) => result.status === "ok")).toHaveLength(10);
-    // The first call over Budget pauses the Agent; the calls after it find it Paused.
+    // The first call over Budget pauses the Agent; the calls after it find it Paused for its Budget.
     const refusals = results
       .flatMap((result) => (result.status === "refused" ? [result.reason] : []))
       .sort();
-    expect(refusals).toEqual([
-      "budget_exhausted",
-      "paused",
-      "paused",
-      "paused",
-      "paused",
-    ]);
+    expect(refusals).toEqual(Array(5).fill("budget_exhausted"));
     expect(calls).toBe(10);
     expect(
       await admin.agent.findUniqueOrThrow({

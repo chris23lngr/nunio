@@ -175,7 +175,7 @@ A soft rule about how the student wants to study, such as "at most 4 hours a day
 _Avoid_: Setting, rule, constraint
 
 **Budget**:
-The monthly cap on AI usage for one Agent, which resets each month. An Agent that exhausts its Budget pauses and asks; it never draws further on the Allowance by itself.
+The monthly cap in USD on AI usage for one Agent, which starts over at 00:00 on the 1st of each month in the Plan's time zone. An Agent that exhausts its Budget is Paused until the student resumes it; it never draws further on the Allowance by itself.
 _Avoid_: Limit, quota, allowance
 
 **Allowance**:

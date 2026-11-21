@@ -45,6 +45,7 @@ import { useId, useState } from "react";
 import { CourseDot } from "@/features/shared/components/course-dot";
 import { ModelLogo } from "@/features/shared/components/model-logo";
 import { PageHeader } from "@/features/shared/components/page-header";
+import { usd } from "./activity-wording";
 import { courseSize, unavailable } from "./agent-course";
 import { controlAgent, saveAgent, startAgentRun } from "./api/agent-mutations";
 import type {
@@ -826,6 +827,12 @@ export function AgentFormScreen({
                     <FieldError id={`${id}-budget-error`}>
                       {errors.budget}
                     </FieldError>
+                  )}
+                  {agent && (
+                    // What counts against it now: used since the 1st, plus calls still in flight.
+                    <p className="mt-2 text-sm text-base-500">
+                      {`Diesen Monat ausgegeben: ${usd(agent.budget.usedMicroUsd + agent.budget.heldMicroUsd)} von ${usd(agent.budget.limitMicroUsd)} USD`}
+                    </p>
                   )}
                 </div>
               </Section>
