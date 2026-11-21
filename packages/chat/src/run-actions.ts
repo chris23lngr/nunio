@@ -325,7 +325,7 @@ export const why: Record<Refusal, string> = {
   started: "the block has already started",
   protected_time: "it overlaps the student's Protected Time",
   restricted: "your Agent may not do this",
-  past: "it starts in the past",
+  past: "it is in the past: the block would start before now, or the Course Event has begun or its window has closed",
   fixed_event: "it overlaps a Fixed Event",
   study_block: "it overlaps another Study Block",
   out_of_scope: "it is not work of your Courses",

@@ -207,6 +207,10 @@ function workLine(action: NonNullable<ActionEntry["action"]>) {
         ? quoted(action.work.title)
         : "Ohne Titel"
       : "gelöscht",
+    // A new Task names the Obligation it counts toward.
+    ...(action.work?.obligation
+      ? [`für ${quoted(action.work.obligation)}`]
+      : []),
     ...(action.work?.course ? [action.work.course] : []),
     ...(action.start && action.end
       ? [shortSpan({ start: action.start, end: action.end })]

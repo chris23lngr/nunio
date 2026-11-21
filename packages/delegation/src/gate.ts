@@ -417,17 +417,19 @@ async function subjectOf(
     return null;
   }
   if (intent.kind === "task.create") {
-    // Its Obligation, Course and Course Event must be the student's own.
+    // Its Obligation, Course and Course Event must be the student's own. An Obligation they Rejected or reported as
+    // handed in is no work any more, as the Plan treats it, so nothing counts toward it.
     if (intent.obligationId) {
       const obligation = await tx.obligation.findUnique({
         where: { id: intent.obligationId },
       });
-      return (
-        obligation && {
-          courseId: obligation.courseId,
-          obligationId: obligation.id,
-        }
-      );
+      if (
+        !obligation ||
+        obligation.state === "rejected" ||
+        obligation.reportedSubmittedAt
+      )
+        return null;
+      return { courseId: obligation.courseId, obligationId: obligation.id };
     }
     if (
       intent.courseId &&

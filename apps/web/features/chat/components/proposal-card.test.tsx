@@ -75,6 +75,7 @@ test.each([
         role: "follow_up",
         minutes: 45,
         event: { title: "Analysis Vorlesung", start: at(17, 10) },
+        obligation: null,
       },
     }),
     "Aufgabe „Vorlesung nacharbeiten“ anlegen?",
@@ -85,7 +86,7 @@ test.each([
     block({
       kind: "task.create",
       work: { title: "Bibliothek", course: null },
-      task: { role: null, minutes: null, event: null },
+      task: { role: null, minutes: null, event: null, obligation: null },
     }),
     "Aufgabe „Bibliothek“ anlegen?",
     "nunio möchte eine neue Aufgabe anlegen.",

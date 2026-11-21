@@ -96,7 +96,12 @@ test("a new Task names its Course and the minutes it needs", () => {
           },
           from: null,
           to: null,
-          task: { role: "follow_up", minutes: 45, event: null },
+          task: {
+            role: "follow_up",
+            minutes: 45,
+            event: null,
+            obligation: null,
+          },
         },
       })}
     />,

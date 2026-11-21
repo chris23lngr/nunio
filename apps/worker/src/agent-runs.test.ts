@@ -1861,14 +1861,17 @@ describe("an Agent's Run creating Tasks (#154)", () => {
         .filter((entry) => entry.type === "action")
         .map((entry) => entry.type === "action" && entry.action),
     ).toEqual(
-      ["Formelsammlung anlegen", "Altklausur rechnen", "Kapitel 3 lesen"].map(
-        (title) => ({
-          kind: "task.create",
-          work: { title, course: "Statistik II" },
-          start: null,
-          end: null,
-        }),
-      ),
+      [
+        { title: "Formelsammlung anlegen" },
+        // The Obligation it counts toward, by its title as nunio shows it.
+        { title: "Altklausur rechnen", obligation: "Klausur Statistik II" },
+        { title: "Kapitel 3 lesen" },
+      ].map((work) => ({
+        kind: "task.create",
+        work: { ...work, course: "Statistik II" },
+        start: null,
+        end: null,
+      })),
     );
   });
 

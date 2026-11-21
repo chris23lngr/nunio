@@ -84,6 +84,16 @@ export type ActivityRun = {
   openApprovals: number;
 };
 
+/**
+ * The work an Action was for, by its title now; null title once it can no longer be read. A new Task toward an
+ * Obligation also names that Obligation, as nunio shows it.
+ */
+export type VerlaufWork = {
+  title: string | null;
+  course: string | null;
+  obligation?: string | null;
+};
+
 /** One entry of a Run's Verlauf, with the Courses and Sources it names looked up now: null once deleted. */
 export type VerlaufEntry =
   | { type: "start"; at: Date; trigger: ActivityRun["trigger"] }
@@ -105,7 +115,7 @@ export type VerlaufEntry =
       action: {
         kind: string;
         /** Its work by its title now; null once deleted. A null title is one that can no longer be read. */
-        work: { title: string | null; course: string | null } | null;
+        work: VerlaufWork | null;
         start: Date | null;
         end: Date | null;
       } | null;
@@ -119,7 +129,7 @@ export type VerlaufEntry =
       /** The Action the Approval was asked for, named as in an `action` entry. */
       action: {
         kind: string;
-        work: { title: string | null; course: string | null } | null;
+        work: VerlaufWork | null;
         start: Date | null;
         end: Date | null;
       };
@@ -412,16 +422,20 @@ export function createActivity({
           course: courseTitle(obligation.courseId),
         };
       };
-      /** The Task a `task.create` Action adds, by its own title, in its Course or its Obligation's. */
-      const newTaskOf = (actionId: string) => {
+      /** The Task a `task.create` Action adds, by its own title, in its Course or toward its Obligation. */
+      const newTaskOf = (actionId: string): VerlaufWork | null => {
         const task = read.newTasks.find((t) => t.id === actionId);
         if (!task) return null;
+        const obligation = task.obligationId
+          ? obligations.find((o) => o.id === task.obligationId)
+          : undefined;
         return {
           title: task.title,
-          course: courseTitle(
-            task.courseId ??
-              obligations.find((o) => o.id === task.obligationId)?.courseId,
-          ),
+          course: courseTitle(task.courseId ?? obligation?.courseId),
+          ...(task.obligationId && {
+            obligation:
+              reviewed.find((o) => o.id === task.obligationId)?.title || null,
+          }),
         };
       };
       const now = clock.now();

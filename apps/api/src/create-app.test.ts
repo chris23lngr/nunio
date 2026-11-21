@@ -8043,7 +8043,7 @@ describe("a free-text Agent's form", () => {
       expect(after.verlauf.at(-1)).toMatchObject({ type: "approval" });
     });
 
-    it("shows an asked Task by its title and its Obligation's Course, then adds it once approved, its Estimate as nunio's", async () => {
+    it("shows an asked Task by its title, its Obligation and that Obligation's Course, then adds it once approved, its Estimate as nunio's", async () => {
       const s = await student("run-approval-task");
       const statistics = await course(s.id, "Statistics II");
       const { id: agentId } = (await (
@@ -8094,7 +8094,12 @@ describe("a free-text Agent's form", () => {
           work: { title: "Altklausur 2024 rechnen", course: "Statistics II" },
           from: null,
           to: null,
-          task: { role: null, minutes: 90, event: null },
+          task: {
+            role: null,
+            minutes: 90,
+            event: null,
+            obligation: "Klausur Statistik",
+          },
         },
       ]);
       const decided = await app.request(
@@ -8135,7 +8140,11 @@ describe("a free-text Agent's form", () => {
           type: "approval",
           action: {
             kind: "task.create",
-            work: { title: "Altklausur 2024 rechnen", course: "Statistics II" },
+            work: {
+              title: "Altklausur 2024 rechnen",
+              course: "Statistics II",
+              obligation: "Klausur Statistik",
+            },
             start: null,
             end: null,
           },

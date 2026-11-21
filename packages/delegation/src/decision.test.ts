@@ -317,6 +317,21 @@ describe("a free-text Agent's Actions (ADR-0001)", () => {
     subject: { courseId: "course-1", obligationId: null },
     taskDue: due,
   });
+  /** A Course Event's Preparation, due when the event starts. */
+  const preparation = (due: Date): Partial<Snapshot> => {
+    const made = task(due);
+    return {
+      ...made,
+      intent: {
+        kind: "task.create",
+        args: {
+          ...(made.intent!.args as object),
+          fixedEventId: "event-1",
+          role: "preparation",
+        },
+      } as Snapshot["intent"],
+    };
+  };
   const modes = {
     createStudyBlocks: "automatic",
     moveOwnStudyBlocks: "automatic",
@@ -475,6 +490,26 @@ describe("a free-text Agent's Actions (ADR-0001)", () => {
         subject: { courseId: "course-2", obligationId: null },
       }),
       refuse("out_of_scope"),
+    ],
+    [
+      "refuses a Preparation for a Course Event that has started, even on Immer erlaubt",
+      situation(preparation(now), withModes({ createTasks: "always" })),
+      refuse("past"),
+    ],
+    [
+      "refuses a Course Event's Task whose window has ended, even when approved",
+      situation(preparation(new Date("2026-11-10T07:00:00Z")), {
+        approval: approved,
+      }),
+      refuse("past"),
+    ],
+    [
+      "creates a Preparation whose Course Event is still to come on Immer erlaubt",
+      situation(
+        preparation(new Date("2026-11-10T09:00:00Z")),
+        withModes({ createTasks: "always" }),
+      ),
+      byGrant("grant-task"),
     ],
     [
       "refuses a Task in no Course",

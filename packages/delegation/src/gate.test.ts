@@ -1549,6 +1549,63 @@ describe("a free-text Agent's Actions", () => {
       ).toMatchObject({ status: "awaiting_approval" });
     });
 
+    it("refuses a Task toward an Obligation the student Rejected or reported handed in, even once approved", async () => {
+      const s = await student();
+      const r = await agentRun(s, { createTasks: "ask" });
+      const { executor, dispatched } = fakeExecutor();
+      const g = gate(executor, {}, rules().planRules);
+      const key = `${r.runId}:1:1`;
+      const intent = task({ obligationId: s.obligationId });
+      const asking = await g.perform(r.p, { key, intent });
+      if (asking.status !== "awaiting_approval") throw new Error(asking.status);
+      await admin.obligation.update({
+        where: { id: s.obligationId },
+        data: { state: "rejected" },
+      });
+      await g.decide(s.p, {
+        kind: "approve",
+        actionId: asking.actionId,
+        fingerprint: asking.fingerprint,
+      });
+
+      expect(await g.perform(r.p, { key, intent })).toMatchObject({
+        status: "refused",
+        reason: "not_owner",
+      });
+      await admin.obligation.update({
+        where: { id: s.obligationId },
+        data: { state: "confirmed", reportedSubmittedAt: now },
+      });
+      expect(
+        await g.perform(r.p, { key: `${r.runId}:1:2`, intent }),
+      ).toMatchObject({ status: "refused", reason: "not_owner" });
+      expect(dispatched).toEqual([]);
+    });
+
+    it("refuses a Preparation for a Course Event that has started, even on Immer erlaubt", async () => {
+      const s = await student();
+      const r = await agentRun(s, { createTasks: "always" });
+      const eventId = await courseEvent(s.studentId, s.courseId);
+      const { executor, dispatched } = fakeExecutor();
+      const g = gate(
+        executor,
+        {},
+        rules(undefined, new Date(now.getTime() - hour)).planRules,
+      );
+
+      expect(
+        await g.perform(r.p, {
+          key: `${r.runId}:1:1`,
+          intent: task({
+            courseId: s.courseId,
+            fixedEventId: eventId,
+            role: "preparation",
+          }),
+        }),
+      ).toMatchObject({ status: "refused", reason: "past" });
+      expect(dispatched).toEqual([]);
+    });
+
     it("refuses a Task in no Course, in another Course, toward another Course's Obligation, or for another Course's event", async () => {
       const s = await student();
       const other = await student();

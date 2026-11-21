@@ -91,6 +91,7 @@ export function describeAction(
               role: role ?? null,
               minutes: estimateMinutes ?? null,
               event: event ? { title: event.title, start: event.start } : null,
+              obligation: obligation?.title ?? null,
             }
           : null,
     };
@@ -147,10 +148,16 @@ export const ActionShown = z
         role: z.enum(["preparation", "follow_up"]).nullable(),
         minutes: z.number().int().nullable(),
         event: z.object({ title: z.string(), start: z.date() }).nullable(),
+        obligation: z
+          .string()
+          .nullable()
+          .describe(
+            "The title of the Obligation it counts toward, as nunio shows it; null for none.",
+          ),
       })
       .nullable()
       .describe(
-        "What a new Task is for: its Course Event and role, and the minutes it needs; null for any other Action.",
+        "What a new Task is for: its Course Event and role or its Obligation, and the minutes it needs; null for any other Action.",
       ),
   })
   .openapi("ActionShown");

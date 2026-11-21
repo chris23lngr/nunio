@@ -2176,14 +2176,22 @@
                   "title",
                   "start"
                 ]
+              },
+              "obligation": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The title of the Obligation it counts toward, as nunio shows it; null for none."
               }
             },
             "required": [
               "role",
               "minutes",
-              "event"
+              "event",
+              "obligation"
             ],
-            "description": "What a new Task is for: its Course Event and role, and the minutes it needs; null for any other Action."
+            "description": "What a new Task is for: its Course Event and role or its Obligation, and the minutes it needs; null for any other Action."
           }
         },
         "required": [
@@ -4863,6 +4871,13 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "obligation": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "For a new Task toward an Obligation, that Obligation's title now; null when it can no longer be read."
                       }
                     },
                     "required": [
@@ -4976,6 +4991,12 @@
                         ]
                       },
                       "course": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "obligation": {
                         "type": [
                           "string",
                           "null"

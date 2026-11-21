@@ -294,6 +294,13 @@ const VerlaufEntrySchema = z
                 .nullable()
                 .describe("Null when its title can no longer be read."),
               course: z.string().nullable(),
+              obligation: z
+                .string()
+                .nullable()
+                .optional()
+                .describe(
+                  "For a new Task toward an Obligation, that Obligation's title now; null when it can no longer be read.",
+                ),
             })
             .nullable()
             .describe(
@@ -341,6 +348,7 @@ const VerlaufEntrySchema = z
           .object({
             title: z.string().nullable(),
             course: z.string().nullable(),
+            obligation: z.string().nullable().optional(),
           })
           .nullable()
           .describe("As in an action entry; null once deleted (gelöscht)."),

@@ -258,6 +258,13 @@ function decideByMode<K extends Kind>(
     "start" in subject &&
     subject.start <= s.now
       ? "started"
+      : undefined) ??
+    // A Preparation for a Course Event that has begun, or a Follow-up whose window has closed, is for the past.
+    (intent.kind === "task.create" &&
+    (intent.args as Args<"task.create">).fixedEventId &&
+    s.taskDue &&
+    s.taskDue <= s.now
+      ? "past"
       : undefined);
   if (refusal) return refuse(refusal);
 
