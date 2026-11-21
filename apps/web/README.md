@@ -90,7 +90,7 @@ the input for assistive technology. Validators used with `TextField` return stri
 Submit buttons subscribe to submission state to prevent duplicate requests; await
 asynchronous work in `onSubmit`. Use `form.Field` for custom controls.
 
-Sign-in, password reset and account deletion use this pattern. Sources and Review
+Sign-in and sign-up use this pattern. Sources and Review
 retain their existing handlers until their next feature migration.
 
 Reference: [TanStack Form composition](https://tanstack.com/form/latest/docs/framework/react/guides/form-composition).
