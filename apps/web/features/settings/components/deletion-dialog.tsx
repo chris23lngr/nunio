@@ -10,25 +10,21 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@nunio/ui/components/dialog/dialog";
+import type { ReactNode } from "react";
 import { useState } from "react";
-import { SignInAgain } from "@/features/auth/sign-in-again";
 
 export function DeletionDialog({
-  apiOrigin,
-  email,
   onSubmit,
   onReset,
   pending,
   signInAgain,
   error,
 }: {
-  apiOrigin: string;
-  email: string | null;
   onSubmit: () => void;
   onReset: () => void;
   pending: boolean;
-  /** The session is too old; the student confirms with a code, then the request is sent again. */
-  signInAgain: boolean;
+  /** Shown instead of the submit button when the session is too old; it sends the request again. */
+  signInAgain?: ReactNode;
   error?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -56,19 +52,12 @@ export function DeletionDialog({
         </DialogHeader>
         {(signInAgain || error) && (
           <DialogBody>
-            {signInAgain && email ? (
-              <SignInAgain
-                apiOrigin={apiOrigin}
-                email={email}
-                onSignedIn={onSubmit}
-              />
-            ) : (
-              error && (
+            {signInAgain ??
+              (error && (
                 <p role="alert" className="text-sm text-destructive-700">
                   {error}
                 </p>
-              )
-            )}
+              ))}
           </DialogBody>
         )}
         <DialogFooter>

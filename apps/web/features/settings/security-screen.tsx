@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PageHeading } from "@/components/headings";
 import {
+  SignInAgain,
   SignInAgainDialog,
   SignInAgainError,
 } from "@/features/auth/sign-in-again";
@@ -13,8 +14,8 @@ import { deletionMutation } from "./api/deletion-mutation";
 import {
   addPasskeyMutation,
   deletePasskeyMutation,
-  passkeyQueries,
-} from "./api/passkey-queries";
+} from "./api/passkey-mutations";
+import { passkeyQueries } from "./api/passkey-queries";
 import {
   revokeSessionMutation,
   signOutMutation,
@@ -47,12 +48,12 @@ export function SecurityScreen({ apiOrigin }: { apiOrigin: string }) {
     },
   });
   const passkeys = useQuery(passkeyQueries(apiOrigin));
-  /** A sensitive action the API refused for an older session, to repeat once the student confirms with a code. */
+  /** A sensitive action the API refused for an older session, to repeat once the student signs in again. */
   const [confirm, setConfirm] = useState<{
     description: string;
     retry: () => void;
   } | null>(null);
-  const askCode =
+  const signInAgain =
     (description: string, retry: () => void) => (error: Error) => {
       if (error instanceof SignInAgainError) setConfirm({ description, retry });
     };
@@ -62,26 +63,27 @@ export function SecurityScreen({ apiOrigin }: { apiOrigin: string }) {
   );
   const deletionNeedsCode = deletion.error instanceof SignInAgainError;
   const email = sessions.data?.email ?? null;
+  const hasPasskey = !!passkeys.data?.length;
   const visibleError = (error: Error | null) =>
     error && !(error instanceof SignInAgainError) ? error.message : null;
   const signOutEverywhere = () =>
     signOut.mutate(true, {
-      onError: askCode(
-        "Um dich überall abzumelden, gib den Code aus deiner E-Mail ein.",
+      onError: signInAgain(
+        "Um dich überall abzumelden, melde dich kurz erneut an.",
         signOutEverywhere,
       ),
     });
   const addNewPasskey = () =>
     addPasskey.mutate(undefined, {
-      onError: askCode(
-        "Um einen Passkey hinzuzufügen, gib den Code aus deiner E-Mail ein.",
+      onError: signInAgain(
+        "Um einen Passkey hinzuzufügen, melde dich kurz erneut an.",
         addNewPasskey,
       ),
     });
   const removePasskey = (id: string) =>
     deletePasskey.mutate(id, {
-      onError: askCode(
-        "Um den Passkey zu löschen, gib den Code aus deiner E-Mail ein.",
+      onError: signInAgain(
+        "Um den Passkey zu löschen, melde dich kurz erneut an.",
         () => removePasskey(id),
       ),
     });
@@ -197,12 +199,19 @@ export function SecurityScreen({ apiOrigin }: { apiOrigin: string }) {
                 </p>
               </div>
               <DeletionDialog
-                apiOrigin={apiOrigin}
-                email={email}
                 onSubmit={() => deletion.mutate()}
                 onReset={() => deletion.reset()}
                 pending={deletion.isPending}
-                signInAgain={deletionNeedsCode}
+                signInAgain={
+                  deletionNeedsCode && email ? (
+                    <SignInAgain
+                      apiOrigin={apiOrigin}
+                      email={email}
+                      hasPasskey={hasPasskey}
+                      onSignedIn={() => deletion.mutate()}
+                    />
+                  ) : undefined
+                }
                 error={deletionNeedsCode ? undefined : deletion.error?.message}
               />
             </div>
@@ -212,6 +221,7 @@ export function SecurityScreen({ apiOrigin }: { apiOrigin: string }) {
       <SignInAgainDialog
         apiOrigin={apiOrigin}
         email={email}
+        hasPasskey={hasPasskey}
         open={!!confirm}
         description={confirm?.description ?? ""}
         onClose={() => setConfirm(null)}

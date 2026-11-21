@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { SecurityScreen } from "@/features/settings/security-screen";
 import { api } from "./api";
 import { TestProviders } from "./providers";
@@ -10,6 +10,10 @@ const { router } = vi.hoisted(() => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 beforeEach(() => vi.clearAllMocks());
+afterEach(() => {
+  Reflect.deleteProperty(window, "PublicKeyCredential");
+  Reflect.deleteProperty(navigator, "credentials");
+});
 
 const currentSession = {
   id: "session-1",
@@ -204,6 +208,45 @@ test("sessions can be loaded again after a temporary failure", async () => {
 });
 
 /** Answers a sign-in code request and its entry, as the API does for a recent sign-in. */
+/** A browser with a passkey for this student, and the API that checks it. */
+function supportPasskeySignIn() {
+  const buffer = () => new Uint8Array([1, 2, 3]).buffer;
+  Object.defineProperty(window, "PublicKeyCredential", {
+    configurable: true,
+    value: function PublicKeyCredential() {},
+  });
+  Object.defineProperty(navigator, "credentials", {
+    configurable: true,
+    value: {
+      get: async () => ({
+        id: "credential-1",
+        rawId: buffer(),
+        type: "public-key",
+        authenticatorAttachment: "platform",
+        getClientExtensionResults: () => ({}),
+        response: {
+          authenticatorData: buffer(),
+          clientDataJSON: buffer(),
+          signature: buffer(),
+          userHandle: null,
+        },
+      }),
+    },
+  });
+  const browser = { verified: 0 };
+  api.route("GET", "/api/auth/passkey/generate-authenticate-options", () =>
+    Response.json({ challenge: "Y2hhbGxlbmdl", userVerification: "required" }),
+  );
+  api.route("POST", "/api/auth/passkey/verify-authentication", () => {
+    browser.verified++;
+    return Response.json({
+      session: currentSession,
+      user: { id: "student-1" },
+    });
+  });
+  return browser;
+}
+
 function serveCodeSignIn() {
   const requested: string[] = [];
   const entered: string[] = [];
@@ -364,6 +407,42 @@ test("signing out everywhere from an older sign-in asks for an emailed code firs
 
   await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/sign-in"));
   expect(code.requested).toEqual(["justus@example.com"]);
+  expect(attempts).toBe(2);
+});
+
+test("signing out everywhere from an older sign-in can be confirmed with a passkey", async () => {
+  serveSessions();
+  servePasskeys([passkey]);
+  const code = serveCodeSignIn();
+  const browser = supportPasskeySignIn();
+  let attempts = 0;
+  api.route("POST", "/api/auth/revoke-sessions", () => {
+    attempts++;
+    return attempts === 1
+      ? Response.json(
+          { code: "SESSION_NOT_FRESH", message: "Sign in again to continue." },
+          { status: 403 },
+        )
+      : Response.json({ status: true });
+  });
+  const user = userEvent.setup();
+  renderSettings();
+  await screen.findByText("Dieses Gerät");
+  await within(screen.getByRole("region", { name: "Passkeys" })).findByRole(
+    "listitem",
+  );
+  await user.click(screen.getByRole("button", { name: "Überall abmelden" }));
+
+  const dialog = within(
+    await screen.findByRole("dialog", { name: "Bestätige, dass du es bist" }),
+  );
+  await user.click(
+    dialog.getByRole("button", { name: "Mit Passkey bestätigen" }),
+  );
+
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/sign-in"));
+  expect(browser.verified).toBe(1);
+  expect(code.requested).toEqual([]);
   expect(attempts).toBe(2);
 });
 
