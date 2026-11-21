@@ -9,14 +9,16 @@ import { openApprovalAt, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type { Facts } from "@nunio/knowledge";
 import { createDerivedText } from "@nunio/knowledge";
-import type { NoticeRefusal } from "@nunio/outreach";
+import type { BriefingRefusal, NoticeRefusal } from "@nunio/outreach";
 
-/** What one model step read: the Plan, its Agent's Approvals, the Facts of these Courses, and these Sources. */
+/** What one model step read: the Plan, its Agent's Approvals, the Inbox, the Facts of these Courses, and these Sources. */
 export type ReadEvent = {
   step: number;
   plan: boolean;
   /** It read the Agent's Approvals; absent in events written before that tool existed. */
   approvals?: boolean;
+  /** It read the Inbox (only Agents holding "Briefing erstellen"); absent in events written before that tool existed. */
+  inbox?: boolean;
   courseIds: string[];
   sourceIds: string[];
 };
@@ -87,6 +89,21 @@ export type NoticeEvent = {
   refusal: NoticeRefusal | "invalid" | null;
 };
 
+/**
+ * What became of one call of Briefing erstellen: the Briefing it wrote, or why none was, `invalid` when its text was
+ * empty, too long, held a link or named an unknown handle. Never the text itself: the Briefing is read in the Inbox.
+ */
+export type BriefingEvent = {
+  step: number;
+  call: number;
+  /** The Capability whose tool the model called. */
+  capability: string;
+  /** The Briefing it wrote; null when none. */
+  briefingId: string | null;
+  outcome: "written" | "refused";
+  refusal: BriefingRefusal | "invalid" | null;
+};
+
 /** The arguments of a `task.create` Action that name it. */
 type NewTask = {
   title: string;
@@ -103,6 +120,7 @@ export async function recordEvents(
     | { key: string; type: "action"; detail: ActionEvent }
     | { key: string; type: "artifact"; detail: ArtifactEvent }
     | { key: string; type: "notice"; detail: NoticeEvent }
+    | { key: string; type: "briefing"; detail: BriefingEvent }
   )[],
 ) {
   if (!events.length) return;
@@ -148,6 +166,7 @@ export type VerlaufEntry =
       step: number;
       plan: boolean;
       approvals: boolean;
+      inbox: boolean;
       courses: { id: string; title: string | null }[];
       sources: { id: string; title: string | null }[];
     }
@@ -186,6 +205,14 @@ export type VerlaufEntry =
       capability: string;
       outcome: NoticeEvent["outcome"];
       refusal: NoticeEvent["refusal"];
+    }
+  | {
+      type: "briefing";
+      at: Date;
+      step: number;
+      capability: string;
+      outcome: BriefingEvent["outcome"];
+      refusal: BriefingEvent["refusal"];
     }
   | {
       type: "approval";
@@ -599,6 +626,7 @@ export function createActivity({
               step: read.step,
               plan: read.plan,
               approvals: read.approvals ?? false,
+              inbox: read.inbox ?? false,
               courses: titled(read.courseIds, courses),
               sources: titled(read.sourceIds, sources),
             };
@@ -620,6 +648,17 @@ export function createActivity({
             const call = event.detail as NoticeEvent;
             return {
               type: "notice",
+              at: event.at,
+              step: call.step,
+              capability: call.capability,
+              outcome: call.outcome,
+              refusal: call.refusal,
+            };
+          }
+          if (event.type === "briefing") {
+            const call = event.detail as BriefingEvent;
+            return {
+              type: "briefing",
               at: event.at,
               step: call.step,
               capability: call.capability,

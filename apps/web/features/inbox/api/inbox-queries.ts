@@ -6,6 +6,7 @@ type Inbox =
   paths["/api/me/inbox"]["get"]["responses"][200]["content"]["application/json"];
 export type Intervention = Inbox["interventions"][number];
 export type Notice = Inbox["notices"][number];
+export type Briefing = Inbox["briefings"][number];
 
 export function inboxQueries(apiOrigin: string) {
   return queryOptions({

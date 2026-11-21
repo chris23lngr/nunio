@@ -84,6 +84,7 @@ model Agent {
   courses      AgentCourse[]
   capabilities AgentCapability[]
   notices      Notice[]
+  briefings    Briefing[]
 
   @@unique([id, studentId])
   @@index([studentId])
@@ -178,6 +179,8 @@ model Run {
   events   RunEvent[]
   /// The Notice it sent: at most one (ADR-0026).
   notice   Notice?
+  /// The Briefing it wrote: at most one (ADR-0026).
+  briefing Briefing?
   /// The Artifact Runs it started: at most one (ADR-0026).
   started  Run[]           @relation("ArtifactRuns")
 

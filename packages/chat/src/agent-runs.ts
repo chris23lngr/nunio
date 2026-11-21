@@ -16,24 +16,43 @@ import {
   withOwner,
 } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
-import type { Citation, KnowledgeReader, Sealed } from "@nunio/knowledge";
+import type {
+  Citation,
+  Facts,
+  KnowledgeReader,
+  Sealed,
+} from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
-import { noticeTextId, raiseForEndedRun, sendNotice } from "@nunio/outreach";
+import {
+  briefingTextId,
+  noticeTextId,
+  raiseForEndedRun,
+  sendBriefing,
+  sendNotice,
+} from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
 import type { ModelMessage } from "ai";
-import type { ActionEvent, ArtifactEvent, NoticeEvent } from "./activity.js";
+import type {
+  ActionEvent,
+  ArtifactEvent,
+  BriefingEvent,
+  NoticeEvent,
+} from "./activity.js";
 import { recordEvents } from "./activity.js";
 import { agendaTool } from "./agenda.js";
 import type { ApprovalsOutput } from "./approvals.js";
 import { approvalsTool } from "./approvals.js";
 import { chatContext } from "./context.js";
 import { courseFactsTool } from "./course-facts.js";
+import type { InboxOutput } from "./inbox-tool.js";
+import { inboxTool } from "./inbox-tool.js";
 import type { ChatPart } from "./parts.js";
 import { retryRateLimited } from "./retry.js";
 import type { ReadCall, StoredCall } from "./run-actions.js";
 import {
   artifactResultOf,
+  briefingResultOf,
   capabilityTools,
   intentOf,
   noticeResultOf,
@@ -41,6 +60,7 @@ import {
   resultOf,
   sendsNotice,
   startsArtifact,
+  writesBriefing,
 } from "./run-actions.js";
 import { searchTool } from "./search.js";
 import type { Handled } from "./turn.js";
@@ -62,6 +82,12 @@ export type RunStepPart =
       toolCallId: string;
       input: Record<string, never>;
       output: ApprovalsOutput;
+    }
+  | {
+      type: "tool-inbox";
+      toolCallId: string;
+      input: Record<string, never>;
+      output: InboxOutput;
     };
 
 /**
@@ -116,6 +142,7 @@ export function createAgentRuns({
   db,
   keys,
   reader,
+  facts,
   plan,
   understanding,
   artifacts,
@@ -129,6 +156,7 @@ export function createAgentRuns({
   db: PrismaClient;
   keys: SourceKeys;
   reader: KnowledgeReader;
+  facts: Pick<Facts, "review">;
   plan: Pick<Plan, "view" | "timeZone">;
   understanding: Pick<Understanding, "levels">;
   artifacts: Pick<Artifacts, "list" | "startFromRun">;
@@ -258,6 +286,67 @@ export function createAgentRuns({
       await recordEvents(tx, run, [{ key, type: "notice", detail }]);
     });
   }
+  /**
+   * Writes the Briefing that call `i` of step `n` composed, at most one per Run, and records it in the Verlauf in the
+   * same transaction, so a repeat writes nothing twice.
+   */
+  async function writeBriefing(
+    run: { runId: string; studentId: string },
+    n: number,
+    i: number,
+    call: StoredCall,
+  ) {
+    const { runId } = run;
+    const key = `briefing:${n}:${i + 1}`;
+    await withOwner(db, principal.fromRun(runId), async (tx) => {
+      if (
+        await tx.runEvent.findUnique({ where: { runId_key: { runId, key } } })
+      )
+        return;
+      const named = { step: n, call: i + 1, capability: call.toolName };
+      let detail: BriefingEvent;
+      if ("briefing" in call) {
+        const { content, contentKey, derivedFrom } = call.briefing.text;
+        const written = await sendBriefing(
+          tx,
+          runId,
+          {
+            text: {
+              content: Uint8Array.from(Buffer.from(content, "base64")),
+              contentKey:
+                contentKey === null
+                  ? null
+                  : Uint8Array.from(Buffer.from(contentKey, "base64")),
+              derivedFrom,
+            },
+            items: call.briefing.items,
+          },
+          clock.now(),
+        );
+        detail =
+          written.status === "written"
+            ? {
+                ...named,
+                briefingId: written.briefingId,
+                outcome: "written",
+                refusal: null,
+              }
+            : {
+                ...named,
+                briefingId: null,
+                outcome: "refused",
+                refusal: written.reason,
+              };
+      } else
+        detail = {
+          ...named,
+          briefingId: null,
+          outcome: "refused",
+          refusal: "invalid",
+        };
+      await recordEvents(tx, run, [{ key, type: "briefing", detail }]);
+    });
+  }
   return {
     /**
      * Records the Run, or takes up the one the student started, with the Agent's Instructions, Capabilities and Model
@@ -336,6 +425,7 @@ export function createAgentRuns({
             OR: [
               { key: { startsWith: `artifact:${n - 1}:` } },
               { key: { startsWith: `notice:${n - 1}:` } },
+              { key: { startsWith: `briefing:${n - 1}:` } },
             ],
           },
         });
@@ -380,7 +470,7 @@ export function createAgentRuns({
           .sort((a, b) => a.title.localeCompare(b.title, "de")),
       );
       const previous = run.steps.at(-1);
-      // The handles and tags earlier steps gave out, so the model names work, blocks and Topics by them across steps.
+      // The handles and tags earlier steps gave out, so the model names work, blocks, Topics and Inbox items across steps.
       const turn = createTurn(
         (previous?.handles as [string, Handled][] | null) ?? [],
         (previous?.citations as Citation[] | null) ?? [],
@@ -414,6 +504,20 @@ export function createAgentRuns({
           agentId: run.agentId ?? undefined,
         }),
         approvals: approvalsTool(turn, { db, p, runId, timeZone, clock }),
+        // Only an Agent holding "Briefing erstellen" may read the whole Inbox across all Courses (#146).
+        ...(held.includes("createBriefing")
+          ? {
+              inbox: inboxTool(turn, {
+                db,
+                keys,
+                facts,
+                artifacts,
+                p,
+                timeZone,
+                clock,
+              }),
+            }
+          : {}),
         ...capabilityTools(held),
       };
       const called = (previous?.calls as StoredCall[] | null) ?? [];
@@ -427,27 +531,34 @@ export function createAgentRuns({
                 toolName: call.toolName,
                 output: {
                   type: "text" as const,
-                  value: sendsNotice(call)
-                    ? noticeResultOf(
+                  value: writesBriefing(call)
+                    ? briefingResultOf(
                         call,
                         (started.find(
-                          (e) => e.key === `notice:${n - 1}:${i + 1}`,
-                        )?.detail as NoticeEvent | undefined) ?? null,
+                          (e) => e.key === `briefing:${n - 1}:${i + 1}`,
+                        )?.detail as BriefingEvent | undefined) ?? null,
                       )
-                    : startsArtifact(call)
-                      ? artifactResultOf(
+                    : sendsNotice(call)
+                      ? noticeResultOf(
                           call,
                           (started.find(
-                            (e) => e.key === `artifact:${n - 1}:${i + 1}`,
-                          )?.detail as ArtifactEvent | undefined) ?? null,
+                            (e) => e.key === `notice:${n - 1}:${i + 1}`,
+                          )?.detail as NoticeEvent | undefined) ?? null,
                         )
-                      : resultOf(
-                          turn,
-                          call,
-                          performed.find(
-                            (a) => a.key === `${runId}:${n - 1}:${i + 1}`,
-                          ) ?? null,
-                        ),
+                      : startsArtifact(call)
+                        ? artifactResultOf(
+                            call,
+                            (started.find(
+                              (e) => e.key === `artifact:${n - 1}:${i + 1}`,
+                            )?.detail as ArtifactEvent | undefined) ?? null,
+                          )
+                        : resultOf(
+                            turn,
+                            call,
+                            performed.find(
+                              (a) => a.key === `${runId}:${n - 1}:${i + 1}`,
+                            ) ?? null,
+                          ),
                 },
               })),
             },
@@ -527,6 +638,7 @@ export function createAgentRuns({
         step: n,
         plan: read("agenda").length > 0,
         approvals: read("approvals").length > 0,
+        inbox: read("inbox").length > 0,
         courseIds: [
           ...new Set(
             read("courseFacts").flatMap((result) => {
@@ -572,31 +684,55 @@ export function createAgentRuns({
           derivedFrom,
           JSON.stringify([...results, ...stepped.value.messages]),
         );
-        // A Notice's text is the model's own and may restate what it read, so it is sealed like the transcript.
+        // A Notice's or Briefing's text is the model's own and may restate what it read, so it is sealed like the transcript.
         const kept: StoredCall[] = [];
         for (const call of calls) {
-          if (!("noticeText" in call)) {
-            kept.push(call);
+          if ("noticeText" in call) {
+            const { noticeText, ...rest } = call;
+            const text = await derived.seal(
+              tx,
+              noticeTextId(runId),
+              derivedFrom,
+              noticeText,
+            );
+            if (!text) return null;
+            kept.push({
+              ...rest,
+              notice: {
+                content: Buffer.from(text.content).toString("base64"),
+                contentKey: text.contentKey
+                  ? Buffer.from(text.contentKey).toString("base64")
+                  : null,
+                derivedFrom: text.derivedFrom,
+              },
+            });
             continue;
           }
-          const { noticeText, ...rest } = call;
-          const text = await derived.seal(
-            tx,
-            noticeTextId(runId),
-            derivedFrom,
-            noticeText,
-          );
-          if (!text) return null;
-          kept.push({
-            ...rest,
-            notice: {
-              content: Buffer.from(text.content).toString("base64"),
-              contentKey: text.contentKey
-                ? Buffer.from(text.contentKey).toString("base64")
-                : null,
-              derivedFrom: text.derivedFrom,
-            },
-          });
+          if ("briefingDraft" in call) {
+            const { briefingDraft, ...rest } = call;
+            const text = await derived.seal(
+              tx,
+              briefingTextId(runId),
+              derivedFrom,
+              briefingDraft.text,
+            );
+            if (!text) return null;
+            kept.push({
+              ...rest,
+              briefing: {
+                text: {
+                  content: Buffer.from(text.content).toString("base64"),
+                  contentKey: text.contentKey
+                    ? Buffer.from(text.contentKey).toString("base64")
+                    : null,
+                  derivedFrom: text.derivedFrom,
+                },
+                items: briefingDraft.items,
+              },
+            });
+            continue;
+          }
+          kept.push(call);
         }
         if (!sealedParts || !transcript) return null;
         await tx.runStep.update({
@@ -658,6 +794,10 @@ export function createAgentRuns({
         }
         if (sendsNotice(call)) {
           await notify({ runId, studentId: step.studentId }, n, i, call);
+          continue;
+        }
+        if (writesBriefing(call)) {
+          await writeBriefing({ runId, studentId: step.studentId }, n, i, call);
           continue;
         }
         if (!("intent" in call)) {

@@ -5,9 +5,17 @@ export type Refusal =
   | "gone"
   | Exclude<Extract<Retrieval, { status: "refused" }>["reason"], "not_owner">;
 
-/** A work, Study Block or Course Event a tool showed under a handle. */
+/** A work, Study Block, Course Event or Inbox item a tool showed under a handle. */
 export type Handled = {
-  kind: "obligation" | "task" | "block" | "event";
+  kind:
+    | "obligation"
+    | "task"
+    | "block"
+    | "event"
+    | "intervention"
+    | "approval"
+    | "notice"
+    | "artifact";
   id: string;
 };
 
@@ -39,13 +47,20 @@ export function createTurn(
   const handles = new Map<string, Handled>(given);
   let refusal: Refusal | undefined;
   return {
-    /** A short handle for a work, Study Block or Course Event, such as O1, T1, B1 or E1, which proposals name it by. */
+    /** A short handle for a work, block, Course Event or Inbox item, such as O1, B1, I1, A1, N1 or R1. */
     handleFor(kind: Handled["kind"], id: string) {
       for (const [handle, known] of handles)
         if (known.kind === kind && known.id === id) return handle;
-      const prefix = { obligation: "O", task: "T", block: "B", event: "E" }[
-        kind
-      ];
+      const prefix = {
+        obligation: "O",
+        task: "T",
+        block: "B",
+        event: "E",
+        intervention: "I",
+        approval: "A",
+        notice: "N",
+        artifact: "R",
+      }[kind];
       const handle = `${prefix}${[...handles.keys()].filter((h) => h.startsWith(prefix)).length + 1}`;
       handles.set(handle, { kind, id });
       return handle;

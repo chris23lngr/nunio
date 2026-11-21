@@ -7,12 +7,13 @@ import type { Kind } from "./kinds.js";
 export const approvalModes = ["always", "automatic", "ask"] as const;
 export type ApprovalMode = (typeof approvalModes)[number];
 
-/** The drawer's sections, in order. Briefings come with its tool. */
+/** The drawer's sections, in order. */
 export const capabilitySections = {
   studyBlocks: "Lernblöcke",
   tasks: "Aufgaben",
   material: "Lernmaterial",
   notices: "Benachrichtigungen",
+  briefings: "Briefings",
 } as const;
 
 type Capability = {
@@ -37,6 +38,12 @@ type Capability = {
   | {
       /** No Action: it sends the student a Notice, at most one per Run (#155). */
       notice: true;
+      /** None: it is simply on or off (ADR-0001). */
+      modes: readonly [];
+    }
+  | {
+      /** No Action: it writes the student a Briefing, at most one per Run (#146). */
+      briefing: true;
       /** None: it is simply on or off (ADR-0001). */
       modes: readonly [];
     }
@@ -109,6 +116,15 @@ export const capabilities = {
     description:
       "Dir eine kurze Nachricht in deine Inbox schreiben, höchstens eine pro Lauf.",
     notice: true,
+    modes: [],
+  },
+  // Plain text plus bundled Inbox items, announced like Notices without content or Agent name (ADR-0014).
+  createBriefing: {
+    section: "briefings",
+    title: "Briefing erstellen",
+    description:
+      "Offene Hinweise, Freigaben, ungelesene Nachrichten und fertiges Lernmaterial zu einem Briefing in deiner Inbox zusammenfassen.",
+    briefing: true,
     modes: [],
   },
 } as const satisfies Record<string, Capability>;

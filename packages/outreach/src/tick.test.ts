@@ -22,6 +22,7 @@ import {
   createOutreachSender,
   InvalidUnsubscribeError,
   NotOpenError,
+  sendBriefing,
   sendNotice,
 } from "./index.js";
 
@@ -474,8 +475,15 @@ describe("the daily Briefing", () => {
       {
         id: expect.any(String),
         madeAt: at("2026-11-09 07:05"),
+        agentId: null,
+        agentName: null,
+        runId: null,
+        text: null,
+        announcement: "announced",
         interventions: [shortfall!.id],
         approvals: [],
+        notices: [],
+        artifacts: [],
         agents: [],
       },
     ]);
@@ -1171,5 +1179,247 @@ describe("Notices (#155)", () => {
     await sender.tick();
 
     expect(mailTo(p)).toHaveLength(1);
+  });
+});
+
+describe("Briefings from Agents (#146)", () => {
+  async function briefingRun(p: Principal, name = "Morgen-Briefing") {
+    if (p.kind !== "student") throw new Error("a student");
+    const { studentId } = p;
+    const agentId = randomUUID();
+    const runId = randomUUID();
+    await admin.agent.create({
+      data: {
+        id: agentId,
+        studentId,
+        name,
+        budgetMicroUsd: 1_000_000,
+        capabilities: {
+          create: [{ capability: "createBriefing" }],
+        },
+      },
+    });
+    await admin.run.create({
+      data: {
+        id: runId,
+        studentId,
+        agentId,
+        status: "running",
+        trigger: "schedule",
+        startedAt: now,
+      },
+    });
+    return { agentId, runId };
+  }
+
+  async function writeBriefing(
+    runId: string,
+    text: string,
+    items: {
+      interventions?: string[];
+      approvals?: string[];
+      notices?: string[];
+      artifacts?: string[];
+    },
+  ) {
+    return withOwner(runtime, principal.fromRun(runId), (tx) =>
+      sendBriefing(
+        tx,
+        runId,
+        {
+          text: {
+            content: Uint8Array.from(Buffer.from(text)),
+            contentKey: null,
+            derivedFrom: [],
+          },
+          items: {
+            interventions: items.interventions ?? [],
+            approvals: items.approvals ?? [],
+            notices: items.notices ?? [],
+            artifacts: items.artifacts ?? [],
+          },
+        },
+        now,
+      ),
+    );
+  }
+
+  it("writes a Briefing with its Agent, Run, text and bundled ids, allows more than one on the same day, and refuses a second in the same Run with run_cap", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    await outreach.updateSettings(p, { briefingAtMinute: null });
+    const { actionIds } = await endedRunAsking(p, 1);
+    const first = await briefingRun(p, "Morgen-Briefing");
+    const second = await briefingRun(p, "Abend-Briefing");
+
+    const one = await writeBriefing(first.runId, "Eine Freigabe wartet.", {
+      approvals: actionIds,
+    });
+    expect(one).toEqual({ status: "written", briefingId: expect.any(String) });
+    expect(
+      await writeBriefing(first.runId, "Zweites Briefing im selben Lauf.", {
+        approvals: actionIds,
+      }),
+    ).toEqual({ status: "refused", reason: "run_cap" });
+
+    now = at("2026-11-09 18:00");
+    const two = await writeBriefing(second.runId, "Noch immer eine Freigabe.", {
+      approvals: actionIds,
+    });
+    expect(two).toEqual({ status: "written", briefingId: expect.any(String) });
+
+    expect((await outreach.inbox(p)).briefings).toEqual([
+      expect.objectContaining({
+        agentId: second.agentId,
+        agentName: "Abend-Briefing",
+        runId: second.runId,
+        text: "Noch immer eine Freigabe.",
+        approvals: actionIds,
+        announcement: "pending",
+      }),
+      expect.objectContaining({
+        agentId: first.agentId,
+        agentName: "Morgen-Briefing",
+        runId: first.runId,
+        text: "Eine Freigabe wartet.",
+        approvals: actionIds,
+        announcement: "pending",
+      }),
+    ]);
+  });
+
+  it("refuses with nothing_open when nothing open is bundled, including items already closed", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    const { runId } = await briefingRun(p);
+
+    expect(await writeBriefing(runId, "Alles ruhig.", {})).toEqual({
+      status: "refused",
+      reason: "nothing_open",
+    });
+
+    await dueTomorrow(p, 20 * 60);
+    await sender.tick();
+    const [shortfall] = await open(p);
+    await outreach.close(p, shortfall!.id, "acknowledged");
+
+    expect(
+      await writeBriefing(runId, "Schon geschlossen.", {
+        interventions: [shortfall!.id],
+      }),
+    ).toEqual({ status: "refused", reason: "nothing_open" });
+  });
+
+  it("refuses with nothing_open when the only bundled item is a run_approvals Intervention whose Approvals lapsed lazily", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    await outreach.updateSettings(p, { briefingAtMinute: null });
+    const { actionIds } = await endedRunAsking(p, 1);
+    await sender.tick();
+    const [row] = await admin.intervention.findMany({
+      where: {
+        studentId: p.kind === "student" ? p.studentId : "",
+        kind: "run_approvals",
+      },
+    });
+    expect(row?.causeEndedAt).toBeNull();
+
+    // Expire the Approval without calling inbox(), so causeEndedAt stays null on the Intervention row.
+    await admin.approval.update({
+      where: { actionId: actionIds[0]! },
+      data: { expiresAt: at("2026-11-09 05:59") },
+    });
+
+    const { runId } = await briefingRun(p);
+    expect(
+      await writeBriefing(runId, "Freigabe schon abgelaufen.", {
+        interventions: [row!.id],
+      }),
+    ).toEqual({ status: "refused", reason: "nothing_open" });
+  });
+
+  it("announces an Agent's Briefing once by content-free email and push, with neither its text nor its Agent's name", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    await outreach.updateSettings(p, {
+      briefingAtMinute: null,
+      briefingEmail: false,
+    });
+    const phone = await device(p);
+    const { actionIds } = await endedRunAsking(p, 1);
+    const { runId } = await briefingRun(p, "Mein Geheim-Agent");
+    await writeBriefing(runId, "Klausur Analysis I ist am Montag.", {
+      approvals: actionIds,
+    });
+
+    await sender.tick();
+    await sender.tick();
+
+    const briefingMails = mailTo(p).filter(
+      (m) => m.subject === "nunio: 1 neues Briefing",
+    );
+    expect(briefingMails).toEqual([
+      {
+        to: expect.any(String),
+        subject: "nunio: 1 neues Briefing",
+        text: expect.stringContaining("https://app.nunio.test/inbox"),
+      },
+    ]);
+    expect(JSON.stringify(briefingMails)).not.toMatch(
+      /Analysis|Geheim-Agent|List-Unsubscribe/,
+    );
+    expect(pushesTo(phone).map((s) => s.urgency)).toContain("normal");
+    expect((await outreach.inbox(p)).briefings).toMatchObject([
+      { announcement: "announced" },
+    ]);
+  });
+
+  it("holds an Agent's Briefing through Quiet Hours and announces it afterwards", async () => {
+    now = at("2026-11-09 23:00");
+    const p = await student();
+    await outreach.updateSettings(p, {
+      briefingAtMinute: null,
+      quietHours: { fromMinute: 22 * 60, toMinute: 6 * 60 + 30 },
+    });
+    const { actionIds } = await endedRunAsking(p, 1);
+    const { runId } = await briefingRun(p);
+    await writeBriefing(runId, "Guten Morgen.", { approvals: actionIds });
+
+    await sender.tick();
+    expect(mailTo(p)).toEqual([]);
+    expect((await outreach.inbox(p)).briefings).toMatchObject([
+      { announcement: "pending" },
+    ]);
+
+    now = at("2026-11-10 06:30");
+    await sender.tick();
+    expect(mailTo(p).map((m) => m.subject)).toContain(
+      "nunio: 1 neues Briefing",
+    );
+    expect((await outreach.inbox(p)).briefings).toMatchObject([
+      { announcement: "announced" },
+    ]);
+  });
+
+  it("counts Agent Briefings against the daily limit together with Interventions and Notices", async () => {
+    now = at("2026-11-09 05:00");
+    const p = await student();
+    await outreach.updateSettings(p, { dailyLimit: 1, briefingAtMinute: null });
+    await dueTomorrow(p, 20 * 60);
+    await sender.tick();
+    const [shortfall] = await open(p);
+    expect(mailTo(p)).toHaveLength(1);
+
+    now = at("2026-11-09 06:00");
+    const { runId } = await briefingRun(p);
+    await writeBriefing(runId, "Über dem Limit.", {
+      interventions: [shortfall!.id],
+    });
+    await sender.tick();
+
+    expect(mailTo(p)).toHaveLength(1);
+    expect((await outreach.inbox(p)).briefings).toMatchObject([
+      { text: "Über dem Limit.", announcement: "inbox_only" },
+    ]);
   });
 });

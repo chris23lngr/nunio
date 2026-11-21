@@ -4,6 +4,7 @@ import type { Clock, Principal, Transaction } from "@nunio/delegation";
 import { openApprovalAt, principal, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import { createDerivedText } from "@nunio/knowledge";
+import { briefingTextId } from "./briefings.js";
 import type { Kind, Subject } from "./causes.js";
 import { causeOf } from "./causes.js";
 import { noticeTextId } from "./notices.js";
@@ -39,9 +40,18 @@ export type NoticeView = {
 export type BriefingView = {
   id: string;
   madeAt: Date;
+  /** Null for a past Briefing nunio wrote itself before Agents took Briefings over. */
+  agentId: string | null;
+  agentName: string | null;
+  runId: string | null;
+  /** Plain text an Agent wrote, null on past nunio Briefings or once a Source its Run had read is deleted. */
+  text: string | null;
+  announcement: "pending" | "announced" | "inbox_only";
   interventions: string[];
   approvals: string[];
   agents: string[];
+  notices: string[];
+  artifacts: string[];
 };
 
 export type OutreachSettings = {
@@ -53,12 +63,18 @@ export type OutreachSettings = {
   briefingEmail: boolean;
   /** When nothing goes out outside the app, in the Plan's time zone; may wrap midnight. */
   quietHours: { fromMinute: number; toMinute: number } | null;
-  /** Announcements of Interventions and Notices per local day, email and push combined; Briefings do not count. */
+  /** Announcements of Interventions, Notices and Agent Briefings per local day, email and push combined. */
   dailyLimit: number;
 };
 
-/** What a Briefing stores as its items. */
-export type BriefingItems = Omit<BriefingView, "id" | "madeAt">;
+/** What a Briefing stores as its items; past nunio Briefings have no `notices` or `artifacts`. */
+export type BriefingItems = {
+  interventions: string[];
+  approvals: string[];
+  agents: string[];
+  notices?: string[];
+  artifacts?: string[];
+};
 
 const defaults: OutreachSettings = {
   briefingAtMinute: 7 * 60,
@@ -210,6 +226,51 @@ export function createOutreach({
       }),
     );
   }
+  /** The student's Briefings, newest first, with their Agent, opened text (when written by one), and announcement state. */
+  async function briefingsOf(tx: Transaction): Promise<BriefingView[]> {
+    const rows = await tx.briefing.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      include: { agent: { select: { name: true } } },
+    });
+    const deliveries = rows.length
+      ? await tx.delivery.findMany({
+          where: { briefingId: { in: rows.map((r) => r.id) } },
+          select: { briefingId: true, sentAt: true, droppedAt: true },
+        })
+      : [];
+    return Promise.all(
+      rows.map(async (row): Promise<BriefingView> => {
+        const of = deliveries.filter((d) => d.briefingId === row.id);
+        const stored = row.items as BriefingItems;
+        return {
+          id: row.id,
+          madeAt: row.createdAt,
+          agentId: row.agentId,
+          agentName: row.agent?.name ?? null,
+          runId: row.runId,
+          text:
+            row.runId && row.textContent !== null
+              ? await derived.open(tx, briefingTextId(row.runId), {
+                  content: row.textContent,
+                  contentKey: row.textKey,
+                  derivedFrom: row.derivedFrom,
+                })
+              : null,
+          announcement: of.some((d) => d.sentAt)
+            ? "announced"
+            : of.some((d) => !d.droppedAt)
+              ? "pending"
+              : "inbox_only",
+          interventions: stored.interventions ?? [],
+          approvals: stored.approvals ?? [],
+          agents: stored.agents ?? [],
+          notices: stored.notices ?? [],
+          artifacts: stored.artifacts ?? [],
+        };
+      }),
+    );
+  }
   return {
     async inbox(student: Principal): Promise<{
       interventions: InterventionView[];
@@ -248,7 +309,7 @@ export function createOutreach({
             });
           return Promise.all([
             tx.intervention.findMany({ orderBy: { createdAt: "desc" } }),
-            tx.briefing.findMany({ orderBy: { createdAt: "desc" }, take: 7 }),
+            briefingsOf(tx),
             runs,
             noticesOf(tx),
           ]);
@@ -290,11 +351,7 @@ export function createOutreach({
           ...views.filter((v) => v.state !== "open"),
         ],
         notices,
-        briefings: briefings.map((b) => ({
-          id: b.id,
-          madeAt: b.createdAt,
-          ...(b.items as BriefingItems),
-        })),
+        briefings,
       };
     },
     /** The public VAPID key a browser subscribes with. */

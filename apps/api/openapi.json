@@ -4131,7 +4131,7 @@
             "items": {
               "$ref": "#/components/schemas/AgentCapability"
             },
-            "maxItems": 8,
+            "maxItems": 9,
             "description": "Its Capabilities, each at most once, on a mode it allows."
           },
           "budgetMicroUsd": {
@@ -4176,7 +4176,8 @@
               "createTasks",
               "createFlashcards",
               "createPracticeSets",
-              "notifyStudent"
+              "notifyStudent",
+              "createBriefing"
             ]
           },
           "mode": {
@@ -4315,7 +4316,8 @@
               "createTasks",
               "createFlashcards",
               "createPracticeSets",
-              "notifyStudent"
+              "notifyStudent",
+              "createBriefing"
             ]
           },
           "section": {
@@ -4770,6 +4772,10 @@
                 "type": "boolean",
                 "description": "It read its Agent's Approvals."
               },
+              "inbox": {
+                "type": "boolean",
+                "description": "It read the Inbox across the student's Courses."
+              },
               "courses": {
                 "type": "array",
                 "items": {
@@ -4823,6 +4829,7 @@
               "step",
               "plan",
               "approvals",
+              "inbox",
               "courses",
               "sources"
             ]
@@ -5072,6 +5079,51 @@
                   "null"
                 ],
                 "description": "Why none was sent, such as run_cap (the Run already sent one) or paused; invalid when its text was empty, too long or held a link."
+              }
+            },
+            "required": [
+              "type",
+              "at",
+              "step",
+              "capability",
+              "outcome",
+              "refusal"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "briefing"
+                ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "step": {
+                "type": "integer"
+              },
+              "capability": {
+                "type": "string",
+                "description": "The Capability whose tool was called: createBriefing."
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "written",
+                  "refused"
+                ],
+                "description": "Whether the Briefing was written; its text is read in the Inbox, never here."
+              },
+              "refusal": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why none was written, such as run_cap (the Run already wrote one), nothing_open (nothing open to bundle), or paused; invalid when its text was empty, too long, held a link, or named nothing from the Inbox."
               }
             },
             "required": [
@@ -5412,6 +5464,43 @@
             "type": "string",
             "format": "date-time"
           },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Agent that wrote the Briefing; null for a past Briefing nunio wrote itself."
+          },
+          "agentName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Shown as \"Briefing von <Agent>\": the Agent's words, never nunio's; null for a past Briefing nunio wrote itself."
+          },
+          "runId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Run that wrote it; null for a past Briefing nunio wrote itself."
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Plain text of at most 1,500 characters, never rendered as a link or formatting; null on past nunio Briefings or once a Source the Run had read is deleted."
+          },
+          "announcement": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "announced",
+              "inbox_only"
+            ],
+            "description": "Whether a content-free email or push about it may still go out (pending), went out (announced), or never will (inbox_only)."
+          },
           "interventions": {
             "type": "array",
             "items": {
@@ -5437,20 +5526,62 @@
                     }
                   ]
                 },
+                "fingerprint": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Sent back unchanged to approve the Action while waiting; null once closed or gone."
+                },
+                "expiresAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "When the Approval request expires; null once gone."
+                },
+                "agent": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "preset": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "preset",
+                    "name"
+                  ],
+                  "description": "The Agent that asked for Approval, or null for Chat or once deleted."
+                },
                 "state": {
                   "type": "string",
                   "enum": [
                     "waiting",
                     "approved",
                     "denied",
-                    "expired"
+                    "expired",
+                    "withdrawn"
                   ],
-                  "description": "The Approval as it stands now; expired once it can no longer be given."
+                  "description": "The Approval as it stands now; expired once it can no longer be given, withdrawn when its Agent was paused or ended."
                 }
               },
               "required": [
                 "actionId",
                 "action",
+                "fingerprint",
+                "expiresAt",
+                "agent",
                 "state"
               ]
             }
@@ -5500,14 +5631,91 @@
                 "exam"
               ]
             }
+          },
+          "notices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The Notices it bundled, by their id in this Inbox."
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "practice_set",
+                    "flashcards",
+                    "draft",
+                    "critique",
+                    null
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "course": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "count": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "ready",
+                    "opened",
+                    "making",
+                    "failed",
+                    "withdrawn",
+                    "gone"
+                  ],
+                  "description": "The Artifact as it stands now; withdrawn once a Source it drew from is deleted, gone once the Artifact itself is deleted."
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "title",
+                "course",
+                "count",
+                "state"
+              ]
+            },
+            "description": "The Artifacts it bundled, each with its state as it stands now."
           }
         },
         "required": [
           "id",
           "madeAt",
+          "agentId",
+          "agentName",
+          "runId",
+          "text",
+          "announcement",
           "interventions",
           "approvals",
-          "agents"
+          "agents",
+          "notices",
+          "artifacts"
         ]
       },
       "OutreachSettings": {
@@ -15881,7 +16089,7 @@
                       "items": {
                         "$ref": "#/components/schemas/Briefing"
                       },
-                      "description": "The last seven, newest first."
+                      "description": "Recent Briefings, newest first."
                     }
                   },
                   "required": [

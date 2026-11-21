@@ -85,16 +85,29 @@ model Notice {
   @@map("notice")
 }
 
-/// A scheduled summary, never edited once made: which Interventions, Approvals and Agents it bundled.
+/// A summary an Agent wrote for the student in a Run (#146), together with the Inbox items it bundled, or a past
+/// scheduled summary nunio wrote before Agents took Briefings over. Never edited once made.
 model Briefing {
-  id        String   @id
-  studentId String
-  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  localDate String
-  createdAt DateTime @default(now())
-  items     Json
+  id          String   @id
+  studentId   String
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /// Null for a past Briefing nunio wrote itself before Agents took Briefings over.
+  agentId     String?
+  agent       Agent?   @relation(fields: [agentId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// The Run that wrote it; at most one per Run (ADR-0026). Null for nunio's own past Briefings.
+  runId       String?
+  run         Run?     @relation(fields: [runId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// Only set on nunio's own past Briefings, which were one per local day.
+  localDate   String?
+  /// Plain text of at most 1,500 characters, sealed under every Source the Run had read; null on nunio's own past Briefings.
+  textContent Bytes?
+  textKey     Bytes?
+  derivedFrom String[] @default([])
+  createdAt   DateTime @default(now())
+  items       Json
 
-  @@unique([studentId, localDate])
+  @@unique([runId, studentId])
+  @@index([studentId, createdAt])
   @@map("briefing")
 }
 

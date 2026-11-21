@@ -135,6 +135,7 @@ export function agentRunActivitiesFromEnv(
     db,
     keys,
     reader,
+    facts,
     plan,
     understanding: createUnderstanding({
       db,

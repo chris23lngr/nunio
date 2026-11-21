@@ -249,28 +249,59 @@ export function createOutreachSender({
           })
         ).map((n) => n.id),
       );
+      const sentToday = await tx.delivery.findMany({
+        where: {
+          OR: [
+            { interventionId: { not: null } },
+            { noticeId: { not: null } },
+            { briefingId: { not: null } },
+          ],
+          sentAt: { gte: startOfDay(at, timeZone) },
+        },
+        select: {
+          interventionId: true,
+          noticeId: true,
+          briefingId: true,
+          sentAt: true,
+        },
+        orderBy: { sentAt: "asc" },
+      });
+      // Agent Briefings follow Notice rules (ADR-0014); nunio's own past Briefings keep theirs until retired (#189).
+      const briefingIds = [
+        ...new Set([
+          ...queued.flatMap((d) => d.briefingId ?? []),
+          ...sentToday.flatMap((d) => d.briefingId ?? []),
+        ]),
+      ];
+      const briefings = new Map(
+        (briefingIds.length
+          ? await tx.briefing.findMany({
+              where: { id: { in: briefingIds } },
+              select: { id: true, agentId: true },
+            })
+          : []
+        ).map((b) => [b.id, b]),
+      );
+      const isAgentBriefing = (briefingId: string) =>
+        briefings.get(briefingId)?.agentId !== null;
       const { email, briefingEmail, dailyLimit } = settings;
-      /** What a message announces that counts against the daily limit: an Intervention or a Notice, each in its own message. */
+      /** What a message announces that counts against the daily limit: an Intervention, Notice or Agent Briefing. */
       const announced = (d: {
         interventionId: string | null;
         noticeId: string | null;
+        briefingId: string | null;
       }) =>
         d.interventionId
           ? { batch: "intervention", id: d.interventionId }
           : d.noticeId
             ? { batch: "notice", id: d.noticeId }
-            : null;
-      // An Intervention or Notice counts with the first message that announced it, however often another channel is
-      // retried; a tick's messages of one batch share one sentAt, so each counts once.
+            : d.briefingId && isAgentBriefing(d.briefingId)
+              ? { batch: "agent_briefing", id: d.briefingId }
+              : null;
+      // An Intervention, Notice or Agent Briefing counts with the first message that announced it, however often
+      // another channel is retried; a tick's messages of one batch share one sentAt, so each counts once.
       const firstAnnounced = new Map<string, string>();
-      for (const d of await tx.delivery.findMany({
-        where: {
-          OR: [{ interventionId: { not: null } }, { noticeId: { not: null } }],
-          sentAt: { gte: startOfDay(at, timeZone) },
-        },
-        select: { interventionId: true, noticeId: true, sentAt: true },
-        orderBy: { sentAt: "asc" },
-      })) {
+      for (const d of sentToday) {
         const item = announced(d);
         if (item && d.sentAt && !firstAnnounced.has(item.id))
           firstAnnounced.set(
@@ -285,16 +316,19 @@ export function createOutreachSender({
         pushSubscriptionOf,
       );
       const reasonOf = (d: (typeof queued)[number]) => {
-        // A message about an Intervention that closed, or a Notice read, meanwhile no longer applies.
+        // A message about an Intervention that closed, a Notice read, or a Briefing deleted meanwhile no longer applies.
         if (d.interventionId && !open.has(d.interventionId)) return "closed";
         if (d.noticeId && !unread.has(d.noticeId)) return "closed";
+        if (d.briefingId && !briefings.has(d.briefingId)) return "closed";
+        const legacyBriefing =
+          d.briefingId !== null && !isAgentBriefing(d.briefingId);
         if (
           d.channel === "email"
-            ? !email || (d.briefingId !== null && !briefingEmail)
+            ? !email || (legacyBriefing && !briefingEmail)
             : !subscriptions.length
         )
           return "disabled";
-        // Past the limit, a new Intervention or Notice waits in the Inbox and the next Briefing instead.
+        // Past the limit, a new Intervention, Notice or Agent Briefing stays in the Inbox instead.
         const item = announced(d);
         if (item && !firstAnnounced.has(item.id) && !opened.has(item.batch)) {
           if (announcedToday >= dailyLimit) return "limit";
@@ -317,7 +351,10 @@ export function createOutreachSender({
             data: { droppedAt: at, dropReason: reason },
           });
       return {
-        due: byReason.send,
+        due: byReason.send.map((d) => ({
+          ...d,
+          agentBriefing: d.briefingId !== null && isAgentBriefing(d.briefingId),
+        })),
         to: (await tx.user.findUniqueOrThrow({ where: { id: studentId } }))
           .email,
         subscriptions,
@@ -337,7 +374,7 @@ export function createOutreachSender({
     }
   }
 
-  /** Sends one channel's due messages: one for the Interventions it announces, one for the Notices, one for a Briefing. */
+  /** Sends one channel's due messages: Interventions, Notices, Agent Briefings, and nunio's Briefing. */
   async function sendChannel(
     p: Principal,
     channel: Channel,
@@ -354,6 +391,7 @@ export function createOutreachSender({
         interventionId: string | null;
         noticeId: string | null;
         briefingId: string | null;
+        agentBriefing: boolean;
       }[];
       to: string;
       subscriptions: ({ id: string } & StoredSubscription)[];
@@ -361,7 +399,8 @@ export function createOutreachSender({
   ) {
     const announcing = due.filter((d) => d.interventionId);
     const noticing = due.filter((d) => d.noticeId);
-    const briefing = due.filter((d) => d.briefingId);
+    const agentBriefing = due.filter((d) => d.briefingId && d.agentBriefing);
+    const briefing = due.filter((d) => d.briefingId && !d.agentBriefing);
     for (const [batch, message, urgency] of [
       [
         announcing,
@@ -380,6 +419,18 @@ export function createOutreachSender({
               ? "nunio: 1 neue Nachricht von einem Agenten"
               : `nunio: ${noticing.length} neue Nachrichten von Agenten`,
           text: `Lies sie in deiner Inbox:\n\n${inboxUrl}`,
+        },
+        "normal",
+      ],
+      // Agent Briefings follow Notice rules: content-free, no Agent name, no unsubscribe header (ADR-0014).
+      [
+        agentBriefing,
+        {
+          subject:
+            agentBriefing.length === 1
+              ? "nunio: 1 neues Briefing"
+              : `nunio: ${agentBriefing.length} neue Briefings`,
+          text: `${agentBriefing.length === 1 ? "Lies es" : "Lies sie"} in deiner Inbox:\n\n${inboxUrl}`,
         },
         "normal",
       ],
