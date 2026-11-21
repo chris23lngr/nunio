@@ -11,3 +11,7 @@ The [service privacy policy](https://www.scaleway.com/en/docs/transactional-emai
 This is an email-workload boundary, not an all-company EU-only claim: [general account/support processing](https://www.scaleway.com/en/privacy-policy/) has a broader transfer boundary. The [DPA/contracts](https://www.scaleway.com/en/contracts/) and [subprocessor list](https://www.scaleway.com/en/subprocessorlist/) belong in the pre-pilot review under ADR-0008; choosing the provider does not record that review as completed.
 
 The API uses the [documented REST endpoint](https://www.scaleway.com/en/docs/transactional-email/api-cli/send-emails-with-api/) in France. Messages contain a verification/reset link and minimal instructions, with no student materials or personal information in the subject. Auth tests stub outbound Scaleway HTTP while retaining real Postgres and Better Auth. DNS, sender validation and actual mailbox delivery require a separate staging smoke test before deployment is considered verified.
+
+## Amendment (2026-11-21): sign-in codes
+
+Passwords are gone ([ADR-0027](0027-email-codes-and-passkeys-replace-passwords.md)), so authentication email no longer carries verification or reset links. A sign-in email contains a 6-digit code and minimal instructions, with no link. A security email reports that a passkey was added, naming the device and time, also without a link. Subjects still carry no student materials or personal information. The processing boundary above is unchanged.

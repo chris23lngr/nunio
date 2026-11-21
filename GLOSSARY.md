@@ -191,7 +191,7 @@ The founder-managed list of Models, with which ones Chat offers, the Chat defaul
 _Avoid_: Allowlist, model registry
 
 **Invitation**:
-The founder's single-use offer for one email address to join the pilot, shared manually and expiring after seven days. Accepting it reserves it for a pending account; pilot access activates only after email verification.
+The founder's single-use offer for one email address to join the pilot, shared manually and expiring after seven days. Accepting it means entering the email code sent to that address, which creates the account with a verified address and activates pilot access.
 _Avoid_: Invite code, referral, sign-up link
 
 **Pilot entitlement**:
