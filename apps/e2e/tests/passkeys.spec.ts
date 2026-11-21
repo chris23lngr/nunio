@@ -22,6 +22,10 @@ test.beforeEach(async ({ page }) => {
 test("a student adds a passkey after a code sign-in, signs in with it, and deletes it", async ({
   page,
 }) => {
+  // The virtual authenticator answers autofill requests by itself, racing the button.
+  await page.addInitScript(() => {
+    PublicKeyCredential.isConditionalMediationAvailable = async () => false;
+  });
   const email = await createStudent("passkey", { offerPasskey: true });
   await page.goto(`${origins.app}/sign-in`);
   await enterSignIn(page, email);
