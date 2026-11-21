@@ -323,6 +323,7 @@ beforeAll(async () => {
   activity = createActivity({ db: runtime, keys, facts, clock });
   outreach = createOutreach({
     db: runtime,
+    keys,
     clock,
     vapidPublicKey: "test-vapid-key",
     unsubscribeSecret: "test-unsubscribe-secret",
@@ -1084,12 +1085,12 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
       [...reads, "createStudyBlocks"].sort(),
     ]);
     // Nothing on ADR-0026's "no tool" list: every Capability tool only creates, moves or removes a Study Block,
-    // creates a Task, or starts flashcards or a practice set. None reopens or completes a Task, changes an Estimate,
-    // drafts or critiques.
+    // creates a Task, starts flashcards or a practice set, or writes the student a Notice. None reopens or completes a
+    // Task, changes an Estimate, drafts or critiques, or reaches anyone but the student.
     expect(
       new Set(
         Object.values(capabilities).map((c) =>
-          "kind" in c ? c.kind : c.artifact,
+          "kind" in c ? c.kind : "artifact" in c ? c.artifact : "notice",
         ),
       ),
     ).toEqual(
@@ -1100,6 +1101,7 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
         "task.create",
         "flashcards",
         "practice_set",
+        "notice",
       ]),
     );
   });
@@ -2287,4 +2289,131 @@ describe("an Agent's Run starting Lernmaterial (#143)", () => {
       expect(saved).toEqual([`${s.agentId} paused`]);
     },
   );
+});
+
+describe("an Agent's Run sending a Notice (#155)", () => {
+  const notify = (text: string) => () => calls("notifyStudent", { text });
+  const noticeEntries = async (s: Awaited<ReturnType<typeof requested>>) =>
+    (await activity.run(s.p, s.agentId, s.runId))!.verlauf.flatMap((entry) =>
+      entry.type === "notice"
+        ? [[entry.step, entry.outcome, entry.refusal] as const]
+        : [],
+    );
+
+  it("sends one Notice to the Inbox in its Agent's name, queued to be announced, refusing every further one with run_cap and carrying on", async () => {
+    const s = await started({ held: [{ id: "notifyStudent", mode: null }] });
+    script = [
+      notify("Deine Klausur in Statistik II ist am 3. März."),
+      notify("Und noch etwas."),
+      () => says("Fertig."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect((await outreach.inbox(s.p)).notices).toEqual([
+      {
+        id: expect.any(String),
+        agentId: s.agentId,
+        agentName: "Klausur Statistik",
+        runId: s.runId,
+        text: "Deine Klausur in Statistik II ist am 3. März.",
+        sentAt: expect.any(Date),
+        readAt: null,
+        announcement: "pending",
+      },
+    ]);
+    expect(
+      await admin.delivery.findMany({
+        where: { studentId: s.studentId, noticeId: { not: null } },
+        select: { channel: true, sentAt: true },
+        orderBy: { channel: "asc" },
+      }),
+    ).toEqual([
+      { channel: "email", sentAt: null },
+      { channel: "push", sentAt: null },
+    ]);
+    expect(actionResults(prompts[2], "notifyStudent")).toEqual([
+      expect.stringMatching(/^Sent: the student finds it in their Inbox/),
+      expect.stringMatching(/^Not sent: this Run has already sent a Notice/),
+    ]);
+    expect(await noticeEntries(s)).toEqual([
+      [1, "sent", null],
+      [2, "refused", "run_cap"],
+    ]);
+    expect(await runs.view(s.p, s.runId)).toMatchObject({
+      status: "done",
+      summary: "Fertig.",
+    });
+  });
+
+  it.each([
+    ["paused", { state: "paused", pausedBy: "student" }],
+    ["ended", { state: "ended", pausedBy: null }],
+  ] as const)(
+    "sends no Notice once its Agent is %s, and keeps those it sent before",
+    async (state, update) => {
+      const earlier = await started({
+        held: [{ id: "notifyStudent", mode: null }],
+      });
+      script = [notify("Vorher geschrieben."), () => says("Fertig.")];
+      await run(earlier);
+      const s = await requested(earlier.p, earlier.agentId);
+      script = [
+        async () => {
+          await admin.agent.update({
+            where: { id: s.agentId },
+            data: update,
+          });
+          return calls("notifyStudent", { text: "Nachher geschrieben." });
+        },
+      ];
+
+      expect(await run(s)).toEqual({ status: "stopped", reason: state });
+
+      expect(
+        (await outreach.inbox(s.p)).notices.map((notice) => notice.text),
+      ).toEqual(["Vorher geschrieben."]);
+      expect(await noticeEntries(s)).toEqual([[1, "refused", state]]);
+    },
+  );
+
+  it("sends nothing for a link or for more than 500 characters, and tells the model why", async () => {
+    const s = await started({ held: [{ id: "notifyStudent", mode: null }] });
+    script = [
+      notify("Melde dich hier an: https://evil.test/login"),
+      notify("x".repeat(501)),
+      () => says("Fertig."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect((await outreach.inbox(s.p)).notices).toEqual([]);
+    expect(actionResults(prompts[2], "notifyStudent")).toEqual([
+      expect.stringMatching(/^Refused, nothing was sent: .*no links/),
+      expect.stringMatching(/^Refused, nothing was sent: .*500 characters/),
+    ]);
+    expect(await noticeEntries(s)).toEqual([
+      [1, "refused", "invalid"],
+      [2, "refused", "invalid"],
+    ]);
+  });
+
+  it("withdraws a Notice's text once a Source the Run read before writing it is deleted", async () => {
+    const s = await started({ held: [{ id: "notifyStudent", mode: null }] });
+    script = [
+      () => calls("searchMaterial", { query: "Klausur" }),
+      notify("Laut Skript ist die Klausur am 3. März."),
+      () => says("Fertig."),
+    ];
+    await run(s);
+    const source = await admin.sourceCourse.findFirstOrThrow({
+      where: { studentId: s.studentId },
+    });
+
+    await sources.remove(s.p, source.sourceId);
+
+    expect((await outreach.inbox(s.p)).notices).toMatchObject([
+      { agentName: "Klausur Statistik", text: null },
+    ]);
+  });
 });

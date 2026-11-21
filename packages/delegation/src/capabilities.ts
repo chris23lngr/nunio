@@ -7,11 +7,12 @@ import type { Kind } from "./kinds.js";
 export const approvalModes = ["always", "automatic", "ask"] as const;
 export type ApprovalMode = (typeof approvalModes)[number];
 
-/** The drawer's sections, in order. Benachrichtigungen and Briefings come with their tools. */
+/** The drawer's sections, in order. Briefings come with its tool. */
 export const capabilitySections = {
   studyBlocks: "Lernblöcke",
   tasks: "Aufgaben",
   material: "Lernmaterial",
+  notices: "Benachrichtigungen",
 } as const;
 
 type Capability = {
@@ -30,6 +31,12 @@ type Capability = {
   | {
       /** No Action: it starts an Artifact Run of this kind, so the gate is not involved (#143). */
       artifact: "flashcards" | "practice_set";
+      /** None: it is simply on or off (ADR-0001). */
+      modes: readonly [];
+    }
+  | {
+      /** No Action: it sends the student a Notice, at most one per Run (#155). */
+      notice: true;
       /** None: it is simply on or off (ADR-0001). */
       modes: readonly [];
     }
@@ -93,6 +100,15 @@ export const capabilities = {
     title: "Übungsaufgaben erstellen",
     description: "Übungsaufgaben zu Themen deiner Kurse erstellen.",
     artifact: "practice_set",
+    modes: [],
+  },
+  // Plain text to the student's Inbox, announced without its content or the Agent's name (ADR-0014).
+  notifyStudent: {
+    section: "notices",
+    title: "Dich benachrichtigen",
+    description:
+      "Dir eine kurze Nachricht in deine Inbox schreiben, höchstens eine pro Lauf.",
+    notice: true,
     modes: [],
   },
 } as const satisfies Record<string, Capability>;

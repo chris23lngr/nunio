@@ -5,7 +5,7 @@ import type {
   Principal,
   Refusal,
 } from "@nunio/delegation";
-import { capabilities, kindOf } from "@nunio/delegation";
+import { capabilities } from "@nunio/delegation";
 import type { KnowledgeReader } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
 import { deadline } from "@nunio/planning";
@@ -75,6 +75,17 @@ const artifactInput: JSONSchema7 = {
 };
 const artifactCap =
   "Read the Topics with courseFacts first, and name them by the tags it gave them, such as S3. Only one practice set or set of flashcards may start per Run.";
+/** A Notice's length at most (#155). */
+const maxNotice = 500;
+/** What Dich benachrichtigen's tool takes: the Notice's plain text. */
+const noticeInput: JSONSchema7 = {
+  type: "object",
+  properties: { text: { type: "string", minLength: 1, maxLength: maxNotice } },
+  required: ["text"],
+  additionalProperties: false,
+};
+/** Anything that reads as a link, which a Notice may not carry (ADR-0014). */
+const link = /\b(?:https?:\/\/|www\.|mailto:)/i;
 
 /** What the model is told of each Capability's tool; how the tool reads its call follows from the Capability's Action. */
 const descriptions: Record<CapabilityId, string> = {
@@ -85,6 +96,7 @@ const descriptions: Record<CapabilityId, string> = {
     "Removes a Study Block you created that the student has not moved since. Name it by its handle, such as B1. A Locked block, or one that has started, cannot be removed.",
   createFlashcards: `Starts making flashcards on Topics of your Courses, which the student finds under Study once made. ${artifactCap}`,
   createPracticeSets: `Starts making a practice set on Topics of your Courses, which the student finds under Study once made. ${artifactCap}`,
+  notifyStudent: `Writes the student a short Notice in their Inbox, shown as yours: plain text of at most ${maxNotice} characters, with no links or formatting. Only one may be sent per Run, so send it only when something needs the student's attention, and say all of it at once.`,
   createTasks:
     "Creates a Task in one of your Courses. Name exactly one of: a Course by its handle, such as K1; an Obligation the Plan showed, such as O1, which the Task works toward; or a Course Event the Plan showed, such as E1, with role preparation or follow_up, only if it has no Task in that role yet. Give a short title and, if you can tell, the minutes it needs. Read the Plan with agenda first, so you add no Task it already has.",
 };
@@ -92,17 +104,23 @@ const descriptions: Record<CapabilityId, string> = {
 /**
  * The Agent's Capability tools: exactly its Capabilities, one tool each, named by the Capability (ADR-0026). None has
  * an `execute`: the step hands its calls back, and they are performed after it, under `runId:step:call`, an Action's
- * through the gate, a Lernmaterial one's by starting its Artifact Run.
+ * through the gate, a Lernmaterial one's by starting its Artifact Run, and Dich benachrichtigen's by sending a Notice.
  */
 export function capabilityTools(held: readonly CapabilityId[]): ToolSet {
   return Object.fromEntries(
     held.map((id) => {
-      const kind = kindOf(id);
+      const capability = capabilities[id];
       return [
         id,
         tool({
           description: descriptions[id],
-          inputSchema: jsonSchema(kind ? inputs[kind]! : artifactInput),
+          inputSchema: jsonSchema(
+            "kind" in capability
+              ? inputs[capability.kind]!
+              : "artifact" in capability
+                ? artifactInput
+                : noticeInput,
+          ),
         }),
       ];
     }),
@@ -112,8 +130,17 @@ export function capabilityTools(held: readonly CapabilityId[]): ToolSet {
 /** The kind of Artifact a Lernmaterial Capability starts. */
 export type ArtifactKind = "flashcards" | "practice_set";
 /**
- * One Capability call of a step as stored: the Action the gate performs, the Artifact Run it starts, or why neither
- * could be. Dates as ISO strings.
+ * A Notice's text as its call is stored: sealed for `noticeTextId(runId)` under every Source the Run had read, as
+ * base64, so the model's words are never kept in the clear.
+ */
+export type SealedNotice = {
+  content: string;
+  contentKey: string | null;
+  derivedFrom: string[];
+};
+/**
+ * One Capability call of a step as stored: the Action the gate performs, the Artifact Run it starts, the Notice it
+ * sends, or why none could be. Dates as ISO strings.
  */
 export type StoredCall = {
   toolCallId: string;
@@ -121,15 +148,24 @@ export type StoredCall = {
 } & (
   | { intent: Record<string, unknown> }
   | { artifact: { kind: ArtifactKind; topicIds: string[] } }
+  | { notice: SealedNotice }
   | { invalid: string }
 );
+/** A call as read, before it is stored: a Notice's text is still plain until it is sealed with the step. */
+export type ReadCall =
+  | StoredCall
+  | { toolCallId: string; toolName: string; noticeText: string };
 
-/** Whether a call was to a Lernmaterial Capability, which starts an Artifact Run instead of asking the gate. */
-export const startsArtifact = (call: StoredCall) =>
-  "artifact" in call ||
+/** Whether a call was to a Capability of this sort, valid or not. */
+const callTo = (call: StoredCall, sort: "artifact" | "notice") =>
+  sort in call ||
   ("invalid" in call &&
     Object.hasOwn(capabilities, call.toolName) &&
-    !kindOf(call.toolName as CapabilityId));
+    sort in capabilities[call.toolName as CapabilityId]);
+/** Whether a call was to a Lernmaterial Capability, which starts an Artifact Run instead of asking the gate. */
+export const startsArtifact = (call: StoredCall) => callTo(call, "artifact");
+/** Whether a call was to Dich benachrichtigen, which sends a Notice instead of asking the gate. */
+export const sendsNotice = (call: StoredCall) => callTo(call, "notice");
 
 /** A stored intent with its dates revived, as the gate takes it; a Task Action has none. */
 export const intentOf = (call: { intent: Record<string, unknown> }) => {
@@ -186,7 +222,7 @@ export async function readCall(
     courses: ReadonlyMap<string, { id: string }>;
   },
   call: { toolCallId: string; toolName: string; input: unknown },
-): Promise<StoredCall> {
+): Promise<ReadCall> {
   const { toolCallId, toolName } = call;
   const invalid = (reason: string): StoredCall => ({
     toolCallId,
@@ -201,6 +237,18 @@ export async function readCall(
     call.input && typeof call.input === "object"
       ? (call.input as Record<string, unknown>)
       : {};
+  if ("notice" in capability) {
+    const { text } = given;
+    if (typeof text !== "string" || !text.trim())
+      return invalid("give the Notice's text.");
+    if (text.trim().length > maxNotice)
+      return invalid(`write at most ${maxNotice} characters.`);
+    if (link.test(text))
+      return invalid(
+        "write plain text with no links: the student is never sent anywhere from a Notice.",
+      );
+    return { toolCallId, toolName, noticeText: text.trim() };
+  }
   if ("artifact" in capability)
     return readArtifact(
       turn,
@@ -478,6 +526,28 @@ export function artifactResultOf(
   if (recorded.outcome === "started")
     return `Started: the ${recorded.kind === "flashcards" ? "flashcards are" : "practice set is"} being made, and the student finds ${recorded.kind === "flashcards" ? "them" : "it"} under Study once made. Do not start it again.`;
   return `Not started: ${notStarted[recorded.refusal ?? ""] ?? recorded.refusal}.`;
+}
+
+/** Why a Notice was not sent, as the model is told. */
+const notSent: Record<string, string> = {
+  run_ended: why.run_ended,
+  paused: why.paused,
+  ended: why.ended,
+  no_capability: "the student no longer lets you send Notices",
+  run_cap:
+    "this Run has already sent a Notice, and only one may be sent per Run, so send no more",
+};
+
+/** What the model is told became of one call of Dich benachrichtigen: the Notice it sent, or why none was. */
+export function noticeResultOf(
+  call: StoredCall,
+  recorded: { outcome: "sent" | "refused"; refusal: string | null } | null,
+): string {
+  if ("invalid" in call) return `Refused, nothing was sent: ${call.invalid}`;
+  if (!recorded) throw new Error(`Call ${call.toolCallId} was never performed`);
+  if (recorded.outcome === "sent")
+    return "Sent: the student finds it in their Inbox. Send no other in this Run.";
+  return `Not sent: ${notSent[recorded.refusal ?? ""] ?? recorded.refusal}.`;
 }
 
 /** What the model is told became of one Action call: what the gate recorded for it, or why none was asked. */

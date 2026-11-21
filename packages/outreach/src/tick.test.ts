@@ -4,7 +4,12 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import type { Principal } from "@nunio/delegation";
-import { createAgents, createDelegation, principal } from "@nunio/delegation";
+import {
+  createAgents,
+  createDelegation,
+  principal,
+  withOwner,
+} from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import type { Facts } from "@nunio/knowledge";
 import { createFacts } from "@nunio/knowledge";
@@ -17,6 +22,7 @@ import {
   createOutreachSender,
   InvalidUnsubscribeError,
   NotOpenError,
+  sendNotice,
 } from "./index.js";
 
 let db: TestDatabase;
@@ -31,6 +37,10 @@ let sender: OutreachSender;
 /** A Berlin wall-clock time in November (CET, UTC+1). */
 const at = (local: string) => new Date(`${local.replace(" ", "T")}:00+01:00`);
 let now = at("2026-11-09 08:00");
+const keys = createSourceKeys({
+  activeVersion: "v1",
+  masters: { v1: randomBytes(32) },
+});
 const clock = { now: () => now };
 /** Arguments as the gate stores them, so an Action seeded here reads back like one it performed. */
 const span = {
@@ -97,17 +107,11 @@ beforeAll(async () => {
   db = await startTestDatabase();
   admin = createPrismaClient(createPool(db.connectionString));
   runtime = createPrismaClient(createPool(db.runtimeConnectionString));
-  facts = createFacts({
-    db: runtime,
-    keys: createSourceKeys({
-      activeVersion: "v1",
-      masters: { v1: randomBytes(32) },
-    }),
-    clock,
-  });
+  facts = createFacts({ db: runtime, keys, clock });
   plan = createPlan({ db: runtime, facts, clock });
   outreach = createOutreach({
     db: runtime,
+    keys,
     clock,
     vapidPublicKey: "test-vapid-key",
     unsubscribeSecret: "test-unsubscribe-secret",
@@ -1013,5 +1017,159 @@ describe("one-click unsubscribe", () => {
     expect(await outreach.settings(p)).toEqual(
       expect.objectContaining({ briefingEmail: true }),
     );
+  });
+});
+
+describe("Notices (#155)", () => {
+  /** A Notice the student's Agent "Klausur vorbereiten" wrote in a Run under way now. */
+  async function noticeFrom(p: Principal, text: string) {
+    if (p.kind !== "student") throw new Error("a student");
+    const { studentId } = p;
+    const agentId = randomUUID();
+    const runId = randomUUID();
+    await admin.agent.create({
+      data: {
+        id: agentId,
+        studentId,
+        name: "Klausur vorbereiten",
+        budgetMicroUsd: 1_000_000,
+        capabilities: {
+          create: [{ capability: "notifyStudent" }],
+        },
+      },
+    });
+    await admin.run.create({
+      data: {
+        id: runId,
+        studentId,
+        agentId,
+        status: "running",
+        trigger: "schedule",
+        startedAt: now,
+      },
+    });
+    const sent = await withOwner(runtime, principal.fromRun(runId), (tx) =>
+      sendNotice(
+        tx,
+        runId,
+        {
+          content: Uint8Array.from(Buffer.from(text)),
+          contentKey: null,
+          derivedFrom: [],
+        },
+        now,
+      ),
+    );
+    if (sent.status !== "sent") throw new Error(sent.reason);
+    return sent.noticeId;
+  }
+  const notices = async (p: Principal) => (await outreach.inbox(p)).notices;
+
+  it("announces a Notice once by email and push, with neither its text nor its Agent's name", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    const phone = await device(p);
+    await noticeFrom(
+      p,
+      "Ruf mich unter 0151 123456 an, es geht um Analysis I.",
+    );
+
+    await sender.tick();
+    await sender.tick();
+
+    expect(mailTo(p)).toEqual([
+      {
+        to: expect.any(String),
+        subject: "nunio: 1 neue Nachricht von einem Agenten",
+        text: expect.stringContaining("https://app.nunio.test/inbox"),
+      },
+    ]);
+    expect(JSON.stringify(mailTo(p))).not.toMatch(
+      /0151|Analysis|Klausur vorbereiten/,
+    );
+    expect(pushesTo(phone)).toEqual([
+      { endpoint: phone, ttlSeconds: 12 * 60 * 60, urgency: "normal" },
+    ]);
+    expect(await notices(p)).toMatchObject([
+      {
+        agentName: "Klausur vorbereiten",
+        text: "Ruf mich unter 0151 123456 an, es geht um Analysis I.",
+        readAt: null,
+        announcement: "announced",
+      },
+    ]);
+  });
+
+  it("holds a Notice through Quiet Hours and announces it afterwards only if it is still unread", async () => {
+    now = at("2026-11-09 23:00");
+    const [unread, read] = [await student(), await student()];
+    for (const p of [unread, read])
+      await outreach.updateSettings(p, {
+        briefingAtMinute: null,
+        quietHours: { fromMinute: 22 * 60, toMinute: 6 * 60 + 30 },
+      });
+    await noticeFrom(unread, "Morgen früh lernen.");
+    const opened = await noticeFrom(read, "Morgen früh lernen.");
+    await sender.tick();
+    expect([...mailTo(unread), ...mailTo(read)]).toEqual([]);
+    expect(await notices(unread)).toMatchObject([{ announcement: "pending" }]);
+
+    await outreach.readNotice(read, opened);
+    expect(await notices(read)).toMatchObject([
+      { readAt: at("2026-11-09 23:00"), announcement: "inbox_only" },
+    ]);
+    now = at("2026-11-10 06:30");
+    await sender.tick();
+
+    expect(mailTo(unread).map((m) => m.subject)).toEqual([
+      "nunio: 1 neue Nachricht von einem Agenten",
+    ]);
+    expect(mailTo(read)).toEqual([]);
+    expect(await notices(read)).toMatchObject([
+      { readAt: at("2026-11-09 23:00"), announcement: "inbox_only" },
+    ]);
+  });
+
+  it("counts Notices against the daily limit together with Interventions, keeping the rest in the Inbox", async () => {
+    now = at("2026-11-09 05:00");
+    const p = await student();
+    await outreach.updateSettings(p, { dailyLimit: 2, briefingAtMinute: null });
+    await dueTomorrow(p, 20 * 60);
+    await sender.tick();
+    now = at("2026-11-09 05:10");
+    await noticeFrom(p, "Erste Nachricht.");
+    await sender.tick();
+
+    now = at("2026-11-09 05:20");
+    await noticeFrom(p, "Zweite Nachricht.");
+    await dueTomorrow(p, 20 * 60);
+    await sender.tick();
+
+    expect(mailTo(p).map((m) => m.subject)).toEqual([
+      "nunio: 1 item needs your attention",
+      "nunio: 1 neue Nachricht von einem Agenten",
+    ]);
+    expect((await notices(p)).map((n) => [n.text, n.announcement])).toEqual([
+      ["Zweite Nachricht.", "inbox_only"],
+      ["Erste Nachricht.", "announced"],
+    ]);
+    expect(await open(p)).toHaveLength(2);
+
+    now = at("2026-11-10 05:00");
+    await noticeFrom(p, "Neuer Tag.");
+    await sender.tick();
+    expect(mailTo(p)).toHaveLength(3);
+  });
+
+  it("never lets one tick's Notice and Intervention announcements together pass the daily limit", async () => {
+    now = at("2026-11-09 05:00");
+    const p = await student();
+    await outreach.updateSettings(p, { dailyLimit: 1, briefingAtMinute: null });
+    await dueTomorrow(p, 20 * 60);
+    await noticeFrom(p, "Gleichzeitig.");
+
+    await sender.tick();
+
+    expect(mailTo(p)).toHaveLength(1);
   });
 });

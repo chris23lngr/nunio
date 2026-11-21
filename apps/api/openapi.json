@@ -4131,7 +4131,7 @@
             "items": {
               "$ref": "#/components/schemas/AgentCapability"
             },
-            "maxItems": 7,
+            "maxItems": 8,
             "description": "Its Capabilities, each at most once, on a mode it allows."
           },
           "budgetMicroUsd": {
@@ -4175,7 +4175,8 @@
               "removeOwnStudyBlocks",
               "createTasks",
               "createFlashcards",
-              "createPracticeSets"
+              "createPracticeSets",
+              "notifyStudent"
             ]
           },
           "mode": {
@@ -4313,7 +4314,8 @@
               "removeOwnStudyBlocks",
               "createTasks",
               "createFlashcards",
-              "createPracticeSets"
+              "createPracticeSets",
+              "notifyStudent"
             ]
           },
           "section": {
@@ -5042,6 +5044,51 @@
               "type": {
                 "type": "string",
                 "enum": [
+                  "notice"
+                ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "step": {
+                "type": "integer"
+              },
+              "capability": {
+                "type": "string",
+                "description": "The Capability whose tool was called: notifyStudent."
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "sent",
+                  "refused"
+                ],
+                "description": "Whether the Notice was sent; its text is read in the Inbox, never here."
+              },
+              "refusal": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why none was sent, such as run_cap (the Run already sent one) or paused; invalid when its text was empty, too long or held a link."
+              }
+            },
+            "required": [
+              "type",
+              "at",
+              "step",
+              "capability",
+              "outcome",
+              "refusal"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
                   "approval"
                 ]
               },
@@ -5298,6 +5345,63 @@
           "closedAt"
         ]
       },
+      "Notice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string",
+            "description": "Shown as \"Nachricht von <Agent>\": the Agent's words, never nunio's."
+          },
+          "runId": {
+            "type": "string",
+            "description": "The Run that sent it."
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Plain text of at most 500 characters, never rendered as a link or formatting; null once a Source the Run had read is deleted."
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "readAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the student first opened it; null while unread."
+          },
+          "announcement": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "announced",
+              "inbox_only"
+            ],
+            "description": "Whether a content-free email or push about it may still go out (pending), went out (announced), or never will (inbox_only), as when it was read first, the daily limit was reached, or nothing is turned on."
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "agentName",
+          "runId",
+          "text",
+          "sentAt",
+          "readAt",
+          "announcement"
+        ]
+      },
       "Briefing": {
         "type": "object",
         "properties": {
@@ -5453,7 +5557,7 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 50,
-            "description": "Alerts about Interventions per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count."
+            "description": "Alerts about Interventions and Notices per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count."
           }
         },
         "required": [
@@ -15753,7 +15857,7 @@
       "get": {
         "responses": {
           "200": {
-            "description": "The student's Interventions, open ones first, and recent Briefings.",
+            "description": "The student's Interventions, open ones first, their Agents' Notices, and recent Briefings.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15765,6 +15869,13 @@
                         "$ref": "#/components/schemas/Intervention"
                       }
                     },
+                    "notices": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Notice"
+                      },
+                      "description": "The Notices the student's Agents sent, newest first."
+                    },
                     "briefings": {
                       "type": "array",
                       "items": {
@@ -15775,6 +15886,7 @@
                   },
                   "required": [
                     "interventions",
+                    "notices",
                     "briefings"
                   ]
                 }
@@ -15783,6 +15895,99 @@
           },
           "401": {
             "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/notices/{id}/read": {
+      "post": {
+        "description": "The student opened the Notice. It stays read, and an announcement of it not yet sent no longer goes out.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16020,7 +16225,7 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 50,
-                    "description": "Alerts about Interventions per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count."
+                    "description": "Alerts about Interventions and Notices per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count."
                   }
                 }
               }

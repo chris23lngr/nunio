@@ -798,3 +798,46 @@ test("the Verlauf shows the flashcards or practice set a Run started, and why on
     ),
   ]);
 });
+
+test("the Verlauf shows the Notice a Run sent, and why one was not sent, never its text", async () => {
+  const run = listed("r-1", 60, "done");
+  const entry = (more: object) => ({
+    type: "notice",
+    at: run.endedAt,
+    step: 1,
+    capability: "notifyStudent",
+    outcome: "sent",
+    refusal: null,
+    ...more,
+  });
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [run], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-1", () =>
+    Response.json(
+      detail(run, {
+        verlauf: [
+          entry({}),
+          entry({ outcome: "refused", refusal: "run_cap" }),
+          entry({ outcome: "refused", refusal: "invalid" }),
+        ],
+      }),
+    ),
+  );
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+
+  const verlauf = await screen.findByRole("list", { name: "Verlauf" });
+  expect(
+    within(verlauf)
+      .getAllByRole("listitem")
+      .map((entry) => entry.textContent),
+  ).toEqual([
+    expect.stringMatching(/\dNachricht an dich gesendetIn deiner Inbox$/),
+    expect.stringMatching(
+      /\dNicht gesendet: NachrichtGrund: Limit dieses Laufs erreicht$/,
+    ),
+    expect.stringMatching(
+      /\dNicht gesendet: NachrichtGrund: Ungültiger Text, nichts wurde gesendet$/,
+    ),
+  ]);
+});

@@ -4,6 +4,7 @@ import {
   interventionKinds,
   NotOpenError,
   UnknownInterventionError,
+  UnknownNoticeError,
 } from "@nunio/outreach";
 import { scopeNames } from "./agents.js";
 import type { AppBindings } from "./app.js";
@@ -46,7 +47,7 @@ const Settings = z
       .min(0)
       .max(50)
       .describe(
-        "Alerts about Interventions per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count.",
+        "Alerts about Interventions and Notices per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count.",
       ),
   })
   .openapi("OutreachSettings");
@@ -88,6 +89,35 @@ const Intervention = z
     closedAt: z.date().nullable(),
   })
   .openapi("Intervention");
+
+const Notice = z
+  .object({
+    id: z.string(),
+    agentId: z.string(),
+    agentName: z
+      .string()
+      .describe(
+        "Shown as \"Nachricht von <Agent>\": the Agent's words, never nunio's.",
+      ),
+    runId: z.string().describe("The Run that sent it."),
+    text: z
+      .string()
+      .nullable()
+      .describe(
+        "Plain text of at most 500 characters, never rendered as a link or formatting; null once a Source the Run had read is deleted.",
+      ),
+    sentAt: z.date(),
+    readAt: z
+      .date()
+      .nullable()
+      .describe("When the student first opened it; null while unread."),
+    announcement: z
+      .enum(["pending", "announced", "inbox_only"])
+      .describe(
+        "Whether a content-free email or push about it may still go out (pending), went out (announced), or never will (inbox_only), as when it was read first, the daily limit was reached, or nothing is turned on.",
+      ),
+  })
+  .openapi("Notice");
 
 const Briefing = z
   .object({
@@ -137,11 +167,14 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
         200: json(
           z.object({
             interventions: z.array(Intervention),
+            notices: z
+              .array(Notice)
+              .describe("The Notices the student's Agents sent, newest first."),
             briefings: z
               .array(Briefing)
               .describe("The last seven, newest first."),
           }),
-          "The student's Interventions, open ones first, and recent Briefings.",
+          "The student's Interventions, open ones first, their Agents' Notices, and recent Briefings.",
         ),
         401: errors[401],
       },
@@ -149,9 +182,11 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
-      const { interventions, briefings } = await c.get("outreach").inbox(p);
+      const { interventions, notices, briefings } = await c
+        .get("outreach")
+        .inbox(p);
       if (!interventions.length && !briefings.length)
-        return c.json({ interventions: [], briefings: [] }, 200);
+        return c.json({ interventions: [], notices, briefings: [] }, 200);
       const ids = [
         ...interventions.flatMap((i) =>
           i.subject.kind === "action" ? [i.subject.id] : [],
@@ -260,9 +295,37 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
               ];
             }),
           })),
+          notices,
         },
         200,
       );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/notices/{id}/read",
+      description:
+        "The student opened the Notice. It stays read, and an announcement of it not yet sent no longer goes out.",
+      request: { params: z.object({ id: z.string().uuid() }) },
+      responses: {
+        200: Done,
+        400: outcomes[400],
+        401: errors[401],
+        404: errors[404],
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      try {
+        await c.get("outreach").readNotice(p, c.req.valid("param").id);
+      } catch (error) {
+        if (error instanceof UnknownNoticeError)
+          return c.json({ error: "gone" }, 404);
+        throw error;
+      }
+      return c.json({ status: "ok" as const }, 200);
     },
   );
   routes.openapi(

@@ -9,6 +9,7 @@ import { openApprovalAt, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type { Facts } from "@nunio/knowledge";
 import { createDerivedText } from "@nunio/knowledge";
+import type { NoticeRefusal } from "@nunio/outreach";
 
 /** What one model step read: the Plan, its Agent's Approvals, the Facts of these Courses, and these Sources. */
 export type ReadEvent = {
@@ -71,6 +72,21 @@ export type ArtifactEvent = {
     | null;
 };
 
+/**
+ * What became of one call of Dich benachrichtigen: the Notice it sent, or why none was, `invalid` when its text was
+ * empty, too long or held a link. Never the text itself: the Notice is read in the Inbox.
+ */
+export type NoticeEvent = {
+  step: number;
+  call: number;
+  /** The Capability whose tool the model called. */
+  capability: string;
+  /** The Notice it sent; null when none. */
+  noticeId: string | null;
+  outcome: "sent" | "refused";
+  refusal: NoticeRefusal | "invalid" | null;
+};
+
 /** The arguments of a `task.create` Action that name it. */
 type NewTask = {
   title: string;
@@ -86,6 +102,7 @@ export async function recordEvents(
     | { key: string; type: "read"; detail: ReadEvent }
     | { key: string; type: "action"; detail: ActionEvent }
     | { key: string; type: "artifact"; detail: ArtifactEvent }
+    | { key: string; type: "notice"; detail: NoticeEvent }
   )[],
 ) {
   if (!events.length) return;
@@ -161,6 +178,14 @@ export type VerlaufEntry =
       topics: { id: string; title: string | null }[];
       outcome: ArtifactEvent["outcome"];
       refusal: ArtifactEvent["refusal"];
+    }
+  | {
+      type: "notice";
+      at: Date;
+      step: number;
+      capability: string;
+      outcome: NoticeEvent["outcome"];
+      refusal: NoticeEvent["refusal"];
     }
   | {
       type: "approval";
@@ -587,6 +612,17 @@ export function createActivity({
               capability: call.capability,
               kind: call.kind,
               topics: titled(call.topicIds, topics),
+              outcome: call.outcome,
+              refusal: call.refusal,
+            };
+          }
+          if (event.type === "notice") {
+            const call = event.detail as NoticeEvent;
+            return {
+              type: "notice",
+              at: event.at,
+              step: call.step,
+              capability: call.capability,
               outcome: call.outcome,
               refusal: call.refusal,
             };

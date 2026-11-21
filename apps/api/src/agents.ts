@@ -362,6 +362,25 @@ const VerlaufEntrySchema = z
         ),
     }),
     z.object({
+      type: z.literal("notice"),
+      at: z.date(),
+      step: z.number().int(),
+      capability: z
+        .string()
+        .describe("The Capability whose tool was called: notifyStudent."),
+      outcome: z
+        .enum(["sent", "refused"])
+        .describe(
+          "Whether the Notice was sent; its text is read in the Inbox, never here.",
+        ),
+      refusal: z
+        .string()
+        .nullable()
+        .describe(
+          "Why none was sent, such as run_cap (the Run already sent one) or paused; invalid when its text was empty, too long or held a link.",
+        ),
+    }),
+    z.object({
       type: z.literal("approval"),
       at: z
         .date()

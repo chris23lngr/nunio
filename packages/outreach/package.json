@@ -17,7 +17,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.3",
-    "@nunio/keys": "workspace:*",
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
@@ -29,6 +28,7 @@
   "dependencies": {
     "@nunio/db": "workspace:*",
     "@nunio/delegation": "workspace:*",
+    "@nunio/keys": "workspace:*",
     "@nunio/knowledge": "workspace:*",
     "@nunio/planning": "workspace:*",
     "web-push": "3.6.7"

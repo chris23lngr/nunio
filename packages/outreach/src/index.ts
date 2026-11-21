@@ -1,16 +1,19 @@
 /**
- * Interventions, Briefings, and the messages that point to the Inbox. See docs/design/outreach.md.
+ * Interventions, Notices, Briefings, and the messages that point to the Inbox. See docs/design/outreach.md.
  */
 
 export { interventionKinds, type Kind, keyOf } from "./causes.js";
+export { type NoticeRefusal, noticeTextId, sendNotice } from "./notices.js";
 export {
   createOutreach,
   type InterventionView,
   InvalidUnsubscribeError,
+  type NoticeView,
   NotOpenError,
   type Outreach,
   type PushSubscriptionJson,
   UnknownInterventionError,
+  UnknownNoticeError,
 } from "./outreach.js";
 export { raiseForEndedRun } from "./raise.js";
 export {
