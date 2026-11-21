@@ -31,6 +31,7 @@ describe("replay", () => {
     "agent-run",
     "agent-run-actions",
     "agent-run-scheduled",
+    "agent-run-stopped",
   ])(
     "replays the recorded %s history with the current workflow code",
     async (name) => {

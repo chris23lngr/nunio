@@ -343,6 +343,7 @@ describe("a free-text Agent's Actions (ADR-0001)", () => {
       stepCalls: 0,
       approvals: 0,
       openApprovals: 0,
+      ended: false,
       ...counts,
     },
   });
@@ -563,6 +564,11 @@ describe("a free-text Agent's Actions (ADR-0001)", () => {
       "acts as its 20th call in the Run",
       situation(create(), uses({ calls: 19 })),
       byGrant("grant-create"),
+    ],
+    [
+      "refuses a new call once its Run has ended, even one it holds a Grant for",
+      situation(create(), uses({ ended: true })),
+      refuse("run_ended"),
     ],
     [
       "refuses a 21st call in the Run, even one it holds a Grant for",

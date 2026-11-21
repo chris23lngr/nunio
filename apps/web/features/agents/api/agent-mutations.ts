@@ -1,6 +1,7 @@
 import type { paths } from "@nunio/api-client";
 import type { QueryClient } from "@tanstack/react-query";
 import { mutationOptions } from "@tanstack/react-query";
+import { approvalQueries } from "@/features/approvals/api/approval-queries";
 import { createApiClient } from "@/lib/api-client";
 import {
   agentCourseQueries,
@@ -91,7 +92,10 @@ export function saveAgent(
   });
 }
 
-/** Pause stops its next Action, even mid-Run; only the student resumes; End removes its Grants for good. */
+/**
+ * Pause stops its Run under way at the next step or Action and withdraws its open Approvals; only the student resumes;
+ * End also removes its Grants for good.
+ */
 export function controlAgent(
   apiOrigin: string,
   id: string,
@@ -103,12 +107,53 @@ export function controlAgent(
       const result = await createApiClient(apiOrigin).POST(path, {
         params: { path: { id } },
       });
-      if (!result.data) throw new Error("Could not change this Agent.");
+      if (!result.data)
+        throw new Error(
+          "Dein Agent konnte nicht geändert werden. Versuche es noch einmal.",
+        );
     },
+    // The Agent, its Runs and the Approvals it withdrew.
     onSettled: () =>
-      queryClient.invalidateQueries({
-        queryKey: agentListQueries(apiOrigin).queryKey,
-      }),
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: agentListQueries(apiOrigin).queryKey,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: approvalQueries(apiOrigin).queryKey,
+        }),
+      ]),
+  });
+}
+
+/** Deletes the Agent for good, with its Activity and its Schedule. */
+export function deleteAgent(
+  apiOrigin: string,
+  id: string,
+  queryClient: QueryClient,
+) {
+  return mutationOptions({
+    mutationFn: async () => {
+      const result = await createApiClient(apiOrigin).DELETE(
+        "/api/me/agents/{id}",
+        { params: { path: { id } } },
+      );
+      // Already gone is what the student wanted.
+      if (!result.data && result.response.status !== 404)
+        throw new Error(
+          "Dein Agent konnte nicht gelöscht werden. Versuche es noch einmal.",
+        );
+    },
+    // Only the list: the deleted Agent's own screen is left, not read again.
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: agentListQueries(apiOrigin).queryKey,
+          exact: true,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: approvalQueries(apiOrigin).queryKey,
+        }),
+      ]),
   });
 }
 

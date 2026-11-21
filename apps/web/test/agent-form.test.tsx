@@ -652,6 +652,109 @@ test("'Jetzt starten' is disabled while the Agent is Paused or Ended", async () 
   }
 });
 
+test("the header's menu pauses, resumes and ends the Agent, and a Paused one shows why under the header with Fortsetzen", async () => {
+  let shown: Record<string, unknown> = { ...agent };
+  const controls: string[] = [];
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(shown));
+  for (const [control, state, pausedBy] of [
+    ["pause", "paused", "student"],
+    ["resume", "active", null],
+    ["end", "ended", null],
+  ] as const)
+    api.route("POST", `/api/me/agents/a-1/${control}`, () => {
+      controls.push(control);
+      shown = { ...shown, state, pausedBy };
+      return Response.json({ status: "ok" });
+    });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const menu = async () => {
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Aktionen für Klausur Statistik",
+      }),
+    );
+    return screen.findByRole("menu");
+  };
+
+  // The header has the lifecycle controls; editing is the Auftrag already open.
+  expect(
+    within(await menu())
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent),
+  ).toEqual(["Pausieren", "Beenden", "Löschen"]);
+  await userEvent.click(
+    within(screen.getByRole("menu")).getByRole("menuitem", {
+      name: "Pausieren",
+    }),
+  );
+  expect(await screen.findByText("Von dir pausiert")).toBeTruthy();
+
+  await userEvent.click(screen.getByRole("button", { name: "Fortsetzen" }));
+  await waitFor(() =>
+    expect(screen.queryByText("Von dir pausiert")).toBeNull(),
+  );
+  await userEvent.click(
+    within(await menu()).getByRole("menuitem", { name: "Beenden" }),
+  );
+  await waitFor(async () =>
+    expect(
+      within(await menu())
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Löschen"]),
+  );
+  expect(controls).toEqual(["pause", "resume", "end"]);
+});
+
+test("a Paused Agent says it ran out of Budget under the header", async () => {
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("GET", "/api/me/agents/a-paused", () =>
+    Response.json({
+      ...agent,
+      id: "a-paused",
+      state: "paused",
+      pausedBy: "budget",
+    }),
+  );
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-paused" />);
+
+  expect(await screen.findByText("Pausiert: Budget aufgebraucht")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Fortsetzen" })).toBeTruthy();
+});
+
+test("Löschen in the header's menu asks first, then deletes the Agent and returns to the list", async () => {
+  const deleted: string[] = [];
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("DELETE", "/api/me/agents/a-1", () => {
+    deleted.push("a-1");
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  await userEvent.click(
+    await screen.findByRole("button", {
+      name: "Aktionen für Klausur Statistik",
+    }),
+  );
+  await userEvent.click(
+    within(await screen.findByRole("menu")).getByRole("menuitem", {
+      name: "Löschen",
+    }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "„Klausur Statistik“ löschen?",
+  });
+  expect(deleted).toEqual([]);
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: "Löschen" }),
+  );
+
+  await waitFor(() => expect(replace).toHaveBeenCalledWith("/agents"));
+  expect(deleted).toEqual(["a-1"]);
+});
+
 test("'Kurse verwalten' searches, reflects the Agent's Courses, and lists an Archived one only to remove it", async () => {
   const saved: unknown[] = [];
   api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));

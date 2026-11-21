@@ -1,9 +1,15 @@
 import type { Schedules } from "@nunio/delegation";
-import { createAgentSchedules } from "@nunio/delegation/temporal-schedules";
+import {
+  createAgentSchedules,
+  workflowAlive,
+} from "@nunio/delegation/temporal-schedules";
 import { payloadCodecFromEnv } from "@nunio/keys";
-import { Client, Connection } from "@temporalio/client";
+import { Client, Connection, WorkflowNotFoundError } from "@temporalio/client";
 
-/** The Temporal side of Runs as the API needs it: waking a Run once the student decided on one of its Actions. */
+/**
+ * The Temporal side of Runs as the API needs it: waking a Run once the student decided on one of its Actions, and
+ * starting, stopping and checking on a free-text Agent's Runs.
+ */
 export interface RunWorkflows {
   /** Carries no authority: the decision is already recorded through the gate; the Run only asks the gate again. */
   signalDecided(
@@ -17,6 +23,18 @@ export interface RunWorkflows {
     runId: string;
     workflowId: string;
   }): Promise<void>;
+  /**
+   * Tells the workflow of a free-text Agent's Run to stop at once, as the student Paused or Ended the Agent; the
+   * database already refuses its next step and Action. False when the workflow no longer runs.
+   */
+  stopAgentRun(
+    workflowId: string,
+    reason: "paused" | "ended",
+  ): Promise<boolean>;
+  /** Whether the workflow of a free-text Agent's Run still runs. */
+  agentRunAlive(workflowId: string): Promise<boolean>;
+  /** Cancels a Run's workflow, as its Agent is deleted; one that no longer runs is left as it is. */
+  cancelRun(workflowId: string): Promise<void>;
 }
 
 /** Signals by workflow and run ID, so a decision never reaches another Run of the same Agent. */
@@ -40,6 +58,26 @@ export function createRunWorkflows({
         workflowId,
         args: [{ studentId, agentId, runId }],
       });
+    },
+    async stopAgentRun(workflowId, reason) {
+      try {
+        await client.workflow
+          .getHandle(workflowId)
+          .signal("stopAgentRun", reason);
+        return true;
+      } catch (error) {
+        // Temporal answers so for a workflow that has closed, however it closed.
+        if (error instanceof WorkflowNotFoundError) return false;
+        throw error;
+      }
+    },
+    agentRunAlive: workflowAlive(client),
+    async cancelRun(workflowId) {
+      try {
+        await client.workflow.getHandle(workflowId).cancel();
+      } catch (error) {
+        if (!(error instanceof WorkflowNotFoundError)) throw error;
+      }
     },
   };
 }
@@ -84,6 +122,14 @@ export function runWorkflowsFromEnv(env: NodeJS.ProcessEnv) {
       ),
     startAgentRun: (run) =>
       withClient((client) => runWorkflowsOf(client).startAgentRun(run)),
+    stopAgentRun: (workflowId, reason) =>
+      withClient((client) =>
+        runWorkflowsOf(client).stopAgentRun(workflowId, reason),
+      ),
+    agentRunAlive: (workflowId) =>
+      withClient((client) => runWorkflowsOf(client).agentRunAlive(workflowId)),
+    cancelRun: (workflowId) =>
+      withClient((client) => runWorkflowsOf(client).cancelRun(workflowId)),
   };
   const schedules: Schedules = {
     create: (r) => withClient((client) => schedulesOf(client).create(r)),

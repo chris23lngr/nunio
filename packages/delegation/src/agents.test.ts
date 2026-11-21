@@ -192,8 +192,10 @@ describe("Agents", () => {
       agentId: created.id,
     }))!;
 
+    // A preset's Runs record no status, so none is under way to stop.
     expect(await agents.pause(s.p, created.id)).toEqual({
       status: "ok",
+      runs: [],
     });
 
     expect(calls).toEqual([`create ${created.id}`, `pause ${created.id}`]);
@@ -437,8 +439,10 @@ describe("Agents", () => {
       intent: move(s.blockId),
     });
 
+    // A preset's Runs record no status, so none is under way to stop.
     expect(await agents.end(s.p, created.id)).toEqual({
       status: "ok",
+      runs: [],
     });
 
     expect(calls).toEqual([`create ${created.id}`, `delete ${created.id}`]);

@@ -4470,6 +4470,13 @@
             "type": "boolean",
             "description": "One of its Runs is under way; another cannot start until it ends."
           },
+          "approvalRunId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The oldest of its Runs with an Approval still open, which Freigaben bestätigen opens; null when none is."
+          },
           "capabilities": {
             "type": "array",
             "items": {
@@ -4597,6 +4604,7 @@
           "state",
           "pausedBy",
           "running",
+          "approvalRunId",
           "capabilities",
           "grants",
           "budget",
@@ -4961,7 +4969,7 @@
               "at": {
                 "type": "string",
                 "format": "date-time",
-                "description": "When the student decided, or when it expired unanswered."
+                "description": "When the student decided, when it expired unanswered, or when it was withdrawn."
               },
               "action": {
                 "type": "object",
@@ -5028,9 +5036,10 @@
                 "enum": [
                   "approved",
                   "denied",
-                  "expired"
+                  "expired",
+                  "withdrawn"
                 ],
-                "description": "The student's answer, or expired when none came in time; expiry writes nothing, it shows once it passed."
+                "description": "The student's answer; expired when none came in time (expiry writes nothing, it shows once it passed); withdrawn when the Agent was Paused or Ended before the student answered."
               },
               "outcome": {
                 "type": [
@@ -14618,6 +14627,13 @@
                           null
                         ]
                       },
+                      "approvalRunId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "The oldest of its Runs with an Approval still open, which Freigaben bestätigen opens; null when none is."
+                      },
                       "badge": {
                         "type": [
                           "string",
@@ -14643,6 +14659,7 @@
                       "exam",
                       "state",
                       "pausedBy",
+                      "approvalRunId",
                       "badge"
                     ]
                   }
@@ -14852,6 +14869,97 @@
           },
           "404": {
             "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Delete the Agent for good (Löschen), with its Activity and its Schedule; its Runs' workflows still running are cancelled.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Its Schedule could not be deleted (error not_deleted), so nothing was; asking again may delete it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15244,6 +15352,7 @@
     },
     "/api/me/agents/{id}/pause": {
       "post": {
+        "description": "Pause the Agent: its Run under way stops at its next step or Action, and its open Approvals are withdrawn for good.",
         "parameters": [
           {
             "schema": {
@@ -15354,6 +15463,7 @@
     },
     "/api/me/agents/{id}/resume": {
       "post": {
+        "description": "Resume a Paused Agent, whoever paused it; no withdrawn Approval comes back.",
         "parameters": [
           {
             "schema": {
@@ -15464,6 +15574,7 @@
     },
     "/api/me/agents/{id}/end": {
       "post": {
+        "description": "End the Agent for good: its Grants go, its Run under way stops at its next step or Action, and its open Approvals are withdrawn. Its Activity stays.",
         "parameters": [
           {
             "schema": {

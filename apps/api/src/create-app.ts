@@ -247,6 +247,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
     db: prisma,
     schedules,
     clock,
+    runAlive: (workflowId) => runWorkflows.agentRunAlive(workflowId),
   });
   const artifactWorkflows = artifactWorkflowsFromEnv(env);
   const artifacts = createArtifacts({

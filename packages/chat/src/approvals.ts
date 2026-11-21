@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@nunio/db";
 import type { Principal, Refusal } from "@nunio/delegation";
-import { withOwner } from "@nunio/delegation";
+import { openApprovalAt, withOwner } from "@nunio/delegation";
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
 import { why } from "./run-actions.js";
@@ -13,7 +13,7 @@ export type ApprovalsOutput = { open: number; decided: number };
 /**
  * Reads the Run's Agent's open Approvals, and those decided or expired since its previous Run, so the Run neither asks
  * twice nor ignores an answer (ADR-0006). Work and blocks are named by handle; what became of each is fenced as data
- * (ADR-0026). An Approval is open until decided or past its expiry, which no timer marks.
+ * (ADR-0026). An Approval is open until decided, withdrawn or past its expiry, which no timer marks.
  */
 export function approvalsTool(
   turn: Turn,
@@ -70,9 +70,27 @@ export function approvalsTool(
           where: {
             action: { run: { agentId: run.agentId, status: { not: null } } },
             OR: [
-              { decision: null, expiresAt: { gt: now } },
+              { action: openApprovalAt(now) },
               { decidedAt: { gte: since } },
-              { decision: null, expiresAt: { gte: since, lte: now } },
+              // Unanswered past its expiry, or refused once a late answer came.
+              {
+                decision: null,
+                expiresAt: { gte: since, lte: now },
+                action: {
+                  OR: [
+                    { status: "awaiting_approval" },
+                    { refusal: "approval_expired" },
+                  ],
+                },
+              },
+              // Withdrawn when the student Paused or Ended the Agent; only the refusal's event dates it.
+              {
+                decision: null,
+                action: {
+                  refusal: "approval_withdrawn",
+                  events: { some: { type: "refused", at: { gte: since } } },
+                },
+              },
             ],
           },
           include: { action: true },
@@ -135,7 +153,7 @@ export function approvalsTool(
         let outcome: string;
         if (decision === "denied") outcome = "declined by the student";
         else if (decision === null)
-          // Refused without an answer: a late one came after it expired.
+          // Refused without an answer: a late one came after it expired, or it was withdrawn.
           outcome =
             action.refusal === "approval_expired"
               ? "expired unanswered"

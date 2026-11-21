@@ -17,6 +17,8 @@ export type Refusal =
   | "ended"
   | "approval_denied"
   | "approval_expired"
+  /** Withdrawn unanswered when its Agent was Paused or Ended; never decided by the gate. */
+  | "approval_withdrawn"
   | "approval_mismatch"
   | "locked"
   | "started"
@@ -28,7 +30,9 @@ export type Refusal =
   | "out_of_scope"
   | "no_capability"
   | "run_cap"
-  | "open_approvals_cap";
+  | "open_approvals_cap"
+  /** A new call of a Run that has already ended, as when it was told to stop. */
+  | "run_ended";
 
 /** What the Plan's rules (`plan.check`) refuse a Study Block for: an Agent is refused these in every mode. */
 export type PlanRefusal = Extract<
@@ -86,6 +90,8 @@ export interface RunUse {
   approvals: number;
   /** The Agent's open, unexpired Approvals, from any of its Runs. */
   openApprovals: number;
+  /** The Run has ended, such as one told to stop whose abandoned calls go on: it takes no new Action. */
+  ended: boolean;
 }
 
 /** Everything the gate re-read for one Action at dispatch, in the transaction that decides it. */
@@ -198,6 +204,7 @@ function decideForAgent<K extends Kind>(
   agent: CapableAgent,
 ): Decision {
   const use = s.runUse;
+  if (use?.ended) return refuse("run_ended");
   // Every call counts, whatever becomes of it, so a Run cannot probe the gate in a loop.
   if (use && (use.calls >= runCaps.calls || use.stepCalls >= runCaps.stepCalls))
     return refuse("run_cap");

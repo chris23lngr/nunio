@@ -122,6 +122,7 @@ const refusals: Record<string, string> = {
   invalid: "Ungültige Angaben, nichts wurde gefragt",
   run_cap: "Limit dieses Laufs erreicht",
   open_approvals_cap: "Zu viele offene Freigaben",
+  run_ended: "Der Lauf war schon beendet",
   out_of_scope: "Keine Arbeit seiner Kurse",
   no_capability: "Dazu hat er keine Fähigkeit",
   locked: "Der Block ist gesperrt",
@@ -136,6 +137,7 @@ const refusals: Record<string, string> = {
   restricted: "Nicht erlaubt",
   approval_denied: "Von dir abgelehnt",
   approval_expired: "Freigabe abgelaufen",
+  approval_withdrawn: "Agent pausiert oder beendet, bevor du entschieden hast",
   approval_mismatch: "Hat sich seit der Frage geändert",
 };
 
@@ -237,7 +239,10 @@ function describeAction(entry: ActionEntry) {
   };
 }
 
-/** An Approval the student decided, or that expired unanswered, and what became of an approved one. */
+/**
+ * An Approval the student decided, that expired unanswered or that was withdrawn as the Agent was Paused or Ended, and
+ * what became of an approved one.
+ */
 function describeApproval(entry: ApprovalEntry) {
   const named = kinds[entry.action.kind];
   const title =
@@ -245,13 +250,15 @@ function describeApproval(entry: ApprovalEntry) {
       ? `Von dir abgelehnt: ${named.asked}`
       : entry.decision === "expired"
         ? `Freigabe abgelaufen: ${named.asked}`
-        : {
-            done: `Von dir freigegeben: ${named.done}`,
-            refused: `Freigegeben, nicht ausgeführt: ${named.asked}`,
-            failed: `Freigegeben, fehlgeschlagen: ${named.asked}`,
-            unconfirmed: `Freigegeben, unbestätigt: ${named.asked}`,
-            pending: `Freigegeben, wird ausgeführt: ${named.asked}`,
-          }[entry.outcome ?? "pending"];
+        : entry.decision === "withdrawn"
+          ? `Freigabe zurückgezogen: ${named.asked}`
+          : {
+              done: `Von dir freigegeben: ${named.done}`,
+              refused: `Freigegeben, nicht ausgeführt: ${named.asked}`,
+              failed: `Freigegeben, fehlgeschlagen: ${named.asked}`,
+              unconfirmed: `Freigegeben, unbestätigt: ${named.asked}`,
+              pending: `Freigegeben, wird ausgeführt: ${named.asked}`,
+            }[entry.outcome ?? "pending"];
   return {
     title,
     details: [

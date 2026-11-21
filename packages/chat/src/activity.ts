@@ -5,7 +5,7 @@ import type {
   Refusal,
   Transaction,
 } from "@nunio/delegation";
-import { withOwner } from "@nunio/delegation";
+import { openApprovalAt, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type { Facts } from "@nunio/knowledge";
 import { createDerivedText } from "@nunio/knowledge";
@@ -116,8 +116,11 @@ export type VerlaufEntry =
         start: Date | null;
         end: Date | null;
       };
-      /** The student's answer, or that none came in time; expiry is lazy, so no event marks it (#149). */
-      decision: "approved" | "denied" | "expired";
+      /**
+       * The student's answer, that none came in time (expiry is lazy, so no event marks it, #149), or that it was
+       * withdrawn unanswered when the Agent was Paused or Ended.
+       */
+      decision: "approved" | "denied" | "expired" | "withdrawn";
       /** For an approved one, what the gate made of it then; `pending` while it is being performed. Null otherwise. */
       outcome: "done" | "refused" | "failed" | "unconfirmed" | "pending" | null;
       /** Why the gate refused the approved Action, such as out_of_scope or approval_mismatch. */
@@ -150,16 +153,12 @@ export function createActivity({
 }) {
   const derived = createDerivedText(keys);
   const openApprovals = async (tx: Transaction, runIds: string[]) => {
-    const open = await tx.approval.findMany({
-      where: {
-        decision: null,
-        expiresAt: { gt: clock.now() },
-        action: { runId: { in: runIds }, status: "awaiting_approval" },
-      },
-      select: { action: { select: { runId: true } } },
+    const open = await tx.action.findMany({
+      where: { ...openApprovalAt(clock.now()), runId: { in: runIds } },
+      select: { runId: true },
     });
     return (runId: string) =>
-      open.filter(({ action }) => action.runId === runId).length;
+      open.filter((action) => action.runId === runId).length;
   };
   const shown = (
     run: {
@@ -280,6 +279,12 @@ export function createActivity({
                 args: true,
                 status: true,
                 refusal: true,
+                // A withdrawal is dated only by its refusal's event.
+                events: {
+                  where: { type: "refused" },
+                  select: { at: true },
+                  take: 1,
+                },
               },
             },
           },
@@ -409,6 +414,17 @@ export function createActivity({
                     decision === "approved" && action.status === "refused"
                       ? (action.refusal as Refusal)
                       : null,
+                },
+              ];
+            if (action.refusal === "approval_withdrawn")
+              return [
+                {
+                  type: "approval",
+                  at: action.events[0]!.at,
+                  action: shown,
+                  decision: "withdrawn",
+                  outcome: null,
+                  refusal: null,
                 },
               ];
             // Unanswered past its expiry, or refused once a late answer came: shown as expired from then.

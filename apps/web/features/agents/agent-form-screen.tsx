@@ -46,7 +46,7 @@ import { CourseDot } from "@/features/shared/components/course-dot";
 import { ModelLogo } from "@/features/shared/components/model-logo";
 import { PageHeader } from "@/features/shared/components/page-header";
 import { courseSize, unavailable } from "./agent-course";
-import { saveAgent, startAgentRun } from "./api/agent-mutations";
+import { controlAgent, saveAgent, startAgentRun } from "./api/agent-mutations";
 import type {
   Agent,
   AgentCapability,
@@ -60,6 +60,7 @@ import {
 } from "./api/agent-queries";
 import { modeOf } from "./capability-mode";
 import { AgentActivity } from "./components/agent-activity";
+import { AgentMenu } from "./components/agent-menu";
 import { CapabilityMenu } from "./components/capability-menu";
 import { EditCapabilitiesSheet } from "./components/edit-capabilities-sheet";
 import { EditCoursesSheet } from "./components/edit-courses-sheet";
@@ -106,6 +107,9 @@ const maxBudget = 100;
 type Saved = Pick<
   Agent,
   | "id"
+  | "preset"
+  | "pausedBy"
+  | "approvalRunId"
   | "name"
   | "description"
   | "emoji"
@@ -118,6 +122,15 @@ type Saved = Pick<
   | "state"
   | "running"
 >;
+
+/** Why a Paused Agent is Paused, as its header says it, such as "Pausiert: Budget aufgebraucht". */
+const pausedLines: Record<string, string> = {
+  student: "Von dir pausiert",
+  budget: "Pausiert: Budget aufgebraucht",
+  course_archived: "Pausiert: Alle Kurse archiviert",
+};
+const pausedLine = (pausedBy: string | null) =>
+  (pausedBy && pausedLines[pausedBy]) || "Pausiert";
 
 /** A minute of the day as HH:MM, and back. */
 const timeOf = (minute: number) =>
@@ -235,6 +248,9 @@ export function AgentFormScreen({
   const start = useMutation(
     startAgentRun(apiOrigin, agent?.id ?? "", queryClient),
   );
+  const control = useMutation(
+    controlAgent(apiOrigin, agent?.id ?? "", queryClient),
+  );
   const running = Boolean(agent?.running) || start.isPending;
   const change = (next: Partial<Draft>) => {
     setDraft((current) => ({ ...current, ...next }));
@@ -330,8 +346,32 @@ export function AgentFormScreen({
           Speichern
           <Save aria-hidden="true" />
         </Button>
+        {agent && (
+          <AgentMenu
+            apiOrigin={apiOrigin}
+            agent={agent}
+            name={agent.name}
+            onControl={(next) => control.mutate(next)}
+            onDeleted={() => router.replace("/agents")}
+          />
+        )}
       </PageHeader>
       <div className="pt-16">
+        {agent?.state === "paused" && (
+          <div className="mx-6 mb-4 flex items-center justify-between gap-4 rounded-lg bg-base-50 px-4 py-3">
+            <p className="text-sm text-base-700">
+              {pausedLine(agent.pausedBy)}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={control.isPending}
+              onClick={() => control.mutate("resume")}
+            >
+              Fortsetzen
+            </Button>
+          </div>
+        )}
         <div
           role="tablist"
           aria-label="Agent"
@@ -374,12 +414,12 @@ export function AgentFormScreen({
           id={`${id}-panel`}
           aria-labelledby={`${id}-tab-${tab}`}
         >
-          {(save.error ?? start.error) && (
+          {(save.error ?? start.error ?? control.error) && (
             <p
               role="alert"
               className="mx-8 mt-6 max-w-[30.5rem] text-sm text-destructive-600"
             >
-              {(save.error ?? start.error)!.message}
+              {(save.error ?? start.error ?? control.error)!.message}
             </p>
           )}
           {tab === "activity" ? (

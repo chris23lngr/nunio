@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import type { ActivityCursor } from "@nunio/chat";
-import type { AgentScope, AgentTrigger } from "@nunio/delegation";
+import type { AgentScope, AgentTrigger, Principal } from "@nunio/delegation";
 import {
   approvalModes,
   capabilities,
@@ -10,6 +10,7 @@ import {
 } from "@nunio/delegation";
 import { courseColors } from "@nunio/knowledge";
 import { deadline, hhmm } from "@nunio/planning";
+import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
 import {
   ActionShown,
@@ -177,6 +178,12 @@ const Agent = z
       .describe(
         "One of its Runs is under way; another cannot start until it ends.",
       ),
+    approvalRunId: z
+      .string()
+      .nullable()
+      .describe(
+        "The oldest of its Runs with an Approval still open, which Freigaben bestätigen opens; null when none is.",
+      ),
     capabilities: z
       .array(AgentCapability)
       .describe(
@@ -319,7 +326,9 @@ const VerlaufEntrySchema = z
       type: z.literal("approval"),
       at: z
         .date()
-        .describe("When the student decided, or when it expired unanswered."),
+        .describe(
+          "When the student decided, when it expired unanswered, or when it was withdrawn.",
+        ),
       action: z.object({
         kind: ActionShown.shape.kind,
         work: z
@@ -333,9 +342,9 @@ const VerlaufEntrySchema = z
         end: z.date().nullable(),
       }),
       decision: z
-        .enum(["approved", "denied", "expired"])
+        .enum(["approved", "denied", "expired", "withdrawn"])
         .describe(
-          "The student's answer, or expired when none came in time; expiry writes nothing, it shows once it passed.",
+          "The student's answer; expired when none came in time (expiry writes nothing, it shows once it passed); withdrawn when the Agent was Paused or Ended before the student answered.",
         ),
       outcome: z
         .enum(["done", "refused", "failed", "unconfirmed", "pending"])
@@ -418,6 +427,26 @@ function nextRun(now: Date, timeZone: string, trigger: AgentTrigger) {
       timeZone,
     );
     if (at > now) return at;
+  }
+}
+
+/**
+ * Tells the Agent's Runs under way to stop at once; one whose workflow no longer runs is ended as failed (#174). The
+ * database already refuses their next step and Action, so a Run Temporal cannot be reached about stops at that.
+ */
+async function stopRuns(
+  c: Context<AppBindings>,
+  p: Principal,
+  runs: { runId: string; workflowId: string }[],
+  reason: "paused" | "ended",
+) {
+  for (const run of runs) {
+    try {
+      if (!(await c.get("runWorkflows").stopAgentRun(run.workflowId, reason)))
+        await c.get("agents").failRun(p, run.runId);
+    } catch (error) {
+      console.error("Could not stop an Agent's Run", error);
+    }
   }
 }
 
@@ -613,6 +642,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
           state: r.state,
           pausedBy: r.pausedBy,
           running: r.running,
+          approvalRunId: r.approvalRunId,
           grants: r.grants.map((g) => g.kind),
           budget: r.budget,
           recentActions: history.map((a) => ({
@@ -655,6 +685,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
               exam: true,
               state: true,
               pausedBy: true,
+              approvalRunId: true,
             }).extend({
               badge: z
                 .enum(["paused", "approval_needed", "running", "ended"])
@@ -685,6 +716,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
           state: r.state,
           pausedBy: r.pausedBy,
           badge: r.badge,
+          approvalRunId: r.approvalRunId,
         })),
         200,
       );
@@ -855,17 +887,72 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
       createRoute({
         method: "post",
         path: `/api/me/agents/{id}/${control}`,
+        description: {
+          pause:
+            "Pause the Agent: its Run under way stops at its next step or Action, and its open Approvals are withdrawn for good.",
+          resume:
+            "Resume a Paused Agent, whoever paused it; no withdrawn Approval comes back.",
+          end: "End the Agent for good: its Grants go, its Run under way stops at its next step or Action, and its open Approvals are withdrawn. Its Activity stays.",
+        }[control],
         request: { params: id },
         responses: { 200: Done, ...archivedOutcomes },
       }),
       async (c) => {
         const p = await student(c);
         if (!p) return c.json({ error: "unauthorized" }, 401);
-        return done(
-          c,
-          await c.get("agents")[control](p, c.req.valid("param").id),
-        );
+        const agentId = c.req.valid("param").id;
+        if (control === "resume")
+          return done(c, await c.get("agents").resume(p, agentId));
+        const result = await c.get("agents")[control](p, agentId);
+        if (result.status === "ok")
+          await stopRuns(
+            c,
+            p,
+            result.runs,
+            control === "pause" ? "paused" : "ended",
+          );
+        return done(c, result);
       },
     );
   }
+  routes.openapi(
+    createRoute({
+      method: "delete",
+      path: "/api/me/agents/{id}",
+      description:
+        "Delete the Agent for good (Löschen), with its Activity and its Schedule; its Runs' workflows still running are cancelled.",
+      request: { params: id },
+      responses: {
+        200: Done,
+        503: json(
+          ErrorBody,
+          "Its Schedule could not be deleted (error not_deleted), so nothing was; asking again may delete it.",
+        ),
+        ...errors,
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      let result: Awaited<
+        ReturnType<AppBindings["Variables"]["agents"]["delete"]>
+      >;
+      try {
+        result = await c.get("agents").delete(p, c.req.valid("param").id);
+      } catch (error) {
+        console.error("Could not delete an Agent", error);
+        return c.json({ error: "not_deleted" }, 503);
+      }
+      if (result.status !== "ok") return c.json({ error: "gone" }, 404);
+      // Best effort: a workflow left running finds its Run gone and changes nothing.
+      for (const workflowId of result.workflows)
+        await c
+          .get("runWorkflows")
+          .cancelRun(workflowId)
+          .catch((error: unknown) =>
+            console.error("Could not cancel a deleted Agent's Run", error),
+          );
+      return c.json({ status: "ok" as const }, 200);
+    },
+  );
 }
