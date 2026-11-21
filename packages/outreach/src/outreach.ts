@@ -77,7 +77,7 @@ const defaults: OutreachSettings = {
   quietHours: null,
   dailyLimit: 3,
 };
-/** Explicit select so retired Briefing columns can be dropped in #192 without breaking running instances. */
+/** The settings nunio reads; the retired Briefing columns were dropped in #192. */
 export const outreachSettingsSelect = {
   email: true,
   quietFromMinute: true,
