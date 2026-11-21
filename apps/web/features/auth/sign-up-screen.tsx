@@ -16,6 +16,8 @@ import { useState } from "react";
 import { Logo } from "@/components/logo";
 import { useAppForm } from "@/lib/form";
 import { CodeStep, sendSignInCode } from "./code-step";
+import { PasskeyPrompt } from "./passkey-prompt";
+import { shouldOfferPasskey } from "./passkeys";
 
 export function SignUpScreen({
   apiOrigin,
@@ -30,9 +32,15 @@ export function SignUpScreen({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [offerPasskey, setOfferPasskey] = useState(false);
   const signInHref = invitation
     ? `/sign-in?invitation=${encodeURIComponent(invitation)}`
     : "/sign-in";
+
+  function enterApp() {
+    router.replace("/");
+    router.refresh();
+  }
 
   const form = useAppForm({
     defaultValues: {
@@ -88,15 +96,17 @@ export function SignUpScreen({
           Für die Registrierung brauchst du eine Einladung. Öffne den Link aus
           deiner Einladungs-E-Mail.
         </p>
+      ) : offerPasskey ? (
+        <PasskeyPrompt apiOrigin={apiOrigin} onDone={enterApp} />
       ) : codeSentTo ? (
         <CodeStep
           apiOrigin={apiOrigin}
           email={codeSentTo}
           name={form.getFieldValue("name").trim()}
           invitation={invitation}
-          onSignedIn={() => {
-            router.replace("/");
-            router.refresh();
+          onSignedIn={async () => {
+            if (await shouldOfferPasskey(apiOrigin)) setOfferPasskey(true);
+            else enterApp();
           }}
           onBack={email ? undefined : () => setCodeSentTo(null)}
         />

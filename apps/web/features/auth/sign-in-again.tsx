@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@nunio/ui/components/dialog/dialog";
 import { useEffect, useState } from "react";
 import { CodeStep, sendSignInCode } from "./code-step";
 
@@ -49,5 +57,47 @@ export function SignInAgain({
     );
   return (
     <CodeStep apiOrigin={apiOrigin} email={email} onSignedIn={onSignedIn} />
+  );
+}
+
+/** Confirms the student with a code before `onSignedIn` repeats the refused action. */
+export function SignInAgainDialog({
+  apiOrigin,
+  email,
+  open,
+  description,
+  onClose,
+  onSignedIn,
+}: {
+  apiOrigin: string;
+  email: string | null;
+  open: boolean;
+  description: string;
+  onClose: () => void;
+  onSignedIn: () => void;
+}) {
+  return (
+    <Dialog
+      open={open && !!email}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Bestätige, dass du es bist</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          {email && (
+            <SignInAgain
+              apiOrigin={apiOrigin}
+              email={email}
+              onSignedIn={onSignedIn}
+            />
+          )}
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
   );
 }

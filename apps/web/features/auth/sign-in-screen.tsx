@@ -11,10 +11,16 @@ import { Input } from "@nunio/ui/components/input/input";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Logo } from "@/components/logo";
+import { authClient } from "@/lib/auth-client";
 import { useAppForm } from "@/lib/form";
 import { CodeStep, sendSignInCode } from "./code-step";
+import { PasskeyPrompt } from "./passkey-prompt";
+import { shouldOfferPasskey, supportsPasskeys } from "./passkeys";
+
+const passkeyFailed =
+  "Die Anmeldung mit Passkey hat nicht geklappt. Versuche es erneut oder melde dich mit einem Code an.";
 
 export function SignInScreen({
   apiOrigin,
@@ -30,9 +36,49 @@ export function SignInScreen({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(initialNotice ?? null);
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [offerPasskey, setOfferPasskey] = useState(false);
+  const [passkeys, setPasskeys] = useState(false);
   const signUpHref = invitation
     ? `/sign-up?invitation=${encodeURIComponent(invitation)}`
     : "/sign-up";
+
+  function enterApp() {
+    router.replace("/");
+    router.refresh();
+  }
+
+  // Lets the browser suggest a saved passkey right in the address field.
+  useEffect(() => {
+    if (!supportsPasskeys()) return;
+    setPasskeys(true);
+    let current = true;
+    void window.PublicKeyCredential.isConditionalMediationAvailable?.()
+      .then(async (available) => {
+        if (!available || !current) return;
+        const result = await authClient(apiOrigin).signIn.passkey({
+          autoFill: true,
+        });
+        if (current && !result?.error) enterApp();
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+    // biome-ignore lint/correctness/useExhaustiveDependencies: Autofill starts once per visit.
+  }, [apiOrigin]);
+
+  async function signInWithPasskey() {
+    setError(null);
+    setNotice(null);
+    const result = await authClient(apiOrigin)
+      .signIn.passkey()
+      .catch(() => ({ error: true }));
+    if (result?.error) {
+      setError(passkeyFailed);
+      return;
+    }
+    enterApp();
+  }
 
   const form = useAppForm({
     defaultValues: { email: "" },
@@ -80,13 +126,15 @@ export function SignInScreen({
         <span>ODER</span>
         <span className="h-px flex-1 bg-base-200" />
       </div>
-      {codeSentTo ? (
+      {offerPasskey ? (
+        <PasskeyPrompt apiOrigin={apiOrigin} onDone={enterApp} />
+      ) : codeSentTo ? (
         <CodeStep
           apiOrigin={apiOrigin}
           email={codeSentTo}
-          onSignedIn={() => {
-            router.replace("/");
-            router.refresh();
+          onSignedIn={async () => {
+            if (await shouldOfferPasskey(apiOrigin)) setOfferPasskey(true);
+            else enterApp();
           }}
           onBack={() => setCodeSentTo(null)}
         />
@@ -120,7 +168,7 @@ export function SignInScreen({
                       id="sign-in-email"
                       name={field.name}
                       type="email"
-                      autoComplete="email"
+                      autoComplete="username webauthn"
                       placeholder="name@example.com"
                       required
                       value={field.state.value}
@@ -156,6 +204,16 @@ export function SignInScreen({
                 </Button>
               )}
             </form.Subscribe>
+            {passkeys && (
+              <Button
+                type="button"
+                variant="outline"
+                className="-mt-3 w-full"
+                onClick={() => void signInWithPasskey()}
+              >
+                Mit Passkey anmelden
+              </Button>
+            )}
           </FieldGroup>
           {error && <FieldError className="mt-4">{error}</FieldError>}
           {notice && (

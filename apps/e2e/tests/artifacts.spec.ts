@@ -27,6 +27,7 @@ test("the student asks for a practice set from the Artifacts page and sees it be
         name: "Justus Schuhmacher",
         email,
         emailVerified: true,
+        passkeyPromptDismissed: true,
       },
     });
   } finally {

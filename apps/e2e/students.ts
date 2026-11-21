@@ -23,12 +23,24 @@ async function withDatabase<T>(
   }
 }
 
-/** A verified student with no password, as every account is (ADR-0027). Browser tests never email generated addresses. */
-export async function createStudent(name: string): Promise<string> {
+/**
+ * A verified student with no password, as every account is (ADR-0027). Browser tests never email generated
+ * addresses. Unless `offerPasskey`, the student already declined the passkey prompt, so sign-in lands in the app.
+ */
+export async function createStudent(
+  name: string,
+  { offerPasskey = false } = {},
+): Promise<string> {
   const email = `${name}+${randomUUID()}@example.com`;
   await withDatabase((prisma) =>
     prisma.user.create({
-      data: { id: randomUUID(), name, email, emailVerified: true },
+      data: {
+        id: randomUUID(),
+        name,
+        email,
+        emailVerified: true,
+        passkeyPromptDismissed: !offerPasskey,
+      },
     }),
   );
   return email;

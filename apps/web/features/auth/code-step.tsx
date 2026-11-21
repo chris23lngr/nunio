@@ -71,7 +71,7 @@ export function CodeStep({
   email: string;
   name?: string;
   invitation?: string;
-  onSignedIn: () => void;
+  onSignedIn: () => void | Promise<void>;
   onBack?: () => void;
 }) {
   const id = useId();
@@ -106,7 +106,7 @@ export function CodeStep({
         }),
       });
       if (!result.error) {
-        onSignedIn();
+        await onSignedIn();
         return;
       }
       setError(refusal(result.error));

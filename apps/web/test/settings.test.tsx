@@ -23,7 +23,28 @@ const currentSession = {
   ipAddress: "127.0.0.1",
 };
 
+const passkey = {
+  id: "passkey-1",
+  name: "MacBook – Safari",
+  userId: "student-1",
+  credentialID: "credential-1",
+  publicKey: "key",
+  counter: 1,
+  deviceType: "multiDevice",
+  backedUp: true,
+  transports: "internal",
+  createdAt: "2026-11-01T10:00:00.000Z",
+  lastUsedAt: "2026-11-20T09:00:00.000Z",
+};
+
+function servePasskeys(passkeys: unknown[] = []) {
+  api.route("GET", "/api/auth/passkey/list-user-passkeys", () =>
+    Response.json(passkeys),
+  );
+}
+
 function serveSessions(sessions = [currentSession]) {
+  servePasskeys();
   api.route("GET", "/api/auth/list-sessions", () => Response.json(sessions));
   api.route("GET", "/api/auth/get-session", () =>
     Response.json({
@@ -410,3 +431,94 @@ test.each([
     }
   },
 );
+
+test("security settings list passkeys with when they were added and last used", async () => {
+  serveSessions();
+  servePasskeys([
+    passkey,
+    { ...passkey, id: "passkey-2", name: "iPhone – Safari", lastUsedAt: null },
+  ]);
+  renderSettings();
+
+  const group = within(screen.getByRole("region", { name: "Passkeys" }));
+  const rows = await group.findAllByRole("listitem");
+  expect(rows).toHaveLength(2);
+  expect(rows[0]!.textContent).toContain("MacBook – Safari");
+  expect(rows[0]!.textContent).toContain("Hinzugefügt am 1. Nov. 2026");
+  expect(rows[0]!.textContent).toContain("Zuletzt verwendet am 20. Nov. 2026");
+  expect(rows[1]!.textContent).toContain("Noch nie verwendet");
+  expect(
+    group.getByRole("button", { name: "Passkey hinzufügen" }),
+  ).toBeTruthy();
+});
+
+test("without passkeys the settings explain what one is for", async () => {
+  serveSessions();
+  renderSettings();
+
+  const group = within(screen.getByRole("region", { name: "Passkeys" }));
+  expect((await group.findByText(/noch keinen Passkey/)).textContent).toContain(
+    "Face ID",
+  );
+});
+
+test("deleting a passkey removes it, even the last one", async () => {
+  serveSessions();
+  let passkeys = [passkey];
+  api.route("GET", "/api/auth/passkey/list-user-passkeys", () =>
+    Response.json(passkeys),
+  );
+  const deleted: string[] = [];
+  api.route("POST", "/api/auth/passkey/delete-passkey", async (request) => {
+    deleted.push(((await request.json()) as { id: string }).id);
+    passkeys = [];
+    return Response.json({ status: true });
+  });
+  const user = userEvent.setup();
+  renderSettings();
+  const group = within(screen.getByRole("region", { name: "Passkeys" }));
+  const row = await group.findByRole("listitem");
+  await user.click(
+    within(row).getByRole("button", { name: "MacBook – Safari löschen" }),
+  );
+
+  await waitFor(() => expect(group.queryByRole("listitem")).toBeNull());
+  expect(deleted).toEqual(["passkey-1"]);
+});
+
+test("deleting a passkey from an older sign-in asks for an emailed code first", async () => {
+  serveSessions();
+  servePasskeys([passkey]);
+  const code = serveCodeSignIn();
+  let attempts = 0;
+  api.route("POST", "/api/auth/passkey/delete-passkey", () => {
+    attempts++;
+    return attempts === 1
+      ? Response.json(
+          { code: "SESSION_NOT_FRESH", message: "Sign in again to continue." },
+          { status: 403 },
+        )
+      : Response.json({ status: true });
+  });
+  const user = userEvent.setup();
+  renderSettings();
+  await screen.findByText("Dieses Gerät");
+  const row = await within(
+    screen.getByRole("region", { name: "Passkeys" }),
+  ).findByRole("listitem");
+  await user.click(
+    within(row).getByRole("button", { name: "MacBook – Safari löschen" }),
+  );
+  const dialog = within(
+    await screen.findByRole("dialog", { name: "Bestätige, dass du es bist" }),
+  );
+  await user.type(await dialog.findByLabelText("Anmeldecode"), "123456");
+
+  await waitFor(() => expect(attempts).toBe(2));
+  expect(code.requested).toEqual(["justus@example.com"]);
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Bestätige, dass du es bist" }),
+    ).toBeNull(),
+  );
+});

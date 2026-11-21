@@ -14,7 +14,10 @@ const { router, client } = vi.hoisted(() => ({
   router: { replace: vi.fn(), refresh: vi.fn() },
   client: {
     emailOtp: { sendVerificationOtp: vi.fn() },
-    signIn: { emailOtp: vi.fn() },
+    signIn: { emailOtp: vi.fn(), passkey: vi.fn() },
+    passkey: { listUserPasskeys: vi.fn(), addPasskey: vi.fn() },
+    getSession: vi.fn(),
+    updateUser: vi.fn(),
   },
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
@@ -24,11 +27,28 @@ beforeEach(() => {
   vi.clearAllMocks();
   client.emailOtp.sendVerificationOtp.mockResolvedValue({ error: null });
   client.signIn.emailOtp.mockResolvedValue({ error: null });
+  client.signIn.passkey.mockResolvedValue({ data: {}, error: null });
+  client.passkey.listUserPasskeys.mockResolvedValue({ data: [], error: null });
+  client.passkey.addPasskey.mockResolvedValue({ data: {}, error: null });
+  client.getSession.mockResolvedValue({
+    data: { user: { passkeyPromptDismissed: false } },
+    error: null,
+  });
+  client.updateUser.mockResolvedValue({ data: {}, error: null });
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  Reflect.deleteProperty(window, "PublicKeyCredential");
 });
+
+/** A browser that supports passkeys, optionally with autofill (conditional UI). */
+function supportPasskeys(autofill = false) {
+  Object.defineProperty(window, "PublicKeyCredential", {
+    configurable: true,
+    value: { isConditionalMediationAvailable: async () => autofill },
+  });
+}
 
 async function requestCode(user = userEvent.setup()) {
   await user.type(screen.getByLabelText("E-Mail"), "student@example.com");
@@ -319,4 +339,137 @@ test("terms must be accepted and their text and document links are available", a
       screen.getByRole("button", { name: `Mit ${provider} registrieren` }),
     ).toHaveProperty("disabled", true);
   }
+});
+
+test("the address field offers passkeys and “Mit Passkey anmelden” signs in with one", async () => {
+  supportPasskeys();
+  render(<SignInScreen apiOrigin="https://api.nunio.test" />);
+
+  expect(screen.getByLabelText("E-Mail").getAttribute("autocomplete")).toBe(
+    "username webauthn",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Mit Passkey anmelden" }),
+  );
+
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"));
+  expect(client.signIn.passkey).toHaveBeenCalledWith();
+});
+
+test("sign-in starts passkey autofill where the browser supports it", async () => {
+  supportPasskeys(true);
+  render(<SignInScreen apiOrigin="https://api.nunio.test" />);
+
+  await waitFor(() =>
+    expect(client.signIn.passkey).toHaveBeenCalledWith({ autoFill: true }),
+  );
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"));
+});
+
+test("a cancelled passkey sign-in leaves the code sign-in usable", async () => {
+  supportPasskeys();
+  client.signIn.passkey.mockResolvedValueOnce({
+    data: null,
+    error: { code: "ERROR_CEREMONY_ABORTED", status: 400 },
+  });
+  render(<SignInScreen apiOrigin="https://api.nunio.test" />);
+  await userEvent.click(
+    screen.getByRole("button", { name: "Mit Passkey anmelden" }),
+  );
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Die Anmeldung mit Passkey hat nicht geklappt. Versuche es erneut oder melde dich mit einem Code an.",
+  );
+  expect(router.replace).not.toHaveBeenCalled();
+  await requestCode();
+});
+
+test("after a code sign-in a student without a passkey is offered one", async () => {
+  supportPasskeys();
+  render(<SignInScreen apiOrigin="https://api.nunio.test" />);
+  const user = await requestCode();
+  await user.type(screen.getByLabelText("Anmeldecode"), "123456");
+
+  expect(
+    await screen.findByRole("heading", { name: "Passkey einrichten?" }),
+  ).toBeTruthy();
+  expect(router.replace).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Passkey einrichten" }));
+
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"));
+  expect(client.passkey.addPasskey).toHaveBeenCalledWith({
+    name: expect.any(String),
+  });
+});
+
+test("“Später” skips the passkey for now and “Nicht mehr fragen” stops asking", async () => {
+  supportPasskeys();
+  const { unmount } = render(
+    <SignInScreen apiOrigin="https://api.nunio.test" />,
+  );
+  let user = await requestCode();
+  await user.type(screen.getByLabelText("Anmeldecode"), "123456");
+  await user.click(await screen.findByRole("button", { name: "Später" }));
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"));
+  expect(client.updateUser).not.toHaveBeenCalled();
+  unmount();
+
+  router.replace.mockClear();
+  render(<SignInScreen apiOrigin="https://api.nunio.test" />);
+  user = await requestCode();
+  await user.type(screen.getByLabelText("Anmeldecode"), "123456");
+  await user.click(
+    await screen.findByRole("button", { name: "Nicht mehr fragen" }),
+  );
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"));
+  expect(client.updateUser).toHaveBeenCalledWith({
+    passkeyPromptDismissed: true,
+  });
+  expect(client.passkey.addPasskey).not.toHaveBeenCalled();
+});
+
+test.each([
+  ["already has a passkey", [{ id: "p1" }], false],
+  ["asked not to be asked again", [], true],
+])(
+  "a student who %s goes straight to the app",
+  async (_case, passkeys, dismissed) => {
+    supportPasskeys();
+    client.passkey.listUserPasskeys.mockResolvedValue({
+      data: passkeys,
+      error: null,
+    });
+    client.getSession.mockResolvedValue({
+      data: { user: { passkeyPromptDismissed: dismissed } },
+      error: null,
+    });
+    render(<SignInScreen apiOrigin="https://api.nunio.test" />);
+    const user = await requestCode();
+    await user.type(screen.getByLabelText("Anmeldecode"), "123456");
+
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"));
+    expect(
+      screen.queryByRole("heading", { name: "Passkey einrichten?" }),
+    ).toBeNull();
+  },
+);
+
+test("registration offers a passkey once the account exists", async () => {
+  supportPasskeys();
+  render(
+    <SignUpScreen
+      apiOrigin="https://api.nunio.test"
+      invitation="invitation-token"
+      email="student@example.com"
+    />,
+  );
+  const user = userEvent.setup();
+  await user.type(screen.getByLabelText("Name"), "Student");
+  await user.click(screen.getByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "Code senden" }));
+  await user.type(await screen.findByLabelText("Anmeldecode"), "123456");
+
+  expect(
+    await screen.findByRole("heading", { name: "Passkey einrichten?" }),
+  ).toBeTruthy();
 });

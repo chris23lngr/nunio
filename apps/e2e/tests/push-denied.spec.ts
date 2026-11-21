@@ -20,6 +20,7 @@ async function createStudent(): Promise<string> {
         name: "push-denied",
         email,
         emailVerified: true,
+        passkeyPromptDismissed: true,
       },
     });
     // Its work does not exist, so the Inbox shows it as gone; closing it still works. As its owner,

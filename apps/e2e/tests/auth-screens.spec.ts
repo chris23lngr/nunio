@@ -104,6 +104,10 @@ test("an invited student registers with an emailed code and lands in the app", a
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Code senden" }).click();
   await page.getByLabel("Anmeldecode").pressSequentially(signInCode);
+  await expect(
+    page.getByRole("heading", { name: "Passkey einrichten?" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Später" }).click();
 
   await expect(page).toHaveURL(`${origins.app}/`);
 });

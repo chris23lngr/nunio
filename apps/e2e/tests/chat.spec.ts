@@ -29,6 +29,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
         name: "Justus Schuhmacher",
         email,
         emailVerified: true,
+        passkeyPromptDismissed: true,
       },
     });
   } finally {
