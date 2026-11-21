@@ -37,7 +37,7 @@ export function SignInScreen({
   const [notice, setNotice] = useState<string | null>(initialNotice ?? null);
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
   const [offerPasskey, setOfferPasskey] = useState(false);
-  const [passkeys, setPasskeys] = useState(false);
+  const [passkeysSupported, setPasskeysSupported] = useState(false);
   const signUpHref = invitation
     ? `/sign-up?invitation=${encodeURIComponent(invitation)}`
     : "/sign-up";
@@ -48,9 +48,10 @@ export function SignInScreen({
   }
 
   // Lets the browser suggest a saved passkey right in the address field.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Autofill starts once per visit.
   useEffect(() => {
     if (!supportsPasskeys()) return;
-    setPasskeys(true);
+    setPasskeysSupported(true);
     let current = true;
     void window.PublicKeyCredential.isConditionalMediationAvailable?.()
       .then(async (available) => {
@@ -64,7 +65,6 @@ export function SignInScreen({
     return () => {
       current = false;
     };
-    // biome-ignore lint/correctness/useExhaustiveDependencies: Autofill starts once per visit.
   }, [apiOrigin]);
 
   async function signInWithPasskey() {
@@ -204,7 +204,7 @@ export function SignInScreen({
                 </Button>
               )}
             </form.Subscribe>
-            {passkeys && (
+            {passkeysSupported && (
               <Button
                 type="button"
                 variant="outline"
