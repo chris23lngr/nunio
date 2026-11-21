@@ -1310,6 +1310,34 @@ describe("Briefings from Agents (#146)", () => {
     ).toEqual({ status: "refused", reason: "nothing_open" });
   });
 
+  it("refuses with nothing_open when the only bundled item is a run_approvals Intervention whose Approvals lapsed lazily", async () => {
+    now = at("2026-11-09 06:00");
+    const p = await student();
+    await outreach.updateSettings(p, { briefingAtMinute: null });
+    const { actionIds } = await endedRunAsking(p, 1);
+    await sender.tick();
+    const [row] = await admin.intervention.findMany({
+      where: {
+        studentId: p.kind === "student" ? p.studentId : "",
+        kind: "run_approvals",
+      },
+    });
+    expect(row?.causeEndedAt).toBeNull();
+
+    // Expire the Approval without calling inbox(), so causeEndedAt stays null on the Intervention row.
+    await admin.approval.update({
+      where: { actionId: actionIds[0]! },
+      data: { expiresAt: at("2026-11-09 05:59") },
+    });
+
+    const { runId } = await briefingRun(p);
+    expect(
+      await writeBriefing(runId, "Freigabe schon abgelaufen.", {
+        interventions: [row!.id],
+      }),
+    ).toEqual({ status: "refused", reason: "nothing_open" });
+  });
+
   it("announces an Agent's Briefing once by content-free email and push, with neither its text nor its Agent's name", async () => {
     now = at("2026-11-09 06:00");
     const p = await student();

@@ -181,14 +181,36 @@ export function inboxTool(
       const obligationInfo = new Map(
         review.courses.flatMap((c) =>
           c.obligations.map(
-            (o) => [o.id, { title: o.title, course: c.title }] as const,
+            (o) =>
+              [
+                o.id,
+                {
+                  title: o.title,
+                  course: c.title,
+                  sourceId:
+                    o.provenance.kind === "source"
+                      ? o.provenance.sourceId
+                      : null,
+                },
+              ] as const,
           ),
         ),
       );
       const factInfo = new Map(
         review.courses.flatMap((c) =>
           c.facts.map(
-            (f) => [f.id, { title: f.value, course: c.title }] as const,
+            (f) =>
+              [
+                f.id,
+                {
+                  title: f.value,
+                  course: c.title,
+                  sourceId:
+                    f.provenance.kind === "source"
+                      ? f.provenance.sourceId
+                      : null,
+                },
+              ] as const,
           ),
         ),
       );
@@ -209,7 +231,9 @@ export function inboxTool(
 
       const describeWork = (id?: string) => {
         if (!id) return "unknown work";
-        const info = obligationInfo.get(id) ?? taskInfo.get(id);
+        const obligation = obligationInfo.get(id);
+        if (obligation?.sourceId) turn.sources.add(obligation.sourceId);
+        const info = obligation ?? taskInfo.get(id);
         return info
           ? info.course
             ? `"${info.title}" (${info.course})`
@@ -274,6 +298,7 @@ export function inboxTool(
             cause.subject.kind === "obligation"
               ? obligationInfo.get(cause.subject.id)
               : factInfo.get(cause.subject.id);
+          if (info?.sourceId) turn.sources.add(info.sourceId);
           detail = info
             ? `disagreement on "${info.title}" (${info.course})`
             : "disagreement";

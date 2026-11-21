@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Transaction } from "@nunio/delegation";
 import { openApprovalAt, runCaps } from "@nunio/delegation";
 import type { Sealed } from "@nunio/knowledge";
+import { causeOf } from "./causes.js";
 import type { BriefingItems } from "./outreach.js";
 import { openIntervention } from "./outreach.js";
 import { channels } from "./raise.js";
@@ -101,13 +102,31 @@ export async function sendBriefing(
     );
   };
 
-  const [openInterventions, openApprovals, unreadNotices, readyArtifact] =
+  const hasOpenIntervention = async (): Promise<boolean> => {
+    if (!items.interventions.length) return false;
+    const rows = await tx.intervention.findMany({
+      where: { id: { in: items.interventions }, ...openIntervention },
+      select: { kind: true, dedupeKey: true },
+    });
+    if (rows.some((r) => r.kind !== "run_approvals")) return true;
+    const runIds = [
+      ...new Set(
+        rows
+          .filter((r) => r.kind === "run_approvals")
+          .map((r) => causeOf(r.dedupeKey).subject.id),
+      ),
+    ];
+    if (!runIds.length) return false;
+    return (
+      (await tx.action.count({
+        where: { runId: { in: runIds }, ...openApprovalAt(at) },
+      })) > 0
+    );
+  };
+
+  const [hasIntervention, openApprovals, unreadNotices, readyArtifact] =
     await Promise.all([
-      items.interventions.length
-        ? tx.intervention.count({
-            where: { id: { in: items.interventions }, ...openIntervention },
-          })
-        : 0,
+      hasOpenIntervention(),
       items.approvals.length
         ? tx.action.count({
             where: { id: { in: items.approvals }, ...openApprovalAt(at) },
@@ -121,7 +140,7 @@ export async function sendBriefing(
       hasOpenArtifact(),
     ]);
   if (
-    openInterventions === 0 &&
+    !hasIntervention &&
     openApprovals === 0 &&
     unreadNotices === 0 &&
     !readyArtifact

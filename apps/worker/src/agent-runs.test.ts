@@ -226,6 +226,8 @@ const testModels = createModels({
   catalog: [],
 });
 
+let facts: ReturnType<typeof createFacts>;
+
 beforeAll(async () => {
   [env, workflowBundle, db] = await Promise.all([
     TestWorkflowEnvironment.createLocal(),
@@ -248,7 +250,7 @@ beforeAll(async () => {
     },
     planRules,
   });
-  const facts = createFacts({ db: runtime, keys, clock });
+  facts = createFacts({ db: runtime, keys, clock });
   const noSchedule = async () => {};
   agents = createAgents({
     db: runtime,
@@ -2723,4 +2725,104 @@ describe("an Agent's Run writing a Briefing (#188)", () => {
       expect(await briefingEntries(s)).toEqual([[2, "refused", state]]);
     },
   );
+
+  it("records the Source provenance of extracted Obligations read via inbox in Briefing and Run derivedFrom for crypto-shredding", async () => {
+    const other = await started({
+      held: [{ id: "createStudyBlocks", mode: "ask" }],
+    });
+    const bound = await admin.sourceCourse.findFirstOrThrow({
+      where: { studentId: other.studentId },
+    });
+    // Replace the student-entered Obligation with one extracted from the Source so its provenance is "source".
+    await admin.obligation.delete({ where: { id: other.obligationId } });
+    await admin.source.update({
+      where: { id: bound.sourceId },
+      data: { courseId: bound.courseId },
+    });
+    await facts.extract(other.p, bound.sourceId, {
+      delegation: createDelegation({ db: runtime, aiEnabled: () => true }),
+      extractor: {
+        model: "test",
+        windows: (pages) => [[...pages]],
+        estimateMicroUsd: () => 1,
+        extract: async () => ({
+          usage: { microUsd: 1 },
+          value: {
+            courses: [
+              {
+                code: null,
+                title: "Statistik II",
+                page: 1,
+                quote: "Statistik II",
+              },
+            ],
+            obligations: [
+              {
+                course: "Statistik II",
+                kind: "exam",
+                title: "Klausur Statistik II",
+                key: "klausur-extracted",
+                destination: null,
+                due: {
+                  date: day(10),
+                  time: "10:00",
+                  timeZone: "Europe/Berlin",
+                  text: "am 3. März",
+                },
+                page: 1,
+                quote: "Die Klausur ist am 3. März.",
+                uncertainty: null,
+              },
+            ],
+            facts: [],
+          },
+        }),
+      },
+    });
+
+    // First Agent asks Approval for a Study Block on the extracted Obligation (no Notice, no Artifact).
+    script = [readPlan, () => createBlock(3), () => says("Fertig.")];
+    expect(await run(other)).toEqual({ status: "done" });
+
+    // Second Agent has only createBriefing and reads only inbox (never searchMaterial or agenda).
+    const briefingAgent = await agents.create(other.p, {
+      name: "Inbox-Briefing",
+      description: "Liest nur die Inbox.",
+      emoji: "🗞️",
+      instructions: "Lies die Inbox und erstelle ein Briefing.",
+      courseIds: [bound.courseId],
+      capabilities: [{ id: "createBriefing", mode: null }],
+      budgetMicroUsd: 1_000_000,
+      trigger: { rhythm: "daily", minute: 420 },
+      modelKey: offered[0]!.key,
+    });
+    if (briefingAgent.status !== "ok") throw new Error(briefingAgent.status);
+    const s = await requested(other.p, briefingAgent.id);
+    script = [
+      () => calls("inbox", {}),
+      () =>
+        calls("createBriefing", {
+          text: "Freigabe für Klausur wartet.",
+          approvals: ["A1"],
+        }),
+      () => says("Briefing fertig."),
+    ];
+    expect(await run(s)).toEqual({ status: "done" });
+
+    const [briefingRow] = await admin.briefing.findMany({
+      where: { runId: s.runId },
+    });
+    const runRow = await admin.run.findUnique({ where: { id: s.runId } });
+    expect(briefingRow?.derivedFrom).toContain(bound.sourceId);
+    expect(runRow?.derivedFrom).toContain(bound.sourceId);
+
+    // Deleting the Obligation's Source crypto-shreds both the Briefing text and the Run summary.
+    await sources.remove(other.p, bound.sourceId);
+    expect((await outreach.inbox(other.p)).briefings).toMatchObject([
+      { id: briefingRow!.id, text: null },
+    ]);
+    expect(
+      (await activity.run(other.p, briefingAgent.id, s.runId))?.summaryGone,
+    ).toBe(true);
+  });
 });

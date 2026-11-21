@@ -256,10 +256,12 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
       if (!interventions.length && !briefings.length)
         return c.json({ interventions: [], notices, briefings: [] }, 200);
       const ids = [
-        ...interventions.flatMap((i) =>
-          i.subject.kind === "action" ? [i.subject.id] : [],
-        ),
-        ...briefings.flatMap((b) => b.approvals),
+        ...new Set([
+          ...interventions.flatMap((i) =>
+            i.subject.kind === "action" ? [i.subject.id] : [],
+          ),
+          ...briefings.flatMap((b) => b.approvals),
+        ]),
       ];
       const needsArtifacts = briefings.some((b) => b.artifacts.length);
       const [plan, review, actions, delegated, listedArtifacts] =
@@ -270,7 +272,9 @@ export function registerInboxRoutes(routes: OpenAPIHono<AppBindings>) {
           needsArtifacts
             ? c.get("facts").review(p)
             : null,
-          ids.length ? c.get("delegation").history(p, { ids }) : [],
+          ids.length
+            ? c.get("delegation").history(p, { ids, limit: ids.length })
+            : [],
           briefings.some((b) => b.agents.length || b.approvals.length)
             ? c.get("agents").list(p)
             : [],
