@@ -8,7 +8,6 @@ import { createSourceKeys } from "@nunio/keys";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createOutreach,
-  InvalidUnsubscribeError,
   NotOpenError,
   UnknownInterventionError,
 } from "./index.js";
@@ -43,7 +42,6 @@ function make() {
     }),
     clock,
     vapidPublicKey: "test-vapid-key",
-    unsubscribeSecret: "test-unsubscribe-secret",
   });
 }
 
@@ -155,15 +153,7 @@ describe("the Inbox", () => {
 
   it("names its errors, so a log says which one it was", () => {
     expect(
-      [
-        new NotOpenError(),
-        new UnknownInterventionError(),
-        new InvalidUnsubscribeError(),
-      ].map((e) => e.name),
-    ).toEqual([
-      "NotOpenError",
-      "UnknownInterventionError",
-      "InvalidUnsubscribeError",
-    ]);
+      [new NotOpenError(), new UnknownInterventionError()].map((e) => e.name),
+    ).toEqual(["NotOpenError", "UnknownInterventionError"]);
   });
 });

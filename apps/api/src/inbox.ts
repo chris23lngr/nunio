@@ -13,24 +13,10 @@ import { body, Done, errors, json, outcomes, student } from "./outcomes.js";
 
 const Settings = z
   .object({
-    briefingAtMinute: z
-      .number()
-      .int()
-      .min(0)
-      .max(1439)
-      .nullable()
-      .describe(
-        "Minutes after local midnight in the Plan's time zone; null turns Briefings off.",
-      ),
     email: z
       .boolean()
       .describe(
         "Whether nunio emails the student; the Inbox has everything either way.",
-      ),
-    briefingEmail: z
-      .boolean()
-      .describe(
-        "Whether Briefings are emailed too; a one-click unsubscribe turns this off.",
       ),
     quietHours: z
       .object({
@@ -47,7 +33,7 @@ const Settings = z
       .min(0)
       .max(50)
       .describe(
-        "Alerts about Interventions and Notices per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count.",
+        "Alerts about Interventions, Notices and Agent Briefings per local day in the Plan's time zone; one sent by email and push counts once.",
       ),
   })
   .openapi("OutreachSettings");

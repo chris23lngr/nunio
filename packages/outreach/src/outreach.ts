@@ -1,7 +1,7 @@
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import type { Clock, Principal, Transaction } from "@nunio/delegation";
-import { openApprovalAt, principal, withOwner } from "@nunio/delegation";
+import { openApprovalAt, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import { createDerivedText } from "@nunio/knowledge";
 import { briefingTextId } from "./briefings.js";
@@ -55,12 +55,8 @@ export type BriefingView = {
 };
 
 export type OutreachSettings = {
-  /** Minutes after local midnight in the Plan's time zone; null turns Briefings off. */
-  briefingAtMinute: number | null;
   /** Whether nunio emails the student; the Inbox has everything either way. */
   email: boolean;
-  /** Whether Briefings are emailed too; a one-click unsubscribe turns this off. */
-  briefingEmail: boolean;
   /** When nothing goes out outside the app, in the Plan's time zone; may wrap midnight. */
   quietHours: { fromMinute: number; toMinute: number } | null;
   /** Announcements of Interventions, Notices and Agent Briefings per local day, email and push combined. */
@@ -77,12 +73,17 @@ export type BriefingItems = {
 };
 
 const defaults: OutreachSettings = {
-  briefingAtMinute: 7 * 60,
   email: true,
-  briefingEmail: true,
   quietHours: null,
   dailyLimit: 3,
 };
+/** Explicit select so retired Briefing columns can be dropped in #192 without breaking running instances. */
+export const outreachSettingsSelect = {
+  email: true,
+  quietFromMinute: true,
+  quietToMinute: true,
+  dailyLimit: true,
+} as const;
 /** Quiet Hours are stored as two columns, both set or both null. */
 const quietHoursOf = (columns: {
   quietFromMinute: number | null;
@@ -98,9 +99,7 @@ const quietHoursColumns = (quietHours: OutreachSettings["quietHours"]) => ({
 
 export const settingsOf = (
   stored: {
-    briefingAtMinute: number | null;
     email: boolean;
-    briefingEmail: boolean;
     quietFromMinute: number | null;
     quietToMinute: number | null;
     dailyLimit: number;
@@ -108,9 +107,7 @@ export const settingsOf = (
 ): OutreachSettings =>
   stored
     ? {
-        briefingAtMinute: stored.briefingAtMinute,
         email: stored.email,
-        briefingEmail: stored.briefingEmail,
         quietHours: quietHoursOf(stored),
         dailyLimit: stored.dailyLimit,
       }
@@ -157,15 +154,8 @@ export const openIntervention = {
   causeEndedAt: null,
 } as const;
 
-/** The token in the one-click link that stops a student's Briefing emails. */
-export const unsubscribeToken = (secret: string, studentId: string) =>
-  createHmac("sha256", secret).update(studentId).digest("hex");
-
 export class NotOpenError extends Error {
   override name = "NotOpenError";
-}
-export class InvalidUnsubscribeError extends Error {
-  override name = "InvalidUnsubscribeError";
 }
 export class UnknownInterventionError extends Error {
   override name = "UnknownInterventionError";
@@ -180,16 +170,13 @@ export function createOutreach({
   keys,
   clock,
   vapidPublicKey,
-  unsubscribeSecret,
 }: {
   db: PrismaClient;
-  /** Opens a Notice's text, sealed under the Sources its Run had read. */
+  /** Opens a Notice's or Briefing's text, sealed under the Sources its Run had read. */
   keys: SourceKeys;
   clock: Clock;
   /** The public key the browser subscribes with; the worker signs pushes with its private half. */
   vapidPublicKey: string;
-  /** Verifies the one-click link that stops Briefing emails; the worker signs it with the same secret. */
-  unsubscribeSecret: string;
 }) {
   const derived = createDerivedText(keys);
   /** The student's Notices, newest first, with their Agent and how they were announced. */
@@ -379,10 +366,11 @@ export function createOutreach({
     },
     async settings(student: Principal): Promise<OutreachSettings> {
       return settingsOf(
-        await withOwner(db, student, (tx) => tx.outreachSettings.findFirst()),
+        await withOwner(db, student, (tx) =>
+          tx.outreachSettings.findFirst({ select: outreachSettingsSelect }),
+        ),
       );
     },
-    /** A changed time applies from the next Briefing; one already made or skipped today stays so. */
     async updateSettings(
       student: Principal,
       { quietHours, ...patch }: Partial<OutreachSettings>,
@@ -396,25 +384,10 @@ export function createOutreach({
           where: { studentId },
           create: { studentId, ...columns },
           update: columns,
+          select: outreachSettingsSelect,
         }),
       );
       return settingsOf(stored);
-    },
-    /** The one-click unsubscribe: stops Briefing emails for the student the link was signed for. */
-    async stopBriefingEmail(studentId: string, token: string): Promise<void> {
-      const expected = Buffer.from(
-        unsubscribeToken(unsubscribeSecret, studentId),
-      );
-      const given = Buffer.from(token);
-      if (expected.length !== given.length || !timingSafeEqual(expected, given))
-        throw new InvalidUnsubscribeError();
-      await withOwner(db, principal.fromSession({ studentId }), (tx, owner) =>
-        tx.outreachSettings.upsert({
-          where: { studentId: owner },
-          create: { studentId: owner, briefingEmail: false },
-          update: { briefingEmail: false },
-        }),
-      );
     },
     async close(
       student: Principal,

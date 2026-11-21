@@ -7,8 +7,6 @@ import { TestProviders } from "./providers";
 
 const initial = {
   email: true,
-  briefingEmail: true,
-  briefingAtMinute: 420,
   quietHours: { fromMinute: 1320, toMinute: 420 } as {
     fromMinute: number;
     toMinute: number;
@@ -45,19 +43,14 @@ test("email changes are drafts until saved and cancel restores saved values", as
   const group = within(
     screen.getByRole("region", { name: "Benachrichtigungen" }),
   );
-  const briefing = group.getByRole("checkbox", {
-    name: "Tägliches Briefing auch per E-Mail erhalten",
-  });
   await user.click(email);
-  expect(briefing.getAttribute("aria-disabled")).toBe("true");
+  expect(email.getAttribute("aria-checked")).toBe("false");
   expect(patches).toEqual([]);
   await user.click(group.getByRole("button", { name: "Abbrechen" }));
   expect(email.getAttribute("aria-checked")).toBe("true");
-  await user.click(briefing);
+  await user.click(email);
   await user.click(group.getByRole("button", { name: "Speichern" }));
-  await waitFor(() =>
-    expect(patches).toEqual([{ email: true, briefingEmail: false }]),
-  );
+  await waitFor(() => expect(patches).toEqual([{ email: false }]));
   await waitFor(() =>
     expect(group.getByRole("button", { name: "Speichern" })).toHaveProperty(
       "disabled",
@@ -115,36 +108,15 @@ test("quiet hours and the daily limit save independently of channel drafts", asy
   );
 });
 
-test("the daily briefing can be rescheduled and disabled in the channel card", async () => {
-  const patches = serveSettings();
-  const user = userEvent.setup();
+test("nunio's retired daily briefing options are no longer shown (#189)", async () => {
+  serveSettings();
   renderSettings();
-  const time = await screen.findByLabelText("Tägliches Briefing um");
-  const group = within(
-    screen.getByRole("region", { name: "Benachrichtigungen" }),
-  );
-  await user.clear(time);
-  await user.type(time, "08:30");
-  await user.click(group.getByRole("button", { name: "Speichern" }));
-  await waitFor(() =>
-    expect(patches[0]).toEqual({
-      email: true,
-      briefingEmail: true,
-      briefingAtMinute: 510,
-    }),
-  );
-  await user.click(
-    group.getByRole("checkbox", { name: "Tägliches Briefing erhalten" }),
-  );
-  expect(time).toHaveProperty("disabled", true);
-  await user.click(group.getByRole("button", { name: "Speichern" }));
-  await waitFor(() =>
-    expect(patches[1]).toEqual({
-      email: true,
-      briefingEmail: true,
-      briefingAtMinute: null,
-    }),
-  );
+  await screen.findByRole("checkbox", { name: "E-Mail" });
+  expect(
+    screen.queryByRole("checkbox", { name: /Tägliches Briefing/ }),
+  ).toBeNull();
+  expect(screen.queryByLabelText("Tägliches Briefing um")).toBeNull();
+  expect(screen.queryByText(/Briefings zählen nicht mit/)).toBeNull();
 });
 
 function browserWithPush(answer: NotificationPermission) {
@@ -314,9 +286,7 @@ test("a failed save retains the draft for retry and Cancel restores saved quiet 
   ).toBe("false");
   failing = false;
   await user.click(channels.getByRole("button", { name: "Speichern" }));
-  await waitFor(() =>
-    expect(saved).toEqual({ email: false, briefingEmail: true }),
-  );
+  await waitFor(() => expect(saved).toEqual({ email: false }));
   await waitFor(() => expect(channels.queryByRole("alert")).toBeNull());
   const quiet = within(screen.getByRole("region", { name: "Ruhezeiten" }));
   await user.click(quiet.getByRole("switch"));

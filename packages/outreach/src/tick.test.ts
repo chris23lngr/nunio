@@ -20,7 +20,6 @@ import type { Outreach, OutreachSender } from "./index.js";
 import {
   createOutreach,
   createOutreachSender,
-  InvalidUnsubscribeError,
   NotOpenError,
   sendBriefing,
   sendNotice,
@@ -115,7 +114,6 @@ beforeAll(async () => {
     keys,
     clock,
     vapidPublicKey: "test-vapid-key",
-    unsubscribeSecret: "test-unsubscribe-secret",
   });
   sender = createOutreachSender({
     db: runtime,
@@ -127,10 +125,6 @@ beforeAll(async () => {
     mailer,
     pusher,
     inboxUrl: "https://app.nunio.test/inbox",
-    unsubscribe: {
-      secret: "test-unsubscribe-secret",
-      url: "https://api.nunio.test/unsubscribe/briefing-email",
-    },
   });
 }, 180_000);
 
@@ -457,90 +451,14 @@ describe("raising Interventions from their causes", () => {
   });
 });
 
-describe("the daily Briefing", () => {
-  it("bundles the open Interventions once a day, after the student's Briefing time", async () => {
-    now = at("2026-11-09 06:50");
-    const p = await student();
-    await dueTomorrow(p, 20 * 60);
-    await sender.tick();
-    const [shortfall] = await open(p);
-    expect((await outreach.inbox(p)).briefings).toEqual([]);
-
-    now = at("2026-11-09 07:05");
-    await sender.tick();
-    now = at("2026-11-09 07:10");
-    await sender.tick();
-
-    expect((await outreach.inbox(p)).briefings).toEqual([
-      {
-        id: expect.any(String),
-        madeAt: at("2026-11-09 07:05"),
-        agentId: null,
-        agentName: null,
-        runId: null,
-        text: null,
-        announcement: "announced",
-        interventions: [shortfall!.id],
-        approvals: [],
-        notices: [],
-        artifacts: [],
-        agents: [],
-      },
-    ]);
-  });
-
-  it("makes no Briefing on a day with nothing to bundle, not even once something comes up later that day", async () => {
-    now = at("2026-11-09 07:05");
-    const p = await student();
-    await sender.tick();
-
-    now = at("2026-11-09 09:00");
-    await dueTomorrow(p, 20 * 60);
-    await sender.tick();
-    expect((await outreach.inbox(p)).briefings).toEqual([]);
-
-    now = at("2026-11-10 07:05");
-    await sender.tick();
-    expect((await outreach.inbox(p)).briefings).toHaveLength(1);
-  });
-
-  it("keeps what it bundled when an Intervention in it lapses afterwards", async () => {
-    now = at("2026-11-09 07:05");
-    const p = await student();
-    const work = await dueTomorrow(p, 20 * 60);
-    await sender.tick();
-    const [shortfall] = await open(p);
-
-    now = at("2026-11-09 09:00");
-    await plan.estimate(p, work, 30);
-    await sender.tick();
-
-    const [briefing] = (await outreach.inbox(p)).briefings;
-    expect(briefing!.interventions).toEqual([shortfall!.id]);
-  });
-
-  it("follows the time zone of the student's Plan", async () => {
-    now = at("2026-11-09 07:05");
-    const p = await student();
-    if (p.kind !== "student") throw new Error("a student");
-    await admin.planPreference.create({
-      data: { studentId: p.studentId, timeZone: "America/New_York" },
-    });
-    await dueTomorrow(p, 20 * 60);
-    await sender.tick();
-    expect((await outreach.inbox(p)).briefings).toEqual([]);
-
-    // 13:05 in Berlin is 07:05 in New York.
-    now = at("2026-11-09 13:05");
-    await sender.tick();
-    expect((await outreach.inbox(p)).briefings).toHaveLength(1);
-  });
-
-  it("bundles the Approvals nunio waits for and the Agents still active", async () => {
+describe("retired nunio Briefing (#189)", () => {
+  it("makes no Briefing of its own on a tick even when Interventions, Approvals and active Agents exist", async () => {
     now = at("2026-11-09 07:05");
     const p = await student();
     if (p.kind !== "student") throw new Error("a student");
     const { studentId } = p;
+    const phone = await device(p);
+    await dueTomorrow(p, 20 * 60);
     const actionId = randomUUID();
     await admin.action.create({
       data: {
@@ -552,67 +470,90 @@ describe("the daily Briefing", () => {
         status: "awaiting_approval",
       },
     });
-    const [active, ended] = [randomUUID(), randomUUID()];
-    await admin.agent.createMany({
-      data: [
-        {
-          id: active,
-          studentId,
-          preset: "keep_course_organized",
-          budgetMicroUsd: 1_000_000,
-        },
-        {
-          id: ended,
-          studentId,
-          preset: "keep_course_organized",
-          budgetMicroUsd: 1_000_000,
-          state: "ended",
-        },
-      ],
+    await admin.agent.create({
+      data: {
+        id: randomUUID(),
+        studentId,
+        preset: "keep_course_organized",
+        budgetMicroUsd: 1_000_000,
+      },
     });
 
     await sender.tick();
 
+    expect((await outreach.inbox(p)).briefings).toEqual([]);
+    expect(mailTo(p).map((m) => m.subject)).toEqual([
+      "nunio: 1 item needs your attention",
+    ]);
+    expect(mailTo(p)[0]!.headers).toBeUndefined();
+    expect(pushesTo(phone).map((s) => s.urgency)).toEqual(["normal"]);
+  });
+
+  it("keeps past nunio Briefings readable in the Inbox and drops any lingering delivery for them", async () => {
+    now = at("2026-11-09 08:00");
+    const p = await student();
+    if (p.kind !== "student") throw new Error("a student");
+    const { studentId } = p;
+    const pastBriefingId = randomUUID();
+    await admin.briefing.create({
+      data: {
+        id: pastBriefingId,
+        studentId,
+        localDate: "2026-11-08",
+        createdAt: at("2026-11-08 07:05"),
+        items: {
+          interventions: ["i-past"],
+          approvals: ["a-past"],
+          agents: ["ag-past"],
+        },
+      },
+    });
+    await admin.delivery.create({
+      data: {
+        id: randomUUID(),
+        studentId,
+        channel: "email",
+        briefingId: pastBriefingId,
+        dueAt: at("2026-11-08 07:05"),
+      },
+    });
+
+    await sender.tick();
+
+    expect(mailTo(p)).toEqual([]);
     expect((await outreach.inbox(p)).briefings).toEqual([
-      expect.objectContaining({
-        interventions: [],
-        approvals: [actionId],
-        agents: [active],
-      }),
+      {
+        id: pastBriefingId,
+        madeAt: at("2026-11-08 07:05"),
+        agentId: null,
+        agentName: null,
+        runId: null,
+        text: null,
+        announcement: "inbox_only",
+        interventions: ["i-past"],
+        approvals: ["a-past"],
+        agents: ["ag-past"],
+        notices: [],
+        artifacts: [],
+      },
     ]);
   });
 
-  it("comes at 07:00 until the student moves it, and never once turned off", async () => {
+  it("returns Outreach settings without Briefing fields", async () => {
     const p = await student();
-    await dueTomorrow(p, 20 * 60);
+
     expect(await outreach.settings(p)).toEqual({
-      briefingAtMinute: 7 * 60,
       email: true,
-      briefingEmail: true,
       quietHours: null,
       dailyLimit: 3,
     });
-
     expect(
-      await outreach.updateSettings(p, { briefingAtMinute: 9 * 60 }),
+      await outreach.updateSettings(p, { email: false, dailyLimit: 5 }),
     ).toEqual({
-      briefingAtMinute: 9 * 60,
-      email: true,
-      briefingEmail: true,
+      email: false,
       quietHours: null,
-      dailyLimit: 3,
+      dailyLimit: 5,
     });
-    now = at("2026-11-09 08:00");
-    await sender.tick();
-    expect((await outreach.inbox(p)).briefings).toEqual([]);
-    now = at("2026-11-09 09:05");
-    await sender.tick();
-    expect((await outreach.inbox(p)).briefings).toHaveLength(1);
-
-    await outreach.updateSettings(p, { briefingAtMinute: null });
-    now = at("2026-11-10 09:05");
-    await sender.tick();
-    expect((await outreach.inbox(p)).briefings).toHaveLength(1);
   });
 });
 
@@ -685,22 +626,6 @@ describe("email", () => {
     expect(mailTo(p)).toEqual([]);
     expect(await open(p)).toHaveLength(1);
   });
-
-  it("announces each Briefing in its own email", async () => {
-    now = at("2026-11-09 06:00");
-    const p = await student();
-    await dueTomorrow(p, 20 * 60);
-    await sender.tick();
-
-    now = at("2026-11-09 07:05");
-    await sender.tick();
-
-    expect(mailTo(p).map((m) => m.subject)).toEqual([
-      "nunio: 1 item needs your attention",
-      "Your nunio Briefing is ready",
-    ]);
-    expect(mailTo(p)[1]!.text).toContain("https://app.nunio.test/inbox");
-  });
 });
 
 describe("push", () => {
@@ -720,19 +645,6 @@ describe("push", () => {
     expect(await open(p)).toHaveLength(1);
   });
 
-  it("pushes a Briefing at low urgency", async () => {
-    now = at("2026-11-09 06:00");
-    const p = await student();
-    const phone = await device(p);
-    await dueTomorrow(p, 20 * 60);
-    await sender.tick();
-
-    now = at("2026-11-09 07:05");
-    await sender.tick();
-
-    expect(pushesTo(phone).map((s) => s.urgency)).toEqual(["normal", "low"]);
-  });
-
   it("stops pushing to a device its push service says is gone, and to one the student turned off", async () => {
     now = at("2026-11-09 06:00");
     const p = await student();
@@ -744,6 +656,7 @@ describe("push", () => {
     push.gone.delete(expired);
 
     now = at("2026-11-09 07:05");
+    await dueTomorrow(p, 20 * 60);
     await sender.tick();
 
     expect([...pushesTo(expired), ...pushesTo(turnedOff)]).toEqual([]);
@@ -774,7 +687,6 @@ describe("Quiet Hours", () => {
     now = at("2026-11-09 23:00");
     const p = await student();
     await outreach.updateSettings(p, {
-      briefingAtMinute: null,
       quietHours: { fromMinute: 22 * 60, toMinute: 6 * 60 + 30 },
     });
     await dueTomorrow(p, 20 * 60);
@@ -795,7 +707,6 @@ describe("Quiet Hours", () => {
     now = at("2026-11-09 23:00");
     const p = await student();
     await outreach.updateSettings(p, {
-      briefingAtMinute: null,
       quietHours: { fromMinute: 22 * 60, toMinute: 6 * 60 + 30 },
     });
     await dueTomorrow(p, 20 * 60);
@@ -809,28 +720,6 @@ describe("Quiet Hours", () => {
     expect(mailTo(p)).toEqual([]);
   });
 
-  it("makes the Briefing on time but holds its email and push until Quiet Hours end", async () => {
-    now = at("2026-11-10 07:05");
-    const p = await student();
-    const phone = await device(p);
-    await outreach.updateSettings(p, {
-      quietHours: { fromMinute: 22 * 60, toMinute: 8 * 60 },
-    });
-    await dueTomorrow(p, 20 * 60);
-    await sender.tick();
-    expect((await outreach.inbox(p)).briefings).toHaveLength(1);
-    expect([...mailTo(p), ...pushesTo(phone)]).toEqual([]);
-
-    now = at("2026-11-10 08:00");
-    await sender.tick();
-
-    expect(mailTo(p).map((m) => m.subject)).toEqual([
-      "nunio: 1 item needs your attention",
-      "Your nunio Briefing is ready",
-    ]);
-    expect(pushesTo(phone)).toHaveLength(2);
-  });
-
   it("follows the time zone of the student's Plan", async () => {
     // 05:00 in Berlin is 23:00 the evening before in New York.
     now = at("2026-11-10 05:00");
@@ -840,7 +729,6 @@ describe("Quiet Hours", () => {
       data: { studentId: p.studentId, timeZone: "America/New_York" },
     });
     await outreach.updateSettings(p, {
-      briefingAtMinute: null,
       quietHours: { fromMinute: 22 * 60, toMinute: 5 * 60 },
     });
     await dueTomorrow(p, 20 * 60);
@@ -856,7 +744,7 @@ describe("Quiet Hours", () => {
 });
 
 describe("the daily limit", () => {
-  it("drops announcements past the day's limit, keeps Briefings, and starts again the next day", async () => {
+  it("drops announcements past the day's limit and starts again the next day", async () => {
     now = at("2026-11-09 05:00");
     const p = await student();
     const phone = await device(p);
@@ -873,17 +761,10 @@ describe("the daily limit", () => {
     expect(pushesTo(phone)).toHaveLength(1);
     expect(await open(p)).toHaveLength(2);
 
-    now = at("2026-11-09 07:05");
-    await sender.tick();
-    expect(mailTo(p).map((m) => m.subject)).toEqual([
-      "nunio: 1 item needs your attention",
-      "Your nunio Briefing is ready",
-    ]);
-
     now = at("2026-11-10 05:00");
     await dueTomorrow(p, 20 * 60, "2026-11-11");
     await sender.tick();
-    expect(mailTo(p)).toHaveLength(3);
+    expect(mailTo(p)).toHaveLength(2);
   });
 
   it("counts an announcement once when one of its channels is retried", async () => {
@@ -935,7 +816,7 @@ describe("the daily limit", () => {
     // 2026-10-25 in Berlin: 00:30 is still CEST (UTC+2), 10:00 is CET (UTC+1).
     now = new Date("2026-10-25T00:30:00+02:00");
     const p = await student();
-    await outreach.updateSettings(p, { dailyLimit: 1, briefingAtMinute: null });
+    await outreach.updateSettings(p, { dailyLimit: 1 });
     await dueTomorrow(p, 30 * 60, "2026-10-26");
     await sender.tick();
     expect(mailTo(p)).toHaveLength(1);
@@ -946,85 +827,6 @@ describe("the daily limit", () => {
 
     expect(await open(p)).toHaveLength(2);
     expect(mailTo(p)).toHaveLength(1);
-  });
-});
-
-describe("one-click unsubscribe", () => {
-  it("lets a Briefing email be unsubscribed with one click, and no Intervention email", async () => {
-    now = at("2026-11-09 06:00");
-    const p = await student();
-    if (p.kind !== "student") throw new Error("a student");
-    await dueTomorrow(p, 20 * 60);
-    await sender.tick();
-    now = at("2026-11-09 07:05");
-    await sender.tick();
-
-    const [announcement, briefing] = mailTo(p);
-    expect(announcement!.headers).toBeUndefined();
-    expect(briefing!.headers).toEqual({
-      "List-Unsubscribe": expect.stringMatching(
-        new RegExp(
-          `^<https://api\\.nunio\\.test/unsubscribe/briefing-email\\?s=${p.studentId}&t=[0-9a-f]{64}>$`,
-        ),
-      ),
-      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-    });
-  });
-
-  it("stops Briefing emails only: Briefings stay in the Inbox and Interventions are still emailed", async () => {
-    now = at("2026-11-09 06:00");
-    const p = await student();
-    await dueTomorrow(p, 20 * 60);
-    await sender.tick();
-    now = at("2026-11-09 07:05");
-    await sender.tick();
-    const link = new URL(
-      mailTo(p)[1]!.headers!["List-Unsubscribe"]!.slice(1, -1),
-    );
-
-    await outreach.stopBriefingEmail(
-      link.searchParams.get("s")!,
-      link.searchParams.get("t")!,
-    );
-
-    expect(await outreach.settings(p)).toEqual(
-      expect.objectContaining({ briefingEmail: false, email: true }),
-    );
-    now = at("2026-11-10 05:00");
-    await dueTomorrow(p, 20 * 60, "2026-11-11");
-    await sender.tick();
-    now = at("2026-11-10 07:05");
-    await sender.tick();
-    expect((await outreach.inbox(p)).briefings).toHaveLength(2);
-    expect(mailTo(p).map((m) => m.subject)).toEqual([
-      "nunio: 1 item needs your attention",
-      "Your nunio Briefing is ready",
-      "nunio: 1 item needs your attention",
-    ]);
-  });
-
-  it("refuses a tampered link, or one signed for another student, and changes nothing", async () => {
-    now = at("2026-11-09 07:05");
-    const p = await student();
-    const other = await student();
-    if (p.kind !== "student" || other.kind !== "student")
-      throw new Error("students");
-    await dueTomorrow(other, 20 * 60);
-    await sender.tick();
-    const theirs = new URL(
-      mailTo(other)
-        .find((m) => m.headers)!
-        .headers!["List-Unsubscribe"]!.slice(1, -1),
-    ).searchParams.get("t")!;
-
-    for (const token of [theirs, "0".repeat(64), "short"])
-      await expect(
-        outreach.stopBriefingEmail(p.studentId, token),
-      ).rejects.toThrow(InvalidUnsubscribeError);
-
-    expect(await outreach.settings(p)).toEqual(
-      expect.objectContaining({ briefingEmail: true }),
-    );
   });
 });
 
@@ -1113,7 +915,6 @@ describe("Notices (#155)", () => {
     const [unread, read] = [await student(), await student()];
     for (const p of [unread, read])
       await outreach.updateSettings(p, {
-        briefingAtMinute: null,
         quietHours: { fromMinute: 22 * 60, toMinute: 6 * 60 + 30 },
       });
     await noticeFrom(unread, "Morgen früh lernen.");
@@ -1141,7 +942,7 @@ describe("Notices (#155)", () => {
   it("counts Notices against the daily limit together with Interventions, keeping the rest in the Inbox", async () => {
     now = at("2026-11-09 05:00");
     const p = await student();
-    await outreach.updateSettings(p, { dailyLimit: 2, briefingAtMinute: null });
+    await outreach.updateSettings(p, { dailyLimit: 2 });
     await dueTomorrow(p, 20 * 60);
     await sender.tick();
     now = at("2026-11-09 05:10");
@@ -1172,7 +973,7 @@ describe("Notices (#155)", () => {
   it("never lets one tick's Notice and Intervention announcements together pass the daily limit", async () => {
     now = at("2026-11-09 05:00");
     const p = await student();
-    await outreach.updateSettings(p, { dailyLimit: 1, briefingAtMinute: null });
+    await outreach.updateSettings(p, { dailyLimit: 1 });
     await dueTomorrow(p, 20 * 60);
     await noticeFrom(p, "Gleichzeitig.");
 
@@ -1247,7 +1048,6 @@ describe("Briefings from Agents (#146)", () => {
   it("writes a Briefing with its Agent, Run, text and bundled ids, allows more than one on the same day, and refuses a second in the same Run with run_cap", async () => {
     now = at("2026-11-09 06:00");
     const p = await student();
-    await outreach.updateSettings(p, { briefingAtMinute: null });
     const { actionIds } = await endedRunAsking(p, 1);
     const first = await briefingRun(p, "Morgen-Briefing");
     const second = await briefingRun(p, "Abend-Briefing");
@@ -1313,7 +1113,6 @@ describe("Briefings from Agents (#146)", () => {
   it("refuses with nothing_open when the only bundled item is a run_approvals Intervention whose Approvals lapsed lazily", async () => {
     now = at("2026-11-09 06:00");
     const p = await student();
-    await outreach.updateSettings(p, { briefingAtMinute: null });
     const { actionIds } = await endedRunAsking(p, 1);
     await sender.tick();
     const [row] = await admin.intervention.findMany({
@@ -1341,10 +1140,6 @@ describe("Briefings from Agents (#146)", () => {
   it("announces an Agent's Briefing once by content-free email and push, with neither its text nor its Agent's name", async () => {
     now = at("2026-11-09 06:00");
     const p = await student();
-    await outreach.updateSettings(p, {
-      briefingAtMinute: null,
-      briefingEmail: false,
-    });
     const phone = await device(p);
     const { actionIds } = await endedRunAsking(p, 1);
     const { runId } = await briefingRun(p, "Mein Geheim-Agent");
@@ -1378,7 +1173,6 @@ describe("Briefings from Agents (#146)", () => {
     now = at("2026-11-09 23:00");
     const p = await student();
     await outreach.updateSettings(p, {
-      briefingAtMinute: null,
       quietHours: { fromMinute: 22 * 60, toMinute: 6 * 60 + 30 },
     });
     const { actionIds } = await endedRunAsking(p, 1);
@@ -1404,7 +1198,7 @@ describe("Briefings from Agents (#146)", () => {
   it("counts Agent Briefings against the daily limit together with Interventions and Notices", async () => {
     now = at("2026-11-09 05:00");
     const p = await student();
-    await outreach.updateSettings(p, { dailyLimit: 1, briefingAtMinute: null });
+    await outreach.updateSettings(p, { dailyLimit: 1 });
     await dueTomorrow(p, 20 * 60);
     await sender.tick();
     const [shortfall] = await open(p);

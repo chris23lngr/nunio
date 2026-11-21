@@ -329,7 +329,6 @@ beforeAll(async () => {
     keys,
     clock,
     vapidPublicKey: "test-vapid-key",
-    unsubscribeSecret: "test-unsubscribe-secret",
   });
 }, 180_000);
 

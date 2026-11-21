@@ -27,7 +27,6 @@ x-backend: &backend
   CODEC_KEY_VERSION: v1
   SOURCE_KEY_VERSION: dev
   SOURCE_MASTER_KEYS: '{"dev":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}'
-  UNSUBSCRIBE_SECRET: dev-unsubscribe-secret
   VAPID_PUBLIC_KEY: dev-vapid-public-key
   # Object storage is not part of this stack; the apps only need the settings to start.
   HETZNER_S3_ENDPOINT: http://storage.invalid

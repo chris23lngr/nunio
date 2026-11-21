@@ -2,24 +2,11 @@
 
 import { Button } from "@nunio/ui/components/button/button";
 import { Checkbox } from "@nunio/ui/components/checkbox/checkbox";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@nunio/ui/components/input-group/input-group";
 import { useEffect, useId, useState } from "react";
 import type { OutreachSettings } from "@/features/inbox/api/settings-queries";
 import { useBrowserPush } from "@/features/inbox/use-browser-push";
 import { useOutreachSettings } from "@/features/inbox/use-outreach-settings";
-import { asMinute, asTime } from "@/lib/time";
 import { SettingGroup } from "./setting-group";
-
-type Channels = {
-  email: boolean;
-  briefingEmail: boolean;
-  briefingEnabled: boolean;
-  briefingTime: string;
-};
 
 export function NotificationChannels({
   apiOrigin,
@@ -37,21 +24,10 @@ export function NotificationChannels({
   const pushEnabled = pushDraft ?? push.state === "on";
   const pushDirty = pushDraft !== null && pushDraft !== (push.state === "on");
   const pending = update.isPending || push.busy;
-  const [draft, setDraft] = useState<Channels | null>(null);
-  const values = draft ?? {
-    email: settings.email,
-    briefingEmail: settings.briefingEmail,
-    briefingEnabled: settings.briefingAtMinute !== null,
-    briefingTime: asTime(settings.briefingAtMinute ?? 420),
-  };
-  const briefingAtMinute = values.briefingEnabled
-    ? asMinute(values.briefingTime)
-    : null;
-  const dirty =
-    pushDirty ||
-    values.email !== settings.email ||
-    values.briefingEmail !== settings.briefingEmail ||
-    briefingAtMinute !== settings.briefingAtMinute;
+  const [emailDraft, setEmailDraft] = useState<boolean | null>(null);
+  const email = emailDraft ?? settings.email;
+  const emailDirty = email !== settings.email;
+  const dirty = pushDirty || emailDirty;
   useEffect(() => {
     onDirtyChange(dirty || pending);
   }, [dirty, pending, onDirtyChange]);
@@ -59,23 +35,16 @@ export function NotificationChannels({
     <form
       onSubmit={async (event) => {
         event.preventDefault();
-        if (
-          pushDirty &&
-          !(await (pushEnabled ? push.turnOn() : push.turnOff()))
-        )
-          return;
+        if (pushDirty) {
+          if (!(await (pushEnabled ? push.turnOn() : push.turnOff()))) return;
+          setPushDraft(null);
+        }
+        if (!emailDirty) return;
         update.mutate(
-          {
-            email: values.email,
-            briefingEmail: values.briefingEmail,
-            ...(briefingAtMinute !== settings.briefingAtMinute
-              ? { briefingAtMinute }
-              : {}),
-          },
+          { email },
           {
             onSuccess: () => {
-              setDraft(null);
-              setPushDraft(null);
+              setEmailDraft(null);
             },
           },
         );
@@ -90,7 +59,7 @@ export function NotificationChannels({
               variant="outline"
               disabled={!dirty || pending}
               onClick={() => {
-                setDraft(null);
+                setEmailDraft(null);
                 setPushDraft(null);
                 update.reset();
               }}
@@ -122,24 +91,10 @@ export function NotificationChannels({
             <label htmlFor={`${id}-email`} className="flex items-center gap-3">
               <Checkbox
                 id={`${id}-email`}
-                checked={values.email}
-                onCheckedChange={(email) => setDraft({ ...values, email })}
+                checked={email}
+                onCheckedChange={setEmailDraft}
               />
               E-Mail
-            </label>
-            <label
-              htmlFor={`${id}-briefing-email`}
-              className="ml-7 flex items-center gap-3 has-disabled:opacity-50"
-            >
-              <Checkbox
-                id={`${id}-briefing-email`}
-                checked={values.briefingEmail}
-                disabled={!values.email}
-                onCheckedChange={(briefingEmail) =>
-                  setDraft({ ...values, briefingEmail })
-                }
-              />
-              Tägliches Briefing auch per E-Mail erhalten
             </label>
             <label
               htmlFor={`${id}-push`}
@@ -170,41 +125,9 @@ export function NotificationChannels({
                 in den Website-Einstellungen deines Browsers.
               </p>
             )}
-            <div className="mt-2 flex flex-col gap-4 border-t border-base-200 pt-4">
-              <label
-                htmlFor={`${id}-briefing`}
-                className="flex items-center gap-3"
-              >
-                <Checkbox
-                  id={`${id}-briefing`}
-                  checked={values.briefingEnabled}
-                  onCheckedChange={(briefingEnabled) =>
-                    setDraft({ ...values, briefingEnabled })
-                  }
-                />
-                Tägliches Briefing erhalten
-              </label>
-              <div className="ml-7 flex flex-col gap-2">
-                <label htmlFor={`${id}-time`}>Tägliches Briefing um</label>
-                <InputGroup>
-                  <InputGroupInput
-                    id={`${id}-time`}
-                    type="time"
-                    required
-                    disabled={!values.briefingEnabled}
-                    value={values.briefingTime}
-                    onChange={(event) =>
-                      setDraft({ ...values, briefingTime: event.target.value })
-                    }
-                  />
-                  <InputGroupAddon align="inline-end">Uhr</InputGroupAddon>
-                </InputGroup>
-                <p className="text-base-500">
-                  Die Zeiten gelten in der Zeitzone deines Plans. E-Mails
-                  enthalten nur einen Hinweis auf deinen Posteingang.
-                </p>
-              </div>
-            </div>
+            <p className="text-base-500">
+              E-Mails enthalten nur einen Hinweis auf deinen Posteingang.
+            </p>
           </fieldset>
         </div>
         {push.error && (

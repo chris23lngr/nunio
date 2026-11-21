@@ -1,20 +1,15 @@
-import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import type { Agents, Clock, Delegation, Principal } from "@nunio/delegation";
 import { principal, withOwner } from "@nunio/delegation";
 import type { Facts } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
 import { causesOf, keyOf } from "./causes.js";
-import type {
-  BriefingItems,
-  OutreachSettings,
-  StoredSubscription,
-} from "./outreach.js";
+import type { OutreachSettings, StoredSubscription } from "./outreach.js";
 import {
   openIntervention,
+  outreachSettingsSelect,
   pushSubscriptionOf,
   settingsOf,
-  unsubscribeToken,
 } from "./outreach.js";
 import { channels, raise, runsAwaitingApproval } from "./raise.js";
 
@@ -89,7 +84,7 @@ type Channel = (typeof channels)[number];
 /** Long enough to reach a phone that was off overnight, never the library's four weeks. */
 const pushTtlSeconds = 12 * 60 * 60;
 
-/** The worker's side of Outreach: raises Interventions from their causes, makes Briefings, and sends what is due. */
+/** The worker's side of Outreach: raises Interventions from their causes and sends what is due. */
 export function createOutreachSender({
   db,
   clock,
@@ -100,7 +95,6 @@ export function createOutreachSender({
   mailer,
   pusher,
   inboxUrl,
-  unsubscribe,
 }: {
   db: PrismaClient;
   clock: Clock;
@@ -112,8 +106,6 @@ export function createOutreachSender({
   pusher: Pusher;
   /** The only link a message outside the app carries. */
   inboxUrl: string;
-  /** Signs the one-click link that stops Briefing emails (RFC 8058); the API verifies it with the same secret. */
-  unsubscribe: { secret: string; url: string };
 }) {
   /** Raises an Intervention for each new cause, and ends the causes that no longer hold. */
   async function sync(p: Principal, { proposal }: PlanView) {
@@ -160,65 +152,15 @@ export function createOutreachSender({
     });
   }
 
-  /** Makes the day's Briefing once the student's Briefing time has passed; a day with nothing to bundle has none. */
-  async function brief(p: Principal, view: PlanView) {
-    const at = clock.now();
-    const { date, minute } = wallClock(at, view.limits.preferences.timeZone);
-    const settings = await withOwner(db, p, (tx) =>
-      tx.outreachSettings.findFirst(),
-    );
-    const briefingAt = settingsOf(settings).briefingAtMinute;
-    if (briefingAt === null || minute < briefingAt) return;
-    if (settings?.lastBriefingOn === date) return;
-    const [approvals, delegated] = await Promise.all([
-      delegation.history(p, { status: "awaiting_approval" }),
-      agents.list(p),
-    ]);
-    await withOwner(db, p, async (tx, studentId) => {
-      const open = await tx.intervention.findMany({
-        where: openIntervention,
-        orderBy: { createdAt: "desc" },
-        select: { id: true },
-      });
-      const items: BriefingItems = {
-        interventions: open.map((i) => i.id),
-        approvals: approvals.map((a) => a.id),
-        agents: delegated.filter((r) => r.state === "active").map((r) => r.id),
-      };
-      const id = randomUUID();
-      const made =
-        Object.values(items).some((ids) => ids.length) &&
-        (
-          await tx.briefing.createMany({
-            data: [{ id, studentId, localDate: date, createdAt: at, items }],
-            skipDuplicates: true,
-          })
-        ).count > 0;
-      if (made)
-        await tx.delivery.createMany({
-          data: channels.map((channel) => ({
-            id: randomUUID(),
-            studentId,
-            channel,
-            briefingId: id,
-            dueAt: at,
-          })),
-        });
-      await tx.outreachSettings.upsert({
-        where: { studentId },
-        create: { studentId, lastBriefingOn: date },
-        update: { lastBriefingOn: date },
-      });
-    });
-  }
-
   /** Sends what is due on each channel; every message is content-free and points to the Inbox. */
   async function deliver(p: Principal, view: PlanView) {
     const at = clock.now();
     const { timeZone } = view.limits.preferences;
     const { minute } = wallClock(at, timeZone);
     const settings = settingsOf(
-      await withOwner(db, p, (tx) => tx.outreachSettings.findFirst()),
+      await withOwner(db, p, (tx) =>
+        tx.outreachSettings.findFirst({ select: outreachSettingsSelect }),
+      ),
     );
     // Nothing leaves the app in Quiet Hours; what is due waits for the first tick after them.
     if (inQuietHours(minute, settings.quietHours)) return;
@@ -266,25 +208,23 @@ export function createOutreachSender({
         },
         orderBy: { sentAt: "asc" },
       });
-      // Agent Briefings follow Notice rules (ADR-0014); nunio's own past Briefings keep theirs until retired (#189).
+      // Only Agent Briefings (agentId non-null) are announced; retired nunio Briefings stay readable in the Inbox only.
       const briefingIds = [
         ...new Set([
           ...queued.flatMap((d) => d.briefingId ?? []),
           ...sentToday.flatMap((d) => d.briefingId ?? []),
         ]),
       ];
-      const briefings = new Map(
+      const agentBriefings = new Set(
         (briefingIds.length
           ? await tx.briefing.findMany({
-              where: { id: { in: briefingIds } },
-              select: { id: true, agentId: true },
+              where: { id: { in: briefingIds }, agentId: { not: null } },
+              select: { id: true },
             })
           : []
-        ).map((b) => [b.id, b]),
+        ).map((b) => b.id),
       );
-      const isAgentBriefing = (briefingId: string) =>
-        briefings.get(briefingId)?.agentId !== null;
-      const { email, briefingEmail, dailyLimit } = settings;
+      const { email, dailyLimit } = settings;
       /** What a message announces that counts against the daily limit: an Intervention, Notice or Agent Briefing. */
       const announced = (d: {
         interventionId: string | null;
@@ -295,8 +235,8 @@ export function createOutreachSender({
           ? { batch: "intervention", id: d.interventionId }
           : d.noticeId
             ? { batch: "notice", id: d.noticeId }
-            : d.briefingId && isAgentBriefing(d.briefingId)
-              ? { batch: "agent_briefing", id: d.briefingId }
+            : d.briefingId && agentBriefings.has(d.briefingId)
+              ? { batch: "briefing", id: d.briefingId }
               : null;
       // An Intervention, Notice or Agent Briefing counts with the first message that announced it, however often
       // another channel is retried; a tick's messages of one batch share one sentAt, so each counts once.
@@ -316,17 +256,11 @@ export function createOutreachSender({
         pushSubscriptionOf,
       );
       const reasonOf = (d: (typeof queued)[number]) => {
-        // A message about an Intervention that closed, a Notice read, or a Briefing deleted meanwhile no longer applies.
+        // A message about an Intervention that closed, a Notice read, or a deleted/retired Briefing no longer applies.
         if (d.interventionId && !open.has(d.interventionId)) return "closed";
         if (d.noticeId && !unread.has(d.noticeId)) return "closed";
-        if (d.briefingId && !briefings.has(d.briefingId)) return "closed";
-        const legacyBriefing =
-          d.briefingId !== null && !isAgentBriefing(d.briefingId);
-        if (
-          d.channel === "email"
-            ? !email || (legacyBriefing && !briefingEmail)
-            : !subscriptions.length
-        )
+        if (d.briefingId && !agentBriefings.has(d.briefingId)) return "closed";
+        if (d.channel === "email" ? !email : !subscriptions.length)
           return "disabled";
         // Past the limit, a new Intervention, Notice or Agent Briefing stays in the Inbox instead.
         const item = announced(d);
@@ -351,14 +285,10 @@ export function createOutreachSender({
             data: { droppedAt: at, dropReason: reason },
           });
       return {
-        due: byReason.send.map((d) => ({
-          ...d,
-          agentBriefing: d.briefingId !== null && isAgentBriefing(d.briefingId),
-        })),
+        due: byReason.send,
         to: (await tx.user.findUniqueOrThrow({ where: { id: studentId } }))
           .email,
         subscriptions,
-        studentId,
       };
     });
     for (const channel of channels) {
@@ -374,7 +304,7 @@ export function createOutreachSender({
     }
   }
 
-  /** Sends one channel's due messages: Interventions, Notices, Agent Briefings, and nunio's Briefing. */
+  /** Sends one channel's due messages: Interventions, Notices, and Agent Briefings. */
   async function sendChannel(
     p: Principal,
     channel: Channel,
@@ -383,15 +313,12 @@ export function createOutreachSender({
       due,
       to,
       subscriptions,
-      studentId,
     }: {
-      studentId: string;
       due: {
         id: string;
         interventionId: string | null;
         noticeId: string | null;
         briefingId: string | null;
-        agentBriefing: boolean;
       }[];
       to: string;
       subscriptions: ({ id: string } & StoredSubscription)[];
@@ -399,8 +326,7 @@ export function createOutreachSender({
   ) {
     const announcing = due.filter((d) => d.interventionId);
     const noticing = due.filter((d) => d.noticeId);
-    const agentBriefing = due.filter((d) => d.briefingId && d.agentBriefing);
-    const briefing = due.filter((d) => d.briefingId && !d.agentBriefing);
+    const briefing = due.filter((d) => d.briefingId);
     for (const [batch, message, urgency] of [
       [
         announcing,
@@ -424,27 +350,15 @@ export function createOutreachSender({
       ],
       // Agent Briefings follow Notice rules: content-free, no Agent name, no unsubscribe header (ADR-0014).
       [
-        agentBriefing,
-        {
-          subject:
-            agentBriefing.length === 1
-              ? "nunio: 1 neues Briefing"
-              : `nunio: ${agentBriefing.length} neue Briefings`,
-          text: `${agentBriefing.length === 1 ? "Lies es" : "Lies sie"} in deiner Inbox:\n\n${inboxUrl}`,
-        },
-        "normal",
-      ],
-      [
         briefing,
         {
-          subject: "Your nunio Briefing is ready",
-          text: `Your Briefing is in your Inbox:\n\n${inboxUrl}`,
-          headers: {
-            "List-Unsubscribe": `<${unsubscribe.url}?s=${studentId}&t=${unsubscribeToken(unsubscribe.secret, studentId)}>`,
-            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-          },
+          subject:
+            briefing.length === 1
+              ? "nunio: 1 neues Briefing"
+              : `nunio: ${briefing.length} neue Briefings`,
+          text: `${briefing.length === 1 ? "Lies es" : "Lies sie"} in deiner Inbox:\n\n${inboxUrl}`,
         },
-        "low",
+        "normal",
       ],
     ] as const) {
       if (!batch.length) continue;
@@ -470,7 +384,7 @@ export function createOutreachSender({
   }
 
   return {
-    /** Every five minutes: brings every active student's Interventions up to date with their causes, makes due Briefings, and sends what is due. */
+    /** Every five minutes: brings every active student's Interventions up to date with their causes and sends what is due. */
     async tick(): Promise<void> {
       const students = await db.$queryRaw<
         { studentId: string }[]
@@ -481,7 +395,6 @@ export function createOutreachSender({
         try {
           const view = await plan.view(p);
           await sync(p, view);
-          await brief(p, view);
           await deliver(p, view);
         } catch (error) {
           console.error("Outreach tick failed for a student", error);
