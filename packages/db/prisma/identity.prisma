@@ -10,6 +10,9 @@ model User {
   updatedAt        DateTime          @updatedAt
   sessions         Session[]
   accounts         Account[]
+  passkeys         Passkey[]
+  /// The student chose "Nicht mehr fragen" for the passkey prompt after a code sign-in (ADR-0027).
+  passkeyPromptDismissed Boolean @default(false)
   pilotEntitlement PilotEntitlement?
   deletionRequest  DeletionRequest?
   allowance        Allowance?
@@ -79,6 +82,27 @@ model Account {
   @@map("account")
 }
 
+/// Better Auth's passkey plugin; `lastUsedAt` is nunio's, set on each passkey sign-in.
+model Passkey {
+  id           String    @id
+  name         String?
+  publicKey    String
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialID String
+  counter      Int
+  deviceType   String
+  backedUp     Boolean
+  transports   String?
+  aaguid       String?
+  createdAt    DateTime? @default(now())
+  lastUsedAt   DateTime?
+
+  @@index([userId])
+  @@index([credentialID])
+  @@map("passkey")
+}
+
 model Verification {
   id         String   @id
   identifier String
@@ -98,6 +122,15 @@ model RateLimit {
   lastRequest BigInt
 
   @@map("rate_limit")
+}
+
+/// Sign-in codes sent and wrong guesses per address in the current window (ADR-0027).
+model SignInCodeLimit {
+  key         String @id
+  count       Int
+  windowStart BigInt
+
+  @@map("sign_in_code_limit")
 }
 
 model Invitation {

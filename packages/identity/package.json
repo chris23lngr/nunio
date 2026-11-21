@@ -20,18 +20,20 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.3",
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
-    "vitest": "5.0.5",
-    "@biomejs/biome": "2.6.3"
+    "vitest": "5.0.5"
   },
   "dependencies": {
+    "@better-auth/passkey": "1.7.27",
     "@nunio/billing": "workspace:*",
     "@nunio/db": "workspace:*",
     "@nunio/delegation": "workspace:*",
-    "better-auth": "1.7.14",
+    "@simplewebauthn/server": "13.3.3",
+    "better-auth": "1.7.27",
     "zod": "4.6.7"
   }
 }

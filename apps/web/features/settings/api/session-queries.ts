@@ -24,6 +24,7 @@ export function sessionQueries(apiOrigin: string) {
       return {
         sessions: listed.data ?? [],
         currentToken: current.data?.session.token ?? null,
+        email: current.data?.user.email ?? null,
       };
     },
   });

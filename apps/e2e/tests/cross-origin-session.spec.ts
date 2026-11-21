@@ -2,10 +2,13 @@ import { randomUUID } from "node:crypto";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { hashPassword } from "better-auth/crypto";
 import { cookieDomain, origins, target } from "../origins.js";
-
-const password = "correct horse battery staple";
+import {
+  createStudent,
+  enterSignIn,
+  signInAs,
+  storeSignInCode,
+} from "../students.js";
 
 test.beforeEach(async () => {
   if (target !== "local") return;
@@ -24,52 +27,6 @@ async function signIn(page: Page, name: string): Promise<string> {
   const email = await createStudent(name);
   await signInAs(page, email);
   return email;
-}
-
-async function createStudent(name: string): Promise<string> {
-  const email = `${name}+${randomUUID()}@example.com`;
-  const databaseURL = process.env.INVITATION_DATABASE_URL;
-  if (!databaseURL)
-    throw new Error(
-      "INVITATION_DATABASE_URL is required to provision verified account fixtures",
-    );
-  const prisma = createPrismaClient(createPool(databaseURL));
-  const userId = randomUUID();
-  try {
-    // Auth HTTP tests exercise signup and verification against the Scaleway stub.
-    // Browser session tests use verified fixtures and never send mail to generated addresses.
-    await prisma.user.create({
-      data: {
-        id: userId,
-        name,
-        email,
-        emailVerified: true,
-        accounts: {
-          create: {
-            id: randomUUID(),
-            accountId: userId,
-            providerId: "credential",
-            password: await hashPassword(password),
-          },
-        },
-      },
-    });
-  } finally {
-    await prisma.$disconnect();
-  }
-  return email;
-}
-
-async function signInAs(page: Page, email: string): Promise<void> {
-  await page.goto(`${origins.app}/sign-in`);
-  await page.getByLabel("E-Mail").fill(email);
-  await page.getByLabel("Passwort").fill(password);
-  const submit = page.getByRole("button", {
-    name: "Mit E-Mail anmelden",
-    exact: true,
-  });
-  await submit.click();
-  await expect(page).toHaveURL(`${origins.app}/`);
 }
 
 test("a visitor without a session is sent to sign-in", {
@@ -194,7 +151,6 @@ test("settings open from the sidebar footer and stack below navigation on mobile
     .getByRole("button", { name: "Konto löschen", exact: true })
     .click();
   const dialog = page.getByRole("dialog", { name: "Konto löschen?" });
-  await expect(dialog.getByLabel("Passwort")).toBeVisible();
   await expect(
     dialog.getByRole("button", { name: "Löschung anfordern" }),
   ).toBeVisible();
@@ -282,7 +238,6 @@ test("a student signs out another session and requests deletion from account set
     .getByRole("button", { name: "Konto löschen", exact: true })
     .click();
   const dialog = page.getByRole("dialog", { name: "Konto löschen?" });
-  await dialog.getByLabel("Passwort").fill(password);
   await dialog.getByRole("button", { name: "Löschung anfordern" }).click();
   await expect(page).toHaveURL(`${origins.app}/sign-in?deletion=requested`);
   await expect(
@@ -354,7 +309,7 @@ test("an expired session removes cached Sources from an open page", async ({
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
   await expect(page.getByText(/Private biology syllabus/)).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Mit E-Mail anmelden", exact: true }),
+    page.getByRole("button", { name: "Code senden", exact: true }),
   ).toBeVisible();
   expect(
     await page.evaluate(() => Reflect.get(window, "foundationDocument")),
@@ -387,11 +342,7 @@ test("signing out and switching students never reuses the previous student's Sou
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
   title = "Grace's private syllabus";
   // Stay in the same document: a page.goto would hide an in-memory cache leak.
-  await page.getByLabel("E-Mail").fill(second);
-  await page.getByLabel("Passwort", { exact: true }).fill(password);
-  await page
-    .getByRole("button", { name: "Mit E-Mail anmelden", exact: true })
-    .click();
+  await enterSignIn(page, second);
   await expect(page.getByText(/Grace's private syllabus/)).toBeVisible();
   await expect(page.getByText(/Ada's private syllabus/)).toHaveCount(0);
   expect(
@@ -427,10 +378,10 @@ test("an account changed outside the page replaces the old student's cached view
     data: {},
   });
   const signedIn = await context.request.post(
-    `${origins.api}/api/auth/sign-in/email`,
+    `${origins.api}/api/auth/sign-in/email-otp`,
     {
       headers: { origin: origins.app },
-      data: { email: second, password },
+      data: { email: second, otp: await storeSignInCode(second) },
     },
   );
   expect(signedIn.ok()).toBe(true);
@@ -470,13 +421,12 @@ test("account deletion cannot restore cached Sources through browser Back", asyn
     .getByRole("button", { name: "Konto löschen", exact: true })
     .click();
   const dialog = page.getByRole("dialog", { name: "Konto löschen?" });
-  await dialog.getByLabel("Passwort").fill(password);
   await dialog.getByRole("button", { name: "Löschung anfordern" }).click();
   await expect(page).toHaveURL(`${origins.app}/sign-in?deletion=requested`);
   await page.goBack();
   await expect(page.getByText(/Deleted student's syllabus/)).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Mit E-Mail anmelden", exact: true }),
+    page.getByRole("button", { name: "Code senden", exact: true }),
   ).toBeVisible();
 });
 
@@ -505,7 +455,7 @@ test("signing out everywhere cannot restore cached Sources through browser Back"
   await page.goBack();
   await expect(page.getByText(/Signed-out student's syllabus/)).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Mit E-Mail anmelden", exact: true }),
+    page.getByRole("button", { name: "Code senden", exact: true }),
   ).toBeVisible();
 });
 

@@ -175,7 +175,10 @@ export function createApp({
 
 /** Builds the app from its deployment environment; throws on the first missing variable. */
 /** Reads the Model Catalog once at start, so a task whose Model is missing stops the API from starting. */
-export async function appFromEnv(env: NodeJS.ProcessEnv) {
+export async function appFromEnv(
+  env: NodeJS.ProcessEnv,
+  { emailFetch }: { emailFetch?: typeof fetch } = {},
+) {
   const required = (name: string) => {
     const value = env[name];
     if (!value) throw new Error(`${name} is not set`);
@@ -190,6 +193,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
   const auth = createAuth({
     prisma,
     baseURL: required("BETTER_AUTH_URL"),
+    appOrigin,
     secret: required("BETTER_AUTH_SECRET"),
     trustedOrigins: [appOrigin],
     cookieDomain: env.COOKIE_DOMAIN,
@@ -197,6 +201,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
       projectId: required("SCW_PROJECT_ID"),
       secretKey: required("SCW_SECRET_KEY"),
       from: required("AUTH_EMAIL_FROM"),
+      ...(emailFetch && { fetch: emailFetch }),
     },
   });
   const spike =

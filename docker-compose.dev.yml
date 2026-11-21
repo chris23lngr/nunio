@@ -40,7 +40,7 @@ x-backend: &backend
   OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-dev}
   OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
   AI_DISABLED: ${AI_DISABLED:-true}
-  # Email is not sent: Scaleway rejects these, so verify accounts by hand (CONTRIBUTING.md).
+  # Email is not sent: Scaleway rejects these. The API logs sign-in codes instead (CONTRIBUTING.md).
   SCW_PROJECT_ID: dev
 
 services:

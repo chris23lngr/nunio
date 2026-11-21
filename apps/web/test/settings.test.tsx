@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { SecurityScreen } from "@/features/settings/security-screen";
 import { api } from "./api";
 import { TestProviders } from "./providers";
@@ -10,6 +10,10 @@ const { router } = vi.hoisted(() => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 beforeEach(() => vi.clearAllMocks());
+afterEach(() => {
+  Reflect.deleteProperty(window, "PublicKeyCredential");
+  Reflect.deleteProperty(navigator, "credentials");
+});
 
 const currentSession = {
   id: "session-1",
@@ -23,7 +27,28 @@ const currentSession = {
   ipAddress: "127.0.0.1",
 };
 
+const passkey = {
+  id: "passkey-1",
+  name: "MacBook – Safari",
+  userId: "student-1",
+  credentialID: "credential-1",
+  publicKey: "key",
+  counter: 1,
+  deviceType: "multiDevice",
+  backedUp: true,
+  transports: "internal",
+  createdAt: "2026-11-01T10:00:00.000Z",
+  lastUsedAt: "2026-11-20T09:00:00.000Z",
+};
+
+function servePasskeys(passkeys: unknown[] = []) {
+  api.route("GET", "/api/auth/passkey/list-user-passkeys", () =>
+    Response.json(passkeys),
+  );
+}
+
 function serveSessions(sessions = [currentSession]) {
+  servePasskeys();
   api.route("GET", "/api/auth/list-sessions", () => Response.json(sessions));
   api.route("GET", "/api/auth/get-session", () =>
     Response.json({
@@ -182,16 +207,80 @@ test("sessions can be loaded again after a temporary failure", async () => {
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
-test("deletion requires password confirmation and allows correcting a wrong password", async () => {
+/** Answers a sign-in code request and its entry, as the API does for a recent sign-in. */
+/** A browser with a passkey for this student, and the API that checks it. */
+function supportPasskeySignIn() {
+  const buffer = () => new Uint8Array([1, 2, 3]).buffer;
+  Object.defineProperty(window, "PublicKeyCredential", {
+    configurable: true,
+    value: function PublicKeyCredential() {},
+  });
+  Object.defineProperty(navigator, "credentials", {
+    configurable: true,
+    value: {
+      get: async () => ({
+        id: "credential-1",
+        rawId: buffer(),
+        type: "public-key",
+        authenticatorAttachment: "platform",
+        getClientExtensionResults: () => ({}),
+        response: {
+          authenticatorData: buffer(),
+          clientDataJSON: buffer(),
+          signature: buffer(),
+          userHandle: null,
+        },
+      }),
+    },
+  });
+  const browser = { verified: 0 };
+  api.route("GET", "/api/auth/passkey/generate-authenticate-options", () =>
+    Response.json({ challenge: "Y2hhbGxlbmdl", userVerification: "required" }),
+  );
+  api.route("POST", "/api/auth/passkey/verify-authentication", () => {
+    browser.verified++;
+    return Response.json({
+      session: currentSession,
+      user: { id: "student-1" },
+    });
+  });
+  return browser;
+}
+
+function serveCodeSignIn() {
+  const requested: string[] = [];
+  const entered: string[] = [];
+  api.route(
+    "POST",
+    "/api/auth/email-otp/send-verification-otp",
+    async (request) => {
+      requested.push(((await request.json()) as { email: string }).email);
+      return Response.json({ success: true });
+    },
+  );
+  api.route("POST", "/api/auth/sign-in/email-otp", async (request) => {
+    entered.push(((await request.json()) as { otp: string }).otp);
+    return Response.json({
+      token: "fresh-token",
+      user: {
+        id: "student-1",
+        name: "Justus",
+        email: "justus@example.com",
+        emailVerified: true,
+        createdAt: currentSession.createdAt,
+        updatedAt: currentSession.updatedAt,
+      },
+    });
+  });
+  return { requested, entered };
+}
+
+test("deletion asks for confirmation and requests it from a recent sign-in", async () => {
   serveSessions();
-  const passwords: string[] = [];
-  api.route("POST", "/api/me/deletion-request", async (request) => {
-    const { password } = (await request.json()) as { password: string };
-    passwords.push(password);
-    return Response.json(
-      {},
-      { status: password === "correct-password" ? 202 : 403 },
-    );
+  let requests = 0;
+  api.route("POST", "/api/me/deletion-request", () => {
+    requests++;
+    return Response.json({ status: "pending" }, { status: 202 });
   });
   const user = userEvent.setup();
   renderSettings();
@@ -201,52 +290,62 @@ test("deletion requires password confirmation and allows correcting a wrong pass
   );
   expect(dialog.getByText(/manuellen Löschung/)).toBeTruthy();
   expect(dialog.getByText(/allen Geräten abgemeldet/)).toBeTruthy();
-  const password = dialog.getByLabelText("Passwort");
-  await user.type(password, "wrong-password");
+  expect(dialog.queryByLabelText(/Passwort/)).toBeNull();
   await user.click(dialog.getByRole("button", { name: "Löschung anfordern" }));
-  expect(await dialog.findByRole("alert")).toHaveProperty(
-    "textContent",
-    "Das Passwort ist nicht korrekt.",
-  );
-  expect(router.replace).not.toHaveBeenCalled();
-  await user.clear(password);
-  await user.type(password, "correct-password");
-  await user.click(dialog.getByRole("button", { name: "Löschung anfordern" }));
+
   await waitFor(() =>
     expect(router.replace).toHaveBeenCalledWith("/sign-in?deletion=requested"),
   );
-  expect(passwords).toEqual(["wrong-password", "correct-password"]);
+  expect(requests).toBe(1);
   expect(router.refresh).not.toHaveBeenCalled();
 });
 
-test.each([
-  [429, "Zu viele Versuche. Warte einen Moment und versuche es erneut."],
-  [
-    500,
+test("deletion from an older sign-in asks for an emailed code, then requests it", async () => {
+  serveSessions();
+  const code = serveCodeSignIn();
+  let requests = 0;
+  api.route("POST", "/api/me/deletion-request", () => {
+    requests++;
+    return requests === 1
+      ? Response.json({ error: "sign_in_again" }, { status: 403 })
+      : Response.json({ status: "pending" }, { status: 202 });
+  });
+  const user = userEvent.setup();
+  renderSettings();
+  await screen.findByText("Dieses Gerät");
+  await user.click(screen.getByRole("button", { name: "Konto löschen" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  await user.click(dialog.getByRole("button", { name: "Löschung anfordern" }));
+
+  const input = await dialog.findByLabelText("Anmeldecode");
+  expect(dialog.getByText(/justus@example\.com/)).toBeTruthy();
+  expect(code.requested).toEqual(["justus@example.com"]);
+  expect(router.replace).not.toHaveBeenCalled();
+  await user.type(input, "123456");
+
+  await waitFor(() =>
+    expect(router.replace).toHaveBeenCalledWith("/sign-in?deletion=requested"),
+  );
+  expect(code.entered).toEqual(["123456"]);
+  expect(requests).toBe(2);
+});
+
+test("a failed deletion leaves the dialog open with actionable feedback", async () => {
+  serveSessions();
+  api.route("POST", "/api/me/deletion-request", () =>
+    Response.json({}, { status: 500 }),
+  );
+  const user = userEvent.setup();
+  renderSettings();
+  await user.click(screen.getByRole("button", { name: "Konto löschen" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  await user.click(dialog.getByRole("button", { name: "Löschung anfordern" }));
+  expect(await dialog.findByRole("alert")).toHaveProperty(
+    "textContent",
     "Die Löschung konnte nicht angefordert werden. Bitte versuche es erneut.",
-  ],
-])(
-  "deletion failure %s leaves the dialog open with actionable feedback",
-  async (status, message) => {
-    serveSessions();
-    api.route("POST", "/api/me/deletion-request", () =>
-      Response.json({}, { status }),
-    );
-    const user = userEvent.setup();
-    renderSettings();
-    await user.click(screen.getByRole("button", { name: "Konto löschen" }));
-    const dialog = within(await screen.findByRole("dialog"));
-    await user.type(dialog.getByLabelText("Passwort"), "password");
-    await user.click(
-      dialog.getByRole("button", { name: "Löschung anfordern" }),
-    );
-    expect(await dialog.findByRole("alert")).toHaveProperty(
-      "textContent",
-      message,
-    );
-    expect(router.replace).not.toHaveBeenCalled();
-  },
-);
+  );
+  expect(router.replace).not.toHaveBeenCalled();
+});
 
 test("a pending deletion cannot be submitted twice", async () => {
   serveSessions();
@@ -262,7 +361,6 @@ test("a pending deletion cannot be submitted twice", async () => {
   renderSettings();
   await user.click(screen.getByRole("button", { name: "Konto löschen" }));
   const dialog = within(await screen.findByRole("dialog"));
-  await user.type(dialog.getByLabelText("Passwort"), "password");
   const submit = dialog.getByRole("button", { name: "Löschung anfordern" });
   await user.click(submit);
   await waitFor(() => expect(submit).toHaveProperty("disabled", true));
@@ -273,22 +371,79 @@ test("a pending deletion cannot be submitted twice", async () => {
   await dialog.findByRole("alert");
 });
 
-test("cancelling deletion clears the password and sends no deletion request", async () => {
+test("cancelling deletion sends no deletion request", async () => {
   serveSessions();
   const user = userEvent.setup();
   renderSettings();
-  const trigger = screen.getByRole("button", {
-    name: "Konto löschen",
-  });
-  await user.click(trigger);
-  let dialog = within(await screen.findByRole("dialog"));
-  await user.type(dialog.getByLabelText("Passwort"), "private-password");
+  await user.click(screen.getByRole("button", { name: "Konto löschen" }));
+  const dialog = within(await screen.findByRole("dialog"));
   await user.click(dialog.getByRole("button", { name: "Abbrechen" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await user.click(trigger);
-  dialog = within(await screen.findByRole("dialog"));
-  expect(dialog.getByLabelText("Passwort")).toHaveProperty("value", "");
   expect(router.replace).not.toHaveBeenCalled();
+});
+
+test("signing out everywhere from an older sign-in asks for an emailed code first", async () => {
+  serveSessions();
+  const code = serveCodeSignIn();
+  let attempts = 0;
+  api.route("POST", "/api/auth/revoke-sessions", () => {
+    attempts++;
+    return attempts === 1
+      ? Response.json(
+          { code: "SESSION_NOT_FRESH", message: "Sign in again to continue." },
+          { status: 403 },
+        )
+      : Response.json({ status: true });
+  });
+  const user = userEvent.setup();
+  renderSettings();
+  await screen.findByText("Dieses Gerät");
+  await user.click(screen.getByRole("button", { name: "Überall abmelden" }));
+
+  const dialog = within(
+    await screen.findByRole("dialog", { name: "Bestätige, dass du es bist" }),
+  );
+  await user.type(await dialog.findByLabelText("Anmeldecode"), "123456");
+
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/sign-in"));
+  expect(code.requested).toEqual(["justus@example.com"]);
+  expect(attempts).toBe(2);
+});
+
+test("signing out everywhere from an older sign-in can be confirmed with a passkey", async () => {
+  serveSessions();
+  servePasskeys([passkey]);
+  const code = serveCodeSignIn();
+  const browser = supportPasskeySignIn();
+  let attempts = 0;
+  api.route("POST", "/api/auth/revoke-sessions", () => {
+    attempts++;
+    return attempts === 1
+      ? Response.json(
+          { code: "SESSION_NOT_FRESH", message: "Sign in again to continue." },
+          { status: 403 },
+        )
+      : Response.json({ status: true });
+  });
+  const user = userEvent.setup();
+  renderSettings();
+  await screen.findByText("Dieses Gerät");
+  await within(screen.getByRole("region", { name: "Passkeys" })).findByRole(
+    "listitem",
+  );
+  await user.click(screen.getByRole("button", { name: "Überall abmelden" }));
+
+  const dialog = within(
+    await screen.findByRole("dialog", { name: "Bestätige, dass du es bist" }),
+  );
+  await user.click(
+    dialog.getByRole("button", { name: "Mit Passkey bestätigen" }),
+  );
+
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/sign-in"));
+  expect(browser.verified).toBe(1);
+  expect(code.requested).toEqual([]);
+  expect(attempts).toBe(2);
 });
 
 test.each([
@@ -355,3 +510,94 @@ test.each([
     }
   },
 );
+
+test("security settings list passkeys with when they were added and last used", async () => {
+  serveSessions();
+  servePasskeys([
+    passkey,
+    { ...passkey, id: "passkey-2", name: "iPhone – Safari", lastUsedAt: null },
+  ]);
+  renderSettings();
+
+  const group = within(screen.getByRole("region", { name: "Passkeys" }));
+  const rows = await group.findAllByRole("listitem");
+  expect(rows).toHaveLength(2);
+  expect(rows[0]!.textContent).toContain("MacBook – Safari");
+  expect(rows[0]!.textContent).toContain("Hinzugefügt am 1. Nov. 2026");
+  expect(rows[0]!.textContent).toContain("Zuletzt verwendet am 20. Nov. 2026");
+  expect(rows[1]!.textContent).toContain("Noch nie verwendet");
+  expect(
+    group.getByRole("button", { name: "Passkey hinzufügen" }),
+  ).toBeTruthy();
+});
+
+test("without passkeys the settings explain what one is for", async () => {
+  serveSessions();
+  renderSettings();
+
+  const group = within(screen.getByRole("region", { name: "Passkeys" }));
+  expect((await group.findByText(/noch keinen Passkey/)).textContent).toContain(
+    "Face ID",
+  );
+});
+
+test("deleting a passkey removes it, even the last one", async () => {
+  serveSessions();
+  let passkeys = [passkey];
+  api.route("GET", "/api/auth/passkey/list-user-passkeys", () =>
+    Response.json(passkeys),
+  );
+  const deleted: string[] = [];
+  api.route("POST", "/api/auth/passkey/delete-passkey", async (request) => {
+    deleted.push(((await request.json()) as { id: string }).id);
+    passkeys = [];
+    return Response.json({ status: true });
+  });
+  const user = userEvent.setup();
+  renderSettings();
+  const group = within(screen.getByRole("region", { name: "Passkeys" }));
+  const row = await group.findByRole("listitem");
+  await user.click(
+    within(row).getByRole("button", { name: "MacBook – Safari löschen" }),
+  );
+
+  await waitFor(() => expect(group.queryByRole("listitem")).toBeNull());
+  expect(deleted).toEqual(["passkey-1"]);
+});
+
+test("deleting a passkey from an older sign-in asks for an emailed code first", async () => {
+  serveSessions();
+  servePasskeys([passkey]);
+  const code = serveCodeSignIn();
+  let attempts = 0;
+  api.route("POST", "/api/auth/passkey/delete-passkey", () => {
+    attempts++;
+    return attempts === 1
+      ? Response.json(
+          { code: "SESSION_NOT_FRESH", message: "Sign in again to continue." },
+          { status: 403 },
+        )
+      : Response.json({ status: true });
+  });
+  const user = userEvent.setup();
+  renderSettings();
+  await screen.findByText("Dieses Gerät");
+  const row = await within(
+    screen.getByRole("region", { name: "Passkeys" }),
+  ).findByRole("listitem");
+  await user.click(
+    within(row).getByRole("button", { name: "MacBook – Safari löschen" }),
+  );
+  const dialog = within(
+    await screen.findByRole("dialog", { name: "Bestätige, dass du es bist" }),
+  );
+  await user.type(await dialog.findByLabelText("Anmeldecode"), "123456");
+
+  await waitFor(() => expect(attempts).toBe(2));
+  expect(code.requested).toEqual(["justus@example.com"]);
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Bestätige, dass du es bist" }),
+    ).toBeNull(),
+  );
+});
