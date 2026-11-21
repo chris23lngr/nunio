@@ -1063,9 +1063,10 @@ export function createAgents({
     },
 
     /**
-     * Records the Artifact Run an Agent's Run starts under one of its Capabilities, charged to that Run: only while the
-     * Run is under way, its Agent active and still holding the Capability, and at most one per Run (ADR-0026). The
-     * Artifact Run has no Agent of its own. Idempotent on `runId`.
+     * Records the Artifact Run an Agent's Run starts under one of its Capabilities, charged to that Run, for work of
+     * `courseIds`: only while the Run is under way, its Agent active and still holding the Capability, each Course one
+     * of its current, accepted, unarchived Courses (ADR-0001: an Archived Course is only read), and at most one per
+     * Run (ADR-0026). The Artifact Run has no Agent of its own. Idempotent on `runId`.
      */
     async startArtifactRun(
       agentRunId: string,
@@ -1073,7 +1074,13 @@ export function createAgents({
         runId,
         workflowId,
         capability,
-      }: { runId: string; workflowId: string; capability: CapabilityId },
+        courseIds,
+      }: {
+        runId: string;
+        workflowId: string;
+        capability: CapabilityId;
+        courseIds: string[];
+      },
     ): Promise<
       | { status: "ok" }
       | {
@@ -1083,6 +1090,7 @@ export function createAgents({
             | "paused"
             | "ended"
             | "no_capability"
+            | "out_of_scope"
             | "run_cap";
         }
     > {
@@ -1097,13 +1105,21 @@ export function createAgents({
         }
         const run = await tx.run.findUniqueOrThrow({
           where: { id: agentRunId },
-          include: { agent: { include: { capabilities: true } } },
+          include: {
+            agent: {
+              include: {
+                capabilities: true,
+                courses: { include: { course: true } },
+              },
+            },
+          },
         });
         type Reason =
           | "run_ended"
           | "paused"
           | "ended"
           | "no_capability"
+          | "out_of_scope"
           | "run_cap";
         const refuse = (reason: Reason) =>
           ({ status: "refused", reason }) as const;
@@ -1111,6 +1127,13 @@ export function createAgents({
         if (run.agent.state !== "active") return refuse(run.agent.state);
         if (!run.agent.capabilities.some((c) => c.capability === capability))
           return refuse("no_capability");
+        const scope = run.agent.courses
+          .filter(
+            ({ course }) => course.status === "accepted" && !course.archivedAt,
+          )
+          .map(({ courseId }) => courseId);
+        if (!courseIds.length || courseIds.some((id) => !scope.includes(id)))
+          return refuse("out_of_scope");
         const started = await tx.run.count({
           where: { startedByRunId: agentRunId },
         });

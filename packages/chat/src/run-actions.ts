@@ -360,8 +360,9 @@ async function readTask(
 }
 
 /**
- * Reads a call of a Lernmaterial Capability into the Artifact Run it starts: on Topics of the Agent's Courses only,
- * named by the tags courseFacts gave out in this or an earlier step.
+ * Reads a call of a Lernmaterial Capability into the Artifact Run it starts: on Topics of the Run's Courses, named by
+ * the tags courseFacts gave out in this or an earlier step. Whether each is of the Agent's current, unarchived Courses
+ * is decided as it starts.
  */
 async function readArtifact(
   turn: Turn,
@@ -457,6 +458,8 @@ const notStarted: Record<string, string> = {
   paused: why.paused,
   ended: why.ended,
   no_capability: "the student no longer lets you make these",
+  out_of_scope:
+    "a Topic is not of your current Courses: you make nothing for a Course that is Archived or no longer yours",
   run_cap:
     "this Run has already started a practice set or flashcards, and only one may start per Run, so make no more such calls",
 };

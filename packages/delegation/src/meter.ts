@@ -16,7 +16,7 @@ import type {
 import { createGate, withdrawApprovals } from "./gate.js";
 import type { ActionIntent } from "./kinds.js";
 import type { Principal, Transaction } from "./principal.js";
-import { withOwner } from "./principal.js";
+import { principal, withOwner } from "./principal.js";
 
 /** AI usage in micro-USD, as OpenRouter reports cost. */
 export interface Usage {
@@ -131,7 +131,10 @@ export function createDelegation({
       let agentId: string | null = null;
       // The Run whose cost the call is: the Run itself, or the Agent's Run that started this Artifact Run.
       let runId: string | null = p.kind === "run" ? p.runId : null;
+      // Settled as the student, so a call outlives its Run or Agent being deleted while it is in flight.
+      let owner: Principal = p;
       const refusal = await withOwner(db, p, async (tx, studentId) => {
+        owner = principal.fromSession({ studentId });
         const denied = await accessRefusal(tx, studentId);
         if (denied) return denied;
         if (p.kind === "run") {
@@ -191,12 +194,13 @@ export function createDelegation({
       });
       if (refusal) return { status: "refused", reason: refusal };
       const settle = (usage: Usage, status: "settled" | "released") =>
-        withOwner(db, p, async (tx, studentId) => {
-          // The Agent before the Allowance, in the order reserving locks them, so the two never deadlock.
+        withOwner(db, owner, async (tx, studentId) => {
+          // The Agent before the Allowance, in the order reserving locks them, so the two never deadlock. An Agent
+          // deleted meanwhile has no Budget left to settle; the Allowance still is.
           if (agentId) {
             // A call that began last month counts against the month it ends in.
             await renewBudget(tx, agentId, clock.now());
-            await tx.agent.update({
+            await tx.agent.updateMany({
               where: { id: agentId },
               data: {
                 heldMicroUsd: { decrement: estimate.microUsd },
@@ -226,7 +230,7 @@ export function createDelegation({
             await settle({ microUsd: 0 }, "released");
           } else {
             // The estimate is already counted; marking it held only makes it findable for the founder.
-            await withOwner(db, p, (tx) =>
+            await withOwner(db, owner, (tx) =>
               tx.usageReservation.update({
                 where: { id: reservationId },
                 data: { status: "held" },

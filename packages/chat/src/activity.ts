@@ -66,6 +66,7 @@ export type ArtifactEvent = {
     | "paused"
     | "ended"
     | "no_capability"
+    | "out_of_scope"
     | "run_cap"
     | null;
 };

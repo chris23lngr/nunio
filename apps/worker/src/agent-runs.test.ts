@@ -176,6 +176,8 @@ const fakeExecutor: Executor = {
   },
 };
 let delegation: ReturnType<typeof createDelegation>;
+/** Starts an Artifact Run's workflow, as the worker does, unless a test puts in another. */
+let startArtifactRun: (runId: string) => Promise<void>;
 /** What each Artifact the Maker makes costs, in micro-USD; its estimate is 10. */
 let makerCost = 20;
 /** Makes flashcards and practice sets of one row each on the first Topic, citing the first passage. */
@@ -305,7 +307,7 @@ beforeAll(async () => {
     artifacts,
     delegation,
     agents,
-    startArtifactRun: artifactRunStarter(env.client, artifactQueue),
+    startArtifactRun: (runId) => startArtifactRun(runId),
     catalog: { chatModels: async () => offered },
     modelFor: (config) => {
       ranOn.push(config.key);
@@ -343,6 +345,7 @@ beforeEach(() => {
   executor = fakeExecutor;
   dispatched = [];
   makerCost = 20;
+  startArtifactRun = artifactRunStarter(env.client, artifactQueue);
 });
 
 /**
@@ -2165,6 +2168,70 @@ describe("an Agent's Run starting Lernmaterial (#143)", () => {
     });
   });
 
+  it("starts it once when the worker loses the first attempt's completion, even if the Topic changed since", async () => {
+    const s = await started({ held: [{ id: "createFlashcards", mode: null }] });
+    const topicId = await topicOf(s);
+    // The first attempt records the Artifact Run, then fails to start its workflow; the Topic is rejected before the
+    // retry.
+    const starter = startArtifactRun;
+    startArtifactRun = async (runId) => {
+      startArtifactRun = starter;
+      await admin.fact.update({
+        where: { id: topicId },
+        data: { state: "rejected" },
+      });
+      throw new Error("Temporal is unavailable");
+    };
+    script = [
+      readFacts,
+      (prompt) => calls("createFlashcards", { topics: [tagIn(prompt)] }),
+      () => says("Fertig."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect(await artifactsOf(s.runId)).toMatchObject([
+      { kind: "flashcards", request: { topicIds: [topicId] } },
+    ]);
+    expect(await artifactEntries(s)).toMatchObject([
+      { outcome: "started", refusal: null },
+    ]);
+    expect(actionResults(prompts[2], "createFlashcards")).toEqual([
+      expect.stringMatching(/^Started/),
+    ]);
+    expect(await made(s.runId)).toBe("failed");
+  }, 30_000);
+
+  it("starts nothing for a Course of its Agent Archived since the Run started, which it still reads", async () => {
+    const s = await started({ held: [{ id: "createFlashcards", mode: null }] });
+    await topicOf(s);
+    script = [
+      readFacts,
+      async (prompt) => {
+        await admin.course.updateMany({
+          where: { studentId: s.studentId },
+          data: { archivedAt: new Date() },
+        });
+        return calls("createFlashcards", { topics: [tagIn(prompt)] });
+      },
+      () => says("Fertig."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect(await artifactsOf(s.runId)).toEqual([]);
+    expect(await artifactEntries(s)).toMatchObject([
+      {
+        topics: [{ title: "Klausurvorbereitung" }],
+        outcome: "refused",
+        refusal: "out_of_scope",
+      },
+    ]);
+    expect(actionResults(prompts[2], "createFlashcards")).toEqual([
+      expect.stringMatching(/^Not started: a Topic is not of your current/),
+    ]);
+  });
+
   it("starts nothing for a tag that names no Topic of its Courses", async () => {
     const s = await started({ held: [{ id: "createFlashcards", mode: null }] });
     await topicOf(s);
@@ -2185,31 +2252,39 @@ describe("an Agent's Run starting Lernmaterial (#143)", () => {
     ]);
   });
 
-  it("pauses its Agent and its Schedule when the Artifact Run's cost exhausts the Budget after the Run ended", async () => {
-    const s = await started({ held: [{ id: "createFlashcards", mode: null }] });
-    await topicOf(s);
-    // Three steps and the query embedding fit; the Maker's estimate of 10 does not.
-    await admin.agent.update({
-      where: { id: s.agentId },
-      data: { budgetMicroUsd: 9 },
-    });
-    script = [
-      readFacts,
-      (prompt) => calls("createFlashcards", { topics: [tagIn(prompt)] }),
-      () => says("Fertig."),
-    ];
-    expect(await run(s)).toEqual({ status: "done" });
-    saved.length = 0;
+  // Three steps cost 3; then the query embedding's estimate is 1 and the Maker's 10.
+  it.each([
+    ["its Maker call", 9],
+    ["its query", 3],
+  ])(
+    "pauses its Agent and its Schedule when the Artifact Run's cost exhausts the Budget after the Run ended, at %s",
+    async (_, budgetMicroUsd) => {
+      const s = await started({
+        held: [{ id: "createFlashcards", mode: null }],
+      });
+      await topicOf(s);
+      await admin.agent.update({
+        where: { id: s.agentId },
+        data: { budgetMicroUsd },
+      });
+      script = [
+        readFacts,
+        (prompt) => calls("createFlashcards", { topics: [tagIn(prompt)] }),
+        () => says("Fertig."),
+      ];
+      expect(await run(s)).toEqual({ status: "done" });
+      saved.length = 0;
 
-    expect(await made(s.runId)).toBe("failed");
+      expect(await made(s.runId)).toBe("failed");
 
-    expect(await artifactsOf(s.runId)).toMatchObject([
-      { status: "failed", failure: "budget_exhausted" },
-    ]);
-    expect(await agents.view(s.p, s.agentId)).toMatchObject({
-      state: "paused",
-      pausedBy: "budget",
-    });
-    expect(saved).toEqual([`${s.agentId} paused`]);
-  });
+      expect(await artifactsOf(s.runId)).toMatchObject([
+        { status: "failed", failure: "budget_exhausted" },
+      ]);
+      expect(await agents.view(s.p, s.agentId)).toMatchObject({
+        state: "paused",
+        pausedBy: "budget",
+      });
+      expect(saved).toEqual([`${s.agentId} paused`]);
+    },
+  );
 });

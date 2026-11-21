@@ -440,8 +440,10 @@ export function createArtifacts({
     },
     /**
      * Starts the Artifact Run an Agent's Run asks for with call `key`, under one of its Capabilities: flashcards or a
-     * practice set for Topics of that Run's Courses only, at most one per Run (ADR-0026), its cost charged to that Run.
-     * Pins the Topics' Courses; the caller starts the Artifact Run's workflow, which calls `make`. Idempotent on `key`.
+     * practice set for Topics of the Agent's current, accepted, unarchived Courses only, at most one per Run
+     * (ADR-0026), its cost charged to that Run. Pins the Topics' Courses; the caller starts the Artifact Run's
+     * workflow, which calls `make`. Idempotent on `key`: once its Artifact Run is recorded, a repeat finishes starting
+     * it, whatever changed since.
      */
     async startFromRun(
       agentRunId: string,
@@ -461,41 +463,45 @@ export function createArtifacts({
             | "paused"
             | "ended"
             | "no_capability"
+            | "out_of_scope"
             | "run_cap";
         }
     > {
       const runId = idOf(`${req.key}:run`),
         artifactId = idOf(`${req.key}:artifact`);
-      const { studentId, courseIds } = await withOwner(
+      const { studentId, recorded, courseIds } = await withOwner(
         db,
         principal.fromRun(agentRunId),
         async (tx, studentId) => ({
           studentId,
-          courseIds: (
-            await tx.runPinCourse.findMany({
-              where: { runId: agentRunId },
-              select: { courseId: true },
-            })
-          ).map((c) => c.courseId),
+          recorded:
+            (await tx.run.findUnique({ where: { id: runId } })) !== null,
+          // The Topics' Courses as stored, whatever became of the Topics since.
+          courseIds: [
+            ...new Set(
+              (
+                await tx.fact.findMany({
+                  where: { id: { in: req.topicIds }, type: "topic" },
+                  select: { courseId: true },
+                })
+              ).map((fact) => fact.courseId),
+            ),
+          ],
         }),
       );
       const student = principal.fromSession({ studentId });
-      const topics = await topicsOf(student, req.topicIds);
-      if (
-        !topics?.length ||
-        topics.some((topic) => !courseIds.includes(topic.courseId))
-      )
-        return { status: "refused", reason: "gone" };
-      const started = await agents.startArtifactRun(agentRunId, {
-        runId,
-        workflowId: `artifactRun/${runId}`,
-        capability: req.capability,
-      });
-      if (started.status !== "ok") return started;
-      const selection = {
-        courseIds: [...new Set(topics.map((topic) => topic.courseId))],
-        sourceIds: [],
-      };
+      if (!recorded) {
+        if (!(await topicsOf(student, req.topicIds)))
+          return { status: "refused", reason: "gone" };
+        const started = await agents.startArtifactRun(agentRunId, {
+          runId,
+          workflowId: `artifactRun/${runId}`,
+          capability: req.capability,
+          courseIds,
+        });
+        if (started.status !== "ok") return started;
+      }
+      const selection = { courseIds, sourceIds: [] };
       if (
         (await reader.pin(student, { runId, from: { selection } })).status !==
         "ok"
@@ -533,6 +539,22 @@ export function createArtifacts({
             data: { status: "failed", failure },
           }),
         );
+        // Metering this Run, its query or its Maker call, Paused the Agent whose Run started it, in the worker, where
+        // nothing pauses its Schedule.
+        if (failure === "budget_exhausted") {
+          const agentId = await withOwner(
+            db,
+            run,
+            async (tx) =>
+              (
+                await tx.run.findUnique({
+                  where: { id: runId },
+                  select: { startedBy: { select: { agentId: true } } },
+                })
+              )?.startedBy?.agentId,
+          );
+          if (agentId) await agents.syncBudgetPause(run, agentId);
+        }
         return "failed" as const;
       };
       const plan = await planOf(run, artifact);
@@ -563,24 +585,7 @@ export function createArtifacts({
       } catch {
         return fail("maker_failed");
       }
-      if (made.status !== "ok") {
-        // An Agent's Budget this Run is charged to Paused it in the worker, where nothing pauses its Schedule.
-        if (made.reason === "budget_exhausted") {
-          const agentId = await withOwner(
-            db,
-            run,
-            async (tx) =>
-              (
-                await tx.run.findUnique({
-                  where: { id: runId },
-                  select: { startedBy: { select: { agentId: true } } },
-                })
-              )?.startedBy?.agentId,
-          );
-          if (agentId) await agents.syncBudgetPause(run, agentId);
-        }
-        return fail(made.reason);
-      }
+      if (made.status !== "ok") return fail(made.reason);
       const cite = <R extends { cited: string[] }>({ cited, ...row }: R) => ({
         ...row,
         citations: cited.flatMap((tag) =>
