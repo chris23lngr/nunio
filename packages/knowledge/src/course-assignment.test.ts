@@ -60,7 +60,7 @@ beforeAll(async () => {
     facts,
     agents: {
       pauseForCourse: async () => {},
-      endForCourse: async () => {},
+      dropCourse: async () => {},
     },
   });
   delegation = createDelegation({ db: runtime, aiEnabled: () => true });

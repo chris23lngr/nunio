@@ -66,6 +66,7 @@ import { CapabilityMenu } from "./components/capability-menu";
 import { EditCapabilitiesSheet } from "./components/edit-capabilities-sheet";
 import { EditCoursesSheet } from "./components/edit-courses-sheet";
 import { SelectModelSheet } from "./components/select-model-sheet";
+import { pausedLine } from "./name";
 
 type Draft = {
   name: string;
@@ -123,15 +124,6 @@ type Saved = Pick<
   | "state"
   | "running"
 >;
-
-/** Why a Paused Agent is Paused, as its header says it, such as "Pausiert: Budget aufgebraucht". */
-const pausedLines: Record<string, string> = {
-  student: "Von dir pausiert",
-  budget: "Pausiert: Budget aufgebraucht",
-  course_archived: "Pausiert: Alle Kurse archiviert",
-};
-const pausedLine = (pausedBy: string | null) =>
-  (pausedBy && pausedLines[pausedBy]) || "Pausiert";
 
 /** A minute of the day as HH:MM, and back. */
 const timeOf = (minute: number) =>

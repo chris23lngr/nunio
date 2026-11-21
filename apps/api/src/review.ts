@@ -8,8 +8,10 @@ import {
   ReviewState,
   Unsupported,
 } from "@nunio/db";
+import type { Principal } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
 import { aiUseClasses } from "@nunio/knowledge";
+import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
 
 const Provenance = z.discriminatedUnion("kind", [
@@ -157,6 +159,21 @@ export const AiUse = z
     }),
   ])
   .openapi("AiUse");
+
+/**
+ * Brings the student's Agents in line with their Courses after a Reject or merge (#145). The change to the Course
+ * stands if this fails, and the next change to their Courses catches up.
+ */
+async function followCourses(c: Context<AppBindings>, p: Principal) {
+  try {
+    await c.get("agents").followCourses(p);
+  } catch (error) {
+    console.error(
+      "Could not bring the Agents in line with their Courses",
+      error,
+    );
+  }
+}
 
 export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
@@ -317,6 +334,9 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
         );
       if (result.status === "gone") return c.json({ error: "gone" }, 404);
       if (result.status === "entered") return c.json({ error: "entered" }, 409);
+      // A Rejected Course leaves the student's Agents.
+      if (c.req.valid("json").decision === "reject")
+        await followCourses(c, principal.fromSession(actor));
       return c.json({ status: "ok" as const }, 200);
     },
   );
@@ -324,7 +344,8 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
     createRoute({
       method: "post",
       path: "/api/me/courses/{id}/merge",
-      description: "Merge this Course into another.",
+      description:
+        "Merge this Course into another, which takes its place on the student's Agents.",
       request: {
         params: z.object({ id: z.string().uuid() }),
         body: {
@@ -364,6 +385,8 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
           { error: "conflicting_corrections", items: result.items },
           409,
         );
+      // The merged Course's Agents have the target instead.
+      await followCourses(c, principal.fromSession(actor));
       // Places the target's ungrouped Topics (ADR-0024); the merge stands if grouping cannot start.
       await c
         .get("sourceWorkflows")

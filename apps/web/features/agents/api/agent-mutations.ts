@@ -107,6 +107,11 @@ export function controlAgent(
       const result = await createApiClient(apiOrigin).POST(path, {
         params: { path: { id } },
       });
+      // Resuming needs a Course to act for.
+      if (result.response.status === 409)
+        throw new Error(
+          "Dein Agent hat keinen aktiven Kurs, für den er arbeiten kann. Gib ihm einen Kurs oder hebe eine Archivierung auf, dann setze ihn fort.",
+        );
       if (!result.data)
         throw new Error(
           "Dein Agent konnte nicht geändert werden. Versuche es noch einmal.",

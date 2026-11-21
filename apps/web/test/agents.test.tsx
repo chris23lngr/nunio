@@ -377,6 +377,41 @@ test("lists each Agent with its emoji, name, Beschreibung and one badge, in the 
   ).toBe("/agents/new");
 });
 
+test("a Paused row says why, unless the student paused it", async () => {
+  api.route("GET", "/api/me/review", () => Response.json({ courses: [] }));
+  api.route("GET", "/api/me/agents", () =>
+    Response.json(
+      [
+        ["a-1", "student"],
+        ["a-2", "budget"],
+        ["a-3", "course_archived"],
+        ["a-4", "no_course"],
+      ].map(([id, pausedBy]) =>
+        listed({
+          id,
+          name: `Agent ${id}`,
+          state: "paused",
+          pausedBy,
+          badge: "paused",
+        }),
+      ),
+    ),
+  );
+  render(
+    <Providers>
+      <AgentsScreen apiOrigin={api.origin} />
+    </Providers>,
+  );
+
+  await screen.findByRole("link", { name: "Agent a-4" });
+  expect(agentRows().map((row) => row.textContent)).toEqual([
+    expect.not.stringMatching(/Pausiert:|Von dir/),
+    expect.stringContaining("Pausiert: Budget aufgebraucht"),
+    expect.stringContaining("Pausiert: Alle Kurse archiviert"),
+    expect.stringContaining("Pausiert: Kein Kurs mehr"),
+  ]);
+});
+
 test("Agenten durchsuchen narrows the list to Agents whose name or Beschreibung matches", async () => {
   api.route("GET", "/api/me/review", () => Response.json({ courses: [] }));
   api.route("GET", "/api/me/agents", () =>

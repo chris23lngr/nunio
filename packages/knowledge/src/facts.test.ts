@@ -1839,7 +1839,7 @@ const coursesOf = () =>
     facts,
     agents: {
       pauseForCourse: async () => {},
-      endForCourse: async () => {},
+      dropCourse: async () => {},
     },
   });
 const courseList = (p: Principal) => coursesOf().list(p);

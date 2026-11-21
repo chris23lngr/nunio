@@ -176,8 +176,28 @@ async function checkCourses(
   return ids;
 }
 
-/** Why an Agent is Paused: by the student, by exhausting its Budget, or by its Course being Archived. */
-export type PausedBy = "student" | "budget" | "course_archived";
+/**
+ * Why an Agent is Paused: by the student, by exhausting its Budget, by all its Courses (a preset's one Course) being
+ * Archived, or by losing its last Course.
+ */
+export type PausedBy = "student" | "budget" | "course_archived" | "no_course";
+
+/**
+ * Why a free-text Agent with these Courses has none left to act for: all are Archived, `archiving` counting as Archived
+ * already, or it has none. Null while one is in scope.
+ */
+function outOfCourses(
+  courses: {
+    courseId: string;
+    course: { status: string; archivedAt: Date | null };
+  }[],
+  archiving?: string,
+): "course_archived" | "no_course" | null {
+  const accepted = courses.filter((c) => c.course.status === "accepted");
+  if (accepted.some((c) => !c.course.archivedAt && c.courseId !== archiving))
+    return null;
+  return accepted.length ? "course_archived" : "no_course";
+}
 
 /** nunio no longer acts for an Archived Course, so no Agent on it may run. */
 const isCourseArchived = async (tx: Transaction, courseId: string | null) =>
@@ -374,6 +394,70 @@ export function createAgents({
     });
     for (const id of ids) await syncSchedule(p, id);
   };
+  /**
+   * Brings the student's free-text Agents in line with their Courses (#145): an entry on a merged Course moves to the
+   * Course it went into, one on a Rejected Course or on `dropping` goes, and an active Agent left with no Course to act
+   * for is Paused, `course_archived` when all its Courses are Archived (`archiving` counting as Archived already) and
+   * `no_course` when it has none. Its open Approvals are withdrawn and, after the commit, its Schedule paused. Only the
+   * student resumes it. Safe to repeat.
+   */
+  const settleCourses = async (
+    p: Principal,
+    { archiving, dropping }: { archiving?: string; dropping?: string } = {},
+  ) => {
+    if (p.kind !== "student") return;
+    const paused = await withOwner(db, p, async (tx, studentId) => {
+      await tx.agentCourse.deleteMany({
+        where: {
+          OR: [
+            { course: { status: "rejected" } },
+            ...(dropping ? [{ courseId: dropping }] : []),
+          ],
+        },
+      });
+      const merged = await tx.agentCourse.findMany({
+        where: { course: { status: "merged" } },
+        include: { course: true },
+      });
+      await tx.agentCourse.createMany({
+        data: merged.flatMap(({ agentId, course }) =>
+          course.mergedIntoId
+            ? [{ agentId, courseId: course.mergedIntoId, studentId }]
+            : [],
+        ),
+        skipDuplicates: true,
+      });
+      await tx.agentCourse.deleteMany({
+        where: { course: { status: "merged" } },
+      });
+      const idle = async (ids?: string[]) =>
+        (
+          await tx.agent.findMany({
+            where: { preset: null, state: "active", id: { in: ids } },
+            include: { courses: { include: { course: true } } },
+          })
+        ).flatMap((r) => {
+          const pausedBy = outOfCourses(r.courses, archiving);
+          return pausedBy ? [{ id: r.id, pausedBy }] : [];
+        });
+      const found = await idle();
+      if (!found.length) return [];
+      for (const { id } of found) await withdrawBeforeLock(tx, studentId, id);
+      const ids = found.map((r) => r.id);
+      await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ANY(${ids}) ORDER BY "id" FOR UPDATE`;
+      // Again under the Agents' locks, for a Course added or an Approval asked meanwhile.
+      const pausing = await idle(ids);
+      for (const { id, pausedBy } of pausing) {
+        await tx.agent.update({
+          where: { id },
+          data: { state: "paused", pausedBy },
+        });
+        await withdrawApprovals(tx, { studentId, agentId: id }, clock.now());
+      }
+      return pausing.map((r) => r.id);
+    });
+    for (const id of paused) await syncSchedule(p, id);
+  };
   return {
     /**
      * A pilot preset with its Grants and Schedule, or a free-text Agent from its form, with its Grants and the Schedule
@@ -482,12 +566,12 @@ export function createAgents({
 
     /**
      * Saves a free-text Agent's whole form; its next Run reads it, and its Schedule follows its trigger. Its Courses may
-     * keep one that was Archived since, and it may keep a Model Chat no longer offers. A preset Agent has no form until
-     * the Agents cutover converts it, so it is "invalid".
+     * keep one that was Archived since, pausing it once all are, and it may keep a Model Chat no longer offers. A preset
+     * Agent has no form until the Agents cutover converts it, so it is "invalid".
      */
     async update(p: Principal, id: string, form: AgentForm) {
       if (p.kind !== "student") return { status: "gone" } as const;
-      return withOwner(db, p, async (tx, studentId) => {
+      const result = await withOwner(db, p, async (tx, studentId) => {
         // Serialises saves, and the gate's read of the Grants, on the Agent.
         await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
         const r = await tx.agent.findUnique({
@@ -534,6 +618,9 @@ export function createAgents({
         await saveSchedule(tx, saved);
         return { status: "ok" } as const;
       });
+      // Kept Courses may all be Archived: it then has none left to act for.
+      if (result.status === "ok") await settleCourses(p);
+      return result;
     },
 
     /**
@@ -590,13 +677,22 @@ export function createAgents({
         await syncSchedule(p, id);
     },
 
-    /** Only the student resumes a Paused Agent, whoever paused it, and not while its Course is Archived. */
+    /**
+     * Only the student resumes a Paused Agent, whoever paused it, and only while it has a Course to act for: not while
+     * all its Courses (a preset's one) are Archived, nor while it has none.
+     */
     async resume(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
       const found = await withOwner(db, p, async (tx) => {
-        const r = await tx.agent.findUnique({ where: { id } });
+        const r = await tx.agent.findUnique({
+          where: { id },
+          include: { courses: { include: { course: true } } },
+        });
         if (r && (await isCourseArchived(tx, r.courseId)))
           return "course_archived";
+        const out =
+          r?.state === "paused" && !r.preset && outOfCourses(r.courses);
+        if (out) return out;
         await tx.agent.updateMany({
           where: { id, state: "paused" },
           data: { state: "active", pausedBy: null },
@@ -605,8 +701,8 @@ export function createAgents({
           (await tx.agent.findUnique({ where: { id } }))?.state === "active"
         );
       });
-      if (found === "course_archived")
-        return { status: "course_archived" } as const;
+      if (found === "course_archived" || found === "no_course")
+        return { status: found } as const;
       if (!found) return { status: "gone" } as const;
       await syncSchedule(p, id);
       return { status: "ok" } as const;
@@ -670,21 +766,36 @@ export function createAgents({
       });
     },
 
-    /** Pauses every active Agent on an Archived Course; only the student resumes them. */
+    /**
+     * As a Course is being Archived: a preset Agent on it is Paused, and a free-text Agent only once all its Courses
+     * are Archived; until then it keeps working for the others. Only the student resumes them.
+     */
     async pauseForCourse(p: Principal, courseId: string) {
       await changeForCourse(p, courseId, "active", () => ({
         state: "paused",
         pausedBy: "course_archived",
       }));
+      await settleCourses(p, { archiving: courseId });
     },
 
-    /** Ends every Agent on a Course being deleted; their Grants go and their history remains. */
-    async endForCourse(p: Principal, courseId: string) {
+    /**
+     * As a Course is being deleted: it leaves every free-text Agent's Courses, and one left with none is Paused. A
+     * preset Agent on it is Ended until the Agents cutover: its Grants go and its history remains.
+     */
+    async dropCourse(p: Principal, courseId: string) {
       await changeForCourse(p, courseId, { not: "ended" }, () => ({
         state: "ended",
         endedAt: clock.now(),
       }));
+      await settleCourses(p, { dropping: courseId });
     },
+
+    /**
+     * Once a Course is Rejected or merged: it leaves every free-text Agent's Courses, a merged one for the Course it
+     * went into, and an Agent left with no Course to act for is Paused. A preset Agent keeps its Course until the
+     * Agents cutover.
+     */
+    followCourses: (p: Principal) => settleCourses(p),
 
     /**
      * The student's Agents, Ended ones included: their history remains. Each has its badge, and the list puts what

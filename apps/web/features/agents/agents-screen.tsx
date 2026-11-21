@@ -33,7 +33,7 @@ import { controlAgent, delegateAgent } from "./api/agent-mutations";
 import type { AgentRow } from "./api/agent-queries";
 import { agentListQueries, delegableCourseQueries } from "./api/agent-queries";
 import { AgentMenu } from "./components/agent-menu";
-import { nameOf } from "./name";
+import { nameOf, pausedLine } from "./name";
 
 /** Each badge's words and colours; an Agent with none shows nothing. */
 const badges = {
@@ -79,6 +79,12 @@ function AgentListItem({
         {agent.description && (
           <span className="truncate text-sm text-base-500">
             {agent.description}
+          </span>
+        )}
+        {/* The badge says Pausiert; why, unless the student paused it. */}
+        {agent.state === "paused" && agent.pausedBy !== "student" && (
+          <span className="truncate text-sm text-base-700">
+            {pausedLine(agent.pausedBy)}
           </span>
         )}
         {control.error && (

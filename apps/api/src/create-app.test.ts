@@ -8250,6 +8250,52 @@ describe("a free-text Agent's form", () => {
       },
     );
 
+    it.each([
+      ["archived", "archive", "course_archived"],
+      ["deleted", "", "no_course"],
+      ["rejected", "decision", "no_course"],
+    ] as const)(
+      "withdraws every open Approval of the Agent once its last Course is %s and it pauses",
+      async (change, path, pausedBy) => {
+        const a = await askedByRun(
+          `run-approval-course-${change}`,
+          "createStudyBlocks",
+        );
+        const { courseId } = await admin.agentCourse.findFirstOrThrow({
+          where: { agentId: a.agentId },
+        });
+
+        const changed = await app.request(
+          `${apiOrigin}/api/me/courses/${courseId}${path && `/${path}`}`,
+          {
+            method: path ? "POST" : "DELETE",
+            headers: a.s.headers,
+            body:
+              path === "decision"
+                ? JSON.stringify({ decision: "reject" })
+                : undefined,
+          },
+        );
+
+        expect(changed.status).toBe(200);
+        expect(
+          await (await a.s.call("GET", `/${a.agentId}`)).json(),
+        ).toMatchObject({ state: "paused", pausedBy, approvalRunId: null });
+        expect(await a.shown()).toMatchObject({
+          openApprovals: 0,
+          approvals: [],
+        });
+        expect(decisions((await a.shown()).verlauf)).toEqual([
+          expect.objectContaining({ decision: "withdrawn" }),
+        ]);
+        const late = await a.decide({
+          decision: "approve",
+          fingerprint: a.asking.fingerprint,
+        });
+        expect(late.status).toBe(409);
+      },
+    );
+
     it("pauses the Agent with reason budget once its Budget runs out, withdrawing its open Approvals and pausing its Schedule until the student resumes it", async () => {
       const a = await askedByRun(
         "agent-budget-exhausted",
@@ -8478,6 +8524,213 @@ describe("a free-text Agent's form", () => {
 
         expect(await a.inbox()).toEqual([]);
       });
+    });
+  });
+
+  describe("as its Courses are Archived, deleted, Rejected or merged", () => {
+    type Student = Awaited<ReturnType<typeof student>>;
+    const onCourse = (
+      s: Student,
+      path: string,
+      body?: unknown,
+      method = "POST",
+    ) =>
+      app.request(`${apiOrigin}/api/me/courses/${path}`, {
+        method,
+        headers: s.headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    const archive = (s: Student, id: string) => onCourse(s, `${id}/archive`);
+    const unarchive = (s: Student, id: string) =>
+      onCourse(s, `${id}/unarchive`);
+    const remove = (s: Student, id: string) =>
+      onCourse(s, id, undefined, "DELETE");
+    const reject = (s: Student, id: string) =>
+      onCourse(s, `${id}/decision`, { decision: "reject" });
+    const merge = (s: Student, id: string, into: string) =>
+      onCourse(s, `${id}/merge`, { into });
+    const agentOn = async (s: Student, courseIds: string[]) =>
+      (
+        (await (await s.call("POST", "", form(courseIds))).json()) as {
+          id: string;
+        }
+      ).id;
+    const shown = async (s: Student, id: string) =>
+      (await (await s.call("GET", `/${id}`)).json()) as {
+        state: string;
+        pausedBy: string | null;
+        courses: { id: string; archived: boolean }[];
+      };
+    const status = async (response: Response | Promise<Response>) =>
+      (await response).status;
+
+    it("keeps working for its other Courses when one is Archived, and pauses with reason course_archived, its Schedule too, once all are", async () => {
+      const s = await student("agent-courses-archived");
+      const statistics = await course(s.id, "Statistics II");
+      const micro = await course(s.id, "Microeconomics");
+      const id = await agentOn(s, [statistics, micro]);
+
+      expect(await status(archive(s, statistics))).toBe(200);
+      expect(await shown(s, id)).toMatchObject({
+        state: "active",
+        pausedBy: null,
+        courses: [
+          { id: micro, archived: false },
+          { id: statistics, archived: true },
+        ],
+      });
+
+      expect(await status(archive(s, micro))).toBe(200);
+      expect(await shown(s, id)).toMatchObject({
+        state: "paused",
+        pausedBy: "course_archived",
+        courses: [
+          { id: micro, archived: true },
+          { id: statistics, archived: true },
+        ],
+      });
+      expect(scheduled.at(-1)).toBe(
+        `save ${id} {"rhythm":"daily","minute":360} Europe/Berlin paused`,
+      );
+      expect(
+        (await (await s.call("GET", "")).json()) as object[],
+      ).toMatchObject([{ id, badge: "paused", pausedBy: "course_archived" }]);
+    });
+
+    it("stays Paused as a Course is unarchived: only the student resumes it, once one of its Courses is unarchived", async () => {
+      const s = await student("agent-courses-unarchived");
+      const statistics = await course(s.id, "Statistics II");
+      const id = await agentOn(s, [statistics]);
+      await archive(s, statistics);
+
+      const refused = await s.call("POST", `/${id}/resume`);
+      expect([refused.status, await refused.json()]).toEqual([
+        409,
+        { error: "course_archived" },
+      ]);
+      expect(await status(unarchive(s, statistics))).toBe(200);
+      expect(await shown(s, id)).toMatchObject({
+        state: "paused",
+        pausedBy: "course_archived",
+      });
+      expect(await status(s.call("POST", `/${id}/resume`))).toBe(200);
+      expect(await shown(s, id)).toMatchObject({
+        state: "active",
+        pausedBy: null,
+      });
+      expect(scheduled.at(-1)).toBe(
+        `save ${id} {"rhythm":"daily","minute":360} Europe/Berlin`,
+      );
+    });
+
+    it("drops a deleted Course, and pauses with reason no_course once it has none left, until the student gives it one and resumes it", async () => {
+      const s = await student("agent-courses-deleted");
+      const statistics = await course(s.id, "Statistics II");
+      const micro = await course(s.id, "Microeconomics");
+      const id = await agentOn(s, [statistics, micro]);
+
+      expect(await status(remove(s, statistics))).toBe(200);
+      expect(await shown(s, id)).toMatchObject({
+        state: "active",
+        courses: [{ id: micro }],
+      });
+
+      expect(await status(remove(s, micro))).toBe(200);
+      expect(await shown(s, id)).toMatchObject({
+        state: "paused",
+        pausedBy: "no_course",
+        courses: [],
+      });
+      expect(scheduled.at(-1)).toBe(
+        `save ${id} {"rhythm":"daily","minute":360} Europe/Berlin paused`,
+      );
+      const refused = await s.call("POST", `/${id}/resume`);
+      expect([refused.status, await refused.json()]).toEqual([
+        409,
+        { error: "no_course" },
+      ]);
+      const finance = await course(s.id, "Finance");
+      expect(await status(s.call("PUT", `/${id}`, form([finance])))).toBe(200);
+      expect(await shown(s, id)).toMatchObject({
+        state: "paused",
+        pausedBy: "no_course",
+      });
+      expect(await status(s.call("POST", `/${id}/resume`))).toBe(200);
+    });
+
+    it("drops a Rejected Course, and pauses with reason no_course once it has none left", async () => {
+      const s = await student("agent-courses-rejected");
+      const statistics = await course(s.id, "Statistics II");
+      const micro = await course(s.id, "Microeconomics");
+      const kept = await agentOn(s, [statistics, micro]);
+      const alone = await agentOn(s, [statistics]);
+
+      expect(await status(reject(s, statistics))).toBe(200);
+
+      expect(await shown(s, kept)).toMatchObject({
+        state: "active",
+        courses: [{ id: micro }],
+      });
+      expect(await shown(s, alone)).toMatchObject({
+        state: "paused",
+        pausedBy: "no_course",
+        courses: [],
+      });
+      expect(scheduled.at(-1)).toBe(
+        `save ${alone} {"rhythm":"daily","minute":360} Europe/Berlin paused`,
+      );
+      // Restored, it is a proposal again, and joins no Agent on its own.
+      expect(
+        await status(
+          onCourse(s, `${statistics}/decision`, { decision: "restore" }),
+        ),
+      ).toBe(200);
+      expect(await shown(s, alone)).toMatchObject({ courses: [] });
+    });
+
+    it("moves the Agent's entry for a merged Course to the Course it went into, pausing it if that one is Archived", async () => {
+      const s = await student("agent-courses-merged");
+      const statistics = await course(s.id, "Statistics II");
+      const duplicate = await course(s.id, "Statistik II");
+      const archived = await course(s.id, "Statistik (alt)");
+      const micro = await course(s.id, "Microeconomics");
+      const both = await agentOn(s, [statistics, duplicate]);
+      const one = await agentOn(s, [micro]);
+      await archive(s, archived);
+
+      expect(await status(merge(s, duplicate, statistics))).toBe(200);
+      expect(await shown(s, both)).toMatchObject({
+        state: "active",
+        courses: [{ id: statistics, archived: false }],
+      });
+
+      expect(await status(merge(s, micro, archived))).toBe(200);
+      expect(await shown(s, one)).toMatchObject({
+        state: "paused",
+        pausedBy: "course_archived",
+        courses: [{ id: archived, archived: true }],
+      });
+    });
+
+    it("pauses with reason course_archived once its form is saved with only Archived Courses", async () => {
+      const s = await student("agent-courses-saved-archived");
+      const statistics = await course(s.id, "Statistics II");
+      const micro = await course(s.id, "Microeconomics");
+      const id = await agentOn(s, [statistics, micro]);
+      await archive(s, statistics);
+
+      expect(await status(s.call("PUT", `/${id}`, form([statistics])))).toBe(
+        200,
+      );
+
+      expect(await shown(s, id)).toMatchObject({
+        state: "paused",
+        pausedBy: "course_archived",
+        courses: [{ id: statistics, archived: true }],
+      });
+      expect(scheduled.at(-1)).toBe(
+        `save ${id} {"rhythm":"daily","minute":360} Europe/Berlin paused`,
+      );
     });
   });
 
