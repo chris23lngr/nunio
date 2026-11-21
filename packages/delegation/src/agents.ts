@@ -7,7 +7,7 @@ import {
   grantedKinds,
 } from "./capabilities.js";
 import type { Clock } from "./gate.js";
-import { openApprovalAt } from "./gate.js";
+import { openApprovalAt, withdrawApprovals } from "./gate.js";
 import type { Kind } from "./kinds.js";
 import { createModelCatalog } from "./model-catalog.js";
 import type { Principal, Transaction } from "./principal.js";
@@ -212,6 +212,17 @@ const badgeRank = (badge: AgentBadge | null) =>
       ? 3
       : (["paused", "approval_needed", "running"] as const).indexOf(badge);
 
+/** An Agent's Runs under way, each with the workflow that runs it. */
+const runsUnderWay = async (tx: Transaction, agentId: string) =>
+  (
+    await tx.run.findMany({
+      where: { agentId, status: "running" },
+      select: { id: true, workflowId: true },
+    })
+  ).flatMap((r) =>
+    r.workflowId ? [{ runId: r.id, workflowId: r.workflowId }] : [],
+  );
+
 /** Ongoing delegations the student owns: records plus the Schedules that start their Runs. */
 export function createAgents({
   db,
@@ -232,6 +243,20 @@ export function createAgents({
     if (!schedules)
       throw new Error("createAgents needs schedules to change an Agent");
     return schedules;
+  };
+  /** For each Agent, or only `agentId`, the oldest of its Runs with an Approval still open. */
+  const oldestAsking = async (tx: Transaction, agentId?: string) => {
+    const map = new Map<string, string>();
+    for (const run of await tx.run.findMany({
+      where: {
+        agentId: agentId ?? { not: null },
+        actions: { some: openApprovalAt(clock.now()) },
+      },
+      orderBy: [{ startedAt: "desc" }, { id: "desc" }],
+      select: { id: true, agentId: true },
+    }))
+      map.set(run.agentId!, run.id);
+    return map;
   };
   /** Brings a free-text Agent's Schedule in line with its row, read under its lock: gone once it is Ended. */
   const saveSchedule = async (
@@ -469,22 +494,27 @@ export function createAgents({
       }
     },
 
-    /** Takes no further Actions, including in a Run under way, while keeping its Grants. */
+    /**
+     * Takes no further Actions, including in a Run under way, while keeping its Grants; its open Approvals are withdrawn
+     * for good. Returns its Runs under way, for the caller to stop at once.
+     */
     async pause(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
-      const found = await withOwner(db, p, async (tx) => {
+      const runs = await withOwner(db, p, async (tx, studentId) => {
+        await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
         await tx.agent.updateMany({
           where: { id, state: "active" },
           data: { state: "paused", pausedBy: "student" },
         });
-        return (
-          (await tx.agent.findUnique({ where: { id } }))?.state === "paused"
-        );
+        if ((await tx.agent.findUnique({ where: { id } }))?.state !== "paused")
+          return null;
+        await withdrawApprovals(tx, { studentId, agentId: id }, clock.now());
+        return runsUnderWay(tx, id);
       });
-      if (!found) return { status: "gone" } as const;
+      if (!runs) return { status: "gone" } as const;
       // After the commit: the record is what the gate checks, so a Run firing meanwhile is refused anyway.
       await syncSchedule(p, id);
-      return { status: "ok" } as const;
+      return { status: "ok", runs } as const;
     },
 
     /** Only the student resumes a Paused Agent, whoever paused it, and not while its Course is Archived. */
@@ -509,20 +539,45 @@ export function createAgents({
       return { status: "ok" } as const;
     },
 
-    /** Stops for good: its Grants are gone and its history remains. */
+    /**
+     * Stops for good: its Grants and open Approvals are gone and its history remains. Returns its Runs under way, for
+     * the caller to stop at once.
+     */
     async end(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
-      const found = await withOwner(db, p, async (tx) => {
+      const runs = await withOwner(db, p, async (tx, studentId) => {
+        await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
         await tx.agent.updateMany({
           where: { id, state: { not: "ended" } },
           data: { state: "ended", endedAt: clock.now() },
         });
+        if (!(await tx.agent.findUnique({ where: { id } }))) return null;
         await tx.grant.deleteMany({ where: { agentId: id } });
-        return Boolean(await tx.agent.findUnique({ where: { id } }));
+        await withdrawApprovals(tx, { studentId, agentId: id }, clock.now());
+        return runsUnderWay(tx, id);
       });
-      if (!found) return { status: "gone" } as const;
+      if (!runs) return { status: "gone" } as const;
       await syncSchedule(p, id);
-      return { status: "ok" } as const;
+      return { status: "ok", runs } as const;
+    },
+
+    /**
+     * Removes the Agent for good, with its Grants, Courses, Capabilities and Activity (its Runs and their Actions), and
+     * its Schedule. If the Schedule cannot be deleted, nothing is. Returns the Runs that were under way, whose workflows
+     * the caller stops; they find their Run gone and change nothing.
+     */
+    async delete(p: Principal, id: string) {
+      if (p.kind !== "student") return { status: "gone" } as const;
+      return withOwner(db, p, async (tx) => {
+        await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
+        if (!(await tx.agent.findUnique({ where: { id } })))
+          return { status: "gone" } as const;
+        const runs = await runsUnderWay(tx, id);
+        await tx.agent.delete({ where: { id } });
+        // Inside the transaction: if the Schedule cannot be deleted, the Agent stays and can be deleted again.
+        await scheduled().delete(id);
+        return { status: "ok", runs } as const;
+      });
     },
 
     /** Pauses every active Agent on an Archived Course; only the student resumes them. */
@@ -551,22 +606,14 @@ export function createAgents({
         const agents = await tx.agent.findMany({
           orderBy: { createdAt: "desc" },
         });
-        const agentsOf = (runs: { agentId: string | null }[]) =>
-          new Set(runs.map((run) => run.agentId));
-        const asking = agentsOf(
-          await tx.run.findMany({
-            where: {
-              agentId: { not: null },
-              actions: { some: openApprovalAt(clock.now()) },
-            },
-            select: { agentId: true },
-          }),
-        );
-        const running = agentsOf(
-          await tx.run.findMany({
-            where: { agentId: { not: null }, status: "running" },
-            select: { agentId: true },
-          }),
+        const asking = await oldestAsking(tx);
+        const running = new Set(
+          (
+            await tx.run.findMany({
+              where: { agentId: { not: null }, status: "running" },
+              select: { agentId: true },
+            })
+          ).map((run) => run.agentId),
         );
         return agents
           .map((r) => {
@@ -581,6 +628,8 @@ export function createAgents({
               state,
               pausedBy: r.pausedBy as PausedBy | null,
               badge: badgeOf(state, asking.has(r.id), running.has(r.id)),
+              /** The oldest of its Runs still awaiting Approval, which Freigaben bestätigen opens; null when none. */
+              approvalRunId: asking.get(r.id) ?? null,
             };
           })
           .sort((a, b) => badgeRank(a.badge) - badgeRank(b.badge));
@@ -601,8 +650,9 @@ export function createAgents({
         if (!r) return null;
         const running = await tx.run.findFirst({
           where: { agentId: id, status: "running" },
-          select: { id: true },
+          select: { id: true, workflowId: true, startedAt: true },
         });
+        const asking = await oldestAsking(tx, id);
         return {
           id: r.id,
           preset: r.preset as Preset | null,
@@ -631,6 +681,10 @@ export function createAgents({
           pausedBy: r.pausedBy as PausedBy | null,
           /** One of its Runs is under way. */
           running: Boolean(running),
+          /** That Run, with the workflow running it; null when none is. */
+          runUnderWay: running,
+          /** The oldest of its Runs still awaiting Approval, which Freigaben bestätigen opens; null when none. */
+          approvalRunId: asking.get(id) ?? null,
           grants: r.grants.map((g) => ({
             kind: g.kind as Kind,
             courseId: g.courseId,
@@ -760,14 +814,22 @@ export function createAgents({
       });
     },
 
-    /** Records that a Run the student started never got under way, so it no longer blocks the next. */
+    /**
+     * Records that a Run under way has failed outside its workflow: one the student started never got under way, or its
+     * workflow no longer runs. It no longer blocks the next, and its transcript is dropped as at any Run's end.
+     */
     async failRun(p: Principal, runId: string) {
-      await withOwner(db, p, (tx) =>
-        tx.run.updateMany({
+      await withOwner(db, p, async (tx) => {
+        const ended = await tx.run.updateMany({
           where: { id: runId, status: "running" },
           data: { status: "failed", endedAt: clock.now() },
-        }),
-      );
+        });
+        if (ended.count)
+          await tx.runStep.updateMany({
+            where: { runId },
+            data: { transcriptContent: null, transcriptKey: null },
+          });
+      });
     },
 
     /**

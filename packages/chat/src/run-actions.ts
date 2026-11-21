@@ -198,6 +198,8 @@ export const why: Record<Refusal, string> = {
   ended: "your Agent is Ended",
   approval_denied: "the student said no",
   approval_expired: "the student did not answer in time",
+  approval_withdrawn:
+    "the student Paused or Ended your Agent before deciding, which withdrew it",
   approval_mismatch: "it changed since the student was asked",
   locked: "the block is Locked",
   started: "the block has already started",

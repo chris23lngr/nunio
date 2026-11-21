@@ -17,6 +17,8 @@ export type Refusal =
   | "ended"
   | "approval_denied"
   | "approval_expired"
+  /** Withdrawn unanswered when its Agent was Paused or Ended; never decided by the gate. */
+  | "approval_withdrawn"
   | "approval_mismatch"
   | "locked"
   | "started"

@@ -144,6 +144,37 @@ export const openApprovalAt = (at: Date) => ({
   approval: { is: { decision: null, expiresAt: { gt: at } } },
 });
 
+/**
+ * Withdraws every open Approval of an Agent's Runs for good, as Pausing or Ending it does (ADR-0006): each Action is
+ * refused as `approval_withdrawn` at `at`, so the student can no longer approve it, it stops counting as open, and the
+ * Agent's next Run reads what became of it. A preset's Run waits on its own Approvals, so they are left to it.
+ */
+export async function withdrawApprovals(
+  tx: Transaction,
+  { studentId, agentId }: { studentId: string; agentId: string },
+  at: Date,
+) {
+  const open = await tx.action.findMany({
+    where: { ...openApprovalAt(at), run: { agentId, status: { not: null } } },
+    select: { id: true },
+  });
+  if (!open.length) return;
+  const ids = open.map((a) => a.id);
+  await tx.action.updateMany({
+    where: { id: { in: ids } },
+    data: { status: "refused", refusal: "approval_withdrawn" },
+  });
+  await tx.actionEvent.createMany({
+    data: ids.map((actionId) => ({
+      studentId,
+      actionId,
+      at,
+      type: "refused",
+      detail: { reason: "approval_withdrawn" },
+    })),
+  });
+}
+
 export interface HistoryQuery {
   /** These Actions only, whatever their status. */
   ids?: string[];
@@ -707,15 +738,8 @@ export function createGate({
                 approvals: await tx.approval.count({
                   where: { action: { runId: run.id } },
                 }),
-                openApprovals: await tx.approval.count({
-                  where: {
-                    decision: null,
-                    expiresAt: { gt: now },
-                    action: {
-                      status: "awaiting_approval",
-                      run: { agentId: agent.id },
-                    },
-                  },
+                openApprovals: await tx.action.count({
+                  where: { ...openApprovalAt(now), run: { agentId: agent.id } },
                 }),
               }
             : null;

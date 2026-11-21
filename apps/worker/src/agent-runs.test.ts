@@ -542,6 +542,37 @@ describe("an Agent's Run", () => {
     ).toBe(0);
   });
 
+  it("stops at once when told its Agent was Paused mid-step, abandoning the step under way", async () => {
+    const s = await started();
+    const handle = env.client.workflow.getHandle(s.workflowId);
+    script = [
+      async () => {
+        await agents.pause(s.p, s.agentId);
+        await handle.signal("stopAgentRun", "paused");
+        // The Run ends while the model is still at its step.
+        await handle.result();
+        return calls("agenda", { from: day(0), to: day(6) });
+      },
+    ];
+
+    expect(await run(s)).toEqual({ status: "stopped", reason: "paused" });
+
+    expect(await runs.view(s.p, s.runId)).toMatchObject({
+      status: "stopped",
+      stopReason: "paused",
+      summary: null,
+    });
+    // The abandoned step keeps nothing once it returns, and no step follows it.
+    await expect
+      .poll(() =>
+        admin.runStep.count({
+          where: { runId: s.runId, partsContent: { not: null } },
+        }),
+      )
+      .toBe(0);
+    expect(prompts).toHaveLength(1);
+  });
+
   it("never calls the model again for a step a lost worker may have paid for, and fails the Run", async () => {
     const s = await started();
     let release = () => {};
@@ -947,6 +978,33 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
     expect(actionResults(prompts[2])).toEqual([expect.stringMatching(/^Done/)]);
   });
 
+  it("acts on nothing more once told its Agent was Ended while it performs a step's Actions", async () => {
+    const s = await started({ held: lernbloecke() });
+    const handle = env.client.workflow.getHandle(s.workflowId);
+    executor = {
+      ...fakeExecutor,
+      async execute(req, opts) {
+        const done = await fakeExecutor.execute(req, opts);
+        await agents.end(s.p, s.agentId);
+        await handle.signal("stopAgentRun", "ended");
+        await handle.result();
+        return done;
+      },
+    };
+    script = [readPlan, () => [...createBlock(3), ...createBlock(4)]];
+
+    expect(await run(s)).toEqual({ status: "stopped", reason: "ended" });
+
+    // The Action under way when the student said stop finishes; the next is refused, and no step follows.
+    await expect.poll(() => statuses(s.runId)).toEqual(["done", "ended"]);
+    expect(dispatched).toHaveLength(1);
+    expect(prompts).toHaveLength(2);
+    expect(await runs.view(s.p, s.runId)).toMatchObject({
+      status: "stopped",
+      stopReason: "ended",
+    });
+  });
+
   it("records the Agent as the creator of a Study Block it creates", async () => {
     executor = createPlanExecutor({ db: runtime });
     const s = await started({ held: lernbloecke() });
@@ -1309,6 +1367,51 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
       ),
     ).toEqual(["none"]);
     expect(again.filter((line) => line.includes(at(6)))).toHaveLength(1);
+  });
+
+  it("reads the Approvals a Pause withdrew as no longer open, once, in the Run after it", async () => {
+    const s = await started({
+      held: lernbloecke({ createStudyBlocks: "ask" }),
+    });
+    script = [
+      readPlan,
+      () => [3, 4].flatMap((offset) => createBlock(offset)),
+      () => says("Ich habe um zwei Freigaben gebeten."),
+    ];
+    await run(s);
+    await agents.pause(s.p, s.agentId);
+    await agents.resume(s.p, s.agentId);
+    const read = async () => {
+      script = [() => calls("approvals", {}), () => says("Fertig.")];
+      await run(await requested(s.p, s.agentId));
+      const lines = (prompts.at(-1) as { role: string; content: unknown }[])
+        .filter((message) => message.role === "tool")
+        .flatMap(
+          (message) =>
+            message.content as {
+              toolName: string;
+              output: { value?: string };
+            }[],
+        )
+        .filter((part) => part.toolName === "approvals")
+        .map((part) => part.output.value ?? "")
+        .join("\n")
+        .split("\n");
+      const since = lines.indexOf(
+        "Decided or expired since your previous Run:",
+      );
+      return { open: lines.slice(2, since), since: lines.slice(since + 1, -1) };
+    };
+
+    const at = (offset: number) => `${day(offset)} 10:00–11:00`;
+    expect(await read()).toEqual({
+      open: ["none"],
+      since: [3, 4].map(
+        (offset) =>
+          `- create a Study Block for O1 at ${at(offset)} · refused: the student Paused or Ended your Agent before deciding, which withdrew it`,
+      ),
+    });
+    expect(await read()).toEqual({ open: ["none"], since: ["none"] });
   });
 
   it("never performs an Action twice when the worker loses the completion of the step or of its Actions", async () => {

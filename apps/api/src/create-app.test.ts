@@ -154,12 +154,26 @@ const agentRunsStarted: {
   workflowId: string;
 }[] = [];
 let agentRunsDown = false;
+/** The Agent Runs the API told to stop, in order, and the workflows that no longer run, as Temporal would say. */
+const agentRunsStopped: { workflowId: string; reason: string }[] = [];
+const goneWorkflows = new Set<string>();
+/** The workflows the API asked Temporal about, in order. */
+const workflowsAsked: string[] = [];
 const runWorkflows: RunWorkflows = {
   signalDecided: async (run, actionId) =>
     void signalled.push({ ...run, actionId }),
   startAgentRun: async (run) => {
     if (agentRunsDown) throw new Error("Temporal unavailable");
     agentRunsStarted.push(run);
+  },
+  stopAgentRun: async (workflowId, reason) => {
+    if (goneWorkflows.has(workflowId)) return false;
+    agentRunsStopped.push({ workflowId, reason });
+    return true;
+  },
+  agentRunAlive: async (workflowId) => {
+    workflowsAsked.push(workflowId);
+    return !goneWorkflows.has(workflowId);
   },
 };
 const schedules: Schedules = {
@@ -6568,6 +6582,7 @@ describe("Agents", () => {
         state: "ended",
         pausedBy: null,
         badge: "ended",
+        approvalRunId: null,
       },
     ]);
   });
@@ -7366,6 +7381,148 @@ describe("a free-text Agent's form", () => {
     });
   }
 
+  it("tells its Run under way to stop at once when it is Paused or Ended", async () => {
+    const s = await student("agent-run-stopped");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+    const { id: runId } = (await (
+      await s.call("POST", `/${id}/runs`)
+    ).json()) as { id: string };
+
+    expect((await s.call("POST", `/${id}/pause`)).status).toBe(200);
+    expect((await s.call("POST", `/${id}/resume`)).status).toBe(200);
+    expect((await s.call("POST", `/${id}/end`)).status).toBe(200);
+
+    expect(
+      agentRunsStopped.filter((r) => r.workflowId === `agentRun/${runId}`),
+    ).toEqual([
+      { workflowId: `agentRun/${runId}`, reason: "paused" },
+      { workflowId: `agentRun/${runId}`, reason: "ended" },
+    ]);
+  });
+
+  it("ends a Run whose workflow no longer runs as failed, so it holds up no other Run", async () => {
+    const s = await student("agent-run-gone");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+    // Under way a while, then its workflow was terminated: it would block every Run after it.
+    const stale = await recordedRun(s.id, id, 30, { status: "running" });
+    goneWorkflows.add(`agentRun/${stale}`);
+
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      running: false,
+    });
+    expect(
+      await admin.run.findUniqueOrThrow({
+        where: { id: stale },
+        select: { status: true, endedAt: true },
+      }),
+    ).toEqual({ status: "failed", endedAt: expect.any(Date) });
+
+    // A Run just started is not asked about on every read.
+    const { id: fresh } = (await (
+      await s.call("POST", `/${id}/runs`)
+    ).json()) as { id: string };
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      running: true,
+    });
+    expect(workflowsAsked).not.toContain(`agentRun/${fresh}`);
+    // Pausing finds a gone one too.
+    goneWorkflows.add(`agentRun/${fresh}`);
+    expect((await s.call("POST", `/${id}/pause`)).status).toBe(200);
+    expect(
+      await admin.run.findUniqueOrThrow({
+        where: { id: fresh },
+        select: { status: true },
+      }),
+    ).toEqual({ status: "failed" });
+  });
+
+  it("deletes an Agent for good: its Activity, Grants and Schedule go, and its Run under way is told to stop", async () => {
+    const s = await student("agent-delete");
+    const statistics = await course(s.id, "Statistics II");
+    const { id } = (await (
+      await s.call(
+        "POST",
+        "",
+        form([statistics], [{ id: "createStudyBlocks", mode: "automatic" }]),
+      )
+    ).json()) as { id: string };
+    await asked(s.id, await recordedRun(s.id, id, 30));
+    const { id: runId } = (await (
+      await s.call("POST", `/${id}/runs`)
+    ).json()) as { id: string };
+    const kept = (
+      (await (await s.call("POST", "", form([statistics]))).json()) as {
+        id: string;
+      }
+    ).id;
+    const other = await student("agent-delete-other");
+
+    expect((await other.call("DELETE", `/${id}`)).status).toBe(404);
+    const deleted = await s.call("DELETE", `/${id}`);
+
+    expect([deleted.status, await deleted.json()]).toEqual([
+      200,
+      { status: "ok" },
+    ]);
+    expect((await s.call("GET", `/${id}`)).status).toBe(404);
+    expect(
+      ((await (await s.call("GET", "")).json()) as { id: string }[]).map(
+        (agent) => agent.id,
+      ),
+    ).toEqual([kept]);
+    expect(await admin.run.count({ where: { agentId: id } })).toBe(0);
+    expect(await admin.action.count({ where: { studentId: s.id } })).toBe(0);
+    expect(await admin.grant.count({ where: { agentId: id } })).toBe(0);
+    expect(scheduled.at(-1)).toBe(`delete ${id}`);
+    expect(agentRunsStopped).toContainEqual({
+      workflowId: `agentRun/${runId}`,
+      reason: "ended",
+    });
+    expect((await s.call("DELETE", `/${id}`)).status).toBe(404);
+  });
+
+  it("keeps the Agent when its Schedule cannot be deleted, so Löschen can be asked again", async () => {
+    const s = await student("agent-delete-down");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+    const remove = vi
+      .spyOn(schedules, "delete")
+      .mockRejectedValueOnce(new Error("Temporal unavailable"));
+    try {
+      expect((await s.call("DELETE", `/${id}`)).status).toBe(503);
+    } finally {
+      remove.mockRestore();
+    }
+
+    expect((await s.call("GET", `/${id}`)).status).toBe(200);
+    expect((await s.call("DELETE", `/${id}`)).status).toBe(200);
+  });
+
+  it("opens Freigaben bestätigen on the oldest Run still awaiting Approval", async () => {
+    const s = await student("agent-approval-run");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+    // Its Approval expired, so it no longer awaits one.
+    await asked(
+      s.id,
+      await recordedRun(s.id, id, 300),
+      new Date(Date.now() - 1_000),
+    );
+    const oldest = await recordedRun(s.id, id, 200);
+    await asked(s.id, oldest);
+    await asked(s.id, await recordedRun(s.id, id, 100));
+
+    expect(await (await s.call("GET", "")).json()).toEqual([
+      expect.objectContaining({ id, approvalRunId: oldest }),
+    ]);
+  });
+
   it("lists an Agent's Runs newest first, a page at a time, each with its open Approvals", async () => {
     const s = await student("agent-activity-list");
     const { id } = (await (
@@ -7426,7 +7583,7 @@ describe("a free-text Agent's form", () => {
       ).id;
     const ended = await created("Beendet");
     await s.call("POST", `/${ended}/end`);
-    // Until Ending withdraws them, an Ended Agent's open Approval or Run still reads Beendet.
+    // An Ended Agent reads Beendet even with an open Approval or a Run left over.
     await asked(s.id, await recordedRun(s.id, ended, 5));
     await recordedRun(s.id, ended, 1, { status: "running" });
     await created("Ohne Lauf");
@@ -7473,6 +7630,7 @@ describe("a free-text Agent's form", () => {
       state: "paused",
       pausedBy: "student",
       badge: "paused",
+      approvalRunId: null,
     });
   });
 
@@ -8040,6 +8198,107 @@ describe("a free-text Agent's form", () => {
       ).toBe(0);
     });
 
+    it.each(["pause", "end"] as const)(
+      "withdraws every open Approval of the Agent on %s, for good: shown withdrawn, refused when approved late, and never back on resume",
+      async (control) => {
+        const a = await askedByRun(
+          `run-approval-withdrawn-${control}`,
+          "createStudyBlocks",
+        );
+        // Freigaben bestätigen opens the Run awaiting Approval.
+        expect(
+          await (await a.s.call("GET", `/${a.agentId}`)).json(),
+        ).toMatchObject({ approvalRunId: a.runId });
+        // Another Run of the same Agent asked too.
+        const other = await recordedRun(a.s.id, a.agentId, 5);
+        await asked(a.s.id, other);
+        const before = Date.now();
+
+        expect(
+          (await a.s.call("POST", `/${a.agentId}/${control}`)).status,
+        ).toBe(200);
+
+        const shown = await a.shown();
+        expect(shown).toMatchObject({ openApprovals: 0, approvals: [] });
+        const withdrawn = shown.verlauf.find(
+          (entry) => entry.type === "approval",
+        )!;
+        expect(withdrawn).toEqual({
+          type: "approval",
+          at: expect.any(String),
+          action: expect.objectContaining({ kind: "studyBlock.create" }),
+          decision: "withdrawn",
+          outcome: null,
+          refusal: null,
+        });
+        expect(new Date(withdrawn.at).getTime()).toBeGreaterThanOrEqual(
+          before - 1_000,
+        );
+        const runs = (await (
+          await a.s.call("GET", `/${a.agentId}/runs?limit=10`)
+        ).json()) as { runs: { openApprovals: number }[] };
+        expect(runs.runs.map((run) => run.openApprovals)).toEqual([0, 0]);
+        const late = await a.decide({
+          decision: "approve",
+          fingerprint: a.asking.fingerprint,
+        });
+        expect(late.status).toBe(409);
+        expect(
+          await admin.studyBlock.count({
+            where: { studentId: a.s.id, start: new Date(asks.start) },
+          }),
+        ).toBe(0);
+        if (control === "pause")
+          expect((await a.s.call("POST", `/${a.agentId}/resume`)).status).toBe(
+            200,
+          );
+        expect(await a.shown()).toMatchObject({
+          openApprovals: 0,
+          approvals: [],
+        });
+        const [listed] = (await (await a.s.call("GET", "")).json()) as {
+          badge: string | null;
+          approvalRunId: string | null;
+        }[];
+        expect(listed).toMatchObject({
+          badge: control === "end" ? "ended" : null,
+          approvalRunId: null,
+        });
+      },
+    );
+
+    it("leaves a preset Agent's Approvals to its Run, which waits on them, when it is Paused", async () => {
+      const s = await student("run-approval-preset-paused");
+      const { id: agentId } = (await (
+        await s.call("POST", "", {
+          preset: "keep_course_organized",
+          courseId: await course(s.id, "Statistics II"),
+        })
+      ).json()) as { id: string };
+      const runId = randomUUID();
+      await admin.run.create({
+        data: {
+          id: runId,
+          studentId: s.id,
+          agentId,
+          workflowId: `run/${runId}`,
+        },
+      });
+      await asked(s.id, runId);
+
+      expect((await s.call("POST", `/${agentId}/pause`)).status).toBe(200);
+
+      expect(
+        await admin.action.findMany({
+          where: { runId },
+          select: { status: true },
+        }),
+      ).toEqual([{ status: "awaiting_approval" }]);
+      expect(agentRunsStopped).not.toContainEqual(
+        expect.objectContaining({ workflowId: `run/${runId}` }),
+      );
+    });
+
     describe("the Run's Intervention in the Inbox", () => {
       /** A Run under way that asked for Approvals, as the Inbox shows its Interventions. */
       async function asking(name: string) {
@@ -8102,6 +8361,11 @@ describe("a free-text Agent's form", () => {
               where: { actionId: a.asking.actionId },
               data: { expiresAt: new Date(Date.now() - 60_000) },
             }),
+        ],
+        [
+          "withdrawn",
+          (a: Awaited<ReturnType<typeof asking>>) =>
+            a.s.call("POST", `/${a.agentId}/pause`),
         ],
       ])(
         "lapses once no Approval of the Run is open, the last one %s, with no timer",

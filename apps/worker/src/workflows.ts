@@ -211,10 +211,18 @@ const { agentActions } = proxyActivities<AgentRunActivities>({
 });
 
 /**
+ * Stops an Agent's Run at once, as the student Paused or Ended its Agent: the step or Actions under way are abandoned
+ * and the Run ends stopped with why. It carries no authority; the database already refuses the next step and Action.
+ */
+export const stopAgentRunSignal =
+  defineSignal<[reason: "paused" | "ended"]>("stopAgentRun");
+
+/**
  * Runs the Agent's model step by step until it answers, performing each step's Action calls through the gate before the
  * next; the step cap lives with the steps, whose last must answer.
  * A refused step, such as a Paused Agent or an exhausted Budget, stops the Run; a failed one, or an error after its
- * retries, fails it. However it ends, cancelled included, the Run is ended, so it never stays under way.
+ * retries, fails it. Told to stop, it abandons the step or Actions under way and stops. However it ends, cancelled
+ * included, the Run is ended, so it never stays under way.
  */
 export async function agentRun(ref: AgentRunRef) {
   // The Run startAgentRun records or takes up, known even if starting fails.
@@ -224,6 +232,14 @@ export async function agentRun(ref: AgentRunRef) {
   };
   const finish = (end: RunEnd) =>
     CancellationScope.nonCancellable(() => finishAgentRun({ run, end }));
+  // The steps and Actions run in this scope, which the stop signal cancels; a Run begun before it existed ignores it.
+  const work = new CancellationScope();
+  let stop: "paused" | "ended" | undefined;
+  if (patched("agent-run-stop-signal"))
+    setHandler(stopAgentRunSignal, (reason) => {
+      stop ??= reason;
+      work.cancel();
+    });
   let end: RunEnd = { status: "done" };
   try {
     // Not cancellable: a Run its Schedule starts is recorded only here, and a cancel that did not wait for it would end
@@ -233,7 +249,7 @@ export async function agentRun(ref: AgentRunRef) {
       : await startAgentRun(ref);
     if (!runId) return { status: "skipped" as const };
     for (let n = 1; ; n++) {
-      const step = await agentStep({ runId, n });
+      const step = await work.run(() => agentStep({ runId, n }));
       if (step.status === "answered") break;
       // Performed after the step, without waiting for any Approval; the next step tells the model what became of them.
       if (
@@ -241,7 +257,7 @@ export async function agentRun(ref: AgentRunRef) {
         step.actions > 0 &&
         patched("agent-run-actions")
       ) {
-        const acted = await agentActions({ runId, n });
+        const acted = await work.run(() => agentActions({ runId, n }));
         // Only the student resolves an Unconfirmed Action; the Run acts on nothing after it.
         if (acted.unconfirmed) {
           end = { status: "stopped", reason: "unconfirmed" };
@@ -258,6 +274,12 @@ export async function agentRun(ref: AgentRunRef) {
       }
     }
   } catch (error) {
+    // Told to stop, the Run ends as stopped; the workflow itself was not cancelled, so it completes.
+    if (stop && isCancellation(error)) {
+      end = { status: "stopped", reason: stop };
+      await finish(end);
+      return end;
+    }
     await finish(
       isCancellation(error)
         ? { status: "stopped", reason: "cancelled" }
