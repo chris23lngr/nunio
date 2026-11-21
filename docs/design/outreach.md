@@ -53,16 +53,14 @@ export function createOutreachSender(deps: {
 }): OutreachSender;
 
 export interface OutreachSender {
-  /** Every five minutes: for each active student, sync Interventions, make a due Briefing, send what is due. */
+  /** Every five minutes: for each active student, sync Interventions and send what is due. */
   tick(): Promise<void>;
 }
 
 export type OutreachSettings = {
   quietHours: { fromMinute: number; toMinute: number } | null; // in the Plan's time zone; may wrap midnight
   dailyLimit: number; // email and push combined; Briefings excluded
-  briefingAtMinute: number | null; // null turns Briefings off
   email: boolean;
-  briefingEmail: boolean; // the one-click unsubscribe turns it off
 };
 
 export interface Mailer {
@@ -103,8 +101,8 @@ export interface Pusher {
 - **Sync.** Each tick derives the student's current causes from `plan.view`, `facts.review` and `delegation.history` (a pure `causesOf` function, an internal seam), raises an Intervention for each new cause, and marks the cause ended for each one that no longer holds. Ending the cause of an open Intervention is a Lapse. Producers never raise Interventions themselves, so a Shortfall that appears only because time passed is still caught. The one exception is an Agent Run that ends with Approvals open: it raises its `run_approvals` Intervention, and queues its announcement, in the same transaction that ends it, and the tick backfills any it missed. `inbox` also lapses a `run_approvals` Intervention lazily: on read, it writes `causeEndedAt` once no Approval of the Run is open, since no timer marks an Approval's expiry.
 - **Live details.** An open Intervention stores its cause, not a copy of its content. `inbox` renders it from the cause's current state, so a growing Shortfall needs no update. A closed one whose subject is gone is shown as gone.
 - **Delivery queue.** Raising an Intervention or making a Briefing queues one delivery per enabled channel. Each tick sends what is due per student and channel as one message ("3 items need your attention"), after rechecking that an announced Intervention is still open, that it is outside Quiet Hours, and that the daily limit leaves room. A delivery past the limit is dropped; its Intervention stays in the Inbox and the next Briefing.
-- **Timing.** Pushes carry a TTL of 12 hours (Briefings `low` urgency), never the library's four-week default. Quiet Hours and the Briefing time are evaluated in the Plan's time zone at send time, so changed settings apply to what is already queued.
-- **Briefings.** Once the student's local time passes `briefingAtMinute`, the tick makes that day's Briefing from open Interventions, waiting Approvals and active Agents (ready Artifacts from Phase 11), then records the day as done even when nothing was made.
+- **Timing.** Pushes carry a TTL of 12 hours (Briefings `low` urgency), never the library's four-week default. Quiet Hours are evaluated in the Plan's time zone at send time, so changed settings apply to what is already queued.
+- **Briefings.** nunio no longer makes a Briefing of its own (#189): an Agent with Briefing erstellen writes it in a Run, and the tick only announces it. Its time and email settings were dropped at the Agents cutover (#192).
 - **Students across tenants.** The tick lists students with an active Pilot entitlement through a `SECURITY DEFINER` function, then works on each as `principal.fromSession({ studentId })`, as the worker's Source activities already do. A failure for one student is logged and does not stop the others.
 
 ## Data
@@ -112,7 +110,7 @@ export interface Pusher {
 - `intervention`: the existing table from Phase 9. `dedupeKey` becomes the cause key; its unique index becomes partial, on `(studentId, dedupeKey) WHERE "causeEndedAt" IS NULL`. New `causeEndedAt`; a row is lapsed when it is set while `acknowledgedAt` and `dismissedAt` are not. The runtime role gains `UPDATE ("causeEndedAt")`.
 - `briefing`: student, local date, `createdAt`, and the bundled items as JSON.
 - `delivery`: student, channel (`email` | `push`), what it announces (an Intervention or a Briefing), `dueAt`, `sentAt`, `droppedAt` with a reason (`closed`, `limit`, `disabled`).
-- `outreach_settings`: the fields of `OutreachSettings` and the last Briefing date. Defaults: no Quiet Hours set, a limit of 3, Briefings at 07:00, email on.
+- `outreach_settings`: the fields of `OutreachSettings`. Defaults: no Quiet Hours set, a limit of 3, email on.
 - `push_subscription`: student, `endpoint` (unique), `p256dh`, `auth`, `expirationTime`, VAPID key id, `createdAt`. Deleted on `"gone"`, on `unsubscribe`, on `pushsubscriptionchange` (the service worker re-subscribes), and with the account. Endpoints are secrets in logs.
 
 All tables are owned by the student under the same row-level security policy as `intervention`.

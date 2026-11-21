@@ -46,7 +46,8 @@ describe("the Agent Model backfill", () => {
     const freeText = await agent({});
     const ended = await agent({ state: "ended" });
     const preset = await agent({});
-    // The column the Agents cutover empties, as a preset had it then.
+    // The column the Agents cutover dropped, put back as a preset had it then.
+    await admin.$executeRaw`ALTER TABLE "agent" ADD COLUMN IF NOT EXISTS "preset" TEXT`;
     await admin.$executeRaw`UPDATE "agent" SET "preset" = 'keep_course_organized' WHERE "id" = ${preset.id}`;
 
     await admin.$executeRawUnsafe(backfill);

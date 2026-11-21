@@ -73,7 +73,8 @@ describe("bringing existing Agents in line with their Courses", () => {
       await admin.agent.create({
         data: { id, studentId, budgetMicroUsd: 1_000_000, ...data },
       });
-      // The column the Agents cutover empties, as a preset had it then.
+      // The column the Agents cutover dropped, put back as a preset had it then.
+      await admin.$executeRaw`ALTER TABLE "agent" ADD COLUMN IF NOT EXISTS "preset" TEXT`;
       if (preset)
         await admin.$executeRaw`UPDATE "agent" SET "preset" = ${preset} WHERE "id" = ${id}`;
       await admin.agentCourse.createMany({
