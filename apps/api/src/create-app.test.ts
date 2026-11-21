@@ -1062,6 +1062,7 @@ describe("the student's deletion request", () => {
     );
 
     expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "DELETION_PENDING" });
     expect(
       response.headers
         .getSetCookie()

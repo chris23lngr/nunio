@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { createPool, createPrismaClient } from "@nunio/db";
 import { expect, test } from "@playwright/test";
-import { hashPassword } from "better-auth/crypto";
 import { origins } from "../origins.js";
+import { enterSignIn } from "../students.js";
 
 test("the student asks for a practice set from the Artifacts page and sees it being made", async ({
   page,
@@ -15,7 +15,6 @@ test("the student asks for a practice set from the Artifacts page and sees it be
     "access-control-allow-headers": "content-type",
   };
   const email = `artifacts-${randomUUID()}@example.com`;
-  const password = "correct horse battery staple";
   const userId = randomUUID();
   const prisma = createPrismaClient(
     createPool(process.env.INVITATION_DATABASE_URL!),
@@ -28,14 +27,6 @@ test("the student asks for a practice set from the Artifacts page and sees it be
         name: "Justus Schuhmacher",
         email,
         emailVerified: true,
-        accounts: {
-          create: {
-            id: randomUUID(),
-            accountId: userId,
-            providerId: "credential",
-            password: await hashPassword(password),
-          },
-        },
       },
     });
   } finally {
@@ -120,11 +111,7 @@ test("the student asks for a practice set from the Artifacts page and sees it be
 
   await page.setViewportSize({ width: 1470, height: 900 });
   await page.goto(`${origins.app}/sign-in`);
-  await page.getByLabel("E-Mail").fill(email);
-  await page.getByLabel("Passwort", { exact: true }).fill(password);
-  await page
-    .getByRole("button", { name: "Mit E-Mail anmelden", exact: true })
-    .click();
+  await enterSignIn(page, email);
   await expect(page).toHaveURL(`${origins.app}/`);
   await page.goto(`${origins.app}/artifacts`);
   await expect(

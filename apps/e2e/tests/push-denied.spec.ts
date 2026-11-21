@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { createPool, createPrismaClient } from "@nunio/db";
 import { expect, test } from "@playwright/test";
-import { hashPassword } from "better-auth/crypto";
 import { origins, target } from "../origins.js";
-
-const password = "correct horse battery staple";
+import { enterSignIn } from "../students.js";
 
 /** A verified student with one open Intervention, made through the operator connection. */
 async function createStudent(): Promise<string> {
@@ -22,14 +20,6 @@ async function createStudent(): Promise<string> {
         name: "push-denied",
         email,
         emailVerified: true,
-        accounts: {
-          create: {
-            id: randomUUID(),
-            accountId: userId,
-            providerId: "credential",
-            password: await hashPassword(password),
-          },
-        },
       },
     });
     // Its work does not exist, so the Inbox shows it as gone; closing it still works. As its owner,
@@ -64,11 +54,7 @@ test("denying notifications leaves every page usable", async ({ page }) => {
   page.on("pageerror", (error) => errors.push(error));
   const email = await createStudent();
   await page.goto(`${origins.app}/sign-in`);
-  await page.getByLabel("E-Mail").fill(email);
-  await page.getByLabel("Passwort").fill(password);
-  await page
-    .getByRole("button", { name: "Mit E-Mail anmelden", exact: true })
-    .click();
+  await enterSignIn(page, email);
   await expect(page).toHaveURL(`${origins.app}/`);
 
   const nav = page.getByRole("navigation", { name: "App navigation" });

@@ -182,16 +182,41 @@ test("sessions can be loaded again after a temporary failure", async () => {
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
-test("deletion requires password confirmation and allows correcting a wrong password", async () => {
+/** Answers a sign-in code request and its entry, as the API does for a recent sign-in. */
+function serveCodeSignIn() {
+  const requested: string[] = [];
+  const entered: string[] = [];
+  api.route(
+    "POST",
+    "/api/auth/email-otp/send-verification-otp",
+    async (request) => {
+      requested.push(((await request.json()) as { email: string }).email);
+      return Response.json({ success: true });
+    },
+  );
+  api.route("POST", "/api/auth/sign-in/email-otp", async (request) => {
+    entered.push(((await request.json()) as { otp: string }).otp);
+    return Response.json({
+      token: "fresh-token",
+      user: {
+        id: "student-1",
+        name: "Justus",
+        email: "justus@example.com",
+        emailVerified: true,
+        createdAt: currentSession.createdAt,
+        updatedAt: currentSession.updatedAt,
+      },
+    });
+  });
+  return { requested, entered };
+}
+
+test("deletion asks for confirmation and requests it from a recent sign-in", async () => {
   serveSessions();
-  const passwords: string[] = [];
-  api.route("POST", "/api/me/deletion-request", async (request) => {
-    const { password } = (await request.json()) as { password: string };
-    passwords.push(password);
-    return Response.json(
-      {},
-      { status: password === "correct-password" ? 202 : 403 },
-    );
+  let requests = 0;
+  api.route("POST", "/api/me/deletion-request", () => {
+    requests++;
+    return Response.json({ status: "pending" }, { status: 202 });
   });
   const user = userEvent.setup();
   renderSettings();
@@ -201,52 +226,62 @@ test("deletion requires password confirmation and allows correcting a wrong pass
   );
   expect(dialog.getByText(/manuellen Löschung/)).toBeTruthy();
   expect(dialog.getByText(/allen Geräten abgemeldet/)).toBeTruthy();
-  const password = dialog.getByLabelText("Passwort");
-  await user.type(password, "wrong-password");
+  expect(dialog.queryByLabelText(/Passwort/)).toBeNull();
   await user.click(dialog.getByRole("button", { name: "Löschung anfordern" }));
-  expect(await dialog.findByRole("alert")).toHaveProperty(
-    "textContent",
-    "Das Passwort ist nicht korrekt.",
-  );
-  expect(router.replace).not.toHaveBeenCalled();
-  await user.clear(password);
-  await user.type(password, "correct-password");
-  await user.click(dialog.getByRole("button", { name: "Löschung anfordern" }));
+
   await waitFor(() =>
     expect(router.replace).toHaveBeenCalledWith("/sign-in?deletion=requested"),
   );
-  expect(passwords).toEqual(["wrong-password", "correct-password"]);
+  expect(requests).toBe(1);
   expect(router.refresh).not.toHaveBeenCalled();
 });
 
-test.each([
-  [429, "Zu viele Versuche. Warte einen Moment und versuche es erneut."],
-  [
-    500,
+test("deletion from an older sign-in asks for an emailed code, then requests it", async () => {
+  serveSessions();
+  const code = serveCodeSignIn();
+  let requests = 0;
+  api.route("POST", "/api/me/deletion-request", () => {
+    requests++;
+    return requests === 1
+      ? Response.json({ error: "sign_in_again" }, { status: 403 })
+      : Response.json({ status: "pending" }, { status: 202 });
+  });
+  const user = userEvent.setup();
+  renderSettings();
+  await screen.findByText("Dieses Gerät");
+  await user.click(screen.getByRole("button", { name: "Konto löschen" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  await user.click(dialog.getByRole("button", { name: "Löschung anfordern" }));
+
+  const input = await dialog.findByLabelText("Anmeldecode");
+  expect(dialog.getByText(/justus@example\.com/)).toBeTruthy();
+  expect(code.requested).toEqual(["justus@example.com"]);
+  expect(router.replace).not.toHaveBeenCalled();
+  await user.type(input, "123456");
+
+  await waitFor(() =>
+    expect(router.replace).toHaveBeenCalledWith("/sign-in?deletion=requested"),
+  );
+  expect(code.entered).toEqual(["123456"]);
+  expect(requests).toBe(2);
+});
+
+test("a failed deletion leaves the dialog open with actionable feedback", async () => {
+  serveSessions();
+  api.route("POST", "/api/me/deletion-request", () =>
+    Response.json({}, { status: 500 }),
+  );
+  const user = userEvent.setup();
+  renderSettings();
+  await user.click(screen.getByRole("button", { name: "Konto löschen" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  await user.click(dialog.getByRole("button", { name: "Löschung anfordern" }));
+  expect(await dialog.findByRole("alert")).toHaveProperty(
+    "textContent",
     "Die Löschung konnte nicht angefordert werden. Bitte versuche es erneut.",
-  ],
-])(
-  "deletion failure %s leaves the dialog open with actionable feedback",
-  async (status, message) => {
-    serveSessions();
-    api.route("POST", "/api/me/deletion-request", () =>
-      Response.json({}, { status }),
-    );
-    const user = userEvent.setup();
-    renderSettings();
-    await user.click(screen.getByRole("button", { name: "Konto löschen" }));
-    const dialog = within(await screen.findByRole("dialog"));
-    await user.type(dialog.getByLabelText("Passwort"), "password");
-    await user.click(
-      dialog.getByRole("button", { name: "Löschung anfordern" }),
-    );
-    expect(await dialog.findByRole("alert")).toHaveProperty(
-      "textContent",
-      message,
-    );
-    expect(router.replace).not.toHaveBeenCalled();
-  },
-);
+  );
+  expect(router.replace).not.toHaveBeenCalled();
+});
 
 test("a pending deletion cannot be submitted twice", async () => {
   serveSessions();
@@ -262,7 +297,6 @@ test("a pending deletion cannot be submitted twice", async () => {
   renderSettings();
   await user.click(screen.getByRole("button", { name: "Konto löschen" }));
   const dialog = within(await screen.findByRole("dialog"));
-  await user.type(dialog.getByLabelText("Passwort"), "password");
   const submit = dialog.getByRole("button", { name: "Löschung anfordern" });
   await user.click(submit);
   await waitFor(() => expect(submit).toHaveProperty("disabled", true));
@@ -273,22 +307,43 @@ test("a pending deletion cannot be submitted twice", async () => {
   await dialog.findByRole("alert");
 });
 
-test("cancelling deletion clears the password and sends no deletion request", async () => {
+test("cancelling deletion sends no deletion request", async () => {
   serveSessions();
   const user = userEvent.setup();
   renderSettings();
-  const trigger = screen.getByRole("button", {
-    name: "Konto löschen",
-  });
-  await user.click(trigger);
-  let dialog = within(await screen.findByRole("dialog"));
-  await user.type(dialog.getByLabelText("Passwort"), "private-password");
+  await user.click(screen.getByRole("button", { name: "Konto löschen" }));
+  const dialog = within(await screen.findByRole("dialog"));
   await user.click(dialog.getByRole("button", { name: "Abbrechen" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await user.click(trigger);
-  dialog = within(await screen.findByRole("dialog"));
-  expect(dialog.getByLabelText("Passwort")).toHaveProperty("value", "");
   expect(router.replace).not.toHaveBeenCalled();
+});
+
+test("signing out everywhere from an older sign-in asks for an emailed code first", async () => {
+  serveSessions();
+  const code = serveCodeSignIn();
+  let attempts = 0;
+  api.route("POST", "/api/auth/revoke-sessions", () => {
+    attempts++;
+    return attempts === 1
+      ? Response.json(
+          { code: "SESSION_NOT_FRESH", message: "Sign in again to continue." },
+          { status: 403 },
+        )
+      : Response.json({ status: true });
+  });
+  const user = userEvent.setup();
+  renderSettings();
+  await screen.findByText("Dieses Gerät");
+  await user.click(screen.getByRole("button", { name: "Überall abmelden" }));
+
+  const dialog = within(
+    await screen.findByRole("dialog", { name: "Bestätige, dass du es bist" }),
+  );
+  await user.type(await dialog.findByLabelText("Anmeldecode"), "123456");
+
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/sign-in"));
+  expect(code.requested).toEqual(["justus@example.com"]);
+  expect(attempts).toBe(2);
 });
 
 test.each([

@@ -1,9 +1,18 @@
 "use client";
 
 import { Button } from "@nunio/ui/components/button/button";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@nunio/ui/components/dialog/dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { PageHeading } from "@/components/headings";
+import { SignInAgain, SignInAgainError } from "@/features/auth/sign-in-again";
 import { deletionMutation } from "./api/deletion-mutation";
 import {
   revokeSessionMutation,
@@ -35,6 +44,9 @@ export function SecurityScreen({ apiOrigin }: { apiOrigin: string }) {
       router.replace("/sign-in?deletion=requested");
     },
   });
+  const signOutNeedsCode = signOut.error instanceof SignInAgainError;
+  const deletionNeedsCode = deletion.error instanceof SignInAgainError;
+  const email = sessions.data?.email ?? null;
   return (
     <main className="mx-auto w-full max-w-[1408px] px-4 py-8 text-base-800 sm:px-8 lg:px-16 lg:py-10">
       <PageHeading>Einstellungen</PageHeading>
@@ -76,7 +88,8 @@ export function SecurityScreen({ apiOrigin }: { apiOrigin: string }) {
             )}
             {sessions.data && (
               <SessionList
-                {...sessions.data}
+                sessions={sessions.data.sessions}
+                currentToken={sessions.data.currentToken}
                 onSignOut={(token) =>
                   token === sessions.data.currentToken
                     ? signOut.mutate(false)
@@ -90,11 +103,36 @@ export function SecurityScreen({ apiOrigin }: { apiOrigin: string }) {
                 {revoke.error.message}
               </p>
             )}
-            {signOut.error && (
+            {signOut.error && !signOutNeedsCode && (
               <p role="alert" className="mt-4 text-sm text-destructive-700">
                 {signOut.error.message}
               </p>
             )}
+            <Dialog
+              open={signOutNeedsCode && !!email}
+              onOpenChange={(open) => {
+                if (!open) signOut.reset();
+              }}
+            >
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Bestätige, dass du es bist</DialogTitle>
+                  <DialogDescription>
+                    Um dich überall abzumelden, gib den Code aus deiner E-Mail
+                    ein.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogBody>
+                  {email && (
+                    <SignInAgain
+                      apiOrigin={apiOrigin}
+                      email={email}
+                      onSignedIn={() => signOut.mutate(true)}
+                    />
+                  )}
+                </DialogBody>
+              </DialogContent>
+            </Dialog>
           </SettingGroup>
           <SettingGroup title="Gefahrenbereich">
             <div className="flex flex-col items-start gap-4 sm:flex-row sm:justify-between sm:gap-6">
@@ -108,10 +146,13 @@ export function SecurityScreen({ apiOrigin }: { apiOrigin: string }) {
                 </p>
               </div>
               <DeletionDialog
-                onSubmit={(password) => deletion.mutateAsync(password)}
+                apiOrigin={apiOrigin}
+                email={email}
+                onSubmit={() => deletion.mutate()}
                 onReset={() => deletion.reset()}
                 pending={deletion.isPending}
-                error={deletion.error?.message}
+                signInAgain={deletionNeedsCode}
+                error={deletionNeedsCode ? undefined : deletion.error?.message}
               />
             </div>
           </SettingGroup>

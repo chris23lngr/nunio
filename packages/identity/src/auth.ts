@@ -25,7 +25,11 @@ export interface Actor {
   readonly studentId: string;
 }
 
-const invitationRequired = "A valid invitation is required";
+const invitationRequired = () =>
+  new APIError("FORBIDDEN", {
+    code: "INVITATION_REQUIRED",
+    message: "A valid invitation is required",
+  });
 const hour = 60 * 60 * 1000;
 /** Per address, on top of Better Auth's limits per IP (ADR-0027). */
 const codeLimits = {
@@ -183,6 +187,7 @@ export function createAuth({
             );
             if (pendingDeletion)
               throw new APIError("FORBIDDEN", {
+                code: "DELETION_PENDING",
                 message: "Account deletion is pending",
               });
             if (activated) return;
@@ -211,7 +216,7 @@ export function createAuth({
                 select: { id: true },
               }));
             if (!invitation)
-              throw new APIError("FORBIDDEN", { message: invitationRequired });
+              throw invitationRequired();
           },
           // Claim only once the account exists: email-code sign-in creates it outside a transaction.
           after: async (user, context) => {
@@ -226,7 +231,7 @@ export function createAuth({
             });
             if (claimed.count !== 1) {
               await prisma.user.delete({ where: { id: user.id } });
-              throw new APIError("FORBIDDEN", { message: invitationRequired });
+              throw invitationRequired();
             }
           },
         },

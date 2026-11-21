@@ -272,6 +272,9 @@ describe("Invitations gate new accounts", () => {
     const response = await enterCode(address, await codeFor(address));
 
     expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      code: "INVITATION_REQUIRED",
+    });
     expect(response.headers.getSetCookie()).toEqual([]);
   });
 
