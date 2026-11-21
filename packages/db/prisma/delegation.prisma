@@ -55,6 +55,11 @@ model Agent {
   /// Its scope, kept after End removes its Grants: a Course, or one exam (with the exam's Course).
   courseId       String?
   obligationId   String?
+  /// Its trigger: when its Schedule starts a Run, in the Plan's time zone. Täglich ("daily") or chosen Wochentage
+  /// ("weekdays", ISO weekdays: 1 is Monday, 7 is Sunday), at a minute of the day (Uhrzeit).
+  triggerRhythm   String             @default("daily")
+  triggerWeekdays Int[]              @default([])
+  triggerMinute   Int                @default(360)
   state          AgentState          @default(active)
   /// Why it was Paused: by the student, or by exhausting its Budget. Only the student resumes it.
   pausedBy       String?

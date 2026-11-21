@@ -1,4 +1,4 @@
-// Records awaitApproval, ingestSource, responsibilityRun and agentRun (reading only, and acting) histories for the replay test (src/replay.test.ts). Usage, from apps/worker:
+// Records awaitApproval, ingestSource, responsibilityRun and agentRun (reading only, acting, and started by its Schedule) histories for the replay test (src/replay.test.ts). Usage, from apps/worker:
 //   node scripts/record-history.ts [workflows file] [ingestSource history name]
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
@@ -59,7 +59,9 @@ try {
                 effect: { studyBlockId: "block" },
               },
         // An Agent's Run that reads twice, then answers; with Actions, its first step also calls two Action tools.
-        startAgentRun: async ({ runId }: { runId: string }) => runId,
+        // A Run its Schedule starts has no runId from the API.
+        startAgentRun: async ({ runId }: { runId?: string }) =>
+          runId ?? "agent-run-scheduled",
         agentStep: async ({ runId, n }: { runId: string; n: number }) =>
           n >= 3
             ? { status: "answered" }
@@ -138,6 +140,18 @@ try {
   write(
     "agent-run-actions",
     await env.client.workflow.getHandle(actingWorkflowId).fetchHistory(),
+  );
+  const scheduledWorkflowId = `agentRun/agent-${randomUUID()}`;
+  await (await worker()).runUntil(
+    env.client.workflow.execute("agentRun", {
+      taskQueue,
+      workflowId: scheduledWorkflowId,
+      args: [{ studentId: "student", agentId: "agent" }],
+    }),
+  );
+  write(
+    "agent-run-scheduled",
+    await env.client.workflow.getHandle(scheduledWorkflowId).fetchHistory(),
   );
 } finally {
   await env.teardown();

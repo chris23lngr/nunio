@@ -40,6 +40,7 @@ const agent = {
   running: false,
   grants: [],
   budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
+  trigger: { rhythm: "daily", minute: 360 },
   recentActions: [],
   next: { runAt: null, action: null },
 };

@@ -31,4 +31,4 @@ export {
   type Tradeoff,
   type Unplanned,
 } from "./rebalance.js";
-export { deadline } from "./time.js";
+export { deadline, hhmm } from "./time.js";
