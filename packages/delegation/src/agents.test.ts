@@ -762,7 +762,7 @@ describe("an Agent's Schedule", () => {
     ]);
   });
 
-  it("saves the other Agents' Schedules when one cannot be saved", async () => {
+  it("saves the other Agents' Schedules when one cannot be saved, then fails, so the worker does not start", async () => {
     const s = await withAcceptedCourse();
     const { schedules, calls } = fakeSchedules();
     const agents = createAgents({ db: runtime, schedules, clock });
@@ -782,7 +782,9 @@ describe("an Agent's Schedule", () => {
     };
     calls.length = 0;
 
-    await agents.saveSchedules();
+    await expect(agents.saveSchedules()).rejects.toThrow(
+      "Could not save 1 Agents' Schedules",
+    );
 
     expect(calls.filter((call) => call.includes(ids[1]!))).toHaveLength(1);
   });

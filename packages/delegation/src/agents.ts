@@ -515,19 +515,27 @@ export function createAgents({
 
     /**
      * Brings the Schedule of every Agent not Ended in line with its trigger, as the worker starts: one whose Schedule is
-     * missing or out of date gets it. Safe to repeat; one Agent's failure leaves the others' to go on.
+     * missing or out of date gets it. Safe to repeat. One Agent's failure leaves the others' to go on, and then it
+     * rejects, so the worker does not start while an Agent may have no Schedule.
      */
     async saveSchedules() {
       const found = await db.$queryRaw<
         { agentId: string; studentId: string }[]
       >`SELECT "agentId", "studentId" FROM scheduled_agents()`;
+      const failed: unknown[] = [];
       for (const { agentId, studentId } of found) {
         try {
           await syncSchedule(mint.fromSession({ studentId }), agentId);
         } catch (error) {
           console.error("Could not save an Agent's Schedule", error);
+          failed.push(error);
         }
       }
+      if (failed.length)
+        throw new AggregateError(
+          failed,
+          `Could not save ${failed.length} Agents' Schedules`,
+        );
     },
 
     /**

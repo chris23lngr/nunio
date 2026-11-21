@@ -83,10 +83,10 @@ const agentRunActivities = agentRunActivitiesFromEnv(
   workflowAlive(client),
   artifactRunStarter(client, taskQueue),
 );
-// Before polling: the Agents cutover (#192) retires the presets' Schedules and Runs, so this worker, which has no preset
-// workflow, never runs or replays one. Then every Agent's Schedule is saved under its own ID; each start repeats both.
-await retirePresets(client);
-await agentRunActivities.saveSchedules();
+// Before polling: every Agent's Schedule is saved under its own ID, then the Agents cutover (#192) retires the presets'
+// Schedules and Runs, so this worker, which has no preset workflow, never runs or replays one. A failed save stops the
+// start here, before anything old is deleted, so Render keeps the running worker; each start repeats both.
+await retirePresets(client, () => agentRunActivities.saveSchedules());
 const worker = await Worker.create({
   connection,
   namespace: required("TEMPORAL_NAMESPACE"),

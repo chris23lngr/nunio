@@ -102,12 +102,17 @@ export const workflowAlive =
   };
 
 /**
- * The Agents cutover (#192) on Temporal, before the worker polls: deletes every Schedule under the old ID
- * `responsibility/<agentId>`, a preset's or an Agent's, then terminates each preset Run (`responsibilityRun`) still
- * running, so no worker without that workflow ever has to run or replay one. Each Agent's Schedule is saved again under
- * `agent/<agentId>` by `agents.saveSchedules()`. Safe to repeat: once done, it finds nothing.
+ * The Agents cutover (#192) on Temporal, before the worker polls. First `saveSchedules` saves every Agent's Schedule
+ * under `agent/<agentId>`; if any save fails it rejects, and nothing old is touched, so the worker does not start and no
+ * Agent is left without a Schedule. Only then is every Schedule under the old ID `responsibility/<agentId>` deleted, a
+ * preset's or an Agent's, and each preset Run (`responsibilityRun`) still running terminated, so no worker without that
+ * workflow ever has to run or replay one. Safe to repeat, and for several workers at once: once done, it finds nothing.
  */
-export async function retirePresets(client: Client) {
+export async function retirePresets(
+  client: Client,
+  saveSchedules: () => Promise<void>,
+) {
+  await saveSchedules();
   for await (const schedule of client.schedule.list())
     if (schedule.scheduleId.startsWith("responsibility/"))
       await client.schedule

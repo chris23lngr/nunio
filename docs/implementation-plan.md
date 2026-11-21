@@ -449,7 +449,7 @@ The accepted design, including slicing, matching, and the eval, is [extraction.m
 - [x] A Pause between two Actions stops the second (`gate.test.ts`, `runs.test.ts`).
 - [x] Repeated Approval clicks dispatch once (`gate.test.ts`, `runs.test.ts`).
 - [x] A stale Artifact version is refused: not applicable until Artifacts and Submissions exist (Phase 11). Its pilot counterpart, a block moved since its Approval, is refused with `approval_mismatch` (`gate.test.ts`).
-- [x] Replaying recorded workflow histories against the current code succeeds in CI (`apps/worker/src/replay.test.ts`, including `responsibility-run`).
+- [x] Replaying recorded workflow histories against the current code succeeds in CI (`apps/worker/src/replay.test.ts`; the `responsibility-run` history went with the preset Runs at the Agents cutover, #192).
 
 **Progress (2026-11-10).** The gate in `packages/delegation` is implemented: the gate suite (`gate.test.ts`), the contract suite (`kinds.test.ts`) and the table-driven decision core (`decision.test.ts`), with the pilot deviations recorded in [delegation-gate.md](design/delegation-gate.md). It covers "a Pause between two Actions stops the second", "repeated Approval clicks dispatch once", and, standing in for a stale Artifact version, a moved block refused with `approval_mismatch`.
 

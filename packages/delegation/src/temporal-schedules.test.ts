@@ -136,8 +136,8 @@ describe("the Agents cutover on Temporal", () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
   };
 
-  it("deletes every Schedule under its old ID and terminates the preset Runs still running, leaving Agents' Schedules", async () => {
-    const taskQueue = `cutover-${randomUUID()}`;
+  /** An Agent's Schedule under the old ID, as it stood before the cutover, and a preset Run waiting on an Approval. */
+  async function asItStood(taskQueue: string) {
     const preset = randomUUID(),
       agent = randomUUID(),
       studentId = randomUUID();
@@ -154,23 +154,11 @@ describe("the Agents cutover on Temporal", () => {
       });
     await old(preset, "responsibilityRun");
     await old(agent, "agentRun");
-    await createAgentSchedules({ client: env.client, taskQueue }).save({
-      agentId: agent,
-      studentId,
-      timeZone: "Europe/Berlin",
-      trigger: { rhythm: "daily", minute: 360 },
-      paused: true,
-    });
-    // A preset Run waiting on an Approval: no worker here runs it, so it stays running.
+    // No worker here runs it, so it stays running.
     const waiting = await env.client.workflow.start("responsibilityRun", {
       taskQueue,
       workflowId: `run/${preset}-${randomUUID()}`,
       args: [{ studentId, responsibilityId: preset }],
-    });
-    const other = await env.client.workflow.start("agentRun", {
-      taskQueue,
-      workflowId: `agentRun/${agent}-${randomUUID()}`,
-      args: [{ studentId, agentId: agent }],
     });
     await listed(async () => {
       for await (const _ of env.client.workflow.list({
@@ -179,20 +167,60 @@ describe("the Agents cutover on Temporal", () => {
         return true;
       return false;
     });
+    const save = () =>
+      createAgentSchedules({ client: env.client, taskQueue }).save({
+        agentId: agent,
+        studentId,
+        timeZone: "Europe/Berlin",
+        trigger: { rhythm: "daily", minute: 360 },
+        paused: true,
+      });
+    return { preset, agent, studentId, waiting, save };
+  }
 
-    await retirePresets(env.client);
-    await retirePresets(env.client);
+  it("saves every Agent's Schedule under its own ID, then deletes every Schedule under the old one and terminates the preset Runs still running", async () => {
+    const taskQueue = `cutover-${randomUUID()}`;
+    const b = await asItStood(taskQueue);
+    const other = await env.client.workflow.start("agentRun", {
+      taskQueue,
+      workflowId: `agentRun/${b.agent}-${randomUUID()}`,
+      args: [{ studentId: b.studentId, agentId: b.agent }],
+    });
 
-    for (const id of [preset, agent])
+    await retirePresets(env.client, b.save);
+    await retirePresets(env.client, b.save);
+
+    for (const id of [b.preset, b.agent])
       await expect(
         env.client.schedule.getHandle(`responsibility/${id}`).describe(),
       ).rejects.toThrow();
     expect(
-      (await env.client.schedule.getHandle(`agent/${agent}`).describe()).state
+      (await env.client.schedule.getHandle(`agent/${b.agent}`).describe()).state
         .paused,
     ).toBe(true);
-    expect((await waiting.describe()).status.name).toBe("TERMINATED");
+    expect((await b.waiting.describe()).status.name).toBe("TERMINATED");
     expect((await other.describe()).status.name).toBe("RUNNING");
     await other.terminate();
+  });
+
+  it("touches nothing old when an Agent's Schedule cannot be saved, so the worker does not start", async () => {
+    const taskQueue = `cutover-${randomUUID()}`;
+    const b = await asItStood(taskQueue);
+
+    await expect(
+      retirePresets(env.client, async () => {
+        throw new Error("Could not save 1 Agents' Schedules");
+      }),
+    ).rejects.toThrow("Could not save 1 Agents' Schedules");
+
+    for (const id of [b.preset, b.agent])
+      expect(
+        (await env.client.schedule.getHandle(`responsibility/${id}`).describe())
+          .scheduleId,
+      ).toBe(`responsibility/${id}`);
+    expect((await b.waiting.describe()).status.name).toBe("RUNNING");
+    // A later start, once Temporal answers again, finishes the cutover.
+    await retirePresets(env.client, b.save);
+    expect((await b.waiting.describe()).status.name).toBe("TERMINATED");
   });
 });
