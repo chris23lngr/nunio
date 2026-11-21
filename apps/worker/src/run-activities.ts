@@ -131,8 +131,6 @@ export function runActivitiesFromEnv(
     "VAPID_PUBLIC_KEY",
     "VAPID_PRIVATE_KEY",
     "VAPID_SUBJECT",
-    "UNSUBSCRIBE_SECRET",
-    "API_ORIGIN",
   ].filter((name) => !env[name]);
   if (missing.length)
     throw new Error(`Missing settings: ${missing.join(", ")}`);
@@ -171,10 +169,6 @@ export function runActivitiesFromEnv(
       subject: env.VAPID_SUBJECT!,
     }),
     inboxUrl: `${env.APP_ORIGIN}/inbox`,
-    unsubscribe: {
-      secret: env.UNSUBSCRIBE_SECRET!,
-      url: `${env.API_ORIGIN}/unsubscribe/briefing-email`,
-    },
   });
   /** Each preset's Actions: the Rebalance of the Agent's Course, or of its one exam. */
   const propose = async (runId: string) => {

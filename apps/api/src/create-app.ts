@@ -41,7 +41,7 @@ import {
   sourceStorageFromEnv,
 } from "@nunio/knowledge";
 import type { Outreach } from "@nunio/outreach";
-import { createOutreach, InvalidUnsubscribeError } from "@nunio/outreach";
+import { createOutreach } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import { createPlan, createPlanExecutor, planRules } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
@@ -153,20 +153,6 @@ export function createApp({
     c.set("artifactWorkflows", artifactWorkflows);
     c.set("understanding", understanding);
     await next();
-  });
-  // RFC 8058 one-click unsubscribe: a mail provider POSTs without a session or our Origin, and must not be redirected.
-  app.post("/unsubscribe/briefing-email", async (c) => {
-    try {
-      await outreach.stopBriefingEmail(
-        c.req.query("s") ?? "",
-        c.req.query("t") ?? "",
-      );
-    } catch (error) {
-      if (error instanceof InvalidUnsubscribeError)
-        return c.text("This link is not valid.", 403);
-      throw error;
-    }
-    return c.text("You will no longer get Briefing emails from nunio.", 200);
   });
   app.route("/", routes);
   if (spike) app.route("/", spikeRoutes(spike));
@@ -317,7 +303,6 @@ export async function appFromEnv(
       keys,
       clock,
       vapidPublicKey: required("VAPID_PUBLIC_KEY"),
-      unsubscribeSecret: required("UNSUBSCRIBE_SECRET"),
     }),
   });
 }

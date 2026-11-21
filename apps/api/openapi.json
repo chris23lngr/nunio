@@ -5721,22 +5721,9 @@
       "OutreachSettings": {
         "type": "object",
         "properties": {
-          "briefingAtMinute": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0,
-            "maximum": 1439,
-            "description": "Minutes after local midnight in the Plan's time zone; null turns Briefings off."
-          },
           "email": {
             "type": "boolean",
             "description": "Whether nunio emails the student; the Inbox has everything either way."
-          },
-          "briefingEmail": {
-            "type": "boolean",
-            "description": "Whether Briefings are emailed too; a one-click unsubscribe turns this off."
           },
           "quietHours": {
             "type": [
@@ -5765,13 +5752,11 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 50,
-            "description": "Alerts about Interventions and Notices per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count."
+            "description": "Alerts about Interventions, Notices and Agent Briefings per local day in the Plan's time zone; one sent by email and push counts once."
           }
         },
         "required": [
-          "briefingAtMinute",
           "email",
-          "briefingEmail",
           "quietHours",
           "dailyLimit"
         ]
@@ -16389,22 +16374,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "briefingAtMinute": {
-                    "type": [
-                      "integer",
-                      "null"
-                    ],
-                    "minimum": 0,
-                    "maximum": 1439,
-                    "description": "Minutes after local midnight in the Plan's time zone; null turns Briefings off."
-                  },
                   "email": {
                     "type": "boolean",
                     "description": "Whether nunio emails the student; the Inbox has everything either way."
-                  },
-                  "briefingEmail": {
-                    "type": "boolean",
-                    "description": "Whether Briefings are emailed too; a one-click unsubscribe turns this off."
                   },
                   "quietHours": {
                     "type": [
@@ -16433,7 +16405,7 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 50,
-                    "description": "Alerts about Interventions and Notices per local day in the Plan's time zone; one sent by email and push counts once, and Briefings do not count."
+                    "description": "Alerts about Interventions, Notices and Agent Briefings per local day in the Plan's time zone; one sent by email and push counts once."
                   }
                 }
               }

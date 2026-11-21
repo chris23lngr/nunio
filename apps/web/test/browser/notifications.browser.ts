@@ -16,8 +16,6 @@ test("notification cards fit the viewport and protect drafts during navigation",
   ]);
   let settings = {
     email: true,
-    briefingEmail: true,
-    briefingAtMinute: 420,
     quietHours: { fromMinute: 1320, toMinute: 420 },
     dailyLimit: 3,
   };

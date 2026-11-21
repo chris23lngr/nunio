@@ -542,7 +542,6 @@ beforeAll(async () => {
       keys,
       clock: { now: () => new Date() },
       vapidPublicKey: "test-vapid-key",
-      unsubscribeSecret: "test-unsubscribe-secret",
     }),
     sourceWorkflows: {
       start: async (...args) => {
@@ -9458,48 +9457,52 @@ describe("'prepare me for this exam'", () => {
   });
 });
 
-describe("one-click unsubscribe from Briefing emails", () => {
-  /** RFC 8058: a mail provider POSTs this, with no cookie and no Origin of ours. */
-  const unsubscribe = (s: string, t: string, method = "POST") =>
-    app.request(`${apiOrigin}/unsubscribe/briefing-email?s=${s}&t=${t}`, {
-      method,
-      headers:
-        method === "POST"
-          ? { "content-type": "application/x-www-form-urlencoded" }
-          : {},
-      body: method === "POST" ? "List-Unsubscribe=One-Click" : undefined,
+describe("outreach settings after retiring nunio's own Briefing (#189)", () => {
+  it("returns and updates Outreach settings without Briefing fields", async () => {
+    const cookie = await signUp("outreach-settings-no-briefing");
+
+    const initial = await app.request(`${apiOrigin}/api/me/outreach-settings`, {
+      headers: { cookie },
     });
-  const tokenFor = (id: string) =>
-    createHmac("sha256", "test-unsubscribe-secret").update(id).digest("hex");
-  const settingsOf = async (cookie: string) =>
-    (await (
-      await app.request(`${apiOrigin}/api/me/outreach-settings`, {
-        headers: { cookie },
-      })
-    ).json()) as { briefingEmail: boolean; email: boolean };
+    expect(initial.status).toBe(200);
+    expect(await initial.json()).toEqual({
+      email: true,
+      quietHours: null,
+      dailyLimit: 3,
+    });
 
-  it("stops Briefing emails without a session, answering without a redirect", async () => {
-    const cookie = await signUp("unsubscribe-one-click");
-    const id = await studentId(cookie);
-
-    const response = await unsubscribe(id, tokenFor(id));
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get("location")).toBeNull();
-    expect(await settingsOf(cookie)).toEqual(
-      expect.objectContaining({ briefingEmail: false, email: true }),
-    );
+    const updated = await app.request(`${apiOrigin}/api/me/outreach-settings`, {
+      method: "PATCH",
+      headers: {
+        cookie,
+        origin: appOrigin,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        email: false,
+        quietHours: { fromMinute: 1320, toMinute: 420 },
+        dailyLimit: 5,
+      }),
+    });
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toEqual({
+      email: false,
+      quietHours: { fromMinute: 1320, toMinute: 420 },
+      dailyLimit: 5,
+    });
   });
 
-  it("refuses a link that was not signed for the student, and ignores a GET", async () => {
-    const cookie = await signUp("unsubscribe-refused");
-    const id = await studentId(cookie);
-
-    expect((await unsubscribe(id, "0".repeat(64))).status).toBe(403);
-    expect((await unsubscribe(id, tokenFor(id), "GET")).status).not.toBe(200);
-    expect(await settingsOf(cookie)).toEqual(
-      expect.objectContaining({ briefingEmail: true }),
+  it("no longer serves the Briefing one-click unsubscribe route", async () => {
+    const response = await app.request(
+      `${apiOrigin}/unsubscribe/briefing-email?s=any&t=${"0".repeat(64)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "List-Unsubscribe=One-Click",
+      },
     );
+
+    expect(response.status).toBe(404);
   });
 });
 

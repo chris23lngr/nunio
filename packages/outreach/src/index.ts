@@ -14,7 +14,6 @@ export {
   type BriefingView,
   createOutreach,
   type InterventionView,
-  InvalidUnsubscribeError,
   type NoticeView,
   NotOpenError,
   type Outreach,

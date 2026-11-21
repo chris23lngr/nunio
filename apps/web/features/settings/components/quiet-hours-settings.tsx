@@ -108,8 +108,8 @@ export function QuietHoursSettings({
                 </InputGroupAddon>
               </InputGroup>
               <p className="mt-2 text-base-500">
-                0–50 pro Tag. Bei 0 werden keine Hinweise versendet. Briefings
-                zählen nicht mit; dein Posteingang zeigt weiterhin alles.
+                0–50 pro Tag. Bei 0 werden keine Hinweise versendet; dein
+                Posteingang zeigt weiterhin alles.
               </p>
             </div>
           </div>
