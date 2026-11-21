@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.161",
+    "@better-auth/passkey": "1.7.27",
     "@nunio/api-client": "workspace:*",
     "@nunio/ui": "workspace:*",
     "@tanstack/react-form": "1.33.5",

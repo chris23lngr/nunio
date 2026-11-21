@@ -19,6 +19,33 @@ export async function sendSignInCode(
   );
 }
 
+/** Tells the student a passkey was added, so they notice one they did not add (ADR-0027). */
+export async function sendPasskeyAddedEmail(
+  options: ScalewayEmailOptions,
+  to: string,
+  name: string,
+  addedAt: Date,
+) {
+  const zone = { timeZone: "Europe/Berlin" } as const;
+  const date = addedAt.toLocaleDateString("de-DE", {
+    ...zone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const time = addedAt.toLocaleTimeString("de-DE", {
+    ...zone,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  await sendEmail(
+    options,
+    to,
+    "Neuer Passkey für dein nunio-Konto",
+    `Am ${date} um ${time} Uhr wurde deinem nunio-Konto ein neuer Passkey hinzugefügt: ${name}.\n\nWenn du das nicht warst, melde dich mit einem Code an, lösche den Passkey in den Einstellungen unter Sicherheit und melde dich überall ab.`,
+  );
+}
+
 async function sendEmail(
   options: ScalewayEmailOptions,
   to: string,

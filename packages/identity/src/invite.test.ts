@@ -24,6 +24,7 @@ beforeAll(async () => {
   auth = createAuth({
     prisma,
     baseURL: origin,
+    appOrigin: origin,
     trustedOrigins: [origin],
     secret: "invite-test-secret-that-is-long-enough",
     email: {

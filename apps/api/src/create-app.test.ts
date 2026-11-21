@@ -335,6 +335,7 @@ beforeAll(async () => {
   const auth = createAuth({
     prisma,
     baseURL: apiOrigin,
+    appOrigin,
     trustedOrigins: [appOrigin],
     cookieDomain: "nunio.test",
     secret: "spike-b-test-secret-that-is-long-enough",

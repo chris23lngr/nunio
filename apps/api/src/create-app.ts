@@ -190,6 +190,7 @@ export async function appFromEnv(env: NodeJS.ProcessEnv) {
   const auth = createAuth({
     prisma,
     baseURL: required("BETTER_AUTH_URL"),
+    appOrigin,
     secret: required("BETTER_AUTH_SECRET"),
     trustedOrigins: [appOrigin],
     cookieDomain: env.COOKIE_DOMAIN,

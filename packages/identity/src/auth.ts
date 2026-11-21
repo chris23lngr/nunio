@@ -1,19 +1,24 @@
 import { randomUUID } from "node:crypto";
+import { passkey } from "@better-auth/passkey";
 import { activatePilot, hasPilotEntitlement } from "@nunio/billing";
 import type { PrismaClient } from "@nunio/db";
 import { principal, withOwner } from "@nunio/delegation";
+// Lets the declaration build name the passkey plugin's WebAuthn types.
+import type {} from "@simplewebauthn/server";
 import { APIError, betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { emailOTP } from "better-auth/plugins";
 import type { ScalewayEmailOptions } from "./email.js";
-import { sendSignInCode } from "./email.js";
+import { sendPasskeyAddedEmail, sendSignInCode } from "./email.js";
 import { hashInvitationToken } from "./invitation.js";
 
 export interface AuthOptions {
   prisma: PrismaClient;
   /** The API origin that serves `/api/auth/*`. */
   baseURL: string;
+  /** The app origin, where passkeys are created and used; its host is the relying party (ADR-0027). */
+  appOrigin: string;
   trustedOrigins: string[];
   secret: string;
   email: ScalewayEmailOptions;
@@ -46,6 +51,13 @@ const signInAgain = () =>
     code: "SESSION_NOT_FRESH",
     message: "Sign in again to continue.",
   });
+/** Paths that change a student's passkeys; like signing out everywhere, they need a recent sign-in. */
+const sensitivePaths = new Set([
+  "/revoke-sessions",
+  "/passkey/generate-register-options",
+  "/passkey/verify-registration",
+  "/passkey/delete-passkey",
+]);
 const tooManyRequests = () =>
   new APIError("TOO_MANY_REQUESTS", {
     message: "Too many requests. Please try again later.",
@@ -54,6 +66,7 @@ const tooManyRequests = () =>
 export function createAuth({
   prisma,
   baseURL,
+  appOrigin,
   trustedOrigins,
   secret,
   email,
@@ -135,7 +148,7 @@ export function createAuth({
     ],
     hooks: {
       before: createAuthMiddleware(async (context) => {
-        if (context.path === "/revoke-sessions") {
+        if (sensitivePaths.has(context.path)) {
           const current = await getSessionFromCtx(context);
           if (current && !isRecent(current.session)) throw signInAgain();
           return;
@@ -161,6 +174,28 @@ export function createAuth({
         }
       }),
       after: createAuthMiddleware(async (context) => {
+        if (context.path === "/passkey/verify-registration") {
+          const added = context.context.returned;
+          const student = context.context.session?.user;
+          if (
+            !student ||
+            !added ||
+            added instanceof Response ||
+            added instanceof APIError
+          )
+            return;
+          const { name } = added as { name?: string };
+          // The passkey is saved; a failed notice must not fail its registration.
+          await sendPasskeyAddedEmail(
+            email,
+            student.email,
+            name || "Passkey",
+            new Date(),
+          ).catch((error) =>
+            context.context.logger.error("Passkey notice was not sent", error),
+          );
+          return;
+        }
         // Only wrong guesses count: a successful sign-in clears the address's count.
         if (context.path === "/sign-in/email-otp" && context.context.newSession)
           await prisma.rateLimit.deleteMany({
@@ -228,15 +263,40 @@ export function createAuth({
               },
               data: { acceptedAt: new Date() },
             });
-            if (claimed.count !== 1) {
-              await prisma.user.delete({ where: { id: user.id } });
-              throw invitationRequired();
-            }
+            // Only a race lost to another claim gets here; the account stays without pilot access.
+            if (claimed.count !== 1) throw invitationRequired();
           },
         },
       },
     },
+    user: {
+      additionalFields: {
+        passkeyPromptDismissed: {
+          type: "boolean",
+          required: false,
+          defaultValue: false,
+          input: true,
+        },
+      },
+    },
     plugins: [
+      passkey({
+        rpID: new URL(appOrigin).hostname,
+        rpName: "nunio",
+        origin: appOrigin,
+        authenticatorSelection: {
+          residentKey: "preferred",
+          userVerification: "required",
+        },
+        authentication: {
+          async afterVerification({ clientData }) {
+            await prisma.passkey.updateMany({
+              where: { credentialID: clientData.id },
+              data: { lastUsedAt: new Date() },
+            });
+          },
+        },
+      }),
       emailOTP({
         otpLength: 6,
         expiresIn: 10 * 60,
@@ -250,6 +310,11 @@ export function createAuth({
       {
         id: "pilot-invitations",
         schema: {
+          passkey: {
+            fields: {
+              lastUsedAt: { type: "date", required: false, input: false },
+            },
+          },
           invitation: {
             fields: {
               tokenHash: { type: "string", unique: true },

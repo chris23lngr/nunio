@@ -22,6 +22,7 @@ beforeAll(async () => {
       const auth = createAuth({
         prisma,
         baseURL: "https://api.nunio.test",
+        appOrigin: origin,
         trustedOrigins: [origin],
         secret: "rate-limit-test-secret-that-is-long-enough",
         email: { projectId: "test-project", secretKey: "test-key", from: "accounts@nunio.test" },
