@@ -147,6 +147,8 @@ export function createAuth({
       "/email-otp/check-verification-otp",
       "/email-otp/request-email-change",
       "/email-otp/change-email",
+      // Passkeys keep the name they were added with (ADR-0027).
+      "/passkey/update-passkey",
     ],
     hooks: {
       before: createAuthMiddleware(async (context) => {
@@ -196,6 +198,18 @@ export function createAuth({
           ).catch((error) =>
             context.context.logger.error("Passkey notice was not sent", error),
           );
+          return;
+        }
+        // A passkey counts as used only once its sign-in has a session.
+        if (
+          context.path === "/passkey/verify-authentication" &&
+          context.context.newSession &&
+          typeof context.body?.response?.id === "string"
+        ) {
+          await prisma.passkey.updateMany({
+            where: { credentialID: context.body.response.id },
+            data: { lastUsedAt: new Date() },
+          });
           return;
         }
         // Only wrong guesses count: a successful sign-in clears the address's count.
@@ -289,14 +303,6 @@ export function createAuth({
         authenticatorSelection: {
           residentKey: "preferred",
           userVerification: "required",
-        },
-        authentication: {
-          async afterVerification({ clientData }) {
-            await prisma.passkey.updateMany({
-              where: { credentialID: clientData.id },
-              data: { lastUsedAt: new Date() },
-            });
-          },
         },
       }),
       emailOTP({

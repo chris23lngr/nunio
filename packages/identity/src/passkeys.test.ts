@@ -319,6 +319,23 @@ describe("signing in with a passkey", () => {
     expect(listed?.lastUsedAt).not.toBeNull();
   });
 
+  it("records no use when the sign-in is refused", async () => {
+    const { address, cookie } = await student("passkey-refused");
+    const authenticator = new Authenticator();
+    await addPasskey(cookie, authenticator);
+    const { id: studentId } = await admin.user.findUniqueOrThrow({
+      where: { email: address },
+    });
+    await admin.deletionRequest.create({ data: { studentId } });
+    const response = await signInWithPasskey(authenticator);
+
+    expect(response.status).toBe(403);
+    const [stored] = await admin.passkey.findMany({
+      where: { userId: studentId },
+    });
+    expect(stored?.lastUsedAt).toBeNull();
+  });
+
   it("asks the browser for user verification", async () => {
     const response = await call("/passkey/generate-authenticate-options");
 
@@ -369,6 +386,21 @@ describe("deleting a passkey", () => {
 
     expect(response.status).toBe(403);
     expect(await passkeys(cookie)).toHaveLength(1);
+  });
+});
+
+describe("renaming a passkey", () => {
+  it("is not offered", async () => {
+    const { cookie } = await student("renames");
+    await addPasskey(cookie, new Authenticator());
+    const [listed] = await passkeys(cookie);
+    const response = await call("/passkey/update-passkey", {
+      cookie,
+      body: { id: listed!.id, name: "Renamed" },
+    });
+
+    expect(response.status).toBe(404);
+    expect((await passkeys(cookie))[0]?.name).toBe("MacBook – Safari");
   });
 });
 
