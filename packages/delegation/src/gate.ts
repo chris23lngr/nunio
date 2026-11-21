@@ -138,6 +138,12 @@ export interface ActionRecord {
   } | null;
   events: { at: Date; type: string; detail: unknown }[];
 }
+/** An Action whose Approval is still open at `at`: unanswered, not withdrawn and not yet expired, which no timer marks. */
+export const openApprovalAt = (at: Date) => ({
+  status: "awaiting_approval" as const,
+  approval: { is: { decision: null, expiresAt: { gt: at } } },
+});
+
 export interface HistoryQuery {
   /** These Actions only, whatever their status. */
   ids?: string[];

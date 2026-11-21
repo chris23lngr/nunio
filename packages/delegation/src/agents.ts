@@ -7,6 +7,7 @@ import {
   grantedKinds,
 } from "./capabilities.js";
 import type { Clock } from "./gate.js";
+import { openApprovalAt } from "./gate.js";
 import type { Kind } from "./kinds.js";
 import { createModelCatalog } from "./model-catalog.js";
 import type { Principal, Transaction } from "./principal.js";
@@ -185,6 +186,31 @@ const isCourseArchived = async (tx: Transaction, courseId: string | null) =>
         where: { id: courseId, archivedAt: { not: null } },
       })),
   );
+
+/**
+ * The one badge an Agent's row shows: Pausiert, Freigabe benötigt (one of its Runs has an open Approval), Läuft
+ * gerade (one of its Runs is under way) or Beendet; null when none applies. An Ended Agent reads Beendet even while
+ * one of its Runs is still asking or under way: it can no longer act on either.
+ */
+export type AgentBadge = "paused" | "approval_needed" | "running" | "ended";
+
+function badgeOf(
+  state: "active" | "paused" | "ended",
+  asking: boolean,
+  running: boolean,
+): AgentBadge | null {
+  if (state === "paused") return "paused";
+  if (state === "ended") return "ended";
+  if (asking) return "approval_needed";
+  return running ? "running" : null;
+}
+
+const badgeRank = (badge: AgentBadge | null) =>
+  badge === "ended"
+    ? 4
+    : badge === null
+      ? 3
+      : (["paused", "approval_needed", "running"] as const).indexOf(badge);
 
 /** Ongoing delegations the student owns: records plus the Schedules that start their Runs. */
 export function createAgents({
@@ -515,21 +541,50 @@ export function createAgents({
       }));
     },
 
-    /** The student's Agents, newest first, Ended ones included: their history remains. */
+    /**
+     * The student's Agents, Ended ones included: their history remains. Each has its badge, and the list puts what
+     * needs the student first: Paused, then Freigabe benötigt, then running, then those without a badge, then Ended;
+     * newest first within each.
+     */
     async list(p: Principal) {
-      return withOwner(db, p, async (tx) =>
-        (await tx.agent.findMany({ orderBy: { createdAt: "desc" } })).map(
-          (r) => ({
-            id: r.id,
-            preset: r.preset as Preset | null,
-            name: r.name,
-            emoji: r.emoji,
-            scope: scopeOf(r),
-            state: r.state as "active" | "paused" | "ended",
-            pausedBy: r.pausedBy as PausedBy | null,
+      return withOwner(db, p, async (tx) => {
+        const agents = await tx.agent.findMany({
+          orderBy: { createdAt: "desc" },
+        });
+        const agentsOf = (runs: { agentId: string | null }[]) =>
+          new Set(runs.map((run) => run.agentId));
+        const asking = agentsOf(
+          await tx.run.findMany({
+            where: {
+              agentId: { not: null },
+              actions: { some: openApprovalAt(clock.now()) },
+            },
+            select: { agentId: true },
           }),
-        ),
-      );
+        );
+        const running = agentsOf(
+          await tx.run.findMany({
+            where: { agentId: { not: null }, status: "running" },
+            select: { agentId: true },
+          }),
+        );
+        return agents
+          .map((r) => {
+            const state = r.state as "active" | "paused" | "ended";
+            return {
+              id: r.id,
+              preset: r.preset as Preset | null,
+              name: r.name,
+              description: r.description,
+              emoji: r.emoji,
+              scope: scopeOf(r),
+              state,
+              pausedBy: r.pausedBy as PausedBy | null,
+              badge: badgeOf(state, asking.has(r.id), running.has(r.id)),
+            };
+          })
+          .sort((a, b) => badgeRank(a.badge) - badgeRank(b.badge));
+      });
     },
 
     /** Its form, scope, state, Grants, and usage against its Budget; null when it is not the student's. */

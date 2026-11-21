@@ -1,10 +1,9 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import type { Clock, Principal } from "@nunio/delegation";
-import { principal, withOwner } from "@nunio/delegation";
+import { openApprovalAt, principal, withOwner } from "@nunio/delegation";
 import type { Kind, Subject } from "./causes.js";
 import { causeOf } from "./causes.js";
-import { openApprovalAt } from "./raise.js";
 
 export type InterventionView = {
   id: string;

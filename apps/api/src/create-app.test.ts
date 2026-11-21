@@ -6561,11 +6561,13 @@ describe("Agents", () => {
         id,
         preset: "keep_course_organized",
         name: "",
+        description: "",
         emoji: "🤖",
         course: { id: s.courseId, title: "Analysis I" },
         exam: null,
         state: "ended",
         pausedBy: null,
+        badge: "ended",
       },
     ]);
   });
@@ -7410,6 +7412,67 @@ describe("a free-text Agent's form", () => {
         }),
       ],
       nextCursor: null,
+    });
+  });
+
+  it("lists the student's Agents with one badge each: Pausiert, then Freigabe benötigt, then Läuft gerade, then none, Beendet last", async () => {
+    const s = await student("agent-list-badges");
+    const statistics = await course(s.id, "Statistics II");
+    const created = async (name: string) =>
+      (
+        (await (
+          await s.call("POST", "", { ...form([statistics]), name })
+        ).json()) as { id: string }
+      ).id;
+    const ended = await created("Beendet");
+    await s.call("POST", `/${ended}/end`);
+    // Until Ending withdraws them, an Ended Agent's open Approval or Run still reads Beendet.
+    await asked(s.id, await recordedRun(s.id, ended, 5));
+    await recordedRun(s.id, ended, 1, { status: "running" });
+    await created("Ohne Lauf");
+    const running = await created("Läuft");
+    await recordedRun(s.id, running, 1, { status: "running" });
+    const asking = await created("Fragt");
+    await asked(s.id, await recordedRun(s.id, asking, 30));
+    // Its Approval wins over its Run under way.
+    await recordedRun(s.id, asking, 1, { status: "running" });
+    const expired = await created("Abgelaufen");
+    await asked(
+      s.id,
+      await recordedRun(s.id, expired, 30),
+      new Date(Date.now() - 1_000),
+    );
+    const paused = await created("Pausiert");
+    await s.call("POST", `/${paused}/pause`);
+
+    const listed = await s.call("GET", "");
+
+    expect(listed.status).toBe(200);
+    const agents = (await listed.json()) as {
+      id: string;
+      name: string;
+      badge: string | null;
+    }[];
+    expect(agents.map(({ name, badge }) => [name, badge])).toEqual([
+      ["Pausiert", "paused"],
+      ["Fragt", "approval_needed"],
+      ["Läuft", "running"],
+      // Without a badge, newest first.
+      ["Abgelaufen", null],
+      ["Ohne Lauf", null],
+      ["Beendet", "ended"],
+    ]);
+    expect(agents[0]).toEqual({
+      id: paused,
+      preset: null,
+      name: "Pausiert",
+      description: "Hält meine Klausurvorbereitung auf Kurs.",
+      emoji: "🤖",
+      course: null,
+      exam: null,
+      state: "paused",
+      pausedBy: "student",
+      badge: "paused",
     });
   });
 

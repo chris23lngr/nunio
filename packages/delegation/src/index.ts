@@ -44,6 +44,7 @@ export {
   type Executors,
   type HistoryQuery,
   KeyConflictError,
+  openApprovalAt,
   type PlanRules,
   type Resolve,
   StaleApprovalError,
