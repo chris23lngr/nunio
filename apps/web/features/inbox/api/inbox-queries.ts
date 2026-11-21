@@ -2,8 +2,10 @@ import type { paths } from "@nunio/api-client";
 import { queryOptions } from "@tanstack/react-query";
 import { createApiClient } from "@/lib/api-client";
 
-export type Intervention =
-  paths["/api/me/inbox"]["get"]["responses"][200]["content"]["application/json"]["interventions"][number];
+type Inbox =
+  paths["/api/me/inbox"]["get"]["responses"][200]["content"]["application/json"];
+export type Intervention = Inbox["interventions"][number];
+export type Notice = Inbox["notices"][number];
 
 export function inboxQueries(apiOrigin: string) {
   return queryOptions({

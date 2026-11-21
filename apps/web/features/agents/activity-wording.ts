@@ -188,6 +188,8 @@ export function describeEntry(entry: VerlaufEntry): {
       return describeAction(entry);
     case "artifact":
       return describeArtifact(entry);
+    case "notice":
+      return describeNotice(entry);
     case "approval":
       return describeApproval(entry);
     case "end":
@@ -267,6 +269,23 @@ function describeArtifact(entry: Extract<VerlaufEntry, { type: "artifact" }>) {
           ]
         : []),
     ],
+  };
+}
+
+/** The Notice a call sent, read in the Inbox and never shown here, or why none was sent. */
+function describeNotice(entry: Extract<VerlaufEntry, { type: "notice" }>) {
+  if (entry.outcome === "sent")
+    return {
+      title: "Nachricht an dich gesendet",
+      details: ["In deiner Inbox"],
+    };
+  return {
+    title: "Nicht gesendet: Nachricht",
+    details: entry.refusal
+      ? [
+          `Grund: ${entry.refusal === "invalid" ? "Ungültiger Text, nichts wurde gesendet" : (refusals[entry.refusal] ?? entry.refusal)}`,
+        ]
+      : [],
   };
 }
 

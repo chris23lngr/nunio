@@ -314,6 +314,7 @@ export async function appFromEnv(
     // Only the worker sends; the API reads the Inbox and settings, and holds no notification key.
     outreach: createOutreach({
       db: prisma,
+      keys,
       clock,
       vapidPublicKey: required("VAPID_PUBLIC_KEY"),
       unsubscribeSecret: required("UNSUBSCRIBE_SECRET"),

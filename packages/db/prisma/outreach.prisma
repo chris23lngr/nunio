@@ -36,13 +36,13 @@ model OutreachSettings {
   /// Quiet Hours in minutes after local midnight, in the Plan's time zone; both null when off. May wrap midnight.
   quietFromMinute  Int?
   quietToMinute    Int?
-  /// Announcements of Interventions per local day, email and push combined; Briefings do not count.
+  /// Announcements of Interventions and Notices per local day, email and push combined; Briefings do not count.
   dailyLimit       Int     @default(3)
 
   @@map("outreach_settings")
 }
 
-/// One message outside the app announcing an Intervention or a Briefing; settled once, as sent or dropped.
+/// One message outside the app announcing an Intervention, a Notice or a Briefing; settled once, as sent or dropped.
 model Delivery {
   id             String    @id
   studentId      String
@@ -50,15 +50,39 @@ model Delivery {
   /// email or push.
   channel        String
   interventionId String?
+  noticeId       String?
   briefingId     String?
   dueAt          DateTime
   sentAt         DateTime?
   droppedAt      DateTime?
-  /// closed or disabled.
+  /// closed, disabled or limit; closed also for a Notice read, or deleted, before it was announced.
   dropReason     String?
 
   @@index([studentId, dueAt])
   @@map("delivery")
+}
+
+/// A message an Agent wrote the student in a Run (#155), shown as the Agent's own words. Never an Intervention: it has
+/// no cause, never lapses, and is unread until the student opens it. Its announcement is its Deliveries.
+model Notice {
+  id          String    @id
+  studentId   String
+  student     User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  agentId     String
+  agent       Agent     @relation(fields: [agentId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// The Run that sent it; at most one per Run (ADR-0026).
+  runId       String
+  run         Run       @relation(fields: [runId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// Plain text of at most 500 characters, sealed under every Source the Run had read, as its summary is.
+  textContent Bytes
+  textKey     Bytes?
+  derivedFrom String[]  @default([])
+  createdAt   DateTime  @default(now())
+  readAt      DateTime?
+
+  @@unique([runId, studentId])
+  @@index([studentId, createdAt])
+  @@map("notice")
 }
 
 /// A scheduled summary, never edited once made: which Interventions, Approvals and Agents it bundled.

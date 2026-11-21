@@ -237,45 +237,70 @@ export function createOutreachSender({
           })
         ).map((i) => i.id),
       );
+      // A Notice is announced only while unread; one deleted with its Agent is not announced either.
+      const unread = new Set(
+        (
+          await tx.notice.findMany({
+            where: {
+              id: { in: queued.flatMap((d) => d.noticeId ?? []) },
+              readAt: null,
+            },
+            select: { id: true },
+          })
+        ).map((n) => n.id),
+      );
       const { email, briefingEmail, dailyLimit } = settings;
-      // An Intervention counts with the first message that announced it, however often another
-      // channel is retried; a tick's messages share one sentAt, so each tick counts once.
-      const firstAnnounced = new Map<string, number>();
-      for (const { interventionId, sentAt } of await tx.delivery.findMany({
+      /** What a message announces that counts against the daily limit: an Intervention or a Notice, each in its own message. */
+      const announced = (d: {
+        interventionId: string | null;
+        noticeId: string | null;
+      }) =>
+        d.interventionId
+          ? { batch: "intervention", id: d.interventionId }
+          : d.noticeId
+            ? { batch: "notice", id: d.noticeId }
+            : null;
+      // An Intervention or Notice counts with the first message that announced it, however often another channel is
+      // retried; a tick's messages of one batch share one sentAt, so each counts once.
+      const firstAnnounced = new Map<string, string>();
+      for (const d of await tx.delivery.findMany({
         where: {
-          interventionId: { not: null },
+          OR: [{ interventionId: { not: null } }, { noticeId: { not: null } }],
           sentAt: { gte: startOfDay(at, timeZone) },
         },
-        select: { interventionId: true, sentAt: true },
-      }))
-        if (interventionId && sentAt)
+        select: { interventionId: true, noticeId: true, sentAt: true },
+        orderBy: { sentAt: "asc" },
+      })) {
+        const item = announced(d);
+        if (item && d.sentAt && !firstAnnounced.has(item.id))
           firstAnnounced.set(
-            interventionId,
-            Math.min(
-              sentAt.getTime(),
-              firstAnnounced.get(interventionId) ?? Number.POSITIVE_INFINITY,
-            ),
+            item.id,
+            `${item.batch}:${d.sentAt.toISOString()}`,
           );
-      const announcedToday = new Set(firstAnnounced.values()).size;
+      }
+      let announcedToday = new Set(firstAnnounced.values()).size;
+      /** The batches that announce something new in this tick, each one more message toward the limit. */
+      const opened = new Set<string>();
       const subscriptions = (await tx.pushSubscription.findMany()).map(
         pushSubscriptionOf,
       );
       const reasonOf = (d: (typeof queued)[number]) => {
-        // A message about an Intervention that closed meanwhile no longer applies.
+        // A message about an Intervention that closed, or a Notice read, meanwhile no longer applies.
         if (d.interventionId && !open.has(d.interventionId)) return "closed";
+        if (d.noticeId && !unread.has(d.noticeId)) return "closed";
         if (
           d.channel === "email"
             ? !email || (d.briefingId !== null && !briefingEmail)
             : !subscriptions.length
         )
           return "disabled";
-        // Past the limit, a new Intervention waits in the Inbox and the next Briefing instead.
-        if (
-          d.interventionId &&
-          !firstAnnounced.has(d.interventionId) &&
-          announcedToday >= dailyLimit
-        )
-          return "limit";
+        // Past the limit, a new Intervention or Notice waits in the Inbox and the next Briefing instead.
+        const item = announced(d);
+        if (item && !firstAnnounced.has(item.id) && !opened.has(item.batch)) {
+          if (announcedToday >= dailyLimit) return "limit";
+          opened.add(item.batch);
+          announcedToday += 1;
+        }
         return "send";
       };
       const byReason: Record<ReturnType<typeof reasonOf>, typeof queued> = {
@@ -312,7 +337,7 @@ export function createOutreachSender({
     }
   }
 
-  /** Sends one channel's due messages: one for the Interventions it announces, one for a Briefing. */
+  /** Sends one channel's due messages: one for the Interventions it announces, one for the Notices, one for a Briefing. */
   async function sendChannel(
     p: Principal,
     channel: Channel,
@@ -327,6 +352,7 @@ export function createOutreachSender({
       due: {
         id: string;
         interventionId: string | null;
+        noticeId: string | null;
         briefingId: string | null;
       }[];
       to: string;
@@ -334,6 +360,7 @@ export function createOutreachSender({
     },
   ) {
     const announcing = due.filter((d) => d.interventionId);
+    const noticing = due.filter((d) => d.noticeId);
     const briefing = due.filter((d) => d.briefingId);
     for (const [batch, message, urgency] of [
       [
@@ -341,6 +368,18 @@ export function createOutreachSender({
         {
           subject: `nunio: ${announcing.length} ${announcing.length === 1 ? "item needs" : "items need"} your attention`,
           text: `Open your Inbox to see what needs your attention:\n\n${inboxUrl}`,
+        },
+        "normal",
+      ],
+      // Neither the Agent's text nor its name: both may hold the student's content (ADR-0014).
+      [
+        noticing,
+        {
+          subject:
+            noticing.length === 1
+              ? "nunio: 1 neue Nachricht von einem Agenten"
+              : `nunio: ${noticing.length} neue Nachrichten von Agenten`,
+          text: `Lies sie in deiner Inbox:\n\n${inboxUrl}`,
         },
         "normal",
       ],

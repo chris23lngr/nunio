@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { InboxScreen } from "@/features/inbox/inbox-screen";
@@ -324,4 +324,91 @@ test("a Briefing says where each of its Approvals stands now, and keeps what is 
     "Denied: Problem sheet 1",
     "Expired: Problem sheet 1",
   ]);
+});
+
+const notice = {
+  id: "7d2f0a4e-0000-4000-8000-000000000001",
+  agentId: "agent-3",
+  agentName: "Klausur vorbereiten",
+  runId: "run-7",
+  text: "Deine Klausur ist am 5. Februar." as string | null,
+  sentAt: "2026-11-10T07:00:00.000Z",
+  readAt: null as string | null,
+  announcement: "announced",
+};
+
+/** Serves the given Notices and records each one the student opens. */
+function serveNotices(...notices: (typeof notice)[]) {
+  let shown = notices;
+  const opened: string[] = [];
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({ interventions: [], notices: shown, briefings: [] }),
+  );
+  for (const n of notices)
+    api.route("POST", `/api/me/notices/${n.id}/read`, () => {
+      opened.push(n.id);
+      shown = shown.map((s) =>
+        s.id === n.id ? { ...s, readAt: "2026-11-10T08:00:00.000Z" } : s,
+      );
+      return Response.json({ status: "ok" });
+    });
+  render(
+    <TestProviders>
+      <InboxScreen apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+  return opened;
+}
+
+test("a Notice is its Agent's message, unread until the student opens it, which marks it read", async () => {
+  const opened = serveNotices(notice);
+  const messages = await screen.findByRole("region", { name: "Nachrichten" });
+  const item = within(messages).getByRole("article", {
+    name: "Nachricht von Klausur vorbereiten",
+  });
+  expect(within(item).getByText("Ungelesen")).toBeTruthy();
+  expect(
+    within(item).queryByText("Deine Klausur ist am 5. Februar."),
+  ).toBeNull();
+  expect(screen.queryByText("Nothing needs your attention.")).toBeNull();
+
+  await userEvent.click(within(item).getByRole("button", { name: "Öffnen" }));
+
+  expect(
+    await within(item).findByText("Deine Klausur ist am 5. Februar."),
+  ).toBeTruthy();
+  expect(opened).toEqual([notice.id]);
+  await waitFor(() => expect(within(item).queryByText("Ungelesen")).toBeNull());
+});
+
+test("a Notice's text is plain text: nothing in it becomes a link or formatting", async () => {
+  const text = "**Fang** an: <b>jetzt</b> unter www.example.test\nZweite Zeile";
+  serveNotices({ ...notice, text, readAt: "2026-11-10T07:30:00.000Z" });
+
+  const item = await screen.findByRole("article", {
+    name: "Nachricht von Klausur vorbereiten",
+  });
+
+  expect(
+    within(item).getByText((_, element) => element?.textContent === text, {
+      selector: "p",
+    }),
+  ).toBeTruthy();
+  expect(within(item).queryByRole("link")).toBeNull();
+  expect(item.querySelector("b, strong")).toBeNull();
+  expect(within(item).queryByRole("button", { name: "Öffnen" })).toBeNull();
+});
+
+test("a Notice drawn from a Source deleted since says it can no longer be read", async () => {
+  serveNotices({ ...notice, text: null, readAt: "2026-11-10T07:30:00.000Z" });
+
+  const item = await screen.findByRole("article", {
+    name: "Nachricht von Klausur vorbereiten",
+  });
+
+  expect(
+    within(item).getByText(
+      "Nicht mehr lesbar: Eine Quelle, die der Agent gelesen hatte, wurde gelöscht.",
+    ),
+  ).toBeTruthy();
 });

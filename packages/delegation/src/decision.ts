@@ -74,13 +74,15 @@ export interface CapableAgent {
 
 /**
  * What a free-text Agent's Run may do at most (ADR-0026): Action calls, counting granted, asked and refused ones, in the
- * Run and in one model step, Approvals asked, and Artifact Runs started. Past one, a call is refused with `run_cap`.
+ * Run and in one model step, Approvals asked, Artifact Runs started and Notices sent. Past one, a call is refused with
+ * `run_cap`.
  */
 export const runCaps = {
   calls: 20,
   stepCalls: 5,
   approvals: 5,
   artifactRuns: 1,
+  notices: 1,
 } as const;
 /** At most this many of an Agent's Approvals are open at once, across its Runs (ADR-0026); past it, `open_approvals_cap`. */
 export const maxOpenApprovals = 5;

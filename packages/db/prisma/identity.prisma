@@ -39,6 +39,7 @@ model User {
   outreachSettings OutreachSettings?
   briefings        Briefing[]
   deliveries       Delivery[]
+  notices          Notice[]
   pushSubscriptions PushSubscription[]
   artifacts        Artifact[]
   practiceAttempts PracticeAttempt[]

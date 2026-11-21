@@ -85,6 +85,14 @@ const capabilitySet = [
     description: "Übungsaufgaben zu Themen deiner Kurse erstellen.",
     modes: [],
   },
+  {
+    id: "notifyStudent",
+    section: "Benachrichtigungen",
+    title: "Dich benachrichtigen",
+    description:
+      "Dir eine kurze Nachricht in deine Inbox schreiben, höchstens eine pro Lauf.",
+    modes: [],
+  },
 ];
 
 const dataHandling = {
@@ -1042,6 +1050,10 @@ test("'Fähigkeiten verwalten' adds Lernblöcke Capabilities on their default mo
       "Übungsaufgaben erstellenÜbungsaufgaben zu Themen deiner Kurse erstellen.",
       "false",
     ],
+    [
+      "Dich benachrichtigenDir eine kurze Nachricht in deine Inbox schreiben, höchstens eine pro Lauf.",
+      "false",
+    ],
   ]);
   expect(within(sheet).queryAllByRole("combobox")).toEqual([]);
   await userEvent.click(boxes[0]!);
@@ -1212,6 +1224,53 @@ test("'Fähigkeiten verwalten' offers Karteikarten and Übungsaufgaben erstellen
   expect(saved).toEqual([
     expect.objectContaining({
       capabilities: [{ id: "createFlashcards", mode: null }],
+    }),
+  ]);
+});
+
+test("'Fähigkeiten verwalten' offers Dich benachrichtigen under Benachrichtigungen, simply on without a mode", async () => {
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/a-1", () =>
+    Response.json({ ...agent, capabilities: [] }),
+  );
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Fähigkeit hinzufügen" }),
+  );
+  const sheet = await screen.findByRole("dialog", {
+    name: "Fähigkeiten verwalten",
+  });
+  const section = within(sheet).getByRole("button", {
+    name: "Benachrichtigungen",
+  });
+  if (section.getAttribute("aria-expanded") !== "true")
+    await userEvent.click(section);
+  await userEvent.click(
+    await within(sheet).findByRole("checkbox", {
+      name: /Dich benachrichtigen/,
+    }),
+  );
+  expect(within(sheet).queryAllByRole("combobox")).toEqual([]);
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  expect(listedCapabilities()).toEqual([
+    "Dich benachrichtigenDir eine kurze Nachricht in deine Inbox schreiben, höchstens eine pro Lauf.",
+  ]);
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  expect(saved).toEqual([
+    expect.objectContaining({
+      capabilities: [{ id: "notifyStudent", mode: null }],
     }),
   ]);
 });

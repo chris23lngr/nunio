@@ -27,6 +27,7 @@ import {
 import { Textarea } from "@nunio/ui/components/textarea/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  BellRing,
   CalendarMinus,
   CalendarPlus,
   CalendarSync,
@@ -199,6 +200,7 @@ const capabilityIcons: Record<Capability["id"], typeof CalendarPlus> = {
   createTasks: ListPlus,
   createFlashcards: kinds.flashcards.icon,
   createPracticeSets: kinds.practice_set.icon,
+  notifyStudent: BellRing,
 };
 
 const tabs = [

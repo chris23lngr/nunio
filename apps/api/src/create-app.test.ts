@@ -32,6 +32,7 @@ import {
   createDelegation,
   createModelCatalog,
   principal,
+  withOwner,
 } from "@nunio/delegation";
 import { createAuth } from "@nunio/identity";
 import { createSourceKeys } from "@nunio/keys";
@@ -44,7 +45,7 @@ import {
   createSources,
   createTopicAreas,
 } from "@nunio/knowledge";
-import { createOutreach } from "@nunio/outreach";
+import { createOutreach, sendNotice } from "@nunio/outreach";
 import {
   createPlan,
   createPlanExecutor,
@@ -537,6 +538,7 @@ beforeAll(async () => {
     }),
     outreach: createOutreach({
       db: prisma,
+      keys,
       clock: { now: () => new Date() },
       vapidPublicKey: "test-vapid-key",
       unsubscribeSecret: "test-unsubscribe-secret",
@@ -8949,7 +8951,149 @@ describe("a free-text Agent's form", () => {
         description: "Übungsaufgaben zu Themen deiner Kurse erstellen.",
         modes: [],
       },
+      {
+        id: "notifyStudent",
+        section: "Benachrichtigungen",
+        title: "Dich benachrichtigen",
+        description:
+          "Dir eine kurze Nachricht in deine Inbox schreiben, höchstens eine pro Lauf.",
+        modes: [],
+      },
     ]);
+  });
+
+  describe("its Notices in the Inbox (#155)", () => {
+    /** A student whose Agent may notify them, with a Run under way that sent `text` as its Notice. */
+    async function notified(name: string, text: string) {
+      const s = await student(name);
+      const statistics = await course(s.id, "Statistics II");
+      const created = await s.call(
+        "POST",
+        "",
+        form([statistics], [{ id: "notifyStudent", mode: null }]),
+      );
+      expect(created.status).toBe(201);
+      const { id: agentId } = (await created.json()) as { id: string };
+      const runId = await recordedRun(s.id, agentId, 1, { status: "running" });
+      const sent = await withOwner(prisma, principal.fromRun(runId), (tx) =>
+        sendNotice(
+          tx,
+          runId,
+          {
+            content: Uint8Array.from(Buffer.from(text)),
+            contentKey: null,
+            derivedFrom: [],
+          },
+          new Date(),
+        ),
+      );
+      if (sent.status !== "sent") throw new Error(sent.reason);
+      const inbox = async () => {
+        const response = await app.request(`${apiOrigin}/api/me/inbox`, {
+          headers: { cookie: s.headers.cookie },
+        });
+        expect(response.status).toBe(200);
+        return ((await response.json()) as { notices: unknown[] }).notices;
+      };
+      const read = (noticeId: string, headers = s.headers) =>
+        app.request(`${apiOrigin}/api/me/notices/${noticeId}/read`, {
+          method: "POST",
+          headers,
+        });
+      return { s, agentId, runId, noticeId: sent.noticeId, inbox, read };
+    }
+
+    it("shows a Notice as its Agent's message, unread until the student opens it", async () => {
+      const n = await notified(
+        "agent-notice-inbox",
+        "Deine Klausur ist am 5. Februar. **Fang** an: <b>jetzt</b>",
+      );
+
+      expect(await n.inbox()).toEqual([
+        {
+          id: n.noticeId,
+          agentId: n.agentId,
+          agentName: "Klausur Statistik",
+          runId: n.runId,
+          text: "Deine Klausur ist am 5. Februar. **Fang** an: <b>jetzt</b>",
+          sentAt: expect.any(String),
+          readAt: null,
+          announcement: "pending",
+        },
+      ]);
+
+      expect((await n.read(n.noticeId)).status).toBe(200);
+      const [opened] = (await n.inbox()) as {
+        readAt: string;
+        announcement: string;
+      }[];
+      expect(opened).toMatchObject({
+        readAt: expect.any(String),
+        announcement: "inbox_only",
+      });
+      // Opening it again keeps when it was first read.
+      expect((await n.read(n.noticeId)).status).toBe(200);
+      expect(await n.inbox()).toEqual([opened]);
+    });
+
+    it("does not let another student read or open a Notice", async () => {
+      const n = await notified("agent-notice-owner", "Nur für dich.");
+      const other = await student("agent-notice-other");
+
+      expect((await n.read(n.noticeId, other.headers)).status).toBe(404);
+      expect(
+        await (
+          await app.request(`${apiOrigin}/api/me/inbox`, {
+            headers: { cookie: other.headers.cookie },
+          })
+        ).json(),
+      ).toMatchObject({ notices: [] });
+      expect(await n.inbox()).toMatchObject([{ readAt: null }]);
+    });
+
+    it("keeps a Notice once its Agent is Ended, and drops it with the Agent once deleted", async () => {
+      const n = await notified("agent-notice-lifecycle", "Bis bald.");
+
+      expect((await n.s.call("POST", `/${n.agentId}/end`)).status).toBe(200);
+      expect(await n.inbox()).toMatchObject([{ text: "Bis bald." }]);
+
+      expect((await n.s.call("DELETE", `/${n.agentId}`)).status).toBe(200);
+      expect(await n.inbox()).toEqual([]);
+    });
+
+    it("shows the Notice sent in its Run's Verlauf, without its text", async () => {
+      const n = await notified("agent-notice-verlauf", "Geheim.");
+      await admin.runEvent.create({
+        data: {
+          runId: n.runId,
+          studentId: n.s.id,
+          key: "notice:1:1",
+          type: "notice",
+          detail: {
+            step: 1,
+            call: 1,
+            capability: "notifyStudent",
+            noticeId: n.noticeId,
+            outcome: "sent",
+            refusal: null,
+          },
+        },
+      });
+
+      const shown = await n.s.call("GET", `/${n.agentId}/runs/${n.runId}`);
+
+      expect(shown.status).toBe(200);
+      const { verlauf } = (await shown.json()) as { verlauf: unknown[] };
+      expect(verlauf).toContainEqual({
+        type: "notice",
+        at: expect.any(String),
+        step: 1,
+        capability: "notifyStudent",
+        outcome: "sent",
+        refusal: null,
+      });
+      expect(JSON.stringify(verlauf)).not.toContain("Geheim");
+    });
   });
 });
 

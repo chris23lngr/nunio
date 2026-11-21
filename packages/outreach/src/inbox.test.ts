@@ -1,9 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import { principal } from "@nunio/delegation";
+import { createSourceKeys } from "@nunio/keys";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createOutreach,
@@ -36,6 +37,10 @@ const clock = { now: () => now };
 function make() {
   return createOutreach({
     db: runtime,
+    keys: createSourceKeys({
+      activeVersion: "v1",
+      masters: { v1: randomBytes(32) },
+    }),
     clock,
     vapidPublicKey: "test-vapid-key",
     unsubscribeSecret: "test-unsubscribe-secret",

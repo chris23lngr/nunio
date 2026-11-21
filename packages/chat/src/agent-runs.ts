@@ -18,11 +18,11 @@ import {
 import type { SourceKeys } from "@nunio/keys";
 import type { Citation, KnowledgeReader, Sealed } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
-import { raiseForEndedRun } from "@nunio/outreach";
+import { noticeTextId, raiseForEndedRun, sendNotice } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
 import type { ModelMessage } from "ai";
-import type { ActionEvent, ArtifactEvent } from "./activity.js";
+import type { ActionEvent, ArtifactEvent, NoticeEvent } from "./activity.js";
 import { recordEvents } from "./activity.js";
 import { agendaTool } from "./agenda.js";
 import type { ApprovalsOutput } from "./approvals.js";
@@ -31,13 +31,15 @@ import { chatContext } from "./context.js";
 import { courseFactsTool } from "./course-facts.js";
 import type { ChatPart } from "./parts.js";
 import { retryRateLimited } from "./retry.js";
-import type { StoredCall } from "./run-actions.js";
+import type { ReadCall, StoredCall } from "./run-actions.js";
 import {
   artifactResultOf,
   capabilityTools,
   intentOf,
+  noticeResultOf,
   readCall,
   resultOf,
+  sendsNotice,
   startsArtifact,
 } from "./run-actions.js";
 import { searchTool } from "./search.js";
@@ -198,6 +200,64 @@ export function createAgentRuns({
       recordEvents(tx, run, [{ key, type: "artifact", detail }]),
     );
   }
+  /**
+   * Sends the Notice that call `i` of step `n` wrote, at most one per Run, and records it in the Verlauf in the same
+   * transaction, so a repeat sends nothing twice.
+   */
+  async function notify(
+    run: { runId: string; studentId: string },
+    n: number,
+    i: number,
+    call: StoredCall,
+  ) {
+    const { runId } = run;
+    const key = `notice:${n}:${i + 1}`;
+    await withOwner(db, principal.fromRun(runId), async (tx) => {
+      if (
+        await tx.runEvent.findUnique({ where: { runId_key: { runId, key } } })
+      )
+        return;
+      const named = { step: n, call: i + 1, capability: call.toolName };
+      let detail: NoticeEvent;
+      if ("notice" in call) {
+        const { content, contentKey, derivedFrom } = call.notice;
+        const sent = await sendNotice(
+          tx,
+          runId,
+          {
+            content: Uint8Array.from(Buffer.from(content, "base64")),
+            contentKey:
+              contentKey === null
+                ? null
+                : Uint8Array.from(Buffer.from(contentKey, "base64")),
+            derivedFrom,
+          },
+          clock.now(),
+        );
+        detail =
+          sent.status === "sent"
+            ? {
+                ...named,
+                noticeId: sent.noticeId,
+                outcome: "sent",
+                refusal: null,
+              }
+            : {
+                ...named,
+                noticeId: null,
+                outcome: "refused",
+                refusal: sent.reason,
+              };
+      } else
+        detail = {
+          ...named,
+          noticeId: null,
+          outcome: "refused",
+          refusal: "invalid",
+        };
+      await recordEvents(tx, run, [{ key, type: "notice", detail }]);
+    });
+  }
   return {
     /**
      * Records the Run, or takes up the one the student started, with the Agent's Instructions, Capabilities and Model
@@ -271,7 +331,13 @@ export function createAgentRuns({
           where: { runId, key: { startsWith: `${runId}:${n - 1}:` } },
         });
         const started = await tx.runEvent.findMany({
-          where: { runId, key: { startsWith: `artifact:${n - 1}:` } },
+          where: {
+            runId,
+            OR: [
+              { key: { startsWith: `artifact:${n - 1}:` } },
+              { key: { startsWith: `notice:${n - 1}:` } },
+            ],
+          },
         });
         const transcripts = await Promise.all(
           run.steps.map((step) =>
@@ -361,20 +427,27 @@ export function createAgentRuns({
                 toolName: call.toolName,
                 output: {
                   type: "text" as const,
-                  value: startsArtifact(call)
-                    ? artifactResultOf(
+                  value: sendsNotice(call)
+                    ? noticeResultOf(
                         call,
                         (started.find(
-                          (e) => e.key === `artifact:${n - 1}:${i + 1}`,
-                        )?.detail as ArtifactEvent | undefined) ?? null,
+                          (e) => e.key === `notice:${n - 1}:${i + 1}`,
+                        )?.detail as NoticeEvent | undefined) ?? null,
                       )
-                    : resultOf(
-                        turn,
-                        call,
-                        performed.find(
-                          (a) => a.key === `${runId}:${n - 1}:${i + 1}`,
-                        ) ?? null,
-                      ),
+                    : startsArtifact(call)
+                      ? artifactResultOf(
+                          call,
+                          (started.find(
+                            (e) => e.key === `artifact:${n - 1}:${i + 1}`,
+                          )?.detail as ArtifactEvent | undefined) ?? null,
+                        )
+                      : resultOf(
+                          turn,
+                          call,
+                          performed.find(
+                            (a) => a.key === `${runId}:${n - 1}:${i + 1}`,
+                          ) ?? null,
+                        ),
                 },
               })),
             },
@@ -468,7 +541,7 @@ export function createAgentRuns({
       };
       const answered = stepped.value.finishReason === "stop";
       // Read in order, so a block created by one call keeps its handle for the next; an answer acts on nothing.
-      const calls: StoredCall[] = [];
+      const calls: ReadCall[] = [];
       if (!answered)
         for (const call of stepped.value.actionCalls)
           calls.push(
@@ -499,6 +572,32 @@ export function createAgentRuns({
           derivedFrom,
           JSON.stringify([...results, ...stepped.value.messages]),
         );
+        // A Notice's text is the model's own and may restate what it read, so it is sealed like the transcript.
+        const kept: StoredCall[] = [];
+        for (const call of calls) {
+          if (!("noticeText" in call)) {
+            kept.push(call);
+            continue;
+          }
+          const { noticeText, ...rest } = call;
+          const text = await derived.seal(
+            tx,
+            noticeTextId(runId),
+            derivedFrom,
+            noticeText,
+          );
+          if (!text) return null;
+          kept.push({
+            ...rest,
+            notice: {
+              content: Buffer.from(text.content).toString("base64"),
+              contentKey: text.contentKey
+                ? Buffer.from(text.contentKey).toString("base64")
+                : null,
+              derivedFrom: text.derivedFrom,
+            },
+          });
+        }
         if (!sealedParts || !transcript) return null;
         await tx.runStep.update({
           where: { runId_n: { runId, n } },
@@ -509,7 +608,7 @@ export function createAgentRuns({
             transcriptContent: transcript.content,
             transcriptKey: transcript.contentKey,
             derivedFrom,
-            calls: calls as object[],
+            calls: kept as object[],
             handles: turn.handled(),
             citations: [...turn.citations],
           },
@@ -555,6 +654,10 @@ export function createAgentRuns({
       ).entries()) {
         if (startsArtifact(call)) {
           await startArtifact({ runId, studentId: step.studentId }, n, i, call);
+          continue;
+        }
+        if (sendsNotice(call)) {
+          await notify({ runId, studentId: step.studentId }, n, i, call);
           continue;
         }
         if (!("intent" in call)) {
