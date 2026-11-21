@@ -6,29 +6,18 @@ export const dynamic = "force-dynamic";
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    invitation?: string;
-    error?: string;
-    reset?: string;
-    deletion?: string;
-  }>;
+  searchParams: Promise<{ invitation?: string; deletion?: string }>;
 }) {
-  const { invitation, error, reset, deletion } = await searchParams;
-  const initialError = error
-    ? "Dieser Bestätigungslink ist ungültig oder abgelaufen. Melde dich an, um eine neue E-Mail anzufordern."
-    : undefined;
+  const { invitation, deletion } = await searchParams;
   const initialNotice =
-    reset === "success"
-      ? "Dein Passwort wurde zurückgesetzt. Melde dich mit deinem neuen Passwort an."
-      : deletion === "requested"
-        ? "Deine Anfrage zur Kontolöschung ist eingegangen. Du wurdest auf allen Geräten abgemeldet."
-        : undefined;
+    deletion === "requested"
+      ? "Deine Anfrage zur Kontolöschung ist eingegangen. Du wurdest auf allen Geräten abgemeldet."
+      : undefined;
   return (
     <SignInScreen
       apiOrigin={apiOrigin()}
       invitation={invitation}
       initialNotice={initialNotice}
-      initialError={initialError}
     />
   );
 }

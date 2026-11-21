@@ -6,8 +6,14 @@ export const dynamic = "force-dynamic";
 export default async function SignUpPage({
   searchParams,
 }: {
-  searchParams: Promise<{ invitation?: string }>;
+  searchParams: Promise<{ invitation?: string; email?: string }>;
 }) {
-  const { invitation } = await searchParams;
-  return <SignUpScreen apiOrigin={apiOrigin()} invitation={invitation} />;
+  const { invitation, email } = await searchParams;
+  return (
+    <SignUpScreen
+      apiOrigin={apiOrigin()}
+      invitation={invitation}
+      email={email}
+    />
+  );
 }

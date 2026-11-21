@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@nunio/ui/components/button/button";
-import { Checkbox } from "@nunio/ui/components/checkbox/checkbox";
 import {
   Field,
   FieldError,
@@ -12,83 +11,89 @@ import { Input } from "@nunio/ui/components/input/input";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Logo } from "@/components/logo";
 import { authClient } from "@/lib/auth-client";
 import { useAppForm } from "@/lib/form";
+import { CodeStep, sendSignInCode } from "./code-step";
+import { PasskeyPrompt } from "./passkey-prompt";
+import { shouldOfferPasskey, supportsPasskeys } from "./passkeys";
+
+const passkeyFailed =
+  "Die Anmeldung mit Passkey hat nicht geklappt. Versuche es erneut oder melde dich mit einem Code an.";
 
 export function SignInScreen({
   apiOrigin,
   invitation,
   initialNotice,
-  initialError,
 }: {
   apiOrigin: string;
+  /** Kept for the link to registration; accounts are created only there. */
   invitation?: string;
   initialNotice?: string;
-  initialError?: string;
 }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(initialError ?? null);
+  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(initialNotice ?? null);
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
-  const [sendingVerification, setSendingVerification] = useState(false);
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [offerPasskey, setOfferPasskey] = useState(false);
+  const [passkeysSupported, setPasskeysSupported] = useState(false);
   const signUpHref = invitation
     ? `/sign-up?invitation=${encodeURIComponent(invitation)}`
     : "/sign-up";
 
+  function enterApp() {
+    router.replace("/");
+    router.refresh();
+  }
+
+  // Lets the browser suggest a saved passkey right in the address field.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Autofill starts once per visit.
+  useEffect(() => {
+    if (!supportsPasskeys()) return;
+    setPasskeysSupported(true);
+    let current = true;
+    void window.PublicKeyCredential.isConditionalMediationAvailable?.()
+      .then(async (available) => {
+        if (!available || !current) return;
+        const result = await authClient(apiOrigin).signIn.passkey({
+          autoFill: true,
+        });
+        if (current && !result?.error) enterApp();
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [apiOrigin]);
+
+  async function signInWithPasskey() {
+    setError(null);
+    setNotice(null);
+    const result = await authClient(apiOrigin)
+      .signIn.passkey()
+      .catch(() => ({ error: true }));
+    if (result?.error) {
+      setError(passkeyFailed);
+      return;
+    }
+    enterApp();
+  }
+
   const form = useAppForm({
-    defaultValues: { email: "", password: "", rememberMe: false },
+    defaultValues: { email: "" },
     onSubmit: async ({ value }) => {
       setError(null);
       setNotice(null);
-      setPendingEmail(null);
-      try {
-        const result = await authClient(apiOrigin).signIn.email(value);
-        if (result.error) {
-          if (result.error.code === "EMAIL_NOT_VERIFIED")
-            setPendingEmail(value.email);
-          setError(
-            result.error.message ??
-              "Die Anmeldung ist fehlgeschlagen. Bitte versuche es erneut.",
-          );
-          return;
-        }
-        router.replace("/");
-        router.refresh();
-      } catch {
-        setError("Die Anmeldung ist fehlgeschlagen. Bitte versuche es erneut.");
-      }
-    },
-  });
-
-  async function resendVerification() {
-    if (!pendingEmail) return;
-    setSendingVerification(true);
-    try {
-      const result = await authClient(apiOrigin).sendVerificationEmail({
-        email: pendingEmail,
-        callbackURL: `${window.location.origin}/sign-in`,
-      });
-      if (result.error) {
-        setError(
-          result.error.message ??
-            "Die Bestätigungs-E-Mail konnte nicht gesendet werden.",
-        );
+      const email = value.email.trim();
+      const failure = await sendSignInCode(apiOrigin, email);
+      if (failure) {
+        setError(failure);
         return;
       }
-      setError(null);
-      setNotice(
-        "Falls eine Bestätigung erforderlich ist, wurde eine neue E-Mail gesendet.",
-      );
-    } catch {
-      setError(
-        "Die Bestätigungs-E-Mail konnte nicht gesendet werden. Bitte versuche es erneut.",
-      );
-    } finally {
-      setSendingVerification(false);
-    }
-  }
+      setCodeSentTo(email);
+    },
+  });
 
   return (
     <>
@@ -121,157 +126,103 @@ export function SignInScreen({
         <span>ODER</span>
         <span className="h-px flex-1 bg-base-200" />
       </div>
-      <form
-        noValidate
-        onSubmit={(event) => {
-          event.preventDefault();
-          void form.handleSubmit();
-        }}
-      >
-        <FieldGroup className="gap-6">
-          <form.Field
-            name="email"
-            validators={{
-              onChange: ({ value }) =>
-                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-                  ? undefined
-                  : "Bitte gib eine gültige E-Mail-Adresse ein.",
-            }}
-          >
-            {(field) => {
-              const invalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={invalid}>
-                  <FieldLabel htmlFor="sign-in-email" className="leading-5">
-                    E-Mail
-                  </FieldLabel>
-                  <Input
-                    id="sign-in-email"
-                    name={field.name}
-                    type="email"
-                    autoComplete="email"
-                    placeholder="name@example.com"
-                    required
-                    value={field.state.value}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    onBlur={field.handleBlur}
-                    aria-invalid={invalid || undefined}
-                    aria-describedby={
-                      invalid ? "sign-in-email-error" : undefined
-                    }
-                  />
-                  {invalid && (
-                    <FieldError id="sign-in-email-error">
-                      {field.state.meta.errors.join(" ")}
-                    </FieldError>
-                  )}
-                </Field>
-              );
-            }}
-          </form.Field>
-          <form.Field
-            name="password"
-            validators={{
-              onChange: ({ value }) =>
-                value ? undefined : "Bitte gib dein Passwort ein.",
-            }}
-          >
-            {(field) => {
-              const invalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={invalid}>
-                  <div className="flex items-center justify-between gap-3">
-                    <FieldLabel
-                      htmlFor="sign-in-password"
-                      className="leading-5"
-                    >
-                      Passwort
+      {offerPasskey ? (
+        <PasskeyPrompt apiOrigin={apiOrigin} onDone={enterApp} />
+      ) : codeSentTo ? (
+        <CodeStep
+          apiOrigin={apiOrigin}
+          email={codeSentTo}
+          onSignedIn={async () => {
+            if (await shouldOfferPasskey(apiOrigin)) setOfferPasskey(true);
+            else enterApp();
+          }}
+          onBack={() => setCodeSentTo(null)}
+        />
+      ) : (
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            void form.handleSubmit();
+          }}
+        >
+          <FieldGroup className="gap-6">
+            <form.Field
+              name="email"
+              validators={{
+                onChange: ({ value }) =>
+                  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+                    ? undefined
+                    : "Bitte gib eine gültige E-Mail-Adresse ein.",
+              }}
+            >
+              {(field) => {
+                const invalid =
+                  field.state.meta.isTouched && !field.state.meta.isValid;
+                return (
+                  <Field data-invalid={invalid}>
+                    <FieldLabel htmlFor="sign-in-email" className="leading-5">
+                      E-Mail
                     </FieldLabel>
-                    <Link
-                      href="/forgot-password"
-                      className="rounded-sm text-sm text-primary-500 hover:text-primary-600 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-500"
-                    >
-                      Passwort vergessen?
-                    </Link>
-                  </div>
-                  <Input
-                    id="sign-in-password"
-                    name={field.name}
-                    type="password"
-                    autoComplete="current-password"
-                    placeholder="**************"
-                    required
-                    value={field.state.value}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    onBlur={field.handleBlur}
-                    aria-invalid={invalid || undefined}
-                    aria-describedby={
-                      invalid ? "sign-in-password-error" : undefined
-                    }
-                  />
-                  {invalid && (
-                    <FieldError id="sign-in-password-error">
-                      {field.state.meta.errors.join(" ")}
-                    </FieldError>
-                  )}
-                </Field>
-              );
-            }}
-          </form.Field>
-          <form.Field name="rememberMe">
-            {(field) => (
-              <Field orientation="horizontal" className="gap-3">
-                <Checkbox
-                  id="remember-me"
-                  name={field.name}
-                  checked={field.state.value}
-                  onCheckedChange={(checked) => field.handleChange(checked)}
-                  onBlur={field.handleBlur}
-                />
-                <FieldLabel
-                  htmlFor="remember-me"
-                  className="leading-5 font-normal"
+                    <Input
+                      id="sign-in-email"
+                      name={field.name}
+                      type="email"
+                      autoComplete="username webauthn"
+                      placeholder="name@example.com"
+                      required
+                      value={field.state.value}
+                      onChange={(event) =>
+                        field.handleChange(event.target.value)
+                      }
+                      onBlur={field.handleBlur}
+                      aria-invalid={invalid || undefined}
+                      aria-describedby={
+                        invalid ? "sign-in-email-error" : undefined
+                      }
+                    />
+                    {invalid && (
+                      <FieldError id="sign-in-email-error">
+                        {field.state.meta.errors.join(" ")}
+                      </FieldError>
+                    )}
+                  </Field>
+                );
+              }}
+            </form.Field>
+            <form.Subscribe
+              selector={(state) => [state.canSubmit, state.isSubmitting]}
+            >
+              {([canSubmit, isSubmitting]) => (
+                <Button
+                  type="submit"
+                  className="h-8 w-full"
+                  disabled={!canSubmit || isSubmitting}
+                  aria-busy={isSubmitting}
                 >
-                  Für 30 Tage angemeldet bleiben
-                </FieldLabel>
-              </Field>
-            )}
-          </form.Field>
-          <form.Subscribe
-            selector={(state) => [state.canSubmit, state.isSubmitting]}
-          >
-            {([canSubmit, isSubmitting]) => (
+                  {isSubmitting ? "Code wird gesendet…" : "Code senden"}
+                </Button>
+              )}
+            </form.Subscribe>
+            {passkeysSupported && (
               <Button
-                type="submit"
-                className="h-8 w-full"
-                disabled={!canSubmit || isSubmitting}
-                aria-busy={isSubmitting}
+                type="button"
+                variant="outline"
+                className="-mt-3 w-full"
+                onClick={() => void signInWithPasskey()}
               >
-                {isSubmitting ? "Anmeldung läuft…" : "Mit E-Mail anmelden"}
+                Mit Passkey anmelden
               </Button>
             )}
-          </form.Subscribe>
-        </FieldGroup>
-        {error && <FieldError className="mt-4">{error}</FieldError>}
-        {notice && (
-          <p role="status" className="mt-4 text-sm text-base-600">
-            {notice}
-          </p>
-        )}
-        {pendingEmail && (
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-4 w-full"
-            disabled={sendingVerification}
-            onClick={resendVerification}
-          >
-            Bestätigungs-E-Mail erneut senden
-          </Button>
-        )}
-      </form>
+          </FieldGroup>
+          {error && <FieldError className="mt-4">{error}</FieldError>}
+          {notice && (
+            <p role="status" className="mt-4 text-sm text-base-600">
+              {notice}
+            </p>
+          )}
+        </form>
+      )}
       <p className="mt-8 text-sm text-base-500">
         Noch kein Konto?{" "}
         <Link

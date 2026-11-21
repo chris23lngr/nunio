@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:https";
 import { createPool, createPrismaClient } from "@nunio/db";
 import { expect, test } from "@playwright/test";
-import { hashPassword } from "better-auth/crypto";
 import { origins } from "../origins.js";
+import { enterSignIn } from "../students.js";
 
 test("Chat keeps its composer visible on desktop and mobile and opens citations in a new tab", async ({
   page,
@@ -17,7 +17,6 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     "access-control-allow-headers": "content-type",
   };
   const email = `chat-${randomUUID()}@example.com`;
-  const password = "correct horse battery staple";
   const userId = randomUUID();
   const prisma = createPrismaClient(
     createPool(process.env.INVITATION_DATABASE_URL!),
@@ -30,14 +29,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
         name: "Justus Schuhmacher",
         email,
         emailVerified: true,
-        accounts: {
-          create: {
-            id: randomUUID(),
-            accountId: userId,
-            providerId: "credential",
-            password: await hashPassword(password),
-          },
-        },
+        passkeyPromptDismissed: true,
       },
     });
   } finally {
@@ -201,11 +193,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     );
     await page.setViewportSize({ width: 1728, height: 1117 });
     await page.goto(`${origins.app}/sign-in`);
-    await page.getByLabel("E-Mail").fill(email);
-    await page.getByLabel("Passwort", { exact: true }).fill(password);
-    await page
-      .getByRole("button", { name: "Mit E-Mail anmelden", exact: true })
-      .click();
+    await enterSignIn(page, email);
     await expect(page).toHaveURL(`${origins.app}/`);
     await page.goto(`${origins.app}/chat`);
     await expect(page.getByRole("heading", { name: /Justus/ })).toBeVisible();

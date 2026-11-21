@@ -34,7 +34,7 @@ The services run in the background. The first build takes a few minutes. When it
 
 ### Create an account
 
-Sign-up needs an invitation and a verified email, and no email arrives locally. Issue an invitation, sign up with it, then mark the account verified by hand:
+Sign-up needs an invitation. No email leaves the local stack: the API writes each sign-in code to its log instead. Issue an invitation:
 
 ```sh
 docker compose -f docker-compose.dev.yml exec -w /app/packages/identity \
@@ -43,14 +43,13 @@ docker compose -f docker-compose.dev.yml exec -w /app/packages/identity \
   api node --import tsx src/invite.ts you@example.com
 ```
 
-Open the `url` it prints and sign up with that address. The verification email cannot be delivered, so instead run:
+Open the `url` it prints, enter your name and select "Code senden". Then read the code from the API log:
 
 ```sh
-docker compose -f docker-compose.dev.yml exec db psql -U nunio -d nunio \
-  -c "UPDATE \"user\" SET \"emailVerified\" = true WHERE email = 'you@example.com'"
+docker compose -f docker-compose.dev.yml logs api | grep Anmeldecode
 ```
 
-Now sign in.
+Later sign-ins work the same way: request a code on the sign-in page and read it from the log.
 
 ### Everyday use
 

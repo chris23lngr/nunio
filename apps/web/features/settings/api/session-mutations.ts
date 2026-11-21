@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { mutationOptions } from "@tanstack/react-query";
+import { SignInAgainError } from "@/features/auth/sign-in-again";
 import { forgetOpenChat } from "@/features/chat/open-chat-cookie";
 import { ApiError } from "@/lib/api-client";
 import { authClient } from "@/lib/auth-client";
@@ -29,6 +30,8 @@ export function signOutMutation(apiOrigin: string) {
       const result = everywhere
         ? await client.revokeSessions()
         : await client.signOut();
+      if (result.error?.code === "SESSION_NOT_FRESH")
+        throw new SignInAgainError();
       if (result.error)
         throw new ApiError(
           result.error.status,

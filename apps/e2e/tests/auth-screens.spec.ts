@@ -1,5 +1,8 @@
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createPool, createPrismaClient } from "@nunio/db";
 import { expect, test } from "@playwright/test";
 import { origins } from "../origins.js";
+import { signInCode, storeCodesInsteadOfEmail } from "../students.js";
 
 test("auth screens use the Paper layout and remain usable on mobile", async ({
   page,
@@ -27,9 +30,6 @@ test("auth screens use the Paper layout and remain usable on mobile", async ({
       )
       .toBeGreaterThan(0);
   }
-  await expect(
-    page.getByRole("link", { name: "Passwort vergessen?" }),
-  ).toHaveAttribute("href", "/forgot-password");
   await page.getByRole("link", { name: "Hier registrieren" }).click();
   await expect(page).toHaveURL(
     `${origins.app}/sign-up?invitation=design-preview`,
@@ -46,7 +46,7 @@ test("auth screens use the Paper layout and remain usable on mobile", async ({
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     375,
   );
-  const submit = page.getByRole("button", { name: "Mit E-Mail registrieren" });
+  const submit = page.getByRole("button", { name: "Code senden" });
   await submit.scrollIntoViewIfNeeded();
   await expect(submit).toBeVisible();
   await page.getByRole("link", { name: "Hier anmelden" }).click();
@@ -61,22 +61,53 @@ test("auth screens use the Paper layout and remain usable on mobile", async ({
   );
 });
 
-test("registration is accessible without an invitation and shows the API's rejection", async ({
+test("registration without an Invitation explains that one is needed", async ({
   page,
 }) => {
   await page.goto(`${origins.app}/sign-up`);
-  await page.getByLabel("Name", { exact: true }).fill("Nicht eingeladen");
-  await page.getByLabel("E-Mail").fill("uninvited@example.com");
-  await page.getByLabel("Passwort", { exact: true }).fill("password123");
-  await page.getByLabel("Passwort bestätigen").fill("password123");
+  await expect(page.getByRole("status")).toContainText(
+    "Für die Registrierung brauchst du eine Einladung.",
+  );
+  await expect(page.getByRole("button", { name: "Code senden" })).toHaveCount(
+    0,
+  );
+});
+
+test("an invited student registers with an emailed code and lands in the app", async ({
+  page,
+}) => {
+  const email = `invited+${randomUUID()}@example.com`;
+  const invitation = randomBytes(32).toString("base64url");
+  const prisma = createPrismaClient(
+    createPool(process.env.INVITATION_DATABASE_URL!),
+  );
+  try {
+    await prisma.rateLimit.deleteMany();
+    await prisma.invitation.create({
+      data: {
+        tokenHash: createHash("sha256").update(invitation).digest("hex"),
+        email,
+        issuedBy: "e2e-operator",
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+    });
+  } finally {
+    await prisma.$disconnect();
+  }
+  await storeCodesInsteadOfEmail(page);
+
+  await page.goto(
+    `${origins.app}/sign-up?invitation=${invitation}&email=${encodeURIComponent(email)}`,
+  );
+  await expect(page.getByLabel("E-Mail")).toHaveValue(email);
+  await page.getByLabel("Name", { exact: true }).fill("Eingeladen");
   await page.getByRole("checkbox").check();
-  const responsePromise = page.waitForResponse((response) =>
-    response.url().endsWith("/api/auth/sign-up/email"),
-  );
-  await page.getByRole("button", { name: "Mit E-Mail registrieren" }).click();
-  expect((await responsePromise).status()).toBe(403);
-  await expect(page.getByRole("main").getByRole("alert")).toHaveText(
-    "A valid invitation is required",
-  );
-  await expect(page).toHaveURL(`${origins.app}/sign-up`);
+  await page.getByRole("button", { name: "Code senden" }).click();
+  await page.getByLabel("Anmeldecode").pressSequentially(signInCode);
+  await expect(
+    page.getByRole("heading", { name: "Passkey einrichten?" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Später" }).click();
+
+  await expect(page).toHaveURL(`${origins.app}/`);
 });

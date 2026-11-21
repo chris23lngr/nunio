@@ -51,8 +51,9 @@ try {
       expiresAt: true,
     },
   });
-  const url = new URL("/sign-in", appOrigin);
+  const url = new URL("/sign-up", appOrigin);
   url.searchParams.set("invitation", token);
+  url.searchParams.set("email", email);
   console.log(JSON.stringify({ ...invitation, url: url.href }));
 } catch {
   // Driver errors can contain connection details; keep credentials out of operator output.

@@ -55,7 +55,6 @@ import type { Understanding } from "@nunio/understanding";
 import { createUnderstanding } from "@nunio/understanding";
 import { APICallError } from "ai";
 import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
-import { hashPassword } from "better-auth/crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ArtifactWorkflows } from "./artifact-workflows.js";
 import { createChatModels } from "./chat-models.js";
@@ -65,7 +64,6 @@ import type { RunWorkflows } from "./run-workflows.js";
 const appOrigin = "https://app.nunio.test";
 const apiOrigin = "https://api.nunio.test";
 const evilOrigin = "https://evil.test";
-const password = "correct horse battery staple";
 const run = Date.now().toString(36);
 const execute = promisify(execFile);
 
@@ -348,7 +346,8 @@ const chatEmbedder: Embedder = {
     usage: { microUsd: 1 },
   }),
 };
-const verificationLinks = new Map<string, string>();
+/** The latest sign-in code emailed to each address. */
+const signInCodes = new Map<string, string>();
 
 beforeAll(async () => {
   db = await startTestDatabase();
@@ -358,6 +357,7 @@ beforeAll(async () => {
   const auth = createAuth({
     prisma,
     baseURL: apiOrigin,
+    appOrigin,
     trustedOrigins: [appOrigin],
     cookieDomain: "nunio.test",
     secret: "spike-b-test-secret-that-is-long-enough",
@@ -371,10 +371,7 @@ beforeAll(async () => {
           to: { email: string }[];
           text: string;
         };
-        verificationLinks.set(
-          body.to[0]!.email,
-          body.text.match(/https?:\/\/\S+/)![0],
-        );
+        signInCodes.set(body.to[0]!.email, body.text.match(/\b\d{6}\b/)![0]);
         return Response.json(
           { emails: [{ id: "test-email" }] },
           { status: 201 },
@@ -582,35 +579,53 @@ function call(
   });
 }
 
-async function signUp(name: string): Promise<string> {
+function cookieOf(response: Response): string {
+  return response.headers
+    .getSetCookie()
+    .map((value) => value.split(";")[0]!)
+    .join("; ");
+}
+
+async function invite(address: string): Promise<string> {
   const invitation = randomBytes(32).toString("base64url");
   await admin.invitation.create({
     data: {
       tokenHash: createHash("sha256").update(invitation).digest("hex"),
-      email: `${name}+${run}@example.com`,
+      email: address,
       issuedBy: "api-test-operator",
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     },
   });
-  const res = await call("/sign-up/email", {
+  return invitation;
+}
+
+/** Sends a code to `address` and enters it, as the sign-in screen does. */
+async function signInWithCode(
+  address: string,
+  invitation?: string,
+): Promise<Response> {
+  // @nunio/identity tests the limits per address; each sign-in here starts with none used.
+  await admin.signInCodeLimit.deleteMany({
+    where: { key: { in: [`code-resend:${address}`, `code-sends:${address}`] } },
+  });
+  signInCodes.delete(address);
+  const sent = await call("/email-otp/send-verification-otp", {
+    origin: appOrigin,
+    body: { email: address, type: "sign-in" },
+  });
+  expect(sent.status).toBe(200);
+  return call("/sign-in/email-otp", {
     origin: appOrigin,
     invitation,
-    body: { name, email: `${name}+${run}@example.com`, password },
+    body: { email: address, otp: signInCodes.get(address) ?? "000000" },
   });
-  expect(res.status).toBe(200);
-  const verified = await app.request(
-    verificationLinks.get(`${name}+${run}@example.com`)!,
-  );
-  expect(verified.status).toBe(302);
-  const signIn = await call("/sign-in/email", {
-    origin: appOrigin,
-    body: { email: `${name}+${run}@example.com`, password },
-  });
-  expect(signIn.status).toBe(200);
-  return signIn.headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0]!)
-    .join("; ");
+}
+
+async function signUp(name: string): Promise<string> {
+  const address = `${name}+${run}@example.com`;
+  const response = await signInWithCode(address, await invite(address));
+  expect(response.status).toBe(200);
+  return cookieOf(response);
 }
 
 function revokePilot(studentId: string, operator = "pilot-founder") {
@@ -637,33 +652,7 @@ async function studentId(cookie: string): Promise<string> {
 }
 
 describe("the student's pilot entitlement", () => {
-  it("does not activate pilot access while email verification is still pending", async () => {
-    const address = `pilot-pending+${run}@example.com`;
-    const invitation = randomBytes(32).toString("base64url");
-    await admin.invitation.create({
-      data: {
-        tokenHash: createHash("sha256").update(invitation).digest("hex"),
-        email: address,
-        issuedBy: "api-test-operator",
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
-    const signup = await call("/sign-up/email", {
-      origin: appOrigin,
-      invitation,
-      body: { name: "Pending pilot", email: address, password },
-    });
-    expect(signup.status).toBe(200);
-    const pending = (await signup.json()) as { user: { id: string } };
-
-    await expect(revokePilot(pending.user.id)).rejects.toMatchObject({
-      code: 1,
-      stdout: "",
-      stderr: expect.stringContaining("Pilot entitlement not found"),
-    });
-  });
-
-  it("activates pilot access for an invited student after email verification", async () => {
+  it("activates pilot access when an invited student enters their first code", async () => {
     const cookie = await signUp("pilot-active");
     const response = await app.request(`${apiOrigin}/api/me/entitlement`, {
       headers: { cookie },
@@ -673,56 +662,34 @@ describe("the student's pilot entitlement", () => {
     expect(await response.json()).toEqual({ status: "active" });
   });
 
-  it("recovers pilot activation on sign-in after verification's activation failed", async () => {
+  it("recovers pilot activation on the next sign-in after the first activation failed", async () => {
     const address = `pilot-activation-retry+${run}@example.com`;
-    const invitation = randomBytes(32).toString("base64url");
-    await admin.invitation.create({
-      data: {
-        tokenHash: createHash("sha256").update(invitation).digest("hex"),
-        email: address,
-        issuedBy: "api-test-operator",
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
-    const signup = await call("/sign-up/email", {
-      origin: appOrigin,
-      invitation,
-      body: { name: "Activation retry", email: address, password },
-    });
-    expect(signup.status).toBe(200);
-    const pending = (await signup.json()) as { user: { id: string } };
-    const verification = verificationLinks.get(address)!;
-    await admin.$executeRaw`CREATE FUNCTION reject_pilot_activation_test() RETURNS trigger
-      LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'temporary pilot activation failure'; END; $$`;
+    const invitation = await invite(address);
+    // Scope the injected database fault to this student, including on a shared test branch.
+    await admin.$executeRawUnsafe(`CREATE FUNCTION reject_pilot_activation_test() RETURNS trigger
+      LANGUAGE plpgsql AS $$ BEGIN
+        IF (SELECT email FROM "user" WHERE id = NEW."studentId") = '${address}' THEN
+          RAISE EXCEPTION 'temporary pilot activation failure';
+        END IF;
+        RETURN NEW;
+      END; $$`);
     try {
-      // Scope the injected database fault to this student, including on a shared test branch.
-      const id = pending.user.id.replaceAll("'", "''");
-      await admin.$executeRawUnsafe(`CREATE TRIGGER reject_pilot_activation_test
-        BEFORE INSERT ON "pilot_entitlement" FOR EACH ROW
-        WHEN (NEW."studentId" = '${id}') EXECUTE FUNCTION reject_pilot_activation_test()`);
-      expect((await app.request(verification)).status).toBe(500);
+      await admin.$executeRaw`CREATE TRIGGER reject_pilot_activation_test
+        BEFORE INSERT ON "pilot_entitlement" FOR EACH ROW EXECUTE FUNCTION reject_pilot_activation_test()`;
+      expect((await signInWithCode(address, invitation)).status).toBe(500);
     } finally {
       await admin.$executeRaw`DROP TRIGGER IF EXISTS reject_pilot_activation_test ON "pilot_entitlement"`;
       await admin.$executeRaw`DROP FUNCTION reject_pilot_activation_test()`;
     }
-    expect((await app.request(verification)).status).toBe(302);
-    const signIn = await call("/sign-in/email", {
-      origin: appOrigin,
-      body: { email: address, password },
-    });
+    const signIn = await signInWithCode(address);
     expect(signIn.status).toBe(200);
-    const cookie = signIn.headers
-      .getSetCookie()
-      .map((value) => value.split(";")[0]!)
-      .join("; ");
     const response = await app.request(`${apiOrigin}/api/me/entitlement`, {
-      headers: { cookie },
+      headers: { cookie: cookieOf(signIn) },
     });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ status: "active" });
   });
-
   it("requires a current session even when the caller supplies a student ID", async () => {
     const response = await app.request(
       `${apiOrigin}/api/me/entitlement?studentId=someone-else`,
@@ -769,15 +736,7 @@ describe("the student's pilot entitlement", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(Date.now() + 31_536_000_000);
-      const signIn = await call("/sign-in/email", {
-        origin: appOrigin,
-        body: { email: `pilot-indefinite+${run}@example.com`, password },
-      });
-      expect(signIn.status).toBe(200);
-      const cookie = signIn.headers
-        .getSetCookie()
-        .map((value) => value.split(";")[0]!)
-        .join("; ");
+      const cookie = await signIn("pilot-indefinite");
       const response = await app.request(`${apiOrigin}/api/me/entitlement`, {
         headers: { cookie },
       });
@@ -788,7 +747,6 @@ describe("the student's pilot entitlement", () => {
       vi.useRealTimers();
     }
   });
-
   it("does not grant pilot access to a verified account that never accepted an invitation", async () => {
     const address = `pilot-legacy+${run}@example.com`;
     const studentId = randomUUID();
@@ -798,25 +756,11 @@ describe("the student's pilot entitlement", () => {
         name: "Legacy",
         email: address,
         emailVerified: true,
-        accounts: {
-          create: {
-            id: randomUUID(),
-            accountId: studentId,
-            providerId: "credential",
-            password: await hashPassword(password),
-          },
-        },
       },
     });
-    const signIn = await call("/sign-in/email", {
-      origin: appOrigin,
-      body: { email: address, password },
-    });
+    const signIn = await signInWithCode(address);
     expect(signIn.status).toBe(200);
-    const cookie = signIn.headers
-      .getSetCookie()
-      .map((value) => value.split(";")[0]!)
-      .join("; ");
+    const cookie = cookieOf(signIn);
     const response = await app.request(`${apiOrigin}/api/me/entitlement`, {
       headers: { cookie },
     });
@@ -891,15 +835,7 @@ describe("the student's pilot entitlement", () => {
     const cookie = await signUp("pilot-revoked-login");
     const id = await studentId(cookie);
     const original = await revokePilot(id, "original-founder");
-    const signIn = await call("/sign-in/email", {
-      origin: appOrigin,
-      body: { email: `pilot-revoked-login+${run}@example.com`, password },
-    });
-    expect(signIn.status).toBe(200);
-    const newCookie = signIn.headers
-      .getSetCookie()
-      .map((value) => value.split(";")[0]!)
-      .join("; ");
+    const newCookie = await signIn("pilot-revoked-login");
     const response = await app.request(`${apiOrigin}/api/me/entitlement`, {
       headers: { cookie: newCookie },
     });
@@ -925,21 +861,6 @@ describe("the student's pilot entitlement", () => {
     expect(await response.json()).toEqual({ status: "active" });
   });
 
-  it("does not reactivate revoked pilot access when the verification link is revisited", async () => {
-    const cookie = await signUp("pilot-verify-again");
-    await revokePilot(await studentId(cookie));
-    const verified = await app.request(
-      verificationLinks.get(`pilot-verify-again+${run}@example.com`)!,
-    );
-    expect(verified.status).toBe(302);
-
-    const response = await app.request(`${apiOrigin}/api/me/entitlement`, {
-      headers: { cookie },
-    });
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "revoked" });
-  });
-
   it("refuses to revoke a pilot entitlement that does not exist", async () => {
     await expect(revokePilot("missing-student")).rejects.toMatchObject({
       code: 1,
@@ -950,15 +871,9 @@ describe("the student's pilot entitlement", () => {
 });
 
 async function signIn(name: string): Promise<string> {
-  const response = await call("/sign-in/email", {
-    origin: appOrigin,
-    body: { email: `${name}+${run}@example.com`, password },
-  });
+  const response = await signInWithCode(`${name}+${run}@example.com`);
   expect(response.status).toBe(200);
-  return response.headers
-    .getSetCookie()
-    .map((value) => value.split(";")[0]!)
-    .join("; ");
+  return cookieOf(response);
 }
 
 describe("the student's Allowance", () => {
@@ -1017,24 +932,9 @@ describe("the student's Allowance", () => {
         name: "Legacy",
         email: address,
         emailVerified: true,
-        accounts: {
-          create: {
-            id: randomUUID(),
-            accountId: id,
-            providerId: "credential",
-            password: await hashPassword(password),
-          },
-        },
       },
     });
-    const signIn = await call("/sign-in/email", {
-      origin: appOrigin,
-      body: { email: address, password },
-    });
-    const cookie = signIn.headers
-      .getSetCookie()
-      .map((value) => value.split(";")[0]!)
-      .join("; ");
+    const cookie = cookieOf(await signInWithCode(address));
 
     const response = await app.request(`${apiOrigin}/api/me/allowance`, {
       headers: { cookie },
@@ -1098,7 +998,7 @@ describe("the student's sessions", () => {
     expect(await studentId(victim)).toBeTruthy();
   });
 
-  it("signs the student out everywhere", async () => {
+  it("signs the student out everywhere from a recent sign-in", async () => {
     const laptop = await signUp("sessions-everywhere");
     const phone = await signIn("sessions-everywhere");
 
@@ -1130,22 +1030,40 @@ describe("the student's sessions", () => {
     expect(forged.status).toBe(403);
     expect(await studentId(cookie)).toBeTruthy();
   });
+
+  it("asks the student to sign in again before signing out everywhere from an older session", async () => {
+    const laptop = await signUp("sessions-everywhere-old");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 10 * 60_000 + 1000);
+      const refused = await call("/revoke-sessions", {
+        origin: appOrigin,
+        cookie: laptop,
+        body: {},
+      });
+
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toMatchObject({ code: "SESSION_NOT_FRESH" });
+      expect(await studentId(laptop)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("the student's deletion request", () => {
-  function requestDeletion(cookie: string, body: unknown, origin = appOrigin) {
+  function requestDeletion(cookie: string, origin = appOrigin) {
     return app.request(`${apiOrigin}/api/me/deletion-request`, {
       method: "POST",
-      headers: { origin, cookie, "content-type": "application/json" },
-      body: JSON.stringify(body),
+      headers: { origin, cookie },
     });
   }
 
-  it("accepts the request with the student's password and ends every session", async () => {
+  it("accepts the request from a recent sign-in and ends every session", async () => {
     const laptop = await signUp("deletion-requested");
     const phone = await signIn("deletion-requested");
 
-    const response = await requestDeletion(laptop, { password });
+    const response = await requestDeletion(laptop);
 
     expect(response.status).toBe(202);
     expect(await response.json()).toEqual({ status: "pending" });
@@ -1158,62 +1076,33 @@ describe("the student's deletion request", () => {
     }
   });
 
-  it("refuses the request without the student's password and keeps their sessions", async () => {
-    const cookie = await signUp("deletion-wrong-password");
+  it("asks the student to sign in again after ten minutes and keeps their sessions", async () => {
+    const cookie = await signUp("deletion-sign-in-again");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 10 * 60_000 + 1000);
+      const response = await requestDeletion(cookie);
 
-    const response = await requestDeletion(cookie, {
-      password: "not the password",
-    });
-
-    expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ error: "invalid_password" });
-    expect(await studentId(cookie)).toBeTruthy();
-    await signIn("deletion-wrong-password");
-  });
-
-  it("limits password attempts per student, refusing even the right password once exceeded", async () => {
-    const cookie = await signUp("deletion-guessing");
-    for (let attempt = 0; attempt < 3; attempt++) {
-      expect(
-        (await requestDeletion(cookie, { password: `guess ${attempt}` }))
-          .status,
-      ).toBe(403);
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "sign_in_again" });
+      expect(await studentId(cookie)).toBeTruthy();
+      const fresh = await signIn("deletion-sign-in-again");
+      expect((await requestDeletion(fresh)).status).toBe(202);
+    } finally {
+      vi.useRealTimers();
     }
-
-    const limited = await requestDeletion(cookie, { password: "guess 3" });
-    const right = await requestDeletion(cookie, { password });
-
-    expect(limited.status).toBe(429);
-    expect(await limited.json()).toEqual({ error: "too_many_requests" });
-    expect(right.status).toBe(429);
-    expect(await studentId(cookie)).toBeTruthy();
-  });
-
-  it("admits only three concurrent password attempts per student", async () => {
-    const cookie = await signUp("deletion-concurrent-guessing");
-
-    const statuses = (
-      await Promise.all(
-        Array.from({ length: 8 }, (_, attempt) =>
-          requestDeletion(cookie, { password: `guess ${attempt}` }),
-        ),
-      )
-    ).map((response) => response.status);
-
-    expect(statuses.filter((status) => status === 403)).toHaveLength(3);
-    expect(statuses.filter((status) => status === 429)).toHaveLength(5);
   });
 
   it("refuses signing in again once deletion is requested", async () => {
     const cookie = await signUp("deletion-sign-in");
-    expect((await requestDeletion(cookie, { password })).status).toBe(202);
+    expect((await requestDeletion(cookie)).status).toBe(202);
 
-    const response = await call("/sign-in/email", {
-      origin: appOrigin,
-      body: { email: `deletion-sign-in+${run}@example.com`, password },
-    });
+    const response = await signInWithCode(
+      `deletion-sign-in+${run}@example.com`,
+    );
 
     expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "DELETION_PENDING" });
     expect(
       response.headers
         .getSetCookie()
@@ -1227,7 +1116,7 @@ describe("the student's deletion request", () => {
   it("refuses a cookie-bearing request from an untrusted origin and keeps the account", async () => {
     const cookie = await signUp("deletion-forged");
 
-    const forged = await requestDeletion(cookie, { password }, evilOrigin);
+    const forged = await requestDeletion(cookie, evilOrigin);
 
     expect(forged.status).toBe(403);
     expect(await studentId(cookie)).toBeTruthy();
@@ -1253,7 +1142,7 @@ describe("the API's auth routes from other origins", () => {
 
   it("lets only the app origin make credentialed cross-origin calls", async () => {
     const preflight = (origin: string) =>
-      app.request(`${apiOrigin}/api/auth/sign-in/email`, {
+      app.request(`${apiOrigin}/api/auth/sign-in/email-otp`, {
         method: "OPTIONS",
         headers: {
           origin,

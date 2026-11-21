@@ -6,29 +6,43 @@ export interface ScalewayEmailOptions {
   fetch?: typeof globalThis.fetch;
 }
 
-export async function sendVerificationEmail(
+export async function sendSignInCode(
   options: ScalewayEmailOptions,
   to: string,
-  url: string,
+  code: string,
 ) {
   await sendEmail(
     options,
     to,
-    "Verify your email address for nunio",
-    `Confirm your email address to finish setting up nunio:\n\n${url}\n\nIf you did not request this, you can ignore this email.`,
+    "Dein Anmeldecode für nunio",
+    `Dein Anmeldecode für nunio lautet:\n\n${code}\n\nDer Code ist 10 Minuten gültig. Gib ihn auf der Anmeldeseite ein. Wenn du keinen Code angefordert hast, kannst du diese E-Mail ignorieren.`,
   );
 }
 
-export async function sendPasswordResetEmail(
+/** Tells the student a passkey was added, so they notice one they did not add (ADR-0027). */
+export async function sendPasskeyAddedEmail(
   options: ScalewayEmailOptions,
   to: string,
-  url: string,
+  name: string,
+  addedAt: Date,
 ) {
+  const zone = { timeZone: "Europe/Berlin" } as const;
+  const date = addedAt.toLocaleDateString("de-DE", {
+    ...zone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const time = addedAt.toLocaleTimeString("de-DE", {
+    ...zone,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   await sendEmail(
     options,
     to,
-    "Reset your password for nunio",
-    `Choose a new password for your nunio account:\n\n${url}\n\nIf you did not request this, you can ignore this email.`,
+    "Neuer Passkey für dein nunio-Konto",
+    `Am ${date} um ${time} Uhr wurde deinem nunio-Konto ein neuer Passkey hinzugefügt: ${name}.\n\nWenn du das nicht warst, melde dich mit einem Code an, lösche den Passkey in den Einstellungen unter Sicherheit und melde dich überall ab.`,
   );
 }
 
