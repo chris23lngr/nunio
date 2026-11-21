@@ -31,6 +31,9 @@ export interface ModelConfig {
 const taskOutputTokens: Partial<Record<Task, number>> = {
   extraction: 32_000,
   scan: 8_000,
+  // Reasoning, a reply of a few sentences and one form-fill of at most ~4,600 characters; it keeps replies far below a
+  // full Chat answer, though the browser still cuts its replies to the API's message cap before sending them back.
+  builder: 8_000,
 };
 /** Generous per-text allowance for role markers and message framing around the text's own tokens. */
 const framingTokens = 200;

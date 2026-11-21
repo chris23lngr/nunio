@@ -377,9 +377,13 @@ export function AgentFormScreen({
         changed.map((field) => [
           field,
           {
-            before: Object.fromEntries(
-              keysOf[field].map((key) => [key, before[key]]),
-            ),
+            // A field still marked keeps what it held before nunio's first change, so Rückgängig restores the
+            // student's own value, not an earlier answer's.
+            before:
+              marked[field]?.before ??
+              Object.fromEntries(
+                keysOf[field].map((key) => [key, before[key]]),
+              ),
             turn,
           },
         ]),

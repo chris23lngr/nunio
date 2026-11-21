@@ -21,7 +21,6 @@ export {
   capabilities,
   capabilityIds,
   capabilitySections,
-  checkCapabilities,
   kindOf,
 } from "./capabilities.js";
 export {

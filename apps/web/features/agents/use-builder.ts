@@ -9,8 +9,9 @@ import {
 } from "./api/builder-mutations";
 import type { BuilderField, BuilderTurn } from "./components/builder-panel";
 
-/** The API reads at most this many messages of the conversation. */
+/** The API reads at most this many messages of the conversation, each at most this long. */
 const maxMessages = 40;
+const maxText = 4000;
 
 /**
  * The builder's conversation, held only here: it is gone once the form is left (ADR-0026 amendment "The builder").
@@ -65,9 +66,13 @@ export function useBuilder(
         {
           form: form(),
           messages: conversation
-            .filter((turn) => turn.text)
+            .filter((turn) => turn.text.trim())
             .slice(-maxMessages)
-            .map(({ role, text }) => ({ role, text })),
+            // A long reply is sent back cut, so it never makes the next request invalid.
+            .map(({ role, text }) => ({
+              role,
+              text: text.trim().slice(0, maxText),
+            })),
         },
         { signal: abort.signal, onText: setReply },
       );

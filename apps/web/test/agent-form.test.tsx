@@ -1716,3 +1716,40 @@ test("the builder becomes unavailable when nunio refuses for an exhausted Allowa
   ).toBeTruthy();
   expect(screen.queryByText("von nunio geändert")).toBeNull();
 });
+
+test("Rückgängig after two answers changed a field restores the student's own value, and a long reply goes back cut", async () => {
+  const asked: { messages: { role: string; text: string }[] }[] = [];
+  const long = `${"Lang. ".repeat(800)}Ende.`;
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("POST", "/api/me/agents/builder", async (request) => {
+    asked.push(await request.json());
+    return asked.length === 1
+      ? builderAnswer(long, { name: "Erster Entwurf" })
+      : builderAnswer("Umbenannt.", { name: "Zweiter Entwurf" });
+  });
+  renderScreen(<AgentFormScreen apiOrigin={api.origin} agent={null} />);
+  const panel = screen.getByRole("complementary", { name: "nunio fragen" });
+  const message = within(panel).getByRole("textbox", {
+    name: "Nachricht an nunio",
+  });
+  const name = screen.getByRole("textbox", { name: "Name" });
+  await userEvent.type(name, "Mein Agent");
+
+  await userEvent.type(message, "Gib ihm einen Namen.{Enter}");
+  await waitFor(() =>
+    expect((name as HTMLInputElement).value).toBe("Erster Entwurf"),
+  );
+  await userEvent.type(message, "Anders bitte.{Enter}");
+  await within(panel).findByText("Umbenannt.");
+  expect((name as HTMLInputElement).value).toBe("Zweiter Entwurf");
+
+  // The builder's long reply is sent back within the API's 4000 characters.
+  const reply = asked[1]!.messages[1]!;
+  expect(reply.role).toBe("builder");
+  expect(reply.text).toBe(long.slice(0, 4000));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Rückgängig: Name" }),
+  );
+  expect((name as HTMLInputElement).value).toBe("Mein Agent");
+  expect(screen.queryByText("von nunio geändert")).toBeNull();
+});
