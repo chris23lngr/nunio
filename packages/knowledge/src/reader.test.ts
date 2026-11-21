@@ -224,6 +224,7 @@ it("lets a free-text Agent's running Run read the whole Plan's Facts, which no o
     capabilities: [],
     budgetMicroUsd: 1_000_000,
     trigger: { rhythm: "daily", minute: 360 },
+    modelKey: "sonnet-5.5-reasoning-high",
   });
   if (created.status !== "ok") throw new Error(created.status);
   const studentId = (p as { studentId: string }).studentId;

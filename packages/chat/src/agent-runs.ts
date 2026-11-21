@@ -137,9 +137,9 @@ export function createAgentRuns({
   ): Sealed => ({ content, contentKey, derivedFrom });
   return {
     /**
-     * Records the Run, or takes up the one the student started, with the Agent's Instructions, Capabilities and the
-     * catalog's Chat default Model snapshotted, and pins its Courses, Archived ones included, as what it reads. Null
-     * when the Agent may not run now. Idempotent on `runId`.
+     * Records the Run, or takes up the one the student started, with the Agent's Instructions, Capabilities and Model
+     * snapshotted, and pins its Courses, Archived ones included, as what it reads. Null when the Agent may not run now.
+     * Idempotent on `runId`.
      */
     async start(ref: {
       studentId: string;
@@ -147,11 +147,7 @@ export function createAgentRuns({
       runId: string;
       workflowId: string;
     }): Promise<string | null> {
-      const offered = await catalog.chatModels();
-      const runId = await agents.startRun({
-        ...ref,
-        modelKey: offered.find((model) => model.chatDefault)?.key ?? null,
-      });
+      const runId = await agents.startRun(ref);
       if (!runId) return null;
       const student = principal.fromSession({ studentId: ref.studentId });
       // A merged Course went into another, which the Agent has only if the student gave it.

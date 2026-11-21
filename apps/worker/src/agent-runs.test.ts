@@ -88,8 +88,17 @@ const sonnet: CatalogModel = {
   description: "",
   chatDefault: true,
 };
+const haiku: CatalogModel = {
+  ...sonnet,
+  key: "haiku-5.5-reasoning-high",
+  providerModelId: "anthropic/claude-haiku-5.5",
+  name: "Haiku 5.5",
+  chatDefault: false,
+};
 /** The Models Chat offers now; a Run's Model must stay among them. */
 let offered: CatalogModel[] = [];
+/** The Model each step ran on, by key. */
+const ranOn: string[] = [];
 
 /** What the model returns in a step, given its prompt and whether it may call a tool. */
 type Step = unknown[] | { content: unknown[]; finishReason: string };
@@ -233,13 +242,15 @@ beforeAll(async () => {
     delegation,
     agents,
     catalog: { chatModels: async () => offered },
-    modelFor: (config) =>
-      createAgentModel({
+    modelFor: (config) => {
+      ranOn.push(config.key);
+      return createAgentModel({
         ...testModels.fromConfig(config),
         model,
         estimateMicroUsd: () => 1,
         actualMicroUsd: () => 1,
-      }),
+      });
+    },
     clock,
   });
   activity = createActivity({ db: runtime, keys, facts, clock });
@@ -259,6 +270,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   offered = [sonnet];
+  ranOn.length = 0;
   script = [];
   prompts.length = 0;
   toolChoices.length = 0;
@@ -273,8 +285,10 @@ beforeEach(() => {
  */
 async function started({
   held = [] as AgentCapability[],
+  modelKey = sonnet.key,
 }: {
   held?: AgentCapability[];
+  modelKey?: string;
 } = {}) {
   const studentId = randomUUID();
   const courseId = randomUUID();
@@ -348,6 +362,7 @@ async function started({
     capabilities: held,
     budgetMicroUsd: 1_000_000,
     trigger: { rhythm: "daily", minute: 360 },
+    modelKey,
   });
   if (created.status !== "ok") throw new Error(created.status);
   return { ...(await requested(p, created.id)), studentId, obligationId };
@@ -748,6 +763,35 @@ describe("an Agent's Run", () => {
       reason: "model_unavailable",
     });
     expect(prompts).toHaveLength(0);
+  });
+
+  it("runs on its Agent's Model, not the Chat default, and stops at the next step once that Model is no longer offered", async () => {
+    const s = await started({ modelKey: haiku.key });
+    offered = [sonnet, haiku];
+    script = [
+      () => {
+        // The founder stops offering it while the Run is under way.
+        offered = [sonnet];
+        return calls("agenda", { from: day(0), to: day(13) });
+      },
+    ];
+
+    expect(await run(s)).toEqual({
+      status: "stopped",
+      reason: "model_unavailable",
+    });
+    expect(ranOn).toEqual([haiku.key]);
+    expect(prompts).toHaveLength(1);
+    const shown = await activity.run(s.p, s.agentId, s.runId);
+    expect(shown).toMatchObject({
+      status: "stopped",
+      stopReason: "model_unavailable",
+    });
+    expect(shown!.verlauf.at(-1)).toMatchObject({
+      type: "end",
+      status: "stopped",
+      reason: "model_unavailable",
+    });
   });
 
   it("records its Verlauf: the start and its trigger, what each step read, and the end", async () => {
