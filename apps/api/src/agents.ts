@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import type { ActivityCursor } from "@nunio/chat";
-import type { AgentScope } from "@nunio/delegation";
+import type { AgentScope, AgentTrigger, Principal } from "@nunio/delegation";
 import {
   approvalModes,
   capabilities,
@@ -9,7 +9,8 @@ import {
   capabilitySections,
 } from "@nunio/delegation";
 import { courseColors } from "@nunio/knowledge";
-import { deadline } from "@nunio/planning";
+import { deadline, hhmm } from "@nunio/planning";
+import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
 import {
   ActionShown,
@@ -33,6 +34,14 @@ import {
 
 /** Every pilot Agent gets the same Budget; its presets make no model calls yet. */
 const defaultBudgetMicroUsd = 1_000_000;
+
+/** Saving the form with a Model Chat does not offer, other than the one the Agent has. */
+const modelUnavailable = {
+  422: json(
+    ErrorBody,
+    "Its Model is not offered in Chat (error model_unavailable); pick another.",
+  ),
+};
 
 /** One of an Agent's Courses, or one it could be given, with what the Agent will read of it. */
 const AgentCourse = z
@@ -60,6 +69,37 @@ const AgentCapability = z
   })
   .strict()
   .openapi("AgentCapability");
+
+/** A minute of the day, as the Uhrzeit. */
+const Minute = z
+  .number()
+  .int()
+  .min(0)
+  .max(24 * 60 - 1);
+
+/** When its Schedule starts a Run, in the Plan's time zone: the v1 rhythms only. */
+const Trigger = z
+  .discriminatedUnion("rhythm", [
+    z.object({ rhythm: z.literal("daily"), minute: Minute }).strict(),
+    z
+      .object({
+        rhythm: z.literal("weekdays"),
+        weekdays: z
+          .array(z.number().int().min(1).max(7))
+          .min(1)
+          .max(7)
+          .refine((days) => new Set(days).size === days.length, {
+            message: "Each Wochentag at most once.",
+          })
+          .describe("Its Wochentage, ISO: 1 is Monday, 7 is Sunday."),
+        minute: Minute,
+      })
+      .strict(),
+  ])
+  .describe(
+    "Täglich (daily) or on chosen Wochentage (weekdays), at a minute of the day (Uhrzeit) in the Plan's time zone.",
+  )
+  .openapi("AgentTrigger");
 
 /** A free-text Agent's form, saved whole. */
 const AgentForm = z
@@ -89,6 +129,14 @@ const AgentForm = z
       .positive()
       .max(100_000_000)
       .describe("Its monthly Budget."),
+    trigger: Trigger,
+    modelKey: z
+      .string()
+      .min(1)
+      .max(200)
+      .describe(
+        "The Model its Runs run on: one of the Models Chat offers (GET /api/me/models), or the one it already has.",
+      ),
   })
   .strict()
   .openapi("AgentForm");
@@ -114,12 +162,27 @@ const Agent = z
       .object({ id: z.string(), title: z.string() })
       .nullable()
       .describe("The one exam it prepares for; null for a Course."),
+    trigger: Trigger.describe(
+      "When its Schedule starts a Run; a preset Agent's is Täglich at 06:00.",
+    ),
+    modelKey: z
+      .string()
+      .nullable()
+      .describe(
+        "The Model its Runs run on, which Chat may have stopped offering since; null for a preset Agent.",
+      ),
     state: z.enum(["active", "paused", "ended"]),
     pausedBy: z.enum(["student", "budget", "course_archived"]).nullable(),
     running: z
       .boolean()
       .describe(
         "One of its Runs is under way; another cannot start until it ends.",
+      ),
+    approvalRunId: z
+      .string()
+      .nullable()
+      .describe(
+        "The oldest of its Runs with an Approval still open, which Freigaben bestätigen opens; null when none is.",
       ),
     capabilities: z
       .array(AgentCapability)
@@ -263,7 +326,9 @@ const VerlaufEntrySchema = z
       type: z.literal("approval"),
       at: z
         .date()
-        .describe("When the student decided, or when it expired unanswered."),
+        .describe(
+          "When the student decided, when it expired unanswered, or when it was withdrawn.",
+        ),
       action: z.object({
         kind: ActionShown.shape.kind,
         work: z
@@ -277,9 +342,9 @@ const VerlaufEntrySchema = z
         end: z.date().nullable(),
       }),
       decision: z
-        .enum(["approved", "denied", "expired"])
+        .enum(["approved", "denied", "expired", "withdrawn"])
         .describe(
-          "The student's answer, or expired when none came in time; expiry writes nothing, it shows once it passed.",
+          "The student's answer; expired when none came in time (expiry writes nothing, it shows once it passed); withdrawn when the Agent was Paused or Ended before the student answered.",
         ),
       outcome: z
         .enum(["done", "refused", "failed", "unconfirmed", "pending"])
@@ -347,14 +412,42 @@ export function scopeNames(review: Review, scope: AgentScope | null) {
   };
 }
 
-/** The next 06:00 in the student's time zone, when the Schedule starts a Run. */
-function nextRun(now: Date, timeZone: string) {
+/** The trigger's next Uhrzeit on one of its days, in the student's time zone, when the Schedule starts a Run. */
+function nextRun(now: Date, timeZone: string, trigger: AgentTrigger) {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone }).format(now);
-  const atSix = deadline(today, "06:00", timeZone);
-  if (atSix > now) return atSix;
-  const tomorrow = new Date(`${today}T12:00:00Z`);
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  return deadline(tomorrow.toISOString().slice(0, 10), "06:00", timeZone);
+  for (let offset = 0; ; offset++) {
+    const day = new Date(`${today}T12:00:00Z`);
+    day.setUTCDate(day.getUTCDate() + offset);
+    const weekday = day.getUTCDay() || 7;
+    if (trigger.rhythm === "weekdays" && !trigger.weekdays.includes(weekday))
+      continue;
+    const at = deadline(
+      day.toISOString().slice(0, 10),
+      hhmm(trigger.minute),
+      timeZone,
+    );
+    if (at > now) return at;
+  }
+}
+
+/**
+ * Tells the Agent's Runs under way to stop at once; one whose workflow no longer runs is ended as failed (#174). The
+ * database already refuses their next step and Action, so a Run Temporal cannot be reached about stops at that.
+ */
+async function stopRuns(
+  c: Context<AppBindings>,
+  p: Principal,
+  runs: { runId: string; workflowId: string }[],
+  reason: "paused" | "ended",
+) {
+  for (const run of runs) {
+    try {
+      if (!(await c.get("runWorkflows").stopAgentRun(run.workflowId, reason)))
+        await c.get("agents").failRun(p, run.runId);
+    } catch (error) {
+      console.error("Could not stop an Agent's Run", error);
+    }
+  }
 }
 
 export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
@@ -379,23 +472,23 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
           AgentForm,
         ]),
       ),
-      responses: { 201: Created, ...archivedOutcomes },
+      responses: { 201: Created, ...archivedOutcomes, ...modelUnavailable },
     }),
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
       const input = c.req.valid("json");
-      return created(
-        c,
-        await c
-          .get("agents")
-          .create(
-            p,
-            "preset" in input
-              ? { ...input, budgetMicroUsd: defaultBudgetMicroUsd }
-              : input,
-          ),
-      );
+      const result = await c
+        .get("agents")
+        .create(
+          p,
+          "preset" in input
+            ? { ...input, budgetMicroUsd: defaultBudgetMicroUsd }
+            : input,
+        );
+      if (result.status === "model_unavailable")
+        return c.json({ error: "model_unavailable" }, 422);
+      return created(c, result);
     },
   );
   routes.openapi(
@@ -405,17 +498,17 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
       description:
         "Save a free-text Agent's whole form; its next Run reads it. A preset Agent has no form (400).",
       request: { params: id, ...body(AgentForm) },
-      responses: { 200: Done, ...archivedOutcomes },
+      responses: { 200: Done, ...archivedOutcomes, ...modelUnavailable },
     }),
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
-      return done(
-        c,
-        await c
-          .get("agents")
-          .update(p, c.req.valid("param").id, c.req.valid("json")),
-      );
+      const result = await c
+        .get("agents")
+        .update(p, c.req.valid("param").id, c.req.valid("json"));
+      if (result.status === "model_unavailable")
+        return c.json({ error: "model_unavailable" }, 422);
+      return done(c, result);
     },
   );
   // Before "/api/me/agents/{id}", which would otherwise take "courses" for an id.
@@ -524,11 +617,11 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
         p,
         r.courses.map((course) => course.id),
       );
-      // Only a preset Agent runs yet, on its daily Schedule.
-      const scheduled = r.state === "active" && r.scope;
-      const [next] = scheduled
-        ? await c.get("plan").intentsFor(p, r.scope!)
-        : [];
+      // Only a preset Agent's next Action can be told in advance.
+      const [next] =
+        r.state === "active" && r.scope
+          ? await c.get("plan").intentsFor(p, r.scope)
+          : [];
       return c.json(
         {
           id: r.id,
@@ -543,10 +636,13 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
             ...sizes.get(course.id)!,
           })),
           capabilities: r.capabilities,
+          trigger: r.trigger,
+          modelKey: r.modelKey,
           ...scopeNames(review, r.scope),
           state: r.state,
           pausedBy: r.pausedBy,
           running: r.running,
+          approvalRunId: r.approvalRunId,
           grants: r.grants.map((g) => g.kind),
           budget: r.budget,
           recentActions: history.map((a) => ({
@@ -557,9 +653,14 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
             action: describeAction(plan, a.kind, a.args),
           })),
           next: {
-            runAt: scheduled
-              ? nextRun(new Date(), plan.limits.preferences.timeZone)
-              : null,
+            runAt:
+              r.state === "active"
+                ? nextRun(
+                    new Date(),
+                    plan.limits.preferences.timeZone,
+                    r.trigger,
+                  )
+                : null,
             action: next ? describeAction(plan, next.kind, next) : null,
           },
         },
@@ -578,14 +679,23 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
               id: true,
               preset: true,
               name: true,
+              description: true,
               emoji: true,
               course: true,
               exam: true,
               state: true,
               pausedBy: true,
+              approvalRunId: true,
+            }).extend({
+              badge: z
+                .enum(["paused", "approval_needed", "running", "ended"])
+                .nullable()
+                .describe(
+                  "Its one badge: Pausiert, Freigabe benötigt (a Run has an open Approval), Läuft gerade (a Run is under way) or Beendet; null when none applies.",
+                ),
             }),
           ),
-          "The student's Agents, newest first.",
+          "The student's Agents, Ended ones included: Paused first, then those needing an Approval, then running ones, then those without a badge, Ended last; newest first within each.",
         ),
         401: errors[401],
       },
@@ -600,10 +710,13 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
           id: r.id,
           preset: r.preset,
           name: r.name,
+          description: r.description,
           emoji: r.emoji,
           ...scopeNames(review!, r.scope),
           state: r.state,
           pausedBy: r.pausedBy,
+          badge: r.badge,
+          approvalRunId: r.approvalRunId,
         })),
         200,
       );
@@ -774,17 +887,72 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
       createRoute({
         method: "post",
         path: `/api/me/agents/{id}/${control}`,
+        description: {
+          pause:
+            "Pause the Agent: its Run under way stops at its next step or Action, and its open Approvals are withdrawn for good.",
+          resume:
+            "Resume a Paused Agent, whoever paused it; no withdrawn Approval comes back.",
+          end: "End the Agent for good: its Grants go, its Run under way stops at its next step or Action, and its open Approvals are withdrawn. Its Activity stays.",
+        }[control],
         request: { params: id },
         responses: { 200: Done, ...archivedOutcomes },
       }),
       async (c) => {
         const p = await student(c);
         if (!p) return c.json({ error: "unauthorized" }, 401);
-        return done(
-          c,
-          await c.get("agents")[control](p, c.req.valid("param").id),
-        );
+        const agentId = c.req.valid("param").id;
+        if (control === "resume")
+          return done(c, await c.get("agents").resume(p, agentId));
+        const result = await c.get("agents")[control](p, agentId);
+        if (result.status === "ok")
+          await stopRuns(
+            c,
+            p,
+            result.runs,
+            control === "pause" ? "paused" : "ended",
+          );
+        return done(c, result);
       },
     );
   }
+  routes.openapi(
+    createRoute({
+      method: "delete",
+      path: "/api/me/agents/{id}",
+      description:
+        "Delete the Agent for good (Löschen), with its Activity and its Schedule; its Runs' workflows still running are cancelled.",
+      request: { params: id },
+      responses: {
+        200: Done,
+        503: json(
+          ErrorBody,
+          "Its Schedule could not be deleted (error not_deleted), so nothing was; asking again may delete it.",
+        ),
+        ...errors,
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      let result: Awaited<
+        ReturnType<AppBindings["Variables"]["agents"]["delete"]>
+      >;
+      try {
+        result = await c.get("agents").delete(p, c.req.valid("param").id);
+      } catch (error) {
+        console.error("Could not delete an Agent", error);
+        return c.json({ error: "not_deleted" }, 503);
+      }
+      if (result.status !== "ok") return c.json({ error: "gone" }, 404);
+      // Best effort: a workflow left running finds its Run gone and changes nothing.
+      for (const workflowId of result.workflows)
+        await c
+          .get("runWorkflows")
+          .cancelRun(workflowId)
+          .catch((error: unknown) =>
+            console.error("Could not cancel a deleted Agent's Run", error),
+          );
+      return c.json({ status: "ok" as const }, 200);
+    },
+  );
 }

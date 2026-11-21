@@ -27,6 +27,7 @@ model CatalogModel {
 
   messages    ChatMessage[]
   preferences ChatPreference[]
+  agents      Agent[]
   changes     ModelCatalogChange[]
 
   @@map("catalog_model")

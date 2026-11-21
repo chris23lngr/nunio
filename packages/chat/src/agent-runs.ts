@@ -18,6 +18,7 @@ import {
 import type { SourceKeys } from "@nunio/keys";
 import type { KnowledgeReader, Sealed } from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
+import { raiseForEndedRun } from "@nunio/outreach";
 import type { Plan } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
 import type { ModelMessage } from "ai";
@@ -136,9 +137,9 @@ export function createAgentRuns({
   ): Sealed => ({ content, contentKey, derivedFrom });
   return {
     /**
-     * Records the Run, or takes up the one the student started, with the Agent's Instructions, Capabilities and the
-     * catalog's Chat default Model snapshotted, and pins its Courses, Archived ones included, as what it reads. Null
-     * when the Agent may not run now. Idempotent on `runId`.
+     * Records the Run, or takes up the one the student started, with the Agent's Instructions, Capabilities and Model
+     * snapshotted, and pins its Courses, Archived ones included, as what it reads. Null when the Agent may not run now.
+     * Idempotent on `runId`.
      */
     async start(ref: {
       studentId: string;
@@ -146,11 +147,7 @@ export function createAgentRuns({
       runId: string;
       workflowId: string;
     }): Promise<string | null> {
-      const offered = await catalog.chatModels();
-      const runId = await agents.startRun({
-        ...ref,
-        modelKey: offered.find((model) => model.chatDefault)?.key ?? null,
-      });
+      const runId = await agents.startRun(ref);
       if (!runId) return null;
       const student = principal.fromSession({ studentId: ref.studentId });
       // A merged Course went into another, which the Agent has only if the student gave it.
@@ -545,8 +542,9 @@ export function createAgentRuns({
 
     /**
      * Ends the student's Run: its status, when it ended, why it did not simply finish, and, when done, the model's
-     * final message as its summary, sealed under every Source the Run read. The transcript is dropped. Ending it again,
-     * or a Run that was never recorded, changes nothing.
+     * final message as its summary, sealed under every Source the Run read. The transcript is dropped. A Run that ends
+     * with Approvals open raises one Intervention for them (ADR-0006). Ending it again, or a Run that was never
+     * recorded, changes nothing.
      */
     async finish(
       { runId, studentId }: { runId: string; studentId: string },
@@ -565,6 +563,7 @@ export function createAgentRuns({
           },
         });
         if (run?.status !== "running") return;
+        const endedAt = clock.now();
         const last = run.steps[0];
         const transcript =
           end.status === "done" && last?.answered && last.transcriptContent
@@ -588,7 +587,7 @@ export function createAgentRuns({
           where: { id: runId },
           data: {
             status: end.status,
-            endedAt: clock.now(),
+            endedAt,
             stopReason: end.status === "done" ? null : (end.reason ?? null),
             summaryContent: summary?.content ?? null,
             summaryKey: summary?.contentKey ?? null,
@@ -599,6 +598,7 @@ export function createAgentRuns({
           where: { runId },
           data: { transcriptContent: null, transcriptKey: null },
         });
+        await raiseForEndedRun(tx, { runId, studentId }, endedAt);
       });
     },
 

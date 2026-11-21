@@ -13,7 +13,8 @@ import type {
 import { createAnswerer, createModels } from "@nunio/ai";
 import type { Artifacts } from "@nunio/artifacts";
 import { createArtifacts } from "@nunio/artifacts";
-import { createActivity, createChats } from "@nunio/chat";
+import type { AgentRuns } from "@nunio/chat";
+import { createActivity, createAgentRuns, createChats } from "@nunio/chat";
 import type { Pool, PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -86,6 +87,7 @@ let delegation: Delegation;
 let agents: Agents;
 let artifacts: Artifacts;
 let understanding: Understanding;
+let agentRuns: AgentRuns;
 /** The Artifact Runs the API asked to start, by run ID; the worker would then make each. */
 const artifactRuns: string[] = [];
 const artifactWorkflows: ArtifactWorkflows = {
@@ -150,6 +152,12 @@ const agentRunsStarted: {
   workflowId: string;
 }[] = [];
 let agentRunsDown = false;
+/** The Agent Runs the API told to stop, in order, and the workflows that no longer run, as Temporal would say. */
+const agentRunsStopped: { workflowId: string; reason: string }[] = [];
+const goneWorkflows = new Set<string>();
+/** The workflows the API asked Temporal about, and those it cancelled, in order. */
+const workflowsAsked: string[] = [];
+const runsCancelled: string[] = [];
 const runWorkflows: RunWorkflows = {
   signalDecided: async (run, actionId) =>
     void signalled.push({ ...run, actionId }),
@@ -157,9 +165,23 @@ const runWorkflows: RunWorkflows = {
     if (agentRunsDown) throw new Error("Temporal unavailable");
     agentRunsStarted.push(run);
   },
+  stopAgentRun: async (workflowId, reason) => {
+    if (goneWorkflows.has(workflowId)) return false;
+    agentRunsStopped.push({ workflowId, reason });
+    return true;
+  },
+  agentRunAlive: async (workflowId) => {
+    workflowsAsked.push(workflowId);
+    return !goneWorkflows.has(workflowId);
+  },
+  cancelRun: async (workflowId) => void runsCancelled.push(workflowId),
 };
 const schedules: Schedules = {
   create: async ({ agentId }) => void scheduled.push(`create ${agentId}`),
+  save: async ({ agentId, trigger, timeZone, paused }) =>
+    void scheduled.push(
+      `save ${agentId} ${JSON.stringify(trigger)} ${timeZone}${paused ? " paused" : ""}`,
+    ),
   pause: async (id) => void scheduled.push(`pause ${id}`),
   unpause: async (id) => void scheduled.push(`unpause ${id}`),
   delete: async (id) => void scheduled.push(`delete ${id}`),
@@ -428,6 +450,7 @@ beforeAll(async () => {
     db: prisma,
     schedules,
     clock: { now: () => new Date() },
+    runAlive: (workflowId) => runWorkflows.agentRunAlive(workflowId),
   });
   artifacts = createArtifacts({
     db: prisma,
@@ -447,6 +470,22 @@ beforeAll(async () => {
     facts,
     delegation,
     grader,
+    clock: { now: () => new Date() },
+  });
+  // Only to end Runs as the worker does; no step runs here.
+  agentRuns = createAgentRuns({
+    db: prisma,
+    keys,
+    reader,
+    plan,
+    understanding,
+    artifacts,
+    delegation,
+    agents,
+    catalog: { chatModels: async () => [] },
+    modelFor: () => {
+      throw new Error("No model step runs in the API");
+    },
     clock: { now: () => new Date() },
   });
   app = createApp({
@@ -6428,11 +6467,14 @@ describe("Agents", () => {
         id,
         preset: "keep_course_organized",
         name: "",
+        description: "",
         emoji: "🤖",
         course: { id: s.courseId, title: "Analysis I" },
         exam: null,
         state: "ended",
         pausedBy: null,
+        badge: "ended",
+        approvalRunId: null,
       },
     ]);
   });
@@ -6548,6 +6590,8 @@ describe("a free-text Agent's form", () => {
     courseIds,
     capabilities,
     budgetMicroUsd: 5_000_000,
+    trigger: { rhythm: "daily", minute: 360 } as Record<string, unknown>,
+    modelKey: "sonnet-5.5-reasoning-high",
   });
 
   it("creates an Agent from the whole form and reads it back, each Course with its Topic and Source counts", async () => {
@@ -6606,15 +6650,108 @@ describe("a free-text Agent's form", () => {
         },
       ],
       budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
+      trigger: { rhythm: "daily", minute: 360 },
       state: "active",
       grants: [],
-      next: { runAt: null, action: null },
+      next: { action: null },
     });
-    // Its trigger is not built yet, so nothing starts its Runs.
-    expect(scheduled).not.toContain(`create ${id}`);
+    expect(scheduled).toContain(
+      `save ${id} {"rhythm":"daily","minute":360} Europe/Berlin`,
+    );
     expect(await (await s.call("GET", "")).json()).toEqual([
       expect.objectContaining({ id, preset: null, name: "Klausur Statistik" }),
     ]);
+  });
+
+  it("runs on the Schedule of its trigger: saved with the form, paused with the Agent and removed on End", async () => {
+    const s = await student("agent-trigger");
+    const statistics = await course(s.id, "Statistics II");
+    await admin.planPreference.create({
+      data: { studentId: s.id, timeZone: "Europe/Vienna" },
+    });
+    const weekdays = { rhythm: "weekdays", weekdays: [5, 1], minute: 1170 };
+
+    const created = await s.call("POST", "", {
+      ...form([statistics]),
+      trigger: weekdays,
+    });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      trigger: { rhythm: "weekdays", weekdays: [1, 5], minute: 1170 },
+    });
+    const updated = await s.call("PUT", `/${id}`, {
+      ...form([statistics]),
+      trigger: { rhythm: "daily", minute: 450 },
+    });
+    expect(updated.status).toBe(200);
+    expect((await s.call("POST", `/${id}/pause`)).status).toBe(200);
+    expect((await s.call("POST", `/${id}/resume`)).status).toBe(200);
+    expect((await s.call("POST", `/${id}/end`)).status).toBe(200);
+
+    expect(scheduled.filter((call) => call.includes(id))).toEqual([
+      `save ${id} {"rhythm":"weekdays","weekdays":[1,5],"minute":1170} Europe/Vienna`,
+      `save ${id} {"rhythm":"daily","minute":450} Europe/Vienna`,
+      `save ${id} {"rhythm":"daily","minute":450} Europe/Vienna paused`,
+      `save ${id} {"rhythm":"daily","minute":450} Europe/Vienna`,
+      `delete ${id}`,
+    ]);
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      trigger: { rhythm: "daily", minute: 450 },
+      state: "ended",
+      next: { runAt: null },
+    });
+  });
+
+  it("accepts only Täglich or one or more Wochentage at a minute of the day", async () => {
+    const s = await student("agent-trigger-invalid");
+    const statistics = await course(s.id, "Statistics II");
+    const { trigger: _, ...untriggered } = form([statistics]);
+
+    expect((await s.call("POST", "", untriggered)).status).toBe(400);
+    for (const trigger of [
+      { rhythm: "weekdays", weekdays: [], minute: 360 },
+      { rhythm: "weekdays", weekdays: [0], minute: 360 },
+      { rhythm: "weekdays", weekdays: [1, 1], minute: 360 },
+      { rhythm: "daily", minute: 1440 },
+      { rhythm: "daily", minute: 6.5 },
+      { rhythm: "daily", weekdays: [1], minute: 360 },
+      { rhythm: "hourly", minute: 0 },
+    ])
+      expect(
+        (await s.call("POST", "", { ...form([statistics]), trigger })).status,
+      ).toBe(400);
+    expect(await (await s.call("GET", "")).json()).toEqual([]);
+  });
+
+  it("shows when its next Run starts: the next Uhrzeit on one of its Wochentage, in the Plan's time zone", async () => {
+    const s = await student("agent-trigger-next");
+    const statistics = await course(s.id, "Statistics II");
+    await admin.planPreference.create({
+      data: { studentId: s.id, timeZone: "America/New_York" },
+    });
+    const { id } = (await (
+      await s.call("POST", "", {
+        ...form([statistics]),
+        trigger: { rhythm: "weekdays", weekdays: [3], minute: 1170 },
+      })
+    ).json()) as { id: string };
+
+    const { next } = (await (await s.call("GET", `/${id}`)).json()) as {
+      next: { runAt: string };
+    };
+
+    const runAt = new Date(next.runAt);
+    expect(runAt.getTime()).toBeGreaterThan(Date.now());
+    expect(runAt.getTime() - Date.now()).toBeLessThanOrEqual(7 * 86_400_000);
+    expect(
+      runAt.toLocaleString("en-GB", {
+        timeZone: "America/New_York",
+        weekday: "long",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    ).toBe("Wednesday 19:30");
   });
 
   it("updates the whole form, keeping a Course that was Archived since and showing it as archived", async () => {
@@ -6712,6 +6849,97 @@ describe("a free-text Agent's form", () => {
         sources: 0,
       },
     ]);
+  });
+
+  it("runs on a Model the student picks from those Chat offers, and keeps its Model once no longer offered", async () => {
+    const s = await student("agent-model");
+    const statistics = await course(s.id, "Statistics II");
+    // Never offered: the founder has not enabled it in Chat.
+    await admin.catalogModel.create({
+      data: {
+        key: "agent-test-off",
+        providerModelId: "anthropic/claude-haiku-5.5",
+        reasoningEffort: "low",
+        maxOutputTokens: 8000,
+        name: "Aus",
+        provider: "Anthropic",
+        description: "Nicht angeboten.",
+      },
+    });
+    await admin.catalogModel.create({
+      data: {
+        key: "agent-test-model",
+        providerModelId: "anthropic/claude-haiku-5.5",
+        reasoningEffort: "medium",
+        maxOutputTokens: 8000,
+        name: "Agent-Testmodell",
+        provider: "Anthropic",
+        description: "Nur für diesen Test.",
+        position: 99,
+        chatEnabled: true,
+        prices: [
+          {
+            minPromptTokens: 0,
+            inputMicroUsdPerMTok: 1,
+            outputMicroUsdPerMTok: 1,
+          },
+        ],
+        zeroRetentionAvailable: true,
+        syncedAt: new Date(),
+      },
+    });
+
+    const { modelKey: _, ...unpicked } = form([statistics]);
+    expect((await s.call("POST", "", unpicked)).status).toBe(400);
+    for (const modelKey of ["agent-test-off", "no-such-model"]) {
+      const refused = await s.call("POST", "", {
+        ...form([statistics]),
+        modelKey,
+      });
+      expect(refused.status).toBe(422);
+      expect(await refused.json()).toEqual({ error: "model_unavailable" });
+    }
+    const created = await s.call("POST", "", {
+      ...form([statistics]),
+      modelKey: "agent-test-model",
+    });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      modelKey: "agent-test-model",
+    });
+
+    // The founder stops offering it: the Agent keeps it, and may change only to one offered.
+    await admin.catalogModel.update({
+      where: { key: "agent-test-model" },
+      data: { chatEnabled: false },
+    });
+    const kept = await s.call("PUT", `/${id}`, {
+      ...form([statistics]),
+      modelKey: "agent-test-model",
+      name: "Umbenannt",
+    });
+    expect(kept.status).toBe(200);
+    const elsewhere = await s.call("PUT", `/${id}`, {
+      ...form([statistics]),
+      modelKey: "agent-test-off",
+    });
+    expect(elsewhere.status).toBe(422);
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      name: "Umbenannt",
+      modelKey: "agent-test-model",
+    });
+    expect(
+      (
+        await s.call("PUT", `/${id}`, {
+          ...form([statistics]),
+          modelKey: "opus-5.5-reasoning-high",
+        })
+      ).status,
+    ).toBe(200);
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      modelKey: "opus-5.5-reasoning-high",
+    });
   });
 
   it("leaves a preset Agent's form alone until the cutover", async () => {
@@ -7045,6 +7273,183 @@ describe("a free-text Agent's form", () => {
     });
   }
 
+  it("tells its Run under way to stop at once when it is Paused or Ended", async () => {
+    const s = await student("agent-run-stopped");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+    const { id: runId } = (await (
+      await s.call("POST", `/${id}/runs`)
+    ).json()) as { id: string };
+
+    expect((await s.call("POST", `/${id}/pause`)).status).toBe(200);
+    expect((await s.call("POST", `/${id}/resume`)).status).toBe(200);
+    expect((await s.call("POST", `/${id}/end`)).status).toBe(200);
+
+    expect(
+      agentRunsStopped.filter((r) => r.workflowId === `agentRun/${runId}`),
+    ).toEqual([
+      { workflowId: `agentRun/${runId}`, reason: "paused" },
+      { workflowId: `agentRun/${runId}`, reason: "ended" },
+    ]);
+  });
+
+  it("ends a Run whose workflow no longer runs as failed, so it holds up no other Run", async () => {
+    const s = await student("agent-run-gone");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+    // Under way a while, then its workflow was terminated: it would block every Run after it.
+    const stale = await recordedRun(s.id, id, 30, { status: "running" });
+    goneWorkflows.add(`agentRun/${stale}`);
+
+    // The list no longer reads "Läuft gerade" for it.
+    expect(await (await s.call("GET", "")).json()).toEqual([
+      expect.objectContaining({ id, badge: null }),
+    ]);
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      running: false,
+    });
+    expect(
+      await admin.run.findUniqueOrThrow({
+        where: { id: stale },
+        select: { status: true, endedAt: true },
+      }),
+    ).toEqual({ status: "failed", endedAt: expect.any(Date) });
+
+    // A Run just started is not asked about on every read.
+    const { id: fresh } = (await (
+      await s.call("POST", `/${id}/runs`)
+    ).json()) as { id: string };
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      running: true,
+    });
+    expect(workflowsAsked).not.toContain(`agentRun/${fresh}`);
+    // Pausing finds a gone one too.
+    goneWorkflows.add(`agentRun/${fresh}`);
+    expect((await s.call("POST", `/${id}/pause`)).status).toBe(200);
+    expect(
+      await admin.run.findUniqueOrThrow({
+        where: { id: fresh },
+        select: { status: true },
+      }),
+    ).toEqual({ status: "failed" });
+  });
+
+  it("deletes an Agent for good: its Activity, Grants and Schedule go, and its Run under way is told to stop", async () => {
+    const s = await student("agent-delete");
+    const statistics = await course(s.id, "Statistics II");
+    const { id } = (await (
+      await s.call(
+        "POST",
+        "",
+        form([statistics], [{ id: "createStudyBlocks", mode: "automatic" }]),
+      )
+    ).json()) as { id: string };
+    await asked(s.id, await recordedRun(s.id, id, 30));
+    const { id: runId } = (await (
+      await s.call("POST", `/${id}/runs`)
+    ).json()) as { id: string };
+    const kept = (
+      (await (await s.call("POST", "", form([statistics]))).json()) as {
+        id: string;
+      }
+    ).id;
+    const other = await student("agent-delete-other");
+
+    expect((await other.call("DELETE", `/${id}`)).status).toBe(404);
+    const deleted = await s.call("DELETE", `/${id}`);
+
+    expect([deleted.status, await deleted.json()]).toEqual([
+      200,
+      { status: "ok" },
+    ]);
+    expect((await s.call("GET", `/${id}`)).status).toBe(404);
+    expect(
+      ((await (await s.call("GET", "")).json()) as { id: string }[]).map(
+        (agent) => agent.id,
+      ),
+    ).toEqual([kept]);
+    expect(await admin.run.count({ where: { agentId: id } })).toBe(0);
+    expect(await admin.action.count({ where: { studentId: s.id } })).toBe(0);
+    expect(await admin.grant.count({ where: { agentId: id } })).toBe(0);
+    expect(scheduled.at(-1)).toBe(`delete ${id}`);
+    expect(runsCancelled).toContain(`agentRun/${runId}`);
+    expect((await s.call("DELETE", `/${id}`)).status).toBe(404);
+  });
+
+  it("cancels a deleted preset Agent's Run that waits on an Approval", async () => {
+    const s = await student("agent-delete-preset");
+    const { id } = (await (
+      await s.call("POST", "", {
+        preset: "keep_course_organized",
+        courseId: await course(s.id, "Statistics II"),
+      })
+    ).json()) as { id: string };
+    const runId = randomUUID();
+    await admin.run.create({
+      data: {
+        id: runId,
+        studentId: s.id,
+        agentId: id,
+        workflowId: `run/${runId}`,
+      },
+    });
+    await asked(s.id, runId);
+    const done = randomUUID();
+    await admin.run.create({
+      data: {
+        id: done,
+        studentId: s.id,
+        agentId: id,
+        workflowId: `run/${done}`,
+      },
+    });
+
+    expect((await s.call("DELETE", `/${id}`)).status).toBe(200);
+
+    expect(runsCancelled).toContain(`run/${runId}`);
+    expect(runsCancelled).not.toContain(`run/${done}`);
+  });
+
+  it("keeps the Agent when its Schedule cannot be deleted, so Löschen can be asked again", async () => {
+    const s = await student("agent-delete-down");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+    const remove = vi
+      .spyOn(schedules, "delete")
+      .mockRejectedValueOnce(new Error("Temporal unavailable"));
+    try {
+      expect((await s.call("DELETE", `/${id}`)).status).toBe(503);
+    } finally {
+      remove.mockRestore();
+    }
+
+    expect((await s.call("GET", `/${id}`)).status).toBe(200);
+    expect((await s.call("DELETE", `/${id}`)).status).toBe(200);
+  });
+
+  it("opens Freigaben bestätigen on the oldest Run still awaiting Approval", async () => {
+    const s = await student("agent-approval-run");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+    // Its Approval expired, so it no longer awaits one.
+    await asked(
+      s.id,
+      await recordedRun(s.id, id, 300),
+      new Date(Date.now() - 1_000),
+    );
+    const oldest = await recordedRun(s.id, id, 200);
+    await asked(s.id, oldest);
+    await asked(s.id, await recordedRun(s.id, id, 100));
+
+    expect(await (await s.call("GET", "")).json()).toEqual([
+      expect.objectContaining({ id, approvalRunId: oldest }),
+    ]);
+  });
+
   it("lists an Agent's Runs newest first, a page at a time, each with its open Approvals", async () => {
     const s = await student("agent-activity-list");
     const { id } = (await (
@@ -7091,6 +7496,68 @@ describe("a free-text Agent's form", () => {
         }),
       ],
       nextCursor: null,
+    });
+  });
+
+  it("lists the student's Agents with one badge each: Pausiert, then Freigabe benötigt, then Läuft gerade, then none, Beendet last", async () => {
+    const s = await student("agent-list-badges");
+    const statistics = await course(s.id, "Statistics II");
+    const created = async (name: string) =>
+      (
+        (await (
+          await s.call("POST", "", { ...form([statistics]), name })
+        ).json()) as { id: string }
+      ).id;
+    const ended = await created("Beendet");
+    await s.call("POST", `/${ended}/end`);
+    // An Ended Agent reads Beendet even with an open Approval or a Run left over.
+    await asked(s.id, await recordedRun(s.id, ended, 5));
+    await recordedRun(s.id, ended, 1, { status: "running" });
+    await created("Ohne Lauf");
+    const running = await created("Läuft");
+    await recordedRun(s.id, running, 1, { status: "running" });
+    const asking = await created("Fragt");
+    await asked(s.id, await recordedRun(s.id, asking, 30));
+    // Its Approval wins over its Run under way.
+    await recordedRun(s.id, asking, 1, { status: "running" });
+    const expired = await created("Abgelaufen");
+    await asked(
+      s.id,
+      await recordedRun(s.id, expired, 30),
+      new Date(Date.now() - 1_000),
+    );
+    const paused = await created("Pausiert");
+    await s.call("POST", `/${paused}/pause`);
+
+    const listed = await s.call("GET", "");
+
+    expect(listed.status).toBe(200);
+    const agents = (await listed.json()) as {
+      id: string;
+      name: string;
+      badge: string | null;
+    }[];
+    expect(agents.map(({ name, badge }) => [name, badge])).toEqual([
+      ["Pausiert", "paused"],
+      ["Fragt", "approval_needed"],
+      ["Läuft", "running"],
+      // Without a badge, newest first.
+      ["Abgelaufen", null],
+      ["Ohne Lauf", null],
+      ["Beendet", "ended"],
+    ]);
+    expect(agents[0]).toEqual({
+      id: paused,
+      preset: null,
+      name: "Pausiert",
+      description: "Hält meine Klausurvorbereitung auf Kurs.",
+      emoji: "🤖",
+      course: null,
+      exam: null,
+      state: "paused",
+      pausedBy: "student",
+      badge: "paused",
+      approvalRunId: null,
     });
   });
 
@@ -7363,6 +7830,7 @@ describe("a free-text Agent's form", () => {
       name: string,
       capability: "createStudyBlocks" | "moveStudyBlocks",
       more: string[] = [],
+      run: { status?: "running" } = {},
     ) {
       const s = await student(name);
       const statistics = await course(s.id, "Statistics II");
@@ -7398,7 +7866,8 @@ describe("a free-text Agent's form", () => {
           end: new Date("2099-02-01T10:00:00Z"),
         },
       });
-      const runId = await recordedRun(s.id, agentId, 10);
+      // Asked while under way; a Run that ended takes no new Action.
+      const runId = await recordedRun(s.id, agentId, 10, { status: "running" });
       const outcome = await delegation.perform(principal.fromRun(runId), {
         key: `${runId}:1:1`,
         intent:
@@ -7418,6 +7887,11 @@ describe("a free-text Agent's form", () => {
       });
       if (outcome.status !== "awaiting_approval")
         throw new Error(outcome.status);
+      if (run.status !== "running")
+        await admin.run.update({
+          where: { id: runId },
+          data: { status: "done", endedAt: new Date() },
+        });
       const decide = (body: object) =>
         app.request(`${apiOrigin}/api/me/approvals/${outcome.actionId}`, {
           method: "POST",
@@ -7655,6 +8129,245 @@ describe("a free-text Agent's form", () => {
       expect(
         await admin.intervention.count({ where: { studentId: a.s.id } }),
       ).toBe(0);
+    });
+
+    it.each(["pause", "end"] as const)(
+      "withdraws every open Approval of the Agent on %s, for good: shown withdrawn, refused when approved late, and never back on resume",
+      async (control) => {
+        const a = await askedByRun(
+          `run-approval-withdrawn-${control}`,
+          "createStudyBlocks",
+        );
+        // Freigaben bestätigen opens the Run awaiting Approval.
+        expect(
+          await (await a.s.call("GET", `/${a.agentId}`)).json(),
+        ).toMatchObject({ approvalRunId: a.runId });
+        // Another Run of the same Agent asked too.
+        const other = await recordedRun(a.s.id, a.agentId, 5);
+        await asked(a.s.id, other);
+        const before = Date.now();
+
+        expect(
+          (await a.s.call("POST", `/${a.agentId}/${control}`)).status,
+        ).toBe(200);
+
+        const shown = await a.shown();
+        expect(shown).toMatchObject({ openApprovals: 0, approvals: [] });
+        const withdrawn = shown.verlauf.find(
+          (entry) => entry.type === "approval",
+        )!;
+        expect(withdrawn).toEqual({
+          type: "approval",
+          at: expect.any(String),
+          action: expect.objectContaining({ kind: "studyBlock.create" }),
+          decision: "withdrawn",
+          outcome: null,
+          refusal: null,
+        });
+        expect(new Date(withdrawn.at).getTime()).toBeGreaterThanOrEqual(
+          before - 1_000,
+        );
+        const runs = (await (
+          await a.s.call("GET", `/${a.agentId}/runs?limit=10`)
+        ).json()) as { runs: { openApprovals: number }[] };
+        expect(runs.runs.map((run) => run.openApprovals)).toEqual([0, 0]);
+        const late = await a.decide({
+          decision: "approve",
+          fingerprint: a.asking.fingerprint,
+        });
+        expect(late.status).toBe(409);
+        expect(
+          await admin.studyBlock.count({
+            where: { studentId: a.s.id, start: new Date(asks.start) },
+          }),
+        ).toBe(0);
+        if (control === "pause")
+          expect((await a.s.call("POST", `/${a.agentId}/resume`)).status).toBe(
+            200,
+          );
+        expect(await a.shown()).toMatchObject({
+          openApprovals: 0,
+          approvals: [],
+        });
+        const [listed] = (await (await a.s.call("GET", "")).json()) as {
+          badge: string | null;
+          approvalRunId: string | null;
+        }[];
+        expect(listed).toMatchObject({
+          badge: control === "end" ? "ended" : null,
+          approvalRunId: null,
+        });
+      },
+    );
+
+    it("keeps the student's answer to an Approval decided while the Agent is being Paused", async () => {
+      const a = await askedByRun(
+        "run-approval-decided-while-paused",
+        "createStudyBlocks",
+      );
+      // The student's approval holds the Action, as deciding does, while Pause comes in.
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let locked!: () => void;
+      const lockTaken = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const deciding = admin.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT 1 FROM "action" WHERE "id" = ${a.asking.actionId} FOR UPDATE`;
+        await tx.approval.update({
+          where: { actionId: a.asking.actionId },
+          data: { decision: "approved", decidedAt: new Date() },
+        });
+        locked();
+        await held;
+      });
+      await lockTaken;
+      const pausing = a.s.call("POST", `/${a.agentId}/pause`);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      release();
+      await deciding;
+
+      expect((await pausing).status).toBe(200);
+      expect(
+        await admin.action.findUniqueOrThrow({
+          where: { id: a.asking.actionId },
+          select: { status: true, refusal: true },
+        }),
+      ).toEqual({ status: "awaiting_approval", refusal: null });
+      expect(decisions((await a.shown()).verlauf)).toEqual([
+        expect.objectContaining({ decision: "approved" }),
+      ]);
+    });
+
+    it("leaves a preset Agent's Approvals to its Run, which waits on them, when it is Paused", async () => {
+      const s = await student("run-approval-preset-paused");
+      const { id: agentId } = (await (
+        await s.call("POST", "", {
+          preset: "keep_course_organized",
+          courseId: await course(s.id, "Statistics II"),
+        })
+      ).json()) as { id: string };
+      const runId = randomUUID();
+      await admin.run.create({
+        data: {
+          id: runId,
+          studentId: s.id,
+          agentId,
+          workflowId: `run/${runId}`,
+        },
+      });
+      await asked(s.id, runId);
+
+      expect((await s.call("POST", `/${agentId}/pause`)).status).toBe(200);
+
+      expect(
+        await admin.action.findMany({
+          where: { runId },
+          select: { status: true },
+        }),
+      ).toEqual([{ status: "awaiting_approval" }]);
+      expect(agentRunsStopped).not.toContainEqual(
+        expect.objectContaining({ workflowId: `run/${runId}` }),
+      );
+    });
+
+    describe("the Run's Intervention in the Inbox", () => {
+      /** A Run under way that asked for Approvals, as the Inbox shows its Interventions. */
+      async function asking(name: string) {
+        const a = await askedByRun(name, "createStudyBlocks", [], {
+          status: "running",
+        });
+        const inbox = async () => {
+          const response = await app.request(`${apiOrigin}/api/me/inbox`, {
+            headers: { cookie: a.s.headers.cookie },
+          });
+          expect(response.status).toBe(200);
+          return ((await response.json()) as { interventions: unknown[] })
+            .interventions;
+        };
+        const end = () =>
+          agentRuns.finish(
+            { runId: a.runId, studentId: a.s.id },
+            { status: "done" },
+          );
+        return { ...a, inbox, end };
+      }
+
+      it("raises one once the Run ends with Approvals open, naming its Agent and opening that Run", async () => {
+        const a = await asking("run-intervention-raised");
+        expect(await a.inbox()).toEqual([]);
+
+        await a.end();
+        await a.end();
+
+        expect(await a.inbox()).toEqual([
+          {
+            id: expect.any(String),
+            kind: "run_approvals",
+            title: "Klausur Statistik",
+            course: null,
+            action: null,
+            shortMinutes: null,
+            run: {
+              id: a.runId,
+              agentId: a.agentId,
+              openApprovals: 1,
+            },
+            raisedAt: expect.any(String),
+            state: "open",
+            closedAt: null,
+          },
+        ]);
+      });
+
+      it.each([
+        [
+          "decided",
+          (a: Awaited<ReturnType<typeof asking>>) =>
+            a.decide({ decision: "deny" }),
+        ],
+        [
+          "expired",
+          (a: Awaited<ReturnType<typeof asking>>) =>
+            admin.approval.update({
+              where: { actionId: a.asking.actionId },
+              data: { expiresAt: new Date(Date.now() - 60_000) },
+            }),
+        ],
+        [
+          "withdrawn",
+          (a: Awaited<ReturnType<typeof asking>>) =>
+            a.s.call("POST", `/${a.agentId}/pause`),
+        ],
+      ])(
+        "lapses once no Approval of the Run is open, the last one %s, with no timer",
+        async (how, close) => {
+          const a = await asking(`run-intervention-lapses-${how}`);
+          await a.end();
+
+          await close(a);
+
+          expect(await a.inbox()).toEqual([
+            expect.objectContaining({
+              kind: "run_approvals",
+              run: expect.objectContaining({ openApprovals: 0 }),
+              state: "lapsed",
+              closedAt: expect.any(String),
+            }),
+          ]);
+        },
+      );
+
+      it("raises none for a Run that ends with nothing open", async () => {
+        const a = await asking("run-intervention-none");
+        await a.decide({ decision: "deny" });
+
+        await a.end();
+
+        expect(await a.inbox()).toEqual([]);
+      });
     });
   });
 

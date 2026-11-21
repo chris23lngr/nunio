@@ -101,9 +101,9 @@ test.each([
   ["/artifacts/a-1", "Artefakte"],
   ["/courses", "Kurse"],
   ["/projects", "Projects"],
-  ["/agents", "Agents"],
+  ["/agents", "Agenten"],
   ["/projects/project-1", "Projects"],
-  ["/agents/r-1", "Agents"],
+  ["/agents/r-1", "Agenten"],
 ])("%s selects only %s in app navigation", (pathname, title) => {
   route.pathname = pathname;
   render(

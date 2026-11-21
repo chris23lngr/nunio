@@ -219,6 +219,7 @@
         "@nunio/delegation": "workspace:*",
         "@nunio/keys": "workspace:*",
         "@nunio/knowledge": "workspace:*",
+        "@nunio/outreach": "workspace:*",
         "@nunio/planning": "workspace:*",
         "@nunio/understanding": "workspace:*",
         "ai": "7.0.157",
@@ -269,11 +270,13 @@
       "dependencies": {
         "@nunio/ai": "workspace:*",
         "@nunio/db": "workspace:*",
+        "@temporalio/client": "1.25.0",
         "zod": "4.6.7",
       },
       "devDependencies": {
         "@biomejs/biome": "2.6.3",
         "@nunio/typescript-config": "workspace:*",
+        "@temporalio/testing": "1.25.0",
         "@types/node": "24.19.2",
         "@types/pg": "8.23.1",
         "pg": "8.23.1",

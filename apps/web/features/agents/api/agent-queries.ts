@@ -93,3 +93,22 @@ export function capabilityQueries(apiOrigin: string) {
     },
   });
 }
+
+export type AgentModels =
+  paths["/api/me/models"]["get"]["responses"][200]["content"]["application/json"];
+export type AgentModel = AgentModels["models"][number];
+
+/** The Models Chat offers, which an Agent's Model is picked from, and the Chat default a new Agent starts on. */
+export function agentModelQueries(apiOrigin: string) {
+  return queryOptions({
+    queryKey: [apiOrigin, "agent-models"],
+    queryFn: async ({ signal }) => {
+      const result = await createApiClient(apiOrigin).GET("/api/me/models", {
+        signal,
+      });
+      if (!result.data)
+        throw new Error("Die Modelle konnten nicht geladen werden.");
+      return result.data;
+    },
+  });
+}

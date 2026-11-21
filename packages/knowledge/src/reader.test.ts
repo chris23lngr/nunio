@@ -209,6 +209,7 @@ it("lets a free-text Agent's running Run read the whole Plan's Facts, which no o
     clock,
     schedules: {
       create: noSchedule,
+      save: noSchedule,
       pause: noSchedule,
       unpause: noSchedule,
       delete: noSchedule,
@@ -222,6 +223,8 @@ it("lets a free-text Agent's running Run read the whole Plan's Facts, which no o
     courseIds: [course],
     capabilities: [],
     budgetMicroUsd: 1_000_000,
+    trigger: { rhythm: "daily", minute: 360 },
+    modelKey: "sonnet-5.5-reasoning-high",
   });
   if (created.status !== "ok") throw new Error(created.status);
   const studentId = (p as { studentId: string }).studentId;

@@ -198,6 +198,8 @@ export const why: Record<Refusal, string> = {
   ended: "your Agent is Ended",
   approval_denied: "the student said no",
   approval_expired: "the student did not answer in time",
+  approval_withdrawn:
+    "the student Paused or Ended your Agent before deciding, which withdrew it",
   approval_mismatch: "it changed since the student was asked",
   locked: "the block is Locked",
   started: "the block has already started",
@@ -211,6 +213,7 @@ export const why: Record<Refusal, string> = {
     "you may not do this, such as moving or removing a block you did not create",
   run_cap:
     "this Run has reached its limit of Action calls or of Approvals asked, so make no more such calls",
+  run_ended: "this Run has already ended",
   open_approvals_cap:
     "the student has too many of your requests open already, so ask nothing more until they decide",
 };

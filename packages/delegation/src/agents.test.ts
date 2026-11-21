@@ -35,6 +35,11 @@ function fakeSchedules() {
     async create({ agentId }) {
       calls.push(`create ${agentId}`);
     },
+    async save({ agentId, trigger, timeZone, paused }) {
+      calls.push(
+        `save ${agentId} ${JSON.stringify(trigger)} ${timeZone}${paused ? " paused" : ""}`,
+      );
+    },
     async pause(agentId) {
       calls.push(`pause ${agentId}`);
     },
@@ -187,8 +192,10 @@ describe("Agents", () => {
       agentId: created.id,
     }))!;
 
+    // A preset's Runs record no status, so none is under way to stop.
     expect(await agents.pause(s.p, created.id)).toEqual({
       status: "ok",
+      runs: [],
     });
 
     expect(calls).toEqual([`create ${created.id}`, `pause ${created.id}`]);
@@ -432,8 +439,10 @@ describe("Agents", () => {
       intent: move(s.blockId),
     });
 
+    // A preset's Runs record no status, so none is under way to stop.
     expect(await agents.end(s.p, created.id)).toEqual({
       status: "ok",
+      runs: [],
     });
 
     expect(calls).toEqual([`create ${created.id}`, `delete ${created.id}`]);
@@ -802,5 +811,174 @@ describe("Agents on an Archived Course", () => {
     expect(await agents.resume(s.p, created.id)).toEqual({
       status: "ok",
     });
+  });
+});
+
+describe("a free-text Agent's Schedule", () => {
+  /** A student whose one Course an Agent can be given, in their Plan's time zone. */
+  async function withAcceptedCourse(timeZone = "Europe/Vienna") {
+    const s = await student();
+    await admin.course.update({
+      where: { id: s.courseId },
+      data: { status: "accepted" },
+    });
+    await admin.planPreference.create({
+      data: { studentId: s.studentId, timeZone },
+    });
+    return s;
+  }
+  const form = (courseId: string, trigger: unknown) => ({
+    name: "Klausur Analysis",
+    description: "",
+    emoji: "🤖",
+    instructions: "Plane meine Klausurvorbereitung.",
+    courseIds: [courseId],
+    capabilities: [],
+    budgetMicroUsd: 5_000_000,
+    trigger: trigger as never,
+    modelKey: "sonnet-5.5-reasoning-high",
+  });
+
+  it("is saved from its trigger in the Plan's time zone, updated on every save, and removed on End", async () => {
+    const s = await withAcceptedCourse();
+    const { schedules, calls } = fakeSchedules();
+    const agents = createAgents({ db: runtime, schedules, clock });
+
+    const created = await agents.create(
+      s.p,
+      form(s.courseId, { rhythm: "daily", minute: 360 }),
+    );
+    if (created.status !== "ok") throw new Error(created.status);
+    const id = created.id;
+    expect(
+      await agents.update(
+        s.p,
+        id,
+        form(s.courseId, {
+          rhythm: "weekdays",
+          weekdays: [5, 1, 3],
+          minute: 1170,
+        }),
+      ),
+    ).toEqual({ status: "ok" });
+    await agents.pause(s.p, id);
+    await agents.resume(s.p, id);
+    await agents.end(s.p, id);
+
+    expect(calls).toEqual([
+      `save ${id} {"rhythm":"daily","minute":360} Europe/Vienna`,
+      `save ${id} {"rhythm":"weekdays","weekdays":[1,3,5],"minute":1170} Europe/Vienna`,
+      `save ${id} {"rhythm":"weekdays","weekdays":[1,3,5],"minute":1170} Europe/Vienna paused`,
+      `save ${id} {"rhythm":"weekdays","weekdays":[1,3,5],"minute":1170} Europe/Vienna`,
+      `delete ${id}`,
+    ]);
+    expect(await agents.view(s.p, id)).toMatchObject({
+      trigger: { rhythm: "weekdays", weekdays: [1, 3, 5], minute: 1170 },
+    });
+  });
+
+  it("accepts only Täglich or one or more Wochentage at a minute of the day", async () => {
+    const s = await withAcceptedCourse();
+    const { schedules, calls } = fakeSchedules();
+    const agents = createAgents({ db: runtime, schedules, clock });
+
+    for (const trigger of [
+      { rhythm: "weekdays", weekdays: [], minute: 360 },
+      { rhythm: "weekdays", weekdays: [0], minute: 360 },
+      { rhythm: "weekdays", weekdays: [8], minute: 360 },
+      { rhythm: "weekdays", weekdays: [1, 1], minute: 360 },
+      { rhythm: "weekdays", weekdays: [1.5], minute: 360 },
+      { rhythm: "daily", minute: 1440 },
+      { rhythm: "daily", minute: -1 },
+      { rhythm: "daily", minute: 6.5 },
+      { rhythm: "daily", weekdays: [1], minute: 360 },
+      { rhythm: "hourly", minute: 0 },
+    ])
+      expect(await agents.create(s.p, form(s.courseId, trigger))).toEqual({
+        status: "invalid",
+      });
+    expect(calls).toEqual([]);
+    expect(
+      await agents.create(
+        s.p,
+        form(s.courseId, { rhythm: "weekdays", weekdays: [7], minute: 1439 }),
+      ),
+    ).toMatchObject({ status: "ok" });
+  });
+
+  it("records no Agent when its Schedule cannot be saved", async () => {
+    const s = await withAcceptedCourse();
+    const { schedules } = fakeSchedules();
+    schedules.save = async () => {
+      throw new Error("Temporal unavailable");
+    };
+    const agents = createAgents({ db: runtime, schedules, clock });
+
+    await expect(
+      agents.create(s.p, form(s.courseId, { rhythm: "daily", minute: 360 })),
+    ).rejects.toThrow("Temporal unavailable");
+
+    expect(await agents.list(s.p)).toEqual([]);
+  });
+
+  it("is saved for every free-text Agent not Ended, paused while it is Paused, when the worker starts", async () => {
+    const s = await withAcceptedCourse("Europe/Berlin");
+    const { schedules, calls } = fakeSchedules();
+    const agents = createAgents({ db: runtime, schedules, clock });
+    const make = async (minute: number) => {
+      const created = await agents.create(
+        s.p,
+        form(s.courseId, { rhythm: "daily", minute }),
+      );
+      if (created.status !== "ok") throw new Error(created.status);
+      return created.id;
+    };
+    const active = await make(360);
+    const paused = await make(420);
+    const ended = await make(480);
+    await agents.pause(s.p, paused);
+    await agents.end(s.p, ended);
+    const preset = await agents.create(s.p, {
+      preset: "keep_course_organized",
+      courseId: s.courseId,
+      budgetMicroUsd: 50_000,
+    });
+    if (preset.status !== "ok") throw new Error(preset.status);
+    calls.length = 0;
+
+    await agents.saveSchedules();
+    const mine = calls.filter((call) =>
+      [active, paused, ended, preset.id].some((id) => call.includes(id)),
+    );
+
+    expect(mine).toEqual([
+      `save ${active} {"rhythm":"daily","minute":360} Europe/Berlin`,
+      `save ${paused} {"rhythm":"daily","minute":420} Europe/Berlin paused`,
+    ]);
+  });
+
+  it("saves the other Agents' Schedules when one cannot be saved", async () => {
+    const s = await withAcceptedCourse();
+    const { schedules, calls } = fakeSchedules();
+    const agents = createAgents({ db: runtime, schedules, clock });
+    const ids: string[] = [];
+    for (const minute of [360, 420]) {
+      const created = await agents.create(
+        s.p,
+        form(s.courseId, { rhythm: "daily", minute }),
+      );
+      if (created.status !== "ok") throw new Error(created.status);
+      ids.push(created.id);
+    }
+    const save = schedules.save;
+    schedules.save = async (r) => {
+      if (r.agentId === ids[0]) throw new Error("Temporal unavailable");
+      await save(r);
+    };
+    calls.length = 0;
+
+    await agents.saveSchedules();
+
+    expect(calls.filter((call) => call.includes(ids[1]!))).toHaveLength(1);
   });
 });

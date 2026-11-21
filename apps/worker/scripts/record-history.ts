@@ -1,7 +1,10 @@
-// Records awaitApproval, ingestSource, responsibilityRun and agentRun (reading only, and acting) histories for the replay test (src/replay.test.ts). Usage, from apps/worker:
+// Records awaitApproval, ingestSource, responsibilityRun and agentRun (reading only, acting, started by its Schedule, and
+// told to stop) histories for the replay test (src/replay.test.ts). Usage, from apps/worker:
 //   node scripts/record-history.ts [workflows file] [ingestSource history name]
+// RECORD_ONLY=agent-run-stopped (comma-separated names) writes only those, keeping the others as recorded before.
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
+import { Context } from "@temporalio/activity";
 import { historyToJSON } from "@temporalio/common/proto-utils";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { Worker } from "@temporalio/worker";
@@ -11,7 +14,9 @@ const workflowsPath = new URL(
   process.argv[2] ?? "../src/workflows.ts",
   import.meta.url,
 ).pathname;
+const only = process.env.RECORD_ONLY?.split(",");
 const write = (name: string, history: Parameters<typeof historyToJSON>[0]) => {
+  if (only && !only.includes(name)) return;
   const path = new URL(`../histories/${name}.json`, import.meta.url);
   writeFileSync(
     path,
@@ -59,14 +64,25 @@ try {
                 effect: { studyBlockId: "block" },
               },
         // An Agent's Run that reads twice, then answers; with Actions, its first step also calls two Action tools.
-        startAgentRun: async ({ runId }: { runId: string }) => runId,
-        agentStep: async ({ runId, n }: { runId: string; n: number }) =>
-          n >= 3
+        // A Run its Schedule starts has no runId from the API.
+        startAgentRun: async ({ runId }: { runId?: string }) =>
+          runId ?? "agent-run-scheduled",
+        // A Run told to stop is signalled during its first step, which it abandons.
+        agentStep: async ({ runId, n }: { runId: string; n: number }) => {
+          if (runId === "agent-run-stopped") {
+            const handle = env.client.workflow.getHandle(
+              Context.current().info.workflowExecution.workflowId,
+            );
+            await handle.signal("stopAgentRun", "paused");
+            await handle.result();
+          }
+          return n >= 3
             ? { status: "answered" }
             : {
                 status: "continue",
                 actions: runId === "agent-run-actions" && n === 1 ? 2 : 0,
-              },
+              };
+        },
         agentActions: async () => ({ unconfirmed: false }),
         finishAgentRun: async () => {},
       },
@@ -138,6 +154,32 @@ try {
   write(
     "agent-run-actions",
     await env.client.workflow.getHandle(actingWorkflowId).fetchHistory(),
+  );
+  const scheduledWorkflowId = `agentRun/agent-${randomUUID()}`;
+  await (await worker()).runUntil(
+    env.client.workflow.execute("agentRun", {
+      taskQueue,
+      workflowId: scheduledWorkflowId,
+      args: [{ studentId: "student", agentId: "agent" }],
+    }),
+  );
+  write(
+    "agent-run-scheduled",
+    await env.client.workflow.getHandle(scheduledWorkflowId).fetchHistory(),
+  );
+  const stoppedWorkflowId = `agentRun/${randomUUID()}`;
+  await (await worker()).runUntil(
+    env.client.workflow.execute("agentRun", {
+      taskQueue,
+      workflowId: stoppedWorkflowId,
+      args: [
+        { studentId: "student", agentId: "agent", runId: "agent-run-stopped" },
+      ],
+    }),
+  );
+  write(
+    "agent-run-stopped",
+    await env.client.workflow.getHandle(stoppedWorkflowId).fetchHistory(),
   );
 } finally {
   await env.teardown();

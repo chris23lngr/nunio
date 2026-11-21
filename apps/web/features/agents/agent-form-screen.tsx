@@ -16,6 +16,14 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@nunio/ui/components/input-group/input-group";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@nunio/ui/components/select/select";
 import { Textarea } from "@nunio/ui/components/textarea/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -35,21 +43,28 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useId, useState } from "react";
 import { CourseDot } from "@/features/shared/components/course-dot";
+import { ModelLogo } from "@/features/shared/components/model-logo";
 import { PageHeader } from "@/features/shared/components/page-header";
 import { courseSize, unavailable } from "./agent-course";
-import { saveAgent, startAgentRun } from "./api/agent-mutations";
+import { controlAgent, saveAgent, startAgentRun } from "./api/agent-mutations";
 import type {
   Agent,
   AgentCapability,
   AgentCourse,
   Capability,
 } from "./api/agent-queries";
-import { agentCourseQueries, capabilityQueries } from "./api/agent-queries";
+import {
+  agentCourseQueries,
+  agentModelQueries,
+  capabilityQueries,
+} from "./api/agent-queries";
 import { modeOf } from "./capability-mode";
 import { AgentActivity } from "./components/agent-activity";
+import { AgentMenu } from "./components/agent-menu";
 import { CapabilityMenu } from "./components/capability-menu";
 import { EditCapabilitiesSheet } from "./components/edit-capabilities-sheet";
 import { EditCoursesSheet } from "./components/edit-courses-sheet";
+import { SelectModelSheet } from "./components/select-model-sheet";
 
 type Draft = {
   name: string;
@@ -62,9 +77,17 @@ type Draft = {
   capabilities: AgentCapability[];
   /** In USD, as typed. */
   budget: string;
+  /** Its Rhythmus: Täglich, or the Wochentage chosen, which stay chosen while Täglich is. */
+  rhythm: "daily" | "weekdays";
+  /** ISO weekdays: 1 is Monday, 7 is Sunday. */
+  weekdays: number[];
+  /** Its Uhrzeit as HH:MM, in the Plan's time zone. */
+  time: string;
+  /** Its Model by key; null until picked, while the Chat default stands in. */
+  modelKey: string | null;
 };
 
-/** A blank "Neuer Agent": 🤖 and 5 USD a month. */
+/** A blank "Neuer Agent": 🤖, 5 USD a month, Täglich at 06:00, on the Chat default. */
 const blank: Draft = {
   name: "",
   description: "",
@@ -73,6 +96,10 @@ const blank: Draft = {
   courses: [],
   capabilities: [],
   budget: "5",
+  rhythm: "daily",
+  weekdays: [],
+  time: "06:00",
+  modelKey: null,
 };
 /** The API's cap on a monthly Budget, in USD. */
 const maxBudget = 100;
@@ -80,6 +107,9 @@ const maxBudget = 100;
 type Saved = Pick<
   Agent,
   | "id"
+  | "preset"
+  | "pausedBy"
+  | "approvalRunId"
   | "name"
   | "description"
   | "emoji"
@@ -87,9 +117,32 @@ type Saved = Pick<
   | "courses"
   | "capabilities"
   | "budget"
+  | "trigger"
+  | "modelKey"
   | "state"
   | "running"
 >;
+
+/** Why a Paused Agent is Paused, as its header says it, such as "Pausiert: Budget aufgebraucht". */
+const pausedLines: Record<string, string> = {
+  student: "Von dir pausiert",
+  budget: "Pausiert: Budget aufgebraucht",
+  course_archived: "Pausiert: Alle Kurse archiviert",
+};
+const pausedLine = (pausedBy: string | null) =>
+  (pausedBy && pausedLines[pausedBy]) || "Pausiert";
+
+/** A minute of the day as HH:MM, and back. */
+const timeOf = (minute: number) =>
+  `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+const minuteOf = (time: string) =>
+  Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+
+const weekdayLabels = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+const rhythms = [
+  { value: "daily" as const, label: "Täglich" },
+  { value: "weekdays" as const, label: "Wochentage" },
+];
 
 const draftOf = (agent: Saved): Draft => ({
   name: agent.name,
@@ -99,6 +152,10 @@ const draftOf = (agent: Saved): Draft => ({
   courses: agent.courses,
   capabilities: agent.capabilities,
   budget: String(agent.budget.limitMicroUsd / 1_000_000),
+  rhythm: agent.trigger.rhythm,
+  weekdays: agent.trigger.rhythm === "weekdays" ? agent.trigger.weekdays : [],
+  time: timeOf(agent.trigger.minute),
+  modelKey: agent.modelKey,
 });
 
 /** A form section: its title, what it is for, and its fields. */
@@ -160,12 +217,15 @@ export function AgentFormScreen({
   apiOrigin,
   agent,
   hasRuns = false,
+  run,
 }: {
   apiOrigin: string;
   /** Null for a "Neuer Agent" not saved yet. */
   agent: Saved | null;
-  /** It ran before, so it opens on its Aktivität with the newest Run. */
+  /** It ran before and is not opened to edit, so it opens on its Aktivität with the newest Run. */
   hasRuns?: boolean;
+  /** The Run Aktivität opens on instead of the newest, as from the Inbox. */
+  run?: string;
 }) {
   const id = useId();
   const router = useRouter();
@@ -177,12 +237,19 @@ export function AgentFormScreen({
   );
   const [editingCourses, setEditingCourses] = useState(false);
   const [editingCapabilities, setEditingCapabilities] = useState(false);
+  const [choosingModel, setChoosingModel] = useState(false);
   const [tried, setTried] = useState(false);
   const offered = useQuery(agentCourseQueries(apiOrigin));
   const capabilitySet = useQuery(capabilityQueries(apiOrigin));
+  const models = useQuery(agentModelQueries(apiOrigin));
+  const modelKey = draft.modelKey ?? models.data?.default ?? null;
+  const model = models.data?.models.find((each) => each.key === modelKey);
   const save = useMutation(saveAgent(apiOrigin, agent?.id, queryClient));
   const start = useMutation(
     startAgentRun(apiOrigin, agent?.id ?? "", queryClient),
+  );
+  const control = useMutation(
+    controlAgent(apiOrigin, agent?.id ?? "", queryClient),
   );
   const running = Boolean(agent?.running) || start.isPending;
   const change = (next: Partial<Draft>) => {
@@ -198,6 +265,12 @@ export function AgentFormScreen({
       draft.budget.trim() && budget > 0 && budget <= maxBudget
         ? null
         : `Gib ein Budget zwischen 0,01 und ${maxBudget} USD an.`,
+    weekdays:
+      draft.rhythm === "daily" || draft.weekdays.length
+        ? null
+        : "Wähle mindestens einen Wochentag.",
+    time: /^\d{2}:\d{2}$/.test(draft.time) ? null : "Gib eine Uhrzeit an.",
+    model: modelKey ? null : "Wähle ein Modell.",
   };
   const submit = async () => {
     setTried(true);
@@ -214,6 +287,15 @@ export function AgentFormScreen({
         courseIds: draft.courses.map((course) => course.id),
         capabilities: draft.capabilities,
         budgetMicroUsd: Math.round(budget * 1_000_000),
+        trigger:
+          draft.rhythm === "daily"
+            ? { rhythm: "daily", minute: minuteOf(draft.time) }
+            : {
+                rhythm: "weekdays",
+                weekdays: draft.weekdays,
+                minute: minuteOf(draft.time),
+              },
+        modelKey: modelKey!,
       })
       .catch(() => {
         // Query owns the mutation error, rendered in the header.
@@ -264,8 +346,32 @@ export function AgentFormScreen({
           Speichern
           <Save aria-hidden="true" />
         </Button>
+        {agent && (
+          <AgentMenu
+            apiOrigin={apiOrigin}
+            agent={agent}
+            name={agent.name}
+            onControl={(next) => control.mutate(next)}
+            onDeleted={() => router.replace("/agents")}
+          />
+        )}
       </PageHeader>
       <div className="pt-16">
+        {agent?.state === "paused" && (
+          <div className="mx-6 mb-4 flex items-center justify-between gap-4 rounded-lg bg-base-50 px-4 py-3">
+            <p className="text-sm text-base-700">
+              {pausedLine(agent.pausedBy)}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={control.isPending}
+              onClick={() => control.mutate("resume")}
+            >
+              Fortsetzen
+            </Button>
+          </div>
+        )}
         <div
           role="tablist"
           aria-label="Agent"
@@ -308,17 +414,21 @@ export function AgentFormScreen({
           id={`${id}-panel`}
           aria-labelledby={`${id}-tab-${tab}`}
         >
-          {(save.error ?? start.error) && (
+          {(save.error ?? start.error ?? control.error) && (
             <p
               role="alert"
               className="mx-8 mt-6 max-w-[30.5rem] text-sm text-destructive-600"
             >
-              {(save.error ?? start.error)!.message}
+              {(save.error ?? start.error ?? control.error)!.message}
             </p>
           )}
           {tab === "activity" ? (
             agent ? (
-              <AgentActivity apiOrigin={apiOrigin} agentId={agent.id} />
+              <AgentActivity
+                apiOrigin={apiOrigin}
+                agentId={agent.id}
+                run={run}
+              />
             ) : (
               <div className="flex flex-col gap-1 p-8">
                 <p className="text-sm font-medium text-base-800">
@@ -400,6 +510,138 @@ export function AgentFormScreen({
                     change({ instructions: event.target.value })
                   }
                 />
+              </Section>
+              <div aria-hidden="true" className="h-px bg-base-200" />
+              <Section
+                title="Auslöser"
+                description="Wann soll der Agent loslegen?"
+              >
+                <div className="flex flex-col">
+                  <label
+                    htmlFor={`${id}-trigger`}
+                    className="text-sm font-medium text-base-800"
+                  >
+                    Auslöser
+                  </label>
+                  {/* A schedule is the only Auslöser of v1. */}
+                  <Select value="schedule" disabled>
+                    <SelectTrigger id={`${id}-trigger`} className="mt-3 w-full">
+                      <SelectValue>Zu einer Uhrzeit</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent
+                      align="start"
+                      sideOffset={8}
+                      alignItemWithTrigger={false}
+                    >
+                      <SelectGroup>
+                        <SelectItem value="schedule">
+                          Zu einer Uhrzeit
+                        </SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col">
+                  <label
+                    htmlFor={`${id}-rhythm`}
+                    className="text-sm font-medium text-base-800"
+                  >
+                    Rhythmus
+                  </label>
+                  <Select
+                    items={rhythms}
+                    value={draft.rhythm}
+                    onValueChange={(value) => {
+                      if (value !== null) change({ rhythm: value });
+                    }}
+                  >
+                    <SelectTrigger id={`${id}-rhythm`} className="mt-3 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent
+                      align="start"
+                      sideOffset={8}
+                      alignItemWithTrigger={false}
+                    >
+                      <SelectGroup>
+                        {rhythms.map((rhythm) => (
+                          <SelectItem key={rhythm.value} value={rhythm.value}>
+                            {rhythm.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  {draft.rhythm === "weekdays" && (
+                    <>
+                      <fieldset
+                        aria-label="Wochentage"
+                        aria-describedby={
+                          shown("weekdays") ? `${id}-weekdays-error` : undefined
+                        }
+                        className="mt-3 flex min-w-0 flex-wrap gap-2 border-0 p-0"
+                      >
+                        {weekdayLabels.map((label, index) => {
+                          const day = index + 1;
+                          const chosen = draft.weekdays.includes(day);
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              aria-pressed={chosen}
+                              onClick={() =>
+                                change({
+                                  weekdays: chosen
+                                    ? draft.weekdays.filter((d) => d !== day)
+                                    : [...draft.weekdays, day].sort(
+                                        (a, b) => a - b,
+                                      ),
+                                })
+                              }
+                              className={cn(
+                                "flex h-7.5 min-w-10 items-center justify-center rounded-md px-2.5 text-sm font-medium shadow-sm outline-1 focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-4 focus-visible:ring-offset-white",
+                                chosen
+                                  ? "bg-primary-100 text-primary-600 outline-primary-200"
+                                  : "bg-white text-base-800 outline-base-700/15 hover:bg-base-50",
+                              )}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </fieldset>
+                      {shown("weekdays") && (
+                        <FieldError id={`${id}-weekdays-error`}>
+                          {errors.weekdays}
+                        </FieldError>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div className="flex flex-col">
+                  <label
+                    htmlFor={`${id}-time`}
+                    className="text-sm font-medium text-base-800"
+                  >
+                    Uhrzeit
+                  </label>
+                  <Input
+                    id={`${id}-time`}
+                    type="time"
+                    className="mt-3 w-32"
+                    value={draft.time}
+                    aria-invalid={shown("time") ? true : undefined}
+                    aria-describedby={
+                      shown("time") ? `${id}-time-error` : undefined
+                    }
+                    onChange={(event) => change({ time: event.target.value })}
+                  />
+                  {shown("time") && (
+                    <FieldError id={`${id}-time-error`}>
+                      {errors.time}
+                    </FieldError>
+                  )}
+                </div>
               </Section>
               <div aria-hidden="true" className="h-px bg-base-200" />
               <Section
@@ -587,6 +829,56 @@ export function AgentFormScreen({
                   )}
                 </div>
               </Section>
+              <div aria-hidden="true" className="h-px bg-base-200" />
+              <Section
+                title="Modell"
+                description="Mit welchem Modell dein Agent arbeitet."
+              >
+                <div className="flex flex-col">
+                  {models.error && (
+                    <p role="alert" className="text-sm text-destructive-600">
+                      {models.error.message}
+                    </p>
+                  )}
+                  {model ? (
+                    <div className="flex items-center gap-3 rounded-lg border border-base-200 px-4 py-3">
+                      <ModelLogo provider={model.provider} />
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="truncate text-sm font-medium text-base-800">
+                          {model.name}
+                        </span>
+                        <span className="text-sm text-base-500">
+                          {model.provider}
+                        </span>
+                      </span>
+                    </div>
+                  ) : (
+                    modelKey &&
+                    models.data && (
+                      <p className="text-sm text-base-500">
+                        Nicht mehr verfügbar. Wähle ein anderes Modell, sonst
+                        stoppen die Läufe deines Agenten.
+                      </p>
+                    )
+                  )}
+                  {shown("model") && (
+                    <FieldError id={`${id}-model-error`}>
+                      {errors.model}
+                    </FieldError>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setChoosingModel(true)}
+                    className="mt-3 flex items-center gap-2 self-start text-sm font-medium text-primary-600 hover:text-primary-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-500"
+                  >
+                    <Pencil
+                      aria-hidden="true"
+                      className="size-4 text-primary-500"
+                    />
+                    Modell ändern
+                  </button>
+                </div>
+              </Section>
             </form>
           )}
         </div>
@@ -614,6 +906,18 @@ export function AgentFormScreen({
           setEditingCapabilities(false);
         }}
         onClose={() => setEditingCapabilities(false)}
+      />
+      <SelectModelSheet
+        open={choosingModel}
+        offered={models.data?.models ?? []}
+        loading={models.isPending}
+        error={models.error?.message}
+        selected={modelKey}
+        onSave={(key) => {
+          change({ modelKey: key });
+          setChoosingModel(false);
+        }}
+        onClose={() => setChoosingModel(false)}
       />
     </main>
   );

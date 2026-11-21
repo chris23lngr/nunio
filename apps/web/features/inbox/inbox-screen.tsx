@@ -2,13 +2,18 @@
 
 import { Button } from "@nunio/ui/components/button/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { hours } from "@/app/(app)/plan-wording";
 import { nameOf } from "@/features/agents/name";
 import { closeIntervention } from "./api/inbox-mutations";
 import type { Intervention } from "./api/inbox-queries";
 import { inboxQueries } from "./api/inbox-queries";
 
-function headingOf({ kind, action, title, shortMinutes }: Intervention) {
+function headingOf({ kind, action, title, shortMinutes, run }: Intervention) {
+  if (kind === "run_approvals")
+    return run?.openApprovals
+      ? `${title} needs your Approval (${run.openApprovals})`
+      : `${title} needs your Approval`;
   if (kind === "shortfall")
     return shortMinutes === null
       ? `No longer short for ${title}`
@@ -64,6 +69,11 @@ export function InboxScreen({ apiOrigin }: { apiOrigin: string }) {
           {open.map((i) => (
             <article key={i.id} aria-label={headingOf(i)}>
               <h3>{headingOf(i)}</h3>
+              {i.run && (
+                <Link href={`/agents/${i.run.agentId}?run=${i.run.id}`}>
+                  Open its Approvals
+                </Link>
+              )}
               <Button
                 type="button"
                 variant="primary"

@@ -14,6 +14,9 @@ vi.mock("next/navigation", () => ({
 beforeEach(() => {
   api.route("GET", "/api/me/agents/capabilities", () => Response.json([]));
   api.route("GET", "/api/me/agents/courses", () => Response.json([]));
+  api.route("GET", "/api/me/models", () =>
+    Response.json({ models: [], default: null, selected: null }),
+  );
   vi.stubGlobal(
     "matchMedia",
     vi.fn(() => ({
@@ -40,6 +43,8 @@ const agent = {
   running: false,
   grants: [],
   budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
+  trigger: { rhythm: "daily", minute: 360 },
+  modelKey: "sonnet-5.5-reasoning-high",
   recentActions: [],
   next: { runAt: null, action: null },
 };
@@ -249,12 +254,47 @@ test("an Agent that ran opens on Aktivität with its newest Run: Datum, Kosten, 
   expect(stat("Status")).toBe("Abgeschlossen");
 });
 
+test("opened on one of its Runs, as the Inbox does, an Agent shows that Run in Aktivität", async () => {
+  const newest = listed("r-2", 60, "done");
+  const asking = listed("r-1", 1_500, "done", { openApprovals: 1 });
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [newest, asking], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-1", () =>
+    Response.json(detail(asking)),
+  );
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" run="r-1" />);
+
+  const tab = await screen.findByRole("tab", { name: "Aktivität" });
+  expect(tab.getAttribute("aria-selected")).toBe("true");
+  const list = await screen.findByRole("navigation", { name: "Läufe" });
+  expect(
+    within(list)
+      .getAllByRole("button")
+      .map((row) => row.getAttribute("aria-current")),
+  ).toEqual([null, "true"]);
+});
+
 test("an Agent that never ran opens on Auftrag", async () => {
   api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
   api.route("GET", "/api/me/agents/a-1/runs", () =>
     Response.json({ runs: [], nextCursor: null }),
   );
   renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  const tab = await screen.findByRole("tab", { name: "Auftrag" });
+  expect(tab.getAttribute("aria-selected")).toBe("true");
+});
+
+test("opened to edit it, as the list's Bearbeiten does, an Agent that ran opens on Auftrag", async () => {
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [listed("r-1", 60, "done")], nextCursor: null }),
+  );
+  renderScreen(
+    <AgentDetailScreen apiOrigin={api.origin} id="a-1" tab="auftrag" />,
+  );
 
   const tab = await screen.findByRole("tab", { name: "Auftrag" });
   expect(tab.getAttribute("aria-selected")).toBe("true");
@@ -493,7 +533,7 @@ test("an Approval whose Action changed says so and reloads instead of approving"
   );
 });
 
-test("the Verlauf shows each Approval decided or expired, and what became of an approved one", async () => {
+test("the Verlauf shows each Approval decided, expired or withdrawn, and what became of an approved one", async () => {
   const run = listed("r-1", 60, "done");
   const action = {
     kind: "studyBlock.create",
@@ -528,6 +568,7 @@ test("the Verlauf shows each Approval decided or expired, and what became of an 
           }),
           decided({ decision: "denied" }),
           decided({ decision: "expired" }),
+          decided({ decision: "withdrawn" }),
         ],
       }),
     ),
@@ -551,5 +592,8 @@ test("the Verlauf shows each Approval decided or expired, and what became of an 
     ),
     expect.stringMatching(/Von dir abgelehnt: Lernblock erstellen„Klausur/),
     expect.stringMatching(/Freigabe abgelaufen: Lernblock erstellen„Klausur/),
+    expect.stringMatching(
+      /Freigabe zurückgezogen: Lernblock erstellen„Klausur/,
+    ),
   ]);
 });

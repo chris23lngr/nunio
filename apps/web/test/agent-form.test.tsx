@@ -17,6 +17,7 @@ beforeEach(() => {
   api.route("GET", "/api/me/agents/capabilities", () =>
     Response.json(capabilitySet),
   );
+  api.route("GET", "/api/me/models", () => Response.json(chatModels));
   // These Agents never ran, so they open on their Auftrag.
   for (const id of ["a-1", "a-paused", "a-ended"])
     api.route("GET", `/api/me/agents/${id}/runs`, () =>
@@ -63,6 +64,45 @@ const capabilitySet = [
     modes: ["automatic", "always", "ask"],
   },
 ];
+
+const dataHandling = {
+  provider: "OpenRouter",
+  upstream: ["Amazon Bedrock", "Google"],
+  routing: "international",
+  zeroRetention: true,
+};
+/** The Models Chat offers, as the API lists them. */
+const chatModels = {
+  models: [
+    {
+      key: "haiku-5.5-reasoning-high",
+      name: "Haiku 5.5",
+      provider: "Anthropic",
+      description: "Schnell und sparsam für kurze, klare Aufgaben.",
+      dataHandling,
+      cost: { relativeToDefault: 0.05, tier: "low" },
+    },
+    {
+      key: "sonnet-5.5-reasoning-high",
+      name: "Sonnet 5.5",
+      provider: "Anthropic",
+      description: "Ausgewogen für Erklärungen und alltägliches Lernen.",
+      dataHandling,
+      cost: { relativeToDefault: 1, tier: "medium" },
+    },
+    {
+      key: "opus-5.5-reasoning-high",
+      name: "Opus 5.5",
+      provider: "Anthropic",
+      description: "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
+      dataHandling,
+      cost: { relativeToDefault: 2, tier: "high" },
+    },
+  ],
+  default: "sonnet-5.5-reasoning-high",
+  // The student's choice for Chat, which a new Agent does not take.
+  selected: "haiku-5.5-reasoning-high",
+};
 
 const ids = {
   statistics: "c0000000-0000-4000-8000-000000000001",
@@ -144,6 +184,22 @@ test("'Neuer Agent' opens a blank form with 🤖 and 5 USD, and Speichern saves 
   expect(
     screen.getByText("Was soll der Agent für dich übernehmen?"),
   ).toBeTruthy();
+  // Täglich at 06:00, and a schedule is the only Auslöser of v1.
+  const trigger = screen.getByRole("region", { name: "Auslöser" });
+  const kind = within(trigger).getByRole("combobox", { name: "Auslöser" });
+  expect(kind.textContent).toContain("Zu einer Uhrzeit");
+  expect(
+    kind.hasAttribute("disabled") || kind.hasAttribute("data-disabled"),
+  ).toBe(true);
+  expect(
+    within(trigger).getByRole("combobox", { name: "Rhythmus" }).textContent,
+  ).toContain("Täglich");
+  expect(
+    within(trigger).queryByRole("group", { name: "Wochentage" }),
+  ).toBeNull();
+  expect(
+    (within(trigger).getByLabelText("Uhrzeit") as HTMLInputElement).value,
+  ).toBe("06:00");
 
   await userEvent.type(
     screen.getByRole("textbox", { name: "Name" }),
@@ -174,6 +230,12 @@ test("'Neuer Agent' opens a blank form with 🤖 and 5 USD, and Speichern saves 
   expect(within(chosen).getByText("12 Themen · 3 Quellen")).toBeTruthy();
   await userEvent.clear(budget);
   await userEvent.type(budget, "2.5");
+  // The Chat default is preselected.
+  expect(
+    await within(screen.getByRole("region", { name: "Modell" })).findByText(
+      "Sonnet 5.5",
+    ),
+  ).toBeTruthy();
 
   await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
@@ -187,6 +249,8 @@ test("'Neuer Agent' opens a blank form with 🤖 and 5 USD, and Speichern saves 
       courseIds: [ids.statistics],
       capabilities: [],
       budgetMicroUsd: 2_500_000,
+      trigger: { rhythm: "daily", minute: 360 },
+      modelKey: "sonnet-5.5-reasoning-high",
     },
   ]);
 });
@@ -233,6 +297,8 @@ const agent = {
   running: false,
   grants: ["studyBlock.create"],
   budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
+  trigger: { rhythm: "daily", minute: 360 },
+  modelKey: "sonnet-5.5-reasoning-high",
   recentActions: [],
   next: { runAt: null, action: null },
 };
@@ -270,8 +336,262 @@ test("a saved Agent's form shows its Courses, an Archived one as archived, and S
         courseIds: [ids.archived, ids.statistics],
         capabilities: [{ id: "createStudyBlocks", mode: "automatic" }],
         budgetMicroUsd: 5_000_000,
+        trigger: { rhythm: "daily", minute: 360 },
+        modelKey: "sonnet-5.5-reasoning-high",
       },
     ]),
+  );
+});
+
+test("'Modell auswählen' lists Chat's Models with their logo and, on hover, the catalog's description, and saves the one picked", async () => {
+  const saved: { modelKey: string }[] = [];
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const section = await screen.findByRole("region", { name: "Modell" });
+  expect(await within(section).findByText("Sonnet 5.5")).toBeTruthy();
+
+  await userEvent.click(
+    within(section).getByRole("button", { name: "Modell ändern" }),
+  );
+  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
+  const choices = within(sheet).getByRole("radiogroup", { name: "Modelle" });
+  const radios = within(choices).getAllByRole("radio") as HTMLInputElement[];
+  expect(
+    radios.map((radio) => [radio.getAttribute("aria-label"), radio.checked]),
+  ).toEqual([
+    ["Haiku 5.5", false],
+    ["Sonnet 5.5", true],
+    ["Opus 5.5", false],
+  ]);
+  for (const radio of radios)
+    expect(
+      radio.closest("label")!.querySelector('img[src*="claude"]'),
+    ).toBeTruthy();
+  expect(
+    screen.queryByText("Am gründlichsten für anspruchsvolle, lange Aufgaben."),
+  ).toBeNull();
+  await userEvent.hover(radios[2]!.closest("label")!);
+  expect(
+    await screen.findByText(
+      "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
+    ),
+  ).toBeTruthy();
+  await userEvent.click(radios[2]!);
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Modell auswählen" }),
+    ).toBeNull(),
+  );
+  expect(within(section).getByText("Opus 5.5")).toBeTruthy();
+
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  expect(saved.map((form) => form.modelKey)).toEqual([
+    "opus-5.5-reasoning-high",
+  ]);
+});
+
+test("Abbrechen closes 'Modell auswählen' without changing the Agent's Model", async () => {
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const section = await screen.findByRole("region", { name: "Modell" });
+  await within(section).findByText("Sonnet 5.5");
+
+  await userEvent.click(
+    within(section).getByRole("button", { name: "Modell ändern" }),
+  );
+  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
+  await userEvent.click(
+    within(sheet).getByRole("radio", { name: "Haiku 5.5" }),
+  );
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Abbrechen" }),
+  );
+
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(within(section).getByText("Sonnet 5.5")).toBeTruthy();
+});
+
+test("a Model Chat stopped offering while the form was open is refused on Speichern, asking for another", async () => {
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", () =>
+    Response.json({ error: "model_unavailable" }, { status: 422 }),
+  );
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const section = await screen.findByRole("region", { name: "Modell" });
+  await userEvent.click(
+    await within(section).findByRole("button", { name: "Modell ändern" }),
+  );
+  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
+  await userEvent.click(within(sheet).getByRole("radio", { name: "Opus 5.5" }));
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Dieses Modell ist nicht mehr verfügbar. Wähle ein anderes und speichere noch einmal.",
+  );
+});
+
+test("an Agent whose Model Chat no longer offers says so, and keeps it until another is picked", async () => {
+  const saved: { modelKey: string }[] = [];
+  api.route("GET", "/api/me/agents/a-1", () =>
+    Response.json({ ...agent, modelKey: "sonnet-4-reasoning-high" }),
+  );
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  const section = await screen.findByRole("region", { name: "Modell" });
+  expect(
+    await within(section).findByText(
+      "Nicht mehr verfügbar. Wähle ein anderes Modell, sonst stoppen die Läufe deines Agenten.",
+    ),
+  ).toBeTruthy();
+  await userEvent.click(
+    within(section).getByRole("button", { name: "Modell ändern" }),
+  );
+  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
+  expect(
+    (within(sheet).getAllByRole("radio") as HTMLInputElement[]).some(
+      (radio) => radio.checked,
+    ),
+  ).toBe(false);
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Abbrechen" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  expect(saved.map((form) => form.modelKey)).toEqual([
+    "sonnet-4-reasoning-high",
+  ]);
+});
+
+test("Auslöser shows a saved Agent's Wochentage and Uhrzeit, and saves the ones chosen", async () => {
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/a-1", () =>
+    Response.json({
+      ...agent,
+      trigger: { rhythm: "weekdays", weekdays: [1, 3], minute: 1170 },
+    }),
+  );
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  const trigger = await screen.findByRole("region", { name: "Auslöser" });
+  expect(
+    within(trigger).getByRole("combobox", { name: "Rhythmus" }).textContent,
+  ).toContain("Wochentage");
+  const days = within(trigger).getByRole("group", { name: "Wochentage" });
+  expect(
+    within(days)
+      .getAllByRole("button")
+      .map((day) => [day.textContent, day.getAttribute("aria-pressed")]),
+  ).toEqual([
+    ["Mo", "true"],
+    ["Di", "false"],
+    ["Mi", "true"],
+    ["Do", "false"],
+    ["Fr", "false"],
+    ["Sa", "false"],
+    ["So", "false"],
+  ]);
+  const time = within(trigger).getByLabelText("Uhrzeit") as HTMLInputElement;
+  expect(time.value).toBe("19:30");
+
+  await userEvent.click(within(days).getByRole("button", { name: "Fr" }));
+  await userEvent.click(within(days).getByRole("button", { name: "Mo" }));
+  await userEvent.clear(time);
+  await userEvent.type(time, "07:15");
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  await waitFor(() =>
+    expect(saved).toEqual([
+      expect.objectContaining({
+        trigger: { rhythm: "weekdays", weekdays: [3, 5], minute: 435 },
+      }),
+    ]),
+  );
+});
+
+test("Auslöser switches between Täglich and Wochentage, and asks for at least one Wochentag and an Uhrzeit", async () => {
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const trigger = await screen.findByRole("region", { name: "Auslöser" });
+
+  await userEvent.click(
+    within(trigger).getByRole("combobox", { name: "Rhythmus" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("option", { name: "Wochentage" }),
+  );
+  const days = await within(trigger).findByRole("group", {
+    name: "Wochentage",
+  });
+  expect(
+    within(days)
+      .getAllByRole("button")
+      .filter((day) => day.getAttribute("aria-pressed") === "true"),
+  ).toEqual([]);
+  await userEvent.clear(within(trigger).getByLabelText("Uhrzeit"));
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(screen.getByText("Wähle mindestens einen Wochentag.")).toBeTruthy();
+  expect(screen.getByText("Gib eine Uhrzeit an.")).toBeTruthy();
+  expect(saved).toEqual([]);
+
+  await userEvent.click(within(days).getByRole("button", { name: "So" }));
+  await userEvent.type(within(trigger).getByLabelText("Uhrzeit"), "21:00");
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+  await waitFor(() =>
+    expect(saved).toEqual([
+      expect.objectContaining({
+        trigger: { rhythm: "weekdays", weekdays: [7], minute: 1260 },
+      }),
+    ]),
+  );
+
+  await userEvent.click(
+    within(trigger).getByRole("combobox", { name: "Rhythmus" }),
+  );
+  await userEvent.click(await screen.findByRole("option", { name: "Täglich" }));
+  expect(
+    within(trigger).queryByRole("group", { name: "Wochentage" }),
+  ).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+  await waitFor(() =>
+    expect(saved.at(-1)).toEqual(
+      expect.objectContaining({ trigger: { rhythm: "daily", minute: 1260 } }),
+    ),
   );
 });
 
@@ -330,6 +650,109 @@ test("'Jetzt starten' is disabled while the Agent is Paused or Ended", async () 
     expect((start as HTMLButtonElement).disabled).toBe(true);
     unmount();
   }
+});
+
+test("the header's menu pauses, resumes and ends the Agent, and a Paused one shows why under the header with Fortsetzen", async () => {
+  let shown: Record<string, unknown> = { ...agent };
+  const controls: string[] = [];
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(shown));
+  for (const [control, state, pausedBy] of [
+    ["pause", "paused", "student"],
+    ["resume", "active", null],
+    ["end", "ended", null],
+  ] as const)
+    api.route("POST", `/api/me/agents/a-1/${control}`, () => {
+      controls.push(control);
+      shown = { ...shown, state, pausedBy };
+      return Response.json({ status: "ok" });
+    });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const menu = async () => {
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Aktionen für Klausur Statistik",
+      }),
+    );
+    return screen.findByRole("menu");
+  };
+
+  // The header has the lifecycle controls; editing is the Auftrag already open.
+  expect(
+    within(await menu())
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent),
+  ).toEqual(["Pausieren", "Beenden", "Löschen"]);
+  await userEvent.click(
+    within(screen.getByRole("menu")).getByRole("menuitem", {
+      name: "Pausieren",
+    }),
+  );
+  expect(await screen.findByText("Von dir pausiert")).toBeTruthy();
+
+  await userEvent.click(screen.getByRole("button", { name: "Fortsetzen" }));
+  await waitFor(() =>
+    expect(screen.queryByText("Von dir pausiert")).toBeNull(),
+  );
+  await userEvent.click(
+    within(await menu()).getByRole("menuitem", { name: "Beenden" }),
+  );
+  await waitFor(async () =>
+    expect(
+      within(await menu())
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Löschen"]),
+  );
+  expect(controls).toEqual(["pause", "resume", "end"]);
+});
+
+test("a Paused Agent says it ran out of Budget under the header", async () => {
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("GET", "/api/me/agents/a-paused", () =>
+    Response.json({
+      ...agent,
+      id: "a-paused",
+      state: "paused",
+      pausedBy: "budget",
+    }),
+  );
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-paused" />);
+
+  expect(await screen.findByText("Pausiert: Budget aufgebraucht")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Fortsetzen" })).toBeTruthy();
+});
+
+test("Löschen in the header's menu asks first, then deletes the Agent and returns to the list", async () => {
+  const deleted: string[] = [];
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("DELETE", "/api/me/agents/a-1", () => {
+    deleted.push("a-1");
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  await userEvent.click(
+    await screen.findByRole("button", {
+      name: "Aktionen für Klausur Statistik",
+    }),
+  );
+  await userEvent.click(
+    within(await screen.findByRole("menu")).getByRole("menuitem", {
+      name: "Löschen",
+    }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "„Klausur Statistik“ löschen?",
+  });
+  expect(deleted).toEqual([]);
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: "Löschen" }),
+  );
+
+  await waitFor(() => expect(replace).toHaveBeenCalledWith("/agents"));
+  expect(deleted).toEqual(["a-1"]);
 });
 
 test("'Kurse verwalten' searches, reflects the Agent's Courses, and lists an Archived one only to remove it", async () => {

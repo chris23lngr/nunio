@@ -12,6 +12,7 @@ import { createArtifacts } from "@nunio/artifacts";
 import type { AgentRuns, RunEnd } from "@nunio/chat";
 import { createAgentRuns } from "@nunio/chat";
 import { createPool, createPrismaClient } from "@nunio/db";
+import type { Schedules } from "@nunio/delegation";
 import {
   createAgents,
   createDelegation,
@@ -75,10 +76,16 @@ const settings = [
   "OPENROUTER_BASE_URL",
 ];
 
-/** The Agent Run Activities as the worker runs them. `catalog` is the Model Catalog's task Models, read once at start. */
+/**
+ * The Agent Run Activities as the worker runs them. `catalog` is the Model Catalog's task Models, read once at start;
+ * `schedules` are the Agents' Schedules, which the worker brings in line with their triggers as it starts; `runAlive`
+ * asks Temporal whether a Run's workflow still runs, so a Run whose workflow is gone skips no later one.
+ */
 export function agentRunActivitiesFromEnv(
   env: NodeJS.ProcessEnv,
   catalog: readonly ModelConfig[],
+  schedules: Schedules,
+  runAlive: (workflowId: string) => Promise<boolean>,
 ) {
   const missing = settings.filter((name) => !env[name]);
   if (missing.length)
@@ -111,7 +118,7 @@ export function agentRunActivitiesFromEnv(
     delegation,
     clock,
   });
-  const agents = createAgents({ db, clock });
+  const agents = createAgents({ db, schedules, clock, runAlive });
   const artifacts = createArtifacts({
     db,
     keys,
@@ -146,6 +153,8 @@ export function agentRunActivitiesFromEnv(
   });
   return {
     activities: createAgentRunActivities(runs),
+    /** Saves the Schedule of every free-text Agent not Ended; safe on every start. */
+    saveSchedules: () => agents.saveSchedules(),
     close: () => db.$disconnect(),
   };
 }

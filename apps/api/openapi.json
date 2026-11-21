@@ -4131,6 +4131,15 @@
             "exclusiveMinimum": 0,
             "maximum": 100000000,
             "description": "Its monthly Budget."
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/AgentTrigger"
+          },
+          "modelKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The Model its Runs run on: one of the Models Chat offers (GET /api/me/models), or the one it already has."
           }
         },
         "required": [
@@ -4140,7 +4149,9 @@
           "instructions",
           "courseIds",
           "capabilities",
-          "budgetMicroUsd"
+          "budgetMicroUsd",
+          "trigger",
+          "modelKey"
         ],
         "additionalProperties": false
       },
@@ -4171,6 +4182,65 @@
           "mode"
         ],
         "additionalProperties": false
+      },
+      "AgentTrigger": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "rhythm": {
+                "type": "string",
+                "enum": [
+                  "daily"
+                ]
+              },
+              "minute": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1439
+              }
+            },
+            "required": [
+              "rhythm",
+              "minute"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "rhythm": {
+                "type": "string",
+                "enum": [
+                  "weekdays"
+                ]
+              },
+              "weekdays": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 7
+                },
+                "minItems": 1,
+                "maxItems": 7,
+                "description": "Its Wochentage, ISO: 1 is Monday, 7 is Sunday."
+              },
+              "minute": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1439
+              }
+            },
+            "required": [
+              "rhythm",
+              "weekdays",
+              "minute"
+            ],
+            "additionalProperties": false
+          }
+        ],
+        "description": "Täglich (daily) or on chosen Wochentage (weekdays), at a minute of the day (Uhrzeit) in the Plan's time zone."
       },
       "AgentCourse": {
         "type": "object",
@@ -4334,6 +4404,23 @@
             ],
             "description": "The one exam it prepares for; null for a Course."
           },
+          "trigger": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AgentTrigger"
+              },
+              {
+                "description": "When its Schedule starts a Run; a preset Agent's is Täglich at 06:00."
+              }
+            ]
+          },
+          "modelKey": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Model its Runs run on, which Chat may have stopped offering since; null for a preset Agent."
+          },
           "state": {
             "type": "string",
             "enum": [
@@ -4357,6 +4444,13 @@
           "running": {
             "type": "boolean",
             "description": "One of its Runs is under way; another cannot start until it ends."
+          },
+          "approvalRunId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The oldest of its Runs with an Approval still open, which Freigaben bestätigen opens; null when none is."
           },
           "capabilities": {
             "type": "array",
@@ -4480,9 +4574,12 @@
           "courses",
           "course",
           "exam",
+          "trigger",
+          "modelKey",
           "state",
           "pausedBy",
           "running",
+          "approvalRunId",
           "capabilities",
           "grants",
           "budget",
@@ -4847,7 +4944,7 @@
               "at": {
                 "type": "string",
                 "format": "date-time",
-                "description": "When the student decided, or when it expired unanswered."
+                "description": "When the student decided, when it expired unanswered, or when it was withdrawn."
               },
               "action": {
                 "type": "object",
@@ -4914,9 +5011,10 @@
                 "enum": [
                   "approved",
                   "denied",
-                  "expired"
+                  "expired",
+                  "withdrawn"
                 ],
-                "description": "The student's answer, or expired when none came in time; expiry writes nothing, it shows once it passed."
+                "description": "The student's answer; expired when none came in time (expiry writes nothing, it shows once it passed); withdrawn when the Agent was Paused or Ended before the student answered."
               },
               "outcome": {
                 "type": [
@@ -5000,12 +5098,13 @@
               "shortfall",
               "disagreement",
               "approval_expired",
-              "unconfirmed"
+              "unconfirmed",
+              "run_approvals"
             ]
           },
           "title": {
             "type": "string",
-            "description": "What it is about: the work, Fact or Action, as it is now."
+            "description": "What it is about: the work, Fact or Action, or the Agent whose Run it is, as it is now."
           },
           "course": {
             "type": [
@@ -5030,6 +5129,30 @@
               "null"
             ],
             "description": "A Shortfall's current size; null once it is gone."
+          },
+          "run": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "agentId": {
+                "type": "string"
+              },
+              "openApprovals": {
+                "type": "integer",
+                "description": "Its Approvals still open; it lapses once none is."
+              }
+            },
+            "required": [
+              "id",
+              "agentId",
+              "openApprovals"
+            ],
+            "description": "The Agent Run whose open Approvals it is about, to open in the Agent's Activity; null for other kinds or once the Agent is deleted."
           },
           "raisedAt": {
             "type": "string",
@@ -5059,6 +5182,7 @@
           "course",
           "action",
           "shortMinutes",
+          "run",
           "raisedAt",
           "state",
           "closedAt"
@@ -14344,13 +14468,31 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Its Model is not offered in Chat (error model_unavailable); pick another.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
           }
         }
       },
       "get": {
         "responses": {
           "200": {
-            "description": "The student's Agents, newest first.",
+            "description": "The student's Agents, Ended ones included: Paused first, then those needing an Approval, then running ones, then those without a badge, Ended last; newest first within each.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14376,6 +14518,9 @@
                       "name": {
                         "type": "string",
                         "description": "Empty for a preset Agent, which is named after its scope."
+                      },
+                      "description": {
+                        "type": "string"
                       },
                       "emoji": {
                         "type": "string"
@@ -14436,17 +14581,41 @@
                           "course_archived",
                           null
                         ]
+                      },
+                      "approvalRunId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "The oldest of its Runs with an Approval still open, which Freigaben bestätigen opens; null when none is."
+                      },
+                      "badge": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "enum": [
+                          "paused",
+                          "approval_needed",
+                          "running",
+                          "ended",
+                          null
+                        ],
+                        "description": "Its one badge: Pausiert, Freigabe benötigt (a Run has an open Approval), Läuft gerade (a Run is under way) or Beendet; null when none applies."
                       }
                     },
                     "required": [
                       "id",
                       "preset",
                       "name",
+                      "description",
                       "emoji",
                       "course",
                       "exam",
                       "state",
-                      "pausedBy"
+                      "pausedBy",
+                      "approvalRunId",
+                      "badge"
                     ]
                   }
                 }
@@ -14591,6 +14760,24 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Its Model is not offered in Chat (error model_unavailable); pick another.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
           }
         }
       },
@@ -14637,6 +14824,97 @@
           },
           "404": {
             "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Delete the Agent for good (Löschen), with its Activity and its Schedule; its Runs' workflows still running are cancelled.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Its Schedule could not be deleted (error not_deleted), so nothing was; asking again may delete it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15029,6 +15307,7 @@
     },
     "/api/me/agents/{id}/pause": {
       "post": {
+        "description": "Pause the Agent: its Run under way stops at its next step or Action, and its open Approvals are withdrawn for good.",
         "parameters": [
           {
             "schema": {
@@ -15139,6 +15418,7 @@
     },
     "/api/me/agents/{id}/resume": {
       "post": {
+        "description": "Resume a Paused Agent, whoever paused it; no withdrawn Approval comes back.",
         "parameters": [
           {
             "schema": {
@@ -15249,6 +15529,7 @@
     },
     "/api/me/agents/{id}/end": {
       "post": {
+        "description": "End the Agent for good: its Grants go, its Run under way stops at its next step or Action, and its open Approvals are withdrawn. Its Activity stays.",
         "parameters": [
           {
             "schema": {

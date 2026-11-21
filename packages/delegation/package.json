@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./temporal-schedules": {
+      "types": "./dist/temporal-schedules.d.ts",
+      "default": "./dist/temporal-schedules.js"
     }
   },
   "scripts": {
@@ -23,11 +27,13 @@
     "typescript": "5.9.3",
     "vitest": "5.0.5",
     "@biomejs/biome": "2.6.3",
+    "@temporalio/testing": "1.25.0",
     "tsx": "4.23.15"
   },
   "dependencies": {
     "@nunio/ai": "workspace:*",
     "@nunio/db": "workspace:*",
+    "@temporalio/client": "1.25.0",
     "zod": "4.6.7"
   }
 }

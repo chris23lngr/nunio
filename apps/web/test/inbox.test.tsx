@@ -155,6 +155,55 @@ test("an Intervention about a Task Action names the Task, not a block", async ()
   ).toBeTruthy();
 });
 
+test("an Agent Run's Intervention names its Agent and how many Approvals wait, and opens that Run in its Aktivität", async () => {
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [
+        {
+          ...expired,
+          kind: "run_approvals",
+          title: "Klausur vorbereiten",
+          course: null,
+          action: null,
+          run: { id: "run-7", agentId: "agent-3", openApprovals: 2 },
+        },
+        {
+          ...expired,
+          id: "5c1e0a4e-0000-4000-8000-000000000009",
+          kind: "run_approvals",
+          title: "Kurs aufräumen",
+          course: null,
+          action: null,
+          run: { id: "run-2", agentId: "agent-1", openApprovals: 0 },
+          state: "lapsed",
+          closedAt: "2026-11-10T08:00:00.000Z",
+        },
+      ],
+    }),
+  );
+  render(
+    <TestProviders>
+      <InboxScreen apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+
+  const open = await screen.findByRole("region", { name: "Needs attention" });
+  const item = within(open).getByRole("article", {
+    name: "Klausur vorbereiten needs your Approval (2)",
+  });
+  expect(
+    within(item)
+      .getByRole("link", { name: "Open its Approvals" })
+      .getAttribute("href"),
+  ).toBe("/agents/agent-3?run=run-7");
+  const closed = screen.getByRole("region", { name: "Closed" });
+  expect(
+    within(closed).getByRole("article", {
+      name: "Kurs aufräumen needs your Approval",
+    }),
+  ).toBeTruthy();
+});
+
 test("a lapsed Intervention says it no longer applies and cannot be closed", async () => {
   api.route("GET", "/api/me/inbox", () =>
     Response.json({

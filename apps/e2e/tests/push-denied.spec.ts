@@ -88,7 +88,7 @@ test("denying notifications leaves every page usable", async ({ page }) => {
     ["Chat", "/chat"],
     ["Plan", "/plan"],
     ["Projects", "/projects"],
-    ["Agents", "/agents"],
+    ["Agenten", "/agents"],
     ["Inbox", "/inbox"],
   ] as const) {
     await nav.getByRole("link", { name, exact: true }).click();

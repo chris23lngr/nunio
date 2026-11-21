@@ -252,6 +252,7 @@ export async function appFromEnv(
     db: prisma,
     schedules,
     clock,
+    runAlive: (workflowId) => runWorkflows.agentRunAlive(workflowId),
   });
   const artifactWorkflows = artifactWorkflowsFromEnv(env);
   const artifacts = createArtifacts({

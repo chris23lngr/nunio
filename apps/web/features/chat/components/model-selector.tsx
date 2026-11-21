@@ -16,36 +16,10 @@ import {
   PopoverHeader,
   PopoverTitle,
 } from "@nunio/ui/components/popover/popover";
-import { Brain, Check, ChevronDown } from "lucide-react";
-import Image from "next/image";
+import { Check, ChevronDown } from "lucide-react";
 import { useState } from "react";
+import { ModelLogo } from "@/features/shared/components/model-logo";
 import type { ChatModel } from "../api/model-queries";
-
-function ModelLogo({
-  provider,
-  trigger = false,
-}: {
-  provider: string | undefined;
-  trigger?: boolean;
-}) {
-  const src =
-    provider === "Anthropic"
-      ? "/icons/claude.svg"
-      : provider === "OpenAI"
-        ? "/icons/openai.svg"
-        : undefined;
-  return src ? (
-    <Image
-      src={src}
-      width={16}
-      height={16}
-      alt=""
-      className={`w-auto shrink-0 ${trigger ? "h-5" : "h-4"}`}
-    />
-  ) : (
-    <Brain aria-hidden="true" className="size-4 shrink-0 text-primary-500" />
-  );
-}
 
 const tiers = { low: "niedrig", medium: "mittel", high: "hoch" };
 const multiplier = new Intl.NumberFormat("de-DE", {
