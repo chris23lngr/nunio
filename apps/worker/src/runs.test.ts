@@ -3,21 +3,14 @@ import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
-import type { ActionIntent, Executor } from "@nunio/delegation";
-import {
-  createAgents,
-  createDelegation,
-  InvalidIntentError,
-  principal,
-} from "@nunio/delegation";
+import type { Executor, PlanRules } from "@nunio/delegation";
+import { createAgents, createDelegation, principal } from "@nunio/delegation";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import type { WorkflowBundle } from "@temporalio/worker";
 import { bundleWorkflowCode, Worker } from "@temporalio/worker";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDecisionNotifier } from "./decision-notifier.js";
 import { ensureReconcileSchedule } from "./reconcile-schedule.js";
 import { createRunActivities } from "./run-activities.js";
-import { approvalDecidedSignal } from "./workflows.js";
 
 const taskQueue = "runs-test";
 let env: TestWorkflowEnvironment;
@@ -46,35 +39,15 @@ afterAll(async () => {
   await Promise.all([env?.teardown(), db?.stop()]);
 });
 
-/** A fake Plan executor that records each dispatch. */
-function fakeExecutor() {
-  const dispatched: string[] = [];
-  const executor: Executor = {
-    async execute(_, { idempotencyKey }) {
-      dispatched.push(idempotencyKey);
-      return { status: "done", effect: { studyBlockId: idempotencyKey } };
-    },
-    async lookup() {
-      return { status: "unknown" };
-    },
-  };
-  return { executor, dispatched };
-}
-
-const noSchedules = {
-  create: async () => {},
-  save: async () => {},
-  pause: async () => {},
-  unpause: async () => {},
-  delete: async () => {},
-};
 const clock = { now: () => new Date() };
+/** The Plan's rules, refusing nothing an Agent's Study Block Action does. */
+const planRules: PlanRules = {
+  check: async () => ({ refusals: [], brokenPreferences: [] }),
+  taskDue: async () => null,
+};
 
-/** A student with one Course, one Obligation in it, blocks nunio or the student placed, and "keep this course organized". */
-async function student({
-  placedBy = "nunio" as "nunio" | "student",
-  blocks = 1,
-} = {}) {
+/** A student with one Course and one Obligation in it, and an Agent that creates Study Blocks on Immer erlaubt. */
+async function student() {
   const studentId = randomUUID(),
     courseId = randomUUID(),
     obligationId = randomUUID();
@@ -98,6 +71,7 @@ async function student({
       matchTitle: "analysis i",
       semester: "2026-ws",
       color: "rose",
+      status: "accepted",
     },
   });
   await admin.obligation.create({
@@ -111,482 +85,28 @@ async function student({
       correctedTitle: "Problem sheet 1",
     },
   });
-  const blockIds = Array.from({ length: blocks }, () => randomUUID());
-  for (const [i, id] of blockIds.entries()) {
-    await admin.studyBlock.create({
-      data: {
-        id,
-        studentId,
-        obligationId,
-        placedBy,
-        start: new Date(Date.UTC(2026, 11, 1, 9 + i)),
-        end: new Date(Date.UTC(2026, 11, 1, 10 + i)),
-      },
-    });
-  }
   const p = principal.fromSession({ studentId });
   const agents = createAgents({
     db: runtime,
-    schedules: noSchedules,
+    schedules: { save: async () => {}, delete: async () => {} },
     clock,
   });
   const created = await agents.create(p, {
-    preset: "keep_course_organized",
-    courseId,
+    name: "Analysis organisieren",
+    description: "",
+    emoji: "📚",
+    instructions: "Halte Analysis I organisiert.",
+    courseIds: [courseId],
+    capabilities: [{ id: "createStudyBlocks", mode: "always" }],
     budgetMicroUsd: 50_000,
+    trigger: { rhythm: "daily", minute: 360 },
+    modelKey: "sonnet-5.5-reasoning-high",
   });
   if (created.status !== "ok") throw new Error(created.status);
-  return {
-    studentId,
-    obligationId,
-    blockIds,
-    p,
-    agentId: created.id,
-    agents,
-  };
+  return { studentId, obligationId, p, agentId: created.id, agents };
 }
-
-const moveTo = (blockId: string, day: number): ActionIntent => ({
-  kind: "studyBlock.move",
-  studyBlockId: blockId,
-  start: new Date(Date.UTC(2026, 11, day, 14)),
-  end: new Date(Date.UTC(2026, 11, day, 15)),
-});
-
-/** A worker running the Run workflow with real Run activities over the given gate and proposal. */
-async function worker(
-  s: Awaited<ReturnType<typeof student>>,
-  executor: Executor,
-  intents: ActionIntent[],
-  deadline?: Date,
-) {
-  const delegation = createDelegation({
-    db: runtime,
-    aiEnabled: () => true,
-    clock,
-    executors: { plan: executor },
-    deadlineOf: async () => deadline ?? null,
-  });
-  return Worker.create({
-    connection: env.nativeConnection,
-    taskQueue,
-    workflowBundle,
-    activities: createRunActivities({
-      db: runtime,
-      delegation,
-      notifyDecision: createDecisionNotifier(env.client),
-      agents: s.agents,
-      propose: async () => intents,
-    }),
-  });
-}
-
-describe("an Agent's Run", () => {
-  it("performs each Action its Grants cover, once", async () => {
-    const s = await student({ blocks: 2 });
-    const { executor, dispatched } = fakeExecutor();
-
-    const result = await (
-      await worker(s, executor, [
-        moveTo(s.blockIds[0]!, 2),
-        moveTo(s.blockIds[1]!, 3),
-      ])
-    ).runUntil(
-      env.client.workflow.execute("responsibilityRun", {
-        taskQueue,
-        workflowId: `run-${randomUUID()}`,
-        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
-      }),
-    );
-
-    expect(result).toEqual({ status: "done" });
-    expect(dispatched).toHaveLength(2);
-  });
-
-  it("reuses the Run after startup commits but its Activity completion is lost", async () => {
-    const s = await student();
-    const start = s.agents.startRun;
-    let calls = 0;
-    s.agents.startRun = async (ref) => {
-      const id = await start(ref);
-      if (++calls === 1) throw new Error("lost Activity completion");
-      return id;
-    };
-    const { executor } = fakeExecutor();
-    expect(
-      await (await worker(s, executor, [])).runUntil(
-        env.client.workflow.execute("responsibilityRun", {
-          taskQueue,
-          workflowId: `retry-start-${randomUUID()}`,
-          args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
-        }),
-      ),
-    ).toEqual({ status: "done" });
-    expect(calls).toBe(2);
-    expect(
-      await admin.run.count({
-        where: { agentId: s.agentId },
-      }),
-    ).toBe(1);
-  });
-
-  it("consumes an Approval signal received before the Activity reply", async () => {
-    const workflowId = `early-approval-${randomUUID()}`;
-    let calls = 0;
-    const w = await Worker.create({
-      connection: env.nativeConnection,
-      taskQueue,
-      workflowBundle,
-      activities: {
-        startRun: async () => "early-run",
-        proposeActions: async () => [moveTo("block", 2)],
-        performAction: async () => {
-          if (++calls === 1) {
-            await env.client.workflow
-              .getHandle(workflowId)
-              .signal(approvalDecidedSignal, "early-action");
-            return {
-              status: "awaiting_approval",
-              actionId: "early-action",
-              fingerprint: "fp",
-              expiresAt: "2099-01-01T00:00:00Z",
-            };
-          }
-          return { status: "done", actionId: "early-action", effect: {} };
-        },
-      },
-    });
-    expect(
-      await w.runUntil(
-        env.client.workflow.execute("responsibilityRun", {
-          taskQueue,
-          workflowId,
-          workflowExecutionTimeout: "4 seconds",
-          args: [{ studentId: "student", responsibilityId: "agent" }],
-        }),
-      ),
-    ).toEqual({ status: "done" });
-    expect(calls).toBe(2);
-  });
-
-  it("does not retry invalid Action intents", async () => {
-    let calls = 0;
-    const w = await Worker.create({
-      connection: env.nativeConnection,
-      taskQueue,
-      workflowBundle,
-      activities: {
-        startRun: async () => "invalid-run",
-        proposeActions: async () => [moveTo("block", 2)],
-        performAction: async () => {
-          calls++;
-          throw new InvalidIntentError("invalid");
-        },
-      },
-    });
-    await expect(
-      w.runUntil(
-        env.client.workflow.execute("responsibilityRun", {
-          taskQueue,
-          workflowId: `invalid-${randomUUID()}`,
-          workflowExecutionTimeout: "7 seconds",
-          args: [{ studentId: "student", responsibilityId: "agent" }],
-        }),
-      ),
-    ).rejects.toThrow();
-    expect(calls).toBe(1);
-  });
-
-  it("waits for the student's Approval, then acts once the API signals their decision", async () => {
-    const s = await student({ placedBy: "student" });
-    const { executor, dispatched } = fakeExecutor();
-    const gate = createDelegation({
-      db: runtime,
-      aiEnabled: () => true,
-      clock,
-    });
-
-    const result = await (
-      await worker(s, executor, [moveTo(s.blockIds[0]!, 2)])
-    ).runUntil(async () => {
-      const handle = await env.client.workflow.start("responsibilityRun", {
-        taskQueue,
-        workflowId: `run-${randomUUID()}`,
-        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
-      });
-      const asking = await awaitingApproval(s.p);
-      await gate.decide(s.p, {
-        kind: "approve",
-        actionId: asking.id,
-        fingerprint: asking.approval!.fingerprint,
-      });
-      await handle.signal(approvalDecidedSignal, asking.id);
-      return handle.result();
-    });
-
-    expect(result).toEqual({ status: "done" });
-    expect(dispatched).toHaveLength(1);
-  });
-});
-
-describe("a Pause during a Run", () => {
-  it("stops the next Action and ends the Run", async () => {
-    const s = await student({ blocks: 2 });
-    await admin.studyBlock.update({
-      where: { id: s.blockIds[0]! },
-      data: { placedBy: "student" },
-    });
-    const { executor, dispatched } = fakeExecutor();
-
-    const result = await (
-      await worker(s, executor, [
-        moveTo(s.blockIds[0]!, 2),
-        moveTo(s.blockIds[1]!, 3),
-      ])
-    ).runUntil(async () => {
-      const handle = await env.client.workflow.start("responsibilityRun", {
-        taskQueue,
-        workflowId: `run-${randomUUID()}`,
-        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
-      });
-      const asking = await awaitingApproval(s.p);
-      await s.agents.pause(s.p, s.agentId);
-      await handle.signal(approvalDecidedSignal, asking.id);
-      return handle.result();
-    });
-
-    expect(result).toEqual({ status: "stopped", reason: "paused" });
-    expect(dispatched).toEqual([]);
-  });
-});
-
-describe("an Action nobody can confirm", () => {
-  it("is never retried: the Run raises an Intervention and ends", async () => {
-    const s = await student({ blocks: 2 });
-    const dispatched: string[] = [];
-    const ambiguous: Executor = {
-      async execute(_, { idempotencyKey }) {
-        dispatched.push(idempotencyKey);
-        return { status: "ambiguous" };
-      },
-      async lookup() {
-        return { status: "unknown" };
-      },
-    };
-
-    const result = await (
-      await worker(s, ambiguous, [
-        moveTo(s.blockIds[0]!, 2),
-        moveTo(s.blockIds[1]!, 3),
-      ])
-    ).runUntil(
-      env.client.workflow.execute("responsibilityRun", {
-        taskQueue,
-        workflowId: `run-${randomUUID()}`,
-        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
-      }),
-    );
-
-    expect(result).toEqual({ status: "stopped", reason: "unconfirmed" });
-    expect(dispatched).toHaveLength(1);
-    expect(
-      await admin.intervention.findMany({
-        where: { studentId: s.studentId },
-        select: { kind: true },
-      }),
-    ).toEqual([{ kind: "unconfirmed" }]);
-  });
-});
-
-describe("an unanswered request for Approval", () => {
-  it("expires at the Obligation's deadline, takes no Action, and raises one Intervention", async () => {
-    const s = await student({ placedBy: "student" });
-    const { executor, dispatched } = fakeExecutor();
-    const deadline = new Date(Date.now() + 3_000);
-
-    const result = await (
-      await worker(s, executor, [moveTo(s.blockIds[0]!, 2)], deadline)
-    ).runUntil(
-      env.client.workflow.execute("responsibilityRun", {
-        taskQueue,
-        workflowId: `run-${randomUUID()}`,
-        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
-      }),
-    );
-
-    expect(result).toEqual({ status: "done" });
-    expect(dispatched).toEqual([]);
-    const [action] = await createDelegation({
-      db: runtime,
-      aiEnabled: () => true,
-      clock,
-    }).history(s.p, {});
-    expect(action).toMatchObject({
-      status: "refused",
-      refusal: "approval_expired",
-    });
-    // Phase 10's inbox will read Interventions; until then the record itself is what can be observed.
-    expect(
-      await admin.intervention.findMany({
-        where: { studentId: s.studentId },
-        select: { kind: true, actionId: true },
-      }),
-    ).toEqual([{ kind: "approval_expired", actionId: action!.id }]);
-  });
-});
-
-describe("repeated Approval clicks", () => {
-  it("dispatch the Action once", async () => {
-    const s = await student({ placedBy: "student" });
-    const { executor, dispatched } = fakeExecutor();
-    const gate = createDelegation({
-      db: runtime,
-      aiEnabled: () => true,
-      clock,
-    });
-
-    const result = await (
-      await worker(s, executor, [moveTo(s.blockIds[0]!, 2)])
-    ).runUntil(async () => {
-      const handle = await env.client.workflow.start("responsibilityRun", {
-        taskQueue,
-        workflowId: `run-${randomUUID()}`,
-        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
-      });
-      const asking = await awaitingApproval(s.p);
-      await Promise.all(
-        Array.from({ length: 4 }, async () => {
-          await gate.decide(s.p, {
-            kind: "approve",
-            actionId: asking.id,
-            fingerprint: asking.approval!.fingerprint,
-          });
-          await handle.signal(approvalDecidedSignal, asking.id);
-        }),
-      );
-      return handle.result();
-    });
-
-    expect(result).toEqual({ status: "done" });
-    expect(dispatched).toHaveLength(1);
-  });
-});
-
-describe("a worker restart while a Run awaits Approval", () => {
-  it("loses neither the Approval nor the continuation", {
-    timeout: 90_000,
-  }, async () => {
-    const s = await student({ placedBy: "student" });
-    const { executor, dispatched } = fakeExecutor();
-    const gate = createDelegation({
-      db: runtime,
-      aiEnabled: () => true,
-      clock,
-    });
-    const workflowId = `run-${randomUUID()}`;
-
-    // The first worker stops for good while the Run waits.
-    const asking = await (
-      await worker(s, executor, [moveTo(s.blockIds[0]!, 2)])
-    ).runUntil(async () => {
-      await env.client.workflow.start("responsibilityRun", {
-        taskQueue,
-        workflowId,
-        args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
-      });
-      return awaitingApproval(s.p);
-    });
-    await gate.decide(s.p, {
-      kind: "approve",
-      actionId: asking.id,
-      fingerprint: asking.approval!.fingerprint,
-    });
-    await env.client.workflow
-      .getHandle(workflowId)
-      .signal(approvalDecidedSignal, asking.id);
-
-    // A new worker, as after a deploy, picks the Run up where it waited.
-    const result = await (
-      await worker(s, executor, [moveTo(s.blockIds[0]!, 2)])
-    ).runUntil(env.client.workflow.getHandle(workflowId).result());
-
-    expect(result).toEqual({ status: "done" });
-    expect(dispatched).toHaveLength(1);
-  });
-});
 
 describe("reconciliation", () => {
-  it("retires a pending wake for an ended execution without signalling its replacement", async () => {
-    const workflowId = `ended-decision-${randomUUID()}`;
-    const old = await env.client.workflow.start("responsibilityRun", {
-      taskQueue,
-      workflowId,
-      args: [{}],
-    });
-    await old.terminate();
-    const replacement = await env.client.workflow.start("responsibilityRun", {
-      taskQueue,
-      workflowId,
-      args: [{}],
-    });
-    try {
-      await createDecisionNotifier(env.client)({
-        workflowId,
-        runId: old.firstExecutionRunId,
-        actionId: "old-action",
-      });
-      const history = await replacement.fetchHistory();
-      expect(
-        history.events?.filter(
-          (e) => e.workflowExecutionSignaledEventAttributes,
-        ),
-      ).toEqual([]);
-    } finally {
-      await replacement.terminate();
-    }
-  });
-
-  it("wakes a denied Run after the API stops before delivering its decision signal", async () => {
-    const s = await student({ placedBy: "student" });
-    const { executor, dispatched } = fakeExecutor();
-    const gate = createDelegation({
-      db: runtime,
-      aiEnabled: () => true,
-      clock,
-    });
-    await (await worker(s, executor, [moveTo(s.blockIds[0]!, 2)])).runUntil(
-      async () => {
-        const handle = await env.client.workflow.start("responsibilityRun", {
-          taskQueue,
-          workflowId: `lost-decision-${randomUUID()}`,
-          args: [{ studentId: s.studentId, responsibilityId: s.agentId }],
-        });
-        try {
-          const asking = await awaitingApproval(s.p);
-          // The API commits, then dies before it can make any Temporal call.
-          await gate.decide(s.p, { kind: "deny", actionId: asking.id });
-          expect(
-            await gate.history(s.p, { status: "awaiting_approval" }),
-          ).toEqual([]);
-          await env.client.workflow.execute("reconcileActions", {
-            taskQueue,
-            workflowId: `recover-decision-${randomUUID()}`,
-          });
-          await expect
-            .poll(async () => (await handle.describe()).status.name, {
-              timeout: 3_000,
-            })
-            .toBe("COMPLETED");
-          expect(await handle.result()).toEqual({ status: "done" });
-          expect(dispatched).toEqual([]);
-        } finally {
-          if ((await handle.describe()).status.name === "RUNNING")
-            await handle.terminate();
-        }
-      },
-    );
-  });
-
   it("confirms a dispatch a dead worker left in flight, through the executor's lookup", async () => {
     const s = await student();
     const runId = (await s.agents.startRun({
@@ -606,9 +126,15 @@ describe("reconciliation", () => {
       aiEnabled: () => true,
       clock,
       executors: { plan: hung },
+      planRules,
     }).perform(principal.fromRun(runId), {
-      key: `${runId}:1`,
-      intent: moveTo(s.blockIds[0]!, 2),
+      key: `${runId}:1:1`,
+      intent: {
+        kind: "studyBlock.create",
+        workId: s.obligationId,
+        start: new Date(Date.UTC(2099, 11, 2, 14)),
+        end: new Date(Date.UTC(2099, 11, 2, 15)),
+      },
     });
     await expect
       .poll(() =>
@@ -630,13 +156,7 @@ describe("reconciliation", () => {
       connection: env.nativeConnection,
       taskQueue,
       workflowBundle,
-      activities: createRunActivities({
-        db: runtime,
-        delegation,
-        notifyDecision: createDecisionNotifier(env.client),
-        agents: s.agents,
-        propose: async () => [],
-      }),
+      activities: createRunActivities({ delegation }),
     });
     await reconciler.runUntil(
       env.client.workflow.execute("reconcileActions", {
@@ -667,21 +187,3 @@ describe("the reconcile Schedule", () => {
     });
   });
 });
-
-/** The Action the Run asked the student about, once it has asked. */
-async function awaitingApproval(p: ReturnType<typeof principal.fromSession>) {
-  const gate = createDelegation({ db: runtime, aiEnabled: () => true, clock });
-  let found: Awaited<ReturnType<typeof gate.history>>[number] | undefined;
-  await expect
-    .poll(
-      async () => {
-        found = (await gate.history(p, {})).find(
-          (a) => a.status === "awaiting_approval",
-        );
-        return Boolean(found);
-      },
-      { timeout: 15_000 },
-    )
-    .toBe(true);
-  return found!;
-}

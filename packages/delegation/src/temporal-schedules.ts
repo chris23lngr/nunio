@@ -9,9 +9,7 @@ import {
 } from "@temporalio/client";
 import type { AgentTrigger, Schedules } from "./agents.js";
 
-// The Schedule ID, workflow type and `responsibilityId` arg keep the old name until the Agents cutover
-// reschedules every Agent.
-const scheduleId = (agentId: string) => `responsibility/${agentId}`;
+const scheduleId = (agentId: string) => `agent/${agentId}`;
 
 /** Each call is safe to repeat: a Schedule that already exists, or is already gone, is left as it is. */
 const ignoring =
@@ -47,23 +45,6 @@ export function createAgentSchedules({
   taskQueue: string;
 }): Schedules {
   return {
-    async create({ agentId, studentId, timeZone }) {
-      await client.schedule
-        .create({
-          scheduleId: scheduleId(agentId),
-          spec: { calendars: [{ hour: 6, minute: 0 }], timezone: timeZone },
-          action: {
-            type: "startWorkflow",
-            workflowType: "responsibilityRun",
-            taskQueue,
-            workflowId: `run/${agentId}`,
-            args: [{ studentId, responsibilityId: agentId }],
-          },
-          // A Run still waiting for an Approval is not joined by the next day's.
-          policies: { overlap: ScheduleOverlapPolicy.SKIP },
-        })
-        .catch(ignoring(ScheduleAlreadyRunning));
-    },
     async save({ agentId, studentId, timeZone, trigger, paused }) {
       const options = {
         spec: { calendars: [calendarOf(trigger)], timezone: timeZone },
@@ -95,12 +76,6 @@ export function createAgentSchedules({
           }));
       }
     },
-    async pause(agentId) {
-      await client.schedule.getHandle(scheduleId(agentId)).pause();
-    },
-    async unpause(agentId) {
-      await client.schedule.getHandle(scheduleId(agentId)).unpause();
-    },
     async delete(agentId) {
       await client.schedule
         .getHandle(scheduleId(agentId))
@@ -125,3 +100,25 @@ export const workflowAlive =
       throw error;
     }
   };
+
+/**
+ * The Agents cutover (#192) on Temporal, before the worker polls: deletes every Schedule under the old ID
+ * `responsibility/<agentId>`, a preset's or an Agent's, then terminates each preset Run (`responsibilityRun`) still
+ * running, so no worker without that workflow ever has to run or replay one. Each Agent's Schedule is saved again under
+ * `agent/<agentId>` by `agents.saveSchedules()`. Safe to repeat: once done, it finds nothing.
+ */
+export async function retirePresets(client: Client) {
+  for await (const schedule of client.schedule.list())
+    if (schedule.scheduleId.startsWith("responsibility/"))
+      await client.schedule
+        .getHandle(schedule.scheduleId)
+        .delete()
+        .catch(ignoring(ScheduleNotFoundError));
+  for await (const run of client.workflow.list({
+    query: `WorkflowType = 'responsibilityRun' AND ExecutionStatus = 'Running'`,
+  }))
+    await client.workflow
+      .getHandle(run.workflowId, run.runId)
+      .terminate("Agents cutover: preset Runs are retired (#192)")
+      .catch(ignoring(WorkflowNotFoundError));
+}

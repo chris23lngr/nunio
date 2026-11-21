@@ -13,37 +13,6 @@ afterAll(async () => {
   await env?.teardown();
 });
 
-describe("waking a Run on Temporal", () => {
-  it("signals approvalDecided with the Action to exactly the Run that asked", async () => {
-    const workflowId = `run/${randomUUID()}-2026-11-12T05:00:00Z`;
-    // No worker polls: Temporal still records the signal against the waiting Run.
-    const handle = await env.client.workflow.start("responsibilityRun", {
-      taskQueue: "runs",
-      workflowId,
-      args: [{}],
-    });
-
-    await createRunWorkflows({
-      client: env.client,
-      taskQueue: "runs",
-    }).signalDecided(
-      { workflowId, runId: handle.firstExecutionRunId },
-      "action-1",
-    );
-
-    const events = (await handle.fetchHistory()).events ?? [];
-    const signalled = events.flatMap((e) =>
-      e.workflowExecutionSignaledEventAttributes
-        ? [e.workflowExecutionSignaledEventAttributes]
-        : [],
-    );
-    expect(signalled.map((s) => s.signalName)).toEqual(["approvalDecided"]);
-    expect(
-      Buffer.from(signalled[0]!.input!.payloads![0]!.data!).toString(),
-    ).toBe('"action-1"');
-  });
-});
-
 describe("starting an Agent's Run on Temporal", () => {
   it("starts one agentRun workflow under the Run's workflow ID, with the recorded Run", async () => {
     const runId = randomUUID();
@@ -106,15 +75,15 @@ describe("stopping an Agent's Run on Temporal", () => {
   });
 
   it("cancels a deleted Agent's Run workflow, and leaves one that no longer runs alone", async () => {
-    const workflowId = `run/${randomUUID()}`;
-    const handle = await env.client.workflow.start("responsibilityRun", {
+    const workflowId = `agentRun/${randomUUID()}`;
+    const handle = await env.client.workflow.start("agentRun", {
       taskQueue: "runs",
       workflowId,
       args: [{}],
     });
 
     await runs().cancelRun(workflowId);
-    await runs().cancelRun(`run/${randomUUID()}`);
+    await runs().cancelRun(`agentRun/${randomUUID()}`);
 
     const events = (await handle.fetchHistory()).events ?? [];
     expect(

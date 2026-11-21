@@ -53,17 +53,16 @@ type Resolve = { kind: "resolve"; actionId: string; resolution: "happened" | "di
 
 ### Invariants
 
-- **Idempotent on `key`.** The caller supplies a deterministic key: `runId:step` from a preset's workflow, `runId:step:call` from a free-text Agent's, or `chatId:messageId:n` from the API. Repeating `perform` with the same key returns the recorded outcome or resumes it, and never dispatches twice. The same key with a different intent throws `KeyConflictError`. A changed Action needs a new key, and therefore a new Approval.
+- **Idempotent on `key`.** The caller supplies a deterministic key: `runId:step:call` from an Agent's Run, or `chatId:messageId:n` from the API. Repeating `perform` with the same key returns the recorded outcome or resumes it, and never dispatches twice. The same key with a different intent throws `KeyConflictError`. A changed Action needs a new key, and therefore a new Approval.
 - **Authority** comes from one of two sources:
   - a Grant on the Run's Agent, provided the Agent is not Paused or Ended;
   - an Approval whose fingerprint equals the hash of kind@version, Destination, canonical arguments, and Artifact version plus a content hash re-read at dispatch.
 
   Chat-origin Runs have no Grants, so they always need an Approval (ADR-0001). An Approval is created only via `decide(approve)` with the fingerprint shown to the student (ADR-0010).
 - **Approval expiry** is min(created + 7 days, the related Obligation's deadline), evaluated against `clock` on every call.
-- **Rechecks happen at dispatch time** in the same transaction that reserves usage. The checks are ownership, Paused/Ended, a Disconnected Connection, Approval validity, Lock, Protected Time, a verified Destination (otherwise `handoff_only`), Restrictions, Budget, and Allowance. Nothing is trusted from an earlier call.
-- **Restrictions can only tighten.** Advanced Agent configuration (allowed kinds, always-ask kinds, per-Action caps) is data on the Agent, compiled into Restrictions. A Restriction can turn "allowed by Grant" into "awaiting Approval" or "refused", and never the reverse.
-- **A free-text Agent** (one with no preset) is decided by its Capabilities instead (ADR-0001). The work must be in one of its accepted, non-Archived Courses (`out_of_scope`), and a Capability it holds must cover the Action (`no_capability`). A block counts as covered by an own-block Capability only if this Agent created it and the student has not moved it since. What `plan.check` refuses is refused in every mode, read through the `PlanRules` port in the gate's transaction, and so is moving a block that has started. Then the mode decides: Nachfragen asks, Immer erlaubt acts and notes broken Preferences on the `dispatched` event, and Automatisch asks for a broken Preference or a block placed, moved or removed within the next 24 hours. A preset Agent's and a Chat's Actions keep the checks above.
-- **A free-text Agent's Run is capped** (ADR-0026). A new call of the Run, keyed `runId:step:call`, is refused with `run_cap` once the Run made 20 calls or its step made 5, counting granted, asked and refused calls, and, when it would ask, once the Run asked 5 Approvals. It is refused with `open_approvals_cap` when it would ask while the Agent has 5 open, unexpired Approvals from any of its Runs. The counts are read under the Agent's lock, and only for a key not yet used, so a repeated call or an Approval applied later is never capped.
+- **Rechecks happen at dispatch time** in the same transaction that reserves usage. The checks are ownership, Paused/Ended, a Disconnected Connection, Approval validity, Lock, Protected Time, a verified Destination (otherwise `handoff_only`), Budget, and Allowance. Nothing is trusted from an earlier call.
+- **An Agent** is decided by its Capabilities (ADR-0001). The work must be in one of its accepted, non-Archived Courses (`out_of_scope`), and a Capability it holds must cover the Action (`no_capability`). A block counts as covered by an own-block Capability only if this Agent created it and the student has not moved it since. What `plan.check` refuses is refused in every mode, read through the `PlanRules` port in the gate's transaction, and so is moving a block that has started. Then the mode decides: Nachfragen asks, Immer erlaubt acts and notes broken Preferences on the `dispatched` event, and Automatisch asks for a broken Preference or a block placed, moved or removed within the next 24 hours. A Chat's Actions keep the checks above.
+- **An Agent's Run is capped** (ADR-0026). A new call of the Run, keyed `runId:step:call`, is refused with `run_cap` once the Run made 20 calls or its step made 5, counting granted, asked and refused calls, and, when it would ask, once the Run asked 5 Approvals. It is refused with `open_approvals_cap` when it would ask while the Agent has 5 open, unexpired Approvals from any of its Runs. The counts are read under the Agent's lock, and only for a key not yet used, so a repeated call or an Approval applied later is never capped.
 - **Budget exhaustion** sets the Agent to Paused in the reserving transaction. The gate never draws further on the Allowance.
 - **An Unconfirmed Action** is never dispatched again. Its reservation stays held until `decide(resolve)`.
 - **`meter`** wraps every model call. It reserves the estimate against Budget and Allowance in one transaction, runs the call with an abort signal, then settles the actual usage. If the call's fate is unknown, the reservation stays held. Callers cannot reserve without settling.
@@ -72,8 +71,7 @@ type Resolve = { kind: "resolve"; actionId: string; resolution: "happened" | "di
 
 `perform` → `awaiting_approval` → the student calls `decide(approve)`. The caller then calls `perform` again with the **same key**:
 
-- **A preset's Run:** the API signals the workflow, which waits on the signal or on the `expiresAt` timer (ADR-0006). The committed decision is also a pending wake until a `decision_notified` event acknowledges delivery. The API attempts delivery immediately; the worker's five-minute reconciliation Schedule retries unacknowledged wakes, including denials no longer shown on a card. A lost delivery acknowledgement can repeat the signal, so the workflow always rechecks the gate. A closed execution needs no further wake.
-- **A free-text Agent's Run** waits for no decision: it ends when its model finishes (ADR-0006). The API calls `perform` after `decide` as that Run's principal, under the Action's key, so the Action stays the Run's and the gate rechecks the Agent's state, Courses, Capabilities and the fingerprint. A mismatch answers "changed". Its Approvals expire lazily: no timer runs, `decide` refuses any late answer, and no wake is pending (`ActionRecord.runWaits` is false).
+- **An Agent's Run** waits for no decision: it ends when its model finishes (ADR-0006). The API calls `perform` after `decide` as that Run's principal, under the Action's key, so the Action stays the Run's and the gate rechecks the Agent's state, Courses, Capabilities and the fingerprint. A mismatch answers "changed". Its Approvals expire lazily: no timer runs, and `decide` refuses any late answer.
 - **Chat origin:** the API calls `perform` directly after `decide`, under the key and intent the `ActionRecord` names. Its routes use the plan executor and `deadlineOf` too. A Chat finds its Actions with `history({ keys })`, since it asks them only after its answer is saved (ADR-0019 amendment).
 
 `decide` never dispatches by itself.
@@ -90,7 +88,7 @@ Domain results are values, never exceptions, so Temporal does not retry them. A 
 ## What the implementation hides
 
 - Resolving a Principal to its owning student, Run, Agent, Grants, and Agent configuration.
-- Per-kind definitions. These are an internal seam, each with an argument schema, `grantCovers`, a conservative usage estimate, the capability route, and the Obligation that caps Approval expiry.
+- Per-kind definitions. These are an internal seam, each with an argument schema, a conservative usage estimate, the capability route, and the Obligation that caps Approval expiry.
 - Canonical fingerprinting.
 - A pure decision core, `decide(snapshot, now) → Decision | Refusal`, tested exhaustively without I/O.
 - The dispatch protocol:
@@ -122,10 +120,8 @@ All tests cross the interface:
   - A Disconnect while awaiting Approval gives `disconnected`.
   - Concurrent `perform` and `meter` calls against one Allowance never overspend.
   - A crash after a remote success gives `unconfirmed`, exactly one dispatch, and a held reservation.
-  - A Restriction never widens authority.
 - **Per-kind contract suite**, run for every kind:
   - Junk arguments are rejected.
-  - `grantCovers` is pure.
   - Every argument change alters the fingerprint.
   - The estimate is at least the measured usage.
 - **Pure decision core:** table-driven, covering every combination of state.

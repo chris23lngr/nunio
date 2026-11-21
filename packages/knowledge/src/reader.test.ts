@@ -208,10 +208,7 @@ it("lets a free-text Agent's running Run read the whole Plan's Facts, which no o
     db: runtime,
     clock,
     schedules: {
-      create: noSchedule,
       save: noSchedule,
-      pause: noSchedule,
-      unpause: noSchedule,
       delete: noSchedule,
     },
   });
@@ -251,22 +248,9 @@ it("lets a free-text Agent's running Run read the whole Plan's Facts, which no o
   expect(result.items.map((i) => i.label)).toEqual([
     "Analysis I, Obligation from Analysis.pdf, page 2",
   ]);
-  const preset = await agents.create(p, {
-    preset: "keep_course_organized",
-    courseId: course,
-    budgetMicroUsd: 1_000_000,
-  });
-  if (preset.status !== "ok") throw new Error(preset.status);
-  const presetRun = (await agents.startRun({
-    studentId,
-    agentId: preset.id,
-    runId: randomUUID(),
-    workflowId: "responsibilityRun",
-  }))!;
-  for (const runId of [studentRun, presetRun])
-    await expect(
-      reader.retrieve(principal.fromRun(runId), { planning: true }, query),
-    ).rejects.toThrow(ScopeMismatchError);
+  await expect(
+    reader.retrieve(principal.fromRun(studentRun), { planning: true }, query),
+  ).rejects.toThrow(ScopeMismatchError);
   await admin.run.update({
     where: { id: agentRun },
     data: { status: "done", endedAt: new Date() },

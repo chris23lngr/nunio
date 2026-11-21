@@ -79,10 +79,16 @@ function fakeExecutor(
   return { executor, dispatched };
 }
 
+/** The Plan's rules, refusing nothing an Agent's Study Block Action does. */
+const noRules: PlanRules = {
+  check: async () => ({ refusals: [], brokenPreferences: [] }),
+  taskDue: async () => null,
+};
+
 function gate(
   executor: Executor,
   deadlines: Record<string, Date> = {},
-  planRules?: PlanRules,
+  planRules: PlanRules = noRules,
 ): Delegation {
   return createDelegation({
     db: runtime,
@@ -152,19 +158,38 @@ async function student() {
   };
 }
 
-/** A Run of an Agent holding the given Grants on the student's Course. */
+/**
+ * A Run under way of an Agent on the student's Course that creates Study Blocks and moves its own, on Immer erlaubt with
+ * a Grant for each of `grants`, and on Nachfragen otherwise. The student's block is its own.
+ */
 async function run(
   s: Awaited<ReturnType<typeof student>>,
   { grants = ["studyBlock.create", "studyBlock.move"] as string[] } = {},
 ) {
   const agentId = randomUUID(),
     runId = randomUUID();
+  const held = {
+    "studyBlock.create": "createStudyBlocks",
+    "studyBlock.move": "moveOwnStudyBlocks",
+  };
+  // An Agent acts only for accepted Courses.
+  await admin.course.update({
+    where: { id: s.courseId },
+    data: { status: "accepted" },
+  });
   await admin.agent.create({
     data: {
       id: agentId,
       studentId: s.studentId,
-      preset: "keep_course_organized",
+      name: "Analysis",
       budgetMicroUsd: 100_000,
+      courses: { create: { courseId: s.courseId } },
+      capabilities: {
+        create: Object.entries(held).map(([kind, capability]) => ({
+          capability,
+          mode: grants.includes(kind) ? ("always" as const) : ("ask" as const),
+        })),
+      },
     },
   });
   await admin.grant.createMany({
@@ -173,11 +198,14 @@ async function run(
       studentId: s.studentId,
       agentId,
       kind,
-      courseId: s.courseId,
     })),
   });
+  await admin.studyBlock.update({
+    where: { id: s.blockId },
+    data: { createdByAgentId: agentId },
+  });
   await admin.run.create({
-    data: { id: runId, studentId: s.studentId, agentId },
+    data: { id: runId, studentId: s.studentId, agentId, status: "running" },
   });
   return { agentId, runId, p: principal.fromRun(runId) };
 }
@@ -521,7 +549,7 @@ describe("rechecks at dispatch", () => {
     expect(dispatched).toHaveLength(1);
   });
 
-  it.each(["paused", "ended", "restricted", "revoked"] as const)(
+  it.each(["paused", "ended", "revoked"] as const)(
     "rechecks authority after waiting for a concurrent %s change",
     async (change) => {
       const s = await student();
@@ -540,15 +568,11 @@ describe("rechecks at dispatch", () => {
           const [backend] = await tx.$queryRaw<
             { pid: number }[]
           >`SELECT pg_backend_pid() AS pid`;
+          // Saving the form locks the Agent's row too, as it removes a Grant.
           await tx.agent.update({
             where: { id: r.agentId },
             data:
-              change === "paused" || change === "ended"
-                ? { state: change }
-                : {
-                    restrictions:
-                      change === "restricted" ? { allowedKinds: [] } : {},
-                  },
+              change === "revoked" ? { name: "Analysis" } : { state: change },
           });
           if (change === "revoked") {
             await tx.grant.deleteMany({
@@ -621,7 +645,7 @@ describe("rechecks at dispatch", () => {
     ).toMatchObject({ status: "refused", reason: "locked" });
   });
 
-  it("never schedules into weekly Protected Time on the student's local day", async () => {
+  it("never schedules a Chat's block into weekly Protected Time on the student's local day", async () => {
     const s = await student();
     // Wednesday 2026-11-11, 15:00–16:00 in Berlin is 14:00–15:00 UTC.
     await admin.protectedTime.create({
@@ -633,18 +657,17 @@ describe("rechecks at dispatch", () => {
         toMinute: 16 * 60,
       },
     });
-    const r = await run(s);
     const g = gate(fakeExecutor().executor);
 
     expect(
-      await g.perform(r.p, { key: `${r.runId}:1`, intent: move(s, 14) }),
+      await g.perform(s.p, { key: "chat-1:message-1:1", intent: move(s, 14) }),
     ).toMatchObject({ status: "refused", reason: "protected_time" });
     expect(
-      await g.perform(r.p, { key: `${r.runId}:2`, intent: move(s, 15) }),
-    ).toMatchObject({ status: "done" });
+      await g.perform(s.p, { key: "chat-1:message-1:2", intent: move(s, 15) }),
+    ).toMatchObject({ status: "awaiting_approval" });
   });
 
-  it("never schedules into a one-off span of Protected Time", async () => {
+  it("never schedules a Chat's block into a one-off span of Protected Time", async () => {
     const s = await student();
     await admin.protectedTime.create({
       data: {
@@ -654,11 +677,9 @@ describe("rechecks at dispatch", () => {
         end: new Date("2026-11-12T00:00:00Z"),
       },
     });
-    const r = await run(s);
-
     expect(
-      await gate(fakeExecutor().executor).perform(r.p, {
-        key: `${r.runId}:1`,
+      await gate(fakeExecutor().executor).perform(s.p, {
+        key: "chat-1:message-1:1",
         intent: move(s),
       }),
     ).toMatchObject({ status: "refused", reason: "protected_time" });
@@ -677,7 +698,7 @@ describe("rechecks at dispatch", () => {
     ).toMatchObject({ status: "refused", reason: "not_owner" });
   });
 
-  it("creates a block for work in the Grant's Course without asking", async () => {
+  it("creates a block for work in its Course without asking", async () => {
     const s = await student();
     const r = await run(s);
     const intent = {
@@ -695,7 +716,7 @@ describe("rechecks at dispatch", () => {
     ).toMatchObject({ status: "done" });
   });
 
-  it("creates a block for a Task in the Grant's Course without asking, though it is toward no Obligation", async () => {
+  it("creates a block for a Task in its Course without asking, though it is toward no Obligation", async () => {
     const s = await student();
     const r = await run(s);
     const taskId = randomUUID();
@@ -719,121 +740,6 @@ describe("rechecks at dispatch", () => {
         },
       }),
     ).toMatchObject({ status: "done" });
-  });
-
-  it("asks a preset Agent under an unscoped Grant: only its scoped Grants are its own", async () => {
-    const s = await student();
-    const r = await run(s, { grants: [] });
-    await admin.grant.create({
-      data: {
-        id: randomUUID(),
-        studentId: s.studentId,
-        agentId: r.agentId,
-        kind: "studyBlock.create",
-      },
-    });
-    const taskId = randomUUID();
-    await admin.task.create({
-      data: {
-        id: taskId,
-        studentId: s.studentId,
-        title: "Bewerbung schreiben",
-      },
-    });
-    const g = gate(fakeExecutor().executor);
-    const block = (workId: string) => ({
-      kind: "studyBlock.create" as const,
-      workId,
-      start: new Date("2026-11-11T09:00:00Z"),
-      end: new Date("2026-11-11T10:00:00Z"),
-    });
-
-    expect(
-      await g.perform(r.p, { key: `${r.runId}:1`, intent: block(taskId) }),
-    ).toMatchObject({ status: "awaiting_approval" });
-    expect(
-      await g.perform(r.p, {
-        key: `${r.runId}:2`,
-        intent: block(s.obligationId),
-      }),
-    ).toMatchObject({ status: "awaiting_approval" });
-  });
-
-  it("asks before adding or reopening a Task, even in a Run whose Grant covers its Course", async () => {
-    const s = await student();
-    const r = await run(s);
-    const taskId = randomUUID();
-    await admin.task.create({
-      data: {
-        id: taskId,
-        studentId: s.studentId,
-        courseId: s.courseId,
-        title: "VL 3 nacharbeiten",
-        doneAt: now,
-      },
-    });
-    const g = gate(fakeExecutor().executor);
-
-    expect(
-      await g.perform(r.p, {
-        key: `${r.runId}:1`,
-        intent: {
-          kind: "task.create",
-          title: "VL 4 vorbereiten",
-          courseId: s.courseId,
-          fixedEventId: null,
-          role: null,
-          estimateMinutes: 30,
-        },
-      }),
-    ).toMatchObject({ status: "awaiting_approval" });
-    expect(
-      await g.perform(r.p, {
-        key: `${r.runId}:2`,
-        intent: { kind: "task.reopen", taskId },
-      }),
-    ).toMatchObject({ status: "awaiting_approval" });
-  });
-
-  it("asks before moving a block the student placed, even with a Grant", async () => {
-    const s = await student();
-    await admin.studyBlock.update({
-      where: { id: s.blockId },
-      data: { placedBy: "student" },
-    });
-    const r = await run(s);
-
-    expect(
-      await gate(fakeExecutor().executor).perform(r.p, {
-        key: `${r.runId}:1`,
-        intent: move(s),
-      }),
-    ).toMatchObject({ status: "awaiting_approval" });
-  });
-
-  it("lets a Restriction turn a Grant into asking, never the reverse", async () => {
-    const s = await student();
-    const asking = await run(s);
-    await admin.agent.update({
-      where: { id: asking.agentId },
-      data: { restrictions: { alwaysAsk: ["studyBlock.move"] } },
-    });
-    const ungranted = await run(s, { grants: [] });
-    await admin.agent.update({
-      where: { id: ungranted.agentId },
-      data: { restrictions: { allowedKinds: ["studyBlock.move"] } },
-    });
-    const g = gate(fakeExecutor().executor);
-
-    expect(
-      await g.perform(asking.p, { key: `${asking.runId}:1`, intent: move(s) }),
-    ).toMatchObject({ status: "awaiting_approval" });
-    expect(
-      await g.perform(ungranted.p, {
-        key: `${ungranted.runId}:1`,
-        intent: move(s),
-      }),
-    ).toMatchObject({ status: "awaiting_approval" });
   });
 });
 
@@ -1162,69 +1068,8 @@ describe("meter in a Run", () => {
   });
 });
 
-describe("durable Approval decision delivery", () => {
-  it.each(["approve", "deny"] as const)(
-    "retries a %s wake after delivery loses its acknowledgement, then stops retrying",
-    async (kind) => {
-      const s = await student();
-      const other = await student();
-      const r = await run(s, { grants: [] });
-      const workflowId = `workflow-${r.runId}`;
-      await admin.run.update({ where: { id: r.runId }, data: { workflowId } });
-      const { executor, dispatched } = fakeExecutor();
-      const g = gate(executor);
-      const asking = await g.perform(r.p, {
-        key: `${r.runId}:1`,
-        intent: move(s),
-      });
-      if (asking.status !== "awaiting_approval") throw new Error(asking.status);
-      const notices: { actionId: string; workflowId: string; runId: string }[] =
-        [];
-      const notify = async (notice: (typeof notices)[number]) => {
-        notices.push(notice);
-      };
-      // Neither an unanswered Approval nor another student's Principal can produce a wake.
-      expect(await g.notifyDecision(s.p, asking.actionId, notify)).toBe(false);
-      await g.decide(
-        s.p,
-        kind === "approve"
-          ? { kind, actionId: asking.actionId, fingerprint: asking.fingerprint }
-          : { kind, actionId: asking.actionId },
-      );
-      expect(await g.notifyDecision(other.p, asking.actionId, notify)).toBe(
-        false,
-      );
-      expect(notices).toEqual([]);
-      // Temporal accepted the signal, but the sender lost the reply before acknowledging it in Postgres.
-      await expect(
-        g.notifyDecision(s.p, asking.actionId, async (notice) => {
-          await notify(notice);
-          throw new Error("lost delivery reply");
-        }),
-      ).rejects.toThrow("lost delivery reply");
-      expect(
-        (await g.history(s.p))[0]!.events.some(
-          (e) => e.type === "decision_notified",
-        ),
-      ).toBe(false);
-      const restarted = gate(executor);
-      await restarted.reconcile(notify);
-      expect(notices).toEqual(
-        Array(2).fill({
-          actionId: asking.actionId,
-          workflowId,
-          runId: r.runId,
-        }),
-      );
-      expect(await restarted.reconcile(notify)).toBe(0);
-      expect(notices).toHaveLength(2);
-      expect(dispatched).toEqual([]);
-    },
-  );
-});
-
-describe("a free-text Agent's Actions", () => {
-  /** A Run of a free-text Agent on the student's Course, with these Capabilities and a Grant for each on a Grant-holding mode. */
+describe("an Agent's Actions", () => {
+  /** A Run of an Agent on the student's Course, with these Capabilities and a Grant for each on a Grant-holding mode. */
   async function agentRun(
     s: Awaited<ReturnType<typeof student>>,
     held: Record<string, "always" | "automatic" | "ask">,

@@ -80,26 +80,6 @@ type Subjects = {
   "studyBlock.remove": BlockSubject;
 };
 
-/** Where a Grant applies: one Course, or one Obligation. */
-export type GrantScope = { courseId: string } | { obligationId: string };
-
-const inScope = (scope: GrantScope, work: WorkSubject) =>
-  "courseId" in scope
-    ? scope.courseId === work.courseId
-    : scope.obligationId === work.obligationId;
-const covers = {
-  "studyBlock.create": (scope: GrantScope, _: unknown, work: WorkSubject) =>
-    inScope(scope, work),
-  // A Rebalance moves a block the student placed or moved only with their Approval.
-  "studyBlock.move": (scope: GrantScope, _: unknown, block: BlockSubject) =>
-    inScope(scope, block) && block.placedBy === "nunio",
-  // A preset's scoped Grants never add a Task; a free-text Agent's Grant for it is matched by kind (ADR-0022).
-  "task.create": () => false,
-  "task.reopen": () => false,
-  // Only the student removes a block: no Grant covers it (ADR-0021).
-  "studyBlock.remove": () => false,
-};
-
 const versions = {
   "studyBlock.create": 1,
   "studyBlock.move": 1,
@@ -133,16 +113,6 @@ export function canonical(value: unknown): string {
 
 function definition<K extends keyof typeof schemas>(kind: K) {
   return {
-    /** Pure: whether a Grant with this scope lets the Action happen without the student's Approval. */
-    grantCovers(
-      scope: GrantScope,
-      args: z.infer<(typeof schemas)[K]>,
-      subject: Subjects[K],
-    ): boolean {
-      return (
-        covers[kind] as (g: GrantScope, a: unknown, s: Subjects[K]) => boolean
-      )(scope, args, subject);
-    },
     /** The hash of kind@version, the canonical arguments, and what was re-read for them; an Approval is bound to it. */
     fingerprint(
       args: z.infer<(typeof schemas)[K]>,

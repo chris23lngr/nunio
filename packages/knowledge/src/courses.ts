@@ -529,8 +529,20 @@ export function createCourses({
           futureStudyBlocks: await tx.studyBlock.count({
             where: futureBlocks(id),
           }),
+          // Those archiving would Pause: active, with no other accepted, unarchived Course to act for.
           agents: await tx.agent.count({
-            where: { courseId: id, state: { not: "ended" } },
+            where: {
+              state: "active",
+              courses: { some: { courseId: id } },
+              NOT: {
+                courses: {
+                  some: {
+                    courseId: { not: id },
+                    course: { status: "accepted", archivedAt: null },
+                  },
+                },
+              },
+            },
           }),
         };
       });
@@ -559,7 +571,7 @@ export function createCourses({
 
     /**
      * Removes the Course and everything only in it; Sources stay, so a later reading may propose it again (ADR 0015).
-     * It leaves its Agents first, pausing those left with none (a preset Agent is Ended), in their own transaction
+     * It leaves its Agents first, pausing those left with none, in their own transaction
      * because each Schedule changes after that commit; a failure in between leaves them without a Course that still
      * exists, which the student asked to go anyway.
      */

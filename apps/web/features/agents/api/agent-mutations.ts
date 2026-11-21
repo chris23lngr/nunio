@@ -10,39 +10,10 @@ import {
   agentQueries,
 } from "./agent-queries";
 
-type Delegate = Extract<
-  paths["/api/me/agents"]["post"]["requestBody"]["content"]["application/json"],
-  { preset: string }
->;
-
-/** Delegates a Course ("keep this course organized") or one exam ("prepare me for this exam"). */
-export function delegateAgent(apiOrigin: string, queryClient: QueryClient) {
-  return mutationOptions({
-    mutationFn: async (body: Delegate) => {
-      const result = await createApiClient(apiOrigin).POST("/api/me/agents", {
-        body,
-      });
-      if (!result.data)
-        throw new Error(
-          body.preset === "prepare_for_exam"
-            ? "Could not delegate this exam."
-            : "Could not delegate this Course.",
-        );
-      return result.data.id;
-    },
-    onSettled: () =>
-      queryClient.invalidateQueries({
-        queryKey: agentListQueries(apiOrigin).queryKey,
-      }),
-  });
-}
-
 export type AgentForm =
   paths["/api/me/agents/{id}"]["put"]["requestBody"]["content"]["application/json"];
-export type CreateAgentForm = Extract<
-  paths["/api/me/agents"]["post"]["requestBody"]["content"]["application/json"],
-  { instructions: string }
->;
+export type CreateAgentForm =
+  paths["/api/me/agents"]["post"]["requestBody"]["content"]["application/json"];
 
 /** Saves a free-text Agent's whole form: creates it when it has no id yet. Resolves to its id. */
 export function saveAgent(
@@ -99,6 +70,14 @@ export function saveAgent(
   });
 }
 
+/** Why a Paused Agent cannot be resumed, by the API's error code. */
+const conflicts: Record<string, string> = {
+  course_archived:
+    "Alle Kurse deines Agenten sind archiviert. Hebe eine Archivierung auf oder gib ihm einen aktiven Kurs, dann setze ihn fort.",
+  no_course:
+    "Dein Agent hat keinen Kurs mehr. Gib ihm einen Kurs, dann setze ihn fort.",
+};
+
 /**
  * Pause stops its Run under way at the next step or Action and withdraws its open Approvals; only the student resumes;
  * End also removes its Grants for good.
@@ -114,11 +93,13 @@ export function controlAgent(
       const result = await createApiClient(apiOrigin).POST(path, {
         params: { path: { id } },
       });
-      // Resuming needs a Course to act for.
-      if (result.response.status === 409)
-        throw new Error(
-          "Dein Agent hat keinen aktiven Kurs, für den er arbeiten kann. Gib ihm einen Kurs oder hebe eine Archivierung auf, dann setze ihn fort.",
-        );
+      // Resuming needs a Course to act for; each conflict says which is missing.
+      const conflict =
+        result.response.status === 409 &&
+        conflicts[
+          (result.error as { error?: string } | undefined)?.error ?? ""
+        ];
+      if (conflict) throw new Error(conflict);
       if (!result.data)
         throw new Error(
           "Dein Agent konnte nicht geändert werden. Versuche es noch einmal.",

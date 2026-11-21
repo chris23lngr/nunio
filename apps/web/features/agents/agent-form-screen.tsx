@@ -122,7 +122,6 @@ const maxBudget = 100;
 type Saved = Pick<
   Agent,
   | "id"
-  | "preset"
   | "pausedBy"
   | "approvalRunId"
   | "name"

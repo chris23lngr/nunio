@@ -4,13 +4,11 @@
 
 export {
   type AgentForm,
-  type AgentScope,
   type Agents,
   type AgentTrigger,
   checkTrigger,
   createAgents,
   type PausedBy,
-  type Preset,
   type Schedules,
 } from "./agents.js";
 export {
@@ -29,7 +27,6 @@ export {
   type PlanRefusal,
   type PlanVerdict,
   type Refusal,
-  type Restrictions,
   type RunUse,
   runCaps,
 } from "./decision.js";
@@ -39,7 +36,6 @@ export {
   type Approve,
   type BlockIntent,
   type Clock,
-  type DecisionNotifier,
   DelegationUnavailable,
   type Deny,
   type Executor,
@@ -54,7 +50,6 @@ export {
 } from "./gate.js";
 export {
   type ActionIntent,
-  type GrantScope,
   InvalidIntentError,
   type Kind,
 } from "./kinds.js";

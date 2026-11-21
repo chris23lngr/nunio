@@ -474,7 +474,6 @@ describe("retired nunio Briefing (#189)", () => {
       data: {
         id: randomUUID(),
         studentId,
-        preset: "keep_course_organized",
         budgetMicroUsd: 1_000_000,
       },
     });

@@ -30,8 +30,9 @@ export const Approval = z
       .describe("Sent back unchanged to approve exactly this Action."),
     expiresAt: z.date(),
     agent: z
-      .object({ id: z.string(), preset: z.string(), name: z.string() })
-      .nullable(),
+      .object({ id: z.string(), name: z.string() })
+      .nullable()
+      .describe("The Agent whose Run asked; null for a Chat."),
   })
   .openapi("Approval");
 
@@ -163,17 +164,16 @@ export const ActionShown = z
   .openapi("ActionShown");
 
 /**
- * Performs an Action once the student approved it, wherever they did, when no Run waits to: a Chat's, which has no
- * Run (ADR-0019, delegation-gate.md "Chat origin"), or a free-text Agent's, whose Run ended without waiting and still
- * owns the Action (ADR-0006). Its record then tells how it went.
+ * Performs an Action once the student approved it, wherever they did: a Chat's, which has no Run (ADR-0019,
+ * delegation-gate.md "Chat origin"), or an Agent's, whose Run ended without waiting and still owns the Action
+ * (ADR-0006). Its record then tells how it went.
  */
 export async function performApproved(
   c: Context<AppBindings>,
   p: Principal,
   record: ActionRecord,
 ) {
-  if (record.runWaits || record.approval?.decision !== "approved")
-    return record;
+  if (record.approval?.decision !== "approved") return record;
   const delegation = c.get("delegation");
   // A Run's Action goes through the gate as the Run's, so its Agent's state, Courses and Capabilities decide it now.
   await delegation
@@ -206,12 +206,12 @@ export async function approvalsOf(
   ).filter((a) => a.approval && a.approval.expiresAt > now);
   if (!asking.length) return [];
   const plan = await c.get("plan").view(p);
-  const agents = new Map<string, { preset: string; name: string }>();
+  const agents = new Map<string, string>();
   for (const id of new Set(
     asking.flatMap((a) => (a.agentId ? [a.agentId] : [])),
   )) {
     const r = await c.get("agents").view(p, id);
-    if (r) agents.set(id, { preset: r.preset ?? "", name: r.name });
+    if (r) agents.set(id, r.name);
   }
   return asking.map((a: ActionRecord) => ({
     actionId: a.id,
@@ -219,11 +219,7 @@ export async function approvalsOf(
     fingerprint: a.approval!.fingerprint,
     expiresAt: a.approval!.expiresAt,
     agent: a.agentId
-      ? {
-          id: a.agentId,
-          preset: agents.get(a.agentId)?.preset ?? "",
-          name: agents.get(a.agentId)?.name ?? "",
-        }
+      ? { id: a.agentId, name: agents.get(a.agentId) ?? "" }
       : null,
   }));
 }
@@ -296,18 +292,6 @@ export function registerApprovalRoutes(routes: OpenAPIHono<AppBindings>) {
         throw error;
       }
       const applied = await performApproved(c, p, record);
-      // A committed decision is the durable outbox; reconciliation retries an unacknowledged wake.
-      await c
-        .get("delegation")
-        .notifyDecision(p, record.id, ({ workflowId, runId, actionId }) =>
-          c.get("runWorkflows").signalDecided({ workflowId, runId }, actionId),
-        )
-        .catch((error: unknown) => {
-          console.error(
-            "Approval decision saved; reconciliation will retry its wake",
-            error,
-          );
-        });
       // The card showed an Action that is no longer what the gate would do, or a request that had expired.
       if (applied.refusal === "approval_mismatch")
         return c.json({ error: "changed" }, 409);

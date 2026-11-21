@@ -1,15 +1,6 @@
 import type { AgentCapability } from "./capabilities.js";
 import { approvalModes, capabilities } from "./capabilities.js";
-import type { Args, GrantScope, Kind, Subject } from "./kinds.js";
-import { definitions } from "./kinds.js";
-
-/** Advanced configuration on an Agent. Restrictions can only tighten what Grants allow. */
-export interface Restrictions {
-  /** Kinds the Agent may take at all; absent means every kind. */
-  allowedKinds?: Kind[];
-  /** Kinds that always ask for Approval, even under a Grant. */
-  alwaysAsk?: Kind[];
-}
+import type { Args, Kind, Subject } from "./kinds.js";
 
 export type Refusal =
   | "not_owner"
@@ -23,6 +14,7 @@ export type Refusal =
   | "locked"
   | "started"
   | "protected_time"
+  /** A preset's `restrictions` refused it; recorded only before the Agents cutover (#192). */
   | "restricted"
   | "past"
   | "fixed_event"
@@ -55,13 +47,7 @@ export interface PlanVerdict {
   brokenPreferences: BrokenPreference[];
 }
 
-/** A pilot preset's Agent: Grants scoped to its Course or exam, which Restrictions can only tighten. */
-export interface PresetAgent {
-  state: "active" | "paused" | "ended";
-  grants: { id: string; kind: Kind; scope: GrantScope }[];
-  restrictions: Restrictions;
-}
-/** A free-text Agent: Capabilities with their modes, unscoped Grants, and its Courses as scope (ADR-0001). */
+/** An Agent: Capabilities with their modes, unscoped Grants, and its Courses as scope (ADR-0001). */
 export interface CapableAgent {
   id: string;
   state: "active" | "paused" | "ended";
@@ -111,13 +97,13 @@ export interface Snapshot<K extends Kind = Kind> {
   fingerprint: string;
   now: Date;
   /** The Run's Agent; null in a Chat, which has none and so no Grants. */
-  agent: PresetAgent | CapableAgent | null;
-  /** Read for a Chat's and a preset Agent's Actions; a free-text Agent's go by `planCheck`. */
+  agent: CapableAgent | null;
+  /** Read for a Chat's Actions; an Agent's go by `planCheck`. */
   intoProtectedTime: boolean;
-  /** For a free-text Agent's Study Block Action, the Plan's rules on it; null otherwise. */
+  /** For an Agent's Study Block Action, the Plan's rules on it; null otherwise. */
   planCheck: PlanVerdict | null;
   /**
-   * For a free-text Agent's new Task, when it would be due: its Obligation's deadline, or the end of its Preparation's or
+   * For an Agent's new Task, when it would be due: its Obligation's deadline, or the end of its Preparation's or
    * Follow-up's window; null otherwise, as for a Task in a Course, which has no deadline.
    */
   taskDue: Date | null;
@@ -128,7 +114,7 @@ export interface Snapshot<K extends Kind = Kind> {
     fingerprint: string;
     expiresAt: Date;
   } | null;
-  /** For a new call of a free-text Agent's Run, what it used so far; null otherwise, such as for an Action already asked. */
+  /** For a new call of an Agent's Run, what it used so far; null otherwise, such as for an Action already asked. */
   runUse: RunUse | null;
 }
 
@@ -144,13 +130,16 @@ export type Decision =
 
 const refuse = (reason: Refusal): Decision => ({ outcome: "refuse", reason });
 
-/** The pure decision core: whether an Action may happen now, and on which authority. */
+/**
+ * The pure decision core: whether an Action may happen now, and on which authority. A Chat's Action, which has no Agent
+ * and so no Grant, always needs the student's Approval.
+ */
 export function decideAction<K extends Kind>(s: Snapshot<K>): Decision {
-  const { intent, subject, agent, approval } = s;
+  const { intent, subject, agent } = s;
   if (!subject) return refuse("not_owner");
   if (agent?.state === "ended") return refuse("ended");
   if (agent?.state === "paused") return refuse("paused");
-  if (agent && "capabilities" in agent)
+  if (agent)
     return decideForAgent(s as Snapshot<K> & { subject: Subject<K> }, agent);
   // Neither a Lock nor Protected Time yields to asking.
   if ("locked" in subject && subject.locked) return refuse("locked");
@@ -162,35 +151,7 @@ export function decideAction<K extends Kind>(s: Snapshot<K>): Decision {
   )
     return refuse("started");
   if (s.intoProtectedTime) return refuse("protected_time");
-  const restrictions = (agent as PresetAgent | null)?.restrictions ?? {};
-  if (
-    restrictions.allowedKinds &&
-    !restrictions.allowedKinds.includes(intent.kind)
-  )
-    return refuse("restricted");
-
-  if (approval?.decision === "denied") return refuse("approval_denied");
-  if (approval && s.now >= approval.expiresAt)
-    return refuse("approval_expired");
-  if (approval?.decision === "approved") {
-    return approval.fingerprint === s.fingerprint
-      ? { outcome: "dispatch", authority: { approvalId: approval.id } }
-      : refuse("approval_mismatch");
-  }
-
-  const definition = definitions[intent.kind] as unknown as {
-    grantCovers(scope: GrantScope, args: Args<K>, subject: Subject<K>): boolean;
-  };
-  const grant = restrictions.alwaysAsk?.includes(intent.kind)
-    ? undefined
-    : (agent as PresetAgent | null)?.grants.find(
-        (g) =>
-          g.kind === intent.kind &&
-          definition.grantCovers(g.scope, intent.args, subject),
-      );
-  return grant
-    ? { outcome: "dispatch", authority: { grantId: grant.id } }
-    : { outcome: "await_approval" };
+  return answered(s) ?? { outcome: "await_approval" };
 }
 
 const dayMs = 24 * 60 * 60_000;

@@ -39,10 +39,8 @@ beforeAll(async () => {
     db: runtime,
     clock,
     schedules: {
-      create: async () => {},
-      save: async () => {},
-      pause: async (id) => void scheduled.push(`pause ${id}`),
-      unpause: async (id) => void scheduled.push(`unpause ${id}`),
+      save: async ({ agentId, paused }) =>
+        void scheduled.push(`save ${agentId}${paused ? " paused" : ""}`),
       delete: async (id) => void scheduled.push(`delete ${id}`),
     },
   });
@@ -439,9 +437,15 @@ async function block(
 
 async function keepOrganized(p: Principal, courseId: string) {
   const result = await agents.create(p, {
-    preset: "keep_course_organized",
-    courseId,
+    name: "Kurs organisieren",
+    description: "",
+    emoji: "📚",
+    instructions: "Halte den Kurs organisiert.",
+    courseIds: [courseId],
+    capabilities: [],
     budgetMicroUsd: 1_000_000,
+    trigger: { rhythm: "daily", minute: 360 },
+    modelKey: "sonnet-5.5-reasoning-high",
   });
   if (result.status !== "ok") throw new Error(result.status);
   return result.id;
@@ -474,7 +478,7 @@ it("archives a Course: its future Study Blocks go, Locked ones too, and its Agen
   expect(await agents.view(p, agent)).toEqual(
     expect.objectContaining({ state: "paused", pausedBy: "course_archived" }),
   );
-  expect(scheduled).toContain(`pause ${agent}`);
+  expect(scheduled).toContain(`save ${agent} paused`);
 
   expect(await courses.unarchive(p, id)).toEqual({ status: "ok" });
   expect((await courses.list(p)).courses[0]).toEqual(
@@ -483,7 +487,7 @@ it("archives a Course: its future Study Blocks go, Locked ones too, and its Agen
   expect((await agents.view(p, agent))?.state).toBe("paused");
 });
 
-it("deletes a Course with everything only in it, ending its Agents; Projects stay without it", async () => {
+it("deletes a Course with everything only in it, pausing an Agent left with no Course; Projects stay without it", async () => {
   const p = await student();
   const id = await created(p, { title: "Statistik II" });
   const kept = await created(p, { title: "Analysis I" });
@@ -502,7 +506,9 @@ it("deletes a Course with everything only in it, ending its Agents; Projects sta
 
   expect((await courses.list(p)).courses.map((c) => c.id)).toEqual([kept]);
   expect(await courses.impact(p, id)).toBeNull();
-  expect((await agents.view(p, agent))?.state).toBe("ended");
+  expect(await agents.view(p, agent)).toEqual(
+    expect.objectContaining({ state: "paused", pausedBy: "no_course" }),
+  );
   expect(await projects.list(p)).toEqual([
     expect.objectContaining({
       id: project.id,

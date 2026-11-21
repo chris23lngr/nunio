@@ -6,7 +6,7 @@ We rejected one long-lived workflow per Agent because semester-long executions m
 
 ## Amendment (2026-11-19): Approvals outlive the Run
 
-Agents replace Responsibilities, and a Run that waited up to 7 days for its Approvals would skip every scheduled Run and "Jetzt starten" in the meantime, so one ignored card would stop a daily Agent for a week ([What happens to an Agent's next Runs while one awaits Approval](https://github.com/chris23lngr/nunio/issues/153)).
+Agents run on the student's free-text Instructions, and a Run that waited up to 7 days for its Approvals would skip every scheduled Run and "Jetzt starten" in the meantime, so one ignored card would stop a daily Agent for a week ([What happens to an Agent's next Runs while one awaits Approval](https://github.com/chris23lngr/nunio/issues/153)).
 
 - **A Run ends when its model finishes.** Its workflow no longer waits for Approvals. An Action needing Approval goes back to the model as asked, not happened, and stays open in the Inbox after the Run ends. The student's decision is applied by the API through the gate, as for a Chat's Approvals ([ADR-0019](0019-the-chat-model-calls-tools.md)), and the Action still belongs to its Run.
 - **Expiry is lazy.** An Approval still expires after 7 days, never later than the related Obligation's deadline, but no timer closes it. It shows as expired, the gate refuses a late decision, and no Intervention is raised.

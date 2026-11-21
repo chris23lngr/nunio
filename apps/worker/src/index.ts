@@ -5,6 +5,7 @@ import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createAgentSchedules,
+  retirePresets,
   workflowAlive,
 } from "@nunio/delegation/temporal-schedules";
 import { payloadCodecFromEnv } from "@nunio/keys";
@@ -16,7 +17,6 @@ import {
   artifactRunStarter,
   createArtifactActivities,
 } from "./artifact-activities.js";
-import { createDecisionNotifier } from "./decision-notifier.js";
 import { log } from "./log.js";
 import { createModelCatalogActivities } from "./model-catalog-activities.js";
 import { ensureModelPriceSchedule } from "./model-price-schedule.js";
@@ -65,10 +65,7 @@ const client = new Client({
   namespace: required("TEMPORAL_NAMESPACE"),
   dataConverter: { payloadCodecs: [codec] },
 });
-const runActivities = runActivitiesFromEnv(
-  process.env,
-  createDecisionNotifier(client),
-);
+const runActivities = runActivitiesFromEnv(process.env);
 await ensureReconcileSchedule(client, taskQueue);
 await ensureOutreachSchedule(client, taskQueue);
 await ensureModelPriceSchedule(client, taskQueue);
@@ -86,7 +83,9 @@ const agentRunActivities = agentRunActivitiesFromEnv(
   workflowAlive(client),
   artifactRunStarter(client, taskQueue),
 );
-// Free-text Agents saved before they had a trigger have no Schedule yet; each start brings every one in line.
+// Before polling: the Agents cutover (#192) retires the presets' Schedules and Runs, so this worker, which has no preset
+// workflow, never runs or replays one. Then every Agent's Schedule is saved under its own ID; each start repeats both.
+await retirePresets(client);
 await agentRunActivities.saveSchedules();
 const worker = await Worker.create({
   connection,

@@ -1,6 +1,5 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
-import { scopeNames } from "./agents.js";
 import type { AppBindings } from "./app.js";
 import { describeAction } from "./approvals.js";
 import { errors, json, student } from "./outcomes.js";
@@ -73,20 +72,7 @@ const HomeView = z
           z.object({
             kind: z.literal("agent"),
             id: z.string(),
-            preset: z
-              .enum(["keep_course_organized", "prepare_for_exam"])
-              .nullable()
-              .describe("Null for a free-text Agent."),
-            name: z
-              .string()
-              .describe(
-                "Empty for a preset Agent, which is named after its scope.",
-              ),
-            course: z.string().nullable(),
-            exam: z
-              .string()
-              .nullable()
-              .describe("The exam it prepares for; null for a Course."),
+            name: z.string(),
             state: z.enum(["active", "paused", "ended"]),
           }),
         ]),
@@ -128,18 +114,12 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
             title: describeAction(plan, a.kind, a.args).work.title,
             expiresAt: a.approval!.expiresAt,
           })),
-        ...delegated.map((r) => {
-          const { course, exam } = scopeNames(review, r.scope);
-          return {
-            kind: "agent" as const,
-            id: r.id,
-            preset: r.preset,
-            name: r.name,
-            course: course?.title ?? null,
-            exam: exam?.title ?? null,
-            state: r.state,
-          };
-        }),
+        ...delegated.map((r) => ({
+          kind: "agent" as const,
+          id: r.id,
+          name: r.name,
+          state: r.state,
+        })),
       ];
       const work = new Map([
         ...plan.obligations.map(

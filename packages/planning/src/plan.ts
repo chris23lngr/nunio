@@ -2,8 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { Estimator, SeriesAssigner } from "@nunio/ai";
 import type { PrismaClient } from "@nunio/db";
 import type {
-  ActionIntent,
-  AgentScope,
   Delegation,
   PlanRefusal,
   PlanRules,
@@ -520,50 +518,6 @@ export function createPlan({
         async (tx) =>
           (await tx.planPreference.findFirst())?.timeZone ?? defaults.timeZone,
       );
-    },
-    /**
-     * The Rebalance moves for one Course's Obligations, or one exam, and their Tasks, as Actions for the
-     * gate, which decides which of them need the student's Approval.
-     */
-    async intentsFor(p: Principal, scope: AgentScope): Promise<ActionIntent[]> {
-      const {
-        obligations: items,
-        tasks,
-        proposal,
-      } = await withOwner(db, p, (tx) => planView(p, tx));
-      const inScope = new Set(
-        items
-          .filter((o) =>
-            "courseId" in scope
-              ? o.courseId === scope.courseId
-              : o.id === scope.obligationId,
-          )
-          .map((o) => o.id),
-      );
-      for (const task of tasks)
-        if (
-          (task.obligationId && inScope.has(task.obligationId)) ||
-          ("courseId" in scope && task.courseId === scope.courseId)
-        )
-          inScope.add(task.id);
-      return proposal.moves
-        .filter((move) => inScope.has(move.workId))
-        .map(
-          (move): ActionIntent =>
-            move.kind === "create"
-              ? {
-                  kind: "studyBlock.create",
-                  workId: move.workId,
-                  start: move.start,
-                  end: move.end,
-                }
-              : {
-                  kind: "studyBlock.move",
-                  studyBlockId: move.blockId,
-                  start: move.to.start,
-                  end: move.to.end,
-                },
-        );
     },
     /** Applies one proposed move as the student's own decision, only while it matches a fresh proposal. */
     async apply(p: Principal, move: Move) {

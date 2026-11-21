@@ -4,7 +4,7 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { Executor, Schedules } from "./index.js";
+import type { Executor, PlanRules, Schedules } from "./index.js";
 import { createAgents, createDelegation, principal } from "./index.js";
 
 let db: TestDatabase;
@@ -32,19 +32,10 @@ const clock = { now: () => now };
 function fakeSchedules() {
   const calls: string[] = [];
   const schedules: Schedules = {
-    async create({ agentId }) {
-      calls.push(`create ${agentId}`);
-    },
     async save({ agentId, trigger, timeZone, paused }) {
       calls.push(
         `save ${agentId} ${JSON.stringify(trigger)} ${timeZone}${paused ? " paused" : ""}`,
       );
-    },
-    async pause(agentId) {
-      calls.push(`pause ${agentId}`);
-    },
-    async unpause(agentId) {
-      calls.push(`unpause ${agentId}`);
     },
     async delete(agentId) {
       calls.push(`delete ${agentId}`);
@@ -62,7 +53,13 @@ const executor: Executor = {
   },
 };
 
-/** A student with one Course, one Obligation in it, and one block nunio placed for it. */
+/** The Plan's rules, refusing nothing an Agent's Study Block Action does. */
+const planRules: PlanRules = {
+  check: async () => ({ refusals: [], brokenPreferences: [] }),
+  taskDue: async () => null,
+};
+
+/** A student with one accepted Course, one Obligation in it, and one block nunio placed for it. */
 async function student() {
   const studentId = randomUUID(),
     courseId = randomUUID(),
@@ -88,6 +85,7 @@ async function student() {
       matchTitle: "analysis i",
       semester: "2026-ws",
       color: "rose",
+      status: "accepted",
     },
   });
   await admin.obligation.create({
@@ -114,10 +112,34 @@ async function student() {
   return {
     studentId,
     courseId,
+    obligationId,
     blockId,
     p: principal.fromSession({ studentId }),
   };
 }
+
+/** An Agent's form for the student's Course: creating Study Blocks on Immer erlaubt, daily at 06:00. */
+const form = (courseId: string, budgetMicroUsd = 50_000) => ({
+  name: "Analysis organisieren",
+  description: "",
+  emoji: "🤖",
+  instructions: "Halte Analysis I organisiert.",
+  courseIds: [courseId],
+  capabilities: [{ id: "createStudyBlocks", mode: "always" }],
+  budgetMicroUsd,
+  trigger: { rhythm: "daily" as const, minute: 360 },
+  modelKey: "sonnet-5.5-reasoning-high",
+});
+/** What the fake Schedules record for that form's Agent. */
+const saved = (id: string, paused = false) =>
+  `save ${id} {"rhythm":"daily","minute":360} Europe/Berlin${paused ? " paused" : ""}`;
+/** A block for the student's Obligation, two days ahead. */
+const block = (s: { obligationId: string }) => ({
+  kind: "studyBlock.create" as const,
+  workId: s.obligationId,
+  start: new Date("2026-11-12T14:00:00Z"),
+  end: new Date("2026-11-12T15:00:00Z"),
+});
 
 const move = (blockId: string) => ({
   kind: "studyBlock.move" as const,
@@ -127,26 +149,19 @@ const move = (blockId: string) => ({
 });
 
 describe("Agents", () => {
-  it("lets the Runs of 'keep this course organized' act on that Course without asking", async () => {
+  it("lets its Runs act on its Course under its Grants, without asking", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
-    const agents = createAgents({
-      db: runtime,
-      schedules,
-      clock,
-    });
+    const agents = createAgents({ db: runtime, schedules, clock });
     const gate = createDelegation({
       db: runtime,
       aiEnabled: () => true,
       clock,
       executors: { plan: executor },
+      planRules,
     });
 
-    const created = await agents.create(s.p, {
-      preset: "keep_course_organized",
-      courseId: s.courseId,
-      budgetMicroUsd: 50_000,
-    });
+    const created = await agents.create(s.p, form(s.courseId));
     if (created.status !== "ok") throw new Error(created.status);
     const runId = await agents.startRun({
       runId: randomUUID(),
@@ -158,32 +173,25 @@ describe("Agents", () => {
 
     expect(
       await gate.perform(principal.fromRun(runId), {
-        key: `${runId}:1`,
-        intent: move(s.blockId),
+        key: `${runId}:1:1`,
+        intent: block(s),
       }),
     ).toMatchObject({ status: "done" });
-    expect(calls).toEqual([`create ${created.id}`]);
+    expect(calls).toEqual([saved(created.id)]);
   });
 
   it("pauses: the Schedule pauses, no Run starts, and a Run under way takes no next Action", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
-    const agents = createAgents({
-      db: runtime,
-      schedules,
-      clock,
-    });
+    const agents = createAgents({ db: runtime, schedules, clock });
     const gate = createDelegation({
       db: runtime,
       aiEnabled: () => true,
       clock,
       executors: { plan: executor },
+      planRules,
     });
-    const created = await agents.create(s.p, {
-      preset: "keep_course_organized",
-      courseId: s.courseId,
-      budgetMicroUsd: 50_000,
-    });
+    const created = await agents.create(s.p, form(s.courseId));
     if (created.status !== "ok") throw new Error(created.status);
     const runId = (await agents.startRun({
       runId: randomUUID(),
@@ -192,13 +200,12 @@ describe("Agents", () => {
       agentId: created.id,
     }))!;
 
-    // A preset's Runs record no status, so none is under way to stop.
     expect(await agents.pause(s.p, created.id)).toEqual({
       status: "ok",
-      runs: [],
+      runs: [{ runId, workflowId: "run-workflow" }],
     });
 
-    expect(calls).toEqual([`create ${created.id}`, `pause ${created.id}`]);
+    expect(calls).toEqual([saved(created.id), saved(created.id, true)]);
     expect(
       await agents.startRun({
         runId: randomUUID(),
@@ -209,8 +216,8 @@ describe("Agents", () => {
     ).toBeNull();
     expect(
       await gate.perform(principal.fromRun(runId), {
-        key: `${runId}:1`,
-        intent: move(s.blockId),
+        key: `${runId}:1:1`,
+        intent: block(s),
       }),
     ).toMatchObject({ status: "refused", reason: "paused" });
   });
@@ -218,22 +225,14 @@ describe("Agents", () => {
   it("resumes only when the student says so, even after exhausting its Budget", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
-    const agents = createAgents({
-      db: runtime,
-      schedules,
-      clock,
-    });
+    const agents = createAgents({ db: runtime, schedules, clock });
     const gate = createDelegation({
       db: runtime,
       aiEnabled: () => true,
       clock,
       executors: { plan: executor },
     });
-    const created = await agents.create(s.p, {
-      preset: "keep_course_organized",
-      courseId: s.courseId,
-      budgetMicroUsd: 1_000,
-    });
+    const created = await agents.create(s.p, form(s.courseId, 1_000));
     if (created.status !== "ok") throw new Error(created.status);
     const runId = (await agents.startRun({
       runId: randomUUID(),
@@ -246,6 +245,10 @@ describe("Agents", () => {
     expect(
       await gate.meter(principal.fromRun(runId), { microUsd: 1 }, call),
     ).toEqual({ status: "refused", reason: "budget_exhausted" });
+    await admin.run.update({
+      where: { id: runId },
+      data: { status: "stopped", endedAt: now },
+    });
     expect(
       await agents.startRun({
         runId: randomUUID(),
@@ -259,7 +262,7 @@ describe("Agents", () => {
       status: "ok",
     });
 
-    expect(calls).toEqual([`create ${created.id}`, `unpause ${created.id}`]);
+    expect(calls).toEqual([saved(created.id), saved(created.id)]);
     expect(
       await agents.startRun({
         runId: randomUUID(),
@@ -287,11 +290,7 @@ describe("Agents", () => {
       aiEnabled: () => true,
       clock,
     });
-    const created = await agents.create(s.p, {
-      preset: "keep_course_organized",
-      courseId: s.courseId,
-      budgetMicroUsd: 1_000,
-    });
+    const created = await agents.create(s.p, form(s.courseId, 1_000));
     if (created.status !== "ok") throw new Error(created.status);
     const run = principal.fromRun(
       (await agents.startRun({
@@ -354,20 +353,12 @@ describe("Agents", () => {
   it("stops Actions even when pausing the Schedule fails", async () => {
     const s = await student();
     const { schedules } = fakeSchedules();
-    schedules.pause = async () => {
+    const agents = createAgents({ db: runtime, schedules, clock });
+    const created = await agents.create(s.p, form(s.courseId));
+    if (created.status !== "ok") throw new Error(created.status);
+    schedules.save = async () => {
       throw new Error("Temporal unavailable");
     };
-    const agents = createAgents({
-      db: runtime,
-      schedules,
-      clock,
-    });
-    const created = await agents.create(s.p, {
-      preset: "keep_course_organized",
-      courseId: s.courseId,
-      budgetMicroUsd: 50_000,
-    });
-    if (created.status !== "ok") throw new Error(created.status);
     await expect(agents.pause(s.p, created.id)).rejects.toThrow(
       "Temporal unavailable",
     );
@@ -379,6 +370,9 @@ describe("Agents", () => {
   it("orders concurrent pause and resume with their Schedule changes", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
+    const agents = createAgents({ db: runtime, schedules, clock });
+    const created = await agents.create(s.p, form(s.courseId));
+    if (created.status !== "ok") throw new Error(created.status);
     let started!: () => void;
     let release!: () => void;
     const pauseStarted = new Promise<void>((resolve) => {
@@ -387,22 +381,14 @@ describe("Agents", () => {
     const pauseReleased = new Promise<void>((resolve) => {
       release = resolve;
     });
-    schedules.pause = async (id) => {
-      started();
-      await pauseReleased;
-      calls.push(`pause ${id}`);
+    const save = schedules.save;
+    schedules.save = async (r) => {
+      if (r.paused) {
+        started();
+        await pauseReleased;
+      }
+      await save(r);
     };
-    const agents = createAgents({
-      db: runtime,
-      schedules,
-      clock,
-    });
-    const created = await agents.create(s.p, {
-      preset: "keep_course_organized",
-      courseId: s.courseId,
-      budgetMicroUsd: 50_000,
-    });
-    if (created.status !== "ok") throw new Error(created.status);
     const pausing = agents.pause(s.p, created.id);
     await pauseStarted;
     const resuming = agents.resume(s.p, created.id);
@@ -411,9 +397,9 @@ describe("Agents", () => {
     release();
     await Promise.all([pausing, resuming]);
     expect(calls).toEqual([
-      `create ${created.id}`,
-      `pause ${created.id}`,
-      `unpause ${created.id}`,
+      saved(created.id),
+      saved(created.id, true),
+      saved(created.id),
     ]);
     expect(await agents.view(s.p, created.id)).toMatchObject({
       state: "active",
@@ -423,16 +409,8 @@ describe("Agents", () => {
   it("records one Run when startup is retried, even after a Pause", async () => {
     const s = await student();
     const { schedules } = fakeSchedules();
-    const agents = createAgents({
-      db: runtime,
-      schedules,
-      clock,
-    });
-    const created = await agents.create(s.p, {
-      preset: "keep_course_organized",
-      courseId: s.courseId,
-      budgetMicroUsd: 50_000,
-    });
+    const agents = createAgents({ db: runtime, schedules, clock });
+    const created = await agents.create(s.p, form(s.courseId));
     if (created.status !== "ok") throw new Error(created.status);
     const ref = {
       studentId: s.studentId,
@@ -450,16 +428,8 @@ describe("Agents", () => {
   it("does not let a Run create Grants or control Agents", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
-    const agents = createAgents({
-      db: runtime,
-      schedules,
-      clock,
-    });
-    const input = {
-      preset: "keep_course_organized" as const,
-      courseId: s.courseId,
-      budgetMicroUsd: 50_000,
-    };
+    const agents = createAgents({ db: runtime, schedules, clock });
+    const input = form(s.courseId);
     const created = await agents.create(s.p, input);
     if (created.status !== "ok") throw new Error(created.status);
     const runId = await agents.startRun({
@@ -486,28 +456,21 @@ describe("Agents", () => {
     expect(await agents.view(s.p, created.id)).toMatchObject({
       state: "paused",
     });
-    expect(calls).toEqual([`create ${created.id}`, `pause ${created.id}`]);
+    expect(calls).toEqual([saved(created.id), saved(created.id, true)]);
   });
 
   it("ends for good: its Grants and Schedule are gone, its history remains", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
-    const agents = createAgents({
-      db: runtime,
-      schedules,
-      clock,
-    });
+    const agents = createAgents({ db: runtime, schedules, clock });
     const gate = createDelegation({
       db: runtime,
       aiEnabled: () => true,
       clock,
       executors: { plan: executor },
+      planRules,
     });
-    const created = await agents.create(s.p, {
-      preset: "keep_course_organized",
-      courseId: s.courseId,
-      budgetMicroUsd: 50_000,
-    });
+    const created = await agents.create(s.p, form(s.courseId));
     if (created.status !== "ok") throw new Error(created.status);
     const runId = (await agents.startRun({
       runId: randomUUID(),
@@ -516,17 +479,16 @@ describe("Agents", () => {
       agentId: created.id,
     }))!;
     await gate.perform(principal.fromRun(runId), {
-      key: `${runId}:1`,
-      intent: move(s.blockId),
+      key: `${runId}:1:1`,
+      intent: block(s),
     });
 
-    // A preset's Runs record no status, so none is under way to stop.
     expect(await agents.end(s.p, created.id)).toEqual({
       status: "ok",
-      runs: [],
+      runs: [{ runId, workflowId: "run-workflow" }],
     });
 
-    expect(calls).toEqual([`create ${created.id}`, `delete ${created.id}`]);
+    expect(calls).toEqual([saved(created.id), `delete ${created.id}`]);
     expect(await agents.resume(s.p, created.id)).toEqual({
       status: "gone",
     });
@@ -539,29 +501,17 @@ describe("Agents", () => {
     ]);
   });
 
-  it("never delegates, or controls, another student's Course or Agent", async () => {
+  it("never takes, or controls, another student's Course or Agent", async () => {
     const s = await student();
     const other = await student();
     const { schedules, calls } = fakeSchedules();
-    const agents = createAgents({
-      db: runtime,
-      schedules,
-      clock,
-    });
-    const theirs = await agents.create(other.p, {
-      preset: "keep_course_organized",
-      courseId: other.courseId,
-      budgetMicroUsd: 50_000,
-    });
+    const agents = createAgents({ db: runtime, schedules, clock });
+    const theirs = await agents.create(other.p, form(other.courseId));
     if (theirs.status !== "ok") throw new Error(theirs.status);
 
-    expect(
-      await agents.create(s.p, {
-        preset: "keep_course_organized",
-        courseId: other.courseId,
-        budgetMicroUsd: 50_000,
-      }),
-    ).toEqual({ status: "gone" });
+    expect(await agents.create(s.p, form(other.courseId))).toEqual({
+      status: "gone",
+    });
     expect(await agents.pause(s.p, theirs.id)).toEqual({
       status: "gone",
     });
@@ -572,214 +522,7 @@ describe("Agents", () => {
       status: "gone",
     });
     expect(await agents.view(s.p, theirs.id)).toBeNull();
-    expect(calls).toEqual([`create ${theirs.id}`]);
-  });
-});
-
-/** An exam in the student's Course, with one block nunio placed for it. */
-async function exam(s: Awaited<ReturnType<typeof student>>) {
-  const examId = randomUUID(),
-    examBlockId = randomUUID();
-  await admin.obligation.create({
-    data: {
-      id: examId,
-      studentId: s.studentId,
-      courseId: s.courseId,
-      matchKey: "exam",
-      kind: "exam",
-      enteredAt: now,
-      correctedTitle: "Klausur",
-    },
-  });
-  await admin.studyBlock.create({
-    data: {
-      id: examBlockId,
-      studentId: s.studentId,
-      obligationId: examId,
-      placedBy: "nunio",
-      start: new Date("2026-11-10T11:00:00Z"),
-      end: new Date("2026-11-10T12:00:00Z"),
-    },
-  });
-  return { examId, examBlockId };
-}
-
-describe("'prepare me for this exam'", () => {
-  it("lets its Runs act on that exam's blocks without asking, and asks for any other work in the Course", async () => {
-    const s = await student();
-    const { examId, examBlockId } = await exam(s);
-    const agents = createAgents({
-      db: runtime,
-      schedules: fakeSchedules().schedules,
-      clock,
-    });
-    const gate = createDelegation({
-      db: runtime,
-      aiEnabled: () => true,
-      clock,
-      executors: { plan: executor },
-    });
-
-    const created = await agents.create(s.p, {
-      preset: "prepare_for_exam",
-      obligationId: examId,
-      budgetMicroUsd: 50_000,
-    });
-    if (created.status !== "ok") throw new Error(created.status);
-    const runId = (await agents.startRun({
-      studentId: s.studentId,
-      agentId: created.id,
-      runId: randomUUID(),
-      workflowId: "run-workflow",
-    }))!;
-
-    expect(
-      await gate.perform(principal.fromRun(runId), {
-        key: `${runId}:1`,
-        intent: move(examBlockId),
-      }),
-    ).toMatchObject({ status: "done" });
-    expect(
-      await gate.perform(principal.fromRun(runId), {
-        key: `${runId}:2`,
-        intent: move(s.blockId),
-      }),
-    ).toMatchObject({ status: "awaiting_approval" });
-    expect(await agents.view(s.p, created.id)).toMatchObject({
-      preset: "prepare_for_exam",
-      scope: { obligationId: examId },
-      grants: [
-        { kind: "studyBlock.create", obligationId: examId },
-        { kind: "studyBlock.move", obligationId: examId },
-      ],
-    });
-  });
-
-  it("is only for an exam of the student's own", async () => {
-    const s = await student();
-    const other = await student();
-    const { examId: theirExam } = await exam(other);
-    const { schedules, calls } = fakeSchedules();
-    const agents = createAgents({
-      db: runtime,
-      schedules,
-      clock,
-    });
-    const assignment = (
-      await admin.obligation.findFirstOrThrow({
-        where: { studentId: s.studentId, kind: "assignment" },
-      })
-    ).id;
-
-    expect(
-      await agents.create(s.p, {
-        preset: "prepare_for_exam",
-        obligationId: assignment,
-        budgetMicroUsd: 50_000,
-      }),
-    ).toEqual({ status: "gone" });
-    expect(
-      await agents.create(s.p, {
-        preset: "prepare_for_exam",
-        obligationId: theirExam,
-        budgetMicroUsd: 50_000,
-      }),
-    ).toEqual({ status: "gone" });
-    expect(calls).toEqual([]);
-  });
-
-  it("refuses an exam the student rejected, or one in a Course they merged away or rejected", async () => {
-    const s = await student();
-    const { schedules, calls } = fakeSchedules();
-    const agents = createAgents({
-      db: runtime,
-      schedules,
-      clock,
-    });
-    const prepare = (obligationId: string) =>
-      agents.create(s.p, {
-        preset: "prepare_for_exam",
-        obligationId,
-        budgetMicroUsd: 50_000,
-      });
-    const { examId: rejected } = await exam(s);
-    await admin.obligation.update({
-      where: { id: rejected },
-      data: { state: "rejected" },
-    });
-    const inCourse = async (status: "merged" | "rejected") => {
-      const courseId = randomUUID(),
-        examId = randomUUID();
-      await admin.course.create({
-        data: {
-          id: courseId,
-          studentId: s.studentId,
-          title: `Course ${status}`,
-          matchTitle: status,
-          semester: "2026-ws",
-          color: "rose",
-          status,
-        },
-      });
-      await admin.obligation.create({
-        data: {
-          id: examId,
-          studentId: s.studentId,
-          courseId,
-          matchKey: `exam-${status}`,
-          kind: "exam",
-          enteredAt: now,
-          correctedTitle: "Klausur",
-        },
-      });
-      return examId;
-    };
-
-    expect(await prepare(rejected)).toEqual({ status: "gone" });
-    expect(await prepare(await inCourse("merged"))).toEqual({ status: "gone" });
-    expect(await prepare(await inCourse("rejected"))).toEqual({
-      status: "gone",
-    });
-    expect(calls).toEqual([]);
-  });
-
-  it("gives each Run its Agent's scope, exactly as its proposals take it", async () => {
-    const s = await student();
-    const { examId } = await exam(s);
-    const agents = createAgents({
-      db: runtime,
-      schedules: fakeSchedules().schedules,
-      clock,
-    });
-    const runOf = async (input: Parameters<typeof agents.create>[1]) => {
-      const created = await agents.create(s.p, input);
-      if (created.status !== "ok") throw new Error(created.status);
-      return (await agents.startRun({
-        studentId: s.studentId,
-        agentId: created.id,
-        runId: randomUUID(),
-        workflowId: "run-workflow",
-      }))!;
-    };
-
-    expect(
-      await agents.scopeOfRun(
-        await runOf({
-          preset: "prepare_for_exam",
-          obligationId: examId,
-          budgetMicroUsd: 1,
-        }),
-      ),
-    ).toEqual({ obligationId: examId });
-    expect(
-      await agents.scopeOfRun(
-        await runOf({
-          preset: "keep_course_organized",
-          courseId: s.courseId,
-          budgetMicroUsd: 1,
-        }),
-      ),
-    ).toEqual({ courseId: s.courseId });
+    expect(calls).toEqual([saved(theirs.id)]);
   });
 });
 
@@ -806,7 +549,6 @@ describe("a Run the student started", () => {
     expect(await admin.run.findMany({ where: { id: run.runId } })).toEqual([
       expect.objectContaining({ agentId: null, chatId }),
     ]);
-    expect(await agents.scopeOfRun(run.runId)).toBeNull();
     expect(
       await gate.perform(principal.fromRun(run.runId), {
         key: `${run.runId}:1`,
@@ -853,19 +595,11 @@ describe("a Run the student started", () => {
 });
 
 describe("Agents on an Archived Course", () => {
-  it("refuses to start one on an Archived Course, or to resume one while its Course is Archived", async () => {
+  it("refuses to start one on an Archived Course, or to resume one while all its Courses are Archived", async () => {
     const s = await student();
     const { schedules } = fakeSchedules();
-    const agents = createAgents({
-      db: runtime,
-      schedules,
-      clock,
-    });
-    const created = await agents.create(s.p, {
-      preset: "keep_course_organized",
-      courseId: s.courseId,
-      budgetMicroUsd: 50_000,
-    });
+    const agents = createAgents({ db: runtime, schedules, clock });
+    const created = await agents.create(s.p, form(s.courseId));
     if (created.status !== "ok") throw new Error(created.status);
     // Archived as the Course overview would leave it.
     await admin.course.update({
@@ -874,13 +608,9 @@ describe("Agents on an Archived Course", () => {
     });
     await agents.pauseForCourse(s.p, s.courseId);
 
-    expect(
-      await agents.create(s.p, {
-        preset: "keep_course_organized",
-        courseId: s.courseId,
-        budgetMicroUsd: 50_000,
-      }),
-    ).toEqual({ status: "course_archived" });
+    expect(await agents.create(s.p, form(s.courseId))).toEqual({
+      status: "course_archived",
+    });
     expect(await agents.resume(s.p, created.id)).toEqual({
       status: "course_archived",
     });
@@ -895,7 +625,7 @@ describe("Agents on an Archived Course", () => {
   });
 });
 
-describe("a free-text Agent's Schedule", () => {
+describe("an Agent's Schedule", () => {
   /** A student whose one Course an Agent can be given, in their Plan's time zone. */
   async function withAcceptedCourse(timeZone = "Europe/Vienna") {
     const s = await student();
@@ -1002,7 +732,7 @@ describe("a free-text Agent's Schedule", () => {
     expect(await agents.list(s.p)).toEqual([]);
   });
 
-  it("is saved for every free-text Agent not Ended, paused while it is Paused, when the worker starts", async () => {
+  it("is saved for every Agent not Ended, paused while it is Paused, when the worker starts", async () => {
     const s = await withAcceptedCourse("Europe/Berlin");
     const { schedules, calls } = fakeSchedules();
     const agents = createAgents({ db: runtime, schedules, clock });
@@ -1019,17 +749,11 @@ describe("a free-text Agent's Schedule", () => {
     const ended = await make(480);
     await agents.pause(s.p, paused);
     await agents.end(s.p, ended);
-    const preset = await agents.create(s.p, {
-      preset: "keep_course_organized",
-      courseId: s.courseId,
-      budgetMicroUsd: 50_000,
-    });
-    if (preset.status !== "ok") throw new Error(preset.status);
     calls.length = 0;
 
     await agents.saveSchedules();
     const mine = calls.filter((call) =>
-      [active, paused, ended, preset.id].some((id) => call.includes(id)),
+      [active, paused, ended].some((id) => call.includes(id)),
     );
 
     expect(mine).toEqual([

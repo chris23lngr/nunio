@@ -15,31 +15,18 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@nunio/ui/components/input-group/input-group";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@nunio/ui/components/select/select";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
 import Link from "next/link";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { PageHeader } from "@/features/shared/components/page-header";
-import { useAppForm } from "@/lib/form";
-import { controlAgent, delegateAgent } from "./api/agent-mutations";
+import { controlAgent } from "./api/agent-mutations";
 import type { AgentRow, AgentTemplate } from "./api/agent-queries";
-import {
-  agentListQueries,
-  agentTemplatesQueries,
-  delegableCourseQueries,
-} from "./api/agent-queries";
+import { agentListQueries, agentTemplatesQueries } from "./api/agent-queries";
 import { AgentMenu } from "./components/agent-menu";
 import { TemplateCard } from "./components/template-card";
 import { TemplateDetailsDialog } from "./components/template-details-dialog";
-import { nameOf, pausedLine } from "./name";
+import { pausedLine } from "./name";
 
 /** Each badge's words and colours; an Agent with none shows nothing. */
 const badges = {
@@ -65,7 +52,7 @@ function AgentListItem({
 }) {
   const queryClient = useQueryClient();
   const control = useMutation(controlAgent(apiOrigin, agent.id, queryClient));
-  const name = nameOf(agent);
+  const { name } = agent;
   const badge = agent.badge && badges[agent.badge];
   return (
     <li className="relative flex items-center gap-4 border-b border-base-200 px-2 py-3 last:border-b-0 hover:bg-base-50">
@@ -123,10 +110,8 @@ function AgentListItem({
   );
 }
 
-/** The student's Agents, what needs them first, with search; and, until the cutover, delegating a preset. */
+/** The student's Agents, what needs them first, with search. */
 export function AgentsScreen({ apiOrigin }: { apiOrigin: string }) {
-  const id = useId();
-  const queryClient = useQueryClient();
   const agents = useQuery(agentListQueries(apiOrigin));
   const templates = useQuery(agentTemplatesQueries(apiOrigin));
   const [selectedTemplate, setSelectedTemplate] =
@@ -134,46 +119,10 @@ export function AgentsScreen({ apiOrigin }: { apiOrigin: string }) {
   const [search, setSearch] = useState("");
   const words = search.trim().toLocaleLowerCase("de");
   const shown = (agents.data ?? []).filter((agent) =>
-    `${nameOf(agent)}\n${agent.description}`
+    `${agent.name}\n${agent.description}`
       .toLocaleLowerCase("de")
       .includes(words),
   );
-  const courses = useQuery(delegableCourseQueries(apiOrigin)).data ?? [];
-  // One mutation each, so each form shows only its own error.
-  const create = useMutation(delegateAgent(apiOrigin, queryClient));
-  const prepare = useMutation(delegateAgent(apiOrigin, queryClient));
-  const exams = courses.flatMap((course) =>
-    course.obligations
-      .filter((o) => o.kind === "exam" && o.state !== "rejected")
-      .map((o) => ({ id: o.id, label: `${o.title} (${course.title})` })),
-  );
-
-  const form = useAppForm({
-    defaultValues: { courseId: "" },
-    onSubmit: async ({ value }) => {
-      await create
-        .mutateAsync({
-          preset: "keep_course_organized",
-          courseId: value.courseId,
-        })
-        .catch(() => {
-          // Query owns the mutation error, rendered below.
-        });
-    },
-  });
-  const examForm = useAppForm({
-    defaultValues: { obligationId: "" },
-    onSubmit: async ({ value }) => {
-      await prepare
-        .mutateAsync({
-          preset: "prepare_for_exam",
-          obligationId: value.obligationId,
-        })
-        .catch(() => {
-          // Query owns the mutation error, rendered below.
-        });
-    },
-  });
 
   return (
     <main className="relative min-h-dvh bg-white font-sans text-base-800">
@@ -269,135 +218,6 @@ export function AgentsScreen({ apiOrigin }: { apiOrigin: string }) {
           </p>
         )}
       </div>
-      <section
-        aria-label="Presets"
-        className="mx-auto w-full max-w-[calc(64rem+4rem)] px-8 pb-16"
-      >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void form.handleSubmit();
-          }}
-        >
-          <form.Field
-            name="courseId"
-            validators={{
-              onChange: ({ value }) => (value ? undefined : "Choose a Course."),
-            }}
-          >
-            {(field) => (
-              <label htmlFor={`${id}-course`}>
-                Course
-                <Select
-                  items={courses.map((course) => ({
-                    value: course.id,
-                    label: course.title,
-                  }))}
-                  name={field.name}
-                  required
-                  value={field.state.value || null}
-                  onValueChange={(value) => field.handleChange(value ?? "")}
-                >
-                  <SelectTrigger
-                    id={`${id}-course`}
-                    aria-label="Course"
-                    onBlur={field.handleBlur}
-                  >
-                    <SelectValue placeholder="Choose a Course" />
-                  </SelectTrigger>
-                  <SelectContent
-                    align="start"
-                    sideOffset={8}
-                    alignItemWithTrigger={false}
-                  >
-                    <SelectGroup>
-                      <SelectItem value="" disabled>
-                        Choose a Course
-                      </SelectItem>
-                      {courses.map((course) => (
-                        <SelectItem key={course.id} value={course.id}>
-                          {course.title}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </label>
-            )}
-          </form.Field>
-          <form.AppForm>
-            <form.SubmitButton>Keep this course organized</form.SubmitButton>
-          </form.AppForm>
-          <p>
-            nunio will plan and move Study Blocks for this Course every morning.
-            Moving blocks you placed always asks you first.
-          </p>
-          {create.error && <p role="alert">{create.error.message}</p>}
-        </form>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void examForm.handleSubmit();
-          }}
-        >
-          <examForm.Field
-            name="obligationId"
-            validators={{
-              onChange: ({ value }) => (value ? undefined : "Choose an exam."),
-            }}
-          >
-            {(field) => (
-              <label htmlFor={`${id}-exam`}>
-                Exam
-                <Select
-                  items={exams.map((exam) => ({
-                    value: exam.id,
-                    label: exam.label,
-                  }))}
-                  name={field.name}
-                  required
-                  value={field.state.value || null}
-                  onValueChange={(value) => field.handleChange(value ?? "")}
-                >
-                  <SelectTrigger
-                    id={`${id}-exam`}
-                    aria-label="Exam"
-                    onBlur={field.handleBlur}
-                  >
-                    <SelectValue placeholder="Choose an exam" />
-                  </SelectTrigger>
-                  <SelectContent
-                    align="start"
-                    sideOffset={8}
-                    alignItemWithTrigger={false}
-                  >
-                    <SelectGroup>
-                      <SelectItem value="" disabled>
-                        Choose an exam
-                      </SelectItem>
-                      {exams.map((exam) => (
-                        <SelectItem key={exam.id} value={exam.id}>
-                          {exam.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </label>
-            )}
-          </examForm.Field>
-          <examForm.AppForm>
-            <examForm.SubmitButton>
-              Prepare me for this exam
-            </examForm.SubmitButton>
-          </examForm.AppForm>
-          <p>
-            nunio will plan and move Study Blocks for this exam every morning in
-            the run-up to it.
-          </p>
-          {prepare.error && <p role="alert">{prepare.error.message}</p>}
-        </form>
-      </section>
       <TemplateDetailsDialog
         apiOrigin={apiOrigin}
         template={selectedTemplate}

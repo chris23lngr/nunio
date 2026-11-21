@@ -3861,34 +3861,8 @@
                     "id": {
                       "type": "string"
                     },
-                    "preset": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "enum": [
-                        "keep_course_organized",
-                        "prepare_for_exam",
-                        null
-                      ],
-                      "description": "Null for a free-text Agent."
-                    },
                     "name": {
-                      "type": "string",
-                      "description": "Empty for a preset Agent, which is named after its scope."
-                    },
-                    "course": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "exam": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "description": "The exam it prepares for; null for a Course."
+                      "type": "string"
                     },
                     "state": {
                       "type": "string",
@@ -3902,10 +3876,7 @@
                   "required": [
                     "kind",
                     "id",
-                    "preset",
                     "name",
-                    "course",
-                    "exam",
                     "state"
                   ]
                 }
@@ -4071,18 +4042,15 @@
               "id": {
                 "type": "string"
               },
-              "preset": {
-                "type": "string"
-              },
               "name": {
                 "type": "string"
               }
             },
             "required": [
               "id",
-              "preset",
               "name"
-            ]
+            ],
+            "description": "The Agent whose Run asked; null for a Chat."
           }
         },
         "required": [
@@ -4623,28 +4591,15 @@
           "id": {
             "type": "string"
           },
-          "preset": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "keep_course_organized",
-              "prepare_for_exam",
-              null
-            ],
-            "description": "Null for a free-text Agent."
-          },
           "templateId": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The curated Template this Agent was copied from; null for a blank, preset or converted Agent."
+            "description": "The curated Template this Agent was copied from; null for a blank or converted Agent."
           },
           "name": {
-            "type": "string",
-            "description": "Empty for a preset Agent, which is named after its scope."
+            "type": "string"
           },
           "description": {
             "type": "string"
@@ -4660,44 +4615,7 @@
             "items": {
               "$ref": "#/components/schemas/AgentCourse"
             },
-            "description": "A free-text Agent's Courses; none for a preset Agent."
-          },
-          "course": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "title"
-            ]
-          },
-          "exam": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "title"
-            ],
-            "description": "The one exam it prepares for; null for a Course."
+            "description": "Its Courses."
           },
           "trigger": {
             "allOf": [
@@ -4705,7 +4623,7 @@
                 "$ref": "#/components/schemas/AgentTrigger"
               },
               {
-                "description": "When its Schedule starts a Run; a preset Agent's is Täglich at 06:00."
+                "description": "When its Schedule starts a Run."
               }
             ]
           },
@@ -4714,7 +4632,7 @@
               "string",
               "null"
             ],
-            "description": "The Model its Runs run on, which Chat may have stopped offering since; null for a preset Agent."
+            "description": "The Model its Runs run on, which Chat may have stopped offering since; null only if there was no Chat default when it was converted."
           },
           "state": {
             "type": "string",
@@ -4734,8 +4652,10 @@
               "budget",
               "course_archived",
               "no_course",
+              "conversion",
               null
-            ]
+            ],
+            "description": "Why it is Paused: by the student, its Budget, all its Courses Archived, no Course left, or conversion (nunio made it from one of the student's earlier delegations: Übernommen, prüfen und fortsetzen)."
           },
           "running": {
             "type": "boolean",
@@ -4753,7 +4673,7 @@
             "items": {
               "$ref": "#/components/schemas/AgentCapability"
             },
-            "description": "A free-text Agent's Capabilities in the capability set's order; none for a preset Agent."
+            "description": "Its Capabilities in the capability set's order."
           },
           "grants": {
             "type": "array",
@@ -4786,48 +4706,6 @@
             ],
             "description": "Its monthly Budget: what it used this month, counted from 00:00 on the 1st in the Plan's time zone, and what calls still in flight hold."
           },
-          "recentActions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "awaiting_approval",
-                    "dispatching",
-                    "done",
-                    "failed",
-                    "refused",
-                    "unconfirmed"
-                  ]
-                },
-                "refusal": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "at": {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                "action": {
-                  "$ref": "#/components/schemas/ActionShown"
-                }
-              },
-              "required": [
-                "id",
-                "status",
-                "refusal",
-                "at",
-                "action"
-              ]
-            }
-          },
           "next": {
             "type": "object",
             "properties": {
@@ -4838,40 +4716,22 @@
                 ],
                 "format": "date-time",
                 "description": "When its next Run starts; null unless active."
-              },
-              "action": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/ActionShown"
-                  },
-                  {
-                    "type": [
-                      "object",
-                      "null"
-                    ],
-                    "description": "The first Action that Run would take, as the Plan stands now."
-                  }
-                ]
               }
             },
             "required": [
-              "runAt",
-              "action"
+              "runAt"
             ],
-            "description": "The next planned Action."
+            "description": "Its next Run."
           }
         },
         "required": [
           "id",
-          "preset",
           "templateId",
           "name",
           "description",
           "emoji",
           "instructions",
           "courses",
-          "course",
-          "exam",
           "trigger",
           "modelKey",
           "state",
@@ -4881,7 +4741,6 @@
           "capabilities",
           "grants",
           "budget",
-          "recentActions",
           "next"
         ]
       },
@@ -4924,7 +4783,7 @@
               "string",
               "null"
             ],
-            "description": "Why it stopped or failed, such as budget_exhausted, paused, model_unavailable, model_ended_early or cancelled; null when done, or when a failure gave none."
+            "description": "Why it stopped or failed, such as budget_exhausted, paused, model_unavailable, model_ended_early, cancelled, or conversion (under way when nunio made its Agent from one of the student's earlier delegations); null when done, or when a failure gave none."
           },
           "openApprovals": {
             "type": "integer",
@@ -5824,16 +5683,12 @@
                     "id": {
                       "type": "string"
                     },
-                    "preset": {
-                      "type": "string"
-                    },
                     "name": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "id",
-                    "preset",
                     "name"
                   ],
                   "description": "The Agent that asked for Approval, or null for Chat or once deleted."
@@ -5868,41 +5723,13 @@
                 "id": {
                   "type": "string"
                 },
-                "preset": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "enum": [
-                    "keep_course_organized",
-                    "prepare_for_exam",
-                    null
-                  ],
-                  "description": "Null for a free-text Agent."
-                },
                 "name": {
-                  "type": "string",
-                  "description": "Empty for a preset Agent, which is named after its scope."
-                },
-                "course": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "exam": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 }
               },
               "required": [
                 "id",
-                "preset",
-                "name",
-                "course",
-                "exam"
+                "name"
               ]
             }
           },
@@ -13933,7 +13760,7 @@
         }
       },
       "delete": {
-        "description": "Removes the Course and everything only in it; it leaves its Agents, and one left with none is Paused (a preset Agent is Ended). Its Sources stay.",
+        "description": "Removes the Course and everything only in it; it leaves its Agents, and one left with none is Paused. Its Sources stay.",
         "parameters": [
           {
             "schema": {
@@ -15006,55 +14833,13 @@
     },
     "/api/me/agents": {
       "post": {
-        "description": "Create a free-text Agent from its form, or a pilot preset until the Agents cutover.",
+        "description": "Create an Agent from its form.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "preset": {
-                        "type": "string",
-                        "enum": [
-                          "keep_course_organized"
-                        ]
-                      },
-                      "courseId": {
-                        "type": "string",
-                        "format": "uuid"
-                      }
-                    },
-                    "required": [
-                      "preset",
-                      "courseId"
-                    ]
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "preset": {
-                        "type": "string",
-                        "enum": [
-                          "prepare_for_exam"
-                        ]
-                      },
-                      "obligationId": {
-                        "type": "string",
-                        "format": "uuid"
-                      }
-                    },
-                    "required": [
-                      "preset",
-                      "obligationId"
-                    ]
-                  },
-                  {
-                    "$ref": "#/components/schemas/CreateAgentForm"
-                  }
-                ]
+                "$ref": "#/components/schemas/CreateAgentForm"
               }
             }
           }
@@ -15184,64 +14969,14 @@
                       "id": {
                         "type": "string"
                       },
-                      "preset": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "enum": [
-                          "keep_course_organized",
-                          "prepare_for_exam",
-                          null
-                        ],
-                        "description": "Null for a free-text Agent."
-                      },
                       "name": {
-                        "type": "string",
-                        "description": "Empty for a preset Agent, which is named after its scope."
+                        "type": "string"
                       },
                       "description": {
                         "type": "string"
                       },
                       "emoji": {
                         "type": "string"
-                      },
-                      "course": {
-                        "type": [
-                          "object",
-                          "null"
-                        ],
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "title": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "title"
-                        ]
-                      },
-                      "exam": {
-                        "type": [
-                          "object",
-                          "null"
-                        ],
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "title": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "title"
-                        ],
-                        "description": "The one exam it prepares for; null for a Course."
                       },
                       "state": {
                         "type": "string",
@@ -15261,8 +14996,10 @@
                           "budget",
                           "course_archived",
                           "no_course",
+                          "conversion",
                           null
-                        ]
+                        ],
+                        "description": "Why it is Paused: by the student, its Budget, all its Courses Archived, no Course left, or conversion (nunio made it from one of the student's earlier delegations: Übernommen, prüfen und fortsetzen)."
                       },
                       "approvalRunId": {
                         "type": [
@@ -15288,12 +15025,9 @@
                     },
                     "required": [
                       "id",
-                      "preset",
                       "name",
                       "description",
                       "emoji",
-                      "course",
-                      "exam",
                       "state",
                       "pausedBy",
                       "approvalRunId",
@@ -15327,7 +15061,7 @@
     },
     "/api/me/agents/{id}": {
       "put": {
-        "description": "Save a free-text Agent's whole form; its next Run reads it. A preset Agent has no form (400).",
+        "description": "Save an Agent's whole form; its next Run reads it.",
         "parameters": [
           {
             "schema": {
@@ -15477,7 +15211,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Its scope, Grants, recent and next Actions, and Budget.",
+            "description": "Its form, state, Grants, Budget and next Run.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15855,7 +15589,7 @@
     },
     "/api/me/agents/{id}/runs": {
       "post": {
-        "description": "Start a free-text Agent's Run now (Jetzt starten), with its saved configuration. Nothing is queued.",
+        "description": "Start an Agent's Run now (Jetzt starten), with its saved configuration. Nothing is queued.",
         "parameters": [
           {
             "schema": {
@@ -15881,24 +15615,6 @@
                   },
                   "required": [
                     "id"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "A preset Agent has no such Run.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
                   ]
                 }
               }
@@ -15979,7 +15695,7 @@
         }
       },
       "get": {
-        "description": "A free-text Agent's Runs for its Aktivität, newest first.",
+        "description": "An Agent's Runs for its Aktivität, newest first.",
         "parameters": [
           {
             "schema": {

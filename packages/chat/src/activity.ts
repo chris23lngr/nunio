@@ -299,10 +299,8 @@ export function createActivity({
         if (!(await tx.agent.findUnique({ where: { id: agentId } })))
           return null;
         const runs = await tx.run.findMany({
-          // A preset's Runs record no status; they are not part of Activity.
           where: {
             agentId,
-            status: { not: null },
             ...(after && {
               OR: [
                 { startedAt: { lt: after.startedAt } },

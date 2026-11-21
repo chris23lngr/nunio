@@ -182,10 +182,7 @@ const maker: Maker = {
 const agents = createAgents({
   db,
   schedules: {
-    create: async () => {},
     save: async () => {},
-    pause: async () => {},
-    unpause: async () => {},
     delete: async () => {},
   },
   clock,

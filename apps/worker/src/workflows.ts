@@ -18,7 +18,7 @@ import type {
   AgentRunActivities,
   AgentRunRef,
 } from "./agent-run-activities.js";
-import type { RunActivities, RunRef } from "./run-activities.js";
+import type { RunActivities } from "./run-activities.js";
 import type {
   CourseRef,
   SourceActivities,
@@ -108,82 +108,17 @@ export async function deleteSource(
   await purgeSource({ studentId: input.studentId, sourceId: input.sourceId });
 }
 
-// An Agent's Run (ADR-0006): one bounded workflow, started by its Schedule. Domain outcomes come back as values
-// from the gate, so a refused Action is never retried; a thrown Activity error is infrastructure, safe to retry by key.
-const {
-  startRun,
-  proposeActions,
-  performAction,
-  raiseIntervention,
-  reconcileActions: reconcile,
-} = proxyActivities<RunActivities>({
+// Recovers dispatches a dead API or worker left in flight; a thrown Activity error is infrastructure, safe to retry.
+const { reconcileActions: reconcile } = proxyActivities<RunActivities>({
   startToCloseTimeout: "2 minutes",
   retry: {
     initialInterval: "5 seconds",
     maximumInterval: "1 minute",
     maximumAttempts: 10,
-    nonRetryableErrorTypes: ["InvalidIntentError", "KeyConflictError"],
   },
 });
-/**
- * Wakes a Run once the student decided on one of its Actions. It carries no authority: the decision is recorded through
- * the gate's `decide`, and the Run only asks the gate again.
- */
-export const approvalDecidedSignal =
-  defineSignal<[actionId: string]>("approvalDecided");
 
-// The workflow type keeps the old name until the Agents cutover reschedules every Agent.
-export async function responsibilityRun(ref: RunRef) {
-  const runId = await startRun(ref);
-  if (!runId) return { status: "skipped" as const };
-  const consumeWakes = patched("consume-approval-wakes");
-  const wakes = new Map<string, number>();
-  setHandler(approvalDecidedSignal, (actionId) => {
-    wakes.set(actionId, (wakes.get(actionId) ?? 0) + 1);
-  });
-  const intents = await proposeActions(runId);
-  for (const [i, intent] of intents.entries()) {
-    const step = { runId, key: `${runId}:${i + 1}`, intent };
-    let outcome = await performAction(step);
-    while (outcome.status === "awaiting_approval") {
-      const { actionId } = outcome;
-      const seen = consumeWakes ? 0 : (wakes.get(actionId) ?? 0);
-      // Waits for a decision or until the request expires, whichever comes first; the gate then decides again.
-      await condition(
-        () => (wakes.get(actionId) ?? 0) > seen,
-        Math.max(new Date(outcome.expiresAt).getTime() - Date.now(), 1),
-      );
-      if (consumeWakes) wakes.delete(actionId);
-      outcome = await performAction(step);
-    }
-    if (outcome.status === "refused" && outcome.reason === "approval_expired") {
-      await raiseIntervention({
-        runId,
-        actionId: outcome.actionId,
-        kind: "approval_expired",
-      });
-    }
-    // Only the student resolves an Unconfirmed Action; the Run neither retries it nor acts on top of it.
-    if (outcome.status === "unconfirmed") {
-      await raiseIntervention({
-        runId,
-        actionId: outcome.actionId,
-        kind: "unconfirmed",
-      });
-      return { status: "stopped" as const, reason: "unconfirmed" as const };
-    }
-    // A Paused or Ended Agent takes no further Action, including in this Run.
-    if (
-      outcome.status === "refused" &&
-      (outcome.reason === "paused" || outcome.reason === "ended")
-    ) {
-      return { status: "stopped" as const, reason: outcome.reason };
-    }
-  }
-  return { status: "done" as const };
-}
-
-// A free-text Agent's Run (ADR-0006, #141): one bounded workflow, one Activity per model step. Messages and material
+// An Agent's Run (ADR-0006, #141): one bounded workflow, one Activity per model step. Messages and material
 // never cross into workflow history; the steps are persisted in Postgres. Starting and ending are safe to retry.
 const { startAgentRun, finishAgentRun } = proxyActivities<AgentRunActivities>({
   startToCloseTimeout: "1 minute",

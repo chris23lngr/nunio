@@ -44,9 +44,7 @@ model Agent {
   id             String              @id
   studentId      String
   student        User                @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  /// A pilot preset's name; null for a free-text Agent. The Agents cutover removes it.
-  preset         String?
-  /// The curated Template this Agent was copied from, if any; null for a blank, preset or converted Agent.
+  /// The curated Template this Agent was copied from, if any; null for a blank or converted Agent.
   templateId     String?
   name           String              @default("")
   /// Its Beschreibung, for telling it apart from the student's other Agents.
@@ -54,20 +52,18 @@ model Agent {
   emoji          String              @default("🤖")
   /// The student's Instructions, the only text its Runs follow as a request (ADR-0026).
   instructions   String              @default("")
-  /// Its scope, kept after End removes its Grants: a Course, or one exam (with the exam's Course).
-  courseId       String?
-  obligationId   String?
   /// Its trigger: when its Schedule starts a Run, in the Plan's time zone. Täglich ("daily") or chosen Wochentage
   /// ("weekdays", ISO weekdays: 1 is Monday, 7 is Sunday), at a minute of the day (Uhrzeit).
   triggerRhythm   String             @default("daily")
   triggerWeekdays Int[]              @default([])
   triggerMinute   Int                @default(360)
-  /// The Model its Runs run on, chosen from those Chat offers; null for a preset Agent, which makes no model calls.
+  /// The Model its Runs run on, chosen from those Chat offers; null only if the catalog had no Chat default.
   modelKey        String?
   model           CatalogModel?      @relation(fields: [modelKey], references: [key], onDelete: Restrict)
   state          AgentState          @default(active)
   /// Why it was Paused: by the student ("student"), by exhausting its Budget ("budget"), by all its Courses being Archived
-  /// ("course_archived") or by losing its last Course ("no_course"). Only the student resumes it.
+  /// ("course_archived"), by losing its last Course ("no_course"), or by nunio when it made the Agent from one of the
+  /// student's earlier delegations ("conversion"). Only the student resumes it.
   pausedBy       String?
   /// The Budget: its monthly cap on AI usage in micro-USD, and what its Runs have used and hold.
   budgetMicroUsd BigInt
@@ -76,8 +72,6 @@ model Agent {
   /// The month "YYYY-MM", in the Plan's time zone, whose usage `usedMicroUsd` counts; null before any. The Budget starts
   /// over at 00:00 on the 1st: used is cleared, held kept.
   budgetMonth    String?
-  /// Advanced Agent configuration, compiled into Restrictions that can only tighten its Grants.
-  restrictions   Json                @default("{}")
   createdAt      DateTime            @default(now())
   endedAt        DateTime?
 
@@ -128,15 +122,13 @@ model AgentCapability {
   @@map("agent_capability")
 }
 
-/// Standing authority for one kind of Action across the Agent's Courses (a preset Agent's Grant is still scoped to one Course or Obligation); Grants exist only within an Agent.
+/// Standing authority for one kind of Action across the Agent's Courses; Grants exist only within an Agent.
 model Grant {
   id               String         @id
   studentId        String
   agentId          String
   agent            Agent          @relation(fields: [agentId, studentId], references: [id, studentId], onDelete: Cascade)
   kind             String
-  courseId         String?
-  obligationId     String?
 
   @@index([agentId])
   @@map("grant")
@@ -153,14 +145,14 @@ model Run {
   /// The Chat a student's Run was started from, if any.
   chatId           String?
   chat             Chat?           @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
-  /// The Temporal workflow running it, which the API signals once the student decides on one of its Actions.
+  /// The Temporal workflow running it, which the API tells to stop, or cancels.
   workflowId       String?
   /// The Agent's Run that started this Artifact Run, which its cost is charged to; null for any other Run, and once
   /// that Run is deleted with its Agent, which keeps the Artifact.
   startedByRunId   String?
   startedBy        Run?            @relation("ArtifactRuns", fields: [startedByRunId], references: [id], onDelete: SetNull)
   startedAt        DateTime        @default(now())
-  /// A free-text Agent's Run records the rest; null for preset, Chat and Artifact Runs.
+  /// An Agent's Run records the rest; null for Chat and Artifact Runs.
   status           RunStatus?
   trigger          RunTrigger?
   endedAt          DateTime?

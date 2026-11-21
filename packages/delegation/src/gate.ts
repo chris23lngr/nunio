@@ -6,13 +6,11 @@ import type {
   CapableAgent,
   Decision,
   PlanVerdict,
-  PresetAgent,
   Refusal,
-  Restrictions,
   RunUse,
 } from "./decision.js";
 import { decideAction } from "./decision.js";
-import type { ActionIntent, Args, GrantScope, Kind, Subject } from "./kinds.js";
+import type { ActionIntent, Args, Kind, Subject } from "./kinds.js";
 import { canonical, definitions, InvalidIntentError } from "./kinds.js";
 import type { Principal, Transaction } from "./principal.js";
 import { principal as mint, withOwner } from "./principal.js";
@@ -120,13 +118,6 @@ export interface ActionRecord {
   runId: string | null;
   /** The Agent whose Run asked; null for a Chat. */
   agentId: string | null;
-  /** The workflow running that Run, to wake it once the student decides. */
-  workflowId: string | null;
-  /**
-   * Whether its Run's workflow waits for the student's decision, as a preset's does. A free-text Agent's Run ends
-   * without waiting, so its decided Approval is applied by the API, as a Chat's is (ADR-0006).
-   */
-  runWaits: boolean;
   kind: Kind;
   args: unknown;
   /** `kind` and `args` as `perform` takes them. */
@@ -158,8 +149,7 @@ export const openApprovalAt = (at: Date) => ({
 /**
  * Withdraws every open Approval of an Agent's Runs for good, as Pausing or Ending it does (ADR-0006): each Action is
  * refused as `approval_withdrawn` at `at`, so the student can no longer approve it, it stops counting as open, and the
- * Agent's next Run reads what became of it. A preset's Run waits on its own Approvals, so they are left to it.
- * Each Action is locked as deciding locks it and read again, so one the student answered meanwhile keeps its answer.
+ * Agent's next Run reads what became of it. Each Action is locked as deciding locks it and read again, so one the student answered meanwhile keeps its answer.
  */
 export async function withdrawApprovals(
   tx: Transaction,
@@ -168,7 +158,7 @@ export async function withdrawApprovals(
 ) {
   const where = {
     ...openApprovalAt(at),
-    run: { agentId, status: { not: null } },
+    run: { agentId },
   };
   const found = (await tx.action.findMany({ where, select: { id: true } })).map(
     (a) => a.id,
@@ -208,13 +198,6 @@ export interface HistoryQuery {
   limit?: number;
 }
 
-/** A wake carries no authority; it may be delivered more than once. */
-export type DecisionNotifier = (notice: {
-  actionId: string;
-  workflowId: string;
-  runId: string;
-}) => Promise<void>;
-
 export interface GateDeps {
   db: PrismaClient;
   clock: Clock;
@@ -243,7 +226,7 @@ type Job = {
 type Row = NonNullable<Awaited<ReturnType<typeof findAction>>>;
 const include = {
   approval: true,
-  run: { select: { agentId: true, workflowId: true, status: true } },
+  run: { select: { agentId: true, status: true } },
   attempts: { orderBy: { startedAt: "asc" } },
   events: { orderBy: { at: "asc" } },
 } as const;
@@ -300,8 +283,6 @@ function recordOf(a: Row): ActionRecord {
     key: a.key,
     runId: a.runId,
     agentId: a.run?.agentId ?? null,
-    workflowId: a.run?.workflowId ?? null,
-    runWaits: Boolean(a.run) && a.run!.status === null,
     kind: a.kind as Kind,
     args: a.args,
     intent: revive(a.kind, a.args),
@@ -475,11 +456,11 @@ async function subjectOf(
   };
 }
 
-/** The Run's Agent as the gate decides by it: a preset's scoped Grants, or a free-text Agent's Capabilities and Courses. */
+/** The Run's Agent as the gate decides by it: its Capabilities, Grants and Courses. */
 async function agentOf(
   tx: Transaction,
   agentId: string,
-): Promise<PresetAgent | CapableAgent> {
+): Promise<CapableAgent> {
   const current = await tx.agent.findUniqueOrThrow({
     where: { id: agentId },
     include: {
@@ -488,21 +469,6 @@ async function agentOf(
       courses: { include: { course: true } },
     },
   });
-  if (current.preset)
-    return {
-      state: current.state,
-      // Only scoped Grants are a preset's: it acts only on its Course or exam.
-      grants: current.grants
-        .filter((g) => g.courseId || g.obligationId)
-        .map((g) => ({
-          id: g.id,
-          kind: g.kind as Kind,
-          scope: (g.courseId
-            ? { courseId: g.courseId }
-            : { obligationId: g.obligationId! }) as GrantScope,
-        })),
-      restrictions: current.restrictions as Restrictions,
-    };
   return {
     id: current.id,
     state: current.state,
@@ -674,37 +640,7 @@ export function createGate({
     };
   };
 
-  /** The decision is already durable. Acknowledge its wake only after delivery, never before it. */
-  async function notifyDecision(
-    p: Principal,
-    actionId: string,
-    notify: DecisionNotifier,
-  ) {
-    const action = await withOwner(db, p, (tx) =>
-      findAction(tx, { id: actionId }),
-    );
-    if (
-      !action?.approval?.decision ||
-      !action.runId ||
-      !action.run?.workflowId ||
-      // A free-text Agent's Run waits for no decision: the API applies it.
-      action.run.status !== null ||
-      action.events.some((e) => e.type === "decision_notified")
-    )
-      return false;
-    await notify({
-      actionId,
-      runId: action.runId,
-      workflowId: action.run.workflowId,
-    });
-    await withOwner(db, p, (tx, studentId) =>
-      event(tx, studentId, actionId, "decision_notified"),
-    );
-    return true;
-  }
-
   return {
-    notifyDecision,
     async perform(
       p: Principal,
       { key, intent }: { key: string; intent: ActionIntent },
@@ -762,7 +698,7 @@ export function createGate({
         const subject = await subjectOf(tx, parsed);
         const now = clock.now();
         let planCheck: PlanVerdict | null = null;
-        if (agent && "capabilities" in agent && subject && isBlock(parsed)) {
+        if (agent && subject && isBlock(parsed)) {
           if (!planRules)
             throw new Error(
               "createDelegation needs planRules to decide an Agent's Study Block Actions",
@@ -771,12 +707,7 @@ export function createGate({
         }
         // When a free-text Agent's new Task would be due, which Automatisch asks for within the next 24 hours.
         let taskDue: Date | null = null;
-        if (
-          agent &&
-          "capabilities" in agent &&
-          subject &&
-          parsed.kind === "task.create"
-        ) {
+        if (agent && subject && parsed.kind === "task.create") {
           if (!planRules)
             throw new Error(
               "createDelegation needs planRules to decide an Agent's Task Actions",
@@ -787,7 +718,7 @@ export function createGate({
         }
         // Counted under the Agent's lock, for a new call only: an Action already asked was counted when it was.
         const runUse: RunUse | null =
-          run && agent && "capabilities" in agent && !existing
+          run && agent && !existing
             ? {
                 calls: await tx.action.count({ where: { runId: run.id } }),
                 // Its key is `runId:step:call`, so a step's calls share the key up to the call.
@@ -989,11 +920,11 @@ export function createGate({
               `Action ${action.id} was shown with another fingerprint`,
             );
           }
-          // A free-text Agent's Approval expires lazily (ADR-0006), so any late decision is refused; a preset's Run
-          // closes its own on its timer, and a late denial of it is still recorded.
+          // An Agent's Approval expires lazily (ADR-0006), so any late decision is refused; a Chat's late denial is
+          // still recorded.
           if (
             now >= approval.expiresAt &&
-            (d.kind === "approve" || action.run?.status != null)
+            (d.kind === "approve" || action.runId !== null)
           ) {
             await tx.action.update({
               where: { id: action.id },
@@ -1022,8 +953,8 @@ export function createGate({
       });
     },
 
-    /** Recovers stale dispatches and pending decision wakes; neither recovery grants authority to act. */
-    async reconcile(notify?: DecisionNotifier): Promise<number> {
+    /** Recovers stale dispatches; recovery grants no authority to act. */
+    async reconcile(): Promise<number> {
       const stale = await db.$queryRaw<
         { actionId: string; studentId: string }[]
       >`
@@ -1037,23 +968,7 @@ export function createGate({
         if (action?.status === "dispatching")
           await recover(jobOf(action, studentId));
       }
-      let notified = 0;
-      if (notify) {
-        const pending = await db.$queryRaw<
-          { actionId: string; studentId: string }[]
-        >`SELECT * FROM pending_approval_decisions()`;
-        for (const { actionId, studentId } of pending) {
-          if (
-            await notifyDecision(
-              mint.fromSession({ studentId }),
-              actionId,
-              notify,
-            )
-          )
-            notified++;
-        }
-      }
-      return stale.length + notified;
+      return stale.length;
     },
 
     async history(
