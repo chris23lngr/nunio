@@ -4512,7 +4512,8 @@
               "limitMicroUsd",
               "usedMicroUsd",
               "heldMicroUsd"
-            ]
+            ],
+            "description": "Its monthly Budget: what it used this month, counted from 00:00 on the 1st in the Plan's time zone, and what calls still in flight hold."
           },
           "recentActions": {
             "type": "array",

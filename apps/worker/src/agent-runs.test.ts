@@ -100,6 +100,8 @@ const haiku: CatalogModel = {
 let offered: CatalogModel[] = [];
 /** The Model each step ran on, by key. */
 const ranOn: string[] = [];
+/** Each Schedule saved, as its Agent and whether it was saved paused. */
+const saved: string[] = [];
 
 /** What the model returns in a step, given its prompt and whether it may call a tool. */
 type Step = unknown[] | { content: unknown[]; finishReason: string };
@@ -204,7 +206,8 @@ beforeAll(async () => {
     runAlive: workflowAlive(env.client),
     schedules: {
       create: noSchedule,
-      save: noSchedule,
+      save: async ({ agentId, paused }) =>
+        void saved.push(`${agentId}${paused ? " paused" : ""}`),
       pause: noSchedule,
       unpause: noSchedule,
       delete: noSchedule,
@@ -1098,6 +1101,41 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
         select: { decision: true },
       }),
     ).toEqual([{ decision: null }]);
+  });
+
+  it("stops when its Budget runs out mid-Run, pausing its Agent and its Schedule and withdrawing its open Approvals", async () => {
+    const s = await started({
+      held: lernbloecke({ createStudyBlocks: "ask" }),
+    });
+    // Each step costs 1 micro-USD here: enough Budget for two steps, not a third.
+    await admin.agent.update({
+      where: { id: s.agentId },
+      data: { budgetMicroUsd: 2 },
+    });
+    script = [readPlan, () => createBlock(3)];
+    saved.length = 0;
+
+    expect(await run(s)).toEqual({
+      status: "stopped",
+      reason: "budget_exhausted",
+    });
+
+    expect(await agents.view(s.p, s.agentId)).toMatchObject({
+      state: "paused",
+      pausedBy: "budget",
+      approvalRunId: null,
+      budget: { limitMicroUsd: 2, usedMicroUsd: 2, heldMicroUsd: 0 },
+    });
+    expect(await statuses(s.runId)).toEqual(["approval_withdrawn"]);
+    expect(await runs.view(s.p, s.runId)).toMatchObject({
+      status: "stopped",
+      stopReason: "budget_exhausted",
+      summary: null,
+    });
+    // Pausing an Agent pauses its Schedule (ADR-0006), so it starts no Run until the student resumes it.
+    expect(saved).toEqual([`${s.agentId} paused`]);
+    // The model ran only for the two steps the Budget paid for.
+    expect(prompts).toHaveLength(2);
   });
 
   it("raises one Intervention when it ends with Approvals open, queued to be announced, and none when it asked nothing", async () => {

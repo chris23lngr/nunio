@@ -66,10 +66,13 @@ model Agent {
   state          AgentState          @default(active)
   /// Why it was Paused: by the student, or by exhausting its Budget. Only the student resumes it.
   pausedBy       String?
-  /// The Budget: its cap on AI usage in micro-USD, and what its Runs have used and hold.
+  /// The Budget: its monthly cap on AI usage in micro-USD, and what its Runs have used and hold.
   budgetMicroUsd BigInt
   usedMicroUsd   BigInt              @default(0)
   heldMicroUsd   BigInt              @default(0)
+  /// The month "YYYY-MM", in the Plan's time zone, whose usage `usedMicroUsd` counts; null before any. The Budget starts
+  /// over at 00:00 on the 1st: used is cleared, held kept.
+  budgetMonth    String?
   /// Advanced Agent configuration, compiled into Restrictions that can only tighten its Grants.
   restrictions   Json                @default("{}")
   createdAt      DateTime            @default(now())

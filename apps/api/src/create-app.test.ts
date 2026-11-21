@@ -7672,6 +7672,56 @@ describe("a free-text Agent's form", () => {
     });
   });
 
+  it("starts its Budget over in a new month, clearing what it used and keeping what it holds, and leaves a Budget-Paused Agent Paused", async () => {
+    const s = await student("agent-budget-reset");
+    const { id } = (await (
+      await s.call("POST", "", form([await course(s.id, "Statistics II")]))
+    ).json()) as { id: string };
+    // Out of Budget in an earlier month, with one call's outcome still unknown.
+    await admin.agent.update({
+      where: { id },
+      data: {
+        budgetMonth: "2026-01",
+        usedMicroUsd: 4_500_000,
+        heldMicroUsd: 1_000_000,
+        state: "paused",
+        pausedBy: "budget",
+      },
+    });
+    const shown = async () =>
+      (await (await s.call("GET", `/${id}`)).json()) as Record<string, unknown>;
+
+    expect(await shown()).toMatchObject({
+      state: "paused",
+      pausedBy: "budget",
+      budget: {
+        limitMicroUsd: 5_000_000,
+        usedMicroUsd: 0,
+        heldMicroUsd: 1_000_000,
+      },
+    });
+    expect((await s.call("POST", `/${id}/resume`)).status).toBe(200);
+    const run = principal.fromRun(
+      await recordedRun(s.id, id, 0, { status: "running" }),
+    );
+    const step = (microUsd: number) =>
+      delegation.meter(run, { microUsd }, async () => ({
+        value: "step",
+        usage: { microUsd },
+      }));
+    // What it holds still counts against the new month: 4 of the 5 USD are left.
+    expect(await step(4_000_000)).toMatchObject({ status: "ok" });
+    expect(await step(1)).toEqual({
+      status: "refused",
+      reason: "budget_exhausted",
+    });
+    expect(await shown()).toMatchObject({
+      state: "paused",
+      pausedBy: "budget",
+      budget: { usedMicroUsd: 4_000_000, heldMicroUsd: 1_000_000 },
+    });
+  });
+
   it("shows a Run's cost against the Budget, its summary and its Verlauf, naming only a deleted Course, Source or work gelöscht", async () => {
     const s = await student("agent-activity-run");
     const statistics = await course(s.id, "Statistics II");
@@ -8310,6 +8360,66 @@ describe("a free-text Agent's form", () => {
         });
       },
     );
+
+    it("pauses the Agent with reason budget once its Budget runs out, withdrawing its open Approvals and pausing its Schedule until the student resumes it", async () => {
+      const a = await askedByRun(
+        "agent-budget-exhausted",
+        "createStudyBlocks",
+        [],
+        {
+          status: "running",
+        },
+      );
+      const run = principal.fromRun(a.runId);
+      const step = (microUsd: number) =>
+        delegation.meter(run, { microUsd }, async () => ({
+          value: "step",
+          usage: { microUsd },
+        }));
+      expect(await step(4_000_000)).toMatchObject({ status: "ok" });
+
+      expect(await step(1_500_000)).toEqual({
+        status: "refused",
+        reason: "budget_exhausted",
+      });
+      await agentRuns.finish(
+        { runId: a.runId, studentId: a.s.id },
+        { status: "stopped", reason: "budget_exhausted" },
+      );
+
+      expect(
+        await (await a.s.call("GET", `/${a.agentId}`)).json(),
+      ).toMatchObject({
+        state: "paused",
+        pausedBy: "budget",
+        approvalRunId: null,
+        budget: {
+          limitMicroUsd: 5_000_000,
+          usedMicroUsd: 4_000_000,
+          heldMicroUsd: 0,
+        },
+      });
+      const shown = await a.shown();
+      expect(shown).toMatchObject({
+        status: "stopped",
+        stopReason: "budget_exhausted",
+        openApprovals: 0,
+        approvals: [],
+      });
+      expect(decisions(shown.verlauf)).toEqual([
+        expect.objectContaining({ decision: "withdrawn" }),
+      ]);
+      expect(scheduled.at(-1)).toBe(
+        `save ${a.agentId} {"rhythm":"daily","minute":360} Europe/Berlin paused`,
+      );
+      // Paused, it spends nothing more, however small, until the student resumes it.
+      expect(await step(1)).toEqual({
+        status: "refused",
+        reason: "budget_exhausted",
+      });
+      expect((await a.s.call("POST", `/${a.agentId}/resume`)).status).toBe(200);
+      expect(await step(1)).toMatchObject({ status: "ok" });
+    });
 
     it("keeps the student's answer to an Approval decided while the Agent is being Paused", async () => {
       const a = await askedByRun(

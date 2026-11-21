@@ -123,7 +123,7 @@ export function createAgentRuns({
   understanding: Pick<Understanding, "levels">;
   artifacts: Pick<Artifacts, "list">;
   delegation: Delegation;
-  agents: Pick<Agents, "startRun">;
+  agents: Pick<Agents, "startRun" | "syncBudgetPause">;
   catalog: Pick<ModelCatalog, "chatModels">;
   /** The Model a Run's steps run on, from the catalog's offered row. */
   modelFor: (model: CatalogModel) => AgentModel;
@@ -543,14 +543,15 @@ export function createAgentRuns({
     /**
      * Ends the student's Run: its status, when it ended, why it did not simply finish, and, when done, the model's
      * final message as its summary, sealed under every Source the Run read. The transcript is dropped. A Run that ends
-     * with Approvals open raises one Intervention for them (ADR-0006). Ending it again, or a Run that was never
-     * recorded, changes nothing.
+     * with Approvals open raises one Intervention for them (ADR-0006). If its Budget Paused its Agent, the Agent's
+     * Schedule is paused too. Ending it again, or a Run that was never recorded, changes nothing more.
      */
     async finish(
       { runId, studentId }: { runId: string; studentId: string },
       end: RunEnd,
     ) {
-      await withOwner(db, principal.fromSession({ studentId }), async (tx) => {
+      const student = principal.fromSession({ studentId });
+      const agentId = await withOwner(db, student, async (tx) => {
         await tx.$executeRaw`SELECT 1 FROM "run" WHERE "id" = ${runId} FOR UPDATE`;
         const run = await tx.run.findUnique({
           where: { id: runId },
@@ -562,7 +563,7 @@ export function createAgentRuns({
             },
           },
         });
-        if (run?.status !== "running") return;
+        if (run?.status !== "running") return run?.agentId ?? null;
         const endedAt = clock.now();
         const last = run.steps[0];
         const transcript =
@@ -599,7 +600,10 @@ export function createAgentRuns({
           data: { transcriptContent: null, transcriptKey: null },
         });
         await raiseForEndedRun(tx, { runId, studentId }, endedAt);
+        return run.agentId;
       });
+      // Outside the transaction, and again when ending it again: its Budget may have Paused the Agent during the Run.
+      if (agentId) await agents.syncBudgetPause(student, agentId);
     },
 
     /**
