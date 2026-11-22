@@ -21,6 +21,8 @@ This amends ADR-0011's rule that "the model allowlist holds only EU-pinned Bedro
 
 **Amendment (2026-11-19, [ADR-0026](0026-an-agents-grants-accept-bounded-steering-by-its-material.md)):** an Agent's Model is one Chat offers, so before the founder offers a Model in Chat it must pass the Chat injection eval and the Agent injection eval. A Model that fails is not offered. The run is recorded in the PR or note that adds the Model.
 
+**Amendment (2026-11-22, an Agent keeps its Model):** one exception to "an Agent's Model is one Chat offers": when the student saves an Agent, it may keep its current Model after Chat stops offering it. Otherwise any edit, even to its Instructions, would make the student pick another Model first. Its Runs still check per step that Chat offers the Model, and stop with `model_unavailable` ("Modell nicht mehr verfügbar") until Chat offers it again or the student picks another. A retired Model is never offered again, so the operator command refuses to retire a Model that an Agent not yet Ended uses.
+
 ## Considered Options
 
 - **Code allowlist, database switches**: keeps compliance under review, but every new Model and every price change still needs a deploy, and prices drift.

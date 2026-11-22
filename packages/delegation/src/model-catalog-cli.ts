@@ -167,6 +167,12 @@ try {
       throw new Refused(
         `${row.key} is the Chat default; set another default first`,
       );
+    const [{ agents }] = await prisma.$queryRaw<[{ agents: number }]>`
+      SELECT "model_agents"(${row.key}) AS "agents"`;
+    if (agents > 0)
+      throw new Refused(
+        `${row.key} is still the Model of ${agents} Agent(s) not Ended, whose Runs would stop; retire it once none uses it`,
+      );
     await change(row.key, "retire", {
       chatEnabled: false,
       retiredAt: new Date(),

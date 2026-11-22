@@ -1,17 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./index.js";
 import { createPool, createPrismaClient } from "./index.js";
-import type { TestDatabase } from "./testing.js";
-import { startTestDatabase } from "./testing.js";
+import type { DatabaseBeforeMigration } from "./testing.js";
+import { startTestDatabaseBefore } from "./testing.js";
 
-let db: TestDatabase;
-/** Seeds fixtures and runs the backfill as the migration role. */
+let db: DatabaseBeforeMigration;
+/** Seeds fixtures as the migration role, in raw SQL since the schema is still the one before the migration. */
 let admin: PrismaClient;
 
 beforeAll(async () => {
-  db = await startTestDatabase();
+  db = await startTestDatabaseBefore("20261129100000_study_block_created_by");
   admin = createPrismaClient(createPool(db.connectionString));
 }, 180_000);
 
@@ -19,15 +18,6 @@ afterAll(async () => {
   await admin?.$disconnect();
   await db?.stop();
 });
-
-/** The migration's backfill: everything after the statement that adds the column. */
-const backfill = readFileSync(
-  new URL(
-    "../prisma/migrations/20261129100000_study_block_created_by/migration.sql",
-    import.meta.url,
-  ),
-  "utf8",
-).split('ADD COLUMN "createdByAgentId" TEXT;')[1]!;
 
 const at = (hour: number) => new Date(Date.UTC(2026, 10, 10, hour));
 
@@ -38,87 +28,43 @@ describe("the createdByAgentId backfill", () => {
       obligationId = randomUUID(),
       agentId = randomUUID(),
       runId = randomUUID();
-    await admin.user.create({
-      data: {
-        id: studentId,
-        name: "Student",
-        email: `${studentId}@example.com`,
-      },
-    });
-    await admin.course.create({
-      data: {
-        id: courseId,
-        studentId,
-        title: "Analysis I",
-        matchTitle: "analysis i",
-        semester: "2026-ws",
-        color: "rose",
-      },
-    });
-    await admin.obligation.create({
-      data: {
-        id: obligationId,
-        studentId,
-        courseId,
-        matchKey: "sheet-1",
-        kind: "assignment",
-        enteredAt: at(0),
-      },
-    });
-    await admin.agent.create({
-      data: {
-        id: agentId,
-        studentId,
-        budgetMicroUsd: 100_000,
-      },
-    });
-    await admin.run.create({ data: { id: runId, studentId, agentId } });
+    await admin.$executeRaw`
+      INSERT INTO "user" ("id", "name", "email", "updatedAt")
+      VALUES (${studentId}, 'Student', ${`${studentId}@example.com`}, now())`;
+    await admin.$executeRaw`
+      INSERT INTO "course" ("id", "studentId", "title", "matchTitle", "semester", "color")
+      VALUES (${courseId}, ${studentId}, 'Analysis I', 'analysis i', '2026-ws', 'rose')`;
+    await admin.$executeRaw`
+      INSERT INTO "obligation" ("id", "studentId", "courseId", "matchKey", "kind", "enteredAt")
+      VALUES (${obligationId}, ${studentId}, ${courseId}, 'sheet-1', 'assignment', ${at(0)})`;
+    await admin.$executeRaw`
+      INSERT INTO "agent" ("id", "studentId", "budgetMicroUsd") VALUES (${agentId}, ${studentId}, 100000)`;
+    await admin.$executeRaw`
+      INSERT INTO "run" ("id", "studentId", "agentId") VALUES (${runId}, ${studentId}, ${agentId})`;
     /** A block an Action placed at `hour`, as the gate and executor record it, now at `nowAt`. */
     async function placed(hour: number, nowAt: number, { inRun = true } = {}) {
       const actionId = randomUUID(),
         blockId = randomUUID(),
         idempotencyKey = `${actionId}:1`;
-      await admin.action.create({
-        data: {
-          id: actionId,
-          studentId,
-          runId: inRun ? runId : null,
-          key: actionId,
-          kind: "studyBlock.create",
-          // As the gate stores arguments: JSON, with dates as ISO strings.
-          args: JSON.parse(
-            JSON.stringify({
-              workId: obligationId,
-              start: at(hour),
-              end: at(hour + 1),
-            }),
-          ),
-          status: "done",
-        },
+      // As the gate stores arguments: JSON, with dates as ISO strings.
+      const args = JSON.stringify({
+        workId: obligationId,
+        start: at(hour),
+        end: at(hour + 1),
       });
-      await admin.attempt.create({
-        data: {
-          id: randomUUID(),
-          studentId,
-          actionId,
-          idempotencyKey,
-          status: "done",
-          startedAt: at(0),
-        },
-      });
-      await admin.studyBlock.create({
-        data: {
-          id: blockId,
-          studentId,
-          obligationId,
-          placedBy: "nunio",
-          start: at(nowAt),
-          end: at(nowAt + 1),
-        },
-      });
-      await admin.planEffect.create({
-        data: { idempotencyKey, studentId, studyBlockId: blockId },
-      });
+      await admin.$executeRaw`
+        INSERT INTO "action" ("id", "studentId", "runId", "key", "kind", "args", "status")
+        VALUES (${actionId}, ${studentId}, ${inRun ? runId : null}, ${actionId}, 'studyBlock.create',
+          ${args}::jsonb, 'done')`;
+      await admin.$executeRaw`
+        INSERT INTO "attempt" ("id", "studentId", "actionId", "idempotencyKey", "status", "startedAt")
+        VALUES (${randomUUID()}, ${studentId}, ${actionId}, ${idempotencyKey}, 'done', ${at(0)})`;
+      await admin.$executeRaw`
+        INSERT INTO "study_block" ("id", "studentId", "obligationId", "placedBy", "start", "end")
+        VALUES (${blockId}, ${studentId}, ${obligationId}, 'nunio', ${at(nowAt)}, ${at(nowAt + 1)})`;
+      await admin.$executeRaw`
+        INSERT INTO "plan_effect" ("idempotencyKey", "studentId", "studyBlockId")
+        VALUES (${idempotencyKey}, ${studentId}, ${blockId})`;
       return blockId;
     }
     const unmoved = await placed(9, 9);
@@ -126,13 +72,15 @@ describe("the createdByAgentId backfill", () => {
     const moved = await placed(11, 14);
     const fromChat = await placed(16, 16, { inRun: false });
 
-    await admin.$executeRawUnsafe(backfill);
+    await db.applyMigration();
 
     const claims = Object.fromEntries(
       (
-        await admin.studyBlock.findMany({
-          where: { id: { in: [unmoved, moved, fromChat] } },
-        })
+        await admin.$queryRaw<
+          { id: string; createdByAgentId: string | null }[]
+        >`
+          SELECT "id", "createdByAgentId" FROM "study_block"
+          WHERE "id" IN (${unmoved}, ${moved}, ${fromChat})`
       ).map((b) => [b.id, b.createdByAgentId]),
     );
     expect(claims).toEqual({
