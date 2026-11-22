@@ -487,6 +487,33 @@ it("archives a Course: its future Study Blocks go, Locked ones too, and its Agen
   expect((await agents.view(p, agent))?.state).toBe("paused");
 });
 
+it("pauses again, once the Course is Archived, an Agent the student resumed as it was being Archived", async () => {
+  const p = await student();
+  const id = await created(p, { title: "Statistik II" });
+  const agent = await keepOrganized(p, id);
+  await agents.pause(p, agent);
+  // The student resumes it after it was looked at for Pausing, before the Course is Archived.
+  const racing = createCourses({
+    db: runtime,
+    clock: { now: () => now },
+    facts,
+    agents: {
+      ...agents,
+      pauseForCourse: async (p, courseId) => {
+        await agents.pauseForCourse(p, courseId);
+        if ((await agents.view(p, agent))?.state === "paused")
+          await agents.resume(p, agent);
+      },
+    },
+  });
+
+  expect(await racing.archive(p, id)).toEqual({ status: "ok" });
+
+  expect(await agents.view(p, agent)).toEqual(
+    expect.objectContaining({ state: "paused", pausedBy: "course_archived" }),
+  );
+});
+
 it("deletes a Course with everything only in it, pausing an Agent left with no Course; Projects stay without it", async () => {
   const p = await student();
   const id = await created(p, { title: "Statistik II" });

@@ -625,6 +625,123 @@ describe("Agents on an Archived Course", () => {
   });
 });
 
+describe("an Agent losing or getting back its Courses", () => {
+  /** Another accepted Course of the student's. */
+  async function course(studentId: string, title = "Lineare Algebra") {
+    const id = randomUUID();
+    await admin.course.create({
+      data: {
+        id,
+        studentId,
+        title,
+        matchTitle: title.toLowerCase(),
+        semester: "2026-ws",
+        color: "sky",
+        status: "accepted",
+      },
+    });
+    return id;
+  }
+  const reason = async (
+    agents: ReturnType<typeof createAgents>,
+    p: ReturnType<typeof principal.fromSession>,
+    id: string,
+  ) => [
+    (await agents.view(p, id))?.pausedBy,
+    (await agents.list(p)).find((r) => r.id === id)?.pausedBy,
+  ];
+
+  it("reads why Fortsetzen is refused while it has no Course, and what paused it once it has one again", async () => {
+    const s = await student();
+    const { schedules } = fakeSchedules();
+    const agents = createAgents({ db: runtime, schedules, clock });
+    const created = await agents.create(s.p, form(s.courseId));
+    if (created.status !== "ok") throw new Error(created.status);
+    await agents.pause(s.p, created.id);
+
+    await agents.dropCourse(s.p, s.courseId);
+    expect(await reason(agents, s.p, created.id)).toEqual([
+      "no_course",
+      "no_course",
+    ]);
+    expect(await agents.resume(s.p, created.id)).toEqual({
+      status: "no_course",
+    });
+
+    const other = await course(s.studentId);
+    expect(await agents.update(s.p, created.id, form(other))).toEqual({
+      status: "ok",
+    });
+    expect(await reason(agents, s.p, created.id)).toEqual([
+      "student",
+      "student",
+    ]);
+  });
+
+  it("reads Paused with no reason once a Course paused it no longer holds, and resumes", async () => {
+    const s = await student();
+    const { schedules } = fakeSchedules();
+    const agents = createAgents({ db: runtime, schedules, clock });
+    const created = await agents.create(s.p, form(s.courseId));
+    if (created.status !== "ok") throw new Error(created.status);
+    await agents.dropCourse(s.p, s.courseId);
+    expect(await reason(agents, s.p, created.id)).toEqual([
+      "no_course",
+      "no_course",
+    ]);
+
+    const other = await course(s.studentId);
+    await agents.update(s.p, created.id, form(other));
+    expect(await reason(agents, s.p, created.id)).toEqual([null, null]);
+    expect(await agents.resume(s.p, created.id)).toEqual({ status: "ok" });
+  });
+
+  it("resumes on its Courses as committed, never on one leaving it meanwhile", async () => {
+    const s = await student();
+    const { schedules } = fakeSchedules();
+    const agents = createAgents({ db: runtime, schedules, clock });
+    const created = await agents.create(s.p, form(s.courseId));
+    if (created.status !== "ok") throw new Error(created.status);
+    await agents.pause(s.p, created.id);
+    let resuming!: Promise<unknown>;
+    // The Course leaves it in a transaction still open as the student resumes.
+    await admin.$transaction(async (tx) => {
+      await tx.agentCourse.deleteMany({ where: { agentId: created.id } });
+      resuming = agents.resume(s.p, created.id);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+    expect(await resuming).toEqual({ status: "no_course" });
+  });
+
+  it("keeps a save that stands when its Agents cannot be brought in line with their Courses after it", async () => {
+    const s = await student();
+    const { schedules } = fakeSchedules();
+    const agents = createAgents({ db: runtime, schedules, clock });
+    const created = await agents.create(s.p, form(s.courseId));
+    if (created.status !== "ok") throw new Error(created.status);
+    await admin.course.update({
+      where: { id: s.courseId },
+      data: { archivedAt: now },
+    });
+    // Pausing its Schedule fails, as after the save it has no Course left to act for.
+    schedules.save = async ({ paused }) => {
+      if (paused) throw new Error("Temporal is down");
+    };
+
+    expect(
+      await agents.update(s.p, created.id, {
+        ...form(s.courseId),
+        name: "Umbenannt",
+      }),
+    ).toEqual({ status: "ok" });
+    expect(await agents.view(s.p, created.id)).toMatchObject({
+      name: "Umbenannt",
+      state: "paused",
+      pausedBy: "course_archived",
+    });
+  });
+});
+
 describe("an Agent's Schedule", () => {
   /** A student whose one Course an Agent can be given, in their Plan's time zone. */
   async function withAcceptedCourse(timeZone = "Europe/Vienna") {

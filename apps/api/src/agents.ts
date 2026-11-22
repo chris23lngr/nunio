@@ -250,7 +250,7 @@ const Agent = z
       .enum(["student", "budget", "course_archived", "no_course", "conversion"])
       .nullable()
       .describe(
-        "Why it is Paused: by the student, its Budget, all its Courses Archived, no Course left, or conversion (nunio made it from one of the student's earlier delegations: Übernommen, prüfen und fortsetzen).",
+        "Why it is Paused: by the student, its Budget, all its Courses Archived, no Course left, or conversion (nunio made it from one of the student's earlier delegations: Übernommen, prüfen und fortsetzen). While it has no Course to act for, whatever paused it, course_archived or no_course, as resuming is refused for it; null once a Course reason no longer holds, and while it is not Paused.",
       ),
     running: z
       .boolean()
