@@ -1478,6 +1478,132 @@ describe("an Agent's Actions", () => {
       detail: { brokenPreferences: ["daily_limit"] },
     });
   });
+
+  describe("toward an Obligation the student Rejected or reported handed in (#229)", () => {
+    const closures = [
+      ["Rejected", { state: "rejected" as const }],
+      ["handed in", { reportedSubmittedAt: new Date("2026-11-09T12:00:00Z") }],
+    ] as const;
+    const intents = [
+      ["creates a block for it", (s: Fixture) => create(s)],
+      ["creates a block for its Task", (s: Fixture) => create(s, s.taskId)],
+      ["moves its block", (s: Fixture) => move(s)],
+    ] as const;
+    const remove = (s: Fixture) => ({
+      kind: "studyBlock.remove" as const,
+      studyBlockId: s.blockId,
+      workId: s.obligationId,
+      start: new Date("2026-11-10T09:00:00Z"),
+      end: new Date("2026-11-10T10:00:00Z"),
+    });
+    type Fixture = Awaited<ReturnType<typeof student>> & { taskId: string };
+    /** The student's fixture, with a Task toward the Obligation; the block is the Agent's own once it has one. */
+    async function fixture(): Promise<Fixture> {
+      const s = await student(),
+        taskId = randomUUID();
+      await admin.task.create({
+        data: {
+          id: taskId,
+          studentId: s.studentId,
+          obligationId: s.obligationId,
+          title: "Aufgabe 1 lösen",
+        },
+      });
+      return { ...s, taskId };
+    }
+    const held = (mode: "always" | "ask") => ({
+      createStudyBlocks: mode,
+      moveOwnStudyBlocks: mode,
+      removeOwnStudyBlocks: mode,
+    });
+
+    describe.each(closures)("%s", (_, closed) => {
+      it.each(intents)(
+        "refuses an Agent that %s, even on Immer erlaubt",
+        async (_, intentOf) => {
+          const s = await fixture();
+          const r = await agentRun(s, held("always"));
+          await admin.studyBlock.update({
+            where: { id: s.blockId },
+            data: { createdByAgentId: r.agentId },
+          });
+          await admin.obligation.update({
+            where: { id: s.obligationId },
+            data: closed,
+          });
+          const { executor, dispatched } = fakeExecutor();
+
+          expect(
+            await gate(executor, {}, rules().planRules).perform(r.p, {
+              key: `${r.runId}:1`,
+              intent: intentOf(s),
+            }),
+          ).toMatchObject({ status: "refused", reason: "not_owner" });
+          expect(dispatched).toEqual([]);
+        },
+      );
+
+      it.each(intents)(
+        "refuses an Approval decided after it closed, when an Agent or a Chat %s",
+        async (_, intentOf) => {
+          const s = await fixture();
+          const r = await agentRun(s, held("ask"));
+          await admin.studyBlock.update({
+            where: { id: s.blockId },
+            data: { createdByAgentId: r.agentId },
+          });
+          const { executor, dispatched } = fakeExecutor();
+          const g = gate(executor, {}, rules().planRules);
+          const asked = [
+            { p: r.p, key: `${r.runId}:1` },
+            { p: s.p, key: `chat-1:message-1:${randomUUID()}` },
+          ];
+          const asking = [];
+          for (const { p, key } of asked) {
+            const outcome = await g.perform(p, { key, intent: intentOf(s) });
+            if (outcome.status !== "awaiting_approval")
+              throw new Error(outcome.status);
+            asking.push(outcome);
+          }
+          await admin.obligation.update({
+            where: { id: s.obligationId },
+            data: closed,
+          });
+          for (const { actionId, fingerprint } of asking)
+            await g.decide(s.p, { kind: "approve", actionId, fingerprint });
+
+          for (const { p, key } of asked)
+            expect(
+              await g.perform(p, { key, intent: intentOf(s) }),
+            ).toMatchObject({ status: "refused", reason: "not_owner" });
+          expect(dispatched).toEqual([]);
+        },
+      );
+
+      it("still lets an Agent remove its leftover block, which only does less", async () => {
+        const s = await fixture();
+        const r = await agentRun(s, held("always"));
+        await admin.studyBlock.update({
+          where: { id: s.blockId },
+          data: { createdByAgentId: r.agentId },
+        });
+        await admin.obligation.update({
+          where: { id: s.obligationId },
+          data: closed,
+        });
+        const { executor, dispatched } = fakeExecutor();
+
+        expect(
+          await gate(executor, {}, rules().planRules).perform(r.p, {
+            key: `${r.runId}:1`,
+            intent: remove(s),
+          }),
+        ).toMatchObject({ status: "done" });
+        expect(dispatched).toHaveLength(1);
+      });
+    });
+  });
+
   describe("Tasks (#154)", () => {
     const task = (
       args: Partial<{
