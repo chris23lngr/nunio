@@ -1,4 +1,5 @@
 import { createPool, createPrismaClient } from "@nunio/db";
+import { renewBudget } from "./budget.js";
 
 const studentId = process.argv[2]?.trim();
 const reservationId = process.argv[3]?.trim();
@@ -44,8 +45,10 @@ try {
       WHERE "id" = ${reservationId} AND "studentId" = ${studentId} AND "status" = 'held'
       RETURNING "estimateMicroUsd", "settledAt", "agentId"`;
     if (!reservation) return null;
-    // A Run's call also counts against its Agent's Budget; locked before the Allowance, as meter does.
+    // A Run's call also counts against its Agent's Budget; locked before the Allowance, as meter does. Like meter's
+    // settle, it counts against the month it is settled in.
     if (reservation.agentId) {
+      await renewBudget(tx, reservation.agentId, new Date());
       await tx.agent.update({
         where: { id: reservation.agentId },
         data: {

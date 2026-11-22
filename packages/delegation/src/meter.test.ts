@@ -290,3 +290,87 @@ describe("meter for an Agent", () => {
     },
   );
 });
+
+describe("the Budget pause", () => {
+  it("never revives an Agent the student Ended while a call was exhausting its Budget", async () => {
+    const p = await student({ limit: 1_000 });
+    const studentId = (p as { studentId: string }).studentId;
+    const agentId = randomUUID(),
+      runId = randomUUID();
+    // The Budget already counts this month, so renewing it takes no lock.
+    const november = createDelegation({
+      db: runtime,
+      aiEnabled: () => true,
+      clock: { now: () => new Date("2026-11-15T12:00:00Z") },
+    });
+    await admin.agent.create({
+      data: {
+        id: agentId,
+        studentId,
+        budgetMicroUsd: 100,
+        budgetMonth: "2026-11",
+      },
+    });
+    await admin.run.create({
+      data: { id: runId, studentId, agentId, status: "running" },
+    });
+    let markLocked!: (pid: number) => void;
+    let release!: () => void;
+    const locked = new Promise<number>((resolve) => {
+      markLocked = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The End holds the Agent's row lock, uncommitted, while the call finds its Budget exhausted.
+    const end = admin.$transaction(
+      async (tx) => {
+        const [backend] = await tx.$queryRaw<
+          { pid: number }[]
+        >`SELECT pg_backend_pid() AS pid`;
+        await tx.agent.update({
+          where: { id: agentId },
+          data: { state: "ended" },
+        });
+        markLocked(backend!.pid);
+        await released;
+      },
+      { timeout: 15_000 },
+    );
+    const blockerPid = await locked;
+    let called = false;
+    const pending = november.meter(
+      principal.fromRun(runId),
+      { microUsd: 300 },
+      async () => {
+        called = true;
+        return { value: "unexpected", usage: { microUsd: 300 } };
+      },
+    );
+    try {
+      // The pause waits on the End's lock, so the End commits after the call read the Agent as active.
+      await expect
+        .poll(async () => {
+          const rows = await admin.$queryRaw<{ waiting: boolean }[]>`
+            SELECT EXISTS (
+              SELECT 1 FROM pg_stat_activity
+              WHERE ${blockerPid} = ANY(pg_blocking_pids(pid))
+            ) AS waiting`;
+          return rows[0]!.waiting;
+        })
+        .toBe(true);
+    } finally {
+      release();
+      await end;
+    }
+
+    expect(await pending).toEqual({ status: "refused", reason: "ended" });
+    expect(called).toBe(false);
+    expect(
+      await admin.agent.findUniqueOrThrow({
+        where: { id: agentId },
+        select: { state: true, pausedBy: true, heldMicroUsd: true },
+      }),
+    ).toEqual({ state: "ended", pausedBy: null, heldMicroUsd: 0n });
+  });
+});
