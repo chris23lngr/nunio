@@ -4,11 +4,15 @@ import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import type { Delegation, Executor, Principal } from "@nunio/delegation";
-import { createDelegation, principal } from "@nunio/delegation";
+import {
+  createDelegation,
+  DelegationUnavailable,
+  principal,
+} from "@nunio/delegation";
 import { createSourceKeys } from "@nunio/keys";
 import type { Facts } from "@nunio/knowledge";
 import { createFacts } from "@nunio/knowledge";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createPlanExecutor } from "./executor.js";
 import type { Plan } from "./plan.js";
 import { createPlan, planRules } from "./plan.js";
@@ -156,15 +160,22 @@ describe("the Plan executor", () => {
       ...span(14),
     };
 
-    const moved = await executor.execute(
-      { studentId: s.studentId, actionId: "action-1", intent },
-      { idempotencyKey: "action-1:1", signal },
-    );
+    const req = {
+      studentId: s.studentId,
+      actionId: "action-1",
+      intent,
+      block: span(9),
+    };
+
+    const moved = await executor.execute(req, {
+      idempotencyKey: "action-1:1",
+      signal,
+    });
     await plan.moveBlock(s.p, placed.id, span(16));
-    const again = await executor.execute(
-      { studentId: s.studentId, actionId: "action-1", intent },
-      { idempotencyKey: "action-1:1", signal },
-    );
+    const again = await executor.execute(req, {
+      idempotencyKey: "action-1:1",
+      signal,
+    });
 
     expect(moved).toEqual({
       status: "done",
@@ -190,14 +201,21 @@ describe("the Plan executor", () => {
       ...span(9),
     };
 
-    const removed = await executor.execute(
-      { studentId: s.studentId, actionId: "action-1", intent },
-      { idempotencyKey: "action-1:1", signal },
-    );
-    const again = await executor.execute(
-      { studentId: s.studentId, actionId: "action-1", intent },
-      { idempotencyKey: "action-1:1", signal },
-    );
+    const req = {
+      studentId: s.studentId,
+      actionId: "action-1",
+      intent,
+      block: span(9),
+    };
+
+    const removed = await executor.execute(req, {
+      idempotencyKey: "action-1:1",
+      signal,
+    });
+    const again = await executor.execute(req, {
+      idempotencyKey: "action-1:1",
+      signal,
+    });
 
     expect(removed).toEqual({
       status: "done",
@@ -221,6 +239,33 @@ describe("the Plan executor", () => {
         { idempotencyKey: "action-1:1", signal },
       ),
     ).toEqual({ status: "rejected", detail: "the block is gone" });
+  });
+
+  it("rejects moving a block without knowing where it was when decided, as a dispatch from before the check", async () => {
+    const s = await student();
+    const placed = await plan.placeBlock(s.p, {
+      work: { kind: "obligation", id: s.obligationId },
+      ...span(9),
+    });
+    if (placed.status !== "ok") throw new Error(placed.status);
+    const intent = {
+      kind: "studyBlock.move" as const,
+      studyBlockId: placed.id,
+      ...span(14),
+    };
+
+    expect(
+      await executor.execute(
+        { studentId: s.studentId, actionId: "action-1", intent },
+        { idempotencyKey: "action-1:1", signal },
+      ),
+    ).toEqual({
+      status: "rejected",
+      detail: "the block is no longer where it was when decided",
+    });
+    expect((await plan.view(s.p)).studyBlocks).toMatchObject([
+      { id: placed.id, ...span(9) },
+    ]);
   });
 
   it("reports a key's effect as found once taken, and absent before", async () => {
@@ -385,14 +430,26 @@ describe("the Plan executor", () => {
 
 describe("an Agent's Study Block Actions through the gate", () => {
   let gate: Delegation;
+  /** What happens after the gate decided and before the executor acts, as a student's change in that window would. */
+  let meanwhile: (() => Promise<unknown>) | null = null;
+  const between: Executor = {
+    execute: async (req, opts) => {
+      await meanwhile?.();
+      return executor.execute(req, opts);
+    },
+    lookup: (key, req) => executor.lookup(key, req),
+  };
   beforeAll(() => {
     gate = createDelegation({
       db: runtime,
       aiEnabled: () => true,
       clock,
-      executors: { plan: executor },
+      executors: { plan: between },
       planRules,
     });
+  });
+  afterEach(() => {
+    meanwhile = null;
   });
 
   /** A Run of a free-text Agent on the student's Course, with these Capabilities, and a Grant for each that holds one. */
@@ -413,6 +470,7 @@ describe("an Agent's Study Block Actions through the gate", () => {
       createStudyBlocks: "studyBlock.create",
       moveOwnStudyBlocks: "studyBlock.move",
       moveStudyBlocks: "studyBlock.move",
+      removeOwnStudyBlocks: "studyBlock.remove",
       createTasks: "task.create",
     };
     await admin.agent.create({
@@ -532,6 +590,107 @@ describe("an Agent's Study Block Actions through the gate", () => {
     expect(await agent.perform(move(studyBlockId, 15))).toMatchObject({
       status: "awaiting_approval",
     });
+  });
+
+  it("refuses to move a block the student moved or Locked after the gate decided, leaving it as the student left it", async () => {
+    const s = await student();
+    const agent = await agentRun(s, own);
+    const created = await agent.perform(create(s, 9));
+    if (created.status !== "done") throw new Error(created.status);
+    const { studyBlockId } = created.effect as { studyBlockId: string };
+
+    meanwhile = () => plan.moveBlock(s.p, studyBlockId, span(13));
+    expect(await agent.perform(move(studyBlockId, 11))).toMatchObject({
+      status: "failed",
+    });
+    meanwhile = () => plan.lockBlock(s.p, studyBlockId, true);
+    // Moved by the student, it is no longer the Agent's own, so a Chat asks to move it.
+    const key = "chat-1:message-1:0";
+    const asked = await gate.perform(s.p, {
+      key,
+      intent: move(studyBlockId, 15),
+    });
+    if (asked.status !== "awaiting_approval") throw new Error(asked.status);
+    await gate.decide(s.p, {
+      kind: "approve",
+      actionId: asked.actionId,
+      fingerprint: asked.fingerprint,
+    });
+    expect(
+      await gate.perform(s.p, { key, intent: move(studyBlockId, 15) }),
+    ).toMatchObject({ status: "failed" });
+
+    expect((await plan.view(s.p)).studyBlocks).toMatchObject([
+      { id: studyBlockId, ...span(13), placedBy: "student", locked: true },
+    ]);
+  });
+
+  it("refuses to remove a block the student moved after the gate decided", async () => {
+    const s = await student();
+    const agent = await agentRun(s, {
+      ...own,
+      removeOwnStudyBlocks: "automatic",
+    });
+    const created = await agent.perform(create(s, 9));
+    if (created.status !== "done") throw new Error(created.status);
+    const { studyBlockId } = created.effect as { studyBlockId: string };
+
+    meanwhile = () => plan.moveBlock(s.p, studyBlockId, span(13));
+    expect(
+      await agent.perform({
+        kind: "studyBlock.remove",
+        studyBlockId,
+        workId: s.obligationId,
+        ...span(9),
+      }),
+    ).toMatchObject({ status: "failed" });
+
+    expect((await plan.view(s.p)).studyBlocks).toMatchObject([
+      { id: studyBlockId, ...span(13) },
+    ]);
+  });
+
+  it("recovering stale dispatches, moves a block still where it was decided and not one the student moved meanwhile", async () => {
+    const s = await student();
+    const agent = await agentRun(s, own);
+    const blocks: string[] = [];
+    for (const hour of [9, 11]) {
+      const created = await agent.perform(create(s, hour));
+      if (created.status !== "done") throw new Error(created.status);
+      blocks.push((created.effect as { studyBlockId: string }).studyBlockId);
+    }
+    const [kept, moved] = blocks;
+    meanwhile = () => Promise.reject(new Error("the Plan is unreachable"));
+    for (const [id, hour] of [
+      [kept!, 10],
+      [moved!, 12],
+    ] as const)
+      await expect(agent.perform(move(id, hour))).rejects.toThrow(
+        DelegationUnavailable,
+      );
+    meanwhile = null;
+    await plan.moveBlock(s.p, moved!, span(13));
+
+    // Minutes later, reconcile takes the dispatches over from the calls that started them.
+    await createDelegation({
+      db: runtime,
+      aiEnabled: () => true,
+      clock: { now: () => new Date(now.getTime() + 10 * 60_000) },
+      executors: { plan: executor },
+      planRules,
+    }).reconcile();
+
+    const moves = await gate.history(s.p, { status: "done" });
+    expect(
+      moves.filter((a) => a.kind === "studyBlock.move").map((a) => a.args),
+    ).toEqual([expect.objectContaining({ studyBlockId: kept })]);
+    expect(await gate.history(s.p, { status: "failed" })).toMatchObject([
+      { kind: "studyBlock.move", args: { studyBlockId: moved } },
+    ]);
+    expect((await plan.view(s.p)).studyBlocks).toMatchObject([
+      { id: kept, ...span(10) },
+      { id: moved, ...span(13) },
+    ]);
   });
 
   it("counts a block created after an Approval as the Agent's own", async () => {

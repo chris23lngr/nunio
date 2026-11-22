@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createAgentSchedules, retirePresets } from "./temporal-schedules.js";
+import {
+  createAgentSchedules,
+  retirePresets,
+  saveAgentSchedules,
+} from "./temporal-schedules.js";
 
 let env: TestWorkflowEnvironment;
 
@@ -126,6 +130,94 @@ describe("Agent Schedules on Temporal", () => {
     await schedules.delete(agentId);
 
     await expect(handle.describe()).rejects.toThrow();
+  });
+});
+
+describe("bringing every Agent's Schedule in line as the worker starts", () => {
+  const exists = (scheduleId: string) =>
+    env.client.schedule
+      .getHandle(scheduleId)
+      .describe()
+      .then(
+        () => true,
+        () => false,
+      );
+
+  it("deletes the Schedule of an Agent that does not exist, once it is old enough that no create is still committing it", async () => {
+    const schedules = createAgentSchedules({
+      client: env.client,
+      taskQueue: "runs",
+    });
+    const kept = randomUUID(),
+      orphan = randomUUID(),
+      studentId = randomUUID();
+    for (const agentId of [kept, orphan])
+      await schedules.save({
+        agentId,
+        studentId,
+        timeZone: "Europe/Berlin",
+        trigger: { rhythm: "daily", minute: 360 },
+        paused: false,
+      });
+    const other = `reconcile-${randomUUID()}`;
+    await env.client.schedule.create({
+      scheduleId: other,
+      spec: { calendars: [{ hour: 6, minute: 0 }] },
+      action: {
+        type: "startWorkflow",
+        workflowType: "reconcile",
+        taskQueue: "runs",
+      },
+    });
+    // Waits until Temporal's visibility lists them.
+    for (let i = 0; i < 100; i++) {
+      const ids = new Set<string>();
+      for await (const s of env.client.schedule.list()) ids.add(s.scheduleId);
+      if (ids.has(`agent/${orphan}`) && ids.has(other)) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    const saved: string[] = [];
+    const save = async () => {
+      saved.push(kept);
+      return [kept];
+    };
+
+    // Just created: an Agent create may still be committing it.
+    await saveAgentSchedules(env.client, save);
+    expect(await exists(`agent/${orphan}`)).toBe(true);
+    // An hour on, by two workers starting at once.
+    const later = () => new Date(Date.now() + 60 * 60_000);
+    await Promise.all([
+      saveAgentSchedules(env.client, save, later),
+      saveAgentSchedules(env.client, save, later),
+    ]);
+
+    expect(await exists(`agent/${orphan}`)).toBe(false);
+    expect(await exists(`agent/${kept}`)).toBe(true);
+    expect(await exists(other)).toBe(true);
+    expect(saved).toEqual([kept, kept, kept]);
+  });
+
+  it("deletes nothing when the Agents' Schedules cannot be saved", async () => {
+    const orphan = randomUUID();
+    await createAgentSchedules({ client: env.client, taskQueue: "runs" }).save({
+      agentId: orphan,
+      studentId: randomUUID(),
+      timeZone: "Europe/Berlin",
+      trigger: { rhythm: "daily", minute: 360 },
+      paused: false,
+    });
+
+    await expect(
+      saveAgentSchedules(
+        env.client,
+        async () => {
+          throw new Error("Could not save 1 Agents' Schedules");
+        },
+        () => new Date(Date.now() + 60 * 60_000),
+      ),
+    ).rejects.toThrow("Could not save 1 Agents' Schedules");
+    expect(await exists(`agent/${orphan}`)).toBe(true);
   });
 });
 
