@@ -640,7 +640,7 @@ export function createGate({
     };
   };
 
-  return {
+  const gate = {
     async perform(
       p: Principal,
       { key, intent }: { key: string; intent: ActionIntent },
@@ -953,12 +953,17 @@ export function createGate({
       });
     },
 
-    /** Recovers stale dispatches; recovery grants no authority to act. */
+    /**
+     * Recovers stale dispatches, and performs approved Actions the API never went on to perform; recovery grants no
+     * authority to act, and an approved Action goes through `perform`, which rechecks it and refuses it once expired.
+     */
     async reconcile(): Promise<number> {
+      // Older than this, a dispatch or a decision is no longer in the hands of the call that started it.
+      const before = new Date(clock.now().getTime() - staleMs);
       const stale = await db.$queryRaw<
         { actionId: string; studentId: string }[]
       >`
-        SELECT * FROM stale_attempts(${new Date(clock.now().getTime() - staleMs)}::timestamp(3))`;
+        SELECT * FROM stale_attempts(${before}::timestamp(3))`;
       for (const { actionId, studentId } of stale) {
         const action = await withOwner(
           db,
@@ -968,7 +973,27 @@ export function createGate({
         if (action?.status === "dispatching")
           await recover(jobOf(action, studentId));
       }
-      return stale.length;
+      const approved = await db.$queryRaw<
+        { actionId: string; studentId: string }[]
+      >`
+        SELECT * FROM unperformed_approvals(${before}::timestamp(3))`;
+      for (const { actionId, studentId } of approved) {
+        const student = mint.fromSession({ studentId });
+        const action = await withOwner(db, student, (tx) =>
+          findAction(tx, { id: actionId }),
+        );
+        // Performed meanwhile, or gone with its Run.
+        if (action?.status !== "awaiting_approval") continue;
+        // As the API performs it: a Run's Action as the Run's, so its Agent's state, Courses and Capabilities decide.
+        await gate.perform(
+          action.runId ? mint.fromRun(action.runId) : student,
+          {
+            key: action.key,
+            intent: revive(action.kind, action.args),
+          },
+        );
+      }
+      return stale.length + approved.length;
     },
 
     async history(
@@ -996,4 +1021,5 @@ export function createGate({
       return rows.map(recordOf);
     },
   };
+  return gate;
 }

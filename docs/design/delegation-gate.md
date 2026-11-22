@@ -95,7 +95,7 @@ Domain results are values, never exceptions, so Temporal does not retry them. A 
   1. An intent transaction locks the Agent, Allowance, and Action rows, decides, reserves, and writes an Attempt row (in flight, idempotency key derived from `actionId:attemptN`). That row is the outbox.
   2. The executor is called outside the transaction.
   3. A result transaction records done, failed, or Unconfirmed, and settles or holds the reservation.
-- Recovery. `reconcile`, run on a Temporal Schedule, and any repeated `perform` find stale in-flight Attempts and ask the executor's `lookup(key)`. `found` means done. `absent`, when the provider honours keys, means a retry with the same key. Anything else means Unconfirmed. Nothing is retried blindly.
+- Recovery. `reconcile`, run on a Temporal Schedule, and any repeated `perform` find stale in-flight Attempts and ask the executor's `lookup(key)`. `found` means done. `absent`, when the provider honours keys, means a retry with the same key. Anything else means Unconfirmed. Nothing is retried blindly. `reconcile` also hands an approved Action nobody went on to perform (the API died between `decide` and `perform`) to `perform` once its decision is five minutes old, under the Run's or the student's Principal as the API would. `perform` rechecks it as at any dispatch, so it is performed, or refused, as `approval_expired` once the request ran out (#224).
 - An append-only history: proposals, authority used (the Grant or Approval ID), refusals, attempts, reserved and settled usage. It is written in the same transaction as each state change.
 
 ## Seams and adapters

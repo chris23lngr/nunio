@@ -916,6 +916,60 @@ describe("dispatch and recovery", () => {
       await g.perform(r.p, { key: `${r.runId}:1`, intent: move(s) }),
     ).toMatchObject({ status: "done" });
   });
+
+  it("lets reconcile perform an approved Action the API died before performing, once", async () => {
+    const s = await student();
+    const r = await run(s, { grants: [] });
+    const { executor, dispatched } = fakeExecutor();
+    const g = gate(executor);
+    const asking = (await g.perform(r.p, {
+      key: `${r.runId}:1`,
+      intent: move(s),
+    })) as Extract<ActionOutcome, { status: "awaiting_approval" }>;
+    await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+
+    // Right after the decision, performing it is still the API's to do.
+    await g.reconcile();
+    expect(dispatched).toEqual([]);
+    now = new Date(now.getTime() + hour);
+    await g.reconcile();
+    await g.reconcile();
+
+    expect(dispatched).toHaveLength(1);
+    expect((await g.history(s.p, { ids: [asking.actionId] }))[0]).toMatchObject(
+      {
+        status: "done",
+        authority: { approvalId: expect.any(String) },
+      },
+    );
+  });
+
+  it("lets reconcile refuse an approved Action as expired once its request ran out unperformed", async () => {
+    const s = await student();
+    const { executor, dispatched } = fakeExecutor();
+    const g = gate(executor);
+    const asking = (await g.perform(s.p, {
+      key: "chat-3:message-1:0",
+      intent: move(s),
+    })) as Extract<ActionOutcome, { status: "awaiting_approval" }>;
+    await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+
+    now = new Date(now.getTime() + 7 * day);
+    await g.reconcile();
+
+    expect(dispatched).toEqual([]);
+    expect((await g.history(s.p, { ids: [asking.actionId] }))[0]).toMatchObject(
+      { status: "refused", refusal: "approval_expired" },
+    );
+  });
 });
 
 describe("history", () => {
