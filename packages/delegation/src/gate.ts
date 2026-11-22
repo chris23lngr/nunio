@@ -373,8 +373,8 @@ async function subjectOf(
   tx: Transaction,
   intent: ActionIntent,
 ): Promise<Subject | null> {
-  // An Obligation the student Rejected or reported as handed in is no work any more, as the Plan treats it, so no Task
-  // or Study Block counts toward it.
+  // An Obligation the student Rejected or reported as handed in is no work any more, as the Plan treats it, so no new
+  // Task or Study Block counts toward it and none is moved for it; a leftover block may still be removed.
   const closed = (obligation: {
     state: string;
     reportedSubmittedAt: Date | null;
@@ -453,7 +453,10 @@ async function subjectOf(
     where: { id: intent.studyBlockId },
   });
   if (!block) return null;
-  const work = await workOf(block, { open: true });
+  // Removing a leftover block of closed work only does less, so only moving one is refused.
+  const work = await workOf(block, {
+    open: intent.kind !== "studyBlock.remove",
+  });
   if (!work) return null;
   return {
     ...work,

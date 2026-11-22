@@ -1291,17 +1291,14 @@ describe("an Agent's Actions", () => {
       ["creates a block for it", (s: Fixture) => create(s)],
       ["creates a block for its Task", (s: Fixture) => create(s, s.taskId)],
       ["moves its block", (s: Fixture) => move(s)],
-      [
-        "removes its block",
-        (s: Fixture) => ({
-          kind: "studyBlock.remove" as const,
-          studyBlockId: s.blockId,
-          workId: s.obligationId,
-          start: new Date("2026-11-10T09:00:00Z"),
-          end: new Date("2026-11-10T10:00:00Z"),
-        }),
-      ],
     ] as const;
+    const remove = (s: Fixture) => ({
+      kind: "studyBlock.remove" as const,
+      studyBlockId: s.blockId,
+      workId: s.obligationId,
+      start: new Date("2026-11-10T09:00:00Z"),
+      end: new Date("2026-11-10T10:00:00Z"),
+    });
     type Fixture = Awaited<ReturnType<typeof student>> & { taskId: string };
     /** The student's fixture, with a Task toward the Obligation; the block is the Agent's own once it has one. */
     async function fixture(): Promise<Fixture> {
@@ -1385,6 +1382,28 @@ describe("an Agent's Actions", () => {
           expect(dispatched).toEqual([]);
         },
       );
+
+      it("still lets an Agent remove its leftover block, which only does less", async () => {
+        const s = await fixture();
+        const r = await agentRun(s, held("always"));
+        await admin.studyBlock.update({
+          where: { id: s.blockId },
+          data: { createdByAgentId: r.agentId },
+        });
+        await admin.obligation.update({
+          where: { id: s.obligationId },
+          data: closed,
+        });
+        const { executor, dispatched } = fakeExecutor();
+
+        expect(
+          await gate(executor, {}, rules().planRules).perform(r.p, {
+            key: `${r.runId}:1`,
+            intent: remove(s),
+          }),
+        ).toMatchObject({ status: "done" });
+        expect(dispatched).toHaveLength(1);
+      });
     });
   });
 
