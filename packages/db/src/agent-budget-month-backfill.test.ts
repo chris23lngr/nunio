@@ -1,17 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./index.js";
 import { createPool, createPrismaClient } from "./index.js";
-import type { TestDatabase } from "./testing.js";
-import { startTestDatabase } from "./testing.js";
+import type { DatabaseBeforeMigration } from "./testing.js";
+import { startTestDatabaseBefore } from "./testing.js";
 
-let db: TestDatabase;
-/** Seeds fixtures and runs the backfill as the migration role. */
+let db: DatabaseBeforeMigration;
+/** Seeds fixtures as the migration role, in raw SQL since the schema is still the one before the migration. */
 let admin: PrismaClient;
 
 beforeAll(async () => {
-  db = await startTestDatabase();
+  db = await startTestDatabaseBefore("20261207100000_agent_budget_month");
   admin = createPrismaClient(createPool(db.connectionString));
 }, 180_000);
 
@@ -19,15 +18,6 @@ afterAll(async () => {
   await admin?.$disconnect();
   await db?.stop();
 });
-
-/** The migration's backfill: everything after the statement that adds the column. */
-const backfill = readFileSync(
-  new URL(
-    "../prisma/migrations/20261207100000_agent_budget_month/migration.sql",
-    import.meta.url,
-  ),
-  "utf8",
-).split('ADD COLUMN "budgetMonth" TEXT;')[1]!;
 
 const monthIn = (timeZone: string) => {
   const parts = Object.fromEntries(
@@ -46,33 +36,29 @@ describe("the Agent Budget month backfill", () => {
   it("counts what each Agent used so far for the current month in its Plan's time zone, keeping the amount", async () => {
     const student = async (timeZone?: string) => {
       const studentId = randomUUID();
-      await admin.user.create({
-        data: {
-          id: studentId,
-          name: "Student",
-          email: `${studentId}@example.com`,
-        },
-      });
+      await admin.$executeRaw`
+        INSERT INTO "user" ("id", "name", "email", "updatedAt")
+        VALUES (${studentId}, 'Student', ${`${studentId}@example.com`}, now())`;
       if (timeZone)
-        await admin.planPreference.create({ data: { studentId, timeZone } });
-      return admin.agent.create({
-        data: {
-          id: randomUUID(),
-          studentId,
-          budgetMicroUsd: 5_000_000,
-          usedMicroUsd: 1_200_000,
-        },
-      });
+        await admin.$executeRaw`
+          INSERT INTO "plan_preference" ("studentId", "timeZone")
+          VALUES (${studentId}, ${timeZone})`;
+      const id = randomUUID();
+      await admin.$executeRaw`
+        INSERT INTO "agent" ("id", "studentId", "budgetMicroUsd", "usedMicroUsd")
+        VALUES (${id}, ${studentId}, 5000000, 1200000)`;
+      return { id };
     };
     const kiritimati = await student("Pacific/Kiritimati");
     const berlin = await student();
 
-    await admin.$executeRawUnsafe(backfill);
+    await db.applyMigration();
 
-    const rows = await admin.agent.findMany({
-      where: { id: { in: [kiritimati.id, berlin.id] } },
-      select: { id: true, budgetMonth: true, usedMicroUsd: true },
-    });
+    const rows = await admin.$queryRaw<
+      { id: string; budgetMonth: string; usedMicroUsd: bigint }[]
+    >`
+      SELECT "id", "budgetMonth", "usedMicroUsd" FROM "agent"
+      WHERE "id" IN (${kiritimati.id}, ${berlin.id})`;
     expect(Object.fromEntries(rows.map((r) => [r.id, r]))).toEqual({
       [kiritimati.id]: {
         id: kiritimati.id,

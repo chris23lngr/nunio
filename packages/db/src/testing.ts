@@ -6,6 +6,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,6 +54,60 @@ export async function startTestDatabase(): Promise<TestDatabase> {
     await container.stop();
     throw error;
   }
+}
+
+export interface DatabaseBeforeMigration {
+  /** The migration role, which owns the tables. */
+  connectionString: string;
+  /** Applies the migration the database stopped before, and only that one. */
+  applyMigration(): Promise<void>;
+  stop(): Promise<void>;
+}
+
+/**
+ * A throwaway Testcontainers Postgres with only the migrations before `migration` applied, for testing what that
+ * migration does to rows seeded as the schema stood then. A shared Neon branch is already fully migrated, so this
+ * always starts a container.
+ */
+export async function startTestDatabaseBefore(
+  migration: string,
+): Promise<DatabaseBeforeMigration> {
+  const migrations = join(packageDir, "prisma", "migrations");
+  const names = readdirSync(migrations, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  if (!names.includes(migration)) throw new Error(`No migration ${migration}`);
+  const container = await new PostgreSqlContainer(
+    "pgvector/pgvector:0.8.7-pg18",
+  ).start();
+  const connectionString = container.getConnectionUri();
+  // Each migration's SQL as one script, as `prisma migrate deploy` sends it.
+  const apply = async (name: string) => {
+    const client = new pg.Client({ connectionString });
+    await client.connect();
+    try {
+      await client.query(
+        readFileSync(join(migrations, name, "migration.sql"), "utf8"),
+      );
+    } finally {
+      await client.end();
+    }
+  };
+  try {
+    for (const name of names.slice(0, names.indexOf(migration)))
+      await apply(name);
+  } catch (error) {
+    await container.stop();
+    throw error;
+  }
+  return {
+    connectionString,
+    applyMigration: () => apply(migration),
+    stop: async () => {
+      await container.stop();
+    },
+  };
 }
 
 function migrate(url: string): void {
