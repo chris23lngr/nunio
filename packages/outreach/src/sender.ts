@@ -113,8 +113,10 @@ export function createOutreachSender({
       delegation.history(p, { status: "refused", limit: 500 }),
       delegation.history(p, { status: "unconfirmed", limit: 500 }),
     ]);
-    const pausedForArchivedCourse = (await agents.list(p))
-      .filter((r) => r.pausedBy === "course_archived")
+    const pausedForCourses = (await agents.list(p))
+      .filter(
+        (r) => r.pausedBy === "course_archived" || r.pausedBy === "no_course",
+      )
       .map((r) => r.id);
     const at = clock.now();
     await withOwner(db, p, async (tx, studentId) => {
@@ -127,7 +129,7 @@ export function createOutreachSender({
         shortfalls: proposal.shortfalls,
         review,
         actions: [...expired, ...unconfirmed],
-        pausedForArchivedCourse,
+        pausedForCourses,
         runsAwaitingApproval: await runsAwaitingApproval(tx, at),
       });
       const liveKeys = new Set(live.map((r) => r.dedupeKey));
