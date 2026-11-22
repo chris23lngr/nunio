@@ -57,12 +57,20 @@ export function saveAgent(
           queryKey: agentQueries(apiOrigin, saved).queryKey,
         }),
       ]),
-    // A Course may have been Archived or deleted, or a Model no longer offered, meanwhile: show which.
+    // A Course may have been Archived or deleted, or a Model no longer offered, meanwhile: show which. A deleted one
+    // has left the saved Agent, which its form then leaves out.
     onError: () =>
       Promise.all([
         queryClient.invalidateQueries({
           queryKey: agentCourseQueries(apiOrigin).queryKey,
         }),
+        ...(id
+          ? [
+              queryClient.invalidateQueries({
+                queryKey: agentQueries(apiOrigin, id).queryKey,
+              }),
+            ]
+          : []),
         queryClient.invalidateQueries({
           queryKey: modelQueries(apiOrigin).queryKey,
         }),
