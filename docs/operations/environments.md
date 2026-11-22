@@ -148,15 +148,16 @@ node --env-file=.env.operator packages/delegation/dist/model-catalog-cli.js reti
 - **Models never change.** For a different reasoning effort or output budget, add a new key and retire the old one.
 - **Two enabled Models of the same base model** (for example two Sonnet efforts) are both offered. Keeping that sensible is up to the founder.
 - **Before `enable`,** the Model must pass the Chat injection eval and the Agent injection eval ([Agents release gate](#agents-release-gate)). Pass the new key to the Agent eval as `key=OpenRouter ID`.
-- **Refusals:** the command refuses to disable or retire the Chat default, to make a disabled Model the default, to retire a Model a task still uses (`taskModels` in `packages/ai`), and to add a Covered Model.
+- **Refusals:** the command refuses to disable or retire the Chat default, to make a disabled Model the default, to retire a Model a task still uses (`taskModels` in `packages/ai`) or an Agent that isn't Ended still runs on (its Runs would stop with "Modell nicht mehr verfügbar"), and to add a Covered Model.
 
 The operator connection needs these privileges:
 
 - `SELECT, INSERT` on `catalog_model`;
 - `UPDATE ("chatEnabled", "chatDefault", "position", "retiredAt", "prices", "upstream", "zeroRetentionAvailable", "toolsAvailable", "syncedAt")` on `catalog_model`;
-- `SELECT, INSERT` on `model_catalog_change`.
+- `SELECT, INSERT` on `model_catalog_change`;
+- `EXECUTE` on `FUNCTION "model_agents"(TEXT)`, which returns only how many Agents use a Model.
 
-An operator login created before `toolsAvailable` existed (migration `20261120100000_catalog_model_tools`) needs `GRANT UPDATE ("toolsAvailable") ON "catalog_model"` once, or `sync` fails with a permission error.
+An operator login created before `toolsAvailable` existed (migration `20261120100000_catalog_model_tools`) needs `GRANT UPDATE ("toolsAvailable") ON "catalog_model"` once, or `sync` fails with a permission error. One created before `model_agents` existed (migration `20261215100000_model_agents`) needs `GRANT EXECUTE ON FUNCTION "model_agents"(TEXT)` once, or `retire` fails.
 
 The runtime role reads the catalog and may write only the synced columns. It cannot change the founder's switches or read the audit trail.
 
