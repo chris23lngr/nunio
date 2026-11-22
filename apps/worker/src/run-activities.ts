@@ -1,6 +1,6 @@
 // Run Activities: the reconcile, outreach and Routine ticks. Every Action goes through the gate, never around it.
 import { createPool, createPrismaClient } from "@nunio/db";
-import type { Delegation } from "@nunio/delegation";
+import type { Agents, Delegation } from "@nunio/delegation";
 import { createAgents, createDelegation, principal } from "@nunio/delegation";
 // The mailer alone: the package root also loads Better Auth, which the worker image does not carry.
 import { createScalewayMailer } from "@nunio/identity/email";
@@ -11,21 +11,31 @@ import { createPlan, createPlanExecutor, planRules } from "@nunio/planning";
 
 export function createRunActivities({
   delegation,
+  agents,
 }: {
   delegation: Delegation;
+  agents: Pick<Agents, "failDeadRunsOfAll">;
 }) {
   return {
-    /** Recovers in-flight dispatches a dead API or worker left behind. */
+    /** Recovers in-flight dispatches a dead API or worker left behind, and ends Agents' Runs whose workflow is gone. */
     async reconcileActions(): Promise<number> {
-      return delegation.reconcile();
+      const reconciled = await delegation.reconcile();
+      await agents.failDeadRunsOfAll();
+      return reconciled;
     },
   };
 }
 
 export type RunActivities = ReturnType<typeof createRunActivities>;
 
-/** The Run Activities as the worker runs them: the real gate over the Plan executor, and the ticks over the Plan. */
-export function runActivitiesFromEnv(env: NodeJS.ProcessEnv) {
+/**
+ * The Run Activities as the worker runs them: the real gate over the Plan executor, and the ticks over the Plan.
+ * `runAlive` asks Temporal whether a Run's workflow still runs.
+ */
+export function runActivitiesFromEnv(
+  env: NodeJS.ProcessEnv,
+  runAlive: (workflowId: string) => Promise<boolean>,
+) {
   const missing = [
     "DATABASE_URL",
     "SOURCE_KEY_VERSION",
@@ -55,7 +65,7 @@ export function runActivitiesFromEnv(env: NodeJS.ProcessEnv) {
         (o) => o.id === obligationId,
       )?.due ?? null,
   });
-  const agents = createAgents({ db, clock });
+  const agents = createAgents({ db, clock, runAlive });
   const outreach = createOutreachSender({
     db,
     clock,
@@ -79,7 +89,7 @@ export function runActivitiesFromEnv(env: NodeJS.ProcessEnv) {
 
   return {
     activities: {
-      ...createRunActivities({ delegation }),
+      ...createRunActivities({ delegation, agents }),
       /** Interventions are not Actions: raised and lapsed from their causes, outside the gate. */
       tickOutreach: () => outreach.tick(),
       /** A Routine's Tasks are the student's own planning, not Actions, so they are added outside the gate (ADR-0022). */

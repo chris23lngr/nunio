@@ -66,7 +66,7 @@ const client = new Client({
   namespace: required("TEMPORAL_NAMESPACE"),
   dataConverter: { payloadCodecs: [codec] },
 });
-const runActivities = runActivitiesFromEnv(process.env);
+const runActivities = runActivitiesFromEnv(process.env, workflowAlive(client));
 await ensureReconcileSchedule(client, taskQueue);
 await ensureOutreachSchedule(client, taskQueue);
 await ensureModelPriceSchedule(client, taskQueue);

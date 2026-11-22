@@ -5,6 +5,7 @@ import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import type { Executor, PlanRules } from "@nunio/delegation";
 import { createAgents, createDelegation, principal } from "@nunio/delegation";
+import { workflowAlive } from "@nunio/delegation/temporal-schedules";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import type { WorkflowBundle } from "@temporalio/worker";
 import { bundleWorkflowCode, Worker } from "@temporalio/worker";
@@ -156,7 +157,10 @@ describe("reconciliation", () => {
       connection: env.nativeConnection,
       taskQueue,
       workflowBundle,
-      activities: createRunActivities({ delegation }),
+      activities: createRunActivities({
+        delegation,
+        agents: createAgents({ db: runtime, clock: later }),
+      }),
     });
     await reconciler.runUntil(
       env.client.workflow.execute("reconcileActions", {
@@ -168,6 +172,85 @@ describe("reconciliation", () => {
     expect(await delegation.history(s.p, {})).toMatchObject([
       { status: "done" },
     ]);
+  });
+});
+
+describe("reconciling Agents' Runs", () => {
+  it("ends as failed, across students, the Runs under way over ten minutes whose workflow is gone", async () => {
+    const [gone, otherGone, alive, fresh] = await Promise.all([
+      student(),
+      student(),
+      student(),
+      student(),
+    ]);
+    const start = async (
+      s: Awaited<ReturnType<typeof student>>,
+      workflowId: string,
+    ) =>
+      (await s.agents.startRun({
+        runId: randomUUID(),
+        workflowId,
+        studentId: s.studentId,
+        agentId: s.agentId,
+      }))!;
+    // Nothing polls its task queue, so its workflow runs on.
+    const aliveWorkflowId = `agentRun/${alive.agentId}-${randomUUID()}`;
+    const aliveWorkflow = await env.client.workflow.start("agentRun", {
+      taskQueue: "nobody-polls",
+      workflowId: aliveWorkflowId,
+    });
+    const runs = {
+      gone: await start(gone, `agentRun/${gone.agentId}-${randomUUID()}`),
+      otherGone: await start(
+        otherGone,
+        `agentRun/${otherGone.agentId}-${randomUUID()}`,
+      ),
+      alive: await start(alive, aliveWorkflowId),
+      fresh: await start(fresh, `agentRun/${fresh.agentId}-${randomUUID()}`),
+    };
+    await admin.run.updateMany({
+      where: { id: { in: [runs.gone, runs.otherGone, runs.alive] } },
+      data: { startedAt: new Date(Date.now() - 11 * 60_000) },
+    });
+
+    const reconciler = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities: createRunActivities({
+        delegation: createDelegation({
+          db: runtime,
+          aiEnabled: () => true,
+          clock,
+        }),
+        agents: createAgents({
+          db: runtime,
+          clock,
+          runAlive: workflowAlive(env.client),
+        }),
+      }),
+    });
+    await reconciler.runUntil(
+      env.client.workflow.execute("reconcileActions", {
+        taskQueue,
+        workflowId: `reconcile-${randomUUID()}`,
+      }),
+    );
+    await aliveWorkflow.terminate();
+
+    const statusOf = async (id: string) =>
+      (await admin.run.findUniqueOrThrow({ where: { id } })).status;
+    expect({
+      gone: await statusOf(runs.gone),
+      otherGone: await statusOf(runs.otherGone),
+      alive: await statusOf(runs.alive),
+      fresh: await statusOf(runs.fresh),
+    }).toEqual({
+      gone: "failed",
+      otherGone: "failed",
+      alive: "running",
+      fresh: "running",
+    });
   });
 });
 

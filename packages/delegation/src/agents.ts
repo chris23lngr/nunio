@@ -237,6 +237,8 @@ const runsUnderWay = async (tx: Transaction, agentId: string) =>
 
 /** A Run under way this long may have lost its workflow, such as one terminated, so Temporal is asked about it. */
 const staleRunMs = 10 * 60_000;
+/** How many Agents with such a Run the reconcile asks Temporal about at a time; the next one takes up the rest. */
+const staleAgentsPerReconcile = 50;
 
 export function createAgents({
   db,
@@ -812,6 +814,21 @@ export function createAgents({
           },
         };
       });
+    },
+
+    /**
+     * Ends as failed the Runs under way a while whose workflow no longer runs, across students, for at most
+     * `staleAgentsPerReconcile` Agents, those with the oldest first. Run by the reconcile, so Agents' lists, which do not
+     * ask Temporal, stop reading "Läuft gerade" (#227).
+     */
+    async failDeadRunsOfAll() {
+      const found = await db.$queryRaw<
+        { agentId: string; studentId: string }[]
+      >`
+        SELECT "agentId", "studentId" FROM agents_with_stale_runs(
+          ${new Date(clock.now().getTime() - staleRunMs)}::timestamp(3), ${staleAgentsPerReconcile}::integer)`;
+      for (const { agentId, studentId } of found)
+        await failDeadRuns(mint.fromSession({ studentId }), agentId);
     },
 
     /**
