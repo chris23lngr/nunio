@@ -895,24 +895,31 @@ test("a Paused Agent says it ran out of Budget under the header", async () => {
   expect(screen.getByRole("button", { name: "Fortsetzen" })).toBeTruthy();
 });
 
-test("Budget shows what the Agent spent this month next to its monthly Budget", async () => {
-  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
-  api.route("GET", "/api/me/agents/a-1", () =>
-    Response.json({
-      ...agent,
-      budget: {
-        limitMicroUsd: 5_000_000,
-        usedMicroUsd: 1_000_000,
-        heldMicroUsd: 250_000,
-      },
-    }),
-  );
-  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+test.each([
+  [0, "Diesen Monat ausgegeben: 1,00 von 5,00 USD"],
+  [
+    250_000,
+    "Diesen Monat ausgegeben: 1,00 von 5,00 USD, dazu 0,25 USD reserviert",
+  ],
+])(
+  "Budget shows what the Agent settled this month next to its monthly Budget, and what calls still hold apart (%i held)",
+  async (heldMicroUsd, line) => {
+    api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+    api.route("GET", "/api/me/agents/a-1", () =>
+      Response.json({
+        ...agent,
+        budget: {
+          limitMicroUsd: 5_000_000,
+          usedMicroUsd: 1_000_000,
+          heldMicroUsd,
+        },
+      }),
+    );
+    renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
 
-  expect(
-    await screen.findByText("Diesen Monat ausgegeben: 1,25 von 5,00 USD"),
-  ).toBeTruthy();
-});
+    expect(await screen.findByText(line)).toBeTruthy();
+  },
+);
 
 test("Löschen in the header's menu asks first, then deletes the Agent and returns to the list", async () => {
   const deleted: string[] = [];

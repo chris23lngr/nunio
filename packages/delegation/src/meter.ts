@@ -150,18 +150,22 @@ export function createDelegation({
             WHERE "id" = ${agentId} AND "state" = 'active'
               AND "budgetMicroUsd" - "usedMicroUsd" - "heldMicroUsd" >= ${estimate.microUsd}`;
           if (budgeted === 0) {
-            const { state, pausedBy } = await tx.agent.findUniqueOrThrow({
-              where: { id: agentId },
-              select: { state: true, pausedBy: true },
-            });
-            if (state !== "active")
-              return pausedBy === "budget" ? "budget_exhausted" : state;
-            // Budget exhaustion pauses in the reserving transaction; only the student resumes it. Like any Pause, it
-            // withdraws the Agent's open Approvals (ADR-0006), here under the Agent's lock as Pause's second pass does.
-            await tx.agent.update({
-              where: { id: agentId },
+            // Budget exhaustion pauses in the reserving transaction; only the student resumes it. Only an active Agent
+            // pauses, so an End or Pause that committed since the reservation stands. Like any Pause, it withdraws the
+            // Agent's open Approvals (ADR-0006), here under the Agent's lock as Pause's second pass does.
+            const paused = await tx.agent.updateMany({
+              where: { id: agentId, state: "active" },
               data: { state: "paused", pausedBy: "budget" },
             });
+            if (paused.count === 0) {
+              const { state, pausedBy } = await tx.agent.findUniqueOrThrow({
+                where: { id: agentId },
+                select: { state: true, pausedBy: true },
+              });
+              return state === "active" || pausedBy === "budget"
+                ? "budget_exhausted"
+                : state;
+            }
             await withdrawApprovals(tx, { studentId, agentId }, clock.now());
             return "budget_exhausted";
           }
