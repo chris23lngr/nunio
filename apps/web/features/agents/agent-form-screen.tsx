@@ -46,6 +46,7 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useId, useRef, useState } from "react";
 import { kinds } from "@/features/artifacts/artifact-kinds";
+import { modelQueries } from "@/features/chat/api/model-queries";
 import { CourseDot } from "@/features/shared/components/course-dot";
 import { ModelLogo } from "@/features/shared/components/model-logo";
 import { PageHeader } from "@/features/shared/components/page-header";
@@ -59,11 +60,7 @@ import type {
   AgentTemplate,
   Capability,
 } from "./api/agent-queries";
-import {
-  agentCourseQueries,
-  agentModelQueries,
-  capabilityQueries,
-} from "./api/agent-queries";
+import { agentCourseQueries, capabilityQueries } from "./api/agent-queries";
 import type { FormFill } from "./api/builder-mutations";
 import { modeOf } from "./capability-mode";
 import { AgentActivity } from "./components/agent-activity";
@@ -305,7 +302,7 @@ export function AgentFormScreen({
   const [tried, setTried] = useState(false);
   const offered = useQuery(agentCourseQueries(apiOrigin));
   const capabilitySet = useQuery(capabilityQueries(apiOrigin));
-  const models = useQuery(agentModelQueries(apiOrigin));
+  const models = useQuery(modelQueries(apiOrigin));
   // Only a new Agent stands in Chat's default: a saved one without a Model has Runs that stop.
   const modelKey =
     draft.modelKey ?? (agent ? null : models.data?.default) ?? null;

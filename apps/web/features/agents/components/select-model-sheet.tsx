@@ -16,8 +16,8 @@ import {
   TooltipTrigger,
 } from "@nunio/ui/components/tooltip/tooltip";
 import { useId, useState } from "react";
+import type { ChatModel } from "@/features/chat/api/model-queries";
 import { ModelLogo } from "@/features/shared/components/model-logo";
-import type { AgentModel } from "../api/agent-queries";
 
 /** "Modell auswählen": picks the Agent's Model among those Chat offers, each with its logo and, on hover or keyboard focus, its description. */
 export function SelectModelSheet({
@@ -30,7 +30,7 @@ export function SelectModelSheet({
   onClose,
 }: {
   open: boolean;
-  offered: AgentModel[];
+  offered: ChatModel[];
   loading: boolean;
   error?: string;
   /** The Agent's Model by key; one Chat no longer offers is not listed, so nothing starts picked. */
@@ -65,7 +65,7 @@ function ModelChoice({
   onSave,
   onClose,
 }: {
-  offered: AgentModel[];
+  offered: ChatModel[];
   loading: boolean;
   error?: string;
   selected: string | null;
