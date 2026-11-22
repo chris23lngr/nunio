@@ -151,7 +151,16 @@ export function decideAction<K extends Kind>(s: Snapshot<K>): Decision {
   )
     return refuse("started");
   if (s.intoProtectedTime) return refuse("protected_time");
-  return answered(s) ?? { outcome: "await_approval" };
+  const approved = answered(s);
+  if (approved?.outcome === "refuse") return approved;
+  // Never a block placed or moved to a start that has passed, as when its Approval is performed late.
+  if (
+    (intent.kind === "studyBlock.create" ||
+      intent.kind === "studyBlock.move") &&
+    (intent.args as Args<"studyBlock.create">).start <= s.now
+  )
+    return refuse("past");
+  return approved ?? { outcome: "await_approval" };
 }
 
 const dayMs = 24 * 60 * 60_000;
