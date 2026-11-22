@@ -38,8 +38,9 @@ beforeAll(async () => {
     `GRANT SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd", "updatedAt") ON "allowance" TO ${user}`,
   );
   await admin.$executeRawUnsafe(
-    `GRANT SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd") ON "agent" TO ${user}`,
+    `GRANT SELECT, UPDATE ("usedMicroUsd", "heldMicroUsd", "budgetMonth") ON "agent" TO ${user}`,
   );
+  await admin.$executeRawUnsafe(`GRANT SELECT ON "plan_preference" TO ${user}`);
   const url = new URL(db.connectionString);
   url.username = user;
   url.password = password;
@@ -59,13 +60,17 @@ function settleHeld(
   operator = "founder",
 ) {
   const script = fileURLToPath(new URL("./settle-held.ts", import.meta.url));
-  return execute(process.execPath, [script, studentId, reservationId, usd], {
-    env: {
-      PATH: process.env.PATH,
-      OPERATOR_DATABASE_URL: operatorURL,
-      OPERATOR_ID: operator,
+  return execute(
+    process.execPath,
+    ["--import", "tsx", script, studentId, reservationId, usd],
+    {
+      env: {
+        PATH: process.env.PATH,
+        OPERATOR_DATABASE_URL: operatorURL,
+        OPERATOR_ID: operator,
+      },
     },
-  });
+  );
 }
 
 /** A student with one call of unknown outcome, held at an estimate of $0.0003. */
@@ -134,6 +139,49 @@ describe("settle-held under a least-privilege operator role", () => {
         where: { id: agentId },
       }),
     ).toMatchObject({ usedMicroUsd: 150n, heldMicroUsd: 0n });
+  });
+
+  it("counts a held call settled after its month ended against the month it is settled in", async () => {
+    const { id, p } = await studentWithHeldCall();
+    const agentId = randomUUID(),
+      runId = randomUUID();
+    await admin.agent.create({
+      data: { id: agentId, studentId: id, budgetMicroUsd: 500 },
+    });
+    await admin.run.create({
+      data: { id: runId, studentId: id, agentId },
+    });
+    const sentThenHung = (signal: AbortSignal) =>
+      new Promise<never>((_, reject) =>
+        signal.addEventListener("abort", () => reject(signal.reason)),
+      );
+    await delegation
+      .meter(principal.fromRun(runId), { microUsd: 200 }, sentThenHung, {
+        timeoutMs: 50,
+      })
+      .catch(() => undefined);
+    const held = (await delegation.held(p)).find(
+      (r) => r.estimateMicroUsd === 200,
+    )!;
+    // The call was made in a month that has since ended, with other usage counted then.
+    await admin.agent.update({
+      where: { id: agentId },
+      data: { budgetMonth: "2000-01", usedMicroUsd: 400 },
+    });
+
+    await settleHeld(id, held.id, "0.00015");
+
+    const thisMonth = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Berlin",
+      year: "numeric",
+      month: "2-digit",
+    }).format(new Date());
+    expect(
+      await admin.agent.findUniqueOrThrow({
+        where: { id: agentId },
+        select: { budgetMonth: true, usedMicroUsd: true, heldMicroUsd: true },
+      }),
+    ).toEqual({ budgetMonth: thisMonth, usedMicroUsd: 150n, heldMicroUsd: 0n });
   });
 
   it("charges a held call at the cost the founder found, and frees the rest of its estimate", async () => {
