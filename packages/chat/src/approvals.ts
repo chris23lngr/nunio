@@ -83,7 +83,7 @@ export function approvalsTool(
                   ],
                 },
               },
-              // Withdrawn when the student Paused or Ended the Agent; only the refusal's event dates it.
+              // Withdrawn when the Agent was Paused or Ended; only the refusal's event dates it.
               {
                 decision: null,
                 action: {

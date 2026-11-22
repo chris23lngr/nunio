@@ -1619,7 +1619,7 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
       open: ["none"],
       since: [3, 4].map(
         (offset) =>
-          `- create a Study Block for O1 at ${at(offset)} · refused: the student Paused or Ended your Agent before deciding, which withdrew it`,
+          `- create a Study Block for O1 at ${at(offset)} · refused: your Agent was Paused or Ended before the student decided, which withdrew it`,
       ),
     });
     expect(await read()).toEqual({ open: ["none"], since: ["none"] });
