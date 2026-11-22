@@ -860,14 +860,6 @@ describe("an Agent's Run", () => {
       data: { startedAt: new Date(Date.now() - 30 * 60_000) },
     });
 
-    expect(
-      (await agents.list(s.p)).find((agent) => agent.id === s.agentId)?.badge,
-    ).toBeNull();
-    // Under way again, as if nobody had read the list: the Schedule's next fire finds it too.
-    await admin.run.update({
-      where: { id: s.runId },
-      data: { status: "running", endedAt: null },
-    });
     expect(await fromSchedule(s)).toEqual({ status: "done" });
 
     expect(
@@ -879,6 +871,9 @@ describe("an Agent's Run", () => {
     expect(await scheduledRuns(s.agentId)).toEqual([
       { status: "done", stopReason: null },
     ]);
+    expect(
+      (await agents.list(s.p)).find((agent) => agent.id === s.agentId)?.badge,
+    ).toBeNull();
   });
 
   it("ends a Run its Schedule started as stopped when its workflow is cancelled while the Run is recorded", async () => {

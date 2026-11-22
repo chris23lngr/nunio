@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   createAgentSchedules,
   retirePresets,
+  saveAgentSchedules,
   workflowAlive,
 } from "@nunio/delegation/temporal-schedules";
 import { payloadCodecFromEnv } from "@nunio/keys";
@@ -65,7 +66,7 @@ const client = new Client({
   namespace: required("TEMPORAL_NAMESPACE"),
   dataConverter: { payloadCodecs: [codec] },
 });
-const runActivities = runActivitiesFromEnv(process.env);
+const runActivities = runActivitiesFromEnv(process.env, workflowAlive(client));
 await ensureReconcileSchedule(client, taskQueue);
 await ensureOutreachSchedule(client, taskQueue);
 await ensureModelPriceSchedule(client, taskQueue);
@@ -83,10 +84,13 @@ const agentRunActivities = agentRunActivitiesFromEnv(
   workflowAlive(client),
   artifactRunStarter(client, taskQueue),
 );
-// Before polling: every Agent's Schedule is saved under its own ID, then the Agents cutover (#192) retires the presets'
-// Schedules and Runs, so this worker, which has no preset workflow, never runs or replays one. A failed save stops the
-// start here, before anything old is deleted, so Render keeps the running worker; each start repeats both.
-await retirePresets(client, () => agentRunActivities.saveSchedules());
+// Before polling: every Agent's Schedule is saved under its own ID and any `agent/*` Schedule without its Agent is
+// deleted, then the Agents cutover (#192) retires the presets' Schedules and Runs, so this worker, which has no preset
+// workflow, never runs or replays one. A failed save stops the start here, before anything is deleted, so Render keeps
+// the running worker; each start repeats all of it.
+await retirePresets(client, () =>
+  saveAgentSchedules(client, () => agentRunActivities.saveSchedules()),
+);
 const worker = await Worker.create({
   connection,
   namespace: required("TEMPORAL_NAMESPACE"),

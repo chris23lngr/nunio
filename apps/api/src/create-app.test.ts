@@ -7124,13 +7124,19 @@ describe("an Agent's form", () => {
     const stale = await recordedRun(s.id, id, 30, { status: "running" });
     goneWorkflows.add(`agentRun/${stale}`);
 
+    // The list, behind Home and Inbox, never waits on Temporal; opening the Agent asks.
+    expect(await (await s.call("GET", "")).json()).toEqual([
+      expect.objectContaining({ id, badge: "running" }),
+    ]);
+    expect(workflowsAsked).not.toContain(`agentRun/${stale}`);
+    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
+      running: false,
+    });
+    expect(workflowsAsked).toContain(`agentRun/${stale}`);
     // The list no longer reads "Läuft gerade" for it.
     expect(await (await s.call("GET", "")).json()).toEqual([
       expect.objectContaining({ id, badge: null }),
     ]);
-    expect(await (await s.call("GET", `/${id}`)).json()).toMatchObject({
-      running: false,
-    });
     expect(
       await admin.run.findUniqueOrThrow({
         where: { id: stale },
