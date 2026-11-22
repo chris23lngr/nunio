@@ -13,7 +13,10 @@ const effectOf = (done: {
 /** The gate's executor for Study Blocks and Tasks within nunio's Plan: each key takes its effect at most once. */
 export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
   return {
-    async execute({ studentId, actionId, intent }, { idempotencyKey }) {
+    async execute(
+      { studentId, actionId, intent, block: seen },
+      { idempotencyKey },
+    ) {
       return withOwner(db, principal.fromSession({ studentId }), async (tx) => {
         // Serializes executions of one key, so a repeat sees the effect the first recorded.
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${idempotencyKey}))`;
@@ -83,13 +86,35 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
           return { status: "done", effect: { taskId } };
         }
         let studyBlockId: string = randomUUID();
+        if (
+          intent.kind === "studyBlock.move" ||
+          intent.kind === "studyBlock.remove"
+        ) {
+          // Held until the effect commits, so a change by the student either shows here or waits for it.
+          await tx.$executeRaw`SELECT 1 FROM "study_block" WHERE "id" = ${intent.studyBlockId} FOR UPDATE`;
+          const block = await tx.studyBlock.findUnique({
+            where: { id: intent.studyBlockId },
+          });
+          if (!block)
+            return { status: "rejected", detail: "the block is gone" };
+          if (block.lockedAt)
+            return { status: "rejected", detail: "the block is Locked" };
+          // Moved since the gate decided, the student's change stands. A dispatch recorded without where the block was
+          // may have been moved too, so it is refused as well.
+          if (
+            block.start.getTime() !== seen?.start.getTime() ||
+            block.end.getTime() !== seen.end.getTime()
+          )
+            return {
+              status: "rejected",
+              detail: "the block is no longer where it was when decided",
+            };
+        }
         if (intent.kind === "studyBlock.move") {
-          const { count } = await tx.studyBlock.updateMany({
+          await tx.studyBlock.updateMany({
             where: { id: intent.studyBlockId },
             data: { start: intent.start, end: intent.end },
           });
-          if (!count)
-            return { status: "rejected", detail: "the block is gone" };
           // Moved by anyone but the Agent that created it, such as the student through a Chat, it is no longer that Agent's own.
           await tx.studyBlock.updateMany({
             where: {
@@ -100,11 +125,9 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
           });
           studyBlockId = intent.studyBlockId;
         } else if (intent.kind === "studyBlock.remove") {
-          const { count } = await tx.studyBlock.deleteMany({
+          await tx.studyBlock.deleteMany({
             where: { id: intent.studyBlockId },
           });
-          if (!count)
-            return { status: "rejected", detail: "the block is gone" };
           studyBlockId = intent.studyBlockId;
         } else {
           const work = (await tx.obligation.findUnique({
