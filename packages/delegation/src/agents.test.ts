@@ -765,9 +765,15 @@ describe("an Agent's Schedule", () => {
     expect(ids).not.toContain(ended);
   });
 
-  it("starts one Run a day in the Plan's time zone, though the hour the clocks go back fires its Uhrzeit twice", async () => {
-    const s = await withAcceptedCourse("Europe/Berlin");
-    let at = new Date("2026-10-25T00:30:00Z");
+  /**
+   * An Agent of `s` due daily at `minute`, and its Schedule as Temporal fires it: the Run's workflow ID ends in the time
+   * the Run was due, whenever the worker takes it up (`now`). A Run it starts ends at once.
+   */
+  async function firing(
+    s: Awaited<ReturnType<typeof withAcceptedCourse>>,
+    minute: number,
+  ) {
+    let at = new Date();
     const agents = createAgents({
       db: runtime,
       schedules: fakeSchedules().schedules,
@@ -775,30 +781,65 @@ describe("an Agent's Schedule", () => {
     });
     const created = await agents.create(
       s.p,
-      form(s.courseId, { rhythm: "daily", minute: 150 }),
+      form(s.courseId, { rhythm: "daily", minute }),
     );
     if (created.status !== "ok") throw new Error(created.status);
-    const fire = () =>
-      agents.startRun({
+    const agentId = created.id;
+    const fire = async (due: string, now = due) => {
+      at = new Date(now);
+      const runId = await agents.startRun({
         runId: randomUUID(),
-        workflowId: `agentRun/${created.id}-${at.toISOString()}`,
+        workflowId: `agentRun/${agentId}-${due}`,
         studentId: s.studentId,
-        agentId: created.id,
+        agentId,
       });
-    // 02:30 summer time: the Run starts and ends.
-    const first = await fire();
-    expect(first).toEqual(expect.any(String));
-    await admin.run.update({
-      where: { id: first! },
-      data: { status: "done", startedAt: at, endedAt: at },
-    });
+      if (runId)
+        await admin.run.update({
+          where: { id: runId },
+          data: { status: "done", startedAt: at, endedAt: at },
+        });
+      return runId;
+    };
+    return { agents, agentId, fire };
+  }
 
+  it("starts one Run a day in the Plan's time zone, though the hour the clocks go back fires its Uhrzeit twice", async () => {
+    const s = await withAcceptedCourse("Europe/Berlin");
+    const { fire } = await firing(s, 150);
+
+    // 02:30 summer time.
+    expect(await fire("2026-10-25T00:30:00Z")).toEqual(expect.any(String));
     // 02:30 again, now winter time.
-    at = new Date("2026-10-25T01:30:00Z");
-    expect(await fire()).toBeNull();
+    expect(await fire("2026-10-25T01:30:00Z")).toBeNull();
     // 02:30 the next day.
-    at = new Date("2026-10-26T01:30:00Z");
-    expect(await fire()).toEqual(expect.any(String));
+    expect(await fire("2026-10-26T01:30:00Z")).toEqual(expect.any(String));
+  });
+
+  it("starts each evening's Run though the worker took up the one before only after midnight", async () => {
+    const s = await withAcceptedCourse("Europe/Berlin");
+    const { fire } = await firing(s, 23 * 60 + 30);
+
+    // Saturday's 23:30, taken up at 00:15 on Sunday.
+    expect(await fire("2026-11-21T22:30:00Z", "2026-11-21T23:15:00Z")).toEqual(
+      expect.any(String),
+    );
+    // Sunday's 23:30.
+    expect(await fire("2026-11-22T22:30:00Z")).toEqual(expect.any(String));
+  });
+
+  it("starts a Run at a later Uhrzeit on a day the Agent has already run", async () => {
+    const s = await withAcceptedCourse("Europe/Berlin");
+    const { agents, agentId, fire } = await firing(s, 8 * 60);
+
+    expect(await fire("2026-11-23T07:00:00Z")).toEqual(expect.any(String));
+    expect(
+      await agents.update(
+        s.p,
+        agentId,
+        form(s.courseId, { rhythm: "daily", minute: 18 * 60 }),
+      ),
+    ).toEqual({ status: "ok" });
+    expect(await fire("2026-11-23T17:00:00Z")).toEqual(expect.any(String));
   });
 
   it("saves the other Agents' Schedules when one cannot be saved, then fails, so the worker does not start", async () => {

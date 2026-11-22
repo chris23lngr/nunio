@@ -102,9 +102,23 @@ export type AgentForm = {
 const timeZoneOf = async (tx: Transaction) =>
   (await tx.planPreference.findFirst())?.timeZone ?? "Europe/Berlin";
 
-/** The calendar day an instant falls on in a time zone, as "YYYY-MM-DD". */
-const dayOf = (at: Date, timeZone: string) =>
-  new Intl.DateTimeFormat("en-CA", { timeZone }).format(at);
+/** When a Run's Schedule was due: Temporal ends the workflow ID of each start in it, as in "-2026-10-25T00:30:00Z". */
+const dueAtOf = (workflowId: string | null) => {
+  const due = workflowId?.match(/-(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)$/)?.[1];
+  return due ? new Date(due) : null;
+};
+
+/** The day and time on the clock an instant falls on in a time zone, as "YYYY-MM-DD, HH:MM". */
+const wallClockOf = (at: Date, timeZone: string) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(at);
 
 /**
  * Stores an Agent's Capabilities and keeps its Grants in step: one, unscoped, for each kind a Capability on `always`
@@ -803,7 +817,8 @@ export function createAgents({
     /**
      * Records a Run of an active Agent as its Schedule fires, or takes up the one the student started now, and
      * snapshots the Agent's configuration for it. Null when the Agent is not active, when its other Run is still
-     * running (one Run at a time), or when its Schedule already started one today in the Plan's time zone.
+     * running (one Run at a time), or when its Schedule already started one due on the same day at the same time in
+     * the Plan's time zone.
      */
     async startRun({
       studentId,
@@ -851,16 +866,20 @@ export function createAgents({
         if (agent?.state !== "active") return null;
         if (await tx.run.findFirst({ where: { agentId, status: "running" } }))
           return null;
-        // One a day: the Schedule matches its Uhrzeit on the clock, so it fires twice in the hour the clocks go back.
+        // The Schedule matches its Uhrzeit on the clock, so it fires twice in the hour the clocks go back: the second
+        // is due on the same day at the same time as the Run before.
         const last = await tx.run.findFirst({
           where: { agentId, trigger: "schedule" },
           orderBy: { startedAt: "desc" },
-          select: { startedAt: true },
+          select: { workflowId: true },
         });
+        const lastDue = dueAtOf(last?.workflowId ?? null);
+        const due = dueAtOf(workflowId);
         const timeZone = await timeZoneOf(tx);
         if (
-          last &&
-          dayOf(last.startedAt, timeZone) === dayOf(clock.now(), timeZone)
+          lastDue &&
+          due &&
+          wallClockOf(lastDue, timeZone) === wallClockOf(due, timeZone)
         )
           return null;
         const run = await tx.run.create({
