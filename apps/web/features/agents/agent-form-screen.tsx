@@ -166,6 +166,11 @@ const differs = (key: keyof Draft, a: unknown, b: unknown) =>
       JSON.stringify((b as AgentCourse[]).map((c) => c.id))
     : JSON.stringify(a) !== JSON.stringify(b);
 
+const byId = (course: { id: string }) => (other: { id: string }) =>
+  other.id === course.id;
+const sameIds = (a: { id: string }[], b: { id: string }[]) =>
+  a.length === b.length && a.every((course) => b.some(byId(course)));
+
 /** A field the builder changed: what it held before, and the answer that changed it. */
 type Mark = { before: Partial<Draft>; turn: string };
 
@@ -292,6 +297,25 @@ export function AgentFormScreen({
         ? draftOfTemplate(template, initialCourses)
         : blank,
   );
+  // The Agent's Courses as the Draft last took them in. One deleted, Rejected or merged since has left the Agent, so
+  // it leaves the Draft too, and the Course it was merged into joins it: saving never sends a Course that is gone.
+  const [taken, setTaken] = useState(agent?.courses ?? []);
+  if (agent && !sameIds(agent.courses, taken)) {
+    setTaken(agent.courses);
+    const kept = agent.courses;
+    setDraft((draft) => ({
+      ...draft,
+      courses: [
+        ...draft.courses.filter(
+          (course) => !taken.some(byId(course)) || kept.some(byId(course)),
+        ),
+        ...kept.filter(
+          (course) =>
+            !taken.some(byId(course)) && !draft.courses.some(byId(course)),
+        ),
+      ],
+    }));
+  }
   // An Agent with no Runs yet, such as a new one, opens on its Auftrag.
   const [tab, setTab] = useState<"activity" | "goal">(
     agent && hasRuns ? "activity" : "goal",
@@ -390,14 +414,25 @@ export function AgentFormScreen({
     if (changed.length) save.reset();
     return changed;
   };
-  /** Restores what the fields held before the builder changed them. */
-  const undo = (fields: BuilderField[]) => {
-    setDraft((draft) =>
-      Object.assign(
-        { ...draft },
-        ...fields.map((field) => marks[field]?.before ?? {}),
-      ),
+  /**
+   * Restores what the fields held before the builder changed them. Kurse leaves out a Course Archived, deleted or
+   * merged since, unless the Agent already has it, as the Courses on offer read now say.
+   */
+  const undo = async (fields: BuilderField[]) => {
+    const before: Partial<Draft> = Object.assign(
+      {},
+      ...fields.map((field) => marks[field]?.before ?? {}),
     );
+    if (before.courses) {
+      const now = await queryClient
+        .fetchQuery({ ...agentCourseQueries(apiOrigin), staleTime: 0 })
+        .catch(() => offered.data);
+      before.courses = before.courses.filter(
+        (course) =>
+          !now || now.some(byId(course)) || agent?.courses.some(byId(course)),
+      );
+    }
+    setDraft((draft) => ({ ...draft, ...before }));
     unmark(fields);
   };
   const builder = useBuilder(apiOrigin, {
@@ -432,7 +467,9 @@ export function AgentFormScreen({
       ?.focus({ preventScroll: true });
   };
   const marked = (field: BuilderField) =>
-    marks[field] && <ChangedMark field={field} onUndo={() => undo([field])} />;
+    marks[field] && (
+      <ChangedMark field={field} onUndo={() => void undo([field])} />
+    );
 
   const budget = Number(draft.budget);
   const errors = {
@@ -1123,7 +1160,7 @@ export function AgentFormScreen({
                 onStop={builder.stop}
                 onShow={show}
                 onUndoAll={(turn) =>
-                  undo(
+                  void undo(
                     (Object.keys(builderFields) as BuilderField[]).filter(
                       (field) => marks[field]?.turn === turn,
                     ),

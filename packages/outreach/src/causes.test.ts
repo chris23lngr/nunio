@@ -7,7 +7,7 @@ const none: State = {
   shortfalls: [],
   review: { courses: [] },
   actions: [],
-  pausedForArchivedCourse: [],
+  pausedForCourses: [],
 };
 
 describe("causesOf", () => {
@@ -23,7 +23,7 @@ describe("causesOf", () => {
             agentId: "r1",
           },
         ],
-        pausedForArchivedCourse: ["r1"],
+        pausedForCourses: ["r1"],
       }),
     ).toEqual([]);
   });

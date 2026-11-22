@@ -73,7 +73,7 @@ export function causesOf({
   shortfalls,
   review,
   actions,
-  pausedForArchivedCourse,
+  pausedForCourses,
   runsAwaitingApproval = [],
 }: {
   shortfalls: readonly Shortfall[];
@@ -91,8 +91,8 @@ export function causesOf({
     agentId?: string | null;
     runId?: string | null;
   }[];
-  /** Agents Paused because their Course is Archived; their Actions raise nothing. */
-  pausedForArchivedCourse: readonly string[];
+  /** Agents Paused with no Course to act for, all Archived or none left; their Actions raise nothing. */
+  pausedForCourses: readonly string[];
   /** Agent Runs that ended with Approvals still open. */
   runsAwaitingApproval?: readonly string[];
 }): Cause[] {
@@ -118,7 +118,7 @@ export function causesOf({
           .map((f) => disagreement("fact", f)),
       ]),
     ...actions
-      .filter((a) => !a.agentId || !pausedForArchivedCourse.includes(a.agentId))
+      .filter((a) => !a.agentId || !pausedForCourses.includes(a.agentId))
       .flatMap((a): Cause[] => {
         if (
           a.status === "refused" &&

@@ -551,7 +551,7 @@ export function createCourses({
     /**
      * nunio stops planning and acting for the Course: its future Study Blocks go, Locked ones too, since the student
      * chose this, and an Agent with no other Course to act for is Paused. They are Paused first, so a failure leaves
-     * nunio doing less.
+     * nunio doing less. Once it is Archived they are looked at again, for one the student resumed meanwhile.
      */
     async archive(p: Principal, id: string) {
       const accepted = await withOwner(db, p, (tx) =>
@@ -559,7 +559,7 @@ export function createCourses({
       );
       if (!accepted) return { status: "gone" } as const;
       await agents.pauseForCourse(p, id);
-      return withOwner(db, p, async (tx) => {
+      const result = await withOwner(db, p, async (tx) => {
         await tx.studyBlock.deleteMany({ where: futureBlocks(id) });
         await tx.course.update({
           where: { id },
@@ -567,6 +567,16 @@ export function createCourses({
         });
         return { status: "ok" } as const;
       });
+      // The Archive stands if this fails: the gate refuses the Actions of an Agent with no Course to act for.
+      await agents
+        .pauseForCourse(p, id)
+        .catch((error) =>
+          console.error(
+            "Could not pause the Agents of an Archived Course",
+            error,
+          ),
+        );
+      return result;
     },
 
     /**

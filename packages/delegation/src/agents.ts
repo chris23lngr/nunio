@@ -200,6 +200,23 @@ function outOfCourses(
 }
 
 /**
+ * Why a Paused Agent reads Paused: while it has no Course to act for, that, as Fortsetzen is refused for it; else what
+ * paused it, except a Course reason that no longer holds, which reads as none. Its record keeps what paused it.
+ */
+function pausedReason(r: {
+  state: string;
+  pausedBy: string | null;
+  courses: Parameters<typeof outOfCourses>[0];
+}): PausedBy | null {
+  if (r.state !== "paused") return r.pausedBy as PausedBy | null;
+  const out = outOfCourses(r.courses);
+  if (out) return out;
+  return r.pausedBy === "course_archived" || r.pausedBy === "no_course"
+    ? null
+    : (r.pausedBy as PausedBy | null);
+}
+
+/**
  * The one badge an Agent's row shows: Pausiert, Freigabe benötigt (one of its Runs has an open Approval), Läuft
  * gerade (one of its Runs is under way) or Beendet; null when none applies. An Ended Agent reads Beendet even while
  * one of its Runs is still asking or under way: it can no longer act on either.
@@ -521,8 +538,15 @@ export function createAgents({
         await saveSchedule(tx, saved);
         return { status: "ok" } as const;
       });
-      // Kept Courses may all be Archived: it then has none left to act for.
-      if (result.status === "ok") await settleCourses(p);
+      // Kept Courses may all be Archived: it then has none left to act for. The save stands if this fails; the gate
+      // refuses the Actions of an Agent with no Course to act for, and the next change to its Courses catches up.
+      if (result.status === "ok")
+        await settleCourses(p).catch((error) =>
+          console.error(
+            "Could not bring the Agents in line with their Courses",
+            error,
+          ),
+        );
       return result;
     },
 
@@ -596,6 +620,12 @@ export function createAgents({
     async resume(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
       const found = await withOwner(db, p, async (tx) => {
+        await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
+        // Its Courses as committed, held until it resumes: a Course leaving it, Archived or Rejected meanwhile waits,
+        // and `settleCourses` then finds it active and pauses it again.
+        if ((await tx.agent.findUnique({ where: { id } }))?.state === "paused")
+          await tx.$executeRaw`SELECT 1 FROM "agent_course" ac JOIN "course" c ON c."id" = ac."courseId"
+            WHERE ac."agentId" = ${id} FOR SHARE`;
         const r = await tx.agent.findUnique({
           where: { id },
           include: { courses: { include: { course: true } } },
@@ -695,6 +725,7 @@ export function createAgents({
       return withOwner(db, p, async (tx) => {
         const agents = await tx.agent.findMany({
           orderBy: { createdAt: "desc" },
+          include: { courses: { include: { course: true } } },
         });
         const asking = await oldestAsking(tx);
         const running = new Set(
@@ -714,7 +745,7 @@ export function createAgents({
               description: r.description,
               emoji: r.emoji,
               state,
-              pausedBy: r.pausedBy as PausedBy | null,
+              pausedBy: pausedReason(r),
               badge: badgeOf(state, asking.has(r.id), running.has(r.id)),
               /** The oldest of its Runs still awaiting Approval, which Freigaben bestätigen opens; null when none. */
               approvalRunId: asking.get(r.id) ?? null,
@@ -791,7 +822,7 @@ export function createAgents({
           trigger: triggerOf(r),
           modelKey: r.modelKey,
           state: r.state as "active" | "paused" | "ended",
-          pausedBy: r.pausedBy as PausedBy | null,
+          pausedBy: pausedReason(r),
           /** One of its Runs is under way. */
           running: Boolean(running),
           /** The oldest of its Runs still awaiting Approval, which Freigaben bestätigen opens; null when none. */
