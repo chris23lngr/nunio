@@ -1043,9 +1043,11 @@ export function AgentFormScreen({
                       </FieldError>
                     )}
                     {agent && (
-                      // What counts against it now: used since the 1st, plus calls still in flight.
+                      // Settled since the 1st; calls not yet settled, which may have begun last month, hold apart.
                       <p className="mt-2 text-sm text-base-500">
-                        {`Diesen Monat ausgegeben: ${usd(agent.budget.usedMicroUsd + agent.budget.heldMicroUsd)} von ${usd(agent.budget.limitMicroUsd)} USD`}
+                        {`Diesen Monat ausgegeben: ${usd(agent.budget.usedMicroUsd)} von ${usd(agent.budget.limitMicroUsd)} USD`}
+                        {agent.budget.heldMicroUsd > 0 &&
+                          `, dazu ${usd(agent.budget.heldMicroUsd)} USD reserviert`}
                       </p>
                     )}
                   </div>
