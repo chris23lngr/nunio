@@ -159,6 +159,7 @@ export const openApprovalAt = (at: Date) => ({
  * Withdraws every open Approval of an Agent's Runs for good, as Pausing or Ending it does (ADR-0006): each Action is
  * refused as `approval_withdrawn` at `at`, so the student can no longer approve it, it stops counting as open, and the
  * Agent's next Run reads what became of it. Each Action is locked as deciding locks it and read again, so one the student answered meanwhile keeps its answer.
+ * Called under the Agent's lock, which performing takes before an Action's, so the two never deadlock (#226).
  */
 export async function withdrawApprovals(
   tx: Transaction,
@@ -691,6 +692,15 @@ export function createGate({
       const next = await withOwner(db, p, async (tx, studentId) => {
         // Serializes calls with one key, so a repeat waits for the first to commit and then sees its record.
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${studentId}:${key}`}))`;
+        const run =
+          p.kind === "run"
+            ? await tx.run.findUnique({
+                where: { id: p.runId },
+              })
+            : null;
+        // The Agent before its Action, as pausing, ending, metering and deleting it lock them, so none deadlocks (#226).
+        if (run?.agentId)
+          await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${run.agentId} FOR UPDATE`;
         // Settling writes the Action row first, so this lock keeps the Action and its Attempts read consistently.
         await tx.$executeRaw`SELECT 1 FROM "action" WHERE "studentId" = ${studentId} AND "key" = ${key} FOR UPDATE`;
         const existing = await findAction(tx, {
@@ -719,14 +729,6 @@ export function createGate({
         if (existing && existing.status !== "awaiting_approval")
           return { outcome: outcomeOf(existing) } as const;
 
-        const run =
-          p.kind === "run"
-            ? await tx.run.findUnique({
-                where: { id: p.runId },
-              })
-            : null;
-        if (run?.agentId)
-          await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${run.agentId} FOR UPDATE`;
         // Read authority only after the lock, including changes committed while we waited.
         const agent = run?.agentId ? await agentOf(tx, run.agentId) : null;
         const subject = await subjectOf(tx, parsed);

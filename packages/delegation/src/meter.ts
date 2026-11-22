@@ -152,7 +152,7 @@ export function createDelegation({
           if (budgeted === 0) {
             // Budget exhaustion pauses in the reserving transaction; only the student resumes it. Only an active Agent
             // pauses, so an End or Pause that committed since the reservation stands. Like any Pause, it withdraws the
-            // Agent's open Approvals (ADR-0006), here under the Agent's lock as Pause's second pass does.
+            // Agent's open Approvals (ADR-0006), here under the Agent's lock as Pause does.
             const paused = await tx.agent.updateMany({
               where: { id: agentId, state: "active" },
               data: { state: "paused", pausedBy: "budget" },
