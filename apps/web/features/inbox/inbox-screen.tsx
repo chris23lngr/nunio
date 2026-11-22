@@ -73,7 +73,7 @@ function NoticeItem({
   opening,
 }: {
   notice: Notice;
-  onOpen: () => void;
+  onOpen: (options: { onError: () => void }) => void;
   opening: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -99,7 +99,7 @@ function NoticeItem({
           disabled={opening}
           onClick={() => {
             setOpen(true);
-            onOpen();
+            onOpen({ onError: () => setOpen(false) });
           }}
         >
           Öffnen
@@ -126,7 +126,7 @@ function AgentBriefingItem({
   interventions: Intervention[];
   notices: Notice[];
   openingNotice: boolean;
-  onOpenNotice: (noticeId: string) => void;
+  onOpenNotice: (noticeId: string, options: { onError: () => void }) => void;
   decidingApproval: boolean;
   onDecideApproval: (
     approval: RunApproval,
@@ -210,7 +210,7 @@ function AgentBriefingItem({
             key={n.id}
             notice={n}
             opening={openingNotice}
-            onOpen={() => onOpenNotice(n.id)}
+            onOpen={(options) => onOpenNotice(n.id, options)}
           />
         ) : (
           <p key={id}>Nachricht nicht mehr vorhanden</p>
@@ -304,7 +304,7 @@ export function InboxScreen({ apiOrigin }: { apiOrigin: string }) {
               key={n.id}
               notice={n}
               opening={read.isPending}
-              onOpen={() => read.mutate(n.id)}
+              onOpen={(options) => read.mutate(n.id, options)}
             />
           ))}
         </section>
@@ -321,7 +321,9 @@ export function InboxScreen({ apiOrigin }: { apiOrigin: string }) {
                   interventions={interventions}
                   notices={notices}
                   openingNotice={read.isPending}
-                  onOpenNotice={(noticeId) => read.mutate(noticeId)}
+                  onOpenNotice={(noticeId, options) =>
+                    read.mutate(noticeId, options)
+                  }
                   decidingApproval={decide.isPending}
                   onDecideApproval={(approval, decision) =>
                     decide.mutate({ approval, decision })

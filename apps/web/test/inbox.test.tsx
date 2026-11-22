@@ -413,6 +413,26 @@ test("a Notice drawn from a Source deleted since says it can no longer be read",
   ).toBeTruthy();
 });
 
+test("a Notice whose marking as read fails can be opened again", async () => {
+  serveNotices(notice);
+  api.route(
+    "POST",
+    `/api/me/notices/${notice.id}/read`,
+    () => new Response(null, { status: 500 }),
+  );
+  const item = await screen.findByRole("article", {
+    name: "Nachricht von Klausur vorbereiten",
+  });
+
+  await userEvent.click(within(item).getByRole("button", { name: "Öffnen" }));
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Konnte die Nachricht nicht öffnen.",
+  );
+  expect(within(item).getByRole("button", { name: "Öffnen" })).toBeTruthy();
+  expect(within(item).getByText("Ungelesen")).toBeTruthy();
+});
+
 test("an Agent Briefing shows plain text, live RunApprovalCard, unread Notice, and live Artifacts", async () => {
   const decidedCalls: unknown[] = [];
   const openedNotices: string[] = [];
