@@ -425,6 +425,129 @@ describe("Agents", () => {
     expect(await admin.run.count({ where: { agentId: created.id } })).toBe(1);
   });
 
+  it.each([
+    ["pause", "before"],
+    ["pause", "while"],
+    ["end", "before"],
+    ["end", "while"],
+  ] as const)(
+    "%ss without deadlocking a Run that retries the Approval it asked %s the Agent was locked (#226)",
+    async (control, asked) => {
+      const s = await student();
+      const { schedules } = fakeSchedules();
+      const agents = createAgents({ db: runtime, schedules, clock });
+      const gate = createDelegation({
+        db: runtime,
+        aiEnabled: () => true,
+        clock,
+        executors: { plan: executor },
+        planRules,
+      });
+      const created = await agents.create(s.p, form(s.courseId));
+      if (created.status !== "ok") throw new Error(created.status);
+      const runId = (await agents.startRun({
+        runId: randomUUID(),
+        workflowId: "run-workflow",
+        studentId: s.studentId,
+        agentId: created.id,
+      }))!;
+      const key = `${runId}:1:1`;
+      /** Commits an open Approval the Run asked under `key`, as an earlier call of it does. */
+      const ask = async () => {
+        const { start, end } = block(s);
+        await admin.action.create({
+          data: {
+            id: randomUUID(),
+            studentId: s.studentId,
+            runId,
+            key,
+            kind: "studyBlock.create",
+            args: {
+              workId: s.obligationId,
+              start: start.toISOString(),
+              end: end.toISOString(),
+            },
+            status: "awaiting_approval",
+            approval: {
+              create: {
+                id: randomUUID(),
+                fingerprint: "shown",
+                expiresAt: new Date(now.getTime() + 60 * 60_000),
+              },
+            },
+          },
+        });
+      };
+      /** How many backends of this database wait on a lock. */
+      const waiting = async () => {
+        const [row] = await admin.$queryRaw<{ n: number }[]>`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+          WHERE datname = current_database() AND cardinality(pg_blocking_pids(pid)) > 0`;
+        return row!.n;
+      };
+      let markLocked!: () => void;
+      let release!: () => void;
+      const locked = new Promise<void>((resolve) => {
+        markLocked = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      if (asked === "before") await ask();
+      // Another call of the Run holds the Agent's lock while it decides.
+      const holder = admin.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${created.id} FOR UPDATE`;
+          markLocked();
+          await released;
+        },
+        { timeout: 15_000 },
+      );
+      await locked;
+      const retry = () =>
+        gate.perform(principal.fromRun(runId), { key, intent: block(s) });
+      let stopping: Promise<unknown> | undefined;
+      let performing: Promise<unknown> | undefined;
+      try {
+        // Both queue on the Agent's lock: the retry first when the Approval was asked before, else the Pause or End.
+        if (asked === "before") {
+          performing = retry();
+          await expect.poll(waiting).toBe(1);
+          stopping = agents[control](s.p, created.id);
+        } else {
+          stopping = agents[control](s.p, created.id);
+          await expect.poll(waiting).toBe(1);
+          await ask();
+          performing = retry();
+        }
+        await expect.poll(waiting).toBe(2);
+      } finally {
+        release();
+        await holder;
+      }
+
+      const [stopped, performed] = await Promise.allSettled([
+        stopping,
+        performing,
+      ]);
+      expect(stopped).toEqual({
+        status: "fulfilled",
+        value: { status: "ok", runs: [{ runId, workflowId: "run-workflow" }] },
+      });
+      // The retry first finds the Approval still open; after the Pause or End, withdrawn. Either way it ends withdrawn.
+      expect(performed).toMatchObject({
+        status: "fulfilled",
+        value:
+          asked === "before"
+            ? { status: "awaiting_approval" }
+            : { status: "refused", reason: "approval_withdrawn" },
+      });
+      expect(await gate.history(s.p, { keys: [key] })).toMatchObject([
+        { status: "refused", refusal: "approval_withdrawn" },
+      ]);
+    },
+  );
+
   it("does not let a Run create Grants or control Agents", async () => {
     const s = await student();
     const { schedules, calls } = fakeSchedules();
