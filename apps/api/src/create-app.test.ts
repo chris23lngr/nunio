@@ -8473,9 +8473,10 @@ describe("an Agent's form", () => {
         { error: "course_archived" },
       ]);
       expect(await status(unarchive(s, statistics))).toBe(200);
+      // For no reason that holds any longer.
       expect(await shown(s, id)).toMatchObject({
         state: "paused",
-        pausedBy: "course_archived",
+        pausedBy: null,
       });
       expect(await status(s.call("POST", `/${id}/resume`))).toBe(200);
       expect(await shown(s, id)).toMatchObject({
@@ -8515,9 +8516,10 @@ describe("an Agent's form", () => {
       ]);
       const finance = await course(s.id, "Finance");
       expect(await status(s.call("PUT", `/${id}`, form([finance])))).toBe(200);
+      // Paused still, for no reason that holds: the student resumes it.
       expect(await shown(s, id)).toMatchObject({
         state: "paused",
-        pausedBy: "no_course",
+        pausedBy: null,
       });
       expect(await status(s.call("POST", `/${id}/resume`))).toBe(200);
     });
@@ -8575,6 +8577,49 @@ describe("an Agent's form", () => {
         courses: [{ id: archived, archived: true }],
       });
     });
+
+    it.each([
+      ["Rejected", "no_course"],
+      ["merged", null],
+    ] as const)(
+      "keeps a %s Course so when its Agents cannot follow, and they follow on the next change to the Courses",
+      async (change, pausedBy) => {
+        const s = await student(
+          `agent-courses-follow-fails-${change.toLowerCase()}`,
+        );
+        const statistics = await course(s.id, "Statistics II");
+        const micro = await course(s.id, "Microeconomics");
+        const id = await agentOn(s, [statistics]);
+        const follow = agents.followCourses;
+        agents.followCourses = async () => {
+          throw new Error("Database unavailable");
+        };
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        try {
+          const changed = await (change === "Rejected"
+            ? reject(s, statistics)
+            : merge(s, statistics, micro));
+          expect(changed.status).toBe(200);
+        } finally {
+          agents.followCourses = follow;
+          logged.mockRestore();
+        }
+        expect(await shown(s, id)).toMatchObject({
+          state: "active",
+          courses: [{ id: statistics }],
+        });
+
+        expect(await status(remove(s, await course(s.id, "Finance")))).toBe(
+          200,
+        );
+
+        expect(await shown(s, id)).toMatchObject(
+          pausedBy
+            ? { state: "paused", pausedBy, courses: [] }
+            : { state: "active", courses: [{ id: micro }] },
+        );
+      },
+    );
 
     it("pauses with reason course_archived once its form is saved with only Archived Courses", async () => {
       const s = await student("agent-courses-saved-archived");

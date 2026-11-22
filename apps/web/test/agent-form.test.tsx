@@ -384,6 +384,38 @@ test("a saved Agent's form shows its Courses, an Archived one as archived, and S
   );
 });
 
+test("a Course deleted while the form is open leaves the Draft once saving fails on it, and saving again succeeds", async () => {
+  let current = agent;
+  const saved: { courseIds: string[] }[] = [];
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(current));
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    const body = (await request.json()) as { courseIds: string[] };
+    saved.push(body);
+    return body.courseIds.includes(ids.statistics)
+      ? Response.json({ error: "gone" }, { status: 404 })
+      : Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  await screen.findByRole("textbox", { name: "Name" });
+  // Deleted elsewhere meanwhile, which takes it off the Agent.
+  current = { ...agent, courses: [agent.courses[0]!] };
+
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  const chosen = screen.getByRole("list", { name: "Kurse" });
+  await waitFor(() =>
+    expect(within(chosen).queryByText("Statistics II")).toBeNull(),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  expect(saved.map((body) => body.courseIds)).toEqual([
+    [ids.archived, ids.statistics],
+    [ids.archived],
+  ]);
+});
+
 /** Text on screen, not the hidden copy a control is described by. */
 const shown = { ignore: "script, style, [hidden]" };
 
@@ -1869,5 +1901,44 @@ test("Rückgängig after two answers changed a field restores the student's own 
     screen.getByRole("button", { name: "Rückgängig: Name" }),
   );
   expect((name as HTMLInputElement).value).toBe("Mein Agent");
+  expect(screen.queryByText("von nunio geändert")).toBeNull();
+});
+
+test("Rückgängig on Kurse leaves out a Course Archived since, which a new Agent cannot be given", async () => {
+  let courses = offered;
+  api.route("GET", "/api/me/agents/courses", () => Response.json(courses));
+  api.route("POST", "/api/me/agents/builder", () =>
+    builderAnswer("Ich nehme Statistics II.", { courseIds: [ids.statistics] }),
+  );
+  renderScreen(<AgentFormScreen apiOrigin={api.origin} agent={null} />);
+  await userEvent.click(
+    screen.getByRole("button", { name: "Kurse bearbeiten" }),
+  );
+  const sheet = await screen.findByRole("dialog", { name: "Kurse verwalten" });
+  await userEvent.click(
+    await within(sheet).findByRole("checkbox", { name: /Microeconomics/ }),
+  );
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  const panel = screen.getByRole("complementary", { name: "nunio fragen" });
+  await userEvent.type(
+    within(panel).getByRole("textbox", { name: "Nachricht an nunio" }),
+    "Nimm Statistics II.{Enter}",
+  );
+  expect(
+    await within(panel).findByText("Ich nehme Statistics II."),
+  ).toBeTruthy();
+  // Archived elsewhere meanwhile.
+  courses = offered.filter((course) => course.id !== ids.micro);
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Rückgängig: Kurse" }),
+  );
+
+  await waitFor(() =>
+    expect(screen.queryByRole("list", { name: "Kurse" })).toBeNull(),
+  );
   expect(screen.queryByText("von nunio geändert")).toBeNull();
 });

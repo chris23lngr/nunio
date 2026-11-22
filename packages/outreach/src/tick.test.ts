@@ -312,6 +312,57 @@ describe("raising Interventions from their causes", () => {
     ]);
   });
 
+  it.each([
+    ["Paused because it lost its last Course", "no_course"],
+    ["Paused by the student, then left with no Course", "student"],
+  ])(
+    "raises nothing for the Unconfirmed Action of an Agent %s",
+    async (_, pausedBy) => {
+      now = at("2026-11-09 08:00");
+      const p = await student();
+      if (p.kind !== "student") throw new Error("a student");
+      const { studentId } = p;
+      const agentId = randomUUID();
+      const runId = randomUUID();
+      await admin.agent.create({
+        data: {
+          id: agentId,
+          studentId,
+          name: "Klausur vorbereiten",
+          budgetMicroUsd: 1_000_000,
+          state: "paused",
+          pausedBy,
+        },
+      });
+      await admin.run.create({
+        data: {
+          id: runId,
+          studentId,
+          agentId,
+          status: "done",
+          trigger: "schedule",
+          startedAt: new Date(now.getTime() - 3_600_000),
+          endedAt: new Date(now.getTime() - 3_540_000),
+        },
+      });
+      await admin.action.create({
+        data: {
+          id: randomUUID(),
+          studentId,
+          runId,
+          key: `${runId}:1:1`,
+          kind: "studyBlock.create",
+          args: createArgs,
+          status: "unconfirmed",
+        },
+      });
+
+      await sender.tick();
+
+      expect(await open(p)).toEqual([]);
+    },
+  );
+
   it("queues messages only for the Interventions it raised, not one a Run raised meanwhile", async () => {
     now = at("2026-11-09 08:00");
     const p = await student();
