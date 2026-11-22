@@ -101,6 +101,40 @@ export const workflowAlive =
     }
   };
 
+/** No Agent create holds its transaction open this long, so an `agent/*` Schedule older than this without its Agent is orphaned. */
+const orphanAfterMs = 10 * 60_000;
+
+/**
+ * Brings every Agent's Schedule in line as the worker starts: `saveSchedules` saves the Schedule of every Agent not
+ * Ended and returns their IDs, then every `agent/*` Schedule listed before it whose Agent is not among them is deleted,
+ * such as one an Agent create saved before its commit failed, or one left by an Ended Agent. A Schedule younger than
+ * `orphanAfterMs` is left alone, as its Agent may still be committing. If `saveSchedules` rejects, nothing is deleted.
+ * Safe to repeat, and for several workers at once.
+ */
+export async function saveAgentSchedules(
+  client: Client,
+  saveSchedules: () => Promise<string[]>,
+  now = () => new Date(),
+) {
+  // Listed first, so an Agent created meanwhile is either among those saved or too young to delete.
+  const listed: string[] = [];
+  for await (const schedule of client.schedule.list())
+    if (schedule.scheduleId.startsWith("agent/"))
+      listed.push(schedule.scheduleId);
+  const agents = new Set((await saveSchedules()).map(scheduleId));
+  for (const id of listed) {
+    if (agents.has(id)) continue;
+    const handle = client.schedule.getHandle(id);
+    try {
+      const { info } = await handle.describe();
+      if (now().getTime() - info.createdAt.getTime() < orphanAfterMs) continue;
+      await handle.delete();
+    } catch (error) {
+      ignoring(ScheduleNotFoundError)(error);
+    }
+  }
+}
+
 /**
  * The Agents cutover (#192) on Temporal, before the worker polls. First `saveSchedules` saves every Agent's Schedule
  * under `agent/<agentId>`; if any save fails it rejects, and nothing old is touched, so the worker does not start and no

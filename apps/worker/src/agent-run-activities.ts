@@ -157,7 +157,7 @@ export function agentRunActivitiesFromEnv(
   });
   return {
     activities: createAgentRunActivities(runs),
-    /** Saves the Schedule of every free-text Agent not Ended; safe on every start. */
+    /** Saves the Schedule of every Agent not Ended and returns their IDs; safe on every start. */
     saveSchedules: () => agents.saveSchedules(),
     close: () => db.$disconnect(),
   };

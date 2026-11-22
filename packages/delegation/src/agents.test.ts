@@ -751,7 +751,7 @@ describe("an Agent's Schedule", () => {
     await agents.end(s.p, ended);
     calls.length = 0;
 
-    await agents.saveSchedules();
+    const ids = await agents.saveSchedules();
     const mine = calls.filter((call) =>
       [active, paused, ended].some((id) => call.includes(id)),
     );
@@ -760,6 +760,9 @@ describe("an Agent's Schedule", () => {
       `save ${active} {"rhythm":"daily","minute":360} Europe/Berlin`,
       `save ${paused} {"rhythm":"daily","minute":420} Europe/Berlin paused`,
     ]);
+    // So the worker keeps their Schedules and deletes the rest.
+    expect(ids).toEqual(expect.arrayContaining([active, paused]));
+    expect(ids).not.toContain(ended);
   });
 
   it("saves the other Agents' Schedules when one cannot be saved, then fails, so the worker does not start", async () => {

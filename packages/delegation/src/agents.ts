@@ -515,8 +515,9 @@ export function createAgents({
 
     /**
      * Brings the Schedule of every Agent not Ended in line with its trigger, as the worker starts: one whose Schedule is
-     * missing or out of date gets it. Safe to repeat. One Agent's failure leaves the others' to go on, and then it
-     * rejects, so the worker does not start while an Agent may have no Schedule.
+     * missing or out of date gets it, and their IDs are returned, so the worker deletes any other Agent's Schedule.
+     * Safe to repeat. One Agent's failure leaves the others' to go on, and then it rejects, so the worker does not start
+     * while an Agent may have no Schedule.
      */
     async saveSchedules() {
       const found = await db.$queryRaw<
@@ -536,6 +537,7 @@ export function createAgents({
           failed,
           `Could not save ${failed.length} Agents' Schedules`,
         );
+      return found.map((r) => r.agentId);
     },
 
     /**
