@@ -263,15 +263,15 @@ export function createAgents({
         });
     });
   /**
-   * Ends as failed each of the student's Runs, or `agentId`'s, under way a while whose workflow no longer runs, so it
-   * holds up no other Run and reads no longer "Läuft gerade" (#174). If Temporal cannot be asked, it stays under way.
+   * Ends as failed each of `agentId`'s Runs under way a while whose workflow no longer runs, so it holds up no other Run
+   * and reads no longer "Läuft gerade" (#174). If Temporal cannot be asked, it stays under way.
    */
-  const failDeadRuns = async (p: Principal, agentId?: string) => {
+  const failDeadRuns = async (p: Principal, agentId: string) => {
     if (!runAlive) return;
     const stale = await withOwner(db, p, (tx) =>
       tx.run.findMany({
         where: {
-          agentId: agentId ?? { not: null },
+          agentId,
           status: "running",
           workflowId: { not: null },
           startedAt: { lt: new Date(clock.now().getTime() - staleRunMs) },
@@ -677,10 +677,10 @@ export function createAgents({
     /**
      * The student's Agents, Ended ones included: their history remains. Each has its badge, and the list puts what
      * needs the student first: Paused, then Freigabe benötigt, then running, then those without a badge, then Ended;
-     * newest first within each.
+     * newest first within each. It never asks Temporal, as Home and Inbox read it: a Run whose workflow is gone reads as
+     * running until the Agent is opened or its Schedule next fires.
      */
     async list(p: Principal) {
-      await failDeadRuns(p);
       return withOwner(db, p, async (tx) => {
         const agents = await tx.agent.findMany({
           orderBy: { createdAt: "desc" },
