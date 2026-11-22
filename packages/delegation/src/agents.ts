@@ -289,12 +289,6 @@ export function createAgents({
       await failRun(p, run.id);
     }
   };
-  /**
-   * Withdraws the Agent's open Approvals before its lock is taken: deciding and performing lock an Action and then its
-   * Agent, so locking them in that order never deadlocks with them.
-   */
-  const withdrawBeforeLock = (tx: Transaction, studentId: string, id: string) =>
-    withdrawApprovals(tx, { studentId, agentId: id }, clock.now());
   /** For each Agent, or only `agentId`, the oldest of its Runs with an Approval still open. */
   const oldestAsking = async (tx: Transaction, agentId?: string) => {
     const map = new Map<string, string>();
@@ -385,10 +379,9 @@ export function createAgents({
         });
       const found = await idle();
       if (!found.length) return [];
-      for (const { id } of found) await withdrawBeforeLock(tx, studentId, id);
       const ids = found.map((r) => r.id);
       await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ANY(${ids}) ORDER BY "id" FOR UPDATE`;
-      // Again under the Agents' locks, for a Course added or an Approval asked meanwhile.
+      // Again under the Agents' locks, for a Course added meanwhile.
       const pausing = await idle(ids);
       for (const { id, pausedBy } of pausing) {
         await tx.agent.update({
@@ -545,7 +538,6 @@ export function createAgents({
     async pause(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
       const runs = await withOwner(db, p, async (tx, studentId) => {
-        await withdrawBeforeLock(tx, studentId, id);
         await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
         await tx.agent.updateMany({
           where: { id, state: "active" },
@@ -553,7 +545,7 @@ export function createAgents({
         });
         if ((await tx.agent.findUnique({ where: { id } }))?.state !== "paused")
           return null;
-        // Again under the Agent's lock, for one asked meanwhile.
+        // Under the Agent's lock, which performing takes before an Action's, so no call asks one meanwhile.
         await withdrawApprovals(tx, { studentId, agentId: id }, clock.now());
         return runsUnderWay(tx, id);
       });
@@ -610,7 +602,6 @@ export function createAgents({
     async end(p: Principal, id: string) {
       if (p.kind !== "student") return { status: "gone" } as const;
       const runs = await withOwner(db, p, async (tx, studentId) => {
-        await withdrawBeforeLock(tx, studentId, id);
         await tx.$executeRaw`SELECT 1 FROM "agent" WHERE "id" = ${id} FOR UPDATE`;
         await tx.agent.updateMany({
           where: { id, state: { not: "ended" } },
@@ -618,7 +609,7 @@ export function createAgents({
         });
         if (!(await tx.agent.findUnique({ where: { id } }))) return null;
         await tx.grant.deleteMany({ where: { agentId: id } });
-        // Again under the Agent's lock, for one asked meanwhile.
+        // Under the Agent's lock, which performing takes before an Action's, so no call asks one meanwhile.
         await withdrawApprovals(tx, { studentId, agentId: id }, clock.now());
         return runsUnderWay(tx, id);
       });
