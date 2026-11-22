@@ -765,6 +765,42 @@ describe("an Agent's Schedule", () => {
     expect(ids).not.toContain(ended);
   });
 
+  it("starts one Run a day in the Plan's time zone, though the hour the clocks go back fires its Uhrzeit twice", async () => {
+    const s = await withAcceptedCourse("Europe/Berlin");
+    let at = new Date("2026-10-25T00:30:00Z");
+    const agents = createAgents({
+      db: runtime,
+      schedules: fakeSchedules().schedules,
+      clock: { now: () => at },
+    });
+    const created = await agents.create(
+      s.p,
+      form(s.courseId, { rhythm: "daily", minute: 150 }),
+    );
+    if (created.status !== "ok") throw new Error(created.status);
+    const fire = () =>
+      agents.startRun({
+        runId: randomUUID(),
+        workflowId: `agentRun/${created.id}-${at.toISOString()}`,
+        studentId: s.studentId,
+        agentId: created.id,
+      });
+    // 02:30 summer time: the Run starts and ends.
+    const first = await fire();
+    expect(first).toEqual(expect.any(String));
+    await admin.run.update({
+      where: { id: first! },
+      data: { status: "done", startedAt: at, endedAt: at },
+    });
+
+    // 02:30 again, now winter time.
+    at = new Date("2026-10-25T01:30:00Z");
+    expect(await fire()).toBeNull();
+    // 02:30 the next day.
+    at = new Date("2026-10-26T01:30:00Z");
+    expect(await fire()).toEqual(expect.any(String));
+  });
+
   it("saves the other Agents' Schedules when one cannot be saved, then fails, so the worker does not start", async () => {
     const s = await withAcceptedCourse();
     const { schedules, calls } = fakeSchedules();
