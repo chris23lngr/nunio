@@ -102,6 +102,24 @@ export type AgentForm = {
 const timeZoneOf = async (tx: Transaction) =>
   (await tx.planPreference.findFirst())?.timeZone ?? "Europe/Berlin";
 
+/** When a Run's Schedule was due: Temporal ends the workflow ID of each start in it, as in "-2026-10-25T00:30:00Z". */
+const dueAtOf = (workflowId: string | null) => {
+  const due = workflowId?.match(/-(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)$/)?.[1];
+  return due ? new Date(due) : null;
+};
+
+/** The day and time on the clock an instant falls on in a time zone, as "YYYY-MM-DD, HH:MM". */
+const wallClockOf = (at: Date, timeZone: string) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(at);
+
 /**
  * Stores an Agent's Capabilities and keeps its Grants in step: one, unscoped, for each kind a Capability on `always`
  * or `automatic` takes, and none once the Agent is Ended. The gate reads them at each Action, so a change applies at
@@ -219,6 +237,8 @@ const runsUnderWay = async (tx: Transaction, agentId: string) =>
 
 /** A Run under way this long may have lost its workflow, such as one terminated, so Temporal is asked about it. */
 const staleRunMs = 10 * 60_000;
+/** How many Agents with such a Run the reconcile asks Temporal about at a time; the next one takes up the rest. */
+const staleAgentsPerReconcile = 50;
 
 export function createAgents({
   db,
@@ -263,15 +283,15 @@ export function createAgents({
         });
     });
   /**
-   * Ends as failed each of the student's Runs, or `agentId`'s, under way a while whose workflow no longer runs, so it
-   * holds up no other Run and reads no longer "Läuft gerade" (#174). If Temporal cannot be asked, it stays under way.
+   * Ends as failed each of `agentId`'s Runs under way a while whose workflow no longer runs, so it holds up no other Run
+   * and reads no longer "Läuft gerade" (#174). If Temporal cannot be asked, it stays under way.
    */
-  const failDeadRuns = async (p: Principal, agentId?: string) => {
+  const failDeadRuns = async (p: Principal, agentId: string) => {
     if (!runAlive) return;
     const stale = await withOwner(db, p, (tx) =>
       tx.run.findMany({
         where: {
-          agentId: agentId ?? { not: null },
+          agentId,
           status: "running",
           workflowId: { not: null },
           startedAt: { lt: new Date(clock.now().getTime() - staleRunMs) },
@@ -508,8 +528,9 @@ export function createAgents({
 
     /**
      * Brings the Schedule of every Agent not Ended in line with its trigger, as the worker starts: one whose Schedule is
-     * missing or out of date gets it. Safe to repeat. One Agent's failure leaves the others' to go on, and then it
-     * rejects, so the worker does not start while an Agent may have no Schedule.
+     * missing or out of date gets it, and their IDs are returned, so the worker deletes any other Agent's Schedule.
+     * Safe to repeat. One Agent's failure leaves the others' to go on, and then it rejects, so the worker does not start
+     * while an Agent may have no Schedule.
      */
     async saveSchedules() {
       const found = await db.$queryRaw<
@@ -529,6 +550,7 @@ export function createAgents({
           failed,
           `Could not save ${failed.length} Agents' Schedules`,
         );
+      return found.map((r) => r.agentId);
     },
 
     /**
@@ -666,10 +688,10 @@ export function createAgents({
     /**
      * The student's Agents, Ended ones included: their history remains. Each has its badge, and the list puts what
      * needs the student first: Paused, then Freigabe benötigt, then running, then those without a badge, then Ended;
-     * newest first within each.
+     * newest first within each. It never asks Temporal, as Home and Inbox read it: a Run whose workflow is gone reads as
+     * running until the Agent is opened or its Schedule next fires.
      */
     async list(p: Principal) {
-      await failDeadRuns(p);
       return withOwner(db, p, async (tx) => {
         const agents = await tx.agent.findMany({
           orderBy: { createdAt: "desc" },
@@ -786,9 +808,25 @@ export function createAgents({
     },
 
     /**
+     * Ends as failed the Runs under way a while whose workflow no longer runs, across students, for at most
+     * `staleAgentsPerReconcile` Agents, those with the oldest first. Run by the reconcile, so Agents' lists, which do not
+     * ask Temporal, stop reading "Läuft gerade" (#227).
+     */
+    async failDeadRunsOfAll() {
+      const found = await db.$queryRaw<
+        { agentId: string; studentId: string }[]
+      >`
+        SELECT "agentId", "studentId" FROM agents_with_stale_runs(
+          ${new Date(clock.now().getTime() - staleRunMs)}::timestamp(3), ${staleAgentsPerReconcile}::integer)`;
+      for (const { agentId, studentId } of found)
+        await failDeadRuns(mint.fromSession({ studentId }), agentId);
+    },
+
+    /**
      * Records a Run of an active Agent as its Schedule fires, or takes up the one the student started now, and
-     * snapshots the Agent's configuration for it. Null when the Agent is not active, or when its other Run is still
-     * running: one Run at a time.
+     * snapshots the Agent's configuration for it. Null when the Agent is not active, when its other Run is still
+     * running (one Run at a time), or when its Schedule already started one due on the same day at the same time in
+     * the Plan's time zone.
      */
     async startRun({
       studentId,
@@ -835,6 +873,22 @@ export function createAgents({
         }
         if (agent?.state !== "active") return null;
         if (await tx.run.findFirst({ where: { agentId, status: "running" } }))
+          return null;
+        // The Schedule matches its Uhrzeit on the clock, so it fires twice in the hour the clocks go back: the second
+        // is due on the same day at the same time as the Run before.
+        const last = await tx.run.findFirst({
+          where: { agentId, trigger: "schedule" },
+          orderBy: { startedAt: "desc" },
+          select: { workflowId: true },
+        });
+        const lastDue = dueAtOf(last?.workflowId ?? null);
+        const due = dueAtOf(workflowId);
+        const timeZone = await timeZoneOf(tx);
+        if (
+          lastDue &&
+          due &&
+          wallClockOf(lastDue, timeZone) === wallClockOf(due, timeZone)
+        )
           return null;
         const run = await tx.run.create({
           data: {

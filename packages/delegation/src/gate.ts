@@ -42,7 +42,16 @@ export interface Clock {
  */
 export interface Executor {
   execute(
-    req: { studentId: string; actionId: string; intent: ActionIntent },
+    req: {
+      studentId: string;
+      actionId: string;
+      intent: ActionIntent;
+      /**
+       * For a move or removal, where the gate saw the block when it decided. The executor takes no effect on a block
+       * that is no longer there or is Locked, since the student changed it after the decision.
+       */
+      block?: { start: Date; end: Date };
+    },
     opts: { idempotencyKey: string; signal: AbortSignal },
   ): Promise<
     | { status: "done"; effect: unknown }
@@ -223,6 +232,7 @@ type Job = {
   attemptId: string;
   idempotencyKey: string;
   intent: ActionIntent;
+  block?: { start: Date; end: Date };
 };
 type Row = NonNullable<Awaited<ReturnType<typeof findAction>>>;
 const include = {
@@ -593,6 +603,7 @@ export function createGate({
           studentId: job.studentId,
           actionId: job.actionId,
           intent: job.intent,
+          block: job.block,
         },
         {
           idempotencyKey: job.idempotencyKey,
@@ -642,14 +653,25 @@ export function createGate({
 
   const inFlight = (a: Row) =>
     a.attempts.find((attempt) => attempt.status === "in_flight")!;
-  const jobOf = (a: Row, studentId: string) => {
+  const jobOf = (a: Row, studentId: string): Job => {
     const attempt = inFlight(a);
+    // Where the gate saw the block when it dispatched this Attempt, as recorded then.
+    const seen = (
+      a.events.find(
+        (e) =>
+          e.type === "dispatched" &&
+          (e.detail as { attemptId?: string }).attemptId === attempt.id,
+      )?.detail as { block?: { start: string; end: string } } | undefined
+    )?.block;
     return {
       studentId,
       actionId: a.id,
       attemptId: attempt.id,
       idempotencyKey: attempt.idempotencyKey,
       intent: revive(a.kind, a.args),
+      ...(seen && {
+        block: { start: new Date(seen.start), end: new Date(seen.end) },
+      }),
     };
   };
 
@@ -848,6 +870,11 @@ export function createGate({
         }
         const attemptId = randomUUID(),
           idempotencyKey = `${actionId}:${(existing?.attempts.length ?? 0) + 1}`;
+        // The block a move or removal is for, as decided on; the executor acts only if it is still there.
+        const block =
+          subject && "start" in subject
+            ? { start: subject.start, end: subject.end }
+            : undefined;
         await tx.action.update({
           where: { id: actionId },
           data: { status: "dispatching", ...decision.authority },
@@ -865,6 +892,7 @@ export function createGate({
         await event(tx, studentId, actionId, "dispatched", {
           ...decision.authority,
           attemptId,
+          ...(block && { block }),
           ...(decision.brokenPreferences && {
             brokenPreferences: decision.brokenPreferences,
           }),
@@ -876,6 +904,7 @@ export function createGate({
             attemptId,
             idempotencyKey,
             intent: parsed,
+            block,
           },
         } as const;
       });
