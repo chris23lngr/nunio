@@ -373,10 +373,18 @@ async function subjectOf(
   tx: Transaction,
   intent: ActionIntent,
 ): Promise<Subject | null> {
-  const workOf = async (ref: {
-    obligationId: string | null;
-    taskId: string | null;
-  }) => {
+  // An Obligation the student Rejected or reported as handed in is no work any more, as the Plan treats it, so no Task
+  // or Study Block counts toward it.
+  const closed = (obligation: {
+    state: string;
+    reportedSubmittedAt: Date | null;
+  }) =>
+    obligation.state === "rejected" || Boolean(obligation.reportedSubmittedAt);
+  /** The work, directly or through its Task; with `open`, null once its Obligation is closed. */
+  const workOf = async (
+    ref: { obligationId: string | null; taskId: string | null },
+    { open = false } = {},
+  ) => {
     const task = ref.taskId
       ? await tx.task.findUnique({ where: { id: ref.taskId } })
       : null;
@@ -384,6 +392,7 @@ async function subjectOf(
     const obligation = obligationId
       ? await tx.obligation.findUnique({ where: { id: obligationId } })
       : null;
+    if (open && obligation && closed(obligation)) return null;
     // A Task toward no Obligation may still be in a Course of its own (ADR-0022).
     return {
       courseId: obligation?.courseId ?? task?.courseId ?? null,
@@ -392,24 +401,24 @@ async function subjectOf(
   };
   if (intent.kind === "studyBlock.create") {
     if (await tx.obligation.findUnique({ where: { id: intent.workId } }))
-      return workOf({ obligationId: intent.workId, taskId: null });
+      return workOf(
+        { obligationId: intent.workId, taskId: null },
+        { open: true },
+      );
     if (await tx.task.findUnique({ where: { id: intent.workId } }))
-      return workOf({ obligationId: null, taskId: intent.workId });
+      return workOf(
+        { obligationId: null, taskId: intent.workId },
+        { open: true },
+      );
     return null;
   }
   if (intent.kind === "task.create") {
-    // Its Obligation, Course and Course Event must be the student's own. An Obligation they Rejected or reported as
-    // handed in is no work any more, as the Plan treats it, so nothing counts toward it.
+    // Its Obligation, Course and Course Event must be the student's own, and the Obligation still open.
     if (intent.obligationId) {
       const obligation = await tx.obligation.findUnique({
         where: { id: intent.obligationId },
       });
-      if (
-        !obligation ||
-        obligation.state === "rejected" ||
-        obligation.reportedSubmittedAt
-      )
-        return null;
+      if (!obligation || closed(obligation)) return null;
       return { courseId: obligation.courseId, obligationId: obligation.id };
     }
     if (
@@ -437,17 +446,17 @@ async function subjectOf(
   if (intent.kind === "task.reopen") {
     const task = await tx.task.findUnique({ where: { id: intent.taskId } });
     if (!task) return null;
-    return {
-      ...(await workOf({ obligationId: null, taskId: task.id })),
-      title: task.title,
-    };
+    const work = await workOf({ obligationId: null, taskId: task.id });
+    return work && { ...work, title: task.title };
   }
   const block = await tx.studyBlock.findUnique({
     where: { id: intent.studyBlockId },
   });
   if (!block) return null;
+  const work = await workOf(block, { open: true });
+  if (!work) return null;
   return {
-    ...(await workOf(block)),
+    ...work,
     start: block.start,
     end: block.end,
     placedBy: block.placedBy,
