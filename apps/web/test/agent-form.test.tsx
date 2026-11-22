@@ -591,7 +591,9 @@ test("a saved Agent with no Model shows none rather than Chat's default, and Spe
     within(section).getByRole("button", { name: "Modell ändern" }),
   );
   const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
-  await userEvent.click(within(sheet).getByRole("radio", { name: "Haiku 5.5" }));
+  await userEvent.click(
+    within(sheet).getByRole("radio", { name: "Haiku 5.5" }),
+  );
   await userEvent.click(
     within(sheet).getByRole("button", { name: "Speichern" }),
   );
