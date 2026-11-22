@@ -199,8 +199,8 @@ export function HomeView({ apiOrigin }: { apiOrigin: string }) {
           </ul>
         ) : (
           <p>
-            Nothing yet. <Link href="/agents">Delegate a Course</Link> and nunio
-            keeps its Study Blocks planned.
+            Nothing yet. <Link href="/agents">Set up an Agent</Link> and nunio
+            keeps working on your Courses for you.
           </p>
         )}
       </section>
