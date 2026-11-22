@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeEach, expect, test, vi } from "vitest";
 import { Providers } from "@/app/providers";
+import { SecurityScreen } from "@/features/settings/security-screen";
 import { apiFetch } from "@/lib/api-client";
 import { api } from "./api";
 
@@ -43,6 +45,12 @@ function PrivatePage() {
   return <p>{data.status}</p>;
 }
 
+function SecurityPage() {
+  const [, setRenders] = useState(0);
+  rerenderPage = () => setRenders((n) => n + 1);
+  return <SecurityScreen apiOrigin={api.origin} />;
+}
+
 test("an expired session leaves for sign-in once while the old page keeps reading", async () => {
   render(
     <Providers>
@@ -75,4 +83,60 @@ test("a session that expires again on a later page leaves for sign-in again", as
   );
 
   await vi.waitFor(() => expect(navigation.replace).toHaveBeenCalledTimes(2));
+});
+
+test("account deletion leaves with its notice although the cleared page reads unauthorized", async () => {
+  let deleted = false;
+  const signedIn = (body: unknown) => () =>
+    deleted
+      ? Response.json({ error: "unauthorized" }, { status: 401 })
+      : Response.json(body);
+  const session = {
+    id: "session-1",
+    token: "current-token",
+    userId: "student-1",
+    createdAt: "2026-11-08T22:20:00.000Z",
+    updatedAt: "2026-11-08T22:20:00.000Z",
+    expiresAt: "2026-12-08T22:20:00.000Z",
+  };
+  api.route("GET", "/api/auth/list-sessions", signedIn([session]));
+  api.route("GET", "/api/auth/passkey/list-user-passkeys", signedIn([]));
+  api.route(
+    "GET",
+    "/api/auth/get-session",
+    signedIn({
+      session,
+      user: {
+        id: "student-1",
+        name: "Justus",
+        email: "justus@example.com",
+        emailVerified: true,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+      },
+    }),
+  );
+  api.route("POST", "/api/me/deletion-request", () => {
+    deleted = true;
+    return Response.json({ status: "pending" }, { status: 202 });
+  });
+  navigation.pathname = "/settings/security";
+  const user = userEvent.setup();
+  render(
+    <Providers>
+      <SecurityPage />
+    </Providers>,
+  );
+  await screen.findByText("Dieses Gerät");
+  await user.click(screen.getByRole("button", { name: "Konto löschen" }));
+  const dialog = within(
+    await screen.findByRole("dialog", { name: "Konto löschen?" }),
+  );
+  await user.click(dialog.getByRole("button", { name: "Löschung anfordern" }));
+
+  // The cleared page reads again and gets 401s while the deletion's navigation is under way.
+  await screen.findByText("Deine Sitzungen konnten nicht geladen werden.");
+  expect(navigation.replace.mock.calls).toEqual([
+    ["/sign-in?deletion=requested"],
+  ]);
 });

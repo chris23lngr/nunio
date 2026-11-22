@@ -1,10 +1,12 @@
 "use client";
 
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
-import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { createQueryClient } from "@/lib/query-client";
+
+const Leaving = createContext<RefObject<boolean> | null>(null);
 
 export function Providers({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -26,5 +28,25 @@ export function Providers({ children }: { children: ReactNode }) {
     });
     return client;
   });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={client}>
+      <Leaving value={leaving}>{children}</Leaving>
+    </QueryClientProvider>
+  );
+}
+
+/**
+ * Leave the page on purpose (sign-out, deletion). It claims the page's exit before clearing, so the 401s
+ * the cleared page reads cannot send the student to a bare /sign-in instead (#247).
+ */
+export function useLeave() {
+  const leaving = useContext(Leaving);
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  return (to: string, { refresh = true } = {}) => {
+    if (leaving) leaving.current = true;
+    queryClient.clear();
+    router.replace(to);
+    if (refresh) router.refresh();
+  };
 }

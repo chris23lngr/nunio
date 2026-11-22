@@ -2,8 +2,8 @@
 
 import { Button } from "@nunio/ui/components/button/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useLeave } from "@/app/providers";
 import { PageHeading } from "@/components/headings";
 import {
   SignInAgain,
@@ -30,22 +30,16 @@ import { SettingsNavigation } from "./components/settings-navigation";
 export function SecurityScreen({ apiOrigin }: { apiOrigin: string }) {
   const sessions = useQuery(sessionQueries(apiOrigin));
   const queryClient = useQueryClient();
-  const router = useRouter();
+  const leave = useLeave();
   const revoke = useMutation(revokeSessionMutation(apiOrigin, queryClient));
   const signOut = useMutation({
     ...signOutMutation(apiOrigin),
-    onSuccess: () => {
-      queryClient.clear();
-      router.replace("/sign-in");
-      router.refresh();
-    },
+    onSuccess: () => leave("/sign-in"),
   });
   const deletion = useMutation({
     ...deletionMutation(apiOrigin),
-    onSuccess: () => {
-      queryClient.clear();
-      router.replace("/sign-in?deletion=requested");
-    },
+    // Refreshing the protected route would race the notice back to a bare /sign-in.
+    onSuccess: () => leave("/sign-in?deletion=requested", { refresh: false }),
   });
   const passkeys = useQuery(passkeyQueries(apiOrigin));
   /** A sensitive action the API refused for an older session, to repeat once the student signs in again. */

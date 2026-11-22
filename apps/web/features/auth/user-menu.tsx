@@ -12,10 +12,10 @@ import {
 } from "@nunio/ui/components/dropdown-menu/dropdown-menu";
 import { useSidebar } from "@nunio/ui/components/sidebar/sidebar";
 import { Skeleton } from "@nunio/ui/components/skeleton/skeleton";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { ArrowUp, ChevronDown, Gauge, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useLeave } from "@/app/providers";
 import { signOutMutation } from "@/features/settings/api/session-mutations";
 import { authClient } from "@/lib/auth-client";
 
@@ -32,15 +32,10 @@ function Initials({ name, large = false }: { name: string; large?: boolean }) {
 
 export function UserMenu({ apiOrigin }: { apiOrigin: string }) {
   const session = authClient(apiOrigin).useSession();
-  const router = useRouter();
-  const queryClient = useQueryClient();
+  const leave = useLeave();
   const signOut = useMutation({
     ...signOutMutation(apiOrigin),
-    onSuccess: () => {
-      queryClient.clear();
-      router.replace("/sign-in");
-      router.refresh();
-    },
+    onSuccess: () => leave("/sign-in"),
   });
   const { setOpenMobile } = useSidebar();
   const user = session.data?.user;
