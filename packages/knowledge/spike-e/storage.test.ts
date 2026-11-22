@@ -13,7 +13,9 @@ import {
   sseCHeaders,
 } from "./hetzner.ts";
 
-describe("Hetzner storage (spike e)", () => {
+// Each test makes up to three live Hetzner round trips. They usually take 1–2.5 s, but on deploy 80904f6
+// two tests in one run took about 5 s (#225), so the 5 s default failed a healthy provider.
+describe("Hetzner storage (spike e)", { timeout: 30_000 }, () => {
   const { s3, buckets } = hetzner();
 
   it("expires quarantine objects after 7 days", async () => {

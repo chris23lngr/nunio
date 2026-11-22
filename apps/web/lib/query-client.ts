@@ -3,10 +3,7 @@ import { ApiError } from "./api-client";
 
 export function createQueryClient(onUnauthorized: () => void) {
   const onError = (error: Error) => {
-    if (error instanceof ApiError && error.status === 401) {
-      client.clear();
-      onUnauthorized();
-    }
+    if (error instanceof ApiError && error.status === 401) onUnauthorized();
   };
   const client = new QueryClient({
     queryCache: new QueryCache({ onError }),
