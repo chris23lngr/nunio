@@ -65,7 +65,7 @@ export interface Delegation {
     student: Principal,
     d: Approve | Deny | Resolve,
   ): Promise<ActionRecord>;
-  /** Recovers in-flight dispatches. */
+  /** Recovers in-flight dispatches, and performs or refuses approved Actions nobody went on to perform. */
   reconcile(): Promise<number>;
   history(student: Principal, q?: HistoryQuery): Promise<ActionRecord[]>;
   /**

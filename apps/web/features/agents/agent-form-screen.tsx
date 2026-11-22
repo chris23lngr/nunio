@@ -46,6 +46,7 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useId, useRef, useState } from "react";
 import { kinds } from "@/features/artifacts/artifact-kinds";
+import { modelQueries } from "@/features/chat/api/model-queries";
 import { CourseDot } from "@/features/shared/components/course-dot";
 import { ModelLogo } from "@/features/shared/components/model-logo";
 import { PageHeader } from "@/features/shared/components/page-header";
@@ -59,11 +60,7 @@ import type {
   AgentTemplate,
   Capability,
 } from "./api/agent-queries";
-import {
-  agentCourseQueries,
-  agentModelQueries,
-  capabilityQueries,
-} from "./api/agent-queries";
+import { agentCourseQueries, capabilityQueries } from "./api/agent-queries";
 import type { FormFill } from "./api/builder-mutations";
 import { modeOf } from "./capability-mode";
 import { AgentActivity } from "./components/agent-activity";
@@ -305,8 +302,10 @@ export function AgentFormScreen({
   const [tried, setTried] = useState(false);
   const offered = useQuery(agentCourseQueries(apiOrigin));
   const capabilitySet = useQuery(capabilityQueries(apiOrigin));
-  const models = useQuery(agentModelQueries(apiOrigin));
-  const modelKey = draft.modelKey ?? models.data?.default ?? null;
+  const models = useQuery(modelQueries(apiOrigin));
+  // Only a new Agent stands in Chat's default: a saved one without a Model has Runs that stop.
+  const modelKey =
+    draft.modelKey ?? (agent ? null : models.data?.default) ?? null;
   const model = models.data?.models.find((each) => each.key === modelKey);
   const save = useMutation(saveAgent(apiOrigin, agent?.id, queryClient));
   const start = useMutation(
@@ -1074,12 +1073,18 @@ export function AgentFormScreen({
                           </span>
                         </span>
                       </div>
-                    ) : (
-                      modelKey &&
+                    ) : modelKey ? (
                       models.data && (
                         <p className="text-sm text-base-500">
                           Nicht mehr verfügbar. Wähle ein anderes Modell, sonst
                           stoppen die Läufe deines Agenten.
+                        </p>
+                      )
+                    ) : (
+                      agent && (
+                        <p className="text-sm text-base-500">
+                          Kein Modell gewählt. Wähle ein Modell, sonst stoppen
+                          die Läufe deines Agenten.
                         </p>
                       )
                     )}

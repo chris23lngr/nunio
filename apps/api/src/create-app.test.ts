@@ -10724,9 +10724,9 @@ describe("the Agents cutover", () => {
     ),
     "utf8",
   );
-
-  it("turns each seeded Responsibility into a Paused Agent with its history, keeping only the authority it had", async () => {
-    const cookie = await signUp("agent-cutover");
+  /** A signed-up student, and a call to their API. */
+  const cutoverStudent = async (name: string) => {
+    const cookie = await signUp(name);
     const id = await studentId(cookie);
     const headers = {
       cookie,
@@ -10735,21 +10735,6 @@ describe("the Agents cutover", () => {
     };
     const call = (method: string, path: string) =>
       app.request(`${apiOrigin}/api/me${path}`, { method, headers });
-    const course = async (title: string, status = "accepted") => {
-      const courseId = randomUUID();
-      await admin.course.create({
-        data: {
-          id: courseId,
-          studentId: id,
-          title,
-          matchTitle: title.toLowerCase(),
-          semester: "2026-ws",
-          color: "violet",
-          status: status as "accepted",
-        },
-      });
-      return courseId;
-    };
     // The columns the contract migration dropped, put back as the Responsibilities had them.
     await admin.$executeRawUnsafe(`
       ALTER TABLE "agent" ADD COLUMN IF NOT EXISTS "preset" TEXT,
@@ -10759,9 +10744,62 @@ describe("the Agents cutover", () => {
       ALTER TABLE "grant" ADD COLUMN IF NOT EXISTS "courseId" TEXT,
         ADD COLUMN IF NOT EXISTS "obligationId" TEXT;
     `);
-    const analysis = await course("Analysis I");
-    const statistics = await course("Statistics II");
-    const rejected = await course("Verworfen", "rejected");
+    return { id, call };
+  };
+  const course = async (
+    id: string,
+    title: string,
+    data: {
+      status?: "accepted" | "rejected" | "merged";
+      mergedIntoId?: string;
+    } = {},
+  ) => {
+    const courseId = randomUUID();
+    await admin.course.create({
+      data: {
+        id: courseId,
+        studentId: id,
+        title,
+        matchTitle: title.toLowerCase(),
+        semester: "2026-ws",
+        color: "violet",
+        status: data.status ?? "accepted",
+        mergedIntoId: data.mergedIntoId ?? null,
+      },
+    });
+    return courseId;
+  };
+  /** A preset as the Responsibilities left it: scoped Grants, a lifetime Budget and its `restrictions`. */
+  const preset = async (
+    id: string,
+    kind: "keep_course_organized" | "prepare_for_exam",
+    scope: { courseId: string; obligationId?: string },
+    data: {
+      state?: "active" | "paused" | "ended";
+      pausedBy?: string;
+      restrictions?: object;
+    } = {},
+  ) => {
+    const agentId = randomUUID();
+    await admin.$executeRaw`
+      INSERT INTO "agent" ("id", "studentId", "preset", "courseId", "obligationId", "state", "pausedBy",
+        "budgetMicroUsd", "usedMicroUsd", "restrictions", "triggerMinute")
+      VALUES (${agentId}, ${id}, ${kind}, ${scope.courseId}, ${scope.obligationId ?? null},
+        ${data.state ?? "active"}::"agent_state", ${data.pausedBy ?? null}, 1000000, 300000,
+        ${JSON.stringify(data.restrictions ?? {})}::jsonb, 420)`;
+    for (const grant of ["studyBlock.create", "studyBlock.move"])
+      await admin.$executeRaw`
+        INSERT INTO "grant" ("id", "studentId", "agentId", "kind", "courseId", "obligationId")
+        VALUES (${randomUUID()}, ${id}, ${agentId}, ${grant},
+          ${scope.obligationId ? null : scope.courseId}, ${scope.obligationId ?? null})`;
+    return agentId;
+  };
+
+  it("turns each seeded Responsibility into a Paused Agent with its history, keeping only the authority it had", async () => {
+    const { id, call } = await cutoverStudent("agent-cutover");
+    const analysis = await course(id, "Analysis I");
+    const statistics = await course(id, "Statistics II");
+    const rejected = await course(id, "Verworfen", { status: "rejected" });
     const entered = await facts.enterObligation(
       principal.fromSession({ studentId: id }),
       {
@@ -10774,34 +10812,11 @@ describe("the Agents cutover", () => {
     );
     if (entered.status !== "ok") throw new Error(entered.status);
     const exam = entered.id;
-    /** A preset as the Responsibilities left it: scoped Grants, a lifetime Budget and its `restrictions`. */
-    const preset = async (
-      kind: "keep_course_organized" | "prepare_for_exam",
-      scope: { courseId: string; obligationId?: string },
-      data: {
-        state?: "active" | "paused" | "ended";
-        pausedBy?: string;
-        restrictions?: object;
-      } = {},
-    ) => {
-      const agentId = randomUUID();
-      await admin.$executeRaw`
-        INSERT INTO "agent" ("id", "studentId", "preset", "courseId", "obligationId", "state", "pausedBy",
-          "budgetMicroUsd", "usedMicroUsd", "restrictions", "triggerMinute")
-        VALUES (${agentId}, ${id}, ${kind}, ${scope.courseId}, ${scope.obligationId ?? null},
-          ${data.state ?? "active"}::"agent_state", ${data.pausedBy ?? null}, 1000000, 300000,
-          ${JSON.stringify(data.restrictions ?? {})}::jsonb, 420)`;
-      for (const grant of ["studyBlock.create", "studyBlock.move"])
-        await admin.$executeRaw`
-          INSERT INTO "grant" ("id", "studentId", "agentId", "kind", "courseId", "obligationId")
-          VALUES (${randomUUID()}, ${id}, ${agentId}, ${grant},
-            ${scope.obligationId ? null : scope.courseId}, ${scope.obligationId ?? null})`;
-      return agentId;
-    };
-    const organize = await preset("keep_course_organized", {
+    const organize = await preset(id, "keep_course_organized", {
       courseId: analysis,
     });
     const examAgent = await preset(
+      id,
       "prepare_for_exam",
       { courseId: analysis, obligationId: exam },
       {
@@ -10811,16 +10826,18 @@ describe("the Agents cutover", () => {
       },
     );
     const restricted = await preset(
+      id,
       "keep_course_organized",
       { courseId: statistics },
       { restrictions: { allowedKinds: ["studyBlock.create"] } },
     );
     const ended = await preset(
+      id,
       "keep_course_organized",
       { courseId: statistics },
       { state: "ended" },
     );
-    const courseless = await preset("keep_course_organized", {
+    const courseless = await preset(id, "keep_course_organized", {
       courseId: rejected,
     });
 
@@ -11032,5 +11049,226 @@ describe("the Agents cutover", () => {
       state: "active",
       pausedBy: null,
     });
+  });
+
+  it("follows a merged Course, names an exam without a title the student gave it by its Course, and starts the Budget in the Plan's month", async () => {
+    const { id, call } = await cutoverStudent("agent-cutover-scope");
+    const timeZone = "Pacific/Kiritimati";
+    await admin.planPreference.upsert({
+      where: { studentId: id },
+      create: { studentId: id, timeZone },
+      update: { timeZone },
+    });
+    const algebra = await course(id, "Lineare Algebra");
+    const merged = await course(id, "LinAlg", {
+      status: "merged",
+      mergedIntoId: algebra,
+    });
+    const statistics = await course(id, "Statistik");
+    const examId = randomUUID();
+    await admin.obligation.create({
+      data: {
+        id: examId,
+        studentId: id,
+        courseId: statistics,
+        matchKey: "klausur",
+        kind: "exam",
+        enteredAt: new Date(),
+      },
+    });
+    const organize = await preset(id, "keep_course_organized", {
+      courseId: merged,
+    });
+    const examAgent = await preset(id, "prepare_for_exam", {
+      courseId: statistics,
+      obligationId: examId,
+    });
+
+    await admin.$executeRawUnsafe(migration);
+
+    const shown = async (agentId: string) =>
+      (await call("GET", `/agents/${agentId}`)).json();
+    // The name keeps the title the Course had; it now acts for the Course it was merged into.
+    expect(await shown(organize)).toMatchObject({
+      name: "Kurs organisieren · LinAlg",
+      state: "paused",
+      pausedBy: "conversion",
+      courses: [{ id: algebra, title: "Lineare Algebra" }],
+    });
+    expect(await shown(examAgent)).toMatchObject({
+      name: "Klausur vorbereiten · Statistik",
+      state: "paused",
+      courses: [{ id: statistics }],
+    });
+    const month = Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+      })
+        .formatToParts(new Date())
+        .map((part) => [part.type, part.value]),
+    );
+    expect(
+      await admin.agent.findMany({
+        where: { id: { in: [organize, examAgent] } },
+        select: { budgetMonth: true, usedMicroUsd: true },
+      }),
+    ).toEqual([
+      { budgetMonth: `${month.year}-${month.month}`, usedMicroUsd: 0n },
+      { budgetMonth: `${month.year}-${month.month}`, usedMicroUsd: 0n },
+    ]);
+  });
+
+  it("gives each old Run the status its Actions show", async () => {
+    const { id, call } = await cutoverStudent("agent-cutover-runs");
+    const analysis = await course(id, "Analysis I");
+    const workId = randomUUID();
+    await admin.obligation.create({
+      data: {
+        id: workId,
+        studentId: id,
+        courseId: analysis,
+        matchKey: "blatt-1",
+        kind: "assignment",
+        enteredAt: new Date(),
+      },
+    });
+    const agentId = await preset(id, "keep_course_organized", {
+      courseId: analysis,
+    });
+    /** An old Run, which recorded no status, started at `day` 05:00 with one Action per entry, a second apart. */
+    const run = async (
+      day: number,
+      actions: {
+        status: "done" | "unconfirmed" | "refused" | "dispatching";
+        refusal?: string;
+      }[],
+    ) => {
+      const runId = randomUUID();
+      const startedAt = new Date(Date.UTC(2026, 10, day, 5));
+      await admin.run.create({
+        data: {
+          id: runId,
+          studentId: id,
+          agentId,
+          workflowId: `run/${agentId}-${startedAt.toISOString()}`,
+          startedAt,
+        },
+      });
+      for (const [i, { status, refusal }] of actions.entries()) {
+        const at = new Date(startedAt.getTime() + (i + 1) * 1000);
+        const actionId = randomUUID();
+        await admin.action.create({
+          data: {
+            id: actionId,
+            studentId: id,
+            runId,
+            key: `${runId}:${i + 1}`,
+            kind: "studyBlock.create",
+            args: {
+              workId,
+              start: "2099-01-01T09:00:00.000Z",
+              end: "2099-01-01T10:00:00.000Z",
+            },
+            status,
+            refusal: refusal ?? null,
+            createdAt: at,
+          },
+        });
+        if (status !== "dispatching")
+          await admin.actionEvent.create({
+            data: {
+              studentId: id,
+              actionId,
+              at,
+              type: status,
+              ...(refusal && { detail: { reason: refusal } }),
+            },
+          });
+      }
+      return runId;
+    };
+    const done = await run(10, [{ status: "done" }, { status: "done" }]);
+    const empty = await run(11, []);
+    const unconfirmed = await run(12, [
+      { status: "done" },
+      { status: "unconfirmed" },
+    ]);
+    const paused = await run(13, [{ status: "refused", refusal: "paused" }]);
+    const ended = await run(14, [{ status: "refused", refusal: "ended" }]);
+    const refused = await run(15, [{ status: "refused", refusal: "past" }]);
+    const dispatching = await run(16, [{ status: "dispatching" }]);
+
+    await admin.$executeRawUnsafe(migration);
+
+    const { runs } = (await (
+      await call("GET", `/agents/${agentId}/runs?limit=10`)
+    ).json()) as {
+      runs: {
+        id: string;
+        status: string;
+        stopReason: string | null;
+        endedAt: string;
+      }[];
+    };
+    const statusOf = Object.fromEntries(
+      runs.map((r) => [
+        r.id,
+        { status: r.status, stopReason: r.stopReason, endedAt: r.endedAt },
+      ]),
+    );
+    // Each ends when its last Action did, or when it started if it took none.
+    expect(statusOf).toEqual({
+      [done]: {
+        status: "done",
+        stopReason: null,
+        endedAt: "2026-11-10T05:00:02.000Z",
+      },
+      [empty]: {
+        status: "done",
+        stopReason: null,
+        endedAt: "2026-11-11T05:00:00.000Z",
+      },
+      [unconfirmed]: {
+        status: "stopped",
+        stopReason: "unconfirmed",
+        endedAt: "2026-11-12T05:00:02.000Z",
+      },
+      [paused]: {
+        status: "stopped",
+        stopReason: "paused",
+        endedAt: "2026-11-13T05:00:01.000Z",
+      },
+      [ended]: {
+        status: "stopped",
+        stopReason: "ended",
+        endedAt: "2026-11-14T05:00:01.000Z",
+      },
+      [refused]: {
+        status: "done",
+        stopReason: null,
+        endedAt: "2026-11-15T05:00:01.000Z",
+      },
+      [dispatching]: {
+        status: "done",
+        stopReason: null,
+        endedAt: "2026-11-16T05:00:00.000Z",
+      },
+    });
+    // A `dispatching` Action reads unconfirmed under a Run that reads done. Left so: the gate's stale-attempt recovery
+    // still settles that Action, possibly as done, so neither reading was known wrong when the migration ran.
+    const verlauf = async (runId: string) =>
+      (
+        (await (
+          await call("GET", `/agents/${agentId}/runs/${runId}`)
+        ).json()) as { verlauf: { type: string }[] }
+      ).verlauf.filter((entry) => entry.type === "action");
+    expect(await verlauf(dispatching)).toEqual([
+      expect.objectContaining({ outcome: "unconfirmed" }),
+    ]);
+    expect(await verlauf(refused)).toEqual([
+      expect.objectContaining({ outcome: "refused", refusal: "past" }),
+    ]);
   });
 });

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { createServer } from "node:http";
@@ -35,6 +35,7 @@ beforeAll(async () => {
     `GRANT SELECT, INSERT ON "catalog_model" TO ${user}`,
     `GRANT UPDATE ("chatEnabled", "chatDefault", "position", "retiredAt", "prices", "upstream", "zeroRetentionAvailable", "toolsAvailable", "syncedAt") ON "catalog_model" TO ${user}`,
     `GRANT SELECT, INSERT ON "model_catalog_change" TO ${user}`,
+    `GRANT EXECUTE ON FUNCTION "model_agents"(TEXT) TO ${user}`,
   ])
     await admin.$executeRawUnsafe(statement);
   const url = new URL(db.connectionString);
@@ -348,6 +349,62 @@ describe("the Model Catalog command", () => {
     expect(await refusal("enable", "opus-5.5-reasoning-medium")).toMatch(
       /retired/,
     );
+  });
+
+  it("refuses to retire a Model an Agent not Ended still runs on, since its Runs would stop", async () => {
+    await models(
+      "add",
+      "opus-5.5-reasoning-agent",
+      "anthropic/claude-opus-5.5",
+      "medium",
+      "8000",
+      "Opus",
+      "x",
+    );
+    await models("sync");
+    await models("enable", "opus-5.5-reasoning-agent");
+    const studentId = randomUUID();
+    await admin.user.create({
+      data: {
+        id: studentId,
+        name: "Student",
+        email: `${studentId}@example.com`,
+      },
+    });
+    const agent = (state: "paused" | "ended") =>
+      admin.agent.create({
+        data: {
+          id: randomUUID(),
+          studentId,
+          budgetMicroUsd: 1,
+          modelKey: "opus-5.5-reasoning-agent",
+          state,
+        },
+      });
+    await agent("ended");
+    const paused = await agent("paused");
+
+    expect(await refusal("retire", "opus-5.5-reasoning-agent")).toMatch(
+      /1 Agent/,
+    );
+    expect(
+      (
+        await admin.catalogModel.findUnique({
+          where: { key: "opus-5.5-reasoning-agent" },
+        })
+      )?.retiredAt,
+    ).toBeNull();
+
+    await admin.agent.update({
+      where: { id: paused.id },
+      data: { state: "ended" },
+    });
+    await models("retire", "opus-5.5-reasoning-agent");
+    expect(await audit("opus-5.5-reasoning-agent")).toEqual([
+      "add by founder",
+      "enable by founder",
+      "retire by founder",
+    ]);
   });
 
   it("refuses an unknown Model", async () => {

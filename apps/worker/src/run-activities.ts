@@ -17,7 +17,7 @@ export function createRunActivities({
   agents: Pick<Agents, "failDeadRunsOfAll">;
 }) {
   return {
-    /** Recovers in-flight dispatches a dead API or worker left behind, and ends Agents' Runs whose workflow is gone. */
+    /** Recovers in-flight dispatches and unperformed approved Actions a dead API or worker left behind, and ends Agents' Runs whose workflow is gone. */
     async reconcileActions(): Promise<number> {
       const reconciled = await delegation.reconcile();
       await agents.failDeadRunsOfAll();

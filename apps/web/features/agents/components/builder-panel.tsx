@@ -5,7 +5,7 @@ import {
   InputGroupTextarea,
 } from "@nunio/ui/components/input-group/input-group";
 import { Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ComposerSubmitButton } from "@/features/chat/components/composer-submit-button";
 
 /** The form's fields the builder can change, each marked and undone on its own. */
@@ -84,13 +84,25 @@ export function BuilderPanel({
   onUndoAll: (turnId: string) => void;
 }) {
   const [text, setText] = useState("");
+  const conversation = useRef<HTMLOListElement>(null);
+  const message = useRef<HTMLTextAreaElement>(null);
+  // Off once the student scrolls up to reread, so the answer being written doesn't pull them down.
+  const following = useRef(true);
   const busy = reply !== null;
   const canSend = !busy && !unavailable && !!text.trim();
   const send = () => {
     if (!canSend) return;
     onSend(text.trim());
     setText("");
+    following.current = true;
+    // The send button turns into Stop and then a disabled send button, which would drop focus.
+    message.current?.focus();
   };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Runs when a message arrives or grows.
+  useLayoutEffect(() => {
+    const list = conversation.current;
+    if (list && following.current) list.scrollTop = list.scrollHeight;
+  }, [turns.length, reply]);
 
   return (
     <aside
@@ -110,7 +122,13 @@ export function BuilderPanel({
           </div>
         ) : (
           <ol
+            ref={conversation}
             aria-label="Unterhaltung"
+            onScroll={(event) => {
+              const list = event.currentTarget;
+              following.current =
+                list.scrollHeight - list.scrollTop - list.clientHeight < 32;
+            }}
             className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 pt-6"
           >
             {turns.map((turn) =>
@@ -192,6 +210,7 @@ export function BuilderPanel({
           )}
           <InputGroup className="rounded-lg bg-white">
             <InputGroupTextarea
+              ref={message}
               aria-label="Nachricht an nunio"
               value={text}
               disabled={unavailable}
