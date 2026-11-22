@@ -1672,6 +1672,33 @@ test("the builder answers a question without changing the form, and sends the co
   });
 });
 
+test("the builder's conversation follows its latest message, and sending keeps focus in the message box", async () => {
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(900);
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("POST", "/api/me/agents/builder", () =>
+    builderAnswer("Er trägt Lernzeit in freie Zeitfenster ein."),
+  );
+  renderScreen(<AgentFormScreen apiOrigin={api.origin} agent={null} />);
+  const panel = await screen.findByRole("complementary", {
+    name: "nunio fragen",
+  });
+  const message = within(panel).getByRole("textbox", {
+    name: "Nachricht an nunio",
+  });
+
+  await userEvent.type(message, "Was macht Lernblöcke erstellen?");
+  await userEvent.click(
+    within(panel).getByRole("button", { name: "Nachricht senden" }),
+  );
+  await within(panel).findByText("Er trägt Lernzeit in freie Zeitfenster ein.");
+
+  expect(
+    within(panel).getByRole("list", { name: "Unterhaltung" }).scrollTop,
+  ).toBe(900);
+  await waitFor(() => expect(document.activeElement).toBe(message));
+  vi.restoreAllMocks();
+});
+
 test("the builder is unavailable once the Allowance is used up, while the form still works by hand", async () => {
   api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
   api.route("GET", "/api/me/allowance", () =>
