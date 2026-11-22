@@ -15,11 +15,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@nunio/ui/components/tooltip/tooltip";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { ModelLogo } from "@/features/shared/components/model-logo";
 import type { AgentModel } from "../api/agent-queries";
 
-/** "Modell auswählen": picks the Agent's Model among those Chat offers, each with its logo and, on hover, its description. */
+/** "Modell auswählen": picks the Agent's Model among those Chat offers, each with its logo and, on hover or keyboard focus, its description. */
 export function SelectModelSheet({
   open,
   offered,
@@ -73,6 +73,7 @@ function ModelChoice({
   onClose: () => void;
 }) {
   const [picked, setPicked] = useState(selected);
+  const descriptions = useId();
   return (
     <>
       <SheetHeader>
@@ -107,8 +108,9 @@ function ModelChoice({
               const chosen = model.key === picked;
               return (
                 <Tooltip key={model.key}>
-                  {/* The whole card shows the description on hover. */}
-                  <TooltipTrigger render={<div />}>
+                  {/* The whole card shows the description on hover and on keyboard focus. Arrow keys check a radio
+                      with a click, which must not close it. */}
+                  <TooltipTrigger render={<div />} closeOnClick={false}>
                     <label
                       className={`flex cursor-pointer items-center gap-3 rounded-lg px-4 py-3 shadow-xs outline has-focus-visible:ring-2 has-focus-visible:ring-primary-500 has-focus-visible:ring-offset-4 has-focus-visible:ring-offset-white ${
                         chosen
@@ -123,8 +125,13 @@ function ModelChoice({
                         checked={chosen}
                         onChange={() => setPicked(model.key)}
                         aria-label={model.name}
+                        aria-describedby={`${descriptions}-${model.key}`}
                         className="sr-only"
                       />
+                      {/* The tooltip only exists while shown, so screen readers get the description from here. */}
+                      <span id={`${descriptions}-${model.key}`} hidden>
+                        {model.description}
+                      </span>
                       <ModelLogo provider={model.provider} />
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="truncate text-sm leading-5 font-medium text-base-800">

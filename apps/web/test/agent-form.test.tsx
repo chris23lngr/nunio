@@ -384,6 +384,9 @@ test("a saved Agent's form shows its Courses, an Archived one as archived, and S
   );
 });
 
+/** Text on screen, not the hidden copy a control is described by. */
+const shown = { ignore: "script, style, [hidden]" };
+
 test("'Modell auswählen' lists Chat's Models with their logo and, on hover, the catalog's description, and saves the one picked", async () => {
   const saved: { modelKey: string }[] = [];
   api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
@@ -414,12 +417,16 @@ test("'Modell auswählen' lists Chat's Models with their logo and, on hover, the
       radio.closest("label")!.querySelector('img[src*="claude"]'),
     ).toBeTruthy();
   expect(
-    screen.queryByText("Am gründlichsten für anspruchsvolle, lange Aufgaben."),
+    screen.queryByText(
+      "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
+      shown,
+    ),
   ).toBeNull();
   await userEvent.hover(radios[2]!.closest("label")!);
   expect(
     await screen.findByText(
       "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
+      shown,
     ),
   ).toBeTruthy();
   await userEvent.click(radios[2]!);
@@ -439,6 +446,37 @@ test("'Modell auswählen' lists Chat's Models with their logo and, on hover, the
   expect(saved.map((form) => form.modelKey)).toEqual([
     "opus-5.5-reasoning-high",
   ]);
+});
+
+test("'Modell auswählen' shows a Model's description when its card gets keyboard focus, and describes the choice with it", async () => {
+  api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+  const section = await screen.findByRole("region", { name: "Modell" });
+  await within(section).findByText("Sonnet 5.5");
+  await userEvent.click(
+    within(section).getByRole("button", { name: "Modell ändern" }),
+  );
+  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
+  expect(
+    within(sheet).getByRole("radio", {
+      name: "Opus 5.5",
+      description: "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
+    }),
+  ).toBeTruthy();
+
+  within(sheet).getByRole("radio", { name: "Sonnet 5.5" }).focus();
+  await userEvent.keyboard("{ArrowDown}");
+
+  expect(document.activeElement).toBe(
+    within(sheet).getByRole("radio", { name: "Opus 5.5" }),
+  );
+  expect(
+    await screen.findByText(
+      "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
+      shown,
+    ),
+  ).toBeTruthy();
 });
 
 test("Abbrechen closes 'Modell auswählen' without changing the Agent's Model", async () => {
