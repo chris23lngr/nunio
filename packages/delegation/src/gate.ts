@@ -985,13 +985,23 @@ export function createGate({
         // Performed meanwhile, or gone with its Run.
         if (action?.status !== "awaiting_approval") continue;
         // As the API performs it: a Run's Action as the Run's, so its Agent's state, Courses and Capabilities decide.
-        await gate.perform(
-          action.runId ? mint.fromRun(action.runId) : student,
-          {
+        await gate
+          .perform(action.runId ? mint.fromRun(action.runId) : student, {
             key: action.key,
             intent: revive(action.kind, action.args),
-          },
-        );
+          })
+          .catch((error: unknown) => {
+            // An unreachable Plan fails the whole pass, to be retried; an Action that fails otherwise must not hold up
+            // the newer ones behind it, and stays to be tried again on the next pass.
+            if (error instanceof DelegationUnavailable) throw error;
+            console.error(
+              JSON.stringify({
+                msg: "reconcile could not perform an approved Action",
+                actionId,
+                error: error instanceof Error ? error.name : typeof error,
+              }),
+            );
+          });
       }
       return stale.length + approved.length;
     },

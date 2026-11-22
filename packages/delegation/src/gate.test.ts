@@ -5,6 +5,7 @@ import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type {
+  ActionIntent,
   ActionOutcome,
   Delegation,
   Executor,
@@ -968,6 +969,148 @@ describe("dispatch and recovery", () => {
     expect(dispatched).toEqual([]);
     expect((await g.history(s.p, { ids: [asking.actionId] }))[0]).toMatchObject(
       { status: "refused", refusal: "approval_expired" },
+    );
+  });
+
+  /** Of what was dispatched, what was for the student's block or work: reconcile also sees other tests' Actions. */
+  const theirs = (
+    dispatched: { intent: unknown }[],
+    s: Awaited<ReturnType<typeof student>>,
+  ) =>
+    dispatched.filter(({ intent }) => {
+      const i = intent as { studyBlockId?: string; workId?: string };
+      return i.studyBlockId === s.blockId || i.workId === s.obligationId;
+    });
+
+  /** Asks for `intent` in a Chat and approves it, as the API's decide does before performing. */
+  async function approvedInChat(
+    g: Delegation,
+    s: Awaited<ReturnType<typeof student>>,
+    intent: ActionIntent,
+  ) {
+    const asking = (await g.perform(s.p, {
+      key: `chat-4:message-1:${randomUUID()}`,
+      intent,
+    })) as Extract<ActionOutcome, { status: "awaiting_approval" }>;
+    await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+    return asking.actionId;
+  }
+
+  it("lets reconcile go on past an approved Action that always fails, to the newer ones", async () => {
+    const s = await student();
+    const r = await run(s, { grants: [] });
+    const { executor, dispatched } = fakeExecutor();
+    // The Plan's rules fail every time on the older Action's block, once both were asked.
+    let failing = false;
+    const g = gate(
+      executor,
+      {},
+      {
+        ...noRules,
+        async check(_, intent) {
+          if (failing && "start" in intent && intent.start.getUTCHours() === 14)
+            throw new Error("the Plan's rules failed");
+          return { refusals: [], brokenPreferences: [] };
+        },
+      },
+    );
+    const asked = [];
+    for (const [n, startHour] of [14, 16].entries()) {
+      const asking = (await g.perform(r.p, {
+        key: `${r.runId}:${n}`,
+        intent: move(s, startHour),
+      })) as Extract<ActionOutcome, { status: "awaiting_approval" }>;
+      await g.decide(s.p, {
+        kind: "approve",
+        actionId: asking.actionId,
+        fingerprint: asking.fingerprint,
+      });
+      asked.push(asking.actionId);
+      now = new Date(now.getTime() + 60_000);
+    }
+    failing = true;
+
+    now = new Date(now.getTime() + hour);
+    await g.reconcile();
+
+    expect(theirs(dispatched, s)).toEqual([
+      { idempotencyKey: expect.any(String), intent: move(s, 16) },
+    ]);
+    expect(
+      (await g.history(s.p, { ids: asked })).map((a) => a.status).sort(),
+    ).toEqual(["awaiting_approval", "done"]);
+  });
+
+  it("fails reconcile, to be retried, while the Plan cannot be reached for an approved Action", async () => {
+    const s = await student();
+    const g = gate(
+      fakeExecutor({ execute: "succeed-then-crash", lookup: "absent" })
+        .executor,
+    );
+    await approvedInChat(g, s, move(s));
+
+    now = new Date(now.getTime() + hour);
+    await expect(g.reconcile()).rejects.toThrow(DelegationUnavailable);
+  });
+
+  it("lets reconcile refuse a Chat's approved block create or move once its start has passed", async () => {
+    const s = await student();
+    const { executor, dispatched } = fakeExecutor();
+    const g = gate(executor);
+    const ids = [
+      await approvedInChat(g, s, {
+        kind: "studyBlock.create",
+        workId: s.obligationId,
+        start: new Date("2026-11-10T12:00:00Z"),
+        end: new Date("2026-11-10T13:00:00Z"),
+      }),
+      await approvedInChat(g, s, {
+        kind: "studyBlock.move",
+        studyBlockId: s.blockId,
+        start: new Date("2026-11-10T12:00:00Z"),
+        end: new Date("2026-11-10T13:00:00Z"),
+      }),
+    ];
+
+    now = new Date("2026-11-10T12:00:00Z");
+    await g.reconcile();
+
+    expect(theirs(dispatched, s)).toEqual([]);
+    expect(await g.history(s.p, { ids })).toEqual([
+      expect.objectContaining({ status: "refused", refusal: "past" }),
+      expect.objectContaining({ status: "refused", refusal: "past" }),
+    ]);
+  });
+
+  it("lets reconcile refuse, not perform, the approved Action of an Agent Paused since", async () => {
+    const s = await student();
+    const r = await run(s, { grants: [] });
+    const { executor, dispatched } = fakeExecutor();
+    const g = gate(executor);
+    const asking = (await g.perform(r.p, {
+      key: `${r.runId}:1`,
+      intent: move(s),
+    })) as Extract<ActionOutcome, { status: "awaiting_approval" }>;
+    await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+    await admin.agent.update({
+      where: { id: r.agentId },
+      data: { state: "paused", pausedBy: "student" },
+    });
+
+    now = new Date(now.getTime() + hour);
+    await g.reconcile();
+
+    expect(theirs(dispatched, s)).toEqual([]);
+    expect((await g.history(s.p, { ids: [asking.actionId] }))[0]).toMatchObject(
+      { status: "refused", refusal: "paused" },
     );
   });
 });
