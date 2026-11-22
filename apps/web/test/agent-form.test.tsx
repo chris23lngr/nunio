@@ -564,6 +564,45 @@ test("an Agent whose Model Chat no longer offers says so, and keeps it until ano
   ]);
 });
 
+test("a saved Agent with no Model shows none rather than Chat's default, and Speichern asks for one", async () => {
+  const saved: { modelKey: string }[] = [];
+  api.route("GET", "/api/me/agents/a-1", () =>
+    Response.json({ ...agent, modelKey: null }),
+  );
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  const section = await screen.findByRole("region", { name: "Modell" });
+  expect(
+    await within(section).findByText(
+      "Kein Modell gewählt. Wähle ein Modell, sonst stoppen die Läufe deines Agenten.",
+    ),
+  ).toBeTruthy();
+  expect(within(section).queryByText("Sonnet 5.5")).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+  expect(within(section).getByText("Wähle ein Modell.")).toBeTruthy();
+  expect(saved).toEqual([]);
+
+  await userEvent.click(
+    within(section).getByRole("button", { name: "Modell ändern" }),
+  );
+  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
+  await userEvent.click(within(sheet).getByRole("radio", { name: "Haiku 5.5" }));
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  expect(saved.map((form) => form.modelKey)).toEqual([
+    "haiku-5.5-reasoning-high",
+  ]);
+});
+
 test("Auslöser shows a saved Agent's Wochentage and Uhrzeit, and saves the ones chosen", async () => {
   const saved: unknown[] = [];
   api.route("GET", "/api/me/agents/a-1", () =>

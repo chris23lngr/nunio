@@ -306,7 +306,9 @@ export function AgentFormScreen({
   const offered = useQuery(agentCourseQueries(apiOrigin));
   const capabilitySet = useQuery(capabilityQueries(apiOrigin));
   const models = useQuery(agentModelQueries(apiOrigin));
-  const modelKey = draft.modelKey ?? models.data?.default ?? null;
+  // Only a new Agent stands in Chat's default: a saved one without a Model has Runs that stop.
+  const modelKey =
+    draft.modelKey ?? (agent ? null : models.data?.default) ?? null;
   const model = models.data?.models.find((each) => each.key === modelKey);
   const save = useMutation(saveAgent(apiOrigin, agent?.id, queryClient));
   const start = useMutation(
@@ -1074,12 +1076,18 @@ export function AgentFormScreen({
                           </span>
                         </span>
                       </div>
-                    ) : (
-                      modelKey &&
+                    ) : modelKey ? (
                       models.data && (
                         <p className="text-sm text-base-500">
                           Nicht mehr verfügbar. Wähle ein anderes Modell, sonst
                           stoppen die Läufe deines Agenten.
+                        </p>
+                      )
+                    ) : (
+                      agent && (
+                        <p className="text-sm text-base-500">
+                          Kein Modell gewählt. Wähle ein Modell, sonst stoppen
+                          die Läufe deines Agenten.
                         </p>
                       )
                     )}
