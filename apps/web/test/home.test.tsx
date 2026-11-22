@@ -145,3 +145,13 @@ test("says when nothing is ready", async () => {
   const section = await screen.findByRole("region", { name: "Ready for you" });
   expect(within(section).getByText("Nothing new from nunio yet.")).toBeTruthy();
 });
+
+test("with nothing delegated yet, Home points to setting up an Agent", async () => {
+  serveHome([]);
+
+  const link = await screen.findByRole("link", { name: "Set up an Agent" });
+  expect(link.getAttribute("href")).toBe("/agents");
+  expect(link.parentElement!.textContent).toBe(
+    "Nothing yet. Set up an Agent and nunio keeps working on your Courses for you.",
+  );
+});

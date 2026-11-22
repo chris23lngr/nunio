@@ -77,13 +77,6 @@ const defaults: OutreachSettings = {
   quietHours: null,
   dailyLimit: 3,
 };
-/** The settings nunio reads; the retired Briefing columns were dropped in #192. */
-export const outreachSettingsSelect = {
-  email: true,
-  quietFromMinute: true,
-  quietToMinute: true,
-  dailyLimit: true,
-} as const;
 /** Quiet Hours are stored as two columns, both set or both null. */
 const quietHoursOf = (columns: {
   quietFromMinute: number | null;
@@ -366,9 +359,7 @@ export function createOutreach({
     },
     async settings(student: Principal): Promise<OutreachSettings> {
       return settingsOf(
-        await withOwner(db, student, (tx) =>
-          tx.outreachSettings.findFirst({ select: outreachSettingsSelect }),
-        ),
+        await withOwner(db, student, (tx) => tx.outreachSettings.findFirst()),
       );
     },
     async updateSettings(
@@ -384,7 +375,6 @@ export function createOutreach({
           where: { studentId },
           create: { studentId, ...columns },
           update: columns,
-          select: outreachSettingsSelect,
         }),
       );
       return settingsOf(stored);

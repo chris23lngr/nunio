@@ -7,7 +7,6 @@ import { causesOf, keyOf } from "./causes.js";
 import type { OutreachSettings, StoredSubscription } from "./outreach.js";
 import {
   openIntervention,
-  outreachSettingsSelect,
   pushSubscriptionOf,
   settingsOf,
 } from "./outreach.js";
@@ -158,9 +157,7 @@ export function createOutreachSender({
     const { timeZone } = view.limits.preferences;
     const { minute } = wallClock(at, timeZone);
     const settings = settingsOf(
-      await withOwner(db, p, (tx) =>
-        tx.outreachSettings.findFirst({ select: outreachSettingsSelect }),
-      ),
+      await withOwner(db, p, (tx) => tx.outreachSettings.findFirst()),
     );
     // Nothing leaves the app in Quiet Hours; what is due waits for the first tick after them.
     if (inQuietHours(minute, settings.quietHours)) return;

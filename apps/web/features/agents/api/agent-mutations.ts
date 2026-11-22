@@ -2,11 +2,11 @@ import type { paths } from "@nunio/api-client";
 import type { QueryClient } from "@tanstack/react-query";
 import { mutationOptions } from "@tanstack/react-query";
 import { approvalQueries } from "@/features/approvals/api/approval-queries";
+import { modelQueries } from "@/features/chat/api/model-queries";
 import { createApiClient } from "@/lib/api-client";
 import {
   agentCourseQueries,
   agentListQueries,
-  agentModelQueries,
   agentQueries,
 } from "./agent-queries";
 
@@ -64,7 +64,7 @@ export function saveAgent(
           queryKey: agentCourseQueries(apiOrigin).queryKey,
         }),
         queryClient.invalidateQueries({
-          queryKey: agentModelQueries(apiOrigin).queryKey,
+          queryKey: modelQueries(apiOrigin).queryKey,
         }),
       ]),
   });
