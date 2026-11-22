@@ -15,7 +15,7 @@ export function createRunActivities({
   delegation: Delegation;
 }) {
   return {
-    /** Recovers in-flight dispatches a dead API or worker left behind. */
+    /** Recovers in-flight dispatches and unperformed approved Actions a dead API or worker left behind. */
     async reconcileActions(): Promise<number> {
       return delegation.reconcile();
     },

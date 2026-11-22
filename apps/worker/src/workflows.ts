@@ -239,7 +239,7 @@ export async function artifactRun(ref: { runId: string }) {
   return makeArtifact(ref.runId);
 }
 
-/** Started by the reconcile Schedule: asks executors about stale in-flight dispatches, never retrying blindly. */
+/** Started by the reconcile Schedule: asks executors about stale in-flight dispatches, never retrying blindly, and performs unperformed approved Actions through the gate. */
 export async function reconcileActions() {
   return reconcile();
 }

@@ -4,7 +4,7 @@ import {
   ScheduleOverlapPolicy,
 } from "@temporalio/client";
 
-/** Every five minutes, recover in-flight dispatches and undelivered decision wakes. Safe to call on every start. */
+/** Every five minutes, recover in-flight dispatches and approved Actions nobody performed. Safe to call on every start. */
 export async function ensureReconcileSchedule(
   client: Client,
   taskQueue: string,
