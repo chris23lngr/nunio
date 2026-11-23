@@ -1,3 +1,4 @@
+import { SidebarProvider } from "@nunio/ui/components/sidebar/sidebar";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -16,6 +17,16 @@ const course = {
   obligations: [exam],
   facts: [],
 };
+
+const stubMatchMedia = () =>
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
 
 test("the Project select submits its chosen Obligation and resets to no Obligation", async () => {
   const created: unknown[] = [];
@@ -47,35 +58,49 @@ test("the Project select submits its chosen Obligation and resets to no Obligati
 });
 
 test("the Review selects submit a Course and Kind, then restore their defaults", async () => {
+  stubMatchMedia();
   const created: unknown[] = [];
   api.route("GET", "/api/me/review", () =>
     Response.json({ courses: [{ ...course, obligations: [] }] }),
   );
   const suggestions = vi.fn(() => Response.json([]));
   api.route("GET", "/api/me/courses/merge-suggestions", suggestions);
+  api.route("GET", "/api/me/plan", () =>
+    Response.json({ eventSeries: [], fixedEvents: [], calendars: [] }),
+  );
+  api.route("GET", "/api/me/courses", () =>
+    Response.json({ current: "2026-ws", choices: [], courses: [] }),
+  );
   api.route("POST", "/api/me/obligations", async (request) => {
     created.push(await request.json());
     return Response.json({ id: "obligation-1" });
   });
-  render(<ReviewList apiOrigin={api.origin} />);
+  render(
+    <SidebarProvider>
+      <ReviewList apiOrigin={api.origin} />
+    </SidebarProvider>,
+  );
   const user = userEvent.setup();
-  await user.click(await screen.findByText("Add an Obligation"));
-  const select = screen.getByRole("combobox", { name: "Course" });
+  await user.click(
+    await screen.findByRole("button", { name: "Frist hinzufügen" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Frist hinzufügen",
+  });
+  const select = within(dialog).getByRole("combobox", { name: "Kurs" });
   expect(select.textContent).toContain("Analysis I");
   await user.click(select);
-  await user.click(
-    await screen.findByRole("option", { name: "A new Course…" }),
-  );
-  await user.type(screen.getByLabelText("Course title"), "Statistik");
+  await user.click(await screen.findByRole("option", { name: "Neuer Kurs…" }));
+  await user.type(within(dialog).getByLabelText("Kurstitel"), "Statistik");
   await user.type(
-    screen.getByLabelText("Title", { exact: true }),
+    within(dialog).getByLabelText("Titel", { exact: true }),
     "Abschlussprüfung",
   );
-  const kind = screen.getByRole("combobox", { name: "Kind" });
-  expect(kind.textContent).toContain("Assignment");
+  const kind = within(dialog).getByRole("combobox", { name: "Art" });
+  expect(kind.textContent).toContain("Abgabe");
   await user.click(kind);
-  await user.click(await screen.findByRole("option", { name: "Exam" }));
-  await user.click(screen.getByRole("button", { name: "Add" }));
+  await user.click(await screen.findByRole("option", { name: "Klausur" }));
+  await user.click(within(dialog).getByRole("button", { name: "Hinzufügen" }));
   await waitFor(() =>
     expect(created).toEqual([
       {
@@ -87,13 +112,29 @@ test("the Review selects submit a Course and Kind, then restore their defaults",
       },
     ]),
   );
-  await waitFor(() => expect(select.textContent).toContain("Analysis I"));
-  expect(kind.textContent).toContain("Assignment");
-  expect(screen.queryByLabelText("Course title")).toBeNull();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Frist hinzufügen" }),
+    ).toBeNull(),
+  );
   await waitFor(() => expect(suggestions).toHaveBeenCalledTimes(2));
+
+  // Reopening restores the Course and Kind defaults.
+  await user.click(screen.getByRole("button", { name: "Frist hinzufügen" }));
+  const reopened = await screen.findByRole("dialog", {
+    name: "Frist hinzufügen",
+  });
+  expect(
+    within(reopened).getByRole("combobox", { name: "Kurs" }).textContent,
+  ).toContain("Analysis I");
+  expect(
+    within(reopened).getByRole("combobox", { name: "Art" }).textContent,
+  ).toContain("Abgabe");
+  expect(within(reopened).queryByLabelText("Kurstitel")).toBeNull();
 });
 
 test("the required merge select submits the chosen target Course", async () => {
+  stubMatchMedia();
   const merged: unknown[] = [];
   api.route("GET", "/api/me/review", () =>
     Response.json({
@@ -105,26 +146,46 @@ test("the required merge select submits the chosen target Course", async () => {
   );
   const suggestions = vi.fn(() => Response.json([]));
   api.route("GET", "/api/me/courses/merge-suggestions", suggestions);
+  api.route("GET", "/api/me/plan", () =>
+    Response.json({ eventSeries: [], fixedEvents: [], calendars: [] }),
+  );
+  api.route("GET", "/api/me/courses", () =>
+    Response.json({ current: "2026-ws", choices: [], courses: [] }),
+  );
   api.route("POST", "/api/me/courses/course-1/merge", async (request) => {
     merged.push(await request.json());
     return Response.json({ status: "ok" });
   });
-  vi.spyOn(window, "confirm").mockReturnValue(true);
-  render(<ReviewList apiOrigin={api.origin} />);
+  render(
+    <SidebarProvider>
+      <ReviewList apiOrigin={api.origin} />
+    </SidebarProvider>,
+  );
   const user = userEvent.setup();
   const article = await screen.findByRole("article", { name: "Analysis I" });
-  const select = within(article).getByRole("combobox", {
-    name: "Same Course as",
-  });
-  expect(select.textContent).toContain("Choose a Course");
   await user.click(
-    within(article).getByRole("button", { name: "Merge into it" }),
+    within(article).getByRole("button", {
+      name: "Kursaktionen für Analysis I",
+    }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Gleicher Kurs wie …" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Kurs zusammenführen",
+  });
+  const select = within(dialog).getByRole("combobox", {
+    name: "Gleicher Kurs wie",
+  });
+  expect(select.textContent).toContain("Kurs wählen");
+  await user.click(
+    within(dialog).getByRole("button", { name: "Zusammenführen" }),
   );
   expect(merged).toEqual([]);
   await user.click(select);
   await user.click(await screen.findByRole("option", { name: "Statistik" }));
   await user.click(
-    within(article).getByRole("button", { name: "Merge into it" }),
+    within(dialog).getByRole("button", { name: "Zusammenführen" }),
   );
   await waitFor(() => expect(merged).toEqual([{ into: "course-2" }]));
   await waitFor(() => expect(suggestions).toHaveBeenCalledTimes(2));
