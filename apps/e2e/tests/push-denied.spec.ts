@@ -59,7 +59,7 @@ test("denying notifications leaves every page usable", async ({ page }) => {
   await expect(page).toHaveURL(`${origins.app}/`);
 
   const nav = page.getByRole("navigation", { name: "App navigation" });
-  await nav.getByRole("link", { name: "Inbox" }).click();
+  await nav.getByRole("link", { name: "Eingang" }).click();
   await page
     .getByRole("link", { name: "Benachrichtigungen einstellen" })
     .click();
@@ -73,7 +73,7 @@ test("denying notifications leaves every page usable", async ({ page }) => {
     channels.getByText(/Benachrichtigungen sind in diesem Browser blockiert/),
   ).toBeVisible();
   await channels.getByRole("button", { name: "Abbrechen" }).click();
-  await nav.getByRole("link", { name: "Inbox" }).click();
+  await nav.getByRole("link", { name: "Eingang" }).click();
 
   const open = page.getByRole("region", { name: "Needs attention" });
   await open.getByRole("button", { name: "Got it" }).click();
@@ -83,13 +83,13 @@ test("denying notifications leaves every page usable", async ({ page }) => {
   await expect(open).toHaveCount(0);
 
   for (const [name, path] of [
-    ["Home", "/"],
-    ["Review", "/review"],
+    ["Heute", "/"],
+    ["Prüfen", "/review"],
     ["Chat", "/chat"],
     ["Plan", "/plan"],
-    ["Projects", "/projects"],
+    ["Projekte", "/projects"],
     ["Agenten", "/agents"],
-    ["Inbox", "/inbox"],
+    ["Eingang", "/inbox"],
   ] as const) {
     await nav.getByRole("link", { name, exact: true }).click();
     await expect(page).toHaveURL(`${origins.app}${path}`);

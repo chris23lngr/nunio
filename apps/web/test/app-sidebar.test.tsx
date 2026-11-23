@@ -90,19 +90,46 @@ test("each navigation link has its own decorative icon", () => {
   expect(new Set(glyphs).size).toBe(11);
 });
 
+test("the app navigation lists the sections in German, in order", () => {
+  render(
+    <AppLayout>
+      <main>Page content</main>
+    </AppLayout>,
+  );
+
+  const navigation = within(
+    screen.getByRole("navigation", { name: "App navigation" }),
+  );
+  const sections = navigation
+    .getAllByRole("link")
+    .map((link) => [link.textContent, link.getAttribute("href")]);
+  expect(sections).toEqual([
+    ["Heute", "/"],
+    ["Eingang", "/inbox"],
+    ["Plan", "/plan"],
+    ["Chat", "/chat"],
+    ["Lernen", "/study"],
+    ["Artefakte", "/artifacts"],
+    ["Prüfen", "/review"],
+    ["Projekte", "/projects"],
+    ["Agenten", "/agents"],
+    ["Kurse", "/courses"],
+  ]);
+});
+
 test.each([
-  ["/", "Home"],
-  ["/inbox", "Inbox"],
-  ["/review", "Review"],
+  ["/", "Heute"],
+  ["/inbox", "Eingang"],
+  ["/review", "Prüfen"],
   ["/chat", "Chat"],
   ["/plan", "Plan"],
-  ["/study", "Study"],
+  ["/study", "Lernen"],
   ["/artifacts", "Artefakte"],
   ["/artifacts/a-1", "Artefakte"],
   ["/courses", "Kurse"],
-  ["/projects", "Projects"],
+  ["/projects", "Projekte"],
   ["/agents", "Agenten"],
-  ["/projects/project-1", "Projects"],
+  ["/projects/project-1", "Projekte"],
   ["/agents/r-1", "Agenten"],
 ])("%s selects only %s in app navigation", (pathname, title) => {
   route.pathname = pathname;
