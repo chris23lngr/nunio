@@ -30,7 +30,11 @@ function serveInbox() {
   let intervention = expired;
   const closings: unknown[] = [];
   api.route("GET", "/api/me/inbox", () =>
-    Response.json({ interventions: [intervention] }),
+    Response.json({
+      interventions: [intervention],
+      notices: [],
+      briefings: [],
+    }),
   );
   api.route("POST", `/api/me/interventions/${expired.id}`, async (request) => {
     const body = (await request.json()) as { as: string };
@@ -50,39 +54,99 @@ function serveInbox() {
   return closings;
 }
 
-test("dismissing records that the Intervention was not useful, and closes it", async () => {
+/** The open Interventions, as the Offene Hinweise tab lists them. */
+async function openPanel() {
+  await userEvent.click(
+    await screen.findByRole("tab", { name: /Offene Hinweise/ }),
+  );
+  return screen.getByRole("tabpanel");
+}
+
+async function showTab(name: RegExp) {
+  await userEvent.click(await screen.findByRole("tab", { name }));
+  return screen.getByRole("tabpanel");
+}
+
+function renderInbox() {
+  render(
+    <TestProviders>
+      <InboxScreen apiOrigin={api.origin} />
+    </TestProviders>,
+  );
+}
+
+test("dismissing records that the Intervention was not useful, and moves it to the Verlauf", async () => {
   const closings = serveInbox();
-  const open = await screen.findByRole("region", { name: "Needs attention" });
-  const item = within(open).getByRole("article", {
-    name: /approval expired.*Problem sheet 1/i,
+  const item = within(await openPanel()).getByRole("article", {
+    name: "Freigabe abgelaufen: Lernblock für Problem sheet 1 verschieben",
   });
 
   await userEvent.click(
-    within(item).getByRole("button", { name: "Not useful" }),
+    within(item).getByRole("button", { name: "Nicht hilfreich" }),
   );
 
   expect(closings).toEqual([{ as: "dismissed" }]);
-  const closed = await screen.findByRole("region", { name: "Closed" });
-  expect(
-    await within(closed).findByText(/Dismissed as not useful/),
-  ).toBeTruthy();
-  expect(screen.queryByRole("region", { name: "Needs attention" })).toBeNull();
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole("tabpanel")).queryByRole("article"),
+    ).toBeNull(),
+  );
+  const history = await showTab(/Verlauf/);
+  const closed = within(history).getByRole("article", {
+    name: "Freigabe abgelaufen: Lernblock für Problem sheet 1 verschieben",
+  });
+  expect(within(closed).getByText("Nicht hilfreich")).toBeTruthy();
 });
 
 test("acknowledging records only that the student noted it", async () => {
   const closings = serveInbox();
-  const item = await screen.findByRole("article", {
-    name: /approval expired.*Problem sheet 1/i,
+  const item = within(await openPanel()).getByRole("article", {
+    name: /Freigabe abgelaufen/,
   });
 
-  await userEvent.click(within(item).getByRole("button", { name: "Got it" }));
+  await userEvent.click(
+    within(item).getByRole("button", { name: "Verstanden" }),
+  );
 
   expect(closings).toEqual([{ as: "acknowledged" }]);
-  const closed = await screen.findByRole("region", { name: "Closed" });
-  expect(await within(closed).findByText(/Acknowledged/)).toBeTruthy();
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole("tabpanel")).queryByRole("article"),
+    ).toBeNull(),
+  );
+  const history = await showTab(/Verlauf/);
+  expect(within(history).getByText("Verstanden")).toBeTruthy();
 });
 
-test("a Shortfall says how much time is missing before its work is due", async () => {
+test("the Offene Hinweise tab counts the open Interventions; closed ones wait in the Verlauf", async () => {
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [
+        expired,
+        {
+          ...expired,
+          id: "5c1e0a4e-0000-4000-8000-000000000004",
+          state: "acknowledged",
+          closedAt: "2026-11-10T08:00:00.000Z",
+        },
+      ],
+      notices: [],
+      briefings: [],
+    }),
+  );
+  renderInbox();
+
+  const tab = await screen.findByRole("tab", { name: "Offene Hinweise 1" });
+  expect(tab.getAttribute("aria-selected")).toBe("true");
+  expect(
+    within(screen.getByRole("tabpanel")).getAllByRole("article"),
+  ).toHaveLength(1);
+  expect(within(await showTab(/Verlauf/)).getAllByRole("article")).toHaveLength(
+    1,
+  );
+});
+
+test("a Shortfall says how much time is missing before its work is due, and leads to the Plan", async () => {
   api.route("GET", "/api/me/inbox", () =>
     Response.json({
       interventions: [
@@ -91,22 +155,46 @@ test("a Shortfall says how much time is missing before its work is due", async (
           kind: "shortfall",
           title: "Problem sheet 3",
           action: null,
-          shortMinutes: 600,
+          shortMinutes: 120,
         },
       ],
+      notices: [],
+      briefings: [],
     }),
   );
-  render(
-    <TestProviders>
-      <InboxScreen apiOrigin={api.origin} />
-    </TestProviders>,
-  );
+  renderInbox();
 
+  const item = within(await openPanel()).getByRole("article", {
+    name: "2 Std. fehlen für Problem sheet 3",
+  });
+  expect(within(item).getByText("Analysis I · Zeitmangel")).toBeTruthy();
   expect(
-    await screen.findByRole("article", {
-      name: "10 h short for Problem sheet 3",
+    within(item)
+      .getByRole("link", { name: "Im Plan ansehen" })
+      .getAttribute("href"),
+  ).toBe("/plan");
+});
+
+test("a Disagreement is settled where the student reviews their Facts", async () => {
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [
+        { ...expired, kind: "disagreement", title: "Raum 101", action: null },
+      ],
+      notices: [],
+      briefings: [],
     }),
-  ).toBeTruthy();
+  );
+  renderInbox();
+
+  const item = within(await openPanel()).getByRole("article", {
+    name: "Quellen widersprechen sich zu Raum 101",
+  });
+  expect(
+    within(item)
+      .getByRole("link", { name: "In „Prüfen“ klären" })
+      .getAttribute("href"),
+  ).toBe("/review");
 });
 
 test("an Intervention about a Task Action names the Task, not a block", async () => {
@@ -129,33 +217,35 @@ test("an Intervention about a Task Action names the Task, not a block", async ()
           "task.create",
           "Vorlesung nacharbeiten",
         ),
-        task(
-          "5c1e0a4e-0000-4000-8000-000000000003",
-          "task.reopen",
-          "Blatt 3 nacharbeiten",
-        ),
+        {
+          ...task(
+            "5c1e0a4e-0000-4000-8000-000000000003",
+            "task.reopen",
+            "Blatt 3 nacharbeiten",
+          ),
+          kind: "unconfirmed",
+        },
       ],
+      notices: [],
+      briefings: [],
     }),
   );
-  render(
-    <TestProviders>
-      <InboxScreen apiOrigin={api.origin} />
-    </TestProviders>,
-  );
+  renderInbox();
 
+  const open = await openPanel();
   expect(
-    await screen.findByRole("article", {
-      name: "An approval expired: add the Task Vorlesung nacharbeiten",
+    within(open).getByRole("article", {
+      name: "Freigabe abgelaufen: Aufgabe „Vorlesung nacharbeiten“ anlegen",
     }),
   ).toBeTruthy();
   expect(
-    screen.getByRole("article", {
-      name: "An approval expired: reopen the Task Blatt 3 nacharbeiten",
+    within(open).getByRole("article", {
+      name: "nunio konnte nicht bestätigen: Aufgabe „Blatt 3 nacharbeiten“ wieder öffnen",
     }),
   ).toBeTruthy();
 });
 
-test("an Agent Run's Intervention names its Agent and how many Approvals wait, and opens that Run in its Aktivität", async () => {
+test("an Agent Run's Intervention names its Agent and how many Approvals wait, and opens that Run's Approvals", async () => {
   api.route("GET", "/api/me/inbox", () =>
     Response.json({
       interventions: [
@@ -179,27 +269,23 @@ test("an Agent Run's Intervention names its Agent and how many Approvals wait, a
           closedAt: "2026-11-10T08:00:00.000Z",
         },
       ],
+      notices: [],
+      briefings: [],
     }),
   );
-  render(
-    <TestProviders>
-      <InboxScreen apiOrigin={api.origin} />
-    </TestProviders>,
-  );
+  renderInbox();
 
-  const open = await screen.findByRole("region", { name: "Needs attention" });
-  const item = within(open).getByRole("article", {
-    name: "Klausur vorbereiten needs your Approval (2)",
+  const item = within(await openPanel()).getByRole("article", {
+    name: "Klausur vorbereiten braucht deine Freigabe (2)",
   });
   expect(
     within(item)
-      .getByRole("link", { name: "Open its Approvals" })
+      .getByRole("link", { name: "Freigaben öffnen" })
       .getAttribute("href"),
   ).toBe("/agents/agent-3?run=run-7");
-  const closed = screen.getByRole("region", { name: "Closed" });
   expect(
-    within(closed).getByRole("article", {
-      name: "Kurs aufräumen needs your Approval",
+    within(await showTab(/Verlauf/)).getByRole("article", {
+      name: "Kurs aufräumen braucht deine Freigabe",
     }),
   ).toBeTruthy();
 });
@@ -211,119 +297,36 @@ test("a lapsed Intervention says it no longer applies and cannot be closed", asy
         {
           ...expired,
           kind: "disagreement",
-          title: "Room 101",
+          title: "Raum 101",
           action: null,
           state: "lapsed",
           closedAt: "2026-11-10T08:00:00.000Z",
         },
       ],
+      notices: [],
+      briefings: [],
     }),
   );
-  render(
-    <TestProviders>
-      <InboxScreen apiOrigin={api.origin} />
-    </TestProviders>,
-  );
+  renderInbox();
 
-  const closed = await screen.findByRole("region", { name: "Closed" });
-  const item = within(closed).getByRole("article", {
-    name: "Sources disagree about Room 101",
+  const item = within(await showTab(/Verlauf/)).getByRole("article", {
+    name: "Quellen widersprechen sich zu Raum 101",
   });
-  expect(within(item).getByText("No longer applies")).toBeTruthy();
+  expect(within(item).getByText("Gilt nicht mehr")).toBeTruthy();
   expect(within(item).queryByRole("button")).toBeNull();
-});
-
-test("a Briefing lists what it bundled when it was made", async () => {
-  api.route("GET", "/api/me/inbox", () =>
-    Response.json({
-      interventions: [{ ...expired, state: "acknowledged" }],
-      briefings: [
-        {
-          id: "b-1",
-          madeAt: "2026-11-10T06:05:00.000Z",
-          interventions: [expired.id],
-          approvals: [],
-          agents: [
-            {
-              id: "r-1",
-              name: "Kurs organisieren · Analysis I",
-            },
-          ],
-        },
-      ],
-    }),
-  );
-  render(
-    <TestProviders>
-      <InboxScreen apiOrigin={api.origin} />
-    </TestProviders>,
-  );
-
-  const briefings = await screen.findByRole("region", { name: "Briefings" });
-  const [briefing] = within(briefings).getAllByRole("article");
-  expect(
-    within(briefing!).getByText(
-      "An approval expired: move the block for Problem sheet 1",
-    ),
-  ).toBeTruthy();
-  expect(
-    within(briefing!).getByText("Kurs organisieren · Analysis I"),
-  ).toBeTruthy();
 });
 
 test("acknowledging and dismissing do not look alike", async () => {
   serveInbox();
-  const item = await screen.findByRole("article", {
-    name: /approval expired.*Problem sheet 1/i,
+  const item = within(await openPanel()).getByRole("article", {
+    name: /Freigabe abgelaufen/,
   });
 
-  const gotIt = within(item).getByRole("button", { name: "Got it" });
-  const notUseful = within(item).getByRole("button", { name: "Not useful" });
+  const gotIt = within(item).getByRole("button", { name: "Verstanden" });
+  const notUseful = within(item).getByRole("button", {
+    name: "Nicht hilfreich",
+  });
   expect(gotIt.className).not.toBe(notUseful.className);
-});
-
-test("a Briefing says where each of its Approvals stands now, and keeps what is gone", async () => {
-  const approval = (actionId: string, state: string) => ({
-    actionId,
-    action: expired.action,
-    state,
-  });
-  api.route("GET", "/api/me/inbox", () =>
-    Response.json({
-      interventions: [],
-      briefings: [
-        {
-          id: "b-1",
-          madeAt: "2026-11-10T06:05:00.000Z",
-          interventions: [expired.id],
-          approvals: [
-            approval("a-1", "waiting"),
-            approval("a-2", "approved"),
-            approval("a-3", "denied"),
-            approval("a-4", "expired"),
-          ],
-          agents: [],
-        },
-      ],
-    }),
-  );
-  render(
-    <TestProviders>
-      <InboxScreen apiOrigin={api.origin} />
-    </TestProviders>,
-  );
-
-  const briefings = await screen.findByRole("region", { name: "Briefings" });
-  const items = within(briefings)
-    .getAllByRole("listitem")
-    .map((li) => li.textContent);
-  expect(items).toEqual([
-    "Something that is gone",
-    "Waiting for your Approval: Problem sheet 1",
-    "Approved: Problem sheet 1",
-    "Denied: Problem sheet 1",
-    "Expired: Problem sheet 1",
-  ]);
 });
 
 const notice = {
@@ -362,6 +365,7 @@ function serveNotices(...notices: (typeof notice)[]) {
 
 test("a Notice is its Agent's message, unread until the student opens it, which marks it read", async () => {
   const opened = serveNotices(notice);
+  // Beside the open Interventions, which are none here.
   const messages = await screen.findByRole("region", { name: "Nachrichten" });
   const item = within(messages).getByRole("article", {
     name: "Nachricht von Klausur vorbereiten",
@@ -370,7 +374,9 @@ test("a Notice is its Agent's message, unread until the student opens it, which 
   expect(
     within(item).queryByText("Deine Klausur ist am 5. Februar."),
   ).toBeNull();
-  expect(screen.queryByText("Nothing needs your attention.")).toBeNull();
+  expect(
+    screen.queryByText("Nichts braucht gerade deine Aufmerksamkeit."),
+  ).toBeNull();
 
   await userEvent.click(within(item).getByRole("button", { name: "Öffnen" }));
 
@@ -431,6 +437,57 @@ test("a Notice whose marking as read fails can be opened again", async () => {
   );
   expect(within(item).getByRole("button", { name: "Öffnen" })).toBeTruthy();
   expect(within(item).getByText("Ungelesen")).toBeTruthy();
+});
+
+test("the Nachrichten tab counts the unread Notices and lists them all, as Alle anzeigen leads there", async () => {
+  const notices = [1, 2, 3, 4].map((n) => ({
+    ...notice,
+    id: `7d2f0a4e-0000-4000-8000-00000000000${n}`,
+    agentName: `Agent ${n}`,
+    readAt: n === 4 ? "2026-11-10T07:30:00.000Z" : null,
+  }));
+  serveNotices(...notices);
+
+  const side = await screen.findByRole("region", { name: "Nachrichten" });
+  expect(within(side).getAllByRole("article")).toHaveLength(3);
+
+  await userEvent.click(
+    within(side).getByRole("button", { name: "Alle anzeigen" }),
+  );
+
+  const tab = screen.getByRole("tab", { name: "Nachrichten 3" });
+  expect(tab.getAttribute("aria-selected")).toBe("true");
+  expect(
+    within(screen.getByRole("tabpanel")).getAllByRole("article"),
+  ).toHaveLength(4);
+});
+
+test("with nothing to attend to, the Inbox says so and leads to the Verlauf", async () => {
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [{ ...expired, state: "acknowledged" }],
+      notices: [],
+      briefings: [],
+    }),
+  );
+  renderInbox();
+
+  expect(
+    await screen.findByText("Nichts braucht gerade deine Aufmerksamkeit."),
+  ).toBeTruthy();
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Verlauf ansehen" }),
+  );
+
+  expect(
+    screen.getByRole("tab", { name: "Verlauf" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(
+    within(screen.getByRole("tabpanel")).getByRole("article", {
+      name: /Freigabe abgelaufen/,
+    }),
+  ).toBeTruthy();
 });
 
 test("an Agent Briefing shows plain text, live RunApprovalCard, unread Notice, and live Artifacts", async () => {
@@ -513,16 +570,13 @@ test("an Agent Briefing shows plain text, live RunApprovalCard, unread Notice, a
     return Response.json({ status: "ok" });
   });
 
-  render(
-    <TestProviders>
-      <InboxScreen apiOrigin={api.origin} />
-    </TestProviders>,
-  );
+  renderInbox();
 
-  const briefings = await screen.findByRole("region", { name: "Briefings" });
-  const card = within(briefings).getByRole("article", {
+  const panel = await showTab(/Briefings/);
+  const card = within(panel).getByRole("article", {
     name: "Briefing von Morgen-Briefing",
   });
+  expect(within(card).getByText("1 Freigabe offen")).toBeTruthy();
 
   // Plain text: never rendered as a link or formatting.
   expect(
@@ -536,8 +590,15 @@ test("an Agent Briefing shows plain text, live RunApprovalCard, unread Notice, a
   ).toBeNull();
 
   // Live Intervention status and withdrawn Approval status.
-  expect(within(card).getByText(/Acknowledged/)).toBeTruthy();
-  expect(within(card).getByText(/Withdrawn: Problem sheet 1/)).toBeTruthy();
+  const notes = within(card).getByRole("region", { name: "Hinweise" });
+  expect(within(notes).getByText("Verstanden")).toBeTruthy();
+  const settled = within(card).getByRole("region", {
+    name: "Freigaben · aktueller Stand",
+  });
+  expect(
+    within(settled).getByText("Lernblock für Problem sheet 1 verschieben"),
+  ).toBeTruthy();
+  expect(within(settled).getByText("Zurückgezogen")).toBeTruthy();
 
   // Bundled Artifacts: ready one links to /artifacts/art-1, withdrawn one has no link.
   expect(
@@ -545,9 +606,10 @@ test("an Agent Briefing shows plain text, live RunApprovalCard, unread Notice, a
       .getByRole("link", { name: "Stochastik Karten" })
       .getAttribute("href"),
   ).toBe("/artifacts/art-1");
-  expect(
-    within(card).getByText(/Altes Set · Analysis I · Nicht mehr lesbar/),
-  ).toBeTruthy();
+  const artifacts = within(card).getByRole("region", { name: "Artefakte" });
+  expect(within(artifacts).getByText("Altes Set")).toBeTruthy();
+  expect(within(artifacts).getByText("Übungsset · Analysis I")).toBeTruthy();
+  expect(within(artifacts).getByText("Nicht mehr lesbar")).toBeTruthy();
   expect(within(card).queryByRole("link", { name: "Altes Set" })).toBeNull();
 
   // Bundled Notice stays unread until opened explicitly.
@@ -564,9 +626,8 @@ test("an Agent Briefing shows plain text, live RunApprovalCard, unread Notice, a
   expect(decidedCalls).toEqual([
     { decision: "approve", fingerprint: "fp-123" },
   ]);
-  expect(
-    await within(card).findByText(/Approved: Problem sheet 1/),
-  ).toBeTruthy();
+  expect(await within(card).findByText("Freigegeben")).toBeTruthy();
+  expect(within(card).queryByText("1 Freigabe offen")).toBeNull();
 
   // Opening the bundled Notice marks only that Notice read.
   await userEvent.click(
@@ -602,13 +663,10 @@ test("an Agent Briefing drawn from a deleted Source says it can no longer be rea
     }),
   );
 
-  render(
-    <TestProviders>
-      <InboxScreen apiOrigin={api.origin} />
-    </TestProviders>,
-  );
+  renderInbox();
 
-  const card = await screen.findByRole("article", {
+  const panel = await showTab(/Briefings/);
+  const card = within(panel).getByRole("article", {
     name: "Briefing von Morgen-Briefing",
   });
   expect(
@@ -616,5 +674,87 @@ test("an Agent Briefing drawn from a deleted Source says it can no longer be rea
       "Nicht mehr lesbar: Eine Quelle, die der Agent gelesen hatte, wurde gelöscht.",
     ),
   ).toBeTruthy();
-  expect(screen.queryByText("Nothing needs your attention.")).toBeNull();
+  expect(
+    screen.queryByText("Nichts braucht gerade deine Aufmerksamkeit."),
+  ).toBeNull();
+});
+
+test("the Briefings tab switches between Briefings via Letzte Briefings and renders past nunio Briefings", async () => {
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [],
+      notices: [],
+      briefings: [
+        {
+          id: "b-agent-latest",
+          madeAt: "2026-11-10T06:05:00.000Z",
+          agentId: "agent-3",
+          agentName: "Klausur vorbereiten",
+          runId: "run-7",
+          text: "Alles im Plan.",
+          announcement: "announced",
+          interventions: [],
+          approvals: [],
+          agents: [],
+          notices: [],
+          artifacts: [],
+        },
+        {
+          id: "b-nunio-legacy",
+          madeAt: "2026-11-09T07:00:00.000Z",
+          agentId: null,
+          agentName: null,
+          runId: null,
+          text: null,
+          announcement: "announced",
+          interventions: [],
+          approvals: [],
+          agents: [{ id: "agent-3", name: "Klausur vorbereiten" }],
+          notices: [],
+          artifacts: [],
+        },
+      ],
+    }),
+  );
+
+  renderInbox();
+
+  const panel = await showTab(/Briefings/);
+  const rail = within(panel).getByRole("navigation", {
+    name: "Letzte Briefings",
+  });
+  expect(
+    within(panel).getByRole("article", {
+      name: "Briefing von Klausur vorbereiten",
+    }),
+  ).toBeTruthy();
+
+  const legacyButton = within(rail).getByRole("button", {
+    name: /Briefing vom 9\. November/,
+  });
+  await userEvent.click(legacyButton);
+
+  expect(legacyButton.getAttribute("aria-current")).toBe("true");
+  const legacyCard = within(panel).getByRole("article", {
+    name: "Briefing vom 9. November",
+  });
+  expect(
+    within(legacyCard).getByRole("region", { name: "Agenten" }),
+  ).toBeTruthy();
+  expect(within(legacyCard).queryByText(/Nicht mehr lesbar/)).toBeNull();
+});
+
+test("opening the last unread Notice keeps the Hinweise column calm beside Nachrichten", async () => {
+  serveNotices(notice);
+
+  const side = await screen.findByRole("region", { name: "Nachrichten" });
+  expect(screen.getByText("Keine offenen Hinweise.")).toBeTruthy();
+
+  await userEvent.click(within(side).getByRole("button", { name: "Öffnen" }));
+
+  await waitFor(() => expect(within(side).queryByText("Ungelesen")).toBeNull());
+  expect(screen.getByText("Keine offenen Hinweise.")).toBeTruthy();
+  expect(
+    screen.queryByText("Nichts braucht gerade deine Aufmerksamkeit."),
+  ).toBeNull();
 });
