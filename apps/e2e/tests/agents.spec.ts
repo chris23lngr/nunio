@@ -221,7 +221,8 @@ test("a student starts an Agent from a Template, runs it and finds its Approval 
   // Template: its details, then "Template verwenden".
   await page.getByRole("button", { name: /Kurs organisieren/ }).click();
   const details = page.getByRole("dialog", { name: /Kurs organisieren/ });
-  await expect(details).toContainText("Halte meine Kurse organisiert.");
+  await expect(details).toContainText(template.description);
+  await expect(details).toContainText("Erstellt am 19.11.2026");
   await details.getByRole("link", { name: "Template verwenden" }).click();
   await expect(page).toHaveURL(
     `${origins.app}/agents/new?template=organizeCourse`,
