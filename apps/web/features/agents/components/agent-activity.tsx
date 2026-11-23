@@ -7,6 +7,14 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import {
+  CircleCheck,
+  CirclePlay,
+  CircleStop,
+  CircleX,
+  Route,
+} from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   dated,
@@ -19,22 +27,33 @@ import {
   usd,
 } from "../activity-wording";
 import { decideRunApproval } from "../api/activity-mutations";
-import type { ActivityRun } from "../api/activity-queries";
+import type { ActivityRun, VerlaufEntry } from "../api/activity-queries";
 import { agentRunListQueries, agentRunQueries } from "../api/activity-queries";
 import { RunApprovalCard } from "./run-approval-card";
 
-/** A Run's badge, shown only when it isn't simply done. */
-function Badge({ run }: { run: ActivityRun }) {
+/** A Run's badge; in the list hidden when simply done, in the Status stat card always shown. */
+function Badge({
+  run,
+  showDone = false,
+  className,
+}: {
+  run: ActivityRun;
+  showDone?: boolean;
+  className?: string;
+}) {
   const state = stateOf(run);
-  if (state === "Abgeschlossen") return null;
+  if (state === "Abgeschlossen" && !showDone) return null;
   return (
     <span
       className={cn(
-        "shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium",
-        state === "Läuft gerade" && "bg-primary-100 text-primary-700",
-        state === "Freigabe benötigt" && "bg-warning-50 text-warning-700",
+        "inline-flex h-5 shrink-0 items-center rounded-sm px-1.5 text-xs font-medium",
+        state === "Läuft gerade" && "bg-primary-100 text-primary-600",
+        state === "Freigabe benötigt" &&
+          "bg-[oklch(95.4%_0.038_75.2)] text-[oklch(64.6%_0.222_41.1)]",
         state === "Gestoppt" && "bg-base-100 text-base-600",
         state === "Fehlgeschlagen" && "bg-destructive-50 text-destructive-700",
+        state === "Abgeschlossen" && "bg-success-50 text-success-800",
+        className,
       )}
     >
       {state}
@@ -43,13 +62,23 @@ function Badge({ run }: { run: ActivityRun }) {
 }
 
 /** One stat card: what it shows and its value. */
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1 rounded-lg border border-base-200 px-4 py-3">
-      <dt className="text-xs text-base-500">{label}</dt>
-      <dd className="text-sm font-medium text-base-800">{value}</dd>
+    <div className="flex flex-col items-start gap-1.5 rounded-lg bg-white p-4 shadow-sm outline-1 outline-base-700/15">
+      <dt className="text-xs font-medium text-base-500">{label}</dt>
+      <dd className="text-sm font-medium text-base-800">{children}</dd>
     </div>
   );
+}
+
+function entryIcon(entry: VerlaufEntry) {
+  if (entry.type === "start") return CirclePlay;
+  if (entry.type === "end") {
+    if (entry.status === "done") return CircleCheck;
+    if (entry.status === "failed") return CircleX;
+    return CircleStop;
+  }
+  return Route;
 }
 
 /** The selected Run: Datum, Kosten and Status, its Zusammenfassung, its open Approvals, and its Verlauf. */
@@ -69,24 +98,25 @@ function RunDetail({
   const run = query.data;
   if (!run)
     return query.error ? (
-      <p role="alert" className="p-8 text-sm text-destructive-600">
+      <p role="alert" className="pl-8 text-sm text-destructive-600">
         {query.error.message}
       </p>
     ) : null;
   return (
     <section
       aria-label="Lauf"
-      className="flex min-w-0 flex-1 flex-col gap-10 p-8"
+      className="flex min-w-0 flex-1 flex-col gap-8 pl-8"
     >
-      <dl className="grid max-w-[40rem] grid-cols-3 gap-3">
-        <Stat label="Datum" value={dated(run.startedAt)} />
-        <Stat
-          label="Kosten"
-          value={`${usd(run.costMicroUsd)} von ${usd(run.budgetMicroUsd)} USD`}
-        />
-        <Stat label="Status" value={stateOf(run)} />
+      <dl className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+        <Stat label="Datum">{dated(run.startedAt)}</Stat>
+        <Stat label="Kosten">
+          {`${usd(run.costMicroUsd)} von ${usd(run.budgetMicroUsd)} USD`}
+        </Stat>
+        <Stat label="Status">
+          <Badge run={run} showDone />
+        </Stat>
       </dl>
-      <section aria-labelledby={`${runId}-summary`} className="max-w-[40rem]">
+      <section aria-labelledby={`${runId}-summary`}>
         <h2
           id={`${runId}-summary`}
           className="text-base font-medium text-base-800"
@@ -94,16 +124,11 @@ function RunDetail({
           Zusammenfassung
         </h2>
         {run.summary ? (
-          <>
-            <p className="mt-1 text-xs text-base-500">
-              In den Worten deines Agenten
-            </p>
-            <p className="mt-3 text-sm whitespace-pre-line text-base-700">
-              {run.summary}
-            </p>
-          </>
+          <p className="mt-1 max-w-[640px] text-sm leading-6 whitespace-pre-line text-base-600">
+            {run.summary}
+          </p>
         ) : (
-          <p className="mt-3 text-sm text-base-600">
+          <p className="mt-1 max-w-[640px] text-sm leading-6 text-base-600">
             {run.status === "running"
               ? "Dein Agent arbeitet noch."
               : run.status !== "done"
@@ -115,10 +140,7 @@ function RunDetail({
         )}
       </section>
       {(run.approvals.length > 0 || decide.error) && (
-        <section
-          aria-labelledby={`${runId}-freigaben`}
-          className="max-w-[40rem]"
-        >
+        <section aria-labelledby={`${runId}-freigaben`}>
           <h2
             id={`${runId}-freigaben`}
             className="text-base font-medium text-base-800"
@@ -130,7 +152,7 @@ function RunDetail({
               {decide.error.message}
             </p>
           )}
-          <div className="mt-4 flex flex-col gap-3">
+          <div className="mt-3 flex flex-col gap-4">
             {run.approvals.map((approval) => (
               <RunApprovalCard
                 key={approval.actionId}
@@ -142,30 +164,49 @@ function RunDetail({
           </div>
         </section>
       )}
-      <section aria-labelledby={`${runId}-verlauf`} className="max-w-[40rem]">
+      <section aria-labelledby={`${runId}-verlauf`}>
         <h2
           id={`${runId}-verlauf`}
           className="text-base font-medium text-base-800"
         >
           Verlauf
         </h2>
-        <ol aria-label="Verlauf" className="mt-4 flex flex-col gap-4">
+        <ol aria-label="Verlauf" className="mt-4 flex flex-col">
           {run.verlauf.map((entry, i) => {
             const { title, details } = describeEntry(entry);
+            const Icon = entryIcon(entry);
+            const isLast = i === run.verlauf.length - 1;
             return (
               <li
                 // The Verlauf only grows, so an entry keeps its place.
                 // biome-ignore lint/suspicious/noArrayIndexKey: entries have no id of their own
                 key={i}
-                className="flex gap-4 border-l border-base-200 pl-4"
+                className="flex items-stretch gap-3"
               >
-                <span className="w-16 shrink-0 text-xs text-base-500 tabular-nums">
-                  {timeOf(entry.at)}
-                </span>
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-sm text-base-800">{title}</span>
+                <div
+                  aria-hidden="true"
+                  className="flex flex-col items-center gap-1"
+                >
+                  <span
+                    className={cn("h-5 w-px shrink-0", i > 0 && "bg-base-200")}
+                  />
+                  <Icon className="size-4 shrink-0 text-primary-500" />
+                  {!isLast && <span className="w-px flex-1 bg-base-200" />}
+                </div>
+                <div
+                  className={cn(
+                    "flex min-w-0 flex-1 flex-col",
+                    !isLast && "pb-8",
+                  )}
+                >
+                  <span className="text-xs leading-4 text-base-500 tabular-nums">
+                    {timeOf(entry.at)}
+                  </span>
+                  <span className="mt-1.5 text-sm font-medium text-base-600">
+                    {title}
+                  </span>
                   {details.map((detail) => (
-                    <span key={detail} className="text-xs text-base-500">
+                    <span key={detail} className="mt-0.5 text-sm text-base-500">
                       {detail}
                     </span>
                   ))}
@@ -236,41 +277,39 @@ export function AgentActivity({
   // The newest Run until the student picks another, or the Inbox opened one.
   const selected = runs.find((run) => run.id === picked) ?? runs[0]!;
   return (
-    <div className="flex min-h-[calc(100dvh-6.5rem)]">
+    <div className="flex min-h-[calc(100dvh-6.5rem)] items-start px-8 py-8">
       <nav
         aria-label="Läufe"
-        className="w-72 shrink-0 overflow-y-auto border-r border-base-200 p-3"
+        className="w-64 shrink-0 overflow-y-auto border-r border-base-200 pr-6"
       >
-        <ul className="flex flex-col gap-1">
+        <ul className="flex flex-col divide-y divide-base-200">
           {runs.map((run) => (
-            <li key={run.id}>
+            <li key={run.id} className="py-4 first:pt-0 last:pb-0">
               <button
                 type="button"
                 aria-current={run.id === selected.id ? "true" : undefined}
                 onClick={() => setPicked(run.id)}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-primary-500",
+                  "flex w-full flex-col items-start rounded-lg px-2 py-1.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-primary-500",
                   run.id === selected.id ? "bg-base-100" : "hover:bg-base-50",
                 )}
               >
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-medium text-base-800">
-                    {startedAt(run.startedAt)}
-                  </span>
-                  <span className="text-xs text-base-500">
-                    {run.endedAt
-                      ? duration(new Date(run.startedAt), new Date(run.endedAt))
-                      : `Seit ${duration(new Date(run.startedAt), now)}`}
-                  </span>
+                <Badge run={run} className="mb-2" />
+                <span className="w-full truncate text-sm font-medium text-base-800">
+                  {startedAt(run.startedAt)}
                 </span>
-                <Badge run={run} />
+                <span className="mt-0.5 text-xs text-base-500">
+                  {run.endedAt
+                    ? duration(new Date(run.startedAt), new Date(run.endedAt))
+                    : `Seit ${duration(new Date(run.startedAt), now)}`}
+                </span>
               </button>
             </li>
           ))}
         </ul>
         <div ref={end} />
         {isFetchingNextPage && (
-          <p role="status" className="px-3 py-2 text-xs text-base-500">
+          <p role="status" className="px-2 py-2 text-xs text-base-500">
             Ältere Läufe laden …
           </p>
         )}
