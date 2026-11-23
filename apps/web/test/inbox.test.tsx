@@ -1,9 +1,21 @@
+import { SidebarProvider } from "@nunio/ui/components/sidebar/sidebar";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import { InboxScreen } from "@/features/inbox/inbox-screen";
 import { api } from "./api";
 import { TestProviders } from "./providers";
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+});
 
 const expired = {
   id: "5c1e0a4e-0000-4000-8000-000000000001",
@@ -46,11 +58,7 @@ function serveInbox() {
     };
     return Response.json({ status: "ok" });
   });
-  render(
-    <TestProviders>
-      <InboxScreen apiOrigin={api.origin} />
-    </TestProviders>,
-  );
+  renderInbox();
   return closings;
 }
 
@@ -70,7 +78,9 @@ async function showTab(name: RegExp) {
 function renderInbox() {
   render(
     <TestProviders>
-      <InboxScreen apiOrigin={api.origin} />
+      <SidebarProvider>
+        <InboxScreen apiOrigin={api.origin} />
+      </SidebarProvider>
     </TestProviders>,
   );
 }
@@ -355,11 +365,7 @@ function serveNotices(...notices: (typeof notice)[]) {
       );
       return Response.json({ status: "ok" });
     });
-  render(
-    <TestProviders>
-      <InboxScreen apiOrigin={api.origin} />
-    </TestProviders>,
-  );
+  renderInbox();
   return opened;
 }
 
@@ -757,4 +763,16 @@ test("opening the last unread Notice keeps the Hinweise column calm beside Nachr
   expect(
     screen.queryByText("Nichts braucht gerade deine Aufmerksamkeit."),
   ).toBeNull();
+});
+
+test("the Inbox header links to notification settings", async () => {
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({ interventions: [], notices: [], briefings: [] }),
+  );
+  renderInbox();
+
+  const link = await screen.findByRole("link", {
+    name: "Benachrichtigungen einstellen",
+  });
+  expect(link.getAttribute("href")).toBe("/settings/notifications");
 });
