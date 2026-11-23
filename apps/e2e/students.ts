@@ -97,3 +97,9 @@ export async function signInAs(page: Page, email: string): Promise<void> {
   await enterSignIn(page, email);
   await expect(page).toHaveURL(`${origins.app}/`);
 }
+
+/** Signs the student `name` out through the sidebar user menu. */
+export async function signOut(page: Page, name: string): Promise<void> {
+  await page.getByRole("button", { name, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Abmelden", exact: true }).click();
+}
