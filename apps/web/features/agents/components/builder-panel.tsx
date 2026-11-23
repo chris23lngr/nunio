@@ -195,7 +195,7 @@ export function BuilderPanel({
         )}
         <form
           aria-label="Nachricht an nunio verfassen"
-          className="px-4 pt-4 pb-4"
+          className="bg-linear-to-b from-base-50/0 via-base-50 to-base-50 px-4 pt-8 pb-4"
           onSubmit={(event) => {
             event.preventDefault();
             send();

@@ -11,10 +11,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   CircleCheck,
   CircleStop,
-  EllipsisVertical,
+  Ellipsis,
   Pause,
-  Pencil,
   Play,
+  SquarePen,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
@@ -64,7 +64,7 @@ export function AgentMenu({
             />
           }
         >
-          <EllipsisVertical aria-hidden="true" />
+          <Ellipsis aria-hidden="true" className="size-5 text-base-500" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuGroup>
@@ -84,7 +84,7 @@ export function AgentMenu({
               <DropdownMenuItem
                 render={<Link href={`/agents/${agent.id}?tab=auftrag`} />}
               >
-                <Pencil aria-hidden="true" />
+                <SquarePen aria-hidden="true" />
                 Bearbeiten
               </DropdownMenuItem>
             )}

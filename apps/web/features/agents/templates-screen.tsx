@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "@nunio/ui";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -8,13 +9,10 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@nunio/ui/components/breadcrumb/breadcrumb";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@nunio/ui/components/input-group/input-group";
+import { buttonVariants } from "@nunio/ui/components/button/button";
+import { Input } from "@nunio/ui/components/input/input";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Search } from "lucide-react";
+import { ChevronLeft, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { PageHeader } from "@/features/shared/components/page-header";
@@ -41,12 +39,6 @@ export function TemplatesScreen({ apiOrigin }: { apiOrigin: string }) {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink render={<Link href="/" />}>
-                Dashboard
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
               <BreadcrumbLink render={<Link href="/agents" />}>
                 Agenten
               </BreadcrumbLink>
@@ -57,41 +49,43 @@ export function TemplatesScreen({ apiOrigin }: { apiOrigin: string }) {
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
+        <span className="flex-1" />
+        <Link href="/agents/new" className={cn(buttonVariants(), "pr-2")}>
+          Neuer Agent
+          <Plus aria-hidden="true" />
+        </Link>
       </PageHeader>
-      <div className="mx-auto flex w-full max-w-[calc(64rem+4rem)] flex-col px-8 pt-22 pb-16">
+      <div className="mx-auto flex w-full max-w-[calc(56rem+4rem)] flex-col px-8 pt-24 pb-16">
         <Link
           href="/agents"
-          className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-base-600 hover:text-base-800"
+          className="inline-flex w-fit items-center gap-2 text-sm font-medium text-primary-600 hover:text-primary-700"
         >
-          <ArrowLeft aria-hidden="true" className="size-4" />
+          <ChevronLeft aria-hidden="true" className="size-4 text-primary-500" />
           Zurück
         </Link>
-        <h1 className="mt-4 text-2xl leading-8 font-medium text-base-800">
+        <h1 className="mt-3 text-2xl leading-8 font-medium text-base-800">
           Templates
         </h1>
-        <InputGroup className="mt-6 max-w-96">
-          <InputGroupAddon>
-            <Search aria-hidden="true" />
-          </InputGroupAddon>
-          <InputGroupInput
-            type="search"
-            aria-label="Templates durchsuchen"
-            placeholder="Templates durchsuchen …"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </InputGroup>
+        <Input
+          type="search"
+          aria-label="Templates durchsuchen"
+          placeholder="Templates durchsuchen"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="mt-8 w-full sm:w-64"
+        />
         {templates.error && (
           <p role="alert" className="mt-6 text-sm text-destructive-600">
             {templates.error.message}
           </p>
         )}
         {shown.length > 0 && (
-          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {shown.map((template) => (
               <TemplateCard
                 key={template.id}
                 template={template}
+                variant="grid"
                 onSelect={() => setSelected(template)}
               />
             ))}

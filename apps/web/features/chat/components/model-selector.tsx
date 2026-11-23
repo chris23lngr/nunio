@@ -42,12 +42,16 @@ export function ModelSelector({
   value,
   defaultModel,
   onValueChange,
+  variant = "ghost",
+  placeholder = "Modell wählen",
 }: {
   models: ChatModel[];
-  value: string;
+  value: string | null;
   /** Key of the default model, which costs are stated against. */
   defaultModel: string | null;
   onValueChange: (key: string) => void;
+  variant?: "ghost" | "outline";
+  placeholder?: string;
 }) {
   const current = models.find(({ key }) => key === value);
   const standard = models.find(({ key }) => key === defaultModel);
@@ -57,14 +61,31 @@ export function ModelSelector({
     <>
       <DropdownMenu onOpenChange={(menuOpen) => !menuOpen && setOpen(false)}>
         <DropdownMenuTrigger
-          render={<Button variant="ghost" />}
-          aria-label={`Modell: ${current?.name}`}
+          render={
+            <Button
+              variant={variant}
+              className={variant === "outline" ? "w-fit pr-2" : undefined}
+              disabled={models.length === 0}
+            />
+          }
+          aria-label={current ? `Modell: ${current.name}` : placeholder}
         >
-          <ModelLogo provider={current?.provider} trigger />
-          {current?.name}
-          <ChevronDown />
+          {current && (
+            <ModelLogo
+              provider={current.provider}
+              trigger={variant === "ghost"}
+            />
+          )}
+          {current?.name ?? placeholder}
+          <ChevronDown
+            aria-hidden="true"
+            className={variant === "outline" ? "text-base-500" : undefined}
+          />
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-[182px]">
+        <DropdownMenuContent
+          align={variant === "outline" ? "start" : undefined}
+          className="w-[182px]"
+        >
           <DropdownMenuGroup>
             <DropdownMenuLabel>Modelle</DropdownMenuLabel>
             {models.map((model) => (

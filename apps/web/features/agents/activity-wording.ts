@@ -68,8 +68,9 @@ export const startedAt = (at: string) =>
 export const dated = (at: string) =>
   format(new Date(at), "d. MMMM yyyy, HH:mm", { locale: de });
 
-/** "14:02:05". */
-export const timeOf = (at: string) => format(new Date(at), "HH:mm:ss");
+/** "18.11.2026, 08:01:01 Uhr". */
+export const timeOf = (at: string) =>
+  format(new Date(at), "dd.MM.yyyy, HH:mm:ss 'Uhr'");
 
 type ActionEntry = Extract<VerlaufEntry, { type: "action" }>;
 type ApprovalEntry = Extract<VerlaufEntry, { type: "approval" }>;

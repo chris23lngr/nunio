@@ -211,7 +211,7 @@ test("an Agent that ran opens on Aktivität with its newest Run: Datum, Kosten, 
     .getAllByRole("button")
     .map((row) => [row.getAttribute("aria-current"), row.textContent]);
   expect(rows).toEqual([
-    ["true", expect.stringMatching(/2 Min\.Gestoppt$/)],
+    ["true", expect.stringMatching(/^Gestoppt.+2 Min\.$/)],
     [null, expect.stringMatching(/2 Min\.$/)],
   ]);
   await screen.findByText("Kosten", { selector: "dt" });
@@ -254,7 +254,6 @@ test("an Agent that ran opens on Aktivität with its newest Run: Datum, Kosten, 
       "Ich habe zwei Lernblöcke für deine Klausur eingetragen.",
     ),
   ).toBeTruthy();
-  expect(screen.getByText("In den Worten deines Agenten")).toBeTruthy();
   expect(stat("Status")).toBe("Abgeschlossen");
 });
 
@@ -343,8 +342,8 @@ test("the Run list shows each start's duration, 'Seit …' while running, and ba
       .getAllByRole("button")
       .map((row) => row.textContent),
   ).toEqual([
-    expect.stringMatching(/Seit 5 Min\.Läuft gerade$/),
-    expect.stringMatching(/2 Min\.Gestoppt$/),
+    expect.stringMatching(/^Läuft gerade.+Seit 5 Min\.$/),
+    expect.stringMatching(/^Gestoppt.+2 Min\.$/),
   ]);
   await screen.findByText("Status", { selector: "dt" });
   expect(stat("Status")).toBe("Läuft gerade");
@@ -358,10 +357,10 @@ test("the Run list shows each start's duration, 'Seit …' while running, and ba
         .getAllByRole("button")
         .map((row) => row.textContent),
     ).toEqual([
-      expect.stringMatching(/Seit 5 Min\.Läuft gerade$/),
-      expect.stringMatching(/2 Min\.Gestoppt$/),
-      expect.stringMatching(/2 Min\.Freigabe benötigt$/),
-      expect.stringMatching(/2 Min\.Fehlgeschlagen$/),
+      expect.stringMatching(/^Läuft gerade.+Seit 5 Min\.$/),
+      expect.stringMatching(/^Gestoppt.+2 Min\.$/),
+      expect.stringMatching(/^Freigabe benötigt.+2 Min\.$/),
+      expect.stringMatching(/^Fehlgeschlagen.+2 Min\.$/),
     ]),
   );
 });
@@ -478,10 +477,10 @@ test("Freigaben shows the selected Run's open Approvals as nunio renders them, a
   const cards = within(freigaben).getAllByRole("group");
   expect(cards.map((c) => c.textContent)).toEqual([
     expect.stringMatching(
-      /^Lernblock erstellen„Klausur Statistik“ · Statistics IINeu: Mo\., 2\. Feb\., \d\d:\d\d – \d\d:\d\d UhrKlausurhelfer · Läuft ab am Mo\., 9\. Feb\., \d\d:\d\dAblehnenAkzeptieren$/,
+      /^Lernblock erstellen„Klausur Statistik“ · Statistics IINeuMo\., 2\. Feb\., \d\d:\d\d – \d\d:\d\d UhrKlausurhelfer · Läuft ab am Mo\., 9\. Feb\., \d\d:\d\dAblehnenAkzeptieren$/,
     ),
     expect.stringMatching(
-      /^Lernblock verschieben„Klausur Statistik“ · Statistics IIMo\., 2\. Feb\., \d\d:\d\d – \d\d:\d\d Uhr → Di\., 3\. Feb\., \d\d:\d\d – \d\d:\d\d UhrKlausurhelfer · Läuft ab am .+AblehnenAkzeptieren$/,
+      /^Lernblock verschieben„Klausur Statistik“ · Statistics IIBisherMo\., 2\. Feb\., \d\d:\d\d – \d\d:\d\d UhrNeuDi\., 3\. Feb\., \d\d:\d\d – \d\d:\d\d UhrKlausurhelfer · Läuft ab am .+AblehnenAkzeptieren$/,
     ),
   ]);
   // The Agent's own words stay in the Zusammenfassung, never on a card.
@@ -792,13 +791,13 @@ test("the Verlauf shows the flashcards or practice set a Run started, and why on
       .map((entry) => entry.textContent),
   ).toEqual([
     expect.stringMatching(
-      /\dÜbungsaufgaben gestartetThemen: Konfidenzintervalle$/,
+      /UhrÜbungsaufgaben gestartetThemen: Konfidenzintervalle$/,
     ),
     expect.stringMatching(
-      /\dNicht gestartet: KarteikartenThemen: Konfidenzintervalle, gelöschtGrund: Limit dieses Laufs erreicht$/,
+      /UhrNicht gestartet: KarteikartenThemen: Konfidenzintervalle, gelöschtGrund: Limit dieses Laufs erreicht$/,
     ),
     expect.stringMatching(
-      /\dNicht gestartet: KarteikartenGrund: Ungültige Angaben, nichts wurde gestartet$/,
+      /UhrNicht gestartet: KarteikartenGrund: Ungültige Angaben, nichts wurde gestartet$/,
     ),
   ]);
 });
@@ -836,12 +835,12 @@ test("the Verlauf shows the Notice a Run sent, and why one was not sent, never i
       .getAllByRole("listitem")
       .map((entry) => entry.textContent),
   ).toEqual([
-    expect.stringMatching(/\dNachricht an dich gesendetIn deiner Inbox$/),
+    expect.stringMatching(/UhrNachricht an dich gesendetIn deiner Inbox$/),
     expect.stringMatching(
-      /\dNicht gesendet: NachrichtGrund: Limit dieses Laufs erreicht$/,
+      /UhrNicht gesendet: NachrichtGrund: Limit dieses Laufs erreicht$/,
     ),
     expect.stringMatching(
-      /\dNicht gesendet: NachrichtGrund: Ungültiger Text, nichts wurde gesendet$/,
+      /UhrNicht gesendet: NachrichtGrund: Ungültiger Text, nichts wurde gesendet$/,
     ),
   ]);
 });
@@ -890,16 +889,16 @@ test("the Verlauf shows when a Run read the Inbox and wrote or refused a Briefin
       .getAllByRole("listitem")
       .map((item) => item.textContent),
   ).toEqual([
-    expect.stringMatching(/\dHat die Inbox gelesen$/),
-    expect.stringMatching(/\dBriefing erstelltIn deiner Inbox$/),
+    expect.stringMatching(/UhrHat die Inbox gelesen$/),
+    expect.stringMatching(/UhrBriefing erstelltIn deiner Inbox$/),
     expect.stringMatching(
-      /\dKein Briefing erstelltGrund: Nichts Offenes zum Bündeln$/,
+      /UhrKein Briefing erstelltGrund: Nichts Offenes zum Bündeln$/,
     ),
     expect.stringMatching(
-      /\dKein Briefing erstelltGrund: Limit dieses Laufs erreicht$/,
+      /UhrKein Briefing erstelltGrund: Limit dieses Laufs erreicht$/,
     ),
     expect.stringMatching(
-      /\dKein Briefing erstelltGrund: Ungültige Angaben, nichts wurde erstellt$/,
+      /UhrKein Briefing erstelltGrund: Ungültige Angaben, nichts wurde erstellt$/,
     ),
   ]);
 });

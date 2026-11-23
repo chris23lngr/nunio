@@ -416,10 +416,7 @@ test("a Course deleted while the form is open leaves the Draft once saving fails
   ]);
 });
 
-/** Text on screen, not the hidden copy a control is described by. */
-const shown = { ignore: "script, style, [hidden]" };
-
-test("'Modell auswählen' lists Chat's Models with their logo and, on hover, the catalog's description, and saves the one picked", async () => {
+test("Modell lists Chat's Models with their logo and, on hover, the catalog's description, and saves the one picked", async () => {
   const saved: { modelKey: string }[] = [];
   api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
   api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
@@ -429,48 +426,36 @@ test("'Modell auswählen' lists Chat's Models with their logo and, on hover, the
   });
   renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
   const section = await screen.findByRole("region", { name: "Modell" });
-  expect(await within(section).findByText("Sonnet 5.5")).toBeTruthy();
+  const trigger = await within(section).findByRole("button", {
+    name: "Modell: Sonnet 5.5",
+  });
+  expect(trigger.textContent).toBe("Sonnet 5.5");
 
-  await userEvent.click(
-    within(section).getByRole("button", { name: "Modell ändern" }),
-  );
-  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
-  const choices = within(sheet).getByRole("radiogroup", { name: "Modelle" });
-  const radios = within(choices).getAllByRole("radio") as HTMLInputElement[];
+  await userEvent.click(trigger);
+  const group = await screen.findByRole("group", { name: "Modelle" });
+  const items = within(group).getAllByRole("menuitem");
   expect(
-    radios.map((radio) => [radio.getAttribute("aria-label"), radio.checked]),
+    items.map((item) => [item.textContent, item.getAttribute("aria-current")]),
   ).toEqual([
-    ["Haiku 5.5", false],
-    ["Sonnet 5.5", true],
-    ["Opus 5.5", false],
+    ["Haiku 5.5", null],
+    ["Sonnet 5.5", "true"],
+    ["Opus 5.5", null],
   ]);
-  for (const radio of radios)
-    expect(
-      radio.closest("label")!.querySelector('img[src*="claude"]'),
-    ).toBeTruthy();
+  for (const item of items)
+    expect(item.querySelector('img[src*="claude"]')).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await userEvent.hover(items[2]!);
+  const card = await screen.findByRole("dialog", {
+    name: "Anthropic / Opus 5.5",
+  });
+  expect(card.textContent).toContain(
+    "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
+  );
+  await userEvent.click(items[2]!);
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   expect(
-    screen.queryByText(
-      "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
-      shown,
-    ),
-  ).toBeNull();
-  await userEvent.hover(radios[2]!.closest("label")!);
-  expect(
-    await screen.findByText(
-      "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
-      shown,
-    ),
+    within(section).getByRole("button", { name: "Modell: Opus 5.5" }),
   ).toBeTruthy();
-  await userEvent.click(radios[2]!);
-  await userEvent.click(
-    within(sheet).getByRole("button", { name: "Speichern" }),
-  );
-  await waitFor(() =>
-    expect(
-      screen.queryByRole("dialog", { name: "Modell auswählen" }),
-    ).toBeNull(),
-  );
-  expect(within(section).getByText("Opus 5.5")).toBeTruthy();
 
   await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
@@ -480,57 +465,46 @@ test("'Modell auswählen' lists Chat's Models with their logo and, on hover, the
   ]);
 });
 
-test("'Modell auswählen' shows a Model's description when its card gets keyboard focus, and describes the choice with it", async () => {
+test("Modell shows a Model's description when its row gets keyboard focus", async () => {
   api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
   api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
   renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
   const section = await screen.findByRole("region", { name: "Modell" });
-  await within(section).findByText("Sonnet 5.5");
   await userEvent.click(
-    within(section).getByRole("button", { name: "Modell ändern" }),
+    await within(section).findByRole("button", { name: "Modell: Sonnet 5.5" }),
   );
-  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
-  expect(
-    within(sheet).getByRole("radio", {
-      name: "Opus 5.5",
-      description: "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
-    }),
-  ).toBeTruthy();
-
-  within(sheet).getByRole("radio", { name: "Sonnet 5.5" }).focus();
+  const sonnet = await screen.findByRole("menuitem", { name: "Sonnet 5.5" });
+  sonnet.focus();
   await userEvent.keyboard("{ArrowDown}");
 
   expect(document.activeElement).toBe(
-    within(sheet).getByRole("radio", { name: "Opus 5.5" }),
+    screen.getByRole("menuitem", { name: "Opus 5.5" }),
   );
-  expect(
-    await screen.findByText(
-      "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
-      shown,
-    ),
-  ).toBeTruthy();
+  const card = await screen.findByRole("dialog", {
+    name: "Anthropic / Opus 5.5",
+  });
+  expect(card.textContent).toContain(
+    "Am gründlichsten für anspruchsvolle, lange Aufgaben.",
+  );
 });
 
-test("Abbrechen closes 'Modell auswählen' without changing the Agent's Model", async () => {
+test("Escape closes the Modell menu without changing the Agent's Model", async () => {
   api.route("GET", "/api/me/agents/a-1", () => Response.json(agent));
   api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
   renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
   const section = await screen.findByRole("region", { name: "Modell" });
-  await within(section).findByText("Sonnet 5.5");
+  await userEvent.click(
+    await within(section).findByRole("button", { name: "Modell: Sonnet 5.5" }),
+  );
+  await userEvent.hover(
+    await screen.findByRole("menuitem", { name: "Haiku 5.5" }),
+  );
+  await userEvent.keyboard("{Escape}");
 
-  await userEvent.click(
-    within(section).getByRole("button", { name: "Modell ändern" }),
-  );
-  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
-  await userEvent.click(
-    within(sheet).getByRole("radio", { name: "Haiku 5.5" }),
-  );
-  await userEvent.click(
-    within(sheet).getByRole("button", { name: "Abbrechen" }),
-  );
-
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(within(section).getByText("Sonnet 5.5")).toBeTruthy();
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  expect(
+    within(section).getByRole("button", { name: "Modell: Sonnet 5.5" }),
+  ).toBeTruthy();
 });
 
 test("a Model Chat stopped offering while the form was open is refused on Speichern, asking for another", async () => {
@@ -542,14 +516,12 @@ test("a Model Chat stopped offering while the form was open is refused on Speich
   renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
   const section = await screen.findByRole("region", { name: "Modell" });
   await userEvent.click(
-    await within(section).findByRole("button", { name: "Modell ändern" }),
+    await within(section).findByRole("button", { name: "Modell: Sonnet 5.5" }),
   );
-  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
-  await userEvent.click(within(sheet).getByRole("radio", { name: "Opus 5.5" }));
   await userEvent.click(
-    within(sheet).getByRole("button", { name: "Speichern" }),
+    await screen.findByRole("menuitem", { name: "Opus 5.5" }),
   );
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
 
   await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
@@ -577,17 +549,16 @@ test("an Agent whose Model Chat no longer offers says so, and keeps it until ano
     ),
   ).toBeTruthy();
   await userEvent.click(
-    within(section).getByRole("button", { name: "Modell ändern" }),
+    within(section).getByRole("button", { name: "Modell wählen" }),
   );
-  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
+  const group = await screen.findByRole("group", { name: "Modelle" });
   expect(
-    (within(sheet).getAllByRole("radio") as HTMLInputElement[]).some(
-      (radio) => radio.checked,
-    ),
+    within(group)
+      .getAllByRole("menuitem")
+      .some((item) => item.getAttribute("aria-current") === "true"),
   ).toBe(false);
-  await userEvent.click(
-    within(sheet).getByRole("button", { name: "Abbrechen" }),
-  );
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
   expect(await screen.findByText("Gespeichert")).toBeTruthy();
@@ -620,15 +591,12 @@ test("a saved Agent with no Model shows none rather than Chat's default, and Spe
   expect(saved).toEqual([]);
 
   await userEvent.click(
-    within(section).getByRole("button", { name: "Modell ändern" }),
-  );
-  const sheet = await screen.findByRole("dialog", { name: "Modell auswählen" });
-  await userEvent.click(
-    within(sheet).getByRole("radio", { name: "Haiku 5.5" }),
+    within(section).getByRole("button", { name: "Modell wählen" }),
   );
   await userEvent.click(
-    within(sheet).getByRole("button", { name: "Speichern" }),
+    await screen.findByRole("menuitem", { name: "Haiku 5.5" }),
   );
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
   expect(await screen.findByText("Gespeichert")).toBeTruthy();
@@ -1731,7 +1699,9 @@ test("the builder writes into the form, marking each field it changed with its o
   await userEvent.click(
     within(panel).getByRole("button", { name: "Alle rückgängig" }),
   );
-  expect(screen.queryByText("von nunio geändert")).toBeNull();
+  await waitFor(() =>
+    expect(screen.queryByText("von nunio geändert")).toBeNull(),
+  );
   expect(screen.queryByRole("list", { name: "Kurse" })).toBeNull();
   expect(screen.queryByRole("list", { name: "Fähigkeiten" })).toBeNull();
   expect(

@@ -11,19 +11,19 @@ export const modes: {
   {
     mode: "always",
     label: "Immer erlaubt",
-    badge: "bg-primary-50 text-primary-700",
+    badge: "bg-primary-100 text-primary-600",
     Icon: CheckCheck,
   },
   {
     mode: "automatic",
     label: "Automatisch",
-    badge: "bg-success-50 text-success-800",
+    badge: "bg-[oklch(96.7%_0.067_122.3)] text-[oklch(53.2%_0.157_131.6)]",
     Icon: ShieldCheck,
   },
   {
     mode: "ask",
     label: "Nachfragen",
-    badge: "bg-warning-50 text-warning-800",
+    badge: "bg-[oklch(96.2%_0.059_95.6)] text-[oklch(66.6%_0.179_58.3)]",
     Icon: MessageCircleQuestion,
   },
 ];
