@@ -1,13 +1,33 @@
+import { SidebarProvider } from "@nunio/ui/components/sidebar/sidebar";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import { StudyScreen } from "@/features/study/study-screen";
 import { api } from "./api";
 import { TestProviders } from "./providers";
 
-const courseId = "c0000000-0000-4000-8000-000000000001";
-const topicId = "70000000-0000-4000-8000-000000000001";
+beforeEach(() => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+});
+
+const analysisId = "c0000000-0000-4000-8000-000000000001";
+const algebraId = "c0000000-0000-4000-8000-000000000002";
+const konvergenz = "70000000-0000-4000-8000-000000000001";
+const stetigkeit = "70000000-0000-4000-8000-000000000002";
+const reihen = "70000000-0000-4000-8000-000000000003";
+const integrale = "70000000-0000-4000-8000-000000000004";
+const matrizen = "70000000-0000-4000-8000-000000000005";
 const sheetId = "0b000000-0000-4000-8000-000000000001";
+const talkId = "0b000000-0000-4000-8000-000000000002";
+const doneId = "0b000000-0000-4000-8000-000000000003";
+const examId = "0b000000-0000-4000-8000-000000000004";
 const artifactId = "a0000000-0000-4000-8000-000000000001";
 
 const provenance = {
@@ -17,53 +37,167 @@ const provenance = {
   page: 2,
   quote: "Gleichmäßige Konvergenz",
 };
-/** One accepted Course with a Topic and an assignment, as review shows them. */
+const topic = (id: string, value: string) => ({
+  id,
+  type: "topic",
+  value,
+  state: "unreviewed",
+  uncertainty: null,
+  provenance,
+  disagreement: false,
+  unsupported: null,
+  values: [],
+});
+const obligation = (
+  id: string,
+  kind: string,
+  title: string,
+  date: string,
+  reportedSubmittedAt: string | null = null,
+) => ({
+  id,
+  kind,
+  title,
+  state: "confirmed",
+  reportedSubmittedAt,
+  due: { date, time: null, timeZone: null, text: null },
+  destination: "Moodle",
+  uncertainty: null,
+  provenance,
+  disagreement: false,
+  unsupported: null,
+  values: [],
+});
+/** Two Courses as review shows them: Analysis I with four Topics and its Obligations, Lineare Algebra with one Topic. */
 const review = {
   courses: [
     {
-      id: courseId,
+      id: analysisId,
       code: "MA-101",
       title: "Analysis I",
       status: "accepted",
       obligations: [
-        {
-          id: sheetId,
-          kind: "assignment",
-          title: "Blatt 3",
-          state: "confirmed",
-          reportedSubmittedAt: null,
-          due: { date: "2026-11-20", time: null, timeZone: null, text: null },
-          destination: "Moodle",
-          uncertainty: null,
-          provenance,
-          disagreement: false,
-          unsupported: null,
-          values: [],
-        },
+        obligation(sheetId, "assignment", "Blatt 3", "2099-11-20"),
+        obligation(talkId, "presentation", "Vortrag Reihen", "2099-12-11"),
+        obligation(
+          doneId,
+          "assignment",
+          "Blatt 2",
+          "2026-11-13",
+          "2026-11-12T18:00:00.000Z",
+        ),
+        obligation(examId, "exam", "Klausur", "2099-02-10"),
       ],
       facts: [
-        {
-          id: topicId,
-          type: "topic",
-          value: "Gleichmäßige Konvergenz",
-          state: "unreviewed",
-          uncertainty: null,
-          provenance,
-          disagreement: false,
-          unsupported: null,
-          values: [],
-        },
+        topic(reihen, "Reihen"),
+        topic(integrale, "Integrale"),
+        topic(stetigkeit, "Stetigkeit"),
+        topic(konvergenz, "Gleichmäßige Konvergenz"),
       ],
+    },
+    {
+      id: algebraId,
+      code: null,
+      title: "Lineare Algebra",
+      status: "accepted",
+      obligations: [],
+      facts: [topic(matrizen, "Matrizen")],
     },
   ],
 };
+const level = (topicId: string, name: string) => ({
+  topicId,
+  level: name,
+  latestAttempt: null,
+  lastEvidenceAt: null,
+});
+const courseSummary = (id: string, title: string, color: string) => ({
+  id,
+  code: null,
+  title,
+  status: "accepted",
+  semester: "2026-ws",
+  color,
+  entered: true,
+  archived: false,
+  next: null,
+  lastActivityAt: null,
+});
+const ruleOf = (status: string) =>
+  status === "unknown"
+    ? { status, reason: "none" }
+    : { status, level: "course", text: null, provenance: { kind: "entry" } };
 
 /** Serves the study screen's data and records what the student sends. */
-function serveStudy(level: Record<string, unknown>) {
+function serveStudy(course?: string) {
   const sent: { path: string; body: unknown }[] = [];
   api.route("GET", "/api/me/review", () => Response.json(review));
-  api.route("GET", `/api/me/courses/${courseId}/levels`, () =>
-    Response.json([{ topicId, ...level }]),
+  api.route("GET", "/api/me/courses", () =>
+    Response.json({
+      current: "2026-ws",
+      choices: ["2026-ws"],
+      courses: [
+        courseSummary(analysisId, "Analysis I", "rose"),
+        courseSummary(algebraId, "Lineare Algebra", "blue"),
+      ],
+    }),
+  );
+  api.route("GET", `/api/me/courses/${analysisId}/levels`, () =>
+    Response.json([
+      level(reihen, "solid"),
+      level(integrale, "not_studied"),
+      level(stetigkeit, "shaky"),
+      level(konvergenz, "weak"),
+    ]),
+  );
+  api.route("GET", `/api/me/courses/${algebraId}/levels`, () =>
+    Response.json([level(matrizen, "weak")]),
+  );
+  api.route("GET", `/api/me/courses/${analysisId}/artifact-options`, () =>
+    Response.json({
+      topics: [],
+      obligations: [
+        {
+          id: sheetId,
+          title: "Blatt 3",
+          kind: "assignment",
+          due: { date: "2099-11-20", time: null, timeZone: null },
+          aiUse: ruleOf("conditional"),
+        },
+        {
+          id: talkId,
+          title: "Vortrag Reihen",
+          kind: "presentation",
+          due: { date: "2099-12-11", time: null, timeZone: null },
+          aiUse: ruleOf("unknown"),
+        },
+      ],
+    }),
+  );
+  api.route("GET", `/api/me/courses/${algebraId}/artifact-options`, () =>
+    Response.json({ topics: [], obligations: [] }),
+  );
+  api.route("GET", "/api/me/artifacts", () =>
+    Response.json([
+      {
+        id: "a0000000-0000-4000-8000-000000000009",
+        kind: "draft",
+        status: "ready",
+        failure: null,
+        topicIds: [],
+        obligationId: sheetId,
+        createdAt: "2026-11-10T09:00:00.000Z",
+        openedAt: null,
+        withdrawn: false,
+        title: "Blatt 3",
+        courseId: analysisId,
+        count: null,
+        version: 2,
+        updatedAt: "2026-11-11T09:00:00.000Z",
+        lastPractisedAt: null,
+        shaky: false,
+      },
+    ]),
   );
   const record =
     (status: number, reply: unknown) => async (request: Request) => {
@@ -80,274 +214,168 @@ function serveStudy(level: Record<string, unknown>) {
   );
   api.route(
     "POST",
-    `/api/me/topics/${topicId}/self-assessment`,
+    `/api/me/topics/${integrale}/self-assessment`,
     record(200, { status: "ok" }),
   );
   render(
     <TestProviders>
-      <StudyScreen apiOrigin={api.origin} />
+      <SidebarProvider>
+        <StudyScreen apiOrigin={api.origin} course={course} />
+      </SidebarProvider>
     </TestProviders>,
   );
   return sent;
 }
 
-test("shows a Topic's Level and last Evidence, and asks for practice on it", async () => {
-  const sent = serveStudy({
-    level: "weak",
-    latestAttempt: null,
-    lastEvidenceAt: "2026-11-09T10:00:00.000Z",
+/** The Topics a list shows, in order. */
+const titles = (list: HTMLElement) =>
+  within(list)
+    .getAllByRole("listitem")
+    .map((item) => item.getAttribute("aria-label"));
+
+test("shows a tab per Course and the selected Course's weak, then shaky, then unstudied Topics to practise next", async () => {
+  serveStudy();
+  const tabs = await screen.findByRole("tablist", { name: "Kurse" });
+  expect(
+    within(tabs)
+      .getAllByRole("tab")
+      .map((tab) => tab.textContent),
+  ).toEqual(["Analysis I4", "Lineare Algebra1"]);
+  expect(
+    within(tabs).getByRole("tab", { selected: true }).textContent,
+  ).toContain("Analysis I");
+
+  const next = await screen.findByRole("region", { name: "Als Nächstes üben" });
+  await within(next).findByText("Schwach");
+  expect(titles(next)).toEqual([
+    "Gleichmäßige Konvergenz",
+    "Stetigkeit",
+    "Integrale",
+  ]);
+  expect(
+    within(next).getByRole("listitem", { name: "Gleichmäßige Konvergenz" })
+      .textContent,
+  ).toContain("Klausur in ");
+
+  await userEvent.click(within(tabs).getByRole("tab", { name: /Lineare/ }));
+  const algebra = await screen.findByRole("region", {
+    name: "Als Nächstes üben",
   });
-  const topic = await screen.findByRole("article", {
+  await within(algebra).findByRole("listitem", { name: "Matrizen" });
+});
+
+test("opens the Course named in the address", async () => {
+  serveStudy(algebraId);
+  const tabs = await screen.findByRole("tablist", { name: "Kurse" });
+  expect(
+    within(tabs).getByRole("tab", { selected: true }).textContent,
+  ).toContain("Lineare Algebra");
+});
+
+test("starts a practice set on a Topic to practise next, and links to it", async () => {
+  const sent = serveStudy();
+  const next = await screen.findByRole("region", { name: "Als Nächstes üben" });
+  const row = await within(next).findByRole("listitem", {
     name: "Gleichmäßige Konvergenz",
   });
+  await userEvent.click(within(row).getByRole("button", { name: "Üben" }));
 
-  await within(topic).findByText("Weak");
-  expect(within(topic).getByText(/^Last evidence /)).toBeTruthy();
-  await userEvent.click(
-    within(topic).getByRole("button", { name: "Practice" }),
-  );
-
-  const link = await within(topic).findByRole("link", {
-    name: "Open the practice set",
-  });
-  expect(link.getAttribute("href")).toBe(`/artifacts/${artifactId}`);
+  await within(row).findByText("Übungsset wird erstellt");
+  expect(
+    within(row).getByRole("link", { name: "Öffnen" }).getAttribute("href"),
+  ).toBe(`/artifacts/${artifactId}`);
   expect(sent).toEqual([
     {
       path: "/api/me/artifacts",
       body: {
         kind: "practice_set",
-        topicIds: [topicId],
-        from: { selection: { courseIds: [courseId], sourceIds: [] } },
+        topicIds: [konvergenz],
+        from: { selection: { courseIds: [analysisId], sourceIds: [] } },
       },
     },
   ]);
 });
 
-test("shows a Topic not studied, and records the student's own Self-assessment", async () => {
-  const sent = serveStudy({
-    level: "not_studied",
-    latestAttempt: null,
-    lastEvidenceAt: null,
-  });
-  const topic = await screen.findByRole("article", {
-    name: "Gleichmäßige Konvergenz",
-  });
-
-  await within(topic).findByText("Not studied");
+test("asks for flashcards on a Topic to practise next", async () => {
+  const sent = serveStudy();
+  const next = await screen.findByRole("region", { name: "Als Nächstes üben" });
+  const row = await within(next).findByRole("listitem", { name: "Stetigkeit" });
   await userEvent.click(
-    within(topic).getByRole("button", { name: "I feel shaky" }),
+    within(row).getByRole("button", { name: "Karteikarten" }),
   );
 
-  await within(topic).findByText("Noted.");
+  await within(row).findByText("Karteikarten werden erstellt");
+  expect(sent.map(({ body }) => body)).toEqual([
+    {
+      kind: "flashcards",
+      topicIds: [stetigkeit],
+      from: { selection: { courseIds: [analysisId], sourceIds: [] } },
+    },
+  ]);
+});
+
+test("filters all Topics by Level and shows how the Levels are spread", async () => {
+  serveStudy();
+  const all = await screen.findByRole("region", { name: "Alle Themen" });
+  await within(all).findByText("Sicher", { selector: "span" });
+  expect(titles(within(all).getByRole("list"))).toEqual([
+    "Reihen",
+    "Integrale",
+    "Stetigkeit",
+    "Gleichmäßige Konvergenz",
+  ]);
+
+  const filterGroup = within(all).getByRole("group", {
+    name: "Nach Verständnis filtern",
+  });
+  await userEvent.click(
+    within(filterGroup).getByRole("button", { name: /^Schwach/ }),
+  );
+  expect(titles(within(all).getByRole("list"))).toEqual([
+    "Gleichmäßige Konvergenz",
+  ]);
+
+  const spread = screen.getByRole("region", { name: "Verständnis" });
+  expect(within(spread).getByText("4 Themen")).toBeTruthy();
+  expect(
+    within(spread)
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toEqual(["Sicher1", "Unsicher1", "Schwach1", "Noch nicht gelernt1"]);
+});
+
+test("records the student's own Self-assessment inline", async () => {
+  const sent = serveStudy();
+  const all = await screen.findByRole("region", { name: "Alle Themen" });
+  const row = await within(all).findByRole("listitem", { name: "Integrale" });
+  await userEvent.click(
+    await within(row).findByRole("button", {
+      name: "Noch nicht gelernt: selbst einschätzen",
+    }),
+  );
+  await within(row).findByText("Wie sitzt das Thema jetzt?");
+  await userEvent.click(within(row).getByRole("button", { name: "Sitzt" }));
+
+  await within(row).findByText("Notiert.");
   expect(sent).toEqual([
     {
-      path: `/api/me/topics/${topicId}/self-assessment`,
-      body: { level: "shaky" },
+      path: `/api/me/topics/${integrale}/self-assessment`,
+      body: { level: "solid" },
     },
   ]);
 });
 
-/** Serves the study screen and replies to each Artifact request in turn, recording what was sent. */
-function serveWriting(...replies: { status: number; body: unknown }[]) {
-  const sent: { method: string; path: string; body: unknown }[] = [];
-  api.route("GET", "/api/me/review", () => Response.json(review));
-  api.route("GET", `/api/me/courses/${courseId}/levels`, () =>
-    Response.json([]),
-  );
-  api.route("POST", "/api/me/artifacts", async (request) => {
-    sent.push({
-      method: "POST",
-      path: "/api/me/artifacts",
-      body: await request.json(),
-    });
-    const reply = replies.shift()!;
-    return Response.json(reply.body, { status: reply.status });
-  });
-  api.route(
-    "POST",
-    `/api/me/obligations/${sheetId}/ai-use`,
-    async (request) => {
-      sent.push({
-        method: "POST",
-        path: "ai-use",
-        body: await request.json(),
-      });
-      return Response.json({ status: "ok" });
-    },
-  );
-  api.route("GET", `/api/me/obligations/${sheetId}/ai-use`, () =>
-    Response.json({
-      status: "conditional",
-      level: "course",
-      text: "KI ist mit Kennzeichnung erlaubt.",
-      provenance: { kind: "source", sourceId: "s1", title: "Skript", page: 1 },
-    }),
-  );
-  render(
-    <TestProviders>
-      <StudyScreen apiOrigin={api.origin} />
-    </TestProviders>,
-  );
-  return sent;
-}
-const started = { status: 202, body: { artifactId, runId: "r1" } };
-const refused = (error: string) => ({ status: 409, body: { error } });
-const from = { selection: { courseIds: [courseId], sourceIds: [] } };
-
-test("asks for the AI-use Rule while it is unknown, records the student's answer, then drafts", async () => {
-  const sent = serveWriting(refused("ai_use_unknown"), started);
-  const sheet = await screen.findByRole("article", { name: "Blatt 3" });
-  await userEvent.type(
-    within(sheet).getByLabelText("Instructions for a draft"),
-    "Nur Aufgabe 1.",
-  );
-  await userEvent.click(within(sheet).getByRole("button", { name: "Draft" }));
-
-  const question = await within(sheet).findByRole("group", {
-    name: "Does your course allow AI for this?",
-  });
-  await userEvent.click(
-    within(question).getByRole("radio", { name: "For the whole course" }),
-  );
-  await userEvent.click(
-    within(question).getByRole("button", { name: "Allowed" }),
-  );
-
-  await within(sheet).findByRole("link", { name: "Open the draft" });
-  const draft = {
-    kind: "draft",
-    obligationId: sheetId,
-    instructions: "Nur Aufgabe 1.",
-    from,
-  };
-  expect(sent.map(({ path, body }) => [path, body])).toEqual([
-    ["/api/me/artifacts", draft],
-    ["ai-use", { level: "course", value: "allowed" }],
-    ["/api/me/artifacts", draft],
-  ]);
-});
-
-test("shows a conditional AI-use Rule's wording and drafts only once the student confirms its conditions", async () => {
-  const sent = serveWriting(refused("ai_use_conditions"), started);
-  const sheet = await screen.findByRole("article", { name: "Blatt 3" });
-  await userEvent.click(within(sheet).getByRole("button", { name: "Draft" }));
-
-  await within(sheet).findByText("KI ist mit Kennzeichnung erlaubt.");
-  await userEvent.click(
-    within(sheet).getByRole("button", {
-      name: "I will keep to these conditions",
-    }),
-  );
-
-  await within(sheet).findByRole("link", { name: "Open the draft" });
-  expect(sent.map(({ body }) => body)).toEqual([
-    { kind: "draft", obligationId: sheetId, instructions: "", from },
-    {
-      kind: "draft",
-      obligationId: sheetId,
-      instructions: "",
-      from,
-      conditionsConfirmed: true,
-    },
-  ]);
-});
-
-test("says why it will not draft when the course forbids AI, and critiques the student's own work when allowed", async () => {
-  const sent = serveWriting(refused("ai_use_forbidden"), started);
-  const sheet = await screen.findByRole("article", { name: "Blatt 3" });
-  await userEvent.click(within(sheet).getByRole("button", { name: "Draft" }));
-
-  expect((await within(sheet).findByRole("alert")).textContent).toBe(
-    "Your course does not allow AI for this, so nunio will not write it.",
-  );
-
-  await userEvent.type(
-    within(sheet).getByLabelText("Your own work"),
-    "Aufgabe 1: punktweise genügt.",
-  );
-  await userEvent.click(
-    within(sheet).getByRole("button", { name: "Critique my work" }),
-  );
-  await within(sheet).findByRole("link", { name: "Open the Critique" });
-  expect(sent.at(-1)!.body).toEqual({
-    kind: "critique",
-    obligationId: sheetId,
-    of: { ownWork: "Aufgabe 1: punktweise genügt." },
-    from,
-  });
-});
-
-test("prepares a Handoff with where to hand it in, the rule's conditions and the drafts, and records the student's report", async () => {
-  const reports: unknown[] = [];
-  let reportedSubmittedAt: string | null = null;
-  api.route("GET", "/api/me/review", () => Response.json(review));
-  api.route("GET", `/api/me/courses/${courseId}/levels`, () =>
-    Response.json([]),
-  );
-  api.route("GET", `/api/me/obligations/${sheetId}/handoff`, () =>
-    Response.json({
-      obligation: {
-        id: sheetId,
-        title: "Blatt 3",
-        due: { date: "2026-11-20", time: null, timeZone: null },
-        destination: "Moodle",
-        reportedSubmittedAt,
-      },
-      rule: {
-        status: "conditional",
-        level: "course",
-        text: "KI ist mit Kennzeichnung erlaubt.",
-        provenance: {
-          kind: "source",
-          sourceId: "s1",
-          title: "Skript",
-          page: 1,
-        },
-      },
-      drafts: [
-        { id: artifactId, version: 2, createdAt: "2026-11-10T09:00:00.000Z" },
-      ],
-    }),
-  );
-  api.route(
-    "POST",
-    `/api/me/obligations/${sheetId}/reported-submitted`,
-    async (request) => {
-      const body = (await request.json()) as { reported: boolean };
-      reports.push(body);
-      reportedSubmittedAt = body.reported ? "2026-11-19T18:00:00.000Z" : null;
-      return Response.json({ status: "ok" });
-    },
-  );
-  render(
-    <TestProviders>
-      <StudyScreen apiOrigin={api.origin} />
-    </TestProviders>,
-  );
-  const sheet = await screen.findByRole("article", { name: "Blatt 3" });
-  await userEvent.click(
-    within(sheet).getByRole("button", { name: "Prepare the Handoff" }),
-  );
-
-  const handoff = await within(sheet).findByRole("region", { name: "Handoff" });
-  await within(handoff).findByText(
-    "Hand it in at: Moodle (as your Source says; nunio has not checked it).",
-  );
-  expect(
-    within(handoff).getByText("KI ist mit Kennzeichnung erlaubt."),
-  ).toBeTruthy();
-  expect(
-    within(handoff)
-      .getByRole("link", { name: "Draft, version 2" })
-      .getAttribute("href"),
-  ).toBe(`/artifacts/${artifactId}`);
-  await userEvent.click(
-    within(handoff).getByRole("button", { name: "I handed it in" }),
-  );
-  await within(handoff).findByText(/^You reported it as handed in on /);
-  await userEvent.click(
-    within(handoff).getByRole("button", { name: "Take that back" }),
-  );
-  await within(handoff).findByRole("button", { name: "I handed it in" });
-  expect(reports).toEqual([{ reported: true }, { reported: false }]);
+test("lists the Course's Abgaben with their state, each opening its own page", async () => {
+  serveStudy();
+  const list = await screen.findByRole("region", { name: "Abgaben" });
+  expect(within(list).getByText("3 in diesem Kurs")).toBeTruthy();
+  const sheet = within(list).getByRole("link", { name: /Blatt 3/ });
+  expect(sheet.getAttribute("href")).toBe(`/study/obligations/${sheetId}`);
+  await within(sheet).findByText("Entwurf v2 bereit");
+  await within(sheet).findByText("KI mit Bedingungen");
+  const talk = within(list).getByRole("link", { name: /Vortrag Reihen/ });
+  await within(talk).findByText("KI-Regel unklar");
+  const done = within(list).getByRole("link", { name: /Blatt 2/ });
+  expect(within(done).getByText("Als abgegeben gemeldet")).toBeTruthy();
+  expect(within(list).queryByRole("link", { name: /Klausur/ })).toBeNull();
 });

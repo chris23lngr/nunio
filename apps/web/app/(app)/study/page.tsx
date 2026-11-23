@@ -1,16 +1,15 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { StudyScreen } from "@/features/study/study-screen";
 import { apiOrigin, getSession } from "@/lib/session";
 
-export default async function StudyPage() {
+export default async function StudyPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ course?: string }>;
+}) {
   const session = await getSession();
   if (!session) redirect("/sign-in");
+  const { course } = await searchParams;
 
-  return (
-    <main>
-      <Link href="/">Back to Home</Link>
-      <StudyScreen apiOrigin={apiOrigin()} />
-    </main>
-  );
+  return <StudyScreen apiOrigin={apiOrigin()} course={course} />;
 }
