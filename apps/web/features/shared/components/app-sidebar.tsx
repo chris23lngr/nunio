@@ -13,16 +13,16 @@ import {
 } from "@nunio/ui/components/sidebar/sidebar";
 import {
   BookOpen,
-  CalendarDays,
+  Bot,
+  Calendar,
   ClipboardCheck,
   Files,
-  FolderKanban,
+  Folder,
   GraduationCap,
-  House,
   Inbox,
-  ListChecks,
-  MessageSquare,
+  MessagesCircle,
   Settings,
+  Sun,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -30,16 +30,16 @@ import { UserMenu } from "@/features/auth/user-menu";
 import { RecentCourses } from "@/features/shared/components/recent-courses";
 
 const menuItems = [
-  { title: "Home", href: "/", icon: House },
-  { title: "Inbox", href: "/inbox", icon: Inbox },
-  { title: "Review", href: "/review", icon: ClipboardCheck },
-  { title: "Chat", href: "/chat", icon: MessageSquare },
-  { title: "Plan", href: "/plan", icon: CalendarDays },
-  { title: "Study", href: "/study", icon: GraduationCap },
+  { title: "Heute", href: "/", icon: Sun },
+  { title: "Eingang", href: "/inbox", icon: Inbox },
+  { title: "Plan", href: "/plan", icon: Calendar },
+  { title: "Chat", href: "/chat", icon: MessagesCircle },
+  { title: "Lernen", href: "/study", icon: GraduationCap },
   { title: "Artefakte", href: "/artifacts", icon: Files },
+  { title: "Prüfen", href: "/review", icon: ClipboardCheck },
+  { title: "Projekte", href: "/projects", icon: Folder },
+  { title: "Agenten", href: "/agents", icon: Bot },
   { title: "Kurse", href: "/courses", icon: BookOpen },
-  { title: "Projects", href: "/projects", icon: FolderKanban },
-  { title: "Agenten", href: "/agents", icon: ListChecks },
 ];
 
 export function AppSidebar({ apiOrigin }: { apiOrigin: string }) {

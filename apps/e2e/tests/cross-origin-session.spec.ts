@@ -485,7 +485,7 @@ test("navigation from Review back to Sources reuses the recently loaded collecti
   await expect(page.getByText(/Navigation syllabus/)).toBeVisible();
   await page
     .getByRole("navigation", { name: "App navigation" })
-    .getByRole("link", { name: "Review", exact: true })
+    .getByRole("link", { name: "Prüfen", exact: true })
     .click();
   await expect(page.getByRole("heading", { name: "Review" })).toBeVisible();
   await page.getByRole("link", { name: "Back to Sources" }).click();
