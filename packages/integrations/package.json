@@ -7,16 +7,25 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check ."
+    "lint": "biome check .",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
+    "imapflow": "2.12.2",
+    "nodemailer": "10.6.1",
+    "smtp-server": "3.21.7",
+    "testcontainers": "12.2.1",
     "typescript": "5.9.3",
     "vitest": "5.0.5",
     "@biomejs/biome": "2.6.3"
