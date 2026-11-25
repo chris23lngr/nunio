@@ -20,6 +20,7 @@ export {
   startFakeMcpServer,
   type TokenRequest,
 } from "./testing/mcp-server.js";
+export { seedIntegrationCatalog } from "./testing/seed.js";
 export {
   type SmtpFault,
   type SmtpFaultServer,
