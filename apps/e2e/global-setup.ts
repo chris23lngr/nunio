@@ -11,11 +11,6 @@ import type {
   FakeMailServer,
   FakeMcpServer,
 } from "@nunio/integrations/testing";
-import {
-  seedIntegrationCatalog,
-  startFakeMailServer,
-  startFakeMcpServer,
-} from "@nunio/integrations/testing";
 import { createCerts } from "./certs.js";
 import {
   cookieDomain,
@@ -72,19 +67,42 @@ export default async function globalSetup() {
           "Local browser tests require a disposable database; unset DATABASE_URL and DATABASE_URL_UNPOOLED",
         );
       }
-      [db, mail, mcp] = await Promise.all([
-        startTestDatabase(),
+      // Loaded here, so the staging run, which builds only @nunio/db, never needs the fakes.
+      const {
+        seedIntegrationCatalog,
+        startFakeMailServer,
+        startFakeMcpServer,
+      } = await import("@nunio/integrations/testing");
+      // Every start settles before going on, so cleanup stops whatever did start.
+      const started = await Promise.allSettled([
+        startTestDatabase().then((value) => {
+          db = value;
+        }),
         startFakeMailServer({
-          tls: certificate,
+          tls: { ...certificate, hostname: fakes.mail },
           ports: { imaps: ports.imaps, smtps: ports.smtps },
+        }).then((value) => {
+          mail = value;
         }),
         startFakeMcpServer({
           port: ports.mcp,
           url: fakes.mcp,
           tls: certificate,
+        }).then((value) => {
+          mcp = value;
         }),
       ]);
-      await seed(db.connectionString, mcp);
+      for (const result of started)
+        if (result.status === "rejected") throw result.reason;
+      // Offers Email and Testnotizen, as the dev migrate step does.
+      const admin = createPrismaClient(createPool(db!.connectionString));
+      try {
+        await seedIntegrationCatalog(admin, mcp!);
+      } finally {
+        await admin.$disconnect();
+      }
+      // For Playwright workers, to create mailboxes and read delivered mail.
+      process.env.FAKE_MAIL_ADMIN_URL = mail!.adminUrl;
       const shared = {
         ...process.env,
         NODE_ENV: "production" as const,
@@ -94,7 +112,7 @@ export default async function globalSetup() {
         start("api", {
           ...shared,
           PORT: String(ports.api),
-          DATABASE_URL: db.runtimeConnectionString,
+          DATABASE_URL: db!.runtimeConnectionString,
           BETTER_AUTH_URL: origins.api,
           BETTER_AUTH_SECRET: "spike-b-e2e-secret-that-is-long-enough",
           APP_ORIGIN: origins.app,
@@ -130,7 +148,7 @@ export default async function globalSetup() {
       );
 
       // Only Playwright workers provision verified account fixtures.
-      process.env.INVITATION_DATABASE_URL = db.connectionString;
+      process.env.INVITATION_DATABASE_URL = db!.connectionString;
 
       await Promise.all([
         waitFor(`${origins.api}/health`, ca, children[0]!),
@@ -142,16 +160,6 @@ export default async function globalSetup() {
   } catch (error) {
     await cleanup();
     throw error;
-  }
-}
-
-/** Offers Email and Testnotizen, served by the fake MCP server, as the dev migrate step does. */
-async function seed(databaseUrl: string, mcp: FakeMcpServer): Promise<void> {
-  const prisma = createPrismaClient(createPool(databaseUrl));
-  try {
-    await seedIntegrationCatalog(prisma, mcp);
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

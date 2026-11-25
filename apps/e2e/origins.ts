@@ -30,7 +30,10 @@ export const origins =
         evil,
       };
 
-/** The Integration fakes beside the local API: the Testnotizen MCP server, and GreenMail on `ports.imaps` and `ports.smtps`. */
+/**
+ * The Integration fakes beside the local API: the Testnotizen MCP server, and GreenMail on `ports.imaps` and
+ * `ports.smtps`, the ports the dev stack's GreenMail listens on too.
+ */
 export const fakes = {
   mcp: `https://mcp.nunio.test:${ports.mcp}`,
   mail: "mail.nunio.test",
