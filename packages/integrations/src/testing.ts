@@ -11,7 +11,18 @@ export {
   startFakeMailServer,
 } from "./testing/mail-server.js";
 export {
+  type AuthorizationFault,
+  type FakeMcpServer,
+  type FakeMcpServerOptions,
+  type McpFault,
+  type ReceivedCall,
+  type Revocation,
+  startFakeMcpServer,
+  type TokenRequest,
+} from "./testing/mcp-server.js";
+export {
   type SmtpFault,
   type SmtpFaultServer,
   startSmtpFaultServer,
 } from "./testing/smtp-faults.js";
+export { testnotizenTools } from "./testing/testnotizen.js";
