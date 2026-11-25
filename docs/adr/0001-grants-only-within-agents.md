@@ -30,3 +30,18 @@ An Agent's scope is the Courses the student lists for it, at least one, never al
 
 - **Archived Courses.** The Agent takes no Action for an Archived Course's work but still reads it as knowledge, and the Course stays on its list, returning to scope when unarchived. Only when all its Courses are Archived is the Agent Paused. The Course picker offers no Archived Course.
 - **Changes apply at the next Action.** The gate checks the Agent's current Courses for each Action, so an Approval asked for a Course since removed is refused when approved.
+
+## Amendment (2026-11-25): Grants on a Connection's tools
+
+Integration tools are generic MCP, so the student would otherwise be asked about the same tool in every Chat and every Agent ([What "always allow" is and how it relates to Grants](https://github.com/chris23lngr/nunio/issues/260)). For Integration tools only, standing authority sits on the Connection instead of the Agent.
+
+- **One setting per tool.** Each write tool of a Connection is Nachfragen or Immer erlaubt, and Immer erlaubt is a Grant held by the Connection. It covers every Chat the Connection is selected in and every Agent that has the tool turned on. An Agent's drawer shows the same setting and says that changing it applies to all Chats and Agents. There is no Automatisch for Integration tools.
+- **On or off per Agent.** On an Agent, each read and write tool of a Connection is on or off, starting off. A tool that is off is not in the Agent's tool list, so an Agent gets only the tools it needs.
+- **Bound to the tool.** A Grant covers one tool (the Connection and the tool's catalog name) with any arguments. nunio cannot render or check the arguments of a generic MCP tool, so it does not bind a Grant to them. A tool the catalog reclassifies, or that the server stops offering, loses its Grant.
+- **Never grantable.** Sending email (send, reply, forward) and tools the catalog has not classified always ask.
+- **Where it is set.** From the Approval card ("Immer erlauben"), which approves that exact Action (ADR-0010) and grants the tool from then on, and on the Connection's page, where every write tool is listed with its mode and can be revoked. Other open Approvals for the tool stay open; nothing is approved retroactively.
+- **Lifecycle.** A Paused Agent takes no Integration Actions. Ending an Agent removes its on/off choices and leaves the Connection's Grants. Disconnect removes them, so a new Connection starts at Nachfragen. A Connection that Needs reconnection keeps its Grants while its tools are unavailable. Changes apply at the next Action, even in a Run under way.
+- **Traceability.** Every Action taken under a Connection's Grant shows in the Run's Activity, or in the Chat, as taken without asking, with its arguments.
+- **Chats accept bounded steering.** A Chat no longer asks before every Action: under a Connection's Grant, material the Chat reads (email, Sources) can steer it into a granted tool call without a click. We accept this as ADR-0026 does for Agents. It is bounded by the classification, the tools that are never grantable, Activity, and per-turn limits decided separately ([What bounds a Chat or Run that reads mail](https://github.com/chris23lngr/nunio/issues/265)).
+
+Considered: per-Agent modes plus a separate global setting for Chats (two places deciding one tool), and a Connection ceiling each Agent could only narrow (two switches for one decision). One setting per tool was chosen because the student thinks of trusting a tool of their account, not of an Agent, and it keeps one place to look and revoke.
