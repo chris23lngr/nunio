@@ -26,10 +26,11 @@ async function withDatabase<T>(
 /**
  * A verified student with no password, as every account is (ADR-0027). Browser tests never email generated
  * addresses. Unless `offerPasskey`, the student already declined the passkey prompt, so sign-in lands in the app.
+ * With `pilot`, the student has active pilot access.
  */
 export async function createStudent(
   name: string,
-  { offerPasskey = false } = {},
+  { offerPasskey = false, pilot = false } = {},
 ): Promise<string> {
   const email = `${name}+${randomUUID()}@example.com`;
   await withDatabase((prisma) =>
@@ -40,6 +41,8 @@ export async function createStudent(
         email,
         emailVerified: true,
         passkeyPromptDismissed: !offerPasskey,
+        // Active pilot access, which work that reaches outside nunio needs, such as connecting Email.
+        ...(pilot && { pilotEntitlement: { create: {} } }),
       },
     }),
   );

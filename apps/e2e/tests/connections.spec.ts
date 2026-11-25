@@ -44,7 +44,7 @@ test("a student connects Email: nunio recognises the mail server, tests the logi
     body: JSON.stringify({ email: address, login: address, password }),
   });
   expect(created.ok).toBe(true);
-  await signInAs(page, await createStudent("connect-email"));
+  await signInAs(page, await createStudent("connect-email", { pilot: true }));
   await page.goto(`${origins.app}/settings/connections`);
 
   await page
@@ -69,9 +69,11 @@ test("a student connects Email: nunio recognises the mail server, tests the logi
   ).toHaveAttribute("aria-pressed", "true");
   await dialog.getByRole("button", { name: "Verbinden" }).click();
 
-  const connected = page.getByRole("region", { name: "Verbunden" });
-  await expect(connected.getByText(`E-Mail · ${address}`)).toBeVisible();
-  await expect(connected.getByText("Lesen: Posteingang")).toBeVisible();
-  await expect(connected.getByText("Verbunden", { exact: true })).toBeVisible();
+  const row = page
+    .getByRole("region", { name: "Verbunden" })
+    .getByRole("listitem")
+    .filter({ hasText: `E-Mail · ${address}` });
+  await expect(row.getByText("Lesen: Posteingang")).toBeVisible();
+  await expect(row.getByText("Verbunden", { exact: true })).toBeVisible();
   await expect(dialog).toBeHidden();
 });
