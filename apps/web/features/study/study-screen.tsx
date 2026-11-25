@@ -1,447 +1,240 @@
 "use client";
 
-import { Button } from "@nunio/ui/components/button/button";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
+import { cn } from "@nunio/ui";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+} from "@nunio/ui/components/breadcrumb/breadcrumb";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { createApiClient } from "@/lib/api-client";
-import type { ArtifactRequest, Course, Level } from "./api/study-queries";
+import type { ObligationOption } from "@/features/artifacts/api/artifact-options-query";
+import { artifactOptionsQuery } from "@/features/artifacts/api/artifact-options-query";
+import type { ArtifactSummary } from "@/features/artifacts/api/artifact-queries";
+import { artifactsQuery } from "@/features/artifacts/api/artifact-queries";
+import type { CourseColor } from "@/features/courses/api/course-queries";
+import { courseListQuery } from "@/features/courses/api/course-queries";
+import { CourseDot } from "@/features/shared/components/course-dot";
+import { PageHeader } from "@/features/shared/components/page-header";
+import type { Course, Level } from "./api/study-queries";
 import { coursesQueries, levelsQueries } from "./api/study-queries";
+import { AllTopics } from "./components/all-topics";
+import type { StudyTopic } from "./components/next-topics";
+import { NextTopics } from "./components/next-topics";
+import { ObligationList } from "./components/obligation-list";
+import { Understanding } from "./components/understanding";
+import { daysUntil, handedIn } from "./study-format";
 
-/** A Level in words: coarse on purpose. */
-function levelText(level: Level | undefined) {
-  if (!level) return "";
-  return {
-    not_studied: "Not studied",
-    weak: "Weak",
-    shaky: "Shaky",
-    solid: "Solid",
-  }[level.level];
-}
-
-const opened = { practice_set: "practice set", flashcards: "flashcards" };
-
-function TopicCard({
-  apiOrigin,
-  courseId,
-  topic,
-  level,
-}: {
-  apiOrigin: string;
-  courseId: string;
-  topic: Course["facts"][number];
-  level: Level | undefined;
-}) {
-  const queryClient = useQueryClient();
-  const make = useMutation({
-    mutationFn: async (kind: "practice_set" | "flashcards") => {
-      const body: ArtifactRequest = {
-        kind,
-        topicIds: [topic.id],
-        from: { selection: { courseIds: [courseId], sourceIds: [] } },
-      };
-      const result = await createApiClient(apiOrigin).POST(
-        "/api/me/artifacts",
-        { body },
-      );
-      if (!result.data) throw new Error("Could not ask for that.");
-      return { kind, artifactId: result.data.artifactId };
-    },
-  });
-  const assess = useMutation({
-    mutationFn: async (assessed: "shaky" | "solid") => {
-      const result = await createApiClient(apiOrigin).POST(
-        "/api/me/topics/{id}/self-assessment",
-        { params: { path: { id: topic.id } }, body: { level: assessed } },
-      );
-      if (!result.data) throw new Error("Could not record that.");
-    },
-    onSettled: () =>
-      queryClient.invalidateQueries({
-        queryKey: levelsQueries(apiOrigin, courseId).queryKey,
-      }),
-  });
-  return (
-    <article aria-label={topic.value}>
-      <h3>{topic.value}</h3>
-      <p>{levelText(level)}</p>
-      {level?.lastEvidenceAt && (
-        <p>
-          Last evidence {new Date(level.lastEvidenceAt).toLocaleDateString()}
-        </p>
-      )}
-      <Button
-        type="button"
-        variant="primary"
-        disabled={make.isPending}
-        onClick={() => make.mutate("practice_set")}
-      >
-        Practice
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        disabled={make.isPending}
-        onClick={() => make.mutate("flashcards")}
-      >
-        Flashcards
-      </Button>
-      {make.data && (
-        <p>
-          Being made.{" "}
-          <Link href={`/artifacts/${make.data.artifactId}`}>
-            Open the {opened[make.data.kind]}
-          </Link>
-        </p>
-      )}
-      {make.error && <p role="alert">{make.error.message}</p>}
-      <Button
-        type="button"
-        variant="ghost"
-        disabled={assess.isPending}
-        onClick={() => assess.mutate("shaky")}
-      >
-        I feel shaky
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        disabled={assess.isPending}
-        onClick={() => assess.mutate("solid")}
-      >
-        I feel solid
-      </Button>
-      {assess.isSuccess && <p>Noted.</p>}
-      {assess.error && <p role="alert">{assess.error.message}</p>}
-    </article>
+const topicFacts = (course: Course) =>
+  course.facts.filter(
+    (fact) => fact.type === "topic" && fact.state !== "rejected",
   );
+
+/** Days until the Course's soonest upcoming exam, or null when none is ahead. */
+function nextExamInDays(course: Course, now: Date) {
+  const days = course.obligations
+    .filter((o) => o.state !== "rejected" && o.kind === "exam")
+    .map((o) => daysUntil(o.due, now))
+    .filter((d): d is number => d !== null && d >= 0);
+  return days.length ? Math.min(...days) : null;
 }
 
-/** Assessed work nunio may help with: exams and registrations are not handed in. */
-const handedIn = ["assignment", "presentation", "thesis", "other"];
-const writtenAs = { draft: "draft", critique: "Critique" };
-
-type WriteRequest = Extract<ArtifactRequest, { kind: "draft" | "critique" }>;
-type Written =
-  | { started: { kind: WriteRequest["kind"]; artifactId: string } }
-  | { refused: string };
-
-/** What the student needs to hand it in themselves; nothing is sent anywhere. */
-function HandoffPanel({
-  apiOrigin,
-  obligationId,
-}: {
-  apiOrigin: string;
-  obligationId: string;
-}) {
-  const queryClient = useQueryClient();
-  const queryKey = [apiOrigin, "handoff", obligationId];
-  const handoff = useQuery({
-    queryKey,
-    queryFn: async ({ signal }) => {
-      const result = await createApiClient(apiOrigin).GET(
-        "/api/me/obligations/{id}/handoff",
-        { params: { path: { id: obligationId } }, signal },
-      );
-      if (!result.data) throw new Error("Could not prepare the Handoff.");
-      return result.data;
-    },
-  });
-  const report = useMutation({
-    mutationFn: async (reported: boolean) => {
-      const result = await createApiClient(apiOrigin).POST(
-        "/api/me/obligations/{id}/reported-submitted",
-        { params: { path: { id: obligationId } }, body: { reported } },
-      );
-      if (!result.data) throw new Error("Could not record that.");
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey }),
-  });
-  const view = handoff.data;
-  return (
-    <section aria-label="Handoff">
-      <h4>Handoff</h4>
-      {handoff.error && <p role="alert">{handoff.error.message}</p>}
-      {view && (
-        <>
-          <p>
-            {view.obligation.destination
-              ? `Hand it in at: ${view.obligation.destination} (as your Source says; nunio has not checked it).`
-              : "Your Sources do not say where to hand it in."}
-          </p>
-          {view.rule.status === "conditional" && (
-            <p>
-              {view.rule.text ??
-                "You said your course allows AI under conditions; keep to them."}
-            </p>
-          )}
-          <ul>
-            {view.drafts.map((draft) => (
-              <li key={draft.id}>
-                <Link href={`/artifacts/${draft.id}`}>
-                  Draft, version {draft.version}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          {view.obligation.reportedSubmittedAt ? (
-            <p>
-              You reported it as handed in on{" "}
-              {new Date(view.obligation.reportedSubmittedAt).toLocaleString()}.{" "}
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={report.isPending}
-                onClick={() => report.mutate(false)}
-              >
-                Take that back
-              </Button>
-            </p>
-          ) : (
-            <Button
-              type="button"
-              variant="primary"
-              disabled={report.isPending}
-              onClick={() => report.mutate(true)}
-            >
-              I handed it in
-            </Button>
-          )}
-        </>
-      )}
-      {report.error && <p role="alert">{report.error.message}</p>}
-    </section>
-  );
+/** Latest ready draft version per Obligation, drawn from the student's Artifacts. */
+function draftVersions(artifacts: ArtifactSummary[] | undefined) {
+  const map = new Map<string, number>();
+  for (const artifact of artifacts ?? []) {
+    if (
+      artifact.kind !== "draft" ||
+      artifact.status !== "ready" ||
+      artifact.withdrawn ||
+      !artifact.obligationId ||
+      artifact.version === null
+    )
+      continue;
+    const prev = map.get(artifact.obligationId);
+    if (prev === undefined || artifact.version > prev)
+      map.set(artifact.obligationId, artifact.version);
+  }
+  return map;
 }
 
-function ObligationCard({
-  apiOrigin,
-  courseId,
-  obligation,
-}: {
-  apiOrigin: string;
-  courseId: string;
-  obligation: Course["obligations"][number];
-}) {
-  const [instructions, setInstructions] = useState("");
-  const [ownWork, setOwnWork] = useState("");
-  const [level, setLevel] = useState<"obligation" | "course">("obligation");
-  const [pending, setPending] = useState<WriteRequest | null>(null);
-  const [handingIn, setHandingIn] = useState(false);
-  const write = useMutation({
-    mutationFn: async (body: WriteRequest): Promise<Written> => {
-      setPending(body);
-      const result = await createApiClient(apiOrigin).POST(
-        "/api/me/artifacts",
-        { body },
-      );
-      if (result.data)
-        return {
-          started: { kind: body.kind, artifactId: result.data.artifactId },
-        };
-      if (result.response.status === 409)
-        return { refused: (result.error as { error: string }).error };
-      throw new Error("Could not ask for that.");
-    },
-  });
-  const refused =
-    write.data && "refused" in write.data ? write.data.refused : null;
-  const rule = useQuery({
-    queryKey: [apiOrigin, "ai-use", obligation.id],
-    enabled: refused === "ai_use_conditions",
-    queryFn: async ({ signal }) => {
-      const result = await createApiClient(apiOrigin).GET(
-        "/api/me/obligations/{id}/ai-use",
-        { params: { path: { id: obligation.id } }, signal },
-      );
-      if (!result.data) throw new Error("Could not load the rule.");
-      return result.data;
-    },
-  });
-  const answer = useMutation({
-    mutationFn: async (value: "forbidden" | "conditional" | "allowed") => {
-      const result = await createApiClient(apiOrigin).POST(
-        "/api/me/obligations/{id}/ai-use",
-        { params: { path: { id: obligation.id } }, body: { level, value } },
-      );
-      if (!result.data) throw new Error("Could not record your answer.");
-    },
-    // With the rule known, the same request is asked again.
-    onSuccess: () => pending && write.mutate(pending),
-  });
-  const from = { selection: { courseIds: [courseId], sourceIds: [] } };
-  return (
-    <article aria-label={obligation.title}>
-      <h3>{obligation.title}</h3>
-      <label>
-        Instructions for a draft
-        <textarea
-          value={instructions}
-          onChange={(event) => setInstructions(event.target.value)}
-        />
-      </label>
-      <Button
-        type="button"
-        variant="primary"
-        disabled={write.isPending}
-        onClick={() =>
-          write.mutate({
-            kind: "draft",
-            obligationId: obligation.id,
-            instructions,
-            from,
-          })
-        }
-      >
-        Draft
-      </Button>
-      <label>
-        Your own work
-        <textarea
-          value={ownWork}
-          onChange={(event) => setOwnWork(event.target.value)}
-        />
-      </label>
-      <Button
-        type="button"
-        variant="ghost"
-        disabled={write.isPending || !ownWork.trim()}
-        onClick={() =>
-          write.mutate({
-            kind: "critique",
-            obligationId: obligation.id,
-            of: { ownWork },
-            from,
-          })
-        }
-      >
-        Critique my work
-      </Button>
-      {write.data && "started" in write.data && (
-        <p>
-          Being made.{" "}
-          <Link href={`/artifacts/${write.data.started.artifactId}`}>
-            Open the {writtenAs[write.data.started.kind]}
-          </Link>
-        </p>
-      )}
-      <Button type="button" variant="ghost" onClick={() => setHandingIn(true)}>
-        Prepare the Handoff
-      </Button>
-      {handingIn && (
-        <HandoffPanel apiOrigin={apiOrigin} obligationId={obligation.id} />
-      )}
-      {refused === "ai_use_unknown" && (
-        <fieldset aria-label="Does your course allow AI for this?">
-          <legend>Does your course allow AI for this?</legend>
-          <label>
-            <input
-              type="radio"
-              name={`level-${obligation.id}`}
-              checked={level === "obligation"}
-              onChange={() => setLevel("obligation")}
-            />
-            For this assignment
-          </label>
-          <label>
-            <input
-              type="radio"
-              name={`level-${obligation.id}`}
-              checked={level === "course"}
-              onChange={() => setLevel("course")}
-            />
-            For the whole course
-          </label>
-          <Button type="button" onClick={() => answer.mutate("allowed")}>
-            Allowed
-          </Button>
-          <Button type="button" onClick={() => answer.mutate("conditional")}>
-            Allowed with conditions
-          </Button>
-          <Button type="button" onClick={() => answer.mutate("forbidden")}>
-            Forbidden
-          </Button>
-        </fieldset>
-      )}
-      {refused === "ai_use_conditions" && rule.data && pending && (
-        <section aria-label="Your course's conditions">
-          <p>
-            {rule.data.status !== "unknown" && rule.data.text
-              ? rule.data.text
-              : "You said your course allows AI under conditions."}
-          </p>
-          <Button
-            type="button"
-            onClick={() =>
-              write.mutate({ ...pending, conditionsConfirmed: true })
-            }
-          >
-            I will keep to these conditions
-          </Button>
-        </section>
-      )}
-      {refused === "ai_use_forbidden" && (
-        <p role="alert">
-          Your course does not allow AI for this, so nunio will not write it.
-        </p>
-      )}
-      {(write.error ?? answer.error ?? rule.error) && (
-        <p role="alert">
-          {(write.error ?? answer.error ?? rule.error)!.message}
-        </p>
-      )}
-    </article>
-  );
-}
-
-function CourseSection({
+/** One Course's study panel: what to practise next, all Topics, Understanding spread, and Abgaben. */
+function CoursePanel({
   apiOrigin,
   course,
+  drafts,
+  now,
 }: {
   apiOrigin: string;
   course: Course;
+  drafts: Map<string, number>;
+  now: Date;
 }) {
   const levels = useQuery(levelsQueries(apiOrigin, course.id));
-  const topics = course.facts.filter(
-    (fact) => fact.type === "topic" && fact.state !== "rejected",
+  const options = useQuery(artifactOptionsQuery(apiOrigin, course.id));
+  const levelByTopic = new Map<string, Level>(
+    (levels.data ?? []).map((entry) => [entry.topicId, entry]),
   );
+  const topics: StudyTopic[] = topicFacts(course).map((fact) => ({
+    id: fact.id,
+    title: fact.value,
+    level: levelByTopic.get(fact.id) ?? {
+      topicId: fact.id,
+      level: "not_studied",
+      latestAttempt: null,
+      lastEvidenceAt: null,
+    },
+  }));
+  const obligations = course.obligations.filter(
+    (o) => o.state !== "rejected" && handedIn.includes(o.kind),
+  );
+  const rules = new Map<string, ObligationOption["aiUse"]["status"]>(
+    (options.data?.obligations ?? []).map((o) => [o.id, o.aiUse.status]),
+  );
+  const examInDays = nextExamInDays(course, now);
   return (
-    <section aria-label={course.title}>
-      <h2>{course.title}</h2>
-      {levels.error && <p role="alert">{levels.error.message}</p>}
-      {topics.map((topic) => (
-        <TopicCard
-          key={topic.id}
-          apiOrigin={apiOrigin}
-          courseId={course.id}
-          topic={topic}
-          level={levels.data?.find((l) => l.topicId === topic.id)}
-        />
-      ))}
-      {course.obligations
-        .filter((o) => o.state !== "rejected" && handedIn.includes(o.kind))
-        .map((obligation) => (
-          <ObligationCard
-            key={obligation.id}
+    <div
+      role="tabpanel"
+      aria-labelledby={`course-tab-${course.id}`}
+      className="flex flex-col gap-6"
+    >
+      {levels.error && (
+        <p role="alert" className="text-sm text-destructive-600">
+          {levels.error.message}
+        </p>
+      )}
+      <div className="flex flex-col items-start gap-12 lg:flex-row">
+        <div className="flex w-full min-w-0 flex-1 flex-col gap-10">
+          <NextTopics
             apiOrigin={apiOrigin}
             courseId={course.id}
-            obligation={obligation}
+            topics={topics}
+            examInDays={examInDays}
+            now={now}
           />
-        ))}
-    </section>
+          <AllTopics
+            apiOrigin={apiOrigin}
+            courseId={course.id}
+            topics={topics}
+            now={now}
+          />
+        </div>
+        <div className="flex w-full shrink-0 flex-col gap-10 lg:w-80">
+          <Understanding topics={topics} />
+          <ObligationList
+            obligations={obligations}
+            rules={rules}
+            drafts={drafts}
+            now={now}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 
-/** The student's Courses: each Topic's Understanding Level, practice on it, and their own Self-assessment. */
-export function StudyScreen({ apiOrigin }: { apiOrigin: string }) {
+/** The student's Courses: each Topic's Understanding Level, practice on it, Self-assessment, and Abgaben. */
+export function StudyScreen({
+  apiOrigin,
+  course: initialCourse,
+}: {
+  apiOrigin: string;
+  course?: string;
+}) {
   const courses = useQuery(coursesQueries(apiOrigin));
+  const courseList = useQuery(courseListQuery(apiOrigin));
+  const artifacts = useQuery(artifactsQuery(apiOrigin));
+  const [selectedId, setSelectedId] = useState(initialCourse ?? "");
+  const now = new Date();
+
+  const colorsByCourse = new Map<string, CourseColor>();
+  const archived = new Set<string>();
+  for (const summary of courseList.data?.courses ?? []) {
+    colorsByCourse.set(summary.id, summary.color);
+    if (summary.archived) archived.add(summary.id);
+  }
+  const visible = (courses.data ?? []).filter(
+    (entry) => !archived.has(entry.id),
+  );
+  const active =
+    visible.find((entry) => entry.id === selectedId) ?? visible[0] ?? null;
+  const drafts = draftVersions(artifacts.data);
+
   return (
-    <>
-      <h1>Study</h1>
-      {courses.error && <p role="alert">{courses.error.message}</p>}
-      {courses.data?.map((course) => (
-        <CourseSection key={course.id} apiOrigin={apiOrigin} course={course} />
-      ))}
-    </>
+    <main className="relative min-h-dvh bg-white font-sans text-base-800">
+      <PageHeader>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbPage>Lernen</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      </PageHeader>
+      <div className="mx-auto flex w-full max-w-[calc(64rem+4rem)] flex-col gap-7 px-8 pt-24 pb-16">
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-2xl font-medium text-base-800">Lernen</h1>
+          <p className="text-sm text-base-500">
+            Wo du in jedem Kurs stehst und was du als Nächstes üben solltest.
+          </p>
+        </div>
+        {courses.error && (
+          <p role="alert" className="text-sm text-destructive-600">
+            {courses.error.message}
+          </p>
+        )}
+        {visible.length > 0 && (
+          <div
+            role="tablist"
+            aria-label="Kurse"
+            className="flex flex-wrap items-center gap-0.5 self-start rounded-lg bg-base-100 p-0.75"
+          >
+            {visible.map((entry) => {
+              const selected = entry.id === active?.id;
+              const color = colorsByCourse.get(entry.id);
+              const count = topicFacts(entry).length;
+              return (
+                <button
+                  key={entry.id}
+                  id={`course-tab-${entry.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setSelectedId(entry.id)}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.25 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary-500",
+                    selected
+                      ? "bg-white text-base-800 shadow-[0_1px_2px_#0000001a] outline-1 outline-base-700/10"
+                      : "text-base-600 hover:text-base-800",
+                  )}
+                >
+                  {color && <CourseDot color={color} />}
+                  <span>{entry.title}</span>
+                  <span className="text-xs font-medium text-base-500">
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {courses.data && visible.length === 0 && (
+          <p className="rounded-xl border border-dashed border-base-200 px-6 py-10 text-center text-sm text-base-500">
+            Noch keine Kurse. Sobald du Kurse anlegst oder Quellen hochlädst,
+            erscheinen hier deine Themen und Abgaben.
+          </p>
+        )}
+        {active && (
+          <CoursePanel
+            key={active.id}
+            apiOrigin={apiOrigin}
+            course={active}
+            drafts={drafts}
+            now={now}
+          />
+        )}
+      </div>
+    </main>
   );
 }

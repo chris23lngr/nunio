@@ -7,6 +7,7 @@ import {
   createStudent,
   enterSignIn,
   signInAs,
+  signOut,
   storeSignInCode,
 } from "../students.js";
 
@@ -164,7 +165,8 @@ test("signing in on app. sets a parent-domain cookie the app's server can use", 
 }, async ({ page, context }) => {
   const email = await signIn(page, "ada");
 
-  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+  await page.getByRole("button", { name: "ada", exact: true }).click();
+  await expect(page.getByRole("menu").getByText(email)).toBeVisible();
 
   const [cookie] = (await context.cookies(origins.app)).filter((c) =>
     c.name.endsWith("session_token"),
@@ -182,7 +184,7 @@ test("signing out ends the session for the app's server too", async ({
 }) => {
   await signIn(page, "grace");
 
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await signOut(page, "grace");
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
 
   await page.goto(`${origins.app}/`);
@@ -211,7 +213,8 @@ test("a page on an untrusted origin cannot sign the user out", {
   expect(outcome).toBe("blocked");
 
   await page.goto(`${origins.app}/`);
-  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
+  await page.getByRole("button", { name: "alan", exact: true }).click();
+  await expect(page.getByRole("menu").getByText(email)).toBeVisible();
 });
 
 test("a student signs out another session and requests deletion from account settings", async ({
@@ -338,7 +341,7 @@ test("signing out and switching students never reuses the previous student's Sou
   await expect(page.getByText(title, { exact: false })).toBeVisible();
   const second = await createStudent("cache-second");
   await page.evaluate(() => Reflect.set(window, "foundationDocument", "kept"));
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page, "cache-first");
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
   title = "Grace's private syllabus";
   // Stay in the same document: a page.goto would hide an in-memory cache leak.
@@ -485,7 +488,7 @@ test("navigation from Review back to Sources reuses the recently loaded collecti
   await expect(page.getByText(/Navigation syllabus/)).toBeVisible();
   await page
     .getByRole("navigation", { name: "App navigation" })
-    .getByRole("link", { name: "Review", exact: true })
+    .getByRole("link", { name: "Prüfen", exact: true })
     .click();
   await expect(page.getByRole("heading", { name: "Prüfen" })).toBeVisible();
   await page.getByRole("link", { name: "Quelle hochladen" }).click();

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { origins, target } from "../origins.js";
-import { createStudent, enterSignIn } from "../students.js";
+import { createStudent, enterSignIn, signOut } from "../students.js";
 
 test.beforeEach(async ({ page }) => {
   test.skip(target !== "local", "Needs a disposable database for fixtures");
@@ -35,7 +35,7 @@ test("a student adds a passkey after a code sign-in, signs in with it, and delet
   await page.getByRole("button", { name: "Passkey einrichten" }).click();
   await expect(page).toHaveURL(`${origins.app}/`);
 
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page, "passkey");
   await expect(page).toHaveURL(`${origins.app}/sign-in`);
   await page.getByRole("button", { name: "Mit Passkey anmelden" }).click();
   await expect(page).toHaveURL(`${origins.app}/`);
