@@ -127,17 +127,40 @@ const toConnection = (connection: ConnectionSummary) => ({
   agentCount: connection.agentCount,
 });
 
-/** Answers a failed mailbox test; nothing was stored. */
+/** Answers a refused mailbox test or connect; nothing was stored. */
 function refused(
   c: Context<AppBindings>,
   result:
     | Exclude<EmailCheck, { ok: true }>
     | { ok: false; reason: "unknown_folder" },
 ) {
-  return result.reason === "login_failed"
-    ? c.json({ error: result.reason, step: result.step }, 422)
-    : c.json({ error: result.reason }, 422);
+  switch (result.reason) {
+    case "login_failed":
+      return c.json({ error: result.reason, step: result.step }, 422);
+    case "not_offered":
+      return c.json({ error: result.reason }, 404);
+    case "not_entitled":
+    case "deletion_pending":
+      return c.json({ error: result.reason }, 403);
+    case "too_many_attempts":
+      return c.json({ error: result.reason }, 429);
+    default:
+      return c.json({ error: result.reason }, 422);
+  }
 }
+
+/** The refusals both the test and the connect route answer before any mailbox login. */
+const beforeLoginOutcomes = {
+  403: json(
+    ErrorBody,
+    "Pilot access is not active (not_entitled) or deletion is pending (deletion_pending).",
+  ),
+  404: json(ErrorBody, "Email isn't offered (not_offered)."),
+  429: json(
+    ErrorBody,
+    "More than 10 mailbox logins in 15 minutes (too_many_attempts); nothing was tried.",
+  ),
+};
 
 export function registerIntegrationRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
@@ -215,13 +238,16 @@ export function registerIntegrationRoutes(routes: OpenAPIHono<AppBindings>) {
         ),
         400: json(ErrorBody, "Not valid."),
         401: errors[401],
+        ...beforeLoginOutcomes,
         422: LoginFailed,
       },
     }),
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
-      const result = await c.get("connections").testEmail(c.req.valid("json"));
+      const result = await c
+        .get("connections")
+        .testEmail(p, c.req.valid("json"));
       if (!result.ok) return refused(c, result);
       return c.json({ folders: result.folders }, 200);
     },
@@ -247,7 +273,7 @@ export function registerIntegrationRoutes(routes: OpenAPIHono<AppBindings>) {
         ),
         400: json(ErrorBody, "Not valid."),
         401: errors[401],
-        404: json(ErrorBody, "Email isn't offered."),
+        ...beforeLoginOutcomes,
         409: json(ErrorBody, "The student already has an Email Connection."),
         422: LoginFailed,
       },
@@ -258,13 +284,10 @@ export function registerIntegrationRoutes(routes: OpenAPIHono<AppBindings>) {
       const result = await c
         .get("connections")
         .connectEmail(p, c.req.valid("json"));
-      if (!result.ok) {
-        if (result.reason === "not_offered")
-          return c.json({ error: result.reason }, 404);
-        if (result.reason === "already_connected")
-          return c.json({ error: result.reason }, 409);
-        return refused(c, result);
-      }
+      if (!result.ok)
+        return result.reason === "already_connected"
+          ? c.json({ error: result.reason }, 409)
+          : refused(c, result);
       return c.json({ connection: toConnection(result.connection) }, 201);
     },
   );

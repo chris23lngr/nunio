@@ -2,7 +2,7 @@ import { isIP } from "node:net";
 import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 import type { MailServer } from "./providers.js";
-import type { Lookup } from "./servers.js";
+import type { Lookup, MailTls } from "./servers.js";
 import { MailServerRefused, mailTls, resolvePublicHost } from "./servers.js";
 
 /** A mailbox folder, as the folder chips show it. */
@@ -33,12 +33,20 @@ export type MailboxCheck =
   /** The step that failed: "Lesen (IMAP)" or "Senden (SMTP)". */
   | { ok: false; reason: "login_failed"; step: "imap" | "smtp" };
 
+/** A mail server as nunio connects to it: the address it checked, and the host name the certificate must match. */
+export interface MailEndpoint {
+  host: string;
+  address: string;
+  port: number;
+  tls: MailTls;
+}
+
 // Short enough for the student waiting on the Connect dialog.
 const CONNECTION_TIMEOUT = 15_000;
 
 /**
- * Logs in to IMAP and lists the folders, then authenticates to SMTP without sending anything. Each host's address is
- * checked to be public right before nunio connects to it, and its certificate is verified against the host name.
+ * Holds the servers to the port rule and checks each host's address is public right before nunio connects to it,
+ * then logs in (see `loginToMailbox`).
  */
 export async function checkMailbox(
   login: MailboxLogin,
@@ -58,15 +66,39 @@ export async function checkMailbox(
     throw error;
   }
 
-  // The certificate is checked against the host name; an IP literal host has no SNI name.
-  const servername = (host: string) => (isIP(host) ? undefined : host);
+  return loginToMailbox({
+    username: login.username,
+    password: login.password,
+    imap: { ...login.imap, address: imapAddress, tls: imapTls },
+    smtp: { ...login.smtp, address: smtpAddress, tls: smtpTls },
+  });
+}
+
+/** The certificate is checked against the host name; an IP literal host has no SNI name. */
+const servername = (host: string) => (isIP(host) ? undefined : host);
+
+/**
+ * Logs in to IMAP and lists the folders, then authenticates to SMTP without sending anything, at endpoints
+ * `checkMailbox` already held to the port rule and the public-address check.
+ */
+export async function loginToMailbox({
+  username,
+  password,
+  imap: imapAt,
+  smtp: smtpAt,
+}: {
+  username: string;
+  password: string;
+  imap: MailEndpoint;
+  smtp: MailEndpoint;
+}): Promise<MailboxCheck> {
   const imap = new ImapFlow({
-    host: imapAddress,
-    port: login.imap.port,
-    servername: servername(login.imap.host),
-    secure: imapTls === "implicit",
-    doSTARTTLS: imapTls === "starttls" ? true : undefined,
-    auth: { user: login.username, pass: login.password },
+    host: imapAt.address,
+    port: imapAt.port,
+    servername: servername(imapAt.host),
+    secure: imapAt.tls === "implicit",
+    doSTARTTLS: imapAt.tls === "starttls" ? true : undefined,
+    auth: { user: username, pass: password },
     disableAutoIdle: true,
     connectionTimeout: CONNECTION_TIMEOUT,
     greetingTimeout: CONNECTION_TIMEOUT,
@@ -100,12 +132,15 @@ export async function checkMailbox(
   }
 
   const smtp = nodemailer.createTransport({
-    host: smtpAddress,
-    port: login.smtp.port,
-    secure: smtpTls === "implicit",
-    requireTLS: smtpTls === "starttls",
-    auth: { user: login.username, pass: login.password },
-    tls: { servername: servername(login.smtp.host) },
+    host: smtpAt.address,
+    port: smtpAt.port,
+    secure: smtpAt.tls === "implicit",
+    requireTLS: smtpAt.tls === "starttls",
+    auth: { user: username, pass: password },
+    // Authenticates even when the server doesn't advertise AUTH, so a server that would take mail without a
+    // login can't pass as one that checked the password.
+    forceAuth: true,
+    tls: { servername: servername(smtpAt.host) },
     connectionTimeout: CONNECTION_TIMEOUT,
     greetingTimeout: CONNECTION_TIMEOUT,
     socketTimeout: CONNECTION_TIMEOUT * 2,

@@ -484,3 +484,29 @@ test("asks for the login after reading failed, and tests again with it", async (
     },
   ]);
 });
+
+test("tells the student to wait after too many logins", async () => {
+  api.route("GET", "/api/me/integrations", () =>
+    Response.json({ integrations: [email] }),
+  );
+  api.route("POST", "/api/me/connections/email/discover", () =>
+    Response.json(heidelberg),
+  );
+  api.route("POST", "/api/me/connections/email/test", () =>
+    Response.json({ error: "too_many_attempts" }, { status: 429 }),
+  );
+  const user = userEvent.setup();
+  renderConnections();
+
+  const dialog = await openEmailDialog(user);
+  await user.type(
+    dialog.getByLabelText("E-Mail-Adresse"),
+    "lea@stud.uni-heidelberg.de",
+  );
+  await user.type(dialog.getByLabelText("Passwort"), "geheim");
+  await user.click(dialog.getByRole("button", { name: "Anmeldung prüfen" }));
+
+  expect((await dialog.findByRole("alert")).textContent).toBe(
+    "Zu viele Anmeldeversuche. Versuch es in einer Viertelstunde noch einmal.",
+  );
+});

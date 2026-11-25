@@ -18642,6 +18642,42 @@
               }
             }
           },
+          "403": {
+            "description": "Pilot access is not active (not_entitled) or deletion is pending (deletion_pending).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Email isn't offered (not_offered).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
           "422": {
             "description": "Nothing was stored.",
             "content": {
@@ -18690,6 +18726,24 @@
                       ],
                       "description": "port_refused: TLS only on 993 or 143 (IMAP) and 465 or 587 (SMTP). server_refused: a host that doesn't resolve to public addresses. servers_required: an unknown domain without servers. unsupported: Microsoft 365 mail. unknown_folder: a chosen folder the mailbox doesn't have."
                     }
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "More than 10 mailbox logins in 15 minutes (too_many_attempts); nothing was tried.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
                   ]
                 }
               }
@@ -18846,8 +18900,26 @@
               }
             }
           },
+          "403": {
+            "description": "Pilot access is not active (not_entitled) or deletion is pending (deletion_pending).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
           "404": {
-            "description": "Email isn't offered.",
+            "description": "Email isn't offered (not_offered).",
             "content": {
               "application/json": {
                 "schema": {
@@ -18930,6 +19002,24 @@
                       ],
                       "description": "port_refused: TLS only on 993 or 143 (IMAP) and 465 or 587 (SMTP). server_refused: a host that doesn't resolve to public addresses. servers_required: an unknown domain without servers. unsupported: Microsoft 365 mail. unknown_folder: a chosen folder the mailbox doesn't have."
                     }
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "More than 10 mailbox logins in 15 minutes (too_many_attempts); nothing was tried.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
                   ]
                 }
               }

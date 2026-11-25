@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
-import type { Principal } from "@nunio/delegation";
-import { withOwner } from "@nunio/delegation";
+import type { Principal, Transaction } from "@nunio/delegation";
+import { accessRefusal, withOwner } from "@nunio/delegation";
 import type { ConnectionCredentialKeys, SourceKeys } from "@nunio/keys";
 import type { MailboxCheck, MailboxLogin } from "./email/mailbox.js";
 import { checkMailbox } from "./email/mailbox.js";
@@ -31,24 +31,34 @@ export interface EmailLogin {
 }
 
 type Refusal =
+  /** Email isn't offered. */
+  | { ok: false; reason: "not_offered" }
+  /** No active Pilot Entitlement, or a pending deletion: the student may not start new work. */
+  | { ok: false; reason: "not_entitled" | "deletion_pending" }
   /** The address's provider needs Microsoft 365 OAuth, a later slice. */
   | { ok: false; reason: "unsupported" }
   /** An unknown domain, and no hosts entered. */
-  | { ok: false; reason: "servers_required" };
+  | { ok: false; reason: "servers_required" }
+  /** More mailbox logins than `MAIL_LOGIN_LIMIT` allows in its window. */
+  | { ok: false; reason: "too_many_attempts" };
 
 export type EmailCheck = MailboxCheck | Refusal;
 
 export type EmailConnect =
   | { ok: true; connection: ConnectionSummary }
   | Exclude<EmailCheck, { ok: true }>
-  /** Email isn't offered. */
-  | { ok: false; reason: "not_offered" }
   /** The student already has an Email Connection. */
   | { ok: false; reason: "already_connected" }
   /** A chosen folder the mailbox doesn't have. */
   | { ok: false; reason: "unknown_folder" };
 
 const EMAIL = "email";
+
+/**
+ * Mailbox logins per student in a fixed window. Testing and connecting log in to a server the student names with a
+ * password they enter, so without a limit nunio could be used to guess passwords for any mailbox.
+ */
+export const MAIL_LOGIN_LIMIT = { max: 10, windowMs: 15 * 60_000 };
 
 /** A unique violation, as when the student connected Email in another tab meanwhile. */
 const isUniqueViolation = (error: unknown) =>
@@ -88,6 +98,46 @@ export function createConnections({
     };
   }
 
+  /**
+   * Counts a mailbox login against the student's limit in its fixed window; false once the limit is reached. One
+   * statement, like the sign-in code limits: the upsert's row lock serialises concurrent attempts across instances.
+   */
+  function admitLogin(tx: Transaction, studentId: string): Promise<boolean> {
+    const now = Date.now();
+    const expired = now - MAIL_LOGIN_LIMIT.windowMs;
+    return tx.$executeRaw`
+      INSERT INTO "mail_login_limit" ("studentId", "count", "windowStart") VALUES (${studentId}, 1, ${now})
+      ON CONFLICT ("studentId") DO UPDATE SET
+        "count" = CASE WHEN "mail_login_limit"."windowStart" <= ${expired} THEN 1 ELSE "mail_login_limit"."count" + 1 END,
+        "windowStart" = CASE WHEN "mail_login_limit"."windowStart" <= ${expired} THEN ${now} ELSE "mail_login_limit"."windowStart" END
+      WHERE "mail_login_limit"."windowStart" <= ${expired} OR "mail_login_limit"."count" < ${MAIL_LOGIN_LIMIT.max}`.then(
+      (admitted) => admitted === 1,
+    );
+  }
+
+  /**
+   * Everything nunio checks before it logs in to a mailbox, cheapest first: Email offered, the student's access, the
+   * servers, and last the login limit, so only real logins count.
+   */
+  async function beforeLogin(
+    p: Principal,
+    login: EmailLogin,
+  ): Promise<MailboxLogin | Refusal> {
+    const offered = await db.integration.findFirst({
+      where: { key: EMAIL, status: "offered" },
+    });
+    if (!offered) return { ok: false, reason: "not_offered" };
+    const mailbox = mailboxLogin(login);
+    return withOwner(db, p, async (tx, studentId) => {
+      const refusal = await accessRefusal(tx, studentId);
+      if (refusal) return { ok: false, reason: refusal };
+      if ("ok" in mailbox) return mailbox;
+      if (!(await admitLogin(tx, studentId)))
+        return { ok: false, reason: "too_many_attempts" };
+      return mailbox;
+    });
+  }
+
   return {
     /** The student's Connections, by Integration. */
     async list(p: Principal): Promise<ConnectionSummary[]> {
@@ -108,8 +158,8 @@ export function createConnections({
     },
 
     /** Tests reading (IMAP) and sending (SMTP) without sending, and lists the folders; stores nothing. */
-    async testEmail(login: EmailLogin): Promise<EmailCheck> {
-      const mailbox = mailboxLogin(login);
+    async testEmail(p: Principal, login: EmailLogin): Promise<EmailCheck> {
+      const mailbox = await beforeLogin(p, login);
       if ("ok" in mailbox) return mailbox;
       return checkMailbox(mailbox, { fakes, lookup });
     },
@@ -122,16 +172,11 @@ export function createConnections({
       p: Principal,
       login: EmailLogin & { folders: string[] },
     ): Promise<EmailConnect> {
-      const offered = await db.integration.findFirst({
-        where: { key: EMAIL, status: "offered" },
-      });
-      if (!offered) return { ok: false, reason: "not_offered" };
       const existing = await withOwner(db, p, (tx) =>
         tx.connection.findFirst({ where: { integrationKey: EMAIL } }),
       );
       if (existing) return { ok: false, reason: "already_connected" };
-
-      const mailbox = mailboxLogin(login);
+      const mailbox = await beforeLogin(p, login);
       if ("ok" in mailbox) return mailbox;
       const check = await checkMailbox(mailbox, { fakes, lookup });
       if (!check.ok) return check;

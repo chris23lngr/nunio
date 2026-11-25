@@ -11768,20 +11768,26 @@ describe("connecting Email", () => {
     });
   });
 
-  it("refuses connecting while Email isn't offered", async () => {
+  it("refuses testing and connecting while Email isn't offered", async () => {
     const cookie = await signUp("email-hidden");
     await admin.integration.update({
       where: { key: "email" },
       data: { status: "hidden" },
     });
     try {
-      const response = await post("/api/me/connections/email", cookie, {
-        address: lea.address,
-        password,
-        servers: servers(),
-        folders: ["INBOX"],
-      });
-      expect(response.status).toBe(404);
+      for (const path of [
+        "/api/me/connections/email/test",
+        "/api/me/connections/email",
+      ]) {
+        const response = await post(path, cookie, {
+          address: lea.address,
+          password,
+          servers: servers(),
+          folders: ["INBOX"],
+        });
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual({ error: "not_offered" });
+      }
       expect(await storedFor(cookie)).toEqual({
         connections: [],
         credentials: [],
@@ -11792,6 +11798,109 @@ describe("connecting Email", () => {
         data: { status: "offered" },
       });
     }
+  });
+
+  it("limits each student to 10 mailbox logins per 15 minutes", async () => {
+    const cookie = await signUp("email-limit");
+    const attempt = (path: string, body: Record<string, unknown> = {}) =>
+      post(path, cookie, {
+        address: lea.address,
+        password: "falsch",
+        servers: servers(),
+        folders: ["INBOX"],
+        ...body,
+      });
+    for (let i = 0; i < 10; i++)
+      expect((await attempt("/api/me/connections/email/test")).status).toBe(
+        422,
+      );
+
+    for (const path of [
+      "/api/me/connections/email/test",
+      "/api/me/connections/email",
+    ]) {
+      const limited = await attempt(path, { password });
+      expect(limited.status).toBe(429);
+      expect(await limited.json()).toEqual({ error: "too_many_attempts" });
+    }
+    // Another student has their own limit.
+    const other = await signUp("email-limit-other");
+    expect(
+      (
+        await post("/api/me/connections/email/test", other, {
+          address: lea.address,
+          password,
+          servers: servers(),
+        })
+      ).status,
+    ).toBe(200);
+
+    // A new window admits again.
+    await admin.mailLoginLimit.update({
+      where: { studentId: await studentId(cookie) },
+      data: { windowStart: BigInt(Date.now() - 15 * 60_000) },
+    });
+    expect(
+      (await attempt("/api/me/connections/email", { password })).status,
+    ).toBe(201);
+  });
+
+  it("refuses a student whose pilot access isn't active", async () => {
+    const cookie = await signUp("email-not-entitled");
+    await admin.pilotEntitlement.update({
+      where: { studentId: await studentId(cookie) },
+      data: { revokedAt: new Date() },
+    });
+
+    for (const path of [
+      "/api/me/connections/email/test",
+      "/api/me/connections/email",
+    ]) {
+      const response = await post(path, cookie, {
+        address: lea.address,
+        password,
+        servers: servers(),
+        folders: ["INBOX"],
+      });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "not_entitled" });
+    }
+    expect(await storedFor(cookie)).toEqual({
+      connections: [],
+      credentials: [],
+    });
+  });
+
+  it("keeps a Connection and its credentials to its own student", async () => {
+    const a = await signUp("email-owner-a");
+    const b = await signUp("email-owner-b");
+    const connect = (cookie: string) =>
+      post("/api/me/connections/email", cookie, {
+        address: lea.address,
+        password,
+        servers: servers(),
+        folders: ["INBOX"],
+      });
+    expect((await connect(a)).status).toBe(201);
+
+    const listed = (await (
+      await app.request(`${apiOrigin}/api/me/integrations`, {
+        headers: { cookie: b },
+      })
+    ).json()) as { integrations: { key: string; connection: unknown }[] };
+    expect(
+      listed.integrations.find((i) => i.key === "email")?.connection,
+    ).toBeNull();
+    // Row-level security: as student B, the runtime role sees no Connection or credential.
+    const asB = principal.fromSession({ studentId: await studentId(b) });
+    expect(
+      await withOwner(prisma, asB, async (tx) => [
+        ...(await tx.connection.findMany()),
+        ...(await tx.connectionCredential.findMany()),
+      ]),
+    ).toEqual([]);
+    // B connects a mailbox of their own; A's doesn't count as B's one Email Connection.
+    expect((await connect(b)).status).toBe(201);
   });
 
   it("needs a signed-in student", async () => {

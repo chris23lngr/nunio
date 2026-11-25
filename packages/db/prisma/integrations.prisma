@@ -105,3 +105,14 @@ model ConnectionCredential {
   @@unique([connectionId, studentId])
   @@map("connection_credential")
 }
+
+// Mailbox logins a student made in the current fixed window; testing and connecting Email count against it.
+model MailLoginLimit {
+  studentId   String @id
+  student     User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  count       Int
+  /// When the window began, in milliseconds since the epoch.
+  windowStart BigInt
+
+  @@map("mail_login_limit")
+}

@@ -23,6 +23,23 @@ export class MailboxRefused extends Error {
   }
 }
 
+/** Why the test or connect route refused, as the dialog shows it; a refused mailbox keeps its reason. */
+function refusedWith(status: number, error: unknown, fallback: string) {
+  if (status === 422 && error)
+    return new MailboxRefused(error as MailboxRefusal);
+  if (status === 429)
+    return new ApiError(
+      status,
+      "Zu viele Anmeldeversuche. Versuch es in einer Viertelstunde noch einmal.",
+    );
+  if (status === 403)
+    return new ApiError(
+      status,
+      "Ohne aktiven Pilotzugang kann nunio keine E-Mail verbinden.",
+    );
+  return new ApiError(status, fallback);
+}
+
 /** What nunio knows about an address's mail servers. */
 export function emailDiscoveryQuery(apiOrigin: string, address: string) {
   return queryOptions({
@@ -48,10 +65,9 @@ export function emailTestMutation(apiOrigin: string) {
         { body: login },
       );
       if (result.data) return result.data.folders;
-      if (result.response.status === 422 && result.error)
-        throw new MailboxRefused(result.error as MailboxRefusal);
-      throw new ApiError(
+      throw refusedWith(
         result.response.status,
+        result.error,
         "Die Anmeldung konnte nicht geprüft werden. Bitte versuche es erneut.",
       );
     },
@@ -67,10 +83,9 @@ export function emailConnectMutation(apiOrigin: string) {
         { body: login },
       );
       if (result.data) return result.data.connection;
-      if (result.response.status === 422 && result.error)
-        throw new MailboxRefused(result.error as MailboxRefusal);
-      throw new ApiError(
+      throw refusedWith(
         result.response.status,
+        result.error,
         result.response.status === 409
           ? "Du hast schon eine E-Mail verbunden."
           : "Die Verbindung konnte nicht gespeichert werden. Bitte versuche es erneut.",

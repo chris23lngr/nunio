@@ -29,8 +29,8 @@ export class MailServerRefused extends Error {
   }
 }
 
-/** Addresses that aren't on the public internet: private, loopback, link-local, shared, reserved and the like. */
-const nonPublic = new BlockList();
+/** IPv4 addresses that aren't on the public internet: private, loopback, link-local, shared, reserved and the like. */
+const nonPublicIPv4 = new BlockList();
 for (const [network, prefix] of [
   ["0.0.0.0", 8],
   ["10.0.0.0", 8],
@@ -40,6 +40,7 @@ for (const [network, prefix] of [
   ["172.16.0.0", 12],
   ["192.0.0.0", 24],
   ["192.0.2.0", 24],
+  ["192.88.99.0", 24],
   ["192.168.0.0", 16],
   ["198.18.0.0", 15],
   ["198.51.100.0", 24],
@@ -47,25 +48,36 @@ for (const [network, prefix] of [
   ["224.0.0.0", 4],
   ["240.0.0.0", 4],
 ] as const)
-  nonPublic.addSubnet(network, prefix, "ipv4");
+  nonPublicIPv4.addSubnet(network, prefix, "ipv4");
+
+/** IPv6 is allowed only in global unicast, 2000::/3 ... */
+const globalUnicast = new BlockList();
+globalUnicast.addSubnet("2000::", 3, "ipv6");
+/** ... minus its special-purpose blocks: IETF protocol assignments (Teredo, benchmarking, ORCHID), documentation, 6to4. */
+const specialIPv6 = new BlockList();
 for (const [network, prefix] of [
-  ["::", 127],
-  ["64:ff9b::", 96],
-  ["100::", 64],
+  ["2001::", 23],
   ["2001:db8::", 32],
-  ["fc00::", 7],
-  ["fe80::", 10],
-  ["ff00::", 8],
+  ["2002::", 16],
+  ["3fff::", 20],
 ] as const)
-  nonPublic.addSubnet(network, prefix, "ipv6");
+  specialIPv6.addSubnet(network, prefix, "ipv6");
 
 function isPublic(address: string): boolean {
-  // An IPv4-mapped address is checked as IPv4; BlockList can't match one written in hex, so it's refused.
-  if (/^::ffff:/i.test(address)) {
-    const mapped = address.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i)?.[1];
-    return mapped !== undefined && isPublic(mapped);
+  if (isIPv4(address)) return !nonPublicIPv4.check(address, "ipv4");
+  // The URL parser writes an IPv6 address canonically, an IPv4-mapped one as ::ffff:hhhh:hhhh.
+  const canonical = new URL(`http://[${address}]`).hostname.slice(1, -1);
+  const mapped = canonical.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mapped) {
+    const [high, low] = [mapped[1], mapped[2]].map((group) =>
+      Number.parseInt(group ?? "", 16),
+    ) as [number, number];
+    return isPublic(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
   }
-  return !nonPublic.check(address, isIPv4(address) ? "ipv4" : "ipv6");
+  return (
+    globalUnicast.check(canonical, "ipv6") &&
+    !specialIPv6.check(canonical, "ipv6")
+  );
 }
 
 export type Lookup = (

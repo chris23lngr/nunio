@@ -49,6 +49,13 @@ describe("the public-address check", () => {
         lookup: resolvingTo("2a00:1450:4001:80b::200e"),
       }),
     ).resolves.toBe("2a00:1450:4001:80b::200e");
+    // A public IPv4 address written as IPv4-mapped IPv6 is checked as IPv4.
+    await expect(
+      resolvePublicHost("mail.example", {
+        fakes: false,
+        lookup: resolvingTo("::ffff:129.206.100.162"),
+      }),
+    ).resolves.toBe("::ffff:129.206.100.162");
   });
 
   it.each([
@@ -64,6 +71,20 @@ describe("the public-address check", () => {
     "fe80::1",
     "::ffff:10.0.0.5",
     "::ffff:a00:5",
+    "0:0:0:0:0:ffff:7f00:1",
+    // IPv4-compatible, SIIT, NAT64 local-use, site-local, 6to4, Teredo and the other IETF blocks, 6to4 relay.
+    "::127.0.0.1",
+    "::ffff:0:a00:5",
+    "64:ff9b:1::a00:5",
+    "fec0::1",
+    "2002:a00:5::1",
+    "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+    "2001:2::1",
+    "2001:10::1",
+    "2001:20::1",
+    "2001:db8::1",
+    "3fff::1",
+    "192.88.99.1",
   ])("refuses a host that resolves to %s", async (address) => {
     await expect(
       resolvePublicHost("mail.example", {
