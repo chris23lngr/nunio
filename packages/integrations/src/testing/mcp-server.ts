@@ -10,9 +10,17 @@ import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import type { Socket } from "node:net";
 import { toNodeHandler } from "@modelcontextprotocol/node";
-import type { AuthInfo, CallToolResult } from "@modelcontextprotocol/server";
-import { createMcpHandler, Server } from "@modelcontextprotocol/server";
-import type { McpToolDefinition } from "./testnotizen.js";
+import type {
+  AuthInfo,
+  CallToolResult,
+  Tool,
+} from "@modelcontextprotocol/server";
+import {
+  createMcpHandler,
+  ProtocolError,
+  ProtocolErrorCode,
+  Server,
+} from "@modelcontextprotocol/server";
 import { createTestnotizen, testnotizenTools } from "./testnotizen.js";
 
 export interface FakeMcpServerOptions {
@@ -37,8 +45,15 @@ export type AuthorizationFault = "access-denied" | "wrong-iss";
 export type McpFault =
   /** A result with `isError: true`. */
   | { kind: "tool-error"; message?: string }
-  /** An HTTP error instead of a result: a 4xx, a 5xx, or 429 with `Retry-After` in seconds. */
+  /** A JSON-RPC error instead of a result. Default code -32603 (internal error). */
+  | { kind: "rpc-error"; code?: number; message?: string }
+  /**
+   * An HTTP error instead of a result: a 4xx, a 5xx, or 429 with `Retry-After` in seconds. A 401 carries the Bearer
+   * challenge with `error="invalid_token"`, and a 403 the one with `error="insufficient_scope"`.
+   */
   | { kind: "http"; status: number; retryAfter?: number }
+  /** Answers normally, `ms` milliseconds late. */
+  | { kind: "delay"; ms: number }
   /** Never answers; the request stays open until the server stops. */
   | { kind: "hang" }
   /** Closes the connection without answering, after the call was received and recorded. */
@@ -48,8 +63,11 @@ export type McpFault =
   /** A text result of exactly `characters` characters. */
   | { kind: "oversize"; characters: number };
 
-/** The faults the service answers itself, as a result, rather than the HTTP layer. */
-type ResultFault = Exclude<McpFault, { kind: "hang" | "drop" | "http" }>;
+/** The faults the service answers itself, rather than the HTTP layer. */
+type ServiceFault = Exclude<
+  McpFault,
+  { kind: "hang" | "drop" | "http" | "delay" }
+>;
 
 export interface FakeMcpServer {
   /** The origin, which is also the authorization server's issuer. */
@@ -67,7 +85,9 @@ export interface FakeMcpServer {
   /** Queues faults for the next authorizations, one each, in order; then authorizations approve again. */
   scriptAuthorization(...faults: AuthorizationFault[]): void;
   /** Drift: adds a tool, or changes the definition of one with the same name. */
-  setTool(definition: McpToolDefinition): void;
+  setTool(definition: Tool): void;
+  /** Drift: removes a tool. */
+  removeTool(name: string): void;
   /** Expires every access token issued so far, so the next call gets a 401. */
   expireAccessTokens(): void;
   /** Answers every refresh token issued so far with `invalid_grant`. */
@@ -130,7 +150,7 @@ export async function startFakeMcpServer(
   const revocations: Revocation[] = [];
   const authorizationFaults: AuthorizationFault[] = [];
   const scripts = new Map<string, McpFault[]>();
-  const tools = new Map<string, McpToolDefinition>(
+  const tools = new Map<string, Tool>(
     testnotizenTools.map((tool) => [tool.name, tool]),
   );
   const testnotizen = createTestnotizen();
@@ -139,7 +159,7 @@ export async function startFakeMcpServer(
   let mcpUrl = "";
 
   const handler = createMcpHandler(({ authInfo }) => {
-    const fault = authInfo?.extra?.fault as ResultFault | undefined;
+    const fault = authInfo?.extra?.fault as ServiceFault | undefined;
     const server = new Server(
       { name: "testnotizen", version: "1.0.0" },
       { capabilities: { tools: {} } },
@@ -388,23 +408,22 @@ export async function startFakeMcpServer(
     return clientId;
   }
 
+  /** The Bearer challenge (RFC 6750), pointing at the Protected Resource Metadata (RFC 9728). */
+  function challenge(...params: string[]): Record<string, string> {
+    const metadata = `resource_metadata="${issuer}/.well-known/oauth-protected-resource/mcp"`;
+    return { "www-authenticate": `Bearer ${[metadata, ...params].join(", ")}` };
+  }
+
   async function serveMcp(req: IncomingMessage, res: ServerResponse) {
     const bearer = /^Bearer (.+)$/i.exec(req.headers.authorization ?? "")?.[1];
     const access = bearer === undefined ? undefined : accessTokens.get(bearer);
-    if (!access || access.expiresAt <= Date.now()) {
-      const challenge = [
-        `resource_metadata="${issuer}/.well-known/oauth-protected-resource/mcp"`,
-        ...(bearer === undefined ? [] : ['error="invalid_token"']),
-      ].join(", ");
+    if (!access || access.expiresAt <= Date.now())
       return json(
         res,
         401,
         { error: "invalid_token" },
-        {
-          "www-authenticate": `Bearer ${challenge}`,
-        },
+        challenge(...(bearer === undefined ? [] : ['error="invalid_token"'])),
       );
-    }
     if (req.method !== "POST") return mcp(req, res);
     let message: { method?: unknown; params?: Record<string, unknown> };
     try {
@@ -429,10 +448,21 @@ export async function startFakeMcpServer(
         res,
         fault.status,
         { error: `Scripted HTTP ${fault.status}` },
-        fault.retryAfter === undefined
-          ? {}
-          : { "retry-after": String(fault.retryAfter) },
+        {
+          ...(fault.status === 401 ? challenge('error="invalid_token"') : {}),
+          ...(fault.status === 403
+            ? challenge('error="insufficient_scope"', 'scope="notes"')
+            : {}),
+          ...(fault.retryAfter === undefined
+            ? {}
+            : { "retry-after": String(fault.retryAfter) }),
+        },
       );
+    if (fault?.kind === "delay") {
+      const { ms } = fault;
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      fault = undefined;
+    }
     // The other faults travel to the service with the call.
     const auth: AuthInfo = {
       token: bearer!,
@@ -488,6 +518,9 @@ export async function startFakeMcpServer(
     setTool(definition) {
       tools.set(definition.name, definition);
     },
+    removeTool(name) {
+      tools.delete(name);
+    },
     expireAccessTokens() {
       for (const access of accessTokens.values()) access.expiresAt = 0;
     },
@@ -502,9 +535,14 @@ export async function startFakeMcpServer(
   };
 }
 
-function faultResult(fault: ResultFault): CallToolResult {
+function faultResult(fault: ServiceFault): CallToolResult {
   const bytes = (size: number) => Buffer.alloc(size, 7).toString("base64");
   switch (fault.kind) {
+    case "rpc-error":
+      throw new ProtocolError(
+        fault.code ?? ProtocolErrorCode.InternalError,
+        fault.message ?? "Testnotizen ist gerade nicht erreichbar.",
+      );
     case "tool-error":
       return {
         content: [

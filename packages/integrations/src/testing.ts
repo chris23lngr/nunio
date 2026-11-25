@@ -25,7 +25,4 @@ export {
   type SmtpFaultServer,
   startSmtpFaultServer,
 } from "./testing/smtp-faults.js";
-export {
-  type McpToolDefinition,
-  testnotizenTools,
-} from "./testing/testnotizen.js";
+export { testnotizenTools } from "./testing/testnotizen.js";

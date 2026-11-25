@@ -1,19 +1,9 @@
 /**
  * "Testnotizen", the note service the fake MCP server serves. Its tool definitions are what the catalog seed pins.
  */
-import type { CallToolResult } from "@modelcontextprotocol/server";
+import type { CallToolResult, Tool } from "@modelcontextprotocol/server";
 
-export interface McpToolDefinition {
-  name: string;
-  description: string;
-  inputSchema: {
-    type: "object";
-    properties: Record<string, { type: string; description: string }>;
-    required: string[];
-  };
-}
-
-export const testnotizenTools: McpToolDefinition[] = [
+export const testnotizenTools: Tool[] = [
   {
     name: "notes.search",
     description: "Searches the workspace's notes by title and text.",
