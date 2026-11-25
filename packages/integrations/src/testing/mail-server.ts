@@ -100,7 +100,10 @@ export async function startFakeMailServer(): Promise<FakeMailServer> {
   const fronts = await Promise.all([
     startStartTlsFront("imap", endpoint(IMAP), secureContext),
     startStartTlsFront("smtp", endpoint(SMTP), secureContext),
-  ]);
+  ]).catch(async (error) => {
+    await container.stop();
+    throw error;
+  });
   const [imapFront, smtpFront] = fronts;
   const api = `http://${host}:${container.getMappedPort(API)}`;
   const imaps = endpoint(IMAPS);

@@ -7,6 +7,7 @@ import type { Socket } from "node:net";
 import { createServer, connect as tcpConnect } from "node:net";
 import type { SecureContext } from "node:tls";
 import { TLSSocket } from "node:tls";
+import type { Endpoint } from "./mail-server.js";
 
 export interface StartTlsFront {
   port: number;
@@ -54,7 +55,7 @@ const dialogues: Record<"imap" | "smtp", { greeting: string; reply: Reply }> = {
 
 export async function startStartTlsFront(
   protocol: "imap" | "smtp",
-  upstream: { host: string; port: number },
+  upstream: Endpoint,
   secureContext: SecureContext,
 ): Promise<StartTlsFront> {
   const { greeting, reply } = dialogues[protocol];
@@ -101,13 +102,19 @@ export async function startStartTlsFront(
     track(plain);
     secure.on("close", () => plain.destroy());
     plain.on("close", () => secure.destroy());
-    plain.once("data", (greetingChunk) => {
-      const rest = greetingChunk.subarray(greetingChunk.indexOf("\r\n") + 2);
+    let greetingSoFar = Buffer.alloc(0);
+    const onGreeting = (chunk: Buffer) => {
+      greetingSoFar = Buffer.concat([greetingSoFar, chunk]);
+      const end = greetingSoFar.indexOf("\r\n");
+      if (end < 0) return;
+      plain.off("data", onGreeting);
+      const rest = greetingSoFar.subarray(end + 2);
       if (rest.length > 0) secure.write(rest);
       plain.pipe(secure);
       secure.pipe(plain);
       secure.resume();
-    });
+    };
+    plain.on("data", onGreeting);
   }
 
   await new Promise<void>((resolve, reject) => {

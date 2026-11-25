@@ -6,6 +6,7 @@ import type { Socket } from "node:net";
 import { createServer } from "node:net";
 import { SMTPServer } from "smtp-server";
 import { testCertificate } from "./certificate.js";
+import type { Endpoint } from "./mail-server.js";
 
 export type SmtpFault =
   /** `550` to MAIL FROM, before any DATA. */
@@ -17,9 +18,7 @@ export type SmtpFault =
   /** Nothing listens on the port. */
   | "refuse-connection";
 
-export interface SmtpFaultServer {
-  host: string;
-  port: number;
+export interface SmtpFaultServer extends Endpoint {
   /** PEM of the CA behind STARTTLS; clients pass it as `tls.ca`. */
   ca: string;
   stop(): Promise<void>;
