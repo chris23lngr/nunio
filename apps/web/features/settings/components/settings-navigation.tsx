@@ -1,16 +1,17 @@
-import { Bell, ShieldCheck } from "lucide-react";
+import { Bell, Link2, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
 export function SettingsNavigation({
   active = "security",
 }: {
-  active?: "security" | "notifications";
+  active?: "security" | "notifications" | "connections";
 }) {
   return (
     <nav aria-label="Einstellungen" className="w-full shrink-0 xl:w-64">
       {[
         { key: "security", label: "Sicherheit", Icon: ShieldCheck },
         { key: "notifications", label: "Benachrichtigungen", Icon: Bell },
+        { key: "connections", label: "Verbindungen", Icon: Link2 },
       ].map(({ key, label, Icon }) => (
         <Link
           key={key}

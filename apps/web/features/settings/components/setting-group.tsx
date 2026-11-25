@@ -3,10 +3,12 @@ import { useId } from "react";
 
 export function SettingGroup({
   title,
+  description,
   children,
   footer,
 }: {
   title: string;
+  description?: string;
   children: ReactNode;
   footer?: ReactNode;
 }) {
@@ -23,6 +25,11 @@ export function SettingGroup({
         >
           {title}
         </h2>
+        {description && (
+          <p className="mt-0.5 text-sm leading-5 text-base-500">
+            {description}
+          </p>
+        )}
       </header>
       <div className="px-6 pt-2 pb-4">{children}</div>
       {footer && (
