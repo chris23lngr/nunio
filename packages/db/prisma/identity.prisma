@@ -44,6 +44,8 @@ model User {
   artifacts        Artifact[]
   practiceAttempts PracticeAttempt[]
   selfAssessments  SelfAssessment[]
+  connections      Connection[]
+  mailLoginLimit   MailLoginLimit?
 
   @@map("user")
 }

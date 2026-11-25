@@ -25,8 +25,6 @@
     "@modelcontextprotocol/server": "2.4.0",
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
-    "imapflow": "2.12.2",
-    "nodemailer": "10.6.1",
     "smtp-server": "3.21.7",
     "testcontainers": "12.2.1",
     "tsx": "4.23.15",
@@ -35,6 +33,10 @@
     "@biomejs/biome": "2.6.3"
   },
   "dependencies": {
-    "@nunio/db": "workspace:*"
+    "@nunio/db": "workspace:*",
+    "@nunio/delegation": "workspace:*",
+    "@nunio/keys": "workspace:*",
+    "imapflow": "2.12.2",
+    "nodemailer": "10.6.1"
   }
 }

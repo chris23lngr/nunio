@@ -27,7 +27,8 @@ model Integration {
   clientSecretSecret String?
   createdAt          DateTime @default(now())
 
-  tools IntegrationTool[]
+  tools       IntegrationTool[]
+  connections Connection[]
 
   @@map("integration")
 }
@@ -55,4 +56,63 @@ model IntegrationTool {
 
   @@id([integrationKey, name])
   @@map("integration_tool")
+}
+
+// A student's Connection to an Integration (#261): at most one per student and Integration. Its credentials sit in
+// connection_credential; everything nunio stores from it is sealed under its content key, wrapped like a Source key.
+model Connection {
+  id             String      @id
+  studentId      String
+  student        User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  integrationKey String
+  integration    Integration @relation(fields: [integrationKey], references: [key])
+  /// connected or needs_reconnection.
+  state          String      @default("connected")
+  /// Why it needs reconnection; null while connected.
+  stateCause     String?
+  /// Since when it is in its state.
+  stateSince     DateTime    @default(now())
+  /// The account shown, such as the email address.
+  accountLabel   String
+  /// Email: the folders nunio may read, by IMAP path.
+  folders        String[]    @default([])
+  /// Email: the IMAP and SMTP hosts and ports nunio resolved, { imap: { host, port }, smtp: { host, port } }.
+  servers        Json?
+  /// The content key, wrapped under the Source master key of this version.
+  keyVersion     String
+  keyCiphertext  String
+  createdAt      DateTime    @default(now())
+  lastUsedAt     DateTime?
+
+  credential ConnectionCredential?
+
+  @@unique([studentId, integrationKey])
+  @@unique([id, studentId])
+  @@map("connection")
+}
+
+// A Connection's credentials (ADR-0007 amendment), sealed directly under the "connection credentials" master key.
+// No route returns them and no Temporal payload carries them.
+model ConnectionCredential {
+  connectionId String     @id
+  studentId    String
+  connection   Connection @relation(fields: [connectionId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// The master key version they are sealed under.
+  keyVersion   String
+  ciphertext   String
+  createdAt    DateTime   @default(now())
+
+  @@unique([connectionId, studentId])
+  @@map("connection_credential")
+}
+
+// Mailbox logins a student made in the current fixed window; testing and connecting Email count against it.
+model MailLoginLimit {
+  studentId   String @id
+  student     User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  count       Int
+  /// When the window began, in milliseconds since the epoch.
+  windowStart BigInt
+
+  @@map("mail_login_limit")
 }
