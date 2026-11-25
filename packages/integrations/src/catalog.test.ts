@@ -161,9 +161,12 @@ describe("the dev and test seed", () => {
   });
 });
 
+/** Every Integration's tools, so a later catalog migration's are checked too. */
 async function allSeededTools(): Promise<CatalogTool[]> {
-  return [
-    ...(await catalog.tools("email")),
-    ...(await catalog.tools("testnotizen")),
-  ];
+  const integrations = await admin.integration.findMany({
+    select: { key: true },
+  });
+  return (
+    await Promise.all(integrations.map(({ key }) => catalog.tools(key)))
+  ).flat();
 }

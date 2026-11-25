@@ -32,7 +32,7 @@ export interface CatalogTool {
   reviewedAt: Date | null;
 }
 
-/** The Integration catalog: database rows changed only through migrations, like the Model Catalog (ADR-0018). */
+/** The Integration catalog: database rows, seeded and changed through migrations (#280). */
 export function createCatalog({ db }: { db: PrismaClient }) {
   return {
     /** The Integrations students can connect, by name; hidden and withdrawn ones are left out. */

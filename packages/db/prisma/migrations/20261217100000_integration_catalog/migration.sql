@@ -1,5 +1,5 @@
--- The Integration catalog (#280): Integrations and the tools nunio reviewed and classified (#262). Like the Model
--- Catalog (ADR-0018), rows change only through migrations.
+-- The Integration catalog (#280): Integrations and the tools nunio reviewed and classified (#262), seeded and changed
+-- through migrations.
 CREATE TABLE "integration" (
     "key" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -70,7 +70,8 @@ ALTER TABLE "integration_tool" ADD CONSTRAINT "integration_tool_integrationKey_f
 GRANT SELECT ON "integration", "integration_tool" TO nunio_runtime;
 
 -- Email (#263, #264): nunio's own IMAP and SMTP tools, so its pins are nunio's definitions. Hidden until the
--- Integration injection eval passes; the last Integrations ticket's migration offers it.
+-- Integration injection eval passes; the last Integrations ticket's migration offers it. email.search pins `folder`
+-- as a string: a session narrows it to an enum of the Connection's picked folders before the model sees it (#263).
 INSERT INTO "integration" ("key", "name", "logo", "description", "dataNote", "status", "kind") VALUES
   ('email', 'E-Mail', '/integrations/email.svg', 'Mails deiner Uni-Adresse durchsuchen und lesen, nach deiner Freigabe senden',
    'Daten werden von deiner Hochschule verarbeitet', 'hidden', 'email');

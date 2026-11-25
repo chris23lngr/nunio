@@ -27,7 +27,7 @@ const testnotizenClasses: Record<
 
 /**
  * Adds Testnotizen, served by the fake MCP server at `fake` and registering through CIMD with the fake as its issuer,
- * and offers it and Email. Runs as the migration role, and again on every dev start, so it overwrites what it seeded.
+ * and offers it and Email. Runs as the migration role; running it again overwrites what it seeded.
  */
 export async function seedIntegrationCatalog(
   db: PrismaClient,

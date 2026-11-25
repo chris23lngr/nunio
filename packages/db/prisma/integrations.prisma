@@ -1,6 +1,5 @@
-// The Integration catalog (#280), owned by @nunio/integrations. Like the Model Catalog (ADR-0018), its rows are seeded
-// and changed only through migrations; dev and test databases get offered Integrations from the seed helper in
-// @nunio/integrations/testing.
+// The Integration catalog (#280), owned by @nunio/integrations. Its rows are seeded and changed through migrations;
+// dev and test databases get offered Integrations from the seed helper in @nunio/integrations/testing.
 model Integration {
   key                String   @id
   name               String
