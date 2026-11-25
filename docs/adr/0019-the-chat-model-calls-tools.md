@@ -42,6 +42,8 @@ Instructions hidden in a Source can steer tool calls. A proposal does nothing wi
 
 **Amendment (2026-11-13):** [ADR-0021](0021-a-chat-sees-understanding-shortfalls-and-artifacts.md) adds Understanding Levels, Shortfalls and Artifacts to the read tools, adds `studyBlock.remove` to the proposals, and lists further work a Chat does not offer.
 
+**Amendment (2026-11-25, Integration tools):** [ADR-0028](0028-integration-tool-calls-run-where-their-chat-or-run-runs.md) runs a Chat's Integration tool calls in the API, within the turn. Once a turn has dispatched an Integration write, Stop and a closed tab no longer end it, and it is saved even if a later step fails, so the write shows with its answer. A turn takes no further write after an Unconfirmed one.
+
 ## Considered Options
 
 - **Retrieval before the first step, plus a search tool:** every answer is grounded, but follow-up questions are searched with weak terms, and even "thanks" costs a retrieval.
