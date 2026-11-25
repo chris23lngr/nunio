@@ -49,8 +49,11 @@ export interface StoredMail {
 }
 
 export interface FakeMailServerOptions {
-  /** Key, certificate and CA (PEM) every TLS endpoint serves. Default a throwaway CA with a `localhost` leaf. */
-  tls?: TestCertificate;
+  /**
+   * Key, certificate and CA (PEM) every TLS endpoint serves, and the host name the certificate is for, which clients
+   * check it against. Default a throwaway CA with a `localhost` leaf.
+   */
+  tls?: TestCertificate & { hostname: string };
   /** Fixed host ports for the implicit TLS endpoints. Default ephemeral ports. */
   ports?: { imaps: number; smtps: number };
 }
@@ -58,6 +61,8 @@ export interface FakeMailServerOptions {
 export interface FakeMailServer {
   /** PEM of the CA behind every TLS endpoint; clients pass it as `tls.ca`. */
   ca: string;
+  /** GreenMail's admin API, for another process to create accounts or read delivered mail. */
+  adminUrl: string;
   imap: { implicitTls: Endpoint; startTls: Endpoint };
   smtp: { implicitTls: Endpoint; startTls: Endpoint };
   /** The address is also the login. */
@@ -78,7 +83,7 @@ const API = 8080;
 const KEYSTORE = "/home/greenmail/greenmail.p12";
 
 export async function startFakeMailServer({
-  tls: certificate = testCertificate(),
+  tls: certificate = { ...testCertificate(), hostname: "localhost" },
   ports,
 }: FakeMailServerOptions = {}): Promise<FakeMailServer> {
   const container = await new GenericContainer("greenmail/standalone:2.1.15")
@@ -136,7 +141,7 @@ export async function startFakeMailServer({
       ...imaps,
       secure: true,
       auth: { user: account.address, pass: account.password },
-      tls: { ca: certificate.ca },
+      tls: { ca: certificate.ca, servername: certificate.hostname },
       logger: false,
     });
     await client.connect();
@@ -149,6 +154,7 @@ export async function startFakeMailServer({
 
   return {
     ca: certificate.ca,
+    adminUrl: api,
     imap: {
       implicitTls: imaps,
       startTls: { host: "127.0.0.1", port: imapFront.port },

@@ -218,8 +218,11 @@ describe("beside the e2e API", () => {
     return port;
   }
 
-  it("serves TLS under a given certificate's name on fixed ports", async () => {
-    const tls = createCertificate(["DNS:mail.nunio.test"]);
+  it("serves TLS under a given certificate's name on fixed ports, and seeds and reads mail under it", async () => {
+    const tls = {
+      ...createCertificate(["DNS:mail.nunio.test"]),
+      hostname: "mail.nunio.test",
+    };
     const ports = { imaps: await freePort(), smtps: await freePort() };
     const fixed = await startFakeMailServer({ tls, ports });
     try {
@@ -251,6 +254,20 @@ describe("beside the e2e API", () => {
           })
           .verify(),
       ).resolves.toBe(true);
+
+      const uid = await fixed.seed(account, "INBOX", {
+        from: "lenz@uni.test",
+        to: account.address,
+        subject: "Raumänderung",
+        text: "Die Übung findet in Raum 2.104 statt.",
+      });
+      const [stored] = await fixed.messages(account, "INBOX");
+      expect(stored).toMatchObject({
+        uid,
+        envelope: { subject: "Raumänderung" },
+      });
+      const readiness = await fetch(`${fixed.adminUrl}/api/service/readiness`);
+      expect(readiness.ok).toBe(true);
     } finally {
       await fixed.stop();
     }
