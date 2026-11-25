@@ -24,4 +24,13 @@ describe("INTEGRATION_FAKES", () => {
       integrationFakes({ INTEGRATION_FAKES: "true", RENDER: "true" }),
     ).toThrow("INTEGRATION_FAKES must not be set on a deployment");
   });
+
+  it.each([
+    ["Vercel", { VERCEL: "1" }],
+    ["Render", { RENDER: "true" }],
+  ])("refuses to start on %s even when set to false", (_, platform) => {
+    expect(() =>
+      integrationFakes({ INTEGRATION_FAKES: "false", ...platform }),
+    ).toThrow("INTEGRATION_FAKES must not be set on a deployment");
+  });
 });
