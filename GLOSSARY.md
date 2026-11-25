@@ -209,11 +209,11 @@ _Avoid_: Subscription, license, trial, plan
 ### Handing in
 
 **Destination**:
-The external place where an Obligation is handed in, such as a specific Moodle course or a professor's email address. A Destination is either verified for direct Submission by nunio or not.
+The external place where an Obligation is handed in, such as a specific Moodle course or a professor's email address. A Destination is verified once the student confirms it. nunio submits to it directly only while the student has a Connected Connection whose Integration can submit to that kind of Destination; otherwise it is a Handoff.
 _Avoid_: Target, channel, endpoint
 
 **Submission**:
-The Action of handing in the student's work for an Obligation, Own Work or an Artifact, to a Destination.
+The Action of handing in the student's work for an Obligation, Own Work or an Artifact, to a Destination. Every Submission needs its own Approval, and an Agent never makes one. It is confirmed once the Destination accepts it (for email, the student's own mail provider); nunio never claims the work was received.
 _Avoid_: Upload, delivery, hand-in
 
 **Handoff**:
