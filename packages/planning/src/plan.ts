@@ -8,7 +8,7 @@ import type {
   Principal,
   Transaction,
 } from "@nunio/delegation";
-import { principal, withOwner } from "@nunio/delegation";
+import { isHandedIn, principal, withOwner } from "@nunio/delegation";
 import type { Facts } from "@nunio/knowledge";
 import { definitely } from "@nunio/knowledge";
 import { readCalendar } from "./calendar.js";
@@ -306,7 +306,7 @@ export function createPlan({
       ...items.flatMap((o) => (o.due ? [o.due.getTime()] : [])),
     );
     // Work the student reported as handed in needs no more time, and so causes no Shortfall.
-    const planned = items.filter((o) => !o.reportedSubmittedAt);
+    const planned = items.filter((o) => !isHandedIn(o));
     const state: PlanState = {
       now,
       timeZone: preferences.timeZone,
@@ -321,9 +321,7 @@ export function createPlan({
       tasks: tasks
         .filter(
           (task) =>
-            !items.some(
-              (o) => o.id === task.obligationId && o.reportedSubmittedAt,
-            ),
+            !items.some((o) => o.id === task.obligationId && isHandedIn(o)),
         )
         .map((task) => ({
           id: task.id,

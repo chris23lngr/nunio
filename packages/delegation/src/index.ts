@@ -48,6 +48,7 @@ export {
   StaleApprovalError,
   UnknownActionError,
 } from "./gate.js";
+export { isHandedIn } from "./handed-in.js";
 export {
   type ActionIntent,
   InvalidIntentError,

@@ -10,6 +10,7 @@ import type {
   RunUse,
 } from "./decision.js";
 import { decideAction } from "./decision.js";
+import { isHandedIn } from "./handed-in.js";
 import type { ActionIntent, Args, Kind, Subject } from "./kinds.js";
 import { canonical, definitions, InvalidIntentError } from "./kinds.js";
 import type { Principal, Transaction } from "./principal.js";
@@ -386,11 +387,9 @@ async function subjectOf(
 ): Promise<Subject | null> {
   // An Obligation the student Rejected or reported as handed in is no work any more, as the Plan treats it, so no new
   // Task or Study Block counts toward it and none is moved for it; a leftover block may still be removed.
-  const closed = (obligation: {
-    state: string;
-    reportedSubmittedAt: Date | null;
-  }) =>
-    obligation.state === "rejected" || Boolean(obligation.reportedSubmittedAt);
+  const closed = (
+    obligation: { state: string } & Parameters<typeof isHandedIn>[0],
+  ) => obligation.state === "rejected" || isHandedIn(obligation);
   /** The work, directly or through its Task; with `open`, null once its Obligation is closed. */
   const workOf = async (
     ref: { obligationId: string | null; taskId: string | null },
