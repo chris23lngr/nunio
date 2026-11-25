@@ -23,6 +23,7 @@
         "@nunio/db": "workspace:*",
         "@nunio/delegation": "workspace:*",
         "@nunio/identity": "workspace:*",
+        "@nunio/integrations": "workspace:*",
         "@nunio/keys": "workspace:*",
         "@nunio/knowledge": "workspace:*",
         "@nunio/outreach": "workspace:*",
@@ -309,6 +310,9 @@
     "packages/integrations": {
       "name": "@nunio/integrations",
       "version": "0.0.0",
+      "dependencies": {
+        "@nunio/db": "workspace:*",
+      },
       "devDependencies": {
         "@biomejs/biome": "2.6.3",
         "@modelcontextprotocol/client": "2.4.0",

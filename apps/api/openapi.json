@@ -7180,6 +7180,66 @@
           "areas",
           "ungrouped"
         ]
+      },
+      "Integration": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "logo": {
+            "type": "string",
+            "description": "The path of its logo in the web app."
+          },
+          "description": {
+            "type": "string"
+          },
+          "dataNote": {
+            "type": "string",
+            "description": "Where the vendor processes data."
+          },
+          "connection": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "needs_reconnection"
+                ]
+              },
+              "accountLabel": {
+                "type": "string",
+                "description": "The account, such as the email address or workspace name."
+              },
+              "agentCount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "How many of the student's Agents use a tool of it."
+              }
+            },
+            "required": [
+              "state",
+              "accountLabel",
+              "agentCount"
+            ],
+            "description": "The student's Connection to it, or null when they have none."
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "logo",
+          "description",
+          "dataNote",
+          "connection"
+        ]
       }
     },
     "parameters": {}
@@ -18164,6 +18224,51 @@
           },
           "404": {
             "description": "Course, Topic or Topic Area is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/integrations": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "The offered Integrations, by name; hidden and withdrawn ones are left out.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "integrations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Integration"
+                      }
+                    }
+                  },
+                  "required": [
+                    "integrations"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
             "content": {
               "application/json": {
                 "schema": {

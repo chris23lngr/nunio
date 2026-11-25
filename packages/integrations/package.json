@@ -33,5 +33,8 @@
     "typescript": "5.9.3",
     "vitest": "5.0.5",
     "@biomejs/biome": "2.6.3"
+  },
+  "dependencies": {
+    "@nunio/db": "workspace:*"
   }
 }

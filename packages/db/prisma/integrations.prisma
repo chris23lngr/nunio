@@ -1,0 +1,58 @@
+// The Integration catalog (#280), owned by @nunio/integrations. Its rows are seeded and changed through migrations;
+// dev and test databases get offered Integrations from the seed helper in @nunio/integrations/testing.
+model Integration {
+  key                String   @id
+  name               String
+  /// The path of its logo in the web app, such as /integrations/email.svg.
+  logo               String
+  description        String
+  /// Where the vendor processes data, shown on Verfügbar and in the Connect dialog.
+  dataNote           String
+  /// hidden (seeded, not offered), offered or withdrawn.
+  status             String   @default("hidden")
+  /// mcp, or email for nunio's own IMAP and SMTP tools.
+  kind               String
+  /// The MCP server's URL; mcp only, like the columns below.
+  mcpUrl             String?
+  /// http (Streamable HTTP) or sse.
+  transport          String?
+  /// Every scope, asked up front.
+  scopes             String[] @default([])
+  /// The authorization server issuers nunio accepts from the server's Protected Resource Metadata.
+  issuers            String[] @default([])
+  /// cimd, dcr or preregistered.
+  registration       String?
+  /// For preregistered: the names of the platform secrets holding the client id and secret.
+  clientIdSecret     String?
+  clientSecretSecret String?
+  createdAt          DateTime @default(now())
+
+  tools IntegrationTool[]
+
+  @@map("integration")
+}
+
+// A tool nunio reviewed and classified. A server's tool without a row is unclassified and never offered.
+model IntegrationTool {
+  integrationKey   String
+  integration      Integration @relation(fields: [integrationKey], references: [key])
+  /// The server's own tool name.
+  name             String
+  /// read, write, write_always_asked or blocked (#262).
+  class            String
+  /// The pinned definition, { description, inputSchema }, as reviewed.
+  definition       Json
+  /// sha256 of the definition's canonical JSON.
+  definitionHash   String
+  /// nunio's German label, such as "Mail senden".
+  label            String
+  /// The argument an Approval card shows first.
+  headlineArgument String?
+  /// Offered only in a Chat, never to an Agent (only email.submit).
+  chatOnly         Boolean     @default(false)
+  /// When staff last reviewed the server's live definition; null for nunio's own tools.
+  reviewedAt       DateTime?
+
+  @@id([integrationKey, name])
+  @@map("integration_tool")
+}

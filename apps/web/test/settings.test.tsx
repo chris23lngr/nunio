@@ -83,7 +83,7 @@ test("security settings show real sessions and the settings destinations", async
   const navigation = within(
     screen.getByRole("navigation", { name: "Einstellungen" }),
   );
-  expect(navigation.getAllByRole("link")).toHaveLength(2);
+  expect(navigation.getAllByRole("link")).toHaveLength(3);
   expect(
     navigation
       .getByRole("link", { name: "Sicherheit", current: "page" })
