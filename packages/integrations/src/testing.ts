@@ -5,6 +5,7 @@ export { hostileAddress, hostileMail } from "./testing/hostile-mail.js";
 export {
   type Endpoint,
   type FakeMailServer,
+  type FakeMailServerOptions,
   type MailAccount,
   type SeedMail,
   type StoredMail,

@@ -3,4 +3,8 @@
 import { Hono } from "hono";
 import { appFromEnv } from "./create-app.js";
 
+// Only deployments start here, so the fakes are refused even if VERCEL were missing.
+if (process.env.INTEGRATION_FAKES)
+  throw new Error("INTEGRATION_FAKES must not be set on a deployment");
+
 export default new Hono().route("/", await appFromEnv(process.env));

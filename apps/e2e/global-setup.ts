@@ -4,11 +4,17 @@ import { readFileSync } from "node:fs";
 import { request } from "node:https";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
+import type {
+  FakeMailServer,
+  FakeMcpServer,
+} from "@nunio/integrations/testing";
 import { createCerts } from "./certs.js";
 import {
   cookieDomain,
+  fakes,
   origins,
   ports,
   spikeWebhookSecret,
@@ -22,8 +28,15 @@ export default async function globalSetup() {
     new URL(origins.app).hostname,
     new URL(origins.api).hostname,
     new URL(origins.evil).hostname,
+    new URL(fakes.mcp).hostname,
+    fakes.mail,
   ]);
   const ca = readFileSync(certs.caPath);
+  const certificate = {
+    ca: ca.toString("utf8"),
+    key: readFileSync(certs.keyPath, "utf8"),
+    cert: readFileSync(certs.certPath, "utf8"),
+  };
   const tls = {
     NODE_EXTRA_CA_CERTS: certs.caPath,
     TLS_KEY: certs.keyPath,
@@ -31,9 +44,11 @@ export default async function globalSetup() {
   };
   const children: ChildProcess[] = [];
   let db: TestDatabase | undefined;
+  let mail: FakeMailServer | undefined;
+  let mcp: FakeMcpServer | undefined;
   const cleanup = async () => {
     await Promise.all(children.map(stop));
-    await db?.stop();
+    await Promise.all([db?.stop(), mail?.stop(), mcp?.stop()]);
   };
 
   try {
@@ -52,7 +67,42 @@ export default async function globalSetup() {
           "Local browser tests require a disposable database; unset DATABASE_URL and DATABASE_URL_UNPOOLED",
         );
       }
-      db = await startTestDatabase();
+      // Loaded here, so the staging run, which builds only @nunio/db, never needs the fakes.
+      const {
+        seedIntegrationCatalog,
+        startFakeMailServer,
+        startFakeMcpServer,
+      } = await import("@nunio/integrations/testing");
+      // Every start settles before going on, so cleanup stops whatever did start.
+      const started = await Promise.allSettled([
+        startTestDatabase().then((value) => {
+          db = value;
+        }),
+        startFakeMailServer({
+          tls: { ...certificate, hostname: fakes.mail },
+          ports: { imaps: ports.imaps, smtps: ports.smtps },
+        }).then((value) => {
+          mail = value;
+        }),
+        startFakeMcpServer({
+          port: ports.mcp,
+          url: fakes.mcp,
+          tls: certificate,
+        }).then((value) => {
+          mcp = value;
+        }),
+      ]);
+      for (const result of started)
+        if (result.status === "rejected") throw result.reason;
+      // Offers Email and Testnotizen, as the dev migrate step does.
+      const admin = createPrismaClient(createPool(db!.connectionString));
+      try {
+        await seedIntegrationCatalog(admin, mcp!);
+      } finally {
+        await admin.$disconnect();
+      }
+      // For Playwright workers, to create mailboxes and read delivered mail.
+      process.env.FAKE_MAIL_ADMIN_URL = mail!.adminUrl;
       const shared = {
         ...process.env,
         NODE_ENV: "production" as const,
@@ -62,7 +112,7 @@ export default async function globalSetup() {
         start("api", {
           ...shared,
           PORT: String(ports.api),
-          DATABASE_URL: db.runtimeConnectionString,
+          DATABASE_URL: db!.runtimeConnectionString,
           BETTER_AUTH_URL: origins.api,
           BETTER_AUTH_SECRET: "spike-b-e2e-secret-that-is-long-enough",
           APP_ORIGIN: origins.app,
@@ -86,6 +136,7 @@ export default async function globalSetup() {
           // Required at API startup for Chat; no e2e flow asks a question, and the host never resolves.
           OPENROUTER_API_KEY: "test",
           OPENROUTER_BASE_URL: "https://openrouter.invalid/api/v1",
+          INTEGRATION_FAKES: "true",
         }),
         start("web", {
           ...shared,
@@ -97,7 +148,7 @@ export default async function globalSetup() {
       );
 
       // Only Playwright workers provision verified account fixtures.
-      process.env.INVITATION_DATABASE_URL = db.connectionString;
+      process.env.INVITATION_DATABASE_URL = db!.connectionString;
 
       await Promise.all([
         waitFor(`${origins.api}/health`, ca, children[0]!),

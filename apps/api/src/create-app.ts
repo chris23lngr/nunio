@@ -25,7 +25,7 @@ import {
 import type { Auth } from "@nunio/identity";
 import { createAuth } from "@nunio/identity";
 import type { Catalog } from "@nunio/integrations";
-import { createCatalog } from "@nunio/integrations";
+import { createCatalog, integrationFakes } from "@nunio/integrations";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import type {
   Courses,
@@ -178,6 +178,8 @@ export async function appFromEnv(
   env: NodeJS.ProcessEnv,
   { emailFetch }: { emailFetch?: typeof fetch } = {},
 ) {
+  // Refuses to start a deployment that has the test fakes switched on.
+  integrationFakes(env);
   const required = (name: string) => {
     const value = env[name];
     if (!value) throw new Error(`${name} is not set`);

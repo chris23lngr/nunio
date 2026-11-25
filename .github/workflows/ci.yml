@@ -147,7 +147,7 @@ jobs:
         working-directory: apps/e2e
       - run: bunx turbo run build ${{ github.event_name == 'pull_request' && '--affected' || '' }} --concurrency=2
       - name: Local HTTPS names for the e2e suite
-        run: echo "127.0.0.1 app.nunio.test api.nunio.test evil.test" | sudo tee -a /etc/hosts
+        run: echo "127.0.0.1 app.nunio.test api.nunio.test evil.test mail.nunio.test mcp.nunio.test" | sudo tee -a /etc/hosts
       - run: bun run test:e2e --concurrency=2
       - uses: actions/upload-artifact@v5
         if: failure()

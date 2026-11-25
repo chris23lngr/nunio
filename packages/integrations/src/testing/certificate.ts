@@ -8,8 +8,6 @@ export interface TestCertificate {
   ca: string;
   key: string;
   cert: string;
-  /** Key and certificate as PKCS#12 under `P12_PASSWORD`, for GreenMail. */
-  p12: Buffer;
 }
 
 export const P12_PASSWORD = "changeit";
@@ -18,16 +16,13 @@ let created: TestCertificate | undefined;
 
 /** One CA and one leaf for `localhost` per process, so every fake shares the CA a client trusts. */
 export function testCertificate(): TestCertificate {
-  created ??= create();
+  created ??= createCertificate(["DNS:localhost", "IP:127.0.0.1"]);
   return created;
 }
 
-function create(): TestCertificate {
-  const dir = mkdtempSync(join(tmpdir(), "nunio-mail-tls-"));
-  const path = (name: string) => join(dir, name);
-  const openssl = (...args: string[]) =>
-    execFileSync("openssl", args, { stdio: "pipe" });
-  try {
+/** A throwaway CA and a leaf for `names`, given as subjectAltName entries such as `DNS:localhost`, valid for `days`. */
+export function createCertificate(names: string[], days = 2): TestCertificate {
+  return inTempDir((path) => {
     openssl(
       "req",
       "-x509",
@@ -35,7 +30,7 @@ function create(): TestCertificate {
       "rsa:2048",
       "-nodes",
       "-days",
-      "2",
+      String(days),
       "-subj",
       "/CN=nunio fake mail CA",
       "-keyout",
@@ -58,7 +53,7 @@ function create(): TestCertificate {
     writeFileSync(
       path("leaf.ext"),
       [
-        "subjectAltName=DNS:localhost,IP:127.0.0.1",
+        `subjectAltName=${names.join(",")}`,
         "basicConstraints=CA:FALSE",
         "keyUsage=digitalSignature,keyEncipherment",
         "extendedKeyUsage=serverAuth",
@@ -68,7 +63,7 @@ function create(): TestCertificate {
       "x509",
       "-req",
       "-days",
-      "2",
+      String(days),
       "-in",
       path("tls.csr"),
       "-CA",
@@ -81,6 +76,19 @@ function create(): TestCertificate {
       "-out",
       path("tls.crt"),
     );
+    return {
+      ca: readFileSync(path("ca.crt"), "utf8"),
+      key: readFileSync(path("tls.key"), "utf8"),
+      cert: readFileSync(path("tls.crt"), "utf8"),
+    };
+  });
+}
+
+/** Key and certificate (PEM) as PKCS#12 under `P12_PASSWORD`, for GreenMail. */
+export function toP12(key: string, cert: string): Buffer {
+  return inTempDir((path) => {
+    writeFileSync(path("tls.key"), key);
+    writeFileSync(path("tls.crt"), cert);
     openssl(
       "pkcs12",
       "-export",
@@ -93,12 +101,18 @@ function create(): TestCertificate {
       "-out",
       path("tls.p12"),
     );
-    return {
-      ca: readFileSync(path("ca.crt"), "utf8"),
-      key: readFileSync(path("tls.key"), "utf8"),
-      cert: readFileSync(path("tls.crt"), "utf8"),
-      p12: readFileSync(path("tls.p12")),
-    };
+    return readFileSync(path("tls.p12"));
+  });
+}
+
+function openssl(...args: string[]) {
+  execFileSync("openssl", args, { stdio: "pipe" });
+}
+
+function inTempDir<T>(run: (path: (name: string) => string) => T): T {
+  const dir = mkdtempSync(join(tmpdir(), "nunio-test-tls-"));
+  try {
+    return run((name) => join(dir, name));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -1,3 +1,4 @@
+import { createServer } from "node:net";
 import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -7,6 +8,7 @@ import {
   hostileMail,
   startFakeMailServer,
 } from "../testing.js";
+import { createCertificate } from "./certificate.js";
 
 let mail: FakeMailServer;
 let student: MailAccount;
@@ -205,4 +207,69 @@ describe("seeding", () => {
     );
     expect(found).toEqual(asks.map(() => [1]));
   });
+});
+
+describe("beside the e2e API", () => {
+  async function freePort(): Promise<number> {
+    const server = createServer();
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const { port } = server.address() as { port: number };
+    await new Promise<void>((r) => server.close(() => r()));
+    return port;
+  }
+
+  it("serves TLS under a given certificate's name on fixed ports, and seeds and reads mail under it", async () => {
+    const tls = {
+      ...createCertificate(["DNS:mail.nunio.test"]),
+      hostname: "mail.nunio.test",
+    };
+    const ports = { imaps: await freePort(), smtps: await freePort() };
+    const fixed = await startFakeMailServer({ tls, ports });
+    try {
+      expect(fixed.imap.implicitTls.port).toBe(ports.imaps);
+      expect(fixed.smtp.implicitTls.port).toBe(ports.smtps);
+      const account = await fixed.createAccount("student@nunio.test", "pw");
+      const auth = { user: account.address, pass: account.password };
+      const trust = { ca: tls.ca, servername: "mail.nunio.test" };
+
+      await connected(
+        new ImapFlow({
+          host: "127.0.0.1",
+          port: ports.imaps,
+          secure: true,
+          auth,
+          tls: trust,
+          logger: false,
+        }),
+        async (client) => expect(client.authenticated).toBeTruthy(),
+      );
+      await expect(
+        nodemailer
+          .createTransport({
+            host: "127.0.0.1",
+            port: ports.smtps,
+            secure: true,
+            auth,
+            tls: trust,
+          })
+          .verify(),
+      ).resolves.toBe(true);
+
+      const uid = await fixed.seed(account, "INBOX", {
+        from: "lenz@uni.test",
+        to: account.address,
+        subject: "Raumänderung",
+        text: "Die Übung findet in Raum 2.104 statt.",
+      });
+      const [stored] = await fixed.messages(account, "INBOX");
+      expect(stored).toMatchObject({
+        uid,
+        envelope: { subject: "Raumänderung" },
+      });
+      const readiness = await fetch(`${fixed.adminUrl}/api/service/readiness`);
+      expect(readiness.ok).toBe(true);
+    } finally {
+      await fixed.stop();
+    }
+  }, 180_000);
 });

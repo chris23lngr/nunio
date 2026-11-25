@@ -37,6 +37,7 @@
     "@nunio/understanding": "workspace:*",
     "@nunio/outreach": "workspace:*",
     "@nunio/identity": "workspace:*",
+    "@nunio/integrations": "workspace:*",
     "@nunio/artifacts": "workspace:*",
     "@nunio/chat": "workspace:*"
   }

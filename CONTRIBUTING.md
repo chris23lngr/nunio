@@ -4,7 +4,7 @@ Commit messages and agent guidelines are in [AGENTS.md](AGENTS.md).
 
 ## Local development environment
 
-`docker-compose.dev.yml` runs the web app, API, Postgres, Temporal and the Temporal worker on your machine, so you can try a branch before merging. It uses throwaway dev values only and never talks to staging or production.
+`docker-compose.dev.yml` runs the web app, API, Postgres, Temporal, the Temporal worker and the Integration fakes on your machine, so you can try a branch before merging. It uses throwaway dev values only and never talks to staging or production.
 
 Not included: the parser and object storage, so Source uploads and ingestion do not work. Email is not sent either.
 
@@ -12,10 +12,10 @@ Not included: the parser and object storage, so Source uploads and ingestion do 
 
 - Docker with Compose v2
 - [Bun](https://bun.sh), for the `bun run dev:*` shortcuts below
-- Host names for the app and API origins, which must be separate origins under one domain ([ADR-0005](docs/adr/0005-separate-app-and-api-origins.md)). The e2e suite uses the same names, so you may have them already:
+- Host names for the app and API origins, which must be separate origins under one domain ([ADR-0005](docs/adr/0005-separate-app-and-api-origins.md)), and for the Integration fakes. The e2e suite uses the same names, so you may have some already:
 
   ```sh
-  echo "127.0.0.1 app.nunio.test api.nunio.test" | sudo tee -a /etc/hosts
+  echo "127.0.0.1 app.nunio.test api.nunio.test mail.nunio.test mcp.nunio.test" | sudo tee -a /etc/hosts
   ```
 
 ### Start
@@ -31,6 +31,8 @@ The services run in the background. The first build takes a few minutes. When it
 | Web app     | <http://app.nunio.test:3000>             |
 | API         | <http://api.nunio.test:3001> (`/health`) |
 | Temporal UI | <http://localhost:8233>                  |
+
+The stack runs with `INTEGRATION_FAKES` on, and its migrate step offers Email and Testnotizen in Einstellungen › Verbindungen. Testnotizen is a fake MCP server at <http://mcp.nunio.test:3002>. A GreenMail server at `mail.nunio.test` stands in for a university mailbox and takes any address with any password. It serves IMAP over TLS on 8993 and SMTP over TLS on 8465, as in the e2e suite, which the host reaches on 3993 and 3465. Its certificate comes from a dev CA in the `mail-certs` volume, which the API and worker trust.
 
 ### Create an account
 

@@ -1,4 +1,5 @@
-# Local development stack: Postgres, Temporal, the API, the web app and the Temporal worker.
+# Local development stack: Postgres, Temporal, the API, the web app, the Temporal worker and the
+# Integration fakes (a GreenMail mail server and the Testnotizen MCP server).
 # Everything here is a throwaway dev value; nothing connects to staging or production.
 # Not included: the parser and object storage, so Source uploads and ingestion do not work.
 # Usage: docker compose -f docker-compose.dev.yml up --build (see CONTRIBUTING.md).
@@ -41,6 +42,10 @@ x-backend: &backend
   AI_DISABLED: ${AI_DISABLED:-true}
   # Email is not sent: Scaleway rejects these. The API logs sign-in codes instead (CONTRIBUTING.md).
   SCW_PROJECT_ID: dev
+  # Lets Integrations reach the fakes below (private hosts, the nunio.test mail provider).
+  INTEGRATION_FAKES: "true"
+  # Trusts the dev CA behind the fake mail server's certificate; verification stays on.
+  NODE_EXTRA_CA_CERTS: /certs/ca.crt
 
 services:
   db:
@@ -94,6 +99,7 @@ services:
     command: ["sh", "/usr/local/bin/dev-migrate.sh"]
     environment:
       DATABASE_URL: postgresql://nunio:nunio@db:5432/nunio
+      FAKE_MCP_URL: http://mcp.nunio.test:3002
     depends_on:
       db:
         condition: service_healthy
@@ -127,11 +133,15 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
+    volumes:
+      - mail-certs:/certs:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
       temporal:
         condition: service_healthy
+      mail-certs:
+        condition: service_completed_successfully
 
   web:
     <<: *app
@@ -157,12 +167,67 @@ services:
       VAPID_SUBJECT: mailto:dev@nunio.test
       # There is no parser here; only Source ingestion would call it.
       PARSER_HOSTPORT: parser.invalid:10000
+    volumes:
+      - mail-certs:/certs:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
       temporal:
         condition: service_healthy
+      mail-certs:
+        condition: service_completed_successfully
+
+  # The Integration fakes. Their names resolve on the host too (/etc/hosts): the browser opens the fake
+  # MCP server's sign-in page, and a mail client can read the mailbox.
+  mail-certs:
+    <<: *app
+    working_dir: /app/packages/integrations
+    command: ["node", "--import", "tsx", "src/testing/run-dev-certs.ts"]
+    environment:
+      CERTS_DIR: /certs
+    volumes:
+      - mail-certs:/certs
+
+  # GreenMail takes any address with any password. It listens on 8993 and 8465, as in the e2e suite,
+  # under a mail.nunio.test certificate from the dev CA; the host reaches it on 3993 and 3465.
+  mail:
+    image: greenmail/standalone:2.1.15
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.imaps.hostname=0.0.0.0 -Dgreenmail.imaps.port=8993
+        -Dgreenmail.smtps.hostname=0.0.0.0 -Dgreenmail.smtps.port=8465
+        -Dgreenmail.api.hostname=0.0.0.0 -Dgreenmail.api.port=8080
+        -Dgreenmail.auth.disabled
+        -Dgreenmail.tls.keystore.file=/certs/greenmail.p12 -Dgreenmail.tls.keystore.password=changeit
+    volumes:
+      - mail-certs:/certs:ro
+    ports:
+      - "127.0.0.1:3993:8993" # IMAP over TLS
+      - "127.0.0.1:3465:8465" # SMTP over TLS
+    networks:
+      default:
+        aliases:
+          - mail.nunio.test
+    depends_on:
+      mail-certs:
+        condition: service_completed_successfully
+
+  fake-mcp:
+    <<: *app
+    working_dir: /app/packages/integrations
+    command: ["node", "--import", "tsx", "src/testing/run-fake-mcp.ts"]
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3002"
+      PUBLIC_URL: http://mcp.nunio.test:3002
+    ports:
+      - "127.0.0.1:3002:3002"
+    networks:
+      default:
+        aliases:
+          - mcp.nunio.test
 
 volumes:
   db-data:
   temporal-data:
+  mail-certs:
