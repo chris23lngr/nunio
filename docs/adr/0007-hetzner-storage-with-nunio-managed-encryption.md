@@ -19,6 +19,8 @@ If any of these fail, fall back to AWS S3 `eu-central-1`: default encryption, si
 
 **Amendment (2026-10-30, spike e):** Hetzner answers CopyObject on an SSE-C source with 501 Not Implemented. A multipart copy (`UploadPartCopy`, parts up to 5 GiB) works with SSE-C on both sides and stays server-side, so the worker promotes files that way, and the gate is otherwise met. We stay on Hetzner. Results are in [spike-results.md](../operations/spike-results.md#e-hetzner-sse-c-2026-10-30).
 
+**Amendment (2026-11-25, Connection credentials):** Connection credentials (mailbox passwords, OAuth access and refresh tokens, and dynamically registered client credentials) are stored in Postgres and encrypted directly under a dedicated "connection credentials" master key. This key follows the same regime as the others: a separate platform secret per environment, with its version ID recorded. Both the API and the worker hold it. There is no per-Connection data key, because a wrapped per-Connection key would sit in the same backups and add nothing. Credentials are never returned to the browser after saving and never enter Temporal payloads, because activities load them from Postgres. On Disconnect, credentials are deleted at once and tokens are revoked at the vendor where supported. The documented promise: a Disconnected Connection's credentials are gone from nunio immediately and purged from all backups within 30 days. See [The lifecycle of a Connection](https://github.com/chris23lngr/nunio/issues/261).
+
 ## Considered Options
 
 - **AWS S3 eu-central-1**: encrypted by default with documented size-limited POST, but US-parented. Kept as the fallback.

@@ -39,15 +39,23 @@ _Avoid_: Workspace, goal, folder
 ### Connections
 
 **Integration**:
-A kind of external service nunio supports, such as Moodle or Google Calendar.
+A kind of external service nunio supports, such as Moodle, Google Calendar or an email mailbox. nunio curates which Integrations exist; students cannot add their own.
 _Avoid_: Connector, plugin, app
 
 **Connection**:
-The student's authorized link to one external account through an Integration, such as their own Moodle account.
+The student's authorized link to one external account through an Integration, such as their own Moodle account. A Connection either works or Needs reconnection; a service that is briefly unreachable does not change its state.
 _Avoid_: Integration, account link, connector
 
+**Needs reconnection**:
+The state of a Connection whose access only the student can restore, such as after a changed password or an expired authorization. Its tools are unavailable until the student Reconnects; Agents that use it keep running without them and are not Paused.
+_Avoid_: Broken, expired, error, disconnected
+
+**Reconnect**:
+The student signing in again to a Connection that Needs reconnection, which keeps the Connection with its Grants and settings.
+_Avoid_: Reauthorize, relink, connect again
+
 **Disconnect**:
-The student ending a Connection. nunio loses access immediately; Sources already imported stay until the student deletes them separately.
+The student ending a Connection. nunio loses access immediately, the Connection's Grants are gone, its pending Approvals are withdrawn and Agents that use it are Paused. Everything nunio kept from reading or writing through it, such as Chat answers and Briefings drawn from mail, becomes unreadable; Plan changes the student approved stay, and Sources already imported stay until the student deletes them separately. nunio Disconnects every Connection through an Integration it withdraws.
 _Avoid_: Revoke, unlink, remove
 
 ### Knowledge
@@ -299,7 +307,7 @@ A starting point nunio curates for creating an Agent, such as "Klausur vorbereit
 _Avoid_: Preset, Vorlage, blueprint
 
 **Paused**:
-The state of an Agent that takes no further Actions, including in a Run already under way, while keeping its Grants. An Agent is Paused by the student, by exhausting its Budget, by losing a Connection it depends on, by all its Courses being Archived, by losing its last Course, or by nunio when it made the Agent from one of the student's earlier delegations; only the student resumes it, even after its Budget resets or a Course is unarchived.
+The state of an Agent that takes no further Actions, including in a Run already under way, while keeping its Grants. An Agent is Paused by the student, by exhausting its Budget, by a Connection it uses being Disconnected, by all its Courses being Archived, by losing its last Course, or by nunio when it made the Agent from one of the student's earlier delegations; only the student resumes it, even after its Budget resets or a Course is unarchived.
 _Avoid_: Suspended, stopped, disabled, on hold
 
 **Ended**:
@@ -323,11 +331,11 @@ The student's consent to one exact Action, given by confirming that Action as nu
 _Avoid_: Confirmation, consent, permission
 
 **Grant**:
-Standing authority, given in advance, for an Agent to take a kind of Action on the work of its Courses without per-Action Approval. Grants exist only within an Agent. A Grant may still ask in cases nunio fixes, such as a change within the next day.
+Standing authority, given in advance, to take Actions without per-Action Approval: either for one Agent to take a kind of Action on the work of its Courses, or for every Chat and Agent to call one tool of a Connection. An Agent's Grant may still ask in cases nunio fixes, such as a change within the next day; some tools, such as sending email, can never be granted.
 _Avoid_: Permission, automation permission, authority
 
 **Capability**:
-A kind of effect the student lets one Agent have, such as creating Study Blocks or making flashcards. A Capability that is an Action is either asked each time or held as a Grant; any other Capability is simply on or off. Reading the student's material and Plan is never a Capability.
+A kind of effect the student lets one Agent have, such as creating Study Blocks or making flashcards. A Capability that is an Action is either asked each time or held as a Grant; any other Capability is simply on or off. Each tool of a Connection is a Capability that is on or off; whether one that is an Action asks follows the Connection's Grant, not the Agent. Reading the student's material and Plan is never a Capability.
 _Avoid_: Tool, skill, permission
 
 **Unconfirmed**:
