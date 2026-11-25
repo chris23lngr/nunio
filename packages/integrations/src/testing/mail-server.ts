@@ -9,7 +9,8 @@ import type { FetchMessageObject } from "imapflow";
 import { ImapFlow } from "imapflow";
 import MailComposer from "nodemailer/lib/mail-composer";
 import { GenericContainer, Wait } from "testcontainers";
-import { P12_PASSWORD, testCertificate } from "./certificate.js";
+import type { TestCertificate } from "./certificate.js";
+import { P12_PASSWORD, testCertificate, toP12 } from "./certificate.js";
 import { startStartTlsFront } from "./starttls.js";
 
 export interface Endpoint {
@@ -47,6 +48,13 @@ export interface StoredMail {
   source: string;
 }
 
+export interface FakeMailServerOptions {
+  /** Key, certificate and CA (PEM) every TLS endpoint serves. Default a throwaway CA with a `localhost` leaf. */
+  tls?: TestCertificate;
+  /** Fixed host ports for the implicit TLS endpoints. Default ephemeral ports. */
+  ports?: { imaps: number; smtps: number };
+}
+
 export interface FakeMailServer {
   /** PEM of the CA behind every TLS endpoint; clients pass it as `tls.ca`. */
   ca: string;
@@ -69,8 +77,10 @@ const SMTPS = 3465;
 const API = 8080;
 const KEYSTORE = "/home/greenmail/greenmail.p12";
 
-export async function startFakeMailServer(): Promise<FakeMailServer> {
-  const certificate = testCertificate();
+export async function startFakeMailServer({
+  tls: certificate = testCertificate(),
+  ports,
+}: FakeMailServerOptions = {}): Promise<FakeMailServer> {
   const container = await new GenericContainer("greenmail/standalone:2.1.15")
     .withEnvironment({
       // The image's default plus its own keystore path, minus `auth.disabled`, so passwords count.
@@ -82,9 +92,19 @@ export async function startFakeMailServer(): Promise<FakeMailServer> {
       ].join(" "),
     })
     .withCopyContentToContainer([
-      { content: certificate.p12, target: KEYSTORE, mode: 0o644 },
+      {
+        content: toP12(certificate.key, certificate.cert),
+        target: KEYSTORE,
+        mode: 0o644,
+      },
     ])
-    .withExposedPorts(IMAP, IMAPS, SMTP, SMTPS, API)
+    .withExposedPorts(
+      IMAP,
+      ports ? { container: IMAPS, host: ports.imaps } : IMAPS,
+      SMTP,
+      ports ? { container: SMTPS, host: ports.smtps } : SMTPS,
+      API,
+    )
     .withWaitStrategy(Wait.forHttp("/api/service/readiness", API))
     .start();
 
