@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type {
@@ -43,8 +44,13 @@ import {
   withOwner,
 } from "@nunio/delegation";
 import { createAuth } from "@nunio/identity";
-import { createCatalog } from "@nunio/integrations";
-import { createSourceKeys } from "@nunio/keys";
+import { createCatalog, createConnections } from "@nunio/integrations";
+import type { FakeMailServer, MailAccount } from "@nunio/integrations/testing";
+import {
+  startFakeMailServer,
+  startSmtpFaultServer,
+} from "@nunio/integrations/testing";
+import { createConnectionCredentialKeys, createSourceKeys } from "@nunio/keys";
 import type { Facts, Sources, TopicAreas } from "@nunio/knowledge";
 import {
   createCourses,
@@ -68,6 +74,7 @@ import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ArtifactWorkflows } from "./artifact-workflows.js";
 import { createChatModels } from "./chat-models.js";
+import type { AppDeps } from "./create-app.js";
 import { createApp } from "./create-app.js";
 import type { RunWorkflows } from "./run-workflows.js";
 
@@ -90,6 +97,12 @@ const started: unknown[][] = [];
 let workflowsDown = false;
 let admin: PrismaClient;
 let app: ReturnType<typeof createApp>;
+/** What the app was built from, to build another one with a dependency swapped. */
+let appDeps: AppDeps;
+const connectionCredentials = createConnectionCredentialKeys({
+  activeVersion: "test",
+  masters: { test: randomBytes(32) },
+});
 let sources: Sources;
 let facts: Facts;
 let topicAreas: TopicAreas;
@@ -503,7 +516,7 @@ beforeAll(async () => {
     },
     clock: { now: () => new Date() },
   });
-  app = createApp({
+  appDeps = {
     artifacts,
     artifactWorkflows,
     understanding,
@@ -586,8 +599,16 @@ beforeAll(async () => {
     },
     topicAreas,
     integrationCatalog: createCatalog({ db: prisma }),
+    // Under INTEGRATION_FAKES, so the fake mail server on localhost is reachable.
+    connections: createConnections({
+      db: prisma,
+      keys,
+      credentials: connectionCredentials,
+      fakes: true,
+    }),
     spike: { webhookSecret, pool },
-  });
+  };
+  app = createApp(appDeps);
 }, 180_000);
 
 afterAll(async () => {
@@ -11363,6 +11384,7 @@ describe("the Integration catalog", () => {
       logo: `/integrations/${offered}.svg`,
       description: "Seiten lesen und anlegen",
       dataNote: "Daten werden in den USA verarbeitet",
+      kind: "mcp",
       connection: null,
     });
     const keys = integrations.map((integration) => integration.key);
@@ -11374,6 +11396,408 @@ describe("the Integration catalog", () => {
 
   it("needs a signed-in student", async () => {
     const response = await app.request(`${apiOrigin}/api/me/integrations`);
+    expect(response.status).toBe(401);
+  });
+});
+
+describe("connecting Email", () => {
+  let mail: FakeMailServer;
+  let lea: MailAccount;
+  const password = "Pruefung-2026!";
+  const defaultCAs = getCACertificates("default");
+
+  beforeAll(async () => {
+    mail = await startFakeMailServer();
+    // nunio verifies mail servers' certificates; this one is signed by the fake's own CA.
+    setDefaultCACertificates([...defaultCAs, mail.ca]);
+    lea = await mail.createAccount("lea@uni.test", password);
+    await mail.createFolder(lea, "Lehrstuhl");
+    await mail.createFolder(lea, "Sent");
+    // Email is seeded hidden until the Integration injection eval passes; connecting needs it offered.
+    await admin.integration.update({
+      where: { key: "email" },
+      data: { status: "offered" },
+    });
+  }, 180_000);
+
+  afterAll(async () => {
+    await admin?.integration.update({
+      where: { key: "email" },
+      data: { status: "hidden" },
+    });
+    setDefaultCACertificates(defaultCAs);
+    await mail?.stop();
+  });
+
+  /** The fake mail server's implicit TLS endpoints, as the manual form or "Server ändern" enters them. */
+  const servers = () => ({
+    imap: mail.imap.implicitTls,
+    smtp: mail.smtp.implicitTls,
+  });
+
+  function post(
+    path: string,
+    cookie: string,
+    body: unknown,
+    on: ReturnType<typeof createApp> = app,
+  ) {
+    return on.request(`${apiOrigin}${path}`, {
+      method: "POST",
+      headers: {
+        cookie,
+        origin: appOrigin,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function storedFor(cookie: string) {
+    const id = await studentId(cookie);
+    return {
+      connections: await admin.connection.findMany({
+        where: { studentId: id },
+      }),
+      credentials: await admin.connectionCredential.findMany({
+        where: { studentId: id },
+      }),
+    };
+  }
+
+  it("recognises a university's mail servers from the address", async () => {
+    const cookie = await signUp("email-discover");
+
+    const recognised = await post(
+      "/api/me/connections/email/discover",
+      cookie,
+      { address: "j.schuhmacher@stud.uni-heidelberg.de" },
+    );
+    expect(recognised.status).toBe(200);
+    expect(await recognised.json()).toEqual({
+      status: "recognised",
+      university: "Universität Heidelberg",
+      imap: { host: "imap.urz.uni-heidelberg.de", port: 993 },
+      smtp: { host: "mail.urz.uni-heidelberg.de", port: 587 },
+    });
+
+    const unknown = await post("/api/me/connections/email/discover", cookie, {
+      address: "lea@cs.example",
+    });
+    expect(await unknown.json()).toEqual({ status: "unknown" });
+
+    const unsupported = await post(
+      "/api/me/connections/email/discover",
+      cookie,
+      { address: "lea@hsbi.de" },
+    );
+    expect(await unsupported.json()).toEqual({
+      status: "unsupported",
+      university: "Exchange Online",
+    });
+  });
+
+  it("tests reading and sending, lists the folders, and stores nothing", async () => {
+    const cookie = await signUp("email-test");
+
+    const response = await post("/api/me/connections/email/test", cookie, {
+      address: lea.address,
+      password,
+      servers: servers(),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({
+      folders: [
+        {
+          path: "INBOX",
+          name: "INBOX",
+          specialUse: "\\Inbox",
+          preselected: true,
+        },
+        {
+          path: "Lehrstuhl",
+          name: "Lehrstuhl",
+          specialUse: null,
+          preselected: false,
+        },
+        {
+          path: "Sent",
+          name: "Sent",
+          specialUse: "\\Sent",
+          preselected: false,
+        },
+      ],
+    });
+    expect(JSON.stringify(body)).not.toContain(password);
+    expect(await storedFor(cookie)).toEqual({
+      connections: [],
+      credentials: [],
+    });
+  });
+
+  it("saves the Connection with the chosen folders, its servers and sealed credentials, sending no mail", async () => {
+    const cookie = await signUp("email-connect");
+
+    const response = await post("/api/me/connections/email", cookie, {
+      address: lea.address,
+      password,
+      servers: servers(),
+      folders: ["INBOX", "Lehrstuhl"],
+    });
+
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body).toEqual({
+      connection: {
+        state: "connected",
+        accountLabel: lea.address,
+        folders: ["INBOX", "Lehrstuhl"],
+        agentCount: 0,
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain(password);
+
+    const listed = await app.request(`${apiOrigin}/api/me/integrations`, {
+      headers: { cookie },
+    });
+    const listedBody = (await listed.json()) as {
+      integrations: { key: string; kind: string; connection: unknown }[];
+    };
+    expect(
+      listedBody.integrations.find((i) => i.key === "email"),
+    ).toMatchObject({
+      kind: "email",
+      connection: {
+        state: "connected",
+        accountLabel: lea.address,
+        folders: ["INBOX", "Lehrstuhl"],
+        agentCount: 0,
+      },
+    });
+    expect(JSON.stringify(listedBody)).not.toContain(password);
+
+    const { connections, credentials } = await storedFor(cookie);
+    expect(connections).toEqual([
+      expect.objectContaining({
+        integrationKey: "email",
+        state: "connected",
+        stateCause: null,
+        accountLabel: lea.address,
+        folders: ["INBOX", "Lehrstuhl"],
+        servers: servers(),
+        keyVersion: "test",
+        lastUsedAt: null,
+      }),
+    ]);
+    expect(connections[0]!.keyCiphertext).toMatch(/^[A-Za-z0-9+/]+=*$/);
+    expect(credentials).toHaveLength(1);
+    const [credential] = credentials;
+    expect(credential!.connectionId).toBe(connections[0]!.id);
+    expect(credential!.ciphertext).not.toContain(password);
+    expect(
+      JSON.parse(
+        connectionCredentials.open(connections[0]!.id, {
+          version: credential!.keyVersion,
+          ciphertext: credential!.ciphertext,
+        }),
+      ),
+    ).toEqual({ username: lea.address, password });
+
+    // Testing SMTP authenticates without sending: no mail reached the mailbox or its Sent folder.
+    expect(await mail.messages(lea, "INBOX")).toEqual([]);
+    expect(await mail.messages(lea, "Sent")).toEqual([]);
+  });
+
+  it("keeps one Email Connection per student", async () => {
+    const cookie = await signUp("email-twice");
+    const connect = () =>
+      post("/api/me/connections/email", cookie, {
+        address: lea.address,
+        password,
+        servers: servers(),
+        folders: ["INBOX"],
+      });
+    expect((await connect()).status).toBe(201);
+
+    const again = await connect();
+
+    expect(again.status).toBe(409);
+    expect(await again.json()).toEqual({ error: "already_connected" });
+    expect((await storedFor(cookie)).connections).toHaveLength(1);
+  });
+
+  it("names Lesen (IMAP) when the login fails, and stores nothing", async () => {
+    const cookie = await signUp("email-imap-fails");
+
+    for (const path of [
+      "/api/me/connections/email/test",
+      "/api/me/connections/email",
+    ]) {
+      const response = await post(path, cookie, {
+        address: lea.address,
+        password: "falsch",
+        servers: servers(),
+        folders: ["INBOX"],
+      });
+      expect(response.status).toBe(422);
+      expect(await response.json()).toEqual({
+        error: "login_failed",
+        step: "imap",
+      });
+    }
+    expect(await storedFor(cookie)).toEqual({
+      connections: [],
+      credentials: [],
+    });
+  });
+
+  it("names Senden (SMTP) when sending fails, and stores nothing", async () => {
+    const cookie = await signUp("email-smtp-fails");
+    const closed = await startSmtpFaultServer("refuse-connection");
+
+    const response = await post("/api/me/connections/email", cookie, {
+      address: lea.address,
+      password,
+      servers: { imap: mail.imap.implicitTls, smtp: closed },
+      folders: ["INBOX"],
+    });
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({
+      error: "login_failed",
+      step: "smtp",
+    });
+    expect(await storedFor(cookie)).toEqual({
+      connections: [],
+      credentials: [],
+    });
+  });
+
+  it("refuses a host on a private address outside INTEGRATION_FAKES", async () => {
+    const strict = createApp({
+      ...appDeps,
+      connections: createConnections({
+        db: prisma,
+        keys: createSourceKeys({
+          activeVersion: "test",
+          masters: { test: randomBytes(32) },
+        }),
+        credentials: connectionCredentials,
+        fakes: false,
+      }),
+    });
+    const cookie = await signUp("email-private-host");
+
+    for (const path of [
+      "/api/me/connections/email/test",
+      "/api/me/connections/email",
+    ]) {
+      const privateHost = await post(
+        path,
+        cookie,
+        {
+          address: lea.address,
+          password,
+          servers: {
+            imap: { host: "127.0.0.1", port: 993 },
+            smtp: { host: "localhost", port: 465 },
+          },
+          folders: ["INBOX"],
+        },
+        strict,
+      );
+      expect(privateHost.status).toBe(422);
+      expect(await privateHost.json()).toEqual({ error: "server_refused" });
+    }
+
+    // The fake's own port is refused too: TLS only on 993 and 143, 465 and 587.
+    const otherPort = await post(
+      "/api/me/connections/email/test",
+      cookie,
+      { address: lea.address, password, servers: servers() },
+      strict,
+    );
+    expect(otherPort.status).toBe(422);
+    expect(await otherPort.json()).toEqual({ error: "port_refused" });
+    expect(await storedFor(cookie)).toEqual({
+      connections: [],
+      credentials: [],
+    });
+  });
+
+  it("needs servers for an unknown domain and refuses one nunio can't connect yet", async () => {
+    const cookie = await signUp("email-unknown");
+
+    const unknown = await post("/api/me/connections/email/test", cookie, {
+      address: "lea@cs.example",
+      password,
+    });
+    expect(unknown.status).toBe(422);
+    expect(await unknown.json()).toEqual({ error: "servers_required" });
+
+    const unsupported = await post("/api/me/connections/email", cookie, {
+      address: "lea@hsbi.de",
+      password,
+      folders: ["INBOX"],
+    });
+    expect(unsupported.status).toBe(422);
+    expect(await unsupported.json()).toEqual({ error: "unsupported" });
+  });
+
+  it("refuses a folder the mailbox doesn't have", async () => {
+    const cookie = await signUp("email-unknown-folder");
+
+    const response = await post("/api/me/connections/email", cookie, {
+      address: lea.address,
+      password,
+      servers: servers(),
+      folders: ["INBOX", "Privat"],
+    });
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: "unknown_folder" });
+    expect(await storedFor(cookie)).toEqual({
+      connections: [],
+      credentials: [],
+    });
+  });
+
+  it("refuses connecting while Email isn't offered", async () => {
+    const cookie = await signUp("email-hidden");
+    await admin.integration.update({
+      where: { key: "email" },
+      data: { status: "hidden" },
+    });
+    try {
+      const response = await post("/api/me/connections/email", cookie, {
+        address: lea.address,
+        password,
+        servers: servers(),
+        folders: ["INBOX"],
+      });
+      expect(response.status).toBe(404);
+      expect(await storedFor(cookie)).toEqual({
+        connections: [],
+        credentials: [],
+      });
+    } finally {
+      await admin.integration.update({
+        where: { key: "email" },
+        data: { status: "offered" },
+      });
+    }
+  });
+
+  it("needs a signed-in student", async () => {
+    const response = await app.request(
+      `${apiOrigin}/api/me/connections/email/discover`,
+      {
+        method: "POST",
+        headers: { origin: appOrigin, "content-type": "application/json" },
+        body: JSON.stringify({ address: lea.address }),
+      },
+    );
     expect(response.status).toBe(401);
   });
 });

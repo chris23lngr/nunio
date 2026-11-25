@@ -7,7 +7,7 @@ import type { PrismaClient } from "@nunio/db";
 import type { Agents, Delegation } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
-import type { Catalog } from "@nunio/integrations";
+import type { Catalog, Connections } from "@nunio/integrations";
 import type {
   Courses,
   Facts,
@@ -66,6 +66,7 @@ export interface AppBindings {
     artifactWorkflows: ArtifactWorkflows;
     understanding: Understanding;
     integrationCatalog: Catalog;
+    connections: Connections;
   };
 }
 

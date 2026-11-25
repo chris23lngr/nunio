@@ -44,6 +44,7 @@ model User {
   artifacts        Artifact[]
   practiceAttempts PracticeAttempt[]
   selfAssessments  SelfAssessment[]
+  connections      Connection[]
 
   @@map("user")
 }

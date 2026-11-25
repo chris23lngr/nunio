@@ -24,9 +24,16 @@ import {
 } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 import { createAuth } from "@nunio/identity";
-import type { Catalog } from "@nunio/integrations";
-import { createCatalog, integrationFakes } from "@nunio/integrations";
-import { sourceKeysFromEnv } from "@nunio/keys";
+import type { Catalog, Connections } from "@nunio/integrations";
+import {
+  createCatalog,
+  createConnections,
+  integrationFakes,
+} from "@nunio/integrations";
+import {
+  connectionCredentialKeysFromEnv,
+  sourceKeysFromEnv,
+} from "@nunio/keys";
 import type {
   Courses,
   Facts,
@@ -92,6 +99,7 @@ export interface AppDeps {
   artifactWorkflows: ArtifactWorkflows;
   understanding: Understanding;
   integrationCatalog: Catalog;
+  connections: Connections;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
   /** Mounts the spike c routes when set. */
@@ -125,6 +133,7 @@ export function createApp({
   artifactWorkflows,
   understanding,
   integrationCatalog,
+  connections,
 }: AppDeps) {
   const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
@@ -165,6 +174,7 @@ export function createApp({
     c.set("artifactWorkflows", artifactWorkflows);
     c.set("understanding", understanding);
     c.set("integrationCatalog", integrationCatalog);
+    c.set("connections", connections);
     await next();
   });
   app.route("/", routes);
@@ -179,7 +189,7 @@ export async function appFromEnv(
   { emailFetch }: { emailFetch?: typeof fetch } = {},
 ) {
   // Refuses to start a deployment that has the test fakes switched on.
-  integrationFakes(env);
+  const fakes = integrationFakes(env);
   const required = (name: string) => {
     const value = env[name];
     if (!value) throw new Error(`${name} is not set`);
@@ -315,6 +325,12 @@ export async function appFromEnv(
     artifactWorkflows,
     understanding,
     integrationCatalog: createCatalog({ db: prisma }),
+    connections: createConnections({
+      db: prisma,
+      keys,
+      credentials: connectionCredentialKeysFromEnv(env),
+      fakes,
+    }),
     // Only the worker sends; the API reads the Inbox and settings, and holds no notification key.
     outreach: createOutreach({
       db: prisma,

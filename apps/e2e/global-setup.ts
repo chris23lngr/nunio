@@ -127,6 +127,10 @@ export default async function globalSetup() {
           SOURCE_MASTER_KEYS: JSON.stringify({
             test: Buffer.alloc(32, 1).toString("base64"),
           }),
+          CONNECTION_CREDENTIAL_KEY_VERSION: "test",
+          CONNECTION_CREDENTIAL_MASTER_KEYS: JSON.stringify({
+            test: Buffer.alloc(32, 2).toString("base64"),
+          }),
           HETZNER_S3_ENDPOINT: "https://fsn1.your-objectstorage.com",
           HETZNER_S3_REGION: "fsn1",
           HETZNER_S3_ACCESS_KEY_ID: "test",
