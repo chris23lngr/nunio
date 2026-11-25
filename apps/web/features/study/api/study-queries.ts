@@ -10,6 +10,11 @@ export type ArtifactRequest =
   paths["/api/me/artifacts"]["post"]["requestBody"]["content"]["application/json"];
 export type Attempt =
   paths["/api/me/artifacts/{id}/attempts"]["get"]["responses"][200]["content"]["application/json"][number];
+export type Handoff =
+  paths["/api/me/obligations/{id}/handoff"]["get"]["responses"][200]["content"]["application/json"];
+export type AiUse = Handoff["rule"];
+
+class HandoffUnavailable extends Error {}
 
 /** The latest Attempt on each Practice Item of a practice set the student answered. */
 export function attemptsQueries(apiOrigin: string, artifactId: string) {
@@ -35,7 +40,8 @@ export function coursesQueries(apiOrigin: string) {
       const result = await createApiClient(apiOrigin).GET("/api/me/review", {
         signal,
       });
-      if (!result.data) throw new Error("Could not load your Courses.");
+      if (!result.data)
+        throw new Error("Deine Kurse konnten nicht geladen werden.");
       return result.data.courses.filter(
         (course) => course.status !== "rejected" && course.status !== "merged",
       );
@@ -52,8 +58,33 @@ export function levelsQueries(apiOrigin: string, courseId: string) {
         "/api/me/courses/{id}/levels",
         { params: { path: { id: courseId } }, signal },
       );
-      if (!result.data) throw new Error("Could not load your Levels.");
+      if (!result.data)
+        throw new Error("Dein Lernstand konnte nicht geladen werden.");
       return result.data;
     },
+  });
+}
+
+/** One Obligation's Handoff: its Destination wording, AI-use Rule, drafts and submission state. */
+export function handoffQuery(apiOrigin: string, obligationId: string) {
+  return queryOptions({
+    queryKey: [apiOrigin, "handoff", obligationId],
+    queryFn: async ({ signal }) => {
+      const result = await createApiClient(apiOrigin).GET(
+        "/api/me/obligations/{id}/handoff",
+        { params: { path: { id: obligationId } }, signal },
+      );
+      if (result.response.status === 404)
+        throw new HandoffUnavailable("Diese Abgabe gibt es nicht mehr.");
+      if (result.response.status === 409)
+        throw new HandoffUnavailable(
+          "Für diese Verpflichtung wird nichts abgegeben.",
+        );
+      if (!result.data)
+        throw new Error("Die Abgabe konnte nicht geladen werden.");
+      return result.data;
+    },
+    retry: (failures, error) =>
+      !(error instanceof HandoffUnavailable) && failures < 1,
   });
 }
