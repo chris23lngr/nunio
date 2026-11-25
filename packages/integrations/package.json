@@ -20,12 +20,16 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/node": "2.1.2",
+    "@modelcontextprotocol/server": "2.4.0",
     "@nunio/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
     "imapflow": "2.12.2",
     "nodemailer": "10.6.1",
     "smtp-server": "3.21.7",
     "testcontainers": "12.2.1",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "5.0.5",
     "@biomejs/biome": "2.6.3"
