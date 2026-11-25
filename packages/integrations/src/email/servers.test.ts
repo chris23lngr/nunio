@@ -94,6 +94,24 @@ describe("the public-address check", () => {
     ).rejects.toBeInstanceOf(MailServerRefused);
   });
 
+  it.each([
+    "fe80::1%1",
+    "::1%lo0",
+    // A zone means a local interface, so even a global address with one is refused.
+    "2a00:1450:4001:80b::200e%eth0",
+    "not-an-address",
+  ])(
+    "refuses, without throwing, an address with a zone or that doesn't parse: %s",
+    async (address) => {
+      await expect(
+        resolvePublicHost("mail.example", {
+          fakes: false,
+          lookup: resolvingTo(address),
+        }),
+      ).rejects.toBeInstanceOf(MailServerRefused);
+    },
+  );
+
   it("refuses a host when any of its addresses is private", async () => {
     await expect(
       resolvePublicHost("mail.example", {

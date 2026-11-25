@@ -485,7 +485,19 @@ test("asks for the login after reading failed, and tests again with it", async (
   ]);
 });
 
-test("tells the student to wait after too many logins", async () => {
+test.each([
+  [
+    429,
+    "too_many_attempts",
+    "Zu viele Anmeldeversuche. Versuch es in einer Viertelstunde noch einmal.",
+  ],
+  [
+    403,
+    "not_entitled",
+    "Ohne aktiven Pilotzugang kann nunio keine E-Mail verbinden.",
+  ],
+  [403, "deletion_pending", "Für dieses Konto wurde die Löschung angefordert."],
+])("explains a %i %s refusal", async (status, error, message) => {
   api.route("GET", "/api/me/integrations", () =>
     Response.json({ integrations: [email] }),
   );
@@ -493,7 +505,7 @@ test("tells the student to wait after too many logins", async () => {
     Response.json(heidelberg),
   );
   api.route("POST", "/api/me/connections/email/test", () =>
-    Response.json({ error: "too_many_attempts" }, { status: 429 }),
+    Response.json({ error }, { status }),
   );
   const user = userEvent.setup();
   renderConnections();
@@ -506,7 +518,5 @@ test("tells the student to wait after too many logins", async () => {
   await user.type(dialog.getByLabelText("Passwort"), "geheim");
   await user.click(dialog.getByRole("button", { name: "Anmeldung prüfen" }));
 
-  expect((await dialog.findByRole("alert")).textContent).toBe(
-    "Zu viele Anmeldeversuche. Versuch es in einer Viertelstunde noch einmal.",
-  );
+  expect((await dialog.findByRole("alert")).textContent).toBe(message);
 });

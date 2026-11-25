@@ -35,7 +35,9 @@ function refusedWith(status: number, error: unknown, fallback: string) {
   if (status === 403)
     return new ApiError(
       status,
-      "Ohne aktiven Pilotzugang kann nunio keine E-Mail verbinden.",
+      (error as { error?: string } | undefined)?.error === "deletion_pending"
+        ? "Für dieses Konto wurde die Löschung angefordert."
+        : "Ohne aktiven Pilotzugang kann nunio keine E-Mail verbinden.",
     );
   return new ApiError(status, fallback);
 }

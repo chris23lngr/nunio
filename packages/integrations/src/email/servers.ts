@@ -1,5 +1,5 @@
 import { lookup as dnsLookup } from "node:dns/promises";
-import { BlockList, isIPv4 } from "node:net";
+import { BlockList, isIPv4, isIPv6 } from "node:net";
 
 /** How nunio speaks TLS on a mail port: TLS from the first byte, or STARTTLS before any login. */
 export type MailTls = "implicit" | "starttls";
@@ -63,8 +63,10 @@ for (const [network, prefix] of [
 ] as const)
   specialIPv6.addSubnet(network, prefix, "ipv6");
 
+/** Fails closed: an address with a zone (a local interface) or one that isn't an IP address is not public. */
 function isPublic(address: string): boolean {
   if (isIPv4(address)) return !nonPublicIPv4.check(address, "ipv4");
+  if (!isIPv6(address) || address.includes("%")) return false;
   // The URL parser writes an IPv6 address canonically, an IPv4-mapped one as ::ffff:hhhh:hhhh.
   const canonical = new URL(`http://[${address}]`).hostname.slice(1, -1);
   const mapped = canonical.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);

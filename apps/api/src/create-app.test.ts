@@ -11845,6 +11845,99 @@ describe("connecting Email", () => {
     ).toBe(201);
   });
 
+  it("checks Email offered, then access, then an existing Connection, and counts no login for any of them", async () => {
+    const cookie = await signUp("email-order");
+    const id = await studentId(cookie);
+    const connect = () =>
+      post("/api/me/connections/email", cookie, {
+        address: lea.address,
+        password,
+        servers: servers(),
+        folders: ["INBOX"],
+      });
+    expect((await connect()).status).toBe(201);
+    const logins = async () =>
+      (await admin.mailLoginLimit.findUnique({ where: { studentId: id } }))
+        ?.count;
+    expect(await logins()).toBe(1);
+
+    await admin.integration.update({
+      where: { key: "email" },
+      data: { status: "hidden" },
+    });
+    try {
+      const hidden = await connect();
+      expect(hidden.status).toBe(404);
+      expect(await hidden.json()).toEqual({ error: "not_offered" });
+    } finally {
+      await admin.integration.update({
+        where: { key: "email" },
+        data: { status: "offered" },
+      });
+    }
+    await admin.pilotEntitlement.update({
+      where: { studentId: id },
+      data: { revokedAt: new Date() },
+    });
+    const revoked = await connect();
+    expect(revoked.status).toBe(403);
+    expect(await revoked.json()).toEqual({ error: "not_entitled" });
+    await admin.pilotEntitlement.update({
+      where: { studentId: id },
+      data: { revokedAt: null },
+    });
+    const again = await connect();
+    expect(again.status).toBe(409);
+    expect(await again.json()).toEqual({ error: "already_connected" });
+
+    expect(await logins()).toBe(1);
+  });
+
+  it("counts no login for a refused port, since nothing was contacted", async () => {
+    const strict = createApp({
+      ...appDeps,
+      connections: createConnections({
+        db: prisma,
+        keys: createSourceKeys({
+          activeVersion: "test",
+          masters: { test: randomBytes(32) },
+        }),
+        credentials: connectionCredentials,
+        fakes: false,
+      }),
+    });
+    const cookie = await signUp("email-port-not-counted");
+    const test = (imapPort: number) =>
+      post(
+        "/api/me/connections/email/test",
+        cookie,
+        {
+          address: lea.address,
+          password,
+          servers: {
+            imap: { host: "127.0.0.1", port: imapPort },
+            smtp: { host: "127.0.0.1", port: 465 },
+          },
+        },
+        strict,
+      );
+    for (let i = 0; i < 11; i++) {
+      const refused = await test(25);
+      expect(refused.status).toBe(422);
+      expect(await refused.json()).toEqual({ error: "port_refused" });
+    }
+    // Still within the limit: the host check comes after counting, and refuses the private address.
+    const counted = await test(993);
+    expect(await counted.json()).toEqual({ error: "server_refused" });
+    expect(
+      (
+        await admin.mailLoginLimit.findUnique({
+          where: { studentId: await studentId(cookie) },
+        })
+      )?.count,
+    ).toBe(1);
+  });
+
   it("refuses a student whose pilot access isn't active", async () => {
     const cookie = await signUp("email-not-entitled");
     await admin.pilotEntitlement.update({
@@ -11897,6 +11990,7 @@ describe("connecting Email", () => {
       await withOwner(prisma, asB, async (tx) => [
         ...(await tx.connection.findMany()),
         ...(await tx.connectionCredential.findMany()),
+        ...(await tx.mailLoginLimit.findMany()),
       ]),
     ).toEqual([]);
     // B connects a mailbox of their own; A's doesn't count as B's one Email Connection.

@@ -8,6 +8,7 @@ import { checkMailbox } from "./email/mailbox.js";
 import type { MailServer } from "./email/providers.js";
 import { discoverMailbox, mailProviderFor } from "./email/providers.js";
 import type { Lookup } from "./email/servers.js";
+import { mailTls } from "./email/servers.js";
 
 /** A student's Connection as Einstellungen › Verbindungen shows it; never its credentials. */
 export interface ConnectionSummary {
@@ -39,16 +40,20 @@ type Refusal =
   | { ok: false; reason: "unsupported" }
   /** An unknown domain, and no hosts entered. */
   | { ok: false; reason: "servers_required" }
+  /** A port without TLS (see `mailTls`); nothing was contacted. */
+  | { ok: false; reason: "port_refused" }
   /** More mailbox logins than `MAIL_LOGIN_LIMIT` allows in its window. */
   | { ok: false; reason: "too_many_attempts" };
+
+/** The student already has an Email Connection. */
+type AlreadyConnected = { ok: false; reason: "already_connected" };
 
 export type EmailCheck = MailboxCheck | Refusal;
 
 export type EmailConnect =
   | { ok: true; connection: ConnectionSummary }
   | Exclude<EmailCheck, { ok: true }>
-  /** The student already has an Email Connection. */
-  | { ok: false; reason: "already_connected" }
+  | AlreadyConnected
   /** A chosen folder the mailbox doesn't have. */
   | { ok: false; reason: "unknown_folder" };
 
@@ -116,22 +121,44 @@ export function createConnections({
   }
 
   /**
-   * Everything nunio checks before it logs in to a mailbox, cheapest first: Email offered, the student's access, the
-   * servers, and last the login limit, so only real logins count.
+   * Everything nunio checks before it logs in to a mailbox, in one transaction: Email offered, the student's access,
+   * (when connecting) no Email Connection yet, the servers and their ports, and last the login limit. Only a login
+   * nunio will try counts; resolving the hosts comes after it.
    */
-  async function beforeLogin(
+  function beforeLogin(
     p: Principal,
     login: EmailLogin,
-  ): Promise<MailboxLogin | Refusal> {
-    const offered = await db.integration.findFirst({
-      where: { key: EMAIL, status: "offered" },
-    });
-    if (!offered) return { ok: false, reason: "not_offered" };
-    const mailbox = mailboxLogin(login);
+    options: { connecting: false },
+  ): Promise<MailboxLogin | Refusal>;
+  function beforeLogin(
+    p: Principal,
+    login: EmailLogin,
+    options: { connecting: true },
+  ): Promise<MailboxLogin | Refusal | AlreadyConnected>;
+  function beforeLogin(
+    p: Principal,
+    login: EmailLogin,
+    { connecting }: { connecting: boolean },
+  ): Promise<MailboxLogin | Refusal | AlreadyConnected> {
     return withOwner(db, p, async (tx, studentId) => {
+      const offered = await tx.integration.findFirst({
+        where: { key: EMAIL, status: "offered" },
+      });
+      if (!offered) return { ok: false, reason: "not_offered" };
       const refusal = await accessRefusal(tx, studentId);
       if (refusal) return { ok: false, reason: refusal };
+      if (
+        connecting &&
+        (await tx.connection.findFirst({ where: { integrationKey: EMAIL } }))
+      )
+        return { ok: false, reason: "already_connected" };
+      const mailbox = mailboxLogin(login);
       if ("ok" in mailbox) return mailbox;
+      if (
+        !mailTls("imap", mailbox.imap.port, { fakes }) ||
+        !mailTls("smtp", mailbox.smtp.port, { fakes })
+      )
+        return { ok: false, reason: "port_refused" };
       if (!(await admitLogin(tx, studentId)))
         return { ok: false, reason: "too_many_attempts" };
       return mailbox;
@@ -159,7 +186,7 @@ export function createConnections({
 
     /** Tests reading (IMAP) and sending (SMTP) without sending, and lists the folders; stores nothing. */
     async testEmail(p: Principal, login: EmailLogin): Promise<EmailCheck> {
-      const mailbox = await beforeLogin(p, login);
+      const mailbox = await beforeLogin(p, login, { connecting: false });
       if ("ok" in mailbox) return mailbox;
       return checkMailbox(mailbox, { fakes, lookup });
     },
@@ -172,11 +199,7 @@ export function createConnections({
       p: Principal,
       login: EmailLogin & { folders: string[] },
     ): Promise<EmailConnect> {
-      const existing = await withOwner(db, p, (tx) =>
-        tx.connection.findFirst({ where: { integrationKey: EMAIL } }),
-      );
-      if (existing) return { ok: false, reason: "already_connected" };
-      const mailbox = await beforeLogin(p, login);
+      const mailbox = await beforeLogin(p, login, { connecting: true });
       if ("ok" in mailbox) return mailbox;
       const check = await checkMailbox(mailbox, { fakes, lookup });
       if (!check.ok) return check;
