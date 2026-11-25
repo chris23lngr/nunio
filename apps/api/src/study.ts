@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import type { Principal } from "@nunio/delegation";
-import { principal } from "@nunio/delegation";
+import { isHandedIn, principal } from "@nunio/delegation";
 import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
 import { AiUse } from "./review.js";
@@ -645,7 +645,7 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
         .filter(
           (o): o is typeof o & { kind: (typeof handedIn)[number] } =>
             o.state !== "rejected" &&
-            !o.reportedSubmittedAt &&
+            !isHandedIn(o) &&
             (handedIn as readonly string[]).includes(o.kind),
         )
         // Undated ones last.

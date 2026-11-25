@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import type { Agents, Principal, Transaction } from "@nunio/delegation";
-import { withOwner } from "@nunio/delegation";
+import { isHandedIn, withOwner } from "@nunio/delegation";
 import type { Facts } from "./facts.js";
 import type { CourseColor } from "./new-course.js";
 import { clashing, courseColors, matchKeys, newCourse } from "./new-course.js";
@@ -52,7 +52,7 @@ function nextObligation(
     .filter(
       (o) =>
         o.state !== "rejected" &&
-        !o.reportedSubmittedAt &&
+        !isHandedIn(o) &&
         o.due.date &&
         dueKey(o.due) > localNow(now, o.due.timeZone ?? "Europe/Berlin"),
     )
@@ -418,8 +418,7 @@ export function createCourses({
           // Every dated item: its Obligations still owed, the Study Blocks for its work and its Course Events.
           obligations: reviewed.obligations
             .filter(
-              (o) =>
-                o.state !== "rejected" && !o.reportedSubmittedAt && o.due.date,
+              (o) => o.state !== "rejected" && !isHandedIn(o) && o.due.date,
             )
             .map((o) => ({
               id: o.id,

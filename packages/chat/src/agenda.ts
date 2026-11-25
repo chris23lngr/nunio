@@ -1,4 +1,5 @@
 import type { Principal } from "@nunio/delegation";
+import { isHandedIn } from "@nunio/delegation";
 import type { KnowledgeReader } from "@nunio/knowledge";
 import type { Plan, Tradeoff, Unplanned } from "@nunio/planning";
 import { deadline } from "@nunio/planning";
@@ -139,7 +140,7 @@ export function agendaTool(
             turn.sources.add(fact.provenance.sourceId);
           const notes = [
             o.state === "unreviewed" ? "not reviewed by the student" : null,
-            o.reportedSubmittedAt ? "reported as submitted" : null,
+            isHandedIn(o) ? "handed in" : null,
           ].filter(Boolean);
           const course = handleOf.get(o.courseId);
           const shortfall = view.proposal.shortfalls.find(
