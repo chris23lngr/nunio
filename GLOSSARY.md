@@ -331,7 +331,7 @@ The student's consent to one exact Action, given by confirming that Action as nu
 _Avoid_: Confirmation, consent, permission
 
 **Grant**:
-Standing authority, given in advance, to take Actions without per-Action Approval: either for one Agent to take a kind of Action on the work of its Courses, or for every Chat and Agent to call one tool of a Connection. An Agent's Grant may still ask in cases nunio fixes, such as a change within the next day; some tools, such as sending email, can never be granted.
+Standing authority, given in advance, to take Actions without per-Action Approval: either for one Agent to take a kind of Action on the work of its Courses, or for every Chat and Agent to call one tool of a Connection. A Grant may still ask in cases nunio fixes, such as a change within the next day, or a Connection's tool once the Chat or Run has read another Connection's content; some tools, such as sending email, can never be granted.
 _Avoid_: Permission, automation permission, authority
 
 **Capability**:
