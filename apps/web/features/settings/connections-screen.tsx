@@ -4,13 +4,15 @@ import { Button } from "@nunio/ui/components/button/button";
 import { useQuery } from "@tanstack/react-query";
 import Image from "next/image";
 import { PageHeading } from "@/components/headings";
+import type { Integration } from "./api/integration-queries";
 import { integrationQueries } from "./api/integration-queries";
+import { EmailConnectDialog } from "./components/email-connect-dialog";
 import { SettingGroup } from "./components/setting-group";
 import { SettingsNavigation } from "./components/settings-navigation";
 
 export function ConnectionsScreen({ apiOrigin }: { apiOrigin: string }) {
   const query = useQuery(integrationQueries(apiOrigin));
-  // Connect comes with the Connect dialogs (#287, #288); until then no Integration has a Connection.
+  const connected = query.data?.filter((i) => i.connection !== null) ?? [];
   const available = query.data?.filter((i) => i.connection === null) ?? [];
   return (
     <main className="mx-auto w-full max-w-[1408px] px-4 py-8 text-base-800 sm:px-8 lg:px-16 lg:py-10">
@@ -43,9 +45,20 @@ export function ConnectionsScreen({ apiOrigin }: { apiOrigin: string }) {
                 title="Verbunden"
                 description="Dienste, die nunio in Chats und Agents für dich nutzen darf."
               >
-                <p className="py-3 text-sm text-base-500">
-                  Du hast noch keine Dienste verbunden.
-                </p>
+                {connected.length === 0 ? (
+                  <p className="py-3 text-sm text-base-500">
+                    Du hast noch keine Dienste verbunden.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-base-200">
+                    {connected.map((integration) => (
+                      <ConnectedRow
+                        key={integration.key}
+                        integration={integration}
+                      />
+                    ))}
+                  </ul>
+                )}
               </SettingGroup>
               <SettingGroup
                 title="Verfügbar"
@@ -77,10 +90,17 @@ export function ConnectionsScreen({ apiOrigin }: { apiOrigin: string }) {
                             {integration.description} · {integration.dataNote}
                           </p>
                         </div>
-                        {/* The Connect dialogs come in #287 and #288. */}
-                        <Button variant="outline" disabled>
-                          Verbinden
-                        </Button>
+                        {integration.kind === "email" ? (
+                          <EmailConnectDialog
+                            apiOrigin={apiOrigin}
+                            dataNote={integration.dataNote}
+                          />
+                        ) : (
+                          // The OAuth Connect dialog comes with #288.
+                          <Button variant="outline" disabled>
+                            Verbinden
+                          </Button>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -91,5 +111,62 @@ export function ConnectionsScreen({ apiOrigin }: { apiOrigin: string }) {
         </div>
       </div>
     </main>
+  );
+}
+
+/** What a Connection reads and which Agents use it, as one line. */
+function readsLine(connection: NonNullable<Integration["connection"]>) {
+  const parts = [];
+  if (connection.folders.length > 0)
+    parts.push(
+      `Lesen: ${connection.folders
+        .map((folder) => (folder === "INBOX" ? "Posteingang" : folder))
+        .join(", ")}`,
+    );
+  if (connection.agentCount === 1) parts.push("1 Agent nutzt diese Verbindung");
+  else if (connection.agentCount > 1)
+    parts.push(`${connection.agentCount} Agents nutzen diese Verbindung`);
+  return parts.join(" · ");
+}
+
+function ConnectedRow({ integration }: { integration: Integration }) {
+  const connection = integration.connection!;
+  const connected = connection.state === "connected";
+  const line = readsLine(connection);
+  return (
+    <li className="flex items-center gap-3 py-3">
+      <Image
+        src={integration.logo}
+        width={36}
+        height={36}
+        alt=""
+        className="size-9 shrink-0 rounded-lg"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm leading-5 font-medium text-base-800">
+          {integration.name} · {connection.accountLabel}
+        </p>
+        {line && (
+          <p className="mt-0.5 text-xs leading-4 text-base-500">{line}</p>
+        )}
+      </div>
+      <span
+        className={`flex h-5 shrink-0 items-center gap-1.5 rounded-[5px] px-1.5 text-xs leading-4 font-medium ${
+          connected
+            ? "bg-success-50 text-success-800"
+            : "bg-warning-50 text-warning-800"
+        }`}
+      >
+        <span
+          aria-hidden
+          className={`size-1.5 rounded-full ${connected ? "bg-success-500" : "bg-warning-500"}`}
+        />
+        {connected ? "Verbunden" : "Neu verbinden nötig"}
+      </span>
+      {/* The Connection's page comes with #289. */}
+      <Button variant="ghost" disabled>
+        Verwalten
+      </Button>
+    </li>
   );
 }

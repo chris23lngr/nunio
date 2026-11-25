@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createPool, createPrismaClient } from "@nunio/db";
 import { expect, test } from "@playwright/test";
 import { origins } from "../origins.js";
@@ -29,4 +30,48 @@ test("a student finds Email and Testnotizen under Verfügbar in Einstellungen �
   await expect(
     available.getByText("Testnotizen", { exact: true }),
   ).toBeVisible();
+});
+
+// Against the real API and the e2e GreenMail, which the nunio.test provider entry points at under INTEGRATION_FAKES.
+test("a student connects Email: nunio recognises the mail server, tests the login, and saves the chosen folders", async ({
+  page,
+}) => {
+  const address = `student-${randomUUID()}@nunio.test`;
+  const password = "e2e-mail-password";
+  const created = await fetch(`${process.env.FAKE_MAIL_ADMIN_URL}/api/user`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: address, login: address, password }),
+  });
+  expect(created.ok).toBe(true);
+  await signInAs(page, await createStudent("connect-email"));
+  await page.goto(`${origins.app}/settings/connections`);
+
+  await page
+    .getByRole("region", { name: "Verfügbar" })
+    .getByRole("listitem")
+    .filter({ hasText: "E-Mail" })
+    .getByRole("button", { name: "Verbinden" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "E-Mail verbinden" });
+  await dialog.getByLabel("E-Mail-Adresse").fill(address);
+  await dialog.getByLabel("Passwort").fill(password);
+  await expect(
+    dialog.getByText("nunio Test-Uni erkannt · mail.nunio.test"),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Anmeldung prüfen" }).click();
+
+  await expect(
+    dialog.getByRole("status", { name: "Anmeldung geprüft" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Posteingang" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await dialog.getByRole("button", { name: "Verbinden" }).click();
+
+  const connected = page.getByRole("region", { name: "Verbunden" });
+  await expect(connected.getByText(`E-Mail · ${address}`)).toBeVisible();
+  await expect(connected.getByText("Lesen: Posteingang")).toBeVisible();
+  await expect(connected.getByText("Verbunden", { exact: true })).toBeVisible();
+  await expect(dialog).toBeHidden();
 });
