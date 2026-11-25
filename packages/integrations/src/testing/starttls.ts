@@ -96,6 +96,8 @@ export async function startStartTlsFront(
   // The upstream's greeting is swallowed: the client already had one, and speaks first after TLS.
   function upgrade(client: Socket) {
     const secure = new TLSSocket(client, { isServer: true, secureContext });
+    // close() destroys only the topmost socket, never the raw one under a TLS handshake.
+    sockets.delete(client);
     track(secure);
     secure.pause();
     const plain = tcpConnect(upstream);

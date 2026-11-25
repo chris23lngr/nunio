@@ -155,7 +155,7 @@ export async function startFakeMailServer(): Promise<FakeMailServer> {
     async seed(account, folder, { flags = [], ...mail }) {
       const raw = await new MailComposer(mail).compile().build();
       const appended = await withImap(account, (client) =>
-        client.append(folder, raw, flags),
+        client.append(folder, raw, flags, mail.date),
       );
       if (!appended || appended.uid === undefined)
         throw new Error(`GreenMail did not append to ${folder}`);
