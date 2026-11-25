@@ -43,6 +43,7 @@ import {
   withOwner,
 } from "@nunio/delegation";
 import { createAuth } from "@nunio/identity";
+import { createCatalog } from "@nunio/integrations";
 import { createSourceKeys } from "@nunio/keys";
 import type { Facts, Sources, TopicAreas } from "@nunio/knowledge";
 import {
@@ -584,6 +585,7 @@ beforeAll(async () => {
       },
     },
     topicAreas,
+    integrationCatalog: createCatalog({ db: prisma }),
     spike: { webhookSecret, pool },
   });
 }, 180_000);
@@ -11315,5 +11317,63 @@ describe("the Agents cutover", () => {
     expect(await verlauf(refused)).toEqual([
       expect.objectContaining({ outcome: "refused", refusal: "past" }),
     ]);
+  });
+});
+
+describe("the Integration catalog", () => {
+  /** Adds an Integration as a catalog migration would, in `status`. */
+  async function addIntegration(status: string) {
+    const key = `${status}-${run}`;
+    await admin.integration.create({
+      data: {
+        key,
+        name: `Dienst ${status}`,
+        logo: `/integrations/${key}.svg`,
+        description: "Seiten lesen und anlegen",
+        dataNote: "Daten werden in den USA verarbeitet",
+        status,
+        kind: "mcp",
+        mcpUrl: `https://${key}.example/mcp`,
+        transport: "http",
+        scopes: ["default"],
+        issuers: [`https://${key}.example`],
+        registration: "cimd",
+      },
+    });
+    return key;
+  }
+
+  it("lists only offered Integrations, each with the student's Connection", async () => {
+    const offered = await addIntegration("offered");
+    const hidden = await addIntegration("hidden");
+    const withdrawn = await addIntegration("withdrawn");
+    const cookie = await signUp("integration-catalog");
+
+    const response = await app.request(`${apiOrigin}/api/me/integrations`, {
+      headers: { cookie },
+    });
+
+    expect(response.status).toBe(200);
+    const { integrations } = (await response.json()) as {
+      integrations: { key: string }[];
+    };
+    expect(integrations).toContainEqual({
+      key: offered,
+      name: "Dienst offered",
+      logo: `/integrations/${offered}.svg`,
+      description: "Seiten lesen und anlegen",
+      dataNote: "Daten werden in den USA verarbeitet",
+      connection: null,
+    });
+    const keys = integrations.map((integration) => integration.key);
+    // Email is seeded hidden until the Integration injection eval passes.
+    expect(keys).not.toContain("email");
+    expect(keys).not.toContain(hidden);
+    expect(keys).not.toContain(withdrawn);
+  });
+
+  it("needs a signed-in student", async () => {
+    const response = await app.request(`${apiOrigin}/api/me/integrations`);
+    expect(response.status).toBe(401);
   });
 });

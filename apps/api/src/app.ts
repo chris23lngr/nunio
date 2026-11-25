@@ -7,6 +7,7 @@ import type { PrismaClient } from "@nunio/db";
 import type { Agents, Delegation } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
+import type { Catalog } from "@nunio/integrations";
 import type {
   Courses,
   Facts,
@@ -29,6 +30,7 @@ import {
   registerOutreachSettingsRoutes,
   registerPushRoutes,
 } from "./inbox.js";
+import { registerIntegrationRoutes } from "./integrations.js";
 import { registerPlanRoutes } from "./plan.js";
 import { registerProjectRoutes } from "./projects.js";
 import { registerReviewRoutes } from "./review.js";
@@ -63,6 +65,7 @@ export interface AppBindings {
     artifacts: Artifacts;
     artifactWorkflows: ArtifactWorkflows;
     understanding: Understanding;
+    integrationCatalog: Catalog;
   };
 }
 
@@ -216,3 +219,4 @@ registerOutreachSettingsRoutes(routes);
 registerPushRoutes(routes);
 registerStudyRoutes(routes);
 registerTopicAreaRoutes(routes);
+registerIntegrationRoutes(routes);

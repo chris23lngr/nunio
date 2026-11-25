@@ -24,6 +24,8 @@ import {
 } from "@nunio/delegation";
 import type { Auth } from "@nunio/identity";
 import { createAuth } from "@nunio/identity";
+import type { Catalog } from "@nunio/integrations";
+import { createCatalog } from "@nunio/integrations";
 import { sourceKeysFromEnv } from "@nunio/keys";
 import type {
   Courses,
@@ -89,6 +91,7 @@ export interface AppDeps {
   artifacts: Artifacts;
   artifactWorkflows: ArtifactWorkflows;
   understanding: Understanding;
+  integrationCatalog: Catalog;
   /** The only browser origin allowed to call the API with credentials (ADR-0005). */
   appOrigin: string;
   /** Mounts the spike c routes when set. */
@@ -121,6 +124,7 @@ export function createApp({
   artifacts,
   artifactWorkflows,
   understanding,
+  integrationCatalog,
 }: AppDeps) {
   const app = new Hono<AppBindings>();
   app.use("*", cors({ origin: appOrigin, credentials: true }));
@@ -160,6 +164,7 @@ export function createApp({
     c.set("artifacts", artifacts);
     c.set("artifactWorkflows", artifactWorkflows);
     c.set("understanding", understanding);
+    c.set("integrationCatalog", integrationCatalog);
     await next();
   });
   app.route("/", routes);
@@ -307,6 +312,7 @@ export async function appFromEnv(
     artifacts,
     artifactWorkflows,
     understanding,
+    integrationCatalog: createCatalog({ db: prisma }),
     // Only the worker sends; the API reads the Inbox and settings, and holds no notification key.
     outreach: createOutreach({
       db: prisma,

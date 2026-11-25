@@ -38,7 +38,8 @@
     "@nunio/outreach": "workspace:*",
     "@nunio/artifacts": "workspace:*",
     "@nunio/understanding": "workspace:*",
-    "ai": "7.0.157"
+    "ai": "7.0.157",
+    "@nunio/integrations": "workspace:*"
   },
   "devDependencies": {
     "@temporalio/testing": "1.25.0",
