@@ -490,8 +490,8 @@ test("navigation from Review back to Sources reuses the recently loaded collecti
     .getByRole("navigation", { name: "App navigation" })
     .getByRole("link", { name: "Prüfen", exact: true })
     .click();
-  await expect(page.getByRole("heading", { name: "Review" })).toBeVisible();
-  await page.getByRole("link", { name: "Back to Sources" }).click();
+  await expect(page.getByRole("heading", { name: "Prüfen" })).toBeVisible();
+  await page.getByRole("link", { name: "Quelle hochladen" }).click();
   await expect(page.getByText(/Navigation syllabus/)).toBeVisible();
   expect(reads).toBe(1);
 });

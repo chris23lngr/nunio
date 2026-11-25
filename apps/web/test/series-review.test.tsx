@@ -123,3 +123,50 @@ test("confirming a series sets its Routine too, with the minutes the student cho
   );
   expect(decisions).toEqual([["s-om", { courseId: "om" }]]);
 });
+
+test("steppers adjust preparation and follow-up in 15-minute increments and show schedule details", async () => {
+  api.route("GET", "/api/me/plan", () =>
+    Response.json({
+      eventSeries: [series("s-om", "OM Vorlesung", "proposed", "om")],
+      calendars: [{ id: "cal-1", name: "Google Kalender", events: 2 }],
+      fixedEvents: [
+        {
+          id: "ev-1",
+          title: "OM Vorlesung",
+          start: "2026-11-10T10:15:00Z",
+          end: "2026-11-10T11:45:00Z",
+          calendarId: "cal-1",
+          seriesId: "s-om",
+          courseId: null,
+        },
+        {
+          id: "ev-2",
+          title: "OM Vorlesung",
+          start: "2026-11-17T10:15:00Z",
+          end: "2026-11-17T11:45:00Z",
+          calendarId: "cal-1",
+          seriesId: "s-om",
+          courseId: null,
+        },
+      ],
+    }),
+  );
+  const user = userEvent.setup();
+  render(<SeriesReview apiOrigin={api.origin} />);
+  const row = await screen.findByRole("group", { name: "OM Vorlesung" });
+  expect(within(row).getByText(/2 Termine .* Google Kalender/)).toBeTruthy();
+
+  await user.click(
+    within(row).getByRole("button", { name: "Vorbereitung erhöhen" }),
+  );
+  await user.click(
+    within(row).getByRole("button", { name: "Nachbereitung verringern" }),
+  );
+  await user.click(within(row).getByRole("button", { name: "Bestätigen" }));
+
+  await waitFor(() =>
+    expect(routines).toEqual([
+      ["s-om", { preparationMinutes: 45, followUpMinutes: 45 }],
+    ]),
+  );
+});

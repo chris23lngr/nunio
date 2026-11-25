@@ -1,113 +1,763 @@
 "use client";
 
-import type { paths } from "@nunio/api-client";
 import { createApiClient } from "@nunio/api-client";
+import { cn } from "@nunio/ui";
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@nunio/ui/components/select/select";
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+} from "@nunio/ui/components/breadcrumb/breadcrumb";
+import { Button, buttonVariants } from "@nunio/ui/components/button/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@nunio/ui/components/collapsible/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@nunio/ui/components/dropdown-menu/dropdown-menu";
+import {
+  BookOpen,
+  CalendarCheck2,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCheck,
+  Ellipsis,
+  Merge,
+  Plus,
+} from "lucide-react";
+import Link from "next/link";
 import type { FormEvent } from "react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
+import { PageHeader } from "@/features/shared/components/page-header";
+import type { AddObligationInput } from "./review-dialogs";
+import { AddObligationDialog, MergeCourseDialog } from "./review-dialogs";
+import type { EntryActions } from "./review-entry";
+import { FactEntry, ObligationEntry } from "./review-entry";
+import type { Course, Item, MergeSuggestion, Series } from "./review-format";
+import {
+  buildCourseColors,
+  confirmedCount,
+  courseName,
+  due,
+  entries,
+  factTypes,
+  kinds,
+  label,
+  openCount,
+  same,
+  shownCount,
+  sourceTitles,
+} from "./review-format";
+import { SeriesReview } from "./series-review";
 
-type Course =
-  paths["/api/me/review"]["get"]["responses"][200]["content"]["application/json"]["courses"][number];
-type MergeSuggestion =
-  paths["/api/me/courses/merge-suggestions"]["get"]["responses"][200]["content"]["application/json"][number];
-type Obligation = Course["obligations"][number];
-type Fact = Course["facts"][number];
-type Item =
-  | { kind: "obligation"; item: Obligation }
-  | { kind: "fact"; item: Fact };
-type Citation = Obligation["values"][number]["citations"][number];
-const kinds: Record<Obligation["kind"], string> = {
-  exam: "Exam",
-  assignment: "Assignment",
-  presentation: "Presentation",
-  thesis: "Thesis",
-  registration: "Registration",
-  other: "Obligation",
-};
-const factTypes: Record<Fact["type"], string> = {
-  topic: "Topic",
-  course_rule: "Course rule",
-  exam_logistics: "Exam logistics",
-  ai_use_rule: "AI-use rule",
-};
-const unsupported: Record<NonNullable<Obligation["unsupported"]>, string> = {
-  source_deleted: "Its Source was deleted; your Correction is kept.",
-  not_found: "Its Source no longer mentions it; your Correction is kept.",
-};
+const SERIES_TAB = "__series__";
 
-function deadline({
-  date,
-  time,
-  timeZone,
-}: Obligation["values"][number]["due"]) {
-  return date ? [date, time, timeZone].filter(Boolean).join(" ") : "no date";
-}
-function due(value: Obligation["due"]) {
-  return value.date || value.text === null
-    ? deadline(value)
-    : `No date found (“${value.text}”)`;
-}
-function Citations({ citations }: { citations: Citation[] }) {
+function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
-    <>
-      {citations.map((citation) => (
-        <blockquote key={citation.extractionId}>
-          “{citation.quote}”{" "}
-          <cite>
-            {citation.title}, page {citation.page}
-          </cite>
-        </blockquote>
-      ))}
-    </>
+    <div className="flex max-w-[440px] flex-col items-start gap-4 pt-24 pb-30">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg outline-1 outline-dashed outline-base-300">
+        <ClipboardCheck aria-hidden="true" className="size-4.5 text-base-500" />
+      </span>
+      <div className="flex flex-col gap-1.5">
+        <h2 className="text-base font-medium text-base-900">
+          Noch nichts zu prüfen
+        </h2>
+        <p className="text-sm leading-5.5 text-base-600">
+          Ergebnisse erscheinen, sobald eine Quelle gelesen wurde. Lade einen
+          Syllabus oder ein Übungsblatt hoch – nunio zeigt dir dann jede Frist
+          mit der Stelle, aus der sie stammt.
+        </p>
+      </div>
+      <div className="flex items-center gap-2 pt-1">
+        <Link
+          href="/"
+          className={cn(buttonVariants({ variant: "primary" }), "px-3")}
+        >
+          Quelle hochladen
+        </Link>
+        <Button type="button" variant="outline" onClick={onAdd}>
+          Frist selbst eintragen
+        </Button>
+      </div>
+    </div>
   );
 }
-const valueText = (value: Item["item"]["values"][number]) =>
-  "due" in value ? deadline(value.due) : value.value;
-// Mirrors the server's comparison closely enough to pick out which values differ from a Correction.
-const same = (a: string, b: string) =>
-  a.toLocaleLowerCase().replace(/\s+/g, " ").trim() ===
-  b.toLocaleLowerCase().replace(/\s+/g, " ").trim();
-const courseName = (course: Course) =>
-  `${course.code ? `${course.code} ` : ""}${course.title}`;
-const label = ({ kind, item }: Item) =>
-  kind === "obligation"
-    ? `${kinds[item.kind]}: ${item.title}`
-    : `${factTypes[item.type]}: ${item.value}`;
+
+function RejectedEntries({
+  rejected,
+  busy,
+  onRestore,
+}: {
+  rejected: Item[];
+  busy: boolean;
+  onRestore: (entry: Item) => void;
+}) {
+  if (rejected.length === 0) return null;
+  return (
+    <Collapsible className="flex flex-col gap-3">
+      <CollapsibleTrigger className="group flex w-full cursor-pointer items-center gap-2 border-t border-base-200 py-3 text-left">
+        <ChevronRight
+          aria-hidden="true"
+          strokeWidth={2.5}
+          className="size-3.5 shrink-0 text-base-500 transition-transform group-data-panel-open:rotate-90"
+        />
+        <span className="text-sm font-medium text-base-600">
+          Abgelehnt ({rejected.length})
+        </span>
+        <span className="text-[13px] leading-4.5 text-base-500">
+          · bleiben ausgeblendet, bis du sie wiederherstellst
+        </span>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <ul className="flex flex-col divide-y divide-base-200 rounded-xl border border-base-200 bg-base-50">
+          {rejected.map((entry) => (
+            <li
+              key={entry.item.id}
+              className="flex items-center justify-between gap-4 px-5 py-3"
+            >
+              <span className="min-w-0 flex-1 text-sm text-base-700">
+                {label(entry)}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => onRestore(entry)}
+              >
+                Wiederherstellen
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function MergeBanner({
+  course,
+  target,
+  busy,
+  onMerge,
+  onKeepApart,
+}: {
+  course: Course;
+  target: Course;
+  busy: boolean;
+  onMerge: () => void;
+  onKeepApart: () => void;
+}) {
+  const sameCode = Boolean(
+    course.code && target.code && same(course.code, target.code),
+  );
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-[10px] bg-primary-50 px-4 py-3.5 outline-1 outline-primary-200">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white outline-1 outline-primary-200">
+        <Merge aria-hidden="true" className="size-4 text-primary-700" />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p className="text-sm font-medium text-base-900">
+          Ähnlich zu „{courseName(target)}“ – zusammenführen?
+        </p>
+        <p className="text-[13px] leading-4.5 text-base-600">
+          {sameCode ? `Gleicher Kurscode ${course.code}. ` : ""}
+          Einträge und Quellen wandern mit.
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy}
+          onClick={onMerge}
+        >
+          Zusammenführen
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={busy}
+          className="text-base-600"
+          onClick={onKeepApart}
+        >
+          Nein, verschieden
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CourseRail({
+  accepted,
+  proposed,
+  rejectedCourses,
+  openSeriesCount,
+  courseColors,
+  activeSelection,
+  busy,
+  onSelect,
+  onRestoreCourse,
+}: {
+  accepted: Course[];
+  proposed: Course[];
+  rejectedCourses: Course[];
+  openSeriesCount: number;
+  courseColors: Record<string, string>;
+  activeSelection: string | null;
+  busy: boolean;
+  onSelect: (selection: string) => void;
+  onRestoreCourse: (id: string) => void;
+}) {
+  const hasAccepted = accepted.length > 0;
+  const hasCourses = accepted.length > 0 || proposed.length > 0;
+
+  return (
+    <nav
+      aria-label="Kurse"
+      className="flex w-full shrink-0 flex-col gap-1 lg:w-[232px]"
+    >
+      {hasAccepted && (
+        <>
+          <p className="px-2.5 pb-1.5 text-xs font-medium text-base-500">
+            Kurse
+          </p>
+          {accepted.map((course) => {
+            const open = openCount(course);
+            const active = activeSelection === course.id;
+            const ariaLabel =
+              open > 0
+                ? `${course.title} – ${open} offen`
+                : `${course.title} – alles bestätigt`;
+            return (
+              <button
+                key={course.id}
+                type="button"
+                aria-current={active ? "true" : undefined}
+                aria-label={ariaLabel}
+                onClick={() => onSelect(course.id)}
+                className={cn(
+                  "flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left text-sm font-medium transition-colors",
+                  active
+                    ? "bg-base-100 text-base-900"
+                    : "text-base-700 hover:bg-base-50",
+                )}
+              >
+                <span
+                  aria-hidden="true"
+                  className="size-2 shrink-0 rounded-full"
+                  style={{
+                    backgroundColor:
+                      courseColors[course.id] ?? "var(--base-400)",
+                  }}
+                />
+                <span className="min-w-0 flex-1 truncate">{course.title}</span>
+                <span className="flex w-6 shrink-0 justify-end">
+                  {open > 0 ? (
+                    <span className="text-right text-xs font-medium text-warning-700 tabular-nums">
+                      {open}
+                    </span>
+                  ) : (
+                    <Check
+                      aria-hidden="true"
+                      strokeWidth={2.5}
+                      className="size-3.5 text-success-600"
+                    />
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </>
+      )}
+
+      {proposed.length > 0 && (
+        <>
+          <p
+            className={cn(
+              "px-2.5 pb-1.5 text-xs font-medium text-base-500",
+              hasAccepted && "pt-5",
+            )}
+          >
+            Vorgeschlagen
+          </p>
+          {proposed.map((course) => {
+            const count = shownCount(course);
+            const active = activeSelection === course.id;
+            return (
+              <button
+                key={course.id}
+                type="button"
+                aria-current={active ? "true" : undefined}
+                aria-label={`${course.title} – ${count} gefunden`}
+                onClick={() => onSelect(course.id)}
+                className={cn(
+                  "flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left text-sm font-medium transition-colors",
+                  active
+                    ? "bg-base-100 text-base-900"
+                    : "text-base-700 hover:bg-base-50",
+                )}
+              >
+                <span
+                  aria-hidden="true"
+                  className="size-2 shrink-0 rounded-full border-[1.5px] border-dashed border-base-400"
+                />
+                <span className="min-w-0 flex-1 truncate">{course.title}</span>
+                <span className="w-6 shrink-0 text-right text-xs font-medium text-base-500 tabular-nums">
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </>
+      )}
+
+      {openSeriesCount > 0 && (
+        <>
+          <p
+            className={cn(
+              "px-2.5 pb-1.5 text-xs font-medium text-base-500",
+              hasCourses && "pt-5",
+            )}
+          >
+            Kalender
+          </p>
+          <button
+            type="button"
+            aria-current={activeSelection === SERIES_TAB ? "true" : undefined}
+            aria-label={`Kalender-Serien – ${openSeriesCount} offen`}
+            onClick={() => onSelect(SERIES_TAB)}
+            className={cn(
+              "flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left text-sm font-medium transition-colors",
+              activeSelection === SERIES_TAB
+                ? "bg-base-100 text-base-900"
+                : "text-base-700 hover:bg-base-50",
+            )}
+          >
+            <CalendarCheck2
+              aria-hidden="true"
+              className="size-3.5 shrink-0 text-base-500"
+            />
+            <span className="min-w-0 flex-1 truncate">Kalender-Serien</span>
+            <span className="w-6 shrink-0 text-right text-xs font-medium text-warning-700 tabular-nums">
+              {openSeriesCount}
+            </span>
+          </button>
+        </>
+      )}
+
+      {rejectedCourses.length > 0 && (
+        <Collapsible className="flex flex-col gap-2 pt-6">
+          <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1.5 px-2.5 text-left text-[13px] leading-4.5 text-base-500 hover:text-base-700">
+            <ChevronRight
+              aria-hidden="true"
+              strokeWidth={2.5}
+              className="size-3 shrink-0 transition-transform group-data-panel-open:rotate-90"
+            />
+            <span>Abgelehnte Kurse ({rejectedCourses.length})</span>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <ul className="flex flex-col gap-1 px-2.5">
+              {rejectedCourses.map((course) => (
+                <li
+                  key={course.id}
+                  className="flex items-center justify-between gap-2 py-1 text-[13px] text-base-600"
+                >
+                  <span className="min-w-0 flex-1 truncate">
+                    {courseName(course)}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="shrink-0 cursor-pointer text-xs font-medium text-primary-700 hover:text-primary-600 disabled:opacity-50"
+                    onClick={() => onRestoreCourse(course.id)}
+                  >
+                    Wiederherstellen
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+    </nav>
+  );
+}
+
+function ProposedCourseView({
+  course,
+  suggestions,
+  openCourses,
+  busy,
+  onDecide,
+  onOpenMerge,
+  onMergeInto,
+  onKeepApart,
+  onRestoreEntry,
+}: {
+  course: Course;
+  suggestions: Course[];
+  openCourses: Course[];
+  busy: boolean;
+  onDecide: (decision: "accept" | "reject") => void;
+  onOpenMerge: () => void;
+  onMergeInto: (target: Course) => void;
+  onKeepApart: (target: Course) => void;
+  onRestoreEntry: (entry: Item) => void;
+}) {
+  const all = entries(course);
+  const shown = all.filter((entry) => entry.item.state !== "rejected");
+  const rejected = all.filter((entry) => entry.item.state === "rejected");
+  const sources = sourceTitles(course);
+  const metaParts = [
+    "Vorgeschlagen",
+    course.code,
+    sources.length === 1
+      ? `aus „${sources[0]}“`
+      : sources.length > 1
+        ? `aus ${sources.length} Quellen`
+        : null,
+    `${shown.length} ${shown.length === 1 ? "Eintrag" : "Einträge"} gefunden`,
+  ].filter(Boolean);
+
+  return (
+    <article
+      aria-labelledby={`course-${course.id}`}
+      className="flex min-w-0 flex-1 flex-col gap-6"
+    >
+      <div className="flex items-start gap-4 border-b border-base-200 pb-5">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className="size-2.5 shrink-0 rounded-full border-[1.5px] border-dashed border-base-400"
+            />
+            <h2
+              id={`course-${course.id}`}
+              className="text-xl leading-7 font-medium text-base-900"
+            >
+              {course.title}
+            </h2>
+          </div>
+          <p className="pl-5 text-[13px] leading-4.5 text-base-600">
+            {metaParts.join(" · ")}
+          </p>
+        </div>
+      </div>
+
+      {suggestions.map((target) => (
+        <MergeBanner
+          key={target.id}
+          course={course}
+          target={target}
+          busy={busy}
+          onMerge={() => onMergeInto(target)}
+          onKeepApart={() => onKeepApart(target)}
+        />
+      ))}
+
+      <div className="flex flex-col gap-4 rounded-xl bg-white p-5 shadow-xs outline-1 outline-base-200">
+        <div className="flex items-start gap-4">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-50 outline-1 outline-primary-200">
+            <BookOpen aria-hidden="true" className="size-4 text-primary-700" />
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <h3 className="text-base font-semibold text-base-900">
+              Ist das einer deiner Kurse?
+            </h3>
+            <p className="text-sm text-base-700">
+              nunio hat in einer hochgeladenen Quelle einen Kurs erkannt, den du
+              noch nicht hast. Erst wenn du ihn übernimmst, plant nunio seine
+              Fristen ein.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 pl-12">
+          <Button
+            type="button"
+            disabled={busy}
+            className="px-3"
+            onClick={() => onDecide("accept")}
+          >
+            Ja, übernehmen
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => onDecide("reject")}
+          >
+            Nein, ablehnen
+          </Button>
+          {openCourses.length > 1 && (
+            <>
+              <div className="flex-1" />
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                className="px-0 text-primary-700 hover:text-primary-600"
+                onClick={onOpenMerge}
+              >
+                Gleicher Kurs wie …
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {shown.length > 0 && (
+        <Collapsible defaultOpen className="flex flex-col gap-3">
+          <CollapsibleTrigger className="group flex cursor-pointer items-center gap-2 text-left">
+            <ChevronDown
+              aria-hidden="true"
+              strokeWidth={2.5}
+              className="size-3.5 shrink-0 text-base-600 transition-transform group-not-data-panel-open:-rotate-90"
+            />
+            <span className="text-base font-medium text-base-800">
+              {shown.length} {shown.length === 1 ? "Eintrag" : "Einträge"}{" "}
+              gefunden
+            </span>
+            <span className="text-[13px] leading-4.5 text-base-500">
+              · prüfbar, sobald du den Kurs übernimmst
+            </span>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <ul className="flex flex-col divide-y divide-base-200 rounded-xl border border-base-200 bg-base-50">
+              {shown.map((entry) => (
+                <li
+                  key={entry.item.id}
+                  className="flex items-center gap-4 px-5 py-3"
+                >
+                  <span className="w-33 shrink-0 text-[13px] leading-5 text-base-500">
+                    {entry.kind === "obligation"
+                      ? kinds[entry.item.kind]
+                      : factTypes[entry.item.type]}
+                  </span>
+                  <span className="min-w-0 flex-1 text-sm text-base-700">
+                    {entry.kind === "obligation"
+                      ? `${entry.item.title} — ${due(entry.item.due)}`
+                      : entry.item.value}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
+      <RejectedEntries
+        rejected={rejected}
+        busy={busy}
+        onRestore={onRestoreEntry}
+      />
+    </article>
+  );
+}
+
+function AcceptedCourseView({
+  course,
+  swatch,
+  suggestions,
+  openCourses,
+  actions,
+  onOpenMerge,
+  onMergeInto,
+  onKeepApart,
+}: {
+  course: Course;
+  swatch?: string;
+  suggestions: Course[];
+  openCourses: Course[];
+  actions: EntryActions;
+  onOpenMerge: () => void;
+  onMergeInto: (target: Course) => void;
+  onKeepApart: (target: Course) => void;
+}) {
+  const all = entries(course);
+  const shown = all.filter((entry) => entry.item.state !== "rejected");
+  const rejected = all.filter((entry) => entry.item.state === "rejected");
+  const obligations = shown.filter(
+    (entry): entry is Item & { kind: "obligation" } =>
+      entry.kind === "obligation",
+  );
+  const facts = shown.filter(
+    (entry): entry is Item & { kind: "fact" } => entry.kind === "fact",
+  );
+  const sources = sourceTitles(course);
+  const open = openCount(course);
+  const confirmed = confirmedCount(course);
+
+  return (
+    <article
+      aria-labelledby={`course-${course.id}`}
+      className="flex min-w-0 flex-1 flex-col gap-8"
+    >
+      <div className="flex items-start gap-4 border-b border-base-200 pb-5">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className="size-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: swatch ?? "var(--base-400)" }}
+            />
+            <h2
+              id={`course-${course.id}`}
+              className="text-xl leading-7 font-medium text-base-900"
+            >
+              {course.title}
+            </h2>
+          </div>
+          <p className="pl-5 text-[13px] leading-4.5 text-base-600">
+            {course.code && <>{course.code} · </>}
+            {sources.length > 0 && (
+              <>
+                aus {sources.length}{" "}
+                {sources.length === 1 ? "Quelle" : "Quellen"} ·{" "}
+              </>
+            )}
+            {open > 0 && (
+              <span className="font-medium text-warning-700">{open} offen</span>
+            )}
+            {open > 0 && confirmed > 0 && " · "}
+            {confirmed > 0 && <>{confirmed} bestätigt</>}
+            {open === 0 && confirmed === 0 && "Keine Einträge"}
+          </p>
+        </div>
+        {openCourses.length > 1 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={actions.busy}
+                  aria-label={`Kursaktionen für ${course.title}`}
+                  className="size-8"
+                />
+              }
+            >
+              <Ellipsis aria-hidden="true" className="text-base-600" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                <DropdownMenuItem onClick={onOpenMerge}>
+                  Gleicher Kurs wie …
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+
+      {suggestions.map((target) => (
+        <MergeBanner
+          key={target.id}
+          course={course}
+          target={target}
+          busy={actions.busy}
+          onMerge={() => onMergeInto(target)}
+          onKeepApart={() => onKeepApart(target)}
+        />
+      ))}
+
+      <section aria-label="Fristen & Pflichten" className="flex flex-col gap-3">
+        <div className="flex items-baseline gap-2">
+          <h3 className="text-base font-medium text-base-800">
+            Fristen &amp; Pflichten
+          </h3>
+          <span className="text-[13px] leading-4.5 text-base-500 tabular-nums">
+            {obligations.length}
+          </span>
+        </div>
+        {obligations.length === 0 ? (
+          <p className="rounded-xl border border-base-200 bg-white px-5 py-4 text-sm text-base-500">
+            Keine Fristen gefunden.
+          </p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-base-200 overflow-hidden rounded-xl border border-base-200 bg-white">
+            {obligations.map((entry) => (
+              <ObligationEntry
+                key={entry.item.id}
+                entry={entry}
+                actions={actions}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {facts.length > 0 && (
+        <section aria-label="Themen & Details" className="flex flex-col gap-3">
+          <div className="flex items-baseline gap-2">
+            <h3 className="text-base font-medium text-base-800">
+              Themen &amp; Details
+            </h3>
+            <span className="text-[13px] leading-4.5 text-base-500 tabular-nums">
+              {facts.length}
+            </span>
+          </div>
+          <ul className="flex flex-col divide-y divide-base-200 overflow-hidden rounded-xl border border-base-200 bg-white">
+            {facts.map((entry) => (
+              <FactEntry key={entry.item.id} entry={entry} actions={actions} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <RejectedEntries
+        rejected={rejected}
+        busy={actions.busy}
+        onRestore={(entry) => actions.review(entry, "restore")}
+      />
+    </article>
+  );
+}
 
 export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
-  const id = useId();
-  const [entryCourse, setEntryCourse] = useState<string | null>(null);
-  const [entryKind, setEntryKind] = useState<string | null>("assignment");
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [suggestions, setSuggestions] = useState<MergeSuggestion[]>([]);
+  const [series, setSeries] = useState<Series[]>([]);
+  const [courseColors, setCourseColors] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
-  const [newCourse, setNewCourse] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [mergeCourse, setMergeCourse] = useState<Course | null>(null);
   const [version, setVersion] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
         const client = createApiClient(apiOrigin);
-        const [result, similar] = await Promise.all([
+        const [result, similar, plan, summary] = await Promise.all([
           client.GET("/api/me/review"),
-          client.GET("/api/me/courses/merge-suggestions"),
+          client.GET("/api/me/courses/merge-suggestions").catch(() => null),
+          client.GET("/api/me/plan").catch(() => null),
+          client.GET("/api/me/courses").catch(() => null),
         ]);
         if (cancelled) return;
-        if (!result.data) return setError("Could not load your review.");
+        if (!result.data)
+          return setError("Prüfen konnte nicht geladen werden.");
         setCourses(result.data.courses);
-        // Suggestions only help; Review works without them.
-        setSuggestions(similar.data ?? []);
+        // Suggestions, calendar series, and course colors enrich the view; Review still works without them.
+        setSuggestions(similar?.data ?? []);
+        setSeries(plan?.data?.eventSeries ?? []);
+        if (summary?.data?.courses) {
+          setCourseColors(buildCourseColors(summary.data.courses));
+        }
       } catch {
-        if (!cancelled) setError("Could not load your review.");
+        if (!cancelled) setError("Prüfen konnte nicht geladen werden.");
       }
     };
     void load();
@@ -121,9 +771,11 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
     };
   }, [apiOrigin, version]);
 
+  const client = () => createApiClient(apiOrigin);
+
   async function act(
     request: () => Promise<{ data?: unknown; response: Response }>,
-    invalid = "Could not save your decision. Please try again.",
+    invalid = "Deine Entscheidung konnte nicht gespeichert werden. Bitte versuche es erneut.",
   ) {
     setBusy(true);
     setError(null);
@@ -132,60 +784,55 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
       if (!result.data)
         throw new Error(
           result.response.status === 400
-            ? "Check the date, time and time zone."
+            ? "Prüfe Datum, Uhrzeit und Zeitzone."
             : invalid,
         );
       setEditing(null);
-    } catch (error) {
-      setError(
-        error instanceof Error && error.message ? error.message : invalid,
-      );
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : invalid);
     } finally {
       setBusy(false);
       setVersion((v) => v + 1);
     }
   }
-  const client = () => createApiClient(apiOrigin);
+
   const review = (
     { kind, item }: Item,
     action: "confirm" | "reject" | "restore" | "keep_mine",
-  ) =>
-    act(() =>
+  ) => {
+    void act(() =>
       client().POST("/api/me/review/{kind}/{id}/{action}", {
         params: { path: { kind, id: item.id, action } },
       }),
     );
-  const use = ({ kind, item }: Item, extractionId: string) =>
-    act(() =>
+  };
+
+  const use = ({ kind, item }: Item, extractionId: string) => {
+    void act(() =>
       client().POST("/api/me/review/{kind}/{id}/use", {
         params: { path: { kind, id: item.id } },
         body: { extractionId },
       }),
     );
-  const decide = (id: string, decision: "accept" | "reject" | "restore") =>
-    act(() =>
+  };
+
+  const decide = (id: string, decision: "accept" | "reject" | "restore") => {
+    void act(() =>
       client().POST("/api/me/courses/{id}/decision", {
         params: { path: { id } },
         body: { decision },
       }),
     );
-  async function merge(event: FormEvent<HTMLFormElement>, course: Course) {
-    event.preventDefault();
-    const target = courses?.find(
-      (other) => other.id === new FormData(event.currentTarget).get("into"),
-    );
-    if (
-      !target ||
-      !window.confirm(
-        `Merge ${courseName(course)} into ${courseName(target)}? Its items and Sources move there.`,
-      )
-    )
-      return;
-    await mergeInto(course, target);
-  }
-  async function mergeInto(course: Course, target: Course) {
+  };
+
+  async function mergeInto(
+    course: Course,
+    target: Course,
+    inlineError = false,
+  ): Promise<string | null> {
     setBusy(true);
-    setError(null);
+    if (!inlineError) setError(null);
+    let message: string | null = null;
     try {
       const result = await client().POST("/api/me/courses/{id}/merge", {
         params: { path: { id: course.id } },
@@ -196,32 +843,30 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
         result.error &&
         "items" in result.error
       ) {
-        const entries: Item[] = [
-          ...target.obligations.map((item) => ({
-            kind: "obligation" as const,
-            item,
-          })),
-          ...target.facts.map((item) => ({ kind: "fact" as const, item })),
-        ];
+        const targetEntries = entries(target);
         const titles = result.error.items
-          .map(({ id }) => entries.find((entry) => entry.item.id === id))
-          .filter((entry) => entry !== undefined)
+          .map(({ id }) => targetEntries.find((entry) => entry.item.id === id))
+          .filter((entry): entry is Item => entry !== undefined)
           .map(label);
-        setError(
-          `Both Courses hold different Corrections for ${titles.join(", ")}. Make them match or use one value, then merge again.`,
-        );
-      } else if (!result.data)
-        setError("Could not merge the Courses. Please try again.");
+        message = `Beide Kurse haben unterschiedliche Korrekturen für ${titles.join(", ")}. Gleiche sie an oder übernimm einen Wert und führe dann erneut zusammen.`;
+      } else if (!result.data) {
+        message =
+          "Die Kurse konnten nicht zusammengeführt werden. Bitte versuche es erneut.";
+      }
     } catch {
-      setError("Could not merge the Courses. Please try again.");
+      message =
+        "Die Kurse konnten nicht zusammengeführt werden. Bitte versuche es erneut.";
     } finally {
       setBusy(false);
       setVersion((v) => v + 1);
     }
+    if (message && !inlineError) setError(message);
+    return message;
   }
+
   /** "Nein, verschieden": Review never suggests merging these two again. */
-  const keepApart = (course: Course, other: Course) =>
-    act(
+  const keepApart = (course: Course, other: Course) => {
+    void act(
       () =>
         client().POST("/api/me/courses/{id}/keep-apart", {
           params: { path: { id: course.id } },
@@ -229,36 +874,8 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
         }),
       "Das konnte nicht gespeichert werden. Bitte versuche es erneut.",
     );
-  // A render function like the others: it must not remount on each poll.
-  function suggestionsFor(course: Course) {
-    return suggestions.flatMap(({ courseId, intoId }) => {
-      const target = open.find((other) => other.id === intoId);
-      if (courseId !== course.id || !target) return [];
-      return [
-        <p key={intoId}>
-          <span>Ähnlich zu {courseName(target)} – zusammenführen?</span>{" "}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              void mergeInto(course, target);
-            }}
-          >
-            Zusammenführen
-          </button>{" "}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              void keepApart(course, target);
-            }}
-          >
-            Nein, verschieden
-          </button>
-        </p>,
-      ];
-    });
-  }
+  };
+
   function correct(event: FormEvent<HTMLFormElement>, { kind, item }: Item) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -283,539 +900,202 @@ export function ReviewList({ apiOrigin }: { apiOrigin: string }) {
     );
   }
 
-  // Render functions, not components: a component declared here would remount on every poll and drop what the student typed.
-  async function enter(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget,
-      data = new FormData(form);
-    const field = (name: string) => String(data.get(name) ?? "").trim() || null;
-    const course =
-      field("course") === "new"
-        ? { title: field("courseTitle") ?? "", code: field("courseCode") }
-        : { id: field("course") ?? "" };
-    const kind = (field("kind") ?? "other") as Obligation["kind"];
+  async function addObligation(
+    body: AddObligationInput,
+  ): Promise<string | null> {
     setBusy(true);
-    setError(null);
     try {
-      const result = await client().POST("/api/me/obligations", {
-        body: {
-          course,
-          kind,
-          title: field("title") ?? "",
-          due: {
-            date: field("date"),
-            time: field("time"),
-            timeZone: field("timeZone"),
-          },
-          destination: field("destination"),
-        },
-      });
-      if (result.data) {
-        form.reset();
-      } else
-        setError(
-          {
-            400: "Check the date, time and time zone.",
-            404: "That Course is no longer available.",
-            409: "This Course already has that Obligation. Correct it instead.",
-          }[result.response.status] ??
-            "Could not add the Obligation. Please try again.",
-        );
+      const result = await client().POST("/api/me/obligations", { body });
+      if (result.data) return null;
+      return (
+        {
+          400: "Prüfe Datum, Uhrzeit und Zeitzone.",
+          404: "Dieser Kurs ist nicht mehr verfügbar.",
+          409: "Dieser Kurs hat diese Frist bereits. Korrigiere sie stattdessen.",
+        }[result.response.status] ??
+        "Die Frist konnte nicht hinzugefügt werden. Bitte versuche es erneut."
+      );
     } catch {
-      setError("Could not add the Obligation. Please try again.");
+      return "Die Frist konnte nicht hinzugefügt werden. Bitte versuche es erneut.";
     } finally {
       setBusy(false);
       setVersion((v) => v + 1);
     }
   }
-  // A render function for the same reason as correctForm below: what the student typed survives each poll.
-  function entryForm() {
-    const accepted = (courses ?? []).filter(
-      (course) => course.status === "accepted",
-    );
-    return (
-      <details>
-        <summary>Add an Obligation</summary>
-        <form
-          onReset={() => {
-            setEntryCourse(null);
-            setEntryKind("assignment");
-            setNewCourse(false);
-          }}
-          onSubmit={(event) => {
-            void enter(event);
-          }}
-        >
-          <label htmlFor={`${id}-course`}>
-            Course{" "}
-            <Select
-              name="course"
-              value={entryCourse ?? accepted[0]?.id ?? "new"}
-              items={[
-                ...accepted.map((course) => ({
-                  value: course.id,
-                  label: courseName(course),
-                })),
-                { value: "new", label: "A new Course…" },
-              ]}
-              onValueChange={(value) => {
-                setEntryCourse(value);
-                setNewCourse(value === "new");
-              }}
-            >
-              <SelectTrigger id={`${id}-course`} aria-label="Course">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent
-                align="start"
-                sideOffset={8}
-                alignItemWithTrigger={false}
-              >
-                <SelectGroup>
-                  {accepted.map((course) => (
-                    <SelectItem key={course.id} value={course.id}>
-                      {courseName(course)}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="new">A new Course…</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </label>{" "}
-          {(newCourse || accepted.length === 0) && (
-            <>
-              <label>
-                Course title <input name="courseTitle" required />
-              </label>{" "}
-              <label>
-                Code <input name="courseCode" />
-              </label>{" "}
-            </>
-          )}
-          <label htmlFor={`${id}-kind`}>
-            Kind{" "}
-            <Select
-              name="kind"
-              value={entryKind}
-              onValueChange={setEntryKind}
-              items={Object.entries(kinds).map(([value, label]) => ({
-                value,
-                label,
-              }))}
-            >
-              <SelectTrigger id={`${id}-kind`} aria-label="Kind">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent
-                align="start"
-                sideOffset={8}
-                alignItemWithTrigger={false}
-              >
-                <SelectGroup>
-                  {Object.entries(kinds).map(([value, name]) => (
-                    <SelectItem key={value} value={value}>
-                      {name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </label>{" "}
-          <label>
-            Title <input name="title" required />
-          </label>{" "}
-          <label>
-            Date <input name="date" type="date" />
-          </label>{" "}
-          <label>
-            Time <input name="time" type="time" />
-          </label>{" "}
-          <label>
-            Time zone <input name="timeZone" placeholder="Europe/Berlin" />
-          </label>{" "}
-          <label>
-            Hand-in <input name="destination" />
-          </label>{" "}
-          <button type="submit" disabled={busy}>
-            Add
-          </button>
-        </form>
-      </details>
-    );
-  }
-  function correctForm(entry: Item) {
-    return (
-      <form onSubmit={(event) => correct(event, entry)}>
-        {entry.kind === "obligation" ? (
-          <>
-            <label>
-              Title{" "}
-              <input name="title" required defaultValue={entry.item.title} />
-            </label>{" "}
-            <label>
-              Date{" "}
-              <input
-                name="date"
-                type="date"
-                defaultValue={entry.item.due.date ?? ""}
-              />
-            </label>{" "}
-            <label>
-              Time{" "}
-              <input
-                name="time"
-                type="time"
-                defaultValue={entry.item.due.time ?? ""}
-              />
-            </label>{" "}
-            <label>
-              Time zone{" "}
-              <input
-                name="timeZone"
-                placeholder="Europe/Berlin"
-                defaultValue={entry.item.due.timeZone ?? ""}
-              />
-            </label>{" "}
-            <label>
-              Hand-in{" "}
-              <input
-                name="destination"
-                defaultValue={entry.item.destination ?? ""}
-              />
-            </label>
-          </>
-        ) : (
-          <label>
-            Value{" "}
-            <textarea name="value" required defaultValue={entry.item.value} />
-          </label>
-        )}{" "}
-        <button type="submit" disabled={busy}>
-          Save Correction
-        </button>{" "}
-        <button type="button" disabled={busy} onClick={() => setEditing(null)}>
-          Cancel
-        </button>
-      </form>
-    );
-  }
 
-  function itemView(entry: Item) {
-    const { item } = entry;
-    // An entry is the student's own value just like a Correction.
-    const corrected = item.provenance.kind !== "source";
-    const live = item.values.filter((value) => !value.overruled);
-    // With a Correction, only values that differ from it are in question; without one, every live value is.
-    const contested = corrected
-      ? live.filter(
-          (value) =>
-            !same(
-              valueText(value),
-              entry.kind === "obligation"
-                ? deadline(entry.item.due)
-                : entry.item.value,
-            ),
-        )
-      : live;
-    const citations = item.values.flatMap((value) => value.citations);
-    return (
-      <li key={item.id}>
-        <p>
-          <strong>{label(entry)}</strong>
-          {entry.kind === "obligation" && <> — due {due(entry.item.due)}</>}
-          {corrected &&
-            (item.provenance.kind === "entry"
-              ? " (entered by you)"
-              : " (your Correction)")}
-        </p>
-        {entry.kind === "obligation" && entry.item.destination && (
-          <p>Hand-in (not verified): {entry.item.destination}</p>
-        )}
-        {item.uncertainty && <p>Uncertain: {item.uncertainty}</p>}
-        {item.unsupported && <p>{unsupported[item.unsupported]}</p>}
-        {item.disagreement ? (
-          // biome-ignore lint/a11y/useSemanticElements: This group contains review content, not a set of form fields.
-          <div role="group" aria-label="Disagreement">
-            <p>
-              {!corrected
-                ? "Your Sources disagree:"
-                : `A Source now says something different from ${item.provenance.kind === "entry" ? "what you entered" : "your Correction"}:`}
-            </p>
-            <ul>
-              {contested.map((value) => (
-                <li key={value.citations[0]!.extractionId}>
-                  {valueText(value)}{" "}
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      void use(entry, value.citations[0]!.extractionId);
-                    }}
-                  >
-                    Use this
-                  </button>
-                  <Citations citations={value.citations} />
-                </li>
-              ))}
-            </ul>
-            {corrected && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  void review(entry, "keep_mine");
-                }}
-              >
-                Keep mine
-              </button>
-            )}
-          </div>
-        ) : (
-          citations.length > 0 && (
-            <>
-              <Citations citations={citations.slice(0, 1)} />
-              {citations.length > 1 && (
-                <details>
-                  <summary>Also in {citations.length - 1} more</summary>
-                  <Citations citations={citations.slice(1)} />
-                </details>
-              )}
-            </>
-          )
-        )}
-        {editing === item.id ? (
-          correctForm(entry)
-        ) : (
-          <p>
-            {item.state === "confirmed" ? (
-              <span>Confirmed</span>
-            ) : (
-              !item.disagreement && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    void review(entry, "confirm");
-                  }}
-                >
-                  Confirm
-                </button>
-              )
-            )}{" "}
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setEditing(item.id)}
-            >
-              Correct
-            </button>{" "}
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                void review(entry, "reject");
-              }}
-            >
-              Reject
-            </button>
-          </p>
-        )}
-      </li>
-    );
-  }
-
-  const items = (course: Course) => {
-    const entries: Item[] = [
-      ...course.obligations.map((item) => ({
-        kind: "obligation" as const,
-        item,
-      })),
-      ...course.facts.map((item) => ({ kind: "fact" as const, item })),
-    ];
-    const shown = entries.filter((entry) => entry.item.state !== "rejected"),
-      rejected = entries.filter((entry) => entry.item.state === "rejected");
-    const obligations = shown.filter((entry) => entry.kind === "obligation"),
-      facts = shown.filter((entry) => entry.kind === "fact");
-    return (
-      <>
-        <h3>Obligations</h3>
-        {obligations.length === 0 ? (
-          <p>None found.</p>
-        ) : (
-          <ul>{obligations.map(itemView)}</ul>
-        )}
-        {facts.length > 0 && (
-          <>
-            <h3>Topics and details</h3>
-            <ul>{facts.map(itemView)}</ul>
-          </>
-        )}
-        {rejected.length > 0 && (
-          <details>
-            <summary>Rejected ({rejected.length})</summary>
-            <ul>
-              {rejected.map((entry) => (
-                <li key={entry.item.id}>
-                  {label(entry)}{" "}
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      void review(entry, "restore");
-                    }}
-                  >
-                    Restore
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-      </>
-    );
-  };
-  const open = (courses ?? []).filter((course) => course.status !== "rejected");
-  const rejectedCourses = (courses ?? []).filter(
+  const allCourses = courses ?? [];
+  const openCourses = allCourses.filter(
+    (course) => course.status !== "rejected",
+  );
+  const accepted = openCourses.filter((course) => course.status === "accepted");
+  const proposed = openCourses.filter((course) => course.status === "proposed");
+  const rejectedCourses = allCourses.filter(
     (course) => course.status === "rejected",
   );
+  const openSeries = series.filter((s) => s.state !== "confirmed");
+
+  const activeSelection = (() => {
+    if (selected === SERIES_TAB && openSeries.length > 0) return SERIES_TAB;
+    if (selected && openCourses.some((course) => course.id === selected))
+      return selected;
+    return (
+      accepted[0]?.id ??
+      proposed[0]?.id ??
+      (openSeries.length > 0 ? SERIES_TAB : null)
+    );
+  })();
+  const selectedCourse =
+    activeSelection && activeSelection !== SERIES_TAB
+      ? (openCourses.find((course) => course.id === activeSelection) ?? null)
+      : null;
+
+  const suggestionsFor = (course: Course) =>
+    suggestions.flatMap(({ courseId, intoId }) => {
+      if (courseId !== course.id) return [];
+      const target = openCourses.find((other) => other.id === intoId);
+      return target ? [target] : [];
+    });
+
+  const entryActions: EntryActions = {
+    busy,
+    editing,
+    setEditing,
+    review,
+    use,
+    correct,
+  };
+
+  const completelyEmpty =
+    courses !== null && courses.length === 0 && openSeries.length === 0;
 
   return (
-    <section aria-labelledby="review-title">
-      <h1 id="review-title">Review</h1>
-      <p>
-        Check what nunio found in your Sources. Each item shows the passage it
-        came from.
-      </p>
-      {courses !== null && entryForm()}
-      {error && <p role="alert">{error}</p>}
-      {courses === null ? (
-        <p>Loading…</p>
-      ) : courses.length === 0 ? (
-        <p>
-          Nothing to review yet. Results appear here once a Source has been
-          read.
-        </p>
-      ) : (
-        open.map((course) => (
-          <article key={course.id} aria-labelledby={`course-${course.id}`}>
-            <h2 id={`course-${course.id}`}>
-              {course.code ? `${course.code} ` : ""}
-              {course.title}
-            </h2>
-            {suggestionsFor(course)}
-            {course.status === "proposed" ? (
-              <>
-                <p>
-                  Is this one of your Courses?{" "}
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      void decide(course.id, "accept");
+    <main className="relative min-h-dvh bg-white font-sans text-base-800">
+      <PageHeader>
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbPage>Prüfen</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        <div className="flex-1" />
+        {courses !== null && (
+          <Button type="button" onClick={() => setAddOpen(true)}>
+            Frist hinzufügen
+            <Plus data-icon="inline-end" aria-hidden="true" />
+          </Button>
+        )}
+      </PageHeader>
+
+      <div className="mx-auto flex w-full max-w-[calc(1086px+4rem)] flex-col gap-8 px-8 pt-20 pb-20">
+        <div className="flex flex-col gap-1.5">
+          <h1
+            id="review-title"
+            className="text-2xl font-medium tracking-[-0.01em] text-base-800"
+          >
+            Prüfen
+          </h1>
+          <p className="text-sm text-base-600">
+            Prüf, was nunio in deinen Quellen gefunden hat. Jeder Eintrag zeigt
+            die Stelle, aus der er stammt.
+          </p>
+        </div>
+
+        {error && (
+          <p role="alert" className="text-sm text-destructive-600">
+            {error}
+          </p>
+        )}
+
+        {courses === null ? (
+          !error && <p className="text-sm text-base-500">Wird geladen…</p>
+        ) : completelyEmpty ? (
+          <EmptyState onAdd={() => setAddOpen(true)} />
+        ) : (
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-12">
+            <CourseRail
+              accepted={accepted}
+              proposed={proposed}
+              rejectedCourses={rejectedCourses}
+              openSeriesCount={openSeries.length}
+              courseColors={courseColors}
+              activeSelection={activeSelection}
+              busy={busy}
+              onSelect={(next) => {
+                setSelected(next);
+                setEditing(null);
+              }}
+              onRestoreCourse={(id) => decide(id, "restore")}
+            />
+
+            <div className="flex min-w-0 flex-1 flex-col">
+              {activeSelection === SERIES_TAB ? (
+                <SeriesReview
+                  apiOrigin={apiOrigin}
+                  courseColors={courseColors}
+                  onChange={() => setVersion((v) => v + 1)}
+                />
+              ) : selectedCourse ? (
+                selectedCourse.status === "proposed" ? (
+                  <ProposedCourseView
+                    course={selectedCourse}
+                    suggestions={suggestionsFor(selectedCourse)}
+                    openCourses={openCourses}
+                    busy={busy}
+                    onDecide={(decision) => decide(selectedCourse.id, decision)}
+                    onOpenMerge={() => setMergeCourse(selectedCourse)}
+                    onMergeInto={(target) => {
+                      void mergeInto(selectedCourse, target);
                     }}
-                  >
-                    Yes, accept
-                  </button>{" "}
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      void decide(course.id, "reject");
+                    onKeepApart={(target) => keepApart(selectedCourse, target)}
+                    onRestoreEntry={(entry) => review(entry, "restore")}
+                  />
+                ) : (
+                  <AcceptedCourseView
+                    course={selectedCourse}
+                    swatch={courseColors[selectedCourse.id]}
+                    suggestions={suggestionsFor(selectedCourse)}
+                    openCourses={openCourses}
+                    actions={entryActions}
+                    onOpenMerge={() => setMergeCourse(selectedCourse)}
+                    onMergeInto={(target) => {
+                      void mergeInto(selectedCourse, target);
                     }}
-                  >
-                    No, reject
-                  </button>
-                </p>
-                {/* A module handbook proposes many Courses; their items stay folded until the student accepts one. */}
-                <details>
-                  <summary>
-                    {course.obligations.length + course.facts.length} items
-                    found
-                  </summary>
-                  {items(course)}
-                </details>
-              </>
-            ) : (
-              <>
-                <p>Accepted Course</p>
-                {items(course)}
-              </>
-            )}
-            {open.length > 1 && (
-              <form
-                onSubmit={(event) => {
-                  void merge(event, course);
-                }}
-              >
-                <label htmlFor={`${id}-into-${course.id}`}>
-                  Same Course as{" "}
-                  <Select
-                    name="into"
-                    defaultValue={null}
-                    required
-                    items={open
-                      .filter((other) => other.id !== course.id)
-                      .map((other) => ({
-                        value: other.id,
-                        label: courseName(other),
-                      }))}
-                  >
-                    <SelectTrigger
-                      id={`${id}-into-${course.id}`}
-                      aria-label="Same Course as"
-                    >
-                      <SelectValue placeholder="Choose a Course" />
-                    </SelectTrigger>
-                    <SelectContent
-                      align="start"
-                      sideOffset={8}
-                      alignItemWithTrigger={false}
-                    >
-                      <SelectGroup>
-                        <SelectItem value="" disabled>
-                          Choose a Course
-                        </SelectItem>
-                        {open
-                          .filter((other) => other.id !== course.id)
-                          .map((other) => (
-                            <SelectItem key={other.id} value={other.id}>
-                              {courseName(other)}
-                            </SelectItem>
-                          ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </label>{" "}
-                <button type="submit" disabled={busy}>
-                  Merge into it
-                </button>
-              </form>
-            )}
-          </article>
-        ))
-      )}
-      {rejectedCourses.length > 0 && (
-        <details>
-          <summary>Rejected Courses ({rejectedCourses.length})</summary>
-          <ul>
-            {rejectedCourses.map((course) => (
-              <li key={course.id}>
-                {course.code ? `${course.code} ` : ""}
-                {course.title}{" "}
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    void decide(course.id, "restore");
-                  }}
-                >
-                  Restore
-                </button>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </section>
+                    onKeepApart={(target) => keepApart(selectedCourse, target)}
+                  />
+                )
+              ) : (
+                <EmptyState onAdd={() => setAddOpen(true)} />
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <AddObligationDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        accepted={accepted}
+        defaultCourseId={
+          selectedCourse?.status === "accepted" ? selectedCourse.id : null
+        }
+        courseColors={courseColors}
+        busy={busy}
+        onSubmit={addObligation}
+      />
+
+      <MergeCourseDialog
+        course={mergeCourse}
+        targets={
+          mergeCourse
+            ? openCourses.filter((other) => other.id !== mergeCourse.id)
+            : []
+        }
+        courseColors={courseColors}
+        busy={busy}
+        onClose={() => setMergeCourse(null)}
+        onMerge={(source, target) => mergeInto(source, target, true)}
+      />
+    </main>
   );
 }
