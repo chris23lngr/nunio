@@ -10,8 +10,8 @@ CREATE TABLE "integration" (
     "kind" TEXT NOT NULL,
     "mcpUrl" TEXT,
     "transport" TEXT,
-    "scopes" TEXT[] DEFAULT ARRAY[]::TEXT[],
-    "issuers" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "scopes" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    "issuers" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     "registration" TEXT,
     "clientIdSecret" TEXT,
     "clientSecretSecret" TEXT,
@@ -21,14 +21,15 @@ CREATE TABLE "integration" (
     CONSTRAINT "integration_key_check" CHECK ("key" ~ '^[a-z0-9][a-z0-9-]*$'),
     CONSTRAINT "integration_status_check" CHECK ("status" IN ('hidden', 'offered', 'withdrawn')),
     CONSTRAINT "integration_kind_check" CHECK ("kind" IN ('mcp', 'email')),
-    -- An MCP Integration names its server and how nunio registers with it; Email has no server.
-    CONSTRAINT "integration_mcp_check" CHECK (
+    -- An MCP Integration names its server and how nunio registers with it; Email has no server. A CHECK passes
+    -- when it is NULL, so a NULL column must make it false.
+    CONSTRAINT "integration_mcp_check" CHECK (COALESCE(
       CASE "kind"
         WHEN 'mcp' THEN "mcpUrl" IS NOT NULL AND "transport" IN ('http', 'sse')
           AND "registration" IN ('cimd', 'dcr', 'preregistered') AND cardinality("issuers") > 0
         ELSE "mcpUrl" IS NULL AND "transport" IS NULL AND "registration" IS NULL
           AND cardinality("scopes") = 0 AND cardinality("issuers") = 0
-      END
+      END, false)
     ),
     -- A pre-registered client's id and secret come from platform secrets, named here; no other registration has them.
     CONSTRAINT "integration_preregistered_check" CHECK (
@@ -53,12 +54,16 @@ CREATE TABLE "integration_tool" (
     CONSTRAINT "integration_tool_pkey" PRIMARY KEY ("integrationKey", "name"),
     CONSTRAINT "integration_tool_class_check" CHECK ("class" IN ('read', 'write', 'write_always_asked', 'blocked')),
     CONSTRAINT "integration_tool_definitionHash_check" CHECK ("definitionHash" ~ '^[0-9a-f]{64}$'),
-    CONSTRAINT "integration_tool_definition_check" CHECK (
-      jsonb_typeof("definition" -> 'description') = 'string' AND jsonb_typeof("definition" -> 'inputSchema') = 'object'
+    -- As above, a missing key reads as NULL, so each check falls back to false.
+    CONSTRAINT "integration_tool_definition_check" CHECK (COALESCE(
+      jsonb_typeof("definition") = 'object' AND jsonb_typeof("definition" -> 'description') = 'string'
+        AND jsonb_typeof("definition" -> 'inputSchema') = 'object', false)
     ),
-    -- The headline is one of the tool's arguments.
+    -- The headline is one of the tool's arguments: a key of its schema's properties object.
     CONSTRAINT "integration_tool_headlineArgument_check" CHECK (
-      "headlineArgument" IS NULL OR "definition" -> 'inputSchema' -> 'properties' ? "headlineArgument"
+      "headlineArgument" IS NULL OR COALESCE(
+        jsonb_typeof("definition" -> 'inputSchema' -> 'properties') = 'object'
+          AND "definition" -> 'inputSchema' -> 'properties' ? "headlineArgument", false)
     ),
     -- A Chat-only tool always asks, so it can never be granted.
     CONSTRAINT "integration_tool_chatOnly_check" CHECK (NOT "chatOnly" OR "class" = 'write_always_asked')

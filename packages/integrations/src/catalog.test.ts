@@ -159,6 +159,155 @@ describe("the dev and test seed", () => {
     expect(isGrantable({ class: "read", chatOnly: false })).toBe(false);
     expect(isGrantable({ class: "blocked", chatOnly: false })).toBe(false);
   });
+
+  it("resets every column it seeds when run again", async () => {
+    await admin.integrationTool.update({
+      where: {
+        integrationKey_name: {
+          integrationKey: "testnotizen",
+          name: "notes.search",
+        },
+      },
+      data: { headlineArgument: "query" },
+    });
+    await admin.integrationTool.update({
+      where: {
+        integrationKey_name: {
+          integrationKey: "testnotizen",
+          name: "notes.share",
+        },
+      },
+      data: { chatOnly: true },
+    });
+
+    await seedIntegrationCatalog(admin, fake);
+
+    const tools = await catalog.tools("testnotizen");
+    const tool = (name: string) => tools.find((t) => t.name === name)!;
+    expect(tool("notes.search").headlineArgument).toBeNull();
+    expect(tool("notes.share").chatOnly).toBe(false);
+    expect(tool("notes.share").headlineArgument).toBe("email");
+  });
+});
+
+describe("the catalog's database rules", () => {
+  const mcpColumns = `"key", "name", "logo", "description", "dataNote", "kind", "mcpUrl", "transport", "scopes", "issuers", "registration"`;
+  /** Inserts an MCP Integration as a migration would, with `overrides` replacing column values (as SQL). */
+  const insertMcp = (key: string, overrides: Record<string, string> = {}) => {
+    const values: Record<string, string> = {
+      transport: "'http'",
+      scopes: "ARRAY['notes']",
+      issuers: "ARRAY['https://mcp.example']",
+      registration: "'cimd'",
+      ...overrides,
+    };
+    return admin.$executeRawUnsafe(
+      `INSERT INTO "integration" (${mcpColumns}) VALUES ('${key}', 'Dienst', '/integrations/x.svg', 'd', 'n', 'mcp',
+        'https://mcp.example/mcp', ${values.transport}, ${values.scopes}, ${values.issuers}, ${values.registration})`,
+    );
+  };
+  const insertTool = (
+    name: string,
+    definition: string,
+    headlineArgument = "NULL",
+  ) =>
+    admin.$executeRawUnsafe(
+      `INSERT INTO "integration_tool" ("integrationKey", "name", "class", "definition", "definitionHash", "label",
+        "headlineArgument") VALUES ('email', '${name}', 'read', '${definition}', '${"a".repeat(64)}', 'Test',
+        ${headlineArgument})`,
+    );
+  const valid = `{"description":"d","inputSchema":{"type":"object","properties":{"q":{"type":"string"}}}}`;
+
+  it("lets the runtime read the catalog but never change it", async () => {
+    await expect(runtime.integration.findMany()).resolves.toBeDefined();
+    await expect(
+      runtime.$executeRawUnsafe(
+        `INSERT INTO "integration" ("key", "name", "logo", "description", "dataNote", "kind")
+          VALUES ('runtime-added', 'X', '/x.svg', 'd', 'n', 'email')`,
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      runtime.$executeRawUnsafe(
+        `UPDATE "integration" SET "status" = 'offered' WHERE "key" = 'email'`,
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      runtime.$executeRawUnsafe(
+        `DELETE FROM "integration" WHERE "key" = 'email'`,
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      runtime.$executeRawUnsafe(
+        `INSERT INTO "integration_tool" ("integrationKey", "name", "class", "definition", "definitionHash", "label")
+          VALUES ('email', 'email.extra', 'write', '${valid}', '${"a".repeat(64)}', 'X')`,
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      runtime.$executeRawUnsafe(
+        `UPDATE "integration_tool" SET "class" = 'write' WHERE "integrationKey" = 'email'`,
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      runtime.$executeRawUnsafe(
+        `DELETE FROM "integration_tool" WHERE "integrationKey" = 'email'`,
+      ),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it("refuses an MCP Integration without a transport, registration, scopes or issuers", async () => {
+    await expect(insertMcp("mcp-complete")).resolves.toBe(1);
+    await expect(
+      insertMcp("mcp-no-transport", { transport: "NULL" }),
+    ).rejects.toThrow(/integration_mcp_check/);
+    await expect(
+      insertMcp("mcp-no-registration", { registration: "NULL" }),
+    ).rejects.toThrow(/integration_mcp_check/);
+    await expect(
+      insertMcp("mcp-null-issuers", { issuers: "NULL" }),
+    ).rejects.toThrow(/null value/);
+    await expect(
+      insertMcp("mcp-null-scopes", { scopes: "NULL" }),
+    ).rejects.toThrow(/null value/);
+    await expect(
+      insertMcp("mcp-no-issuers", { issuers: "ARRAY[]::TEXT[]" }),
+    ).rejects.toThrow(/integration_mcp_check/);
+  });
+
+  it("refuses a tool definition without a description and an input schema object", async () => {
+    await expect(insertTool("email.valid", valid, "'q'")).resolves.toBe(1);
+    await expect(insertTool("email.array", "[]")).rejects.toThrow(
+      /integration_tool_definition_check/,
+    );
+    await expect(
+      insertTool("email.no-description", `{"inputSchema":{"type":"object"}}`),
+    ).rejects.toThrow(/integration_tool_definition_check/);
+    await expect(
+      insertTool("email.no-schema", `{"description":"d"}`),
+    ).rejects.toThrow(/integration_tool_definition_check/);
+    await expect(
+      insertTool("email.array-schema", `{"description":"d","inputSchema":[]}`),
+    ).rejects.toThrow(/integration_tool_definition_check/);
+  });
+
+  it("refuses a headline argument that is not one of the schema's properties", async () => {
+    await expect(insertTool("email.other", valid, "'other'")).rejects.toThrow(
+      /integration_tool_headlineArgument_check/,
+    );
+    await expect(
+      insertTool(
+        "email.no-properties",
+        `{"description":"d","inputSchema":{"type":"object"}}`,
+        "'q'",
+      ),
+    ).rejects.toThrow(/integration_tool_headlineArgument_check/);
+    await expect(
+      insertTool(
+        "email.array-properties",
+        `{"description":"d","inputSchema":{"type":"object","properties":["q"]}}`,
+        "'q'",
+      ),
+    ).rejects.toThrow(/integration_tool_headlineArgument_check/);
+  });
 });
 
 /** Every Integration's tools, so a later catalog migration's are checked too. */

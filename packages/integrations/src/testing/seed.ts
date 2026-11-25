@@ -58,8 +58,12 @@ export async function seedIntegrationCatalog(
         description: tool.description ?? "",
         inputSchema: tool.inputSchema,
       };
+      const { headlineArgument, ...classified } =
+        testnotizenClasses[tool.name]!;
       const pinned = {
-        ...testnotizenClasses[tool.name]!,
+        ...classified,
+        headlineArgument: headlineArgument ?? null,
+        chatOnly: false,
         definition: definition as object,
         definitionHash: definitionHash(definition),
         reviewedAt,
