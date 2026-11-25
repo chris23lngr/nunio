@@ -274,7 +274,7 @@ test("connects Email: recognises the university, tests reading and sending, then
   );
   const inbox = chips.getByRole("button", { name: "Posteingang" });
   const lehrstuhl = chips.getByRole("button", { name: "Lehrstuhl" });
-  const sent = chips.getByRole("button", { name: "Gesendet" });
+  const sent = chips.getByRole("button", { name: "Sent" });
   expect(inbox.getAttribute("aria-pressed")).toBe("true");
   expect(lehrstuhl.getAttribute("aria-pressed")).toBe("false");
   expect(sent.getAttribute("aria-pressed")).toBe("false");
@@ -406,10 +406,12 @@ test.each([
   renderConnections();
 
   const dialog = await openEmailDialog(user);
+  // A space typed around the address doesn't matter.
   await user.type(
     dialog.getByLabelText("E-Mail-Adresse"),
-    "lea@stud.uni-heidelberg.de",
+    " lea@stud.uni-heidelberg.de ",
   );
+  expect(dialog.queryByLabelText("Benutzername")).toBeNull();
   await user.type(dialog.getByLabelText("Passwort"), "falsch");
   await user.click(dialog.getByRole("button", { name: "Anmeldung prüfen" }));
 
@@ -436,4 +438,49 @@ test.each([
     dialog.queryByRole("group", { name: "Ordner, die nunio lesen darf" }),
   ).toBeNull();
   expect(dialog.queryByRole("button", { name: "Verbinden" })).toBeNull();
+  // When reading fails, the login may be an account name rather than the address.
+  expect(dialog.queryByLabelText("Benutzername") !== null).toBe(
+    step === "imap",
+  );
+});
+
+test("asks for the login after reading failed, and tests again with it", async () => {
+  const tested: unknown[] = [];
+  api.route("GET", "/api/me/integrations", () =>
+    Response.json({ integrations: [email] }),
+  );
+  api.route("POST", "/api/me/connections/email/discover", () =>
+    Response.json(heidelberg),
+  );
+  api.route("POST", "/api/me/connections/email/test", async (request) => {
+    const body = (await request.json()) as { username?: string };
+    tested.push(body);
+    return body.username
+      ? Response.json({ folders })
+      : Response.json({ error: "login_failed", step: "imap" }, { status: 422 });
+  });
+  const user = userEvent.setup();
+  renderConnections();
+
+  const dialog = await openEmailDialog(user);
+  await user.type(
+    dialog.getByLabelText("E-Mail-Adresse"),
+    "lea@stud.uni-heidelberg.de",
+  );
+  await user.type(dialog.getByLabelText("Passwort"), "geheim");
+  await user.click(dialog.getByRole("button", { name: "Anmeldung prüfen" }));
+  await user.type(await dialog.findByLabelText("Benutzername"), "hd123");
+  await user.click(dialog.getByRole("button", { name: "Anmeldung prüfen" }));
+
+  expect(
+    await dialog.findByRole("status", { name: "Anmeldung geprüft" }),
+  ).toBeTruthy();
+  expect(tested).toEqual([
+    { address: "lea@stud.uni-heidelberg.de", password: "geheim" },
+    {
+      address: "lea@stud.uni-heidelberg.de",
+      password: "geheim",
+      username: "hd123",
+    },
+  ]);
 });

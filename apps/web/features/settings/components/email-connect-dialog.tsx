@@ -36,11 +36,9 @@ const noServers = {
   smtpPort: "587",
 };
 
-/** A folder chip's label: the inbox and Sent by their German names, others as the mailbox names them. */
+/** A folder chip's label: the inbox by its German name, as Verbunden shows it, others as the mailbox names them. */
 function folderLabel(folder: MailFolder) {
-  if (folder.specialUse === "\\Inbox") return "Posteingang";
-  if (folder.specialUse === "\\Sent") return "Gesendet";
-  return folder.name;
+  return folder.specialUse === "\\Inbox" ? "Posteingang" : folder.name;
 }
 
 /** What a refused mailbox means to the student, except a failed login, which shows its step. */
@@ -96,6 +94,8 @@ export function EmailConnectDialog({
   const [changeServers, setChangeServers] = useState(false);
   const [servers, setServers] = useState(noServers);
   const [username, setUsername] = useState("");
+  // Shown once reading failed: at many universities the login is an account name, not the address.
+  const [askUsername, setAskUsername] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const id = useId();
 
@@ -103,26 +103,39 @@ export function EmailConnectDialog({
     ...emailDiscoveryQuery(apiOrigin, discoveredFor),
     enabled: discoveredFor !== "",
   });
+  const failedReading = (error: Error) => {
+    if (
+      error instanceof MailboxRefused &&
+      error.refusal.error === "login_failed" &&
+      error.refusal.step === "imap"
+    )
+      setAskUsername(true);
+  };
   const test = useMutation({
     ...emailTestMutation(apiOrigin),
+    onError: failedReading,
     onSuccess: (folders) =>
       setSelected(folders.filter((f) => f.preselected).map((f) => f.path)),
   });
   const connect = useMutation({
     ...emailConnectMutation(apiOrigin),
     // Back to testing: the mailbox no longer passed, or the Connection couldn't be saved.
-    onError: () => test.reset(),
+    onError: (error) => {
+      failedReading(error);
+      test.reset();
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries(integrationQueries(apiOrigin));
       setOpen(false);
     },
   });
 
+  const current = address.trim();
   const recognised =
     discovery.data?.status === "recognised" ? discovery.data : null;
   const manual = discovery.data?.status === "unknown" || changeServers;
   const discovered =
-    discoveredFor === address &&
+    discoveredFor === current &&
     discovery.isSuccess &&
     discovery.data.status !== "unsupported";
   const folders = test.data;
@@ -147,16 +160,20 @@ export function EmailConnectDialog({
     setChangeServers(false);
     setServers(noServers);
     setUsername("");
+    setAskUsername(false);
     setSelected([]);
     edited();
   }
 
   function login(): EmailLogin {
-    if (!manual) return { address, password };
-    return {
-      address,
+    const login: EmailLogin = {
+      address: current,
       password,
       ...(username.trim() && { username: username.trim() }),
+    };
+    if (!manual) return login;
+    return {
+      ...login,
       servers: {
         imap: { host: servers.imapHost.trim(), port: Number(servers.imapPort) },
         smtp: { host: servers.smtpHost.trim(), port: Number(servers.smtpPort) },
@@ -229,9 +246,9 @@ export function EmailConnectDialog({
                     setServers(noServers);
                     edited();
                   }}
-                  onBlur={() => setDiscoveredFor(address.trim())}
+                  onBlur={() => setDiscoveredFor(current)}
                 />
-                {discoveredFor === address && recognised && !changeServers && (
+                {discoveredFor === current && recognised && !changeServers && (
                   <p className="flex flex-wrap items-center gap-1.5 text-xs leading-4 text-base-600">
                     <Check
                       aria-hidden
@@ -258,7 +275,7 @@ export function EmailConnectDialog({
                     </button>
                   </p>
                 )}
-                {discoveredFor === address &&
+                {discoveredFor === current &&
                   discovery.data?.status === "unsupported" && (
                     <p className="text-xs leading-4 text-destructive-700">
                       Diese Uni-Mail kann nunio noch nicht verbinden.
@@ -274,7 +291,7 @@ export function EmailConnectDialog({
                   </p>
                 )}
               </Field>
-              {discoveredFor === address && manual && (
+              {discoveredFor === current && manual && (
                 <div className="flex flex-col gap-3">
                   {discovery.data?.status === "unknown" && (
                     <p className="text-xs leading-4 text-base-600">
@@ -288,25 +305,27 @@ export function EmailConnectDialog({
                     {serverField("smtpHost", "SMTP-Server", "text")}
                     {serverField("smtpPort", "SMTP-Port", "number")}
                   </div>
-                  <Field>
-                    <FieldLabel htmlFor={`${id}-username`}>
-                      Benutzername
-                    </FieldLabel>
-                    <Input
-                      id={`${id}-username`}
-                      autoComplete="username"
-                      placeholder={address}
-                      value={username}
-                      onChange={(event) => {
-                        setUsername(event.target.value);
-                        edited();
-                      }}
-                    />
-                    <FieldDescription className="text-xs leading-4">
-                      Nur nötig, wenn er nicht deine Adresse ist.
-                    </FieldDescription>
-                  </Field>
                 </div>
+              )}
+              {((discoveredFor === current && manual) || askUsername) && (
+                <Field>
+                  <FieldLabel htmlFor={`${id}-username`}>
+                    Benutzername
+                  </FieldLabel>
+                  <Input
+                    id={`${id}-username`}
+                    autoComplete="username"
+                    placeholder={address}
+                    value={username}
+                    onChange={(event) => {
+                      setUsername(event.target.value);
+                      edited();
+                    }}
+                  />
+                  <FieldDescription className="text-xs leading-4">
+                    Nur nötig, wenn er nicht deine Adresse ist.
+                  </FieldDescription>
+                </Field>
               )}
               <Field>
                 <FieldLabel htmlFor={`${id}-password`}>Passwort</FieldLabel>

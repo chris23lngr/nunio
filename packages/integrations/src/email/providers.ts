@@ -97,7 +97,7 @@ export const mailProviders: readonly MailProvider[] = [
     "imap.urz.uni-heidelberg.de",
     "mail.urz.uni-heidelberg.de",
   ),
-  // HSBI's student mail is on Microsoft 365, which refuses passwords for IMAP (#259).
+  // HSBI's student mail is on Microsoft 365, which refuses passwords for IMAP (#259's findings, M365 examples).
   {
     name: "Exchange Online",
     domains: ["hsbi.de"],

@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
-import type { EmailCheck } from "@nunio/integrations";
+import type { ConnectionSummary, EmailCheck } from "@nunio/integrations";
 import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
 import { body, ErrorBody, errors, json, student } from "./outcomes.js";
@@ -119,6 +119,14 @@ const LoginFailed = json(
   "Nothing was stored.",
 );
 
+/** A Connection as the API returns it; never its credentials. */
+const toConnection = (connection: ConnectionSummary) => ({
+  state: connection.state,
+  accountLabel: connection.accountLabel,
+  folders: connection.folders,
+  agentCount: connection.agentCount,
+});
+
 /** Answers a failed mailbox test; nothing was stored. */
 function refused(
   c: Context<AppBindings>,
@@ -164,14 +172,7 @@ export function registerIntegrationRoutes(routes: OpenAPIHono<AppBindings>) {
               description: integration.description,
               dataNote: integration.dataNote,
               kind: integration.kind,
-              connection: connection
-                ? {
-                    state: connection.state,
-                    accountLabel: connection.accountLabel,
-                    folders: connection.folders,
-                    agentCount: connection.agentCount,
-                  }
-                : null,
+              connection: connection ? toConnection(connection) : null,
             };
           }),
         },
@@ -264,18 +265,7 @@ export function registerIntegrationRoutes(routes: OpenAPIHono<AppBindings>) {
           return c.json({ error: result.reason }, 409);
         return refused(c, result);
       }
-      const { connection } = result;
-      return c.json(
-        {
-          connection: {
-            state: connection.state,
-            accountLabel: connection.accountLabel,
-            folders: connection.folders,
-            agentCount: connection.agentCount,
-          },
-        },
-        201,
-      );
+      return c.json({ connection: toConnection(result.connection) }, 201);
     },
   );
 }

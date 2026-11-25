@@ -11538,6 +11538,10 @@ describe("connecting Email", () => {
 
   it("saves the Connection with the chosen folders, its servers and sealed credentials, sending no mail", async () => {
     const cookie = await signUp("email-connect");
+    // GreenMail makes an account for every recipient it receives mail for, so its accounts show any mail sent.
+    const accounts = async () =>
+      (await (await fetch(`${mail.adminUrl}/api/user`)).json()) as unknown[];
+    const before = await accounts();
 
     const response = await post("/api/me/connections/email", cookie, {
       address: lea.address,
@@ -11604,7 +11608,8 @@ describe("connecting Email", () => {
       ),
     ).toEqual({ username: lea.address, password });
 
-    // Testing SMTP authenticates without sending: no mail reached the mailbox or its Sent folder.
+    // Testing SMTP authenticates without sending: no mail reached anyone, the mailbox or its Sent folder.
+    expect(await accounts()).toEqual(before);
     expect(await mail.messages(lea, "INBOX")).toEqual([]);
     expect(await mail.messages(lea, "Sent")).toEqual([]);
   });
