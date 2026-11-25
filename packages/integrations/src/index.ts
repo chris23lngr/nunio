@@ -9,4 +9,5 @@ export {
   isGrantable,
   type ToolClass,
 } from "./catalog.js";
+export { integrationFakes } from "./fakes.js";
 export { definitionHash, type ToolDefinition } from "./pin.js";

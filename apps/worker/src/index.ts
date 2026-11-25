@@ -9,6 +9,7 @@ import {
   saveAgentSchedules,
   workflowAlive,
 } from "@nunio/delegation/temporal-schedules";
+import { integrationFakes } from "@nunio/integrations";
 import { payloadCodecFromEnv } from "@nunio/keys";
 import { Client, Connection } from "@temporalio/client";
 import { NativeConnection, Worker } from "@temporalio/worker";
@@ -32,6 +33,9 @@ function required(name: string): string {
   if (!value) throw new Error(`${name} is not set`);
   return value;
 }
+
+// Refuses to start a deployment that has the test fakes switched on.
+integrationFakes(process.env);
 
 const apiKey = process.env.TEMPORAL_API_KEY;
 const connection = await NativeConnection.connect({

@@ -122,6 +122,7 @@
         "@nunio/db": "workspace:*",
         "@nunio/delegation": "workspace:*",
         "@nunio/identity": "workspace:*",
+        "@nunio/integrations": "workspace:*",
         "@nunio/keys": "workspace:*",
         "@nunio/knowledge": "workspace:*",
         "@nunio/outreach": "workspace:*",
