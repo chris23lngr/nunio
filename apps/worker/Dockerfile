@@ -38,6 +38,7 @@ COPY --from=builder --chown=node:node /app/packages/chat/dist ./packages/chat/di
 COPY --from=builder --chown=node:node /app/packages/db/dist ./packages/db/dist
 COPY --from=builder --chown=node:node /app/packages/delegation/dist ./packages/delegation/dist
 COPY --from=builder --chown=node:node /app/packages/identity/dist ./packages/identity/dist
+COPY --from=builder --chown=node:node /app/packages/integrations/dist ./packages/integrations/dist
 COPY --from=builder --chown=node:node /app/packages/keys/dist ./packages/keys/dist
 COPY --from=builder --chown=node:node /app/packages/knowledge/dist ./packages/knowledge/dist
 COPY --from=builder --chown=node:node /app/packages/outreach/dist ./packages/outreach/dist
@@ -46,5 +47,7 @@ COPY --from=builder --chown=node:node /app/packages/understanding/dist ./package
 USER node
 # Check runtime imports without connecting to Temporal or the database.
 RUN node -e "Promise.all(['run-activities', 'agent-run-activities'].map((m) => import('./apps/worker/dist/' + m + '.js')))"
+# The entrypoint itself also loads @nunio/integrations, resolved from the worker as at runtime.
+RUN cd apps/worker && node --input-type=module -e "await import('@nunio/integrations')"
 # node directly, so SIGTERM reaches the worker, which drains for SHUTDOWN_GRACE_SECONDS.
 CMD ["node", "apps/worker/dist/index.js"]
