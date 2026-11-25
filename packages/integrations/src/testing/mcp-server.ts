@@ -26,7 +26,12 @@ export interface FakeMcpServerOptions {
   url?: string;
   /** Seconds an access token lives. Default 3600. */
   tokenLifetime?: number;
+  /** The account name each token response carries as `workspace_name`, as Notion's does. Default "Testnotizen". */
+  workspaceName?: string;
 }
+
+/** What the next authorization does instead of approving: redirect with `error=access_denied`, or name a wrong `iss`. */
+export type AuthorizationFault = "access-denied" | "wrong-iss";
 
 /** What one scripted `tools/call` gets instead of the service's answer. */
 export type McpFault =
@@ -53,8 +58,14 @@ export interface FakeMcpServer {
   mcpUrl: string;
   /** Every `tools/call` that reached the service with a valid token, in order. */
   readonly calls: readonly ReceivedCall[];
+  /** Every request to the token endpoint, in order, whether it succeeded or not. */
+  readonly tokenRequests: readonly TokenRequest[];
+  /** Every request to the revocation endpoint, in order. */
+  readonly revocations: readonly Revocation[];
   /** Queues faults for `tool`'s next calls: each call spends one, in order, and then the tool answers normally. */
   script(tool: string, ...faults: McpFault[]): void;
+  /** Queues faults for the next authorizations, one each, in order; then authorizations approve again. */
+  scriptAuthorization(...faults: AuthorizationFault[]): void;
   /** Drift: adds a tool, or changes the definition of one with the same name. */
   setTool(definition: McpToolDefinition): void;
   /** Expires every access token issued so far, so the next call gets a 401. */
@@ -69,6 +80,18 @@ export interface ReceivedCall {
   arguments: Record<string, unknown>;
   /** The access token it carried. */
   token: string;
+}
+
+export interface TokenRequest {
+  grantType: string;
+  /** The client id it presented. */
+  clientId?: string;
+}
+
+export interface Revocation {
+  token: string;
+  /** The client id it presented. */
+  clientId?: string;
 }
 
 interface Client {
@@ -97,11 +120,15 @@ export async function startFakeMcpServer(
   options: FakeMcpServerOptions = {},
 ): Promise<FakeMcpServer> {
   const tokenLifetime = options.tokenLifetime ?? 3600;
+  const workspaceName = options.workspaceName ?? "Testnotizen";
   const clients = new Map<string, Client>();
   const codes = new Map<string, Code>();
   const accessTokens = new Map<string, AccessToken>();
   const refreshTokens = new Map<string, Authorization>();
   const calls: ReceivedCall[] = [];
+  const tokenRequests: TokenRequest[] = [];
+  const revocations: Revocation[] = [];
+  const authorizationFaults: AuthorizationFault[] = [];
   const scripts = new Map<string, McpFault[]>();
   const tools = new Map<string, McpToolDefinition>(
     testnotizenTools.map((tool) => [tool.name, tool]),
@@ -220,19 +247,27 @@ export async function startFakeMcpServer(
     if (params.get("resource") !== mcpUrl)
       return json(res, 400, { error: "invalid_target" });
 
-    const code = secret();
-    codes.set(code, {
-      id: secret(),
-      clientId,
-      redirectUri,
-      challenge: params.get("code_challenge")!,
-      expiresAt: Date.now() + 60_000,
-    });
     const callback = new URL(redirectUri);
-    callback.searchParams.set("code", code);
+    const fault = authorizationFaults.shift();
+    if (fault === "access-denied")
+      callback.searchParams.set("error", "access_denied");
+    else {
+      const code = secret();
+      codes.set(code, {
+        id: secret(),
+        clientId,
+        redirectUri,
+        challenge: params.get("code_challenge")!,
+        expiresAt: Date.now() + 60_000,
+      });
+      callback.searchParams.set("code", code);
+    }
     const state = params.get("state");
     if (state !== null) callback.searchParams.set("state", state);
-    callback.searchParams.set("iss", issuer);
+    callback.searchParams.set(
+      "iss",
+      fault === "wrong-iss" ? "https://evil.test" : issuer,
+    );
     res.writeHead(302, { location: callback.href }).end();
   }
 
@@ -262,6 +297,10 @@ export async function startFakeMcpServer(
     res: ServerResponse,
     params: URLSearchParams,
   ) {
+    tokenRequests.push({
+      grantType: params.get("grant_type") ?? "",
+      clientId: credentials(req, params).clientId,
+    });
     const clientId = authenticate(req, params);
     if (clientId === undefined)
       return json(res, 401, { error: "invalid_client" });
@@ -309,6 +348,7 @@ export async function startFakeMcpServer(
       expires_in: tokenLifetime,
       refresh_token: refresh,
       scope: "notes",
+      workspace_name: workspaceName,
     });
   }
 
@@ -318,10 +358,14 @@ export async function startFakeMcpServer(
     res: ServerResponse,
     params: URLSearchParams,
   ) {
+    const value = params.get("token") ?? "";
+    revocations.push({
+      token: value,
+      clientId: credentials(req, params).clientId,
+    });
     const clientId = authenticate(req, params);
     if (clientId === undefined)
       return json(res, 401, { error: "invalid_client" });
-    const value = params.get("token") ?? "";
     const authorization = refreshTokens.get(value) ?? accessTokens.get(value);
     if (authorization?.clientId === clientId) {
       accessTokens.delete(value);
@@ -337,20 +381,10 @@ export async function startFakeMcpServer(
     req: IncomingMessage,
     params: URLSearchParams,
   ): string | undefined {
-    let clientId = params.get("client_id") ?? undefined;
-    let presented = params.get("client_secret") ?? undefined;
-    const basic = /^Basic (.+)$/i.exec(req.headers.authorization ?? "");
-    if (basic) {
-      const [id, password] = Buffer.from(basic[1]!, "base64")
-        .toString()
-        .split(":")
-        .map(decodeURIComponent);
-      clientId = id;
-      presented = password;
-    }
+    const { clientId, secret } = credentials(req, params);
     if (clientId === undefined) return undefined;
     const client = clients.get(clientId);
-    if (!client || client.secret !== presented) return undefined;
+    if (!client || client.secret !== secret) return undefined;
     return clientId;
   }
 
@@ -443,6 +477,11 @@ export async function startFakeMcpServer(
     url: issuer,
     mcpUrl,
     calls,
+    tokenRequests,
+    revocations,
+    scriptAuthorization(...faults) {
+      authorizationFaults.push(...faults);
+    },
     script(tool, ...faults) {
       scripts.set(tool, [...(scripts.get(tool) ?? []), ...faults]);
     },
@@ -511,8 +550,30 @@ function faultResult(fault: ResultFault): CallToolResult {
   }
 }
 
+/** The client id and secret a request presents, by HTTP Basic or in the form. */
+function credentials(
+  req: IncomingMessage,
+  params: URLSearchParams,
+): { clientId?: string; secret?: string } {
+  const basic = /^Basic (.+)$/i.exec(req.headers.authorization ?? "");
+  if (!basic)
+    return {
+      clientId: params.get("client_id") ?? undefined,
+      secret: params.get("client_secret") ?? undefined,
+    };
+  const [clientId, secret] = Buffer.from(basic[1]!, "base64")
+    .toString()
+    .split(":")
+    .map(decodeURIComponent);
+  return { clientId, secret };
+}
+
+/** A URL client id is CIMD; `http:` too, because nunio's dev API serves its document over plain HTTP. */
 function isCimdClientId(clientId: string): boolean {
-  return URL.canParse(clientId) && new URL(clientId).protocol === "https:";
+  return (
+    URL.canParse(clientId) &&
+    ["http:", "https:"].includes(new URL(clientId).protocol)
+  );
 }
 
 function json(

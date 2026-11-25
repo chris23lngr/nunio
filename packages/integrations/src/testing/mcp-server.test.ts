@@ -1,3 +1,4 @@
+import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { getCACertificates, setDefaultCACertificates } from "node:tls";
@@ -11,10 +12,13 @@ import type {
 import {
   auth,
   Client,
+  discoverAuthorizationServerMetadata,
   exchangeAuthorization,
+  IssuerMismatchError,
   OAuthError,
   refreshAuthorization,
   StreamableHTTPClientTransport,
+  startAuthorization,
 } from "@modelcontextprotocol/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FakeMcpServer } from "../testing.js";
@@ -89,25 +93,38 @@ afterEach(async () => {
   await server.stop();
 });
 
-/** Serves `document(url)` at an HTTPS URL under the fakes' CA, which this process then trusts, as a CIMD host. */
+/**
+ * Serves `document(url)` as a CIMD host. Over HTTPS it uses the fakes' CA, which this process then trusts; over HTTP
+ * it stands in for nunio's dev API.
+ */
 async function hostClientMetadata(
   document: (url: string) => object,
+  protocol: "https" | "http" = "https",
 ): Promise<{ url: string; close(): void }> {
   const { ca, key, cert } = testCertificate();
   setDefaultCACertificates([...getCACertificates("default"), ca]);
   let url = "";
-  const host = createServer({ key, cert }, (_req, res) => {
+  const serve = (_req: unknown, res: import("node:http").ServerResponse) => {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify(document(url)));
-  });
+  };
+  const host =
+    protocol === "https"
+      ? createServer({ key, cert }, serve)
+      : createHttpServer(serve);
   await new Promise<void>((resolve) => host.listen(0, "127.0.0.1", resolve));
-  url = `https://localhost:${(host.address() as AddressInfo).port}/oauth/client.json`;
+  url = `${protocol}://localhost:${(host.address() as AddressInfo).port}/oauth/client.json`;
   return { url, close: () => host.close() };
 }
 
 /** Runs the authorization code flow the way nunio's connect route and callback will. */
-async function signIn(provider: MemoryProvider): Promise<void> {
-  expect(await auth(provider, { serverUrl: server.mcpUrl })).toBe("REDIRECT");
+async function signIn(
+  provider: MemoryProvider,
+  fetchFn: typeof fetch = fetch,
+): Promise<void> {
+  expect(await auth(provider, { serverUrl: server.mcpUrl, fetchFn })).toBe(
+    "REDIRECT",
+  );
   const approval = await fetch(provider.authorizationUrl!, {
     redirect: "manual",
   });
@@ -119,6 +136,7 @@ async function signIn(provider: MemoryProvider): Promise<void> {
       serverUrl: server.mcpUrl,
       authorizationCode: callback.searchParams.get("code")!,
       iss: callback.searchParams.get("iss") ?? undefined,
+      fetchFn,
     }),
   ).toBe("AUTHORIZED");
 }
@@ -153,6 +171,101 @@ describe("fake MCP server", () => {
       "notes.share",
     ]);
     expect(tools).toEqual(testnotizenTools);
+  });
+
+  /** The raw token responses, because the SDK's token type drops fields it doesn't know. */
+  async function workspaceNames(): Promise<(string | undefined)[]> {
+    const names: (string | undefined)[] = [];
+    const fetchFn: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init);
+      if (String(input).endsWith("/token"))
+        names.push(
+          ((await response.clone().json()) as { workspace_name?: string })
+            .workspace_name,
+        );
+      return response;
+    };
+    const provider = new MemoryProvider();
+    await signIn(provider, fetchFn);
+    await auth(provider, { serverUrl: server.mcpUrl, fetchFn });
+    return names;
+  }
+
+  it("names the workspace in each token response, like Notion", async () => {
+    await server.stop();
+    server = await startFakeMcpServer({ workspaceName: "Maras Notizen" });
+
+    expect(await workspaceNames()).toEqual(["Maras Notizen", "Maras Notizen"]);
+  });
+
+  it("calls the workspace Testnotizen by default", async () => {
+    expect(await workspaceNames()).toEqual(["Testnotizen", "Testnotizen"]);
+  });
+
+  it("records the token and revocation requests it received", async () => {
+    const provider = new MemoryProvider();
+    await signIn(provider);
+    const clientId = provider.info!.client_id;
+    const first = provider.saved!;
+    await auth(provider, { serverUrl: server.mcpUrl });
+    await fetch(`${server.url}/revoke`, {
+      method: "POST",
+      body: new URLSearchParams({
+        token: provider.saved!.refresh_token!,
+        client_id: clientId,
+      }),
+    });
+    await refreshAuthorization(server.url, {
+      clientInformation: provider.info!,
+      refreshToken: first.refresh_token!,
+    }).catch(() => {});
+
+    expect(server.tokenRequests).toEqual([
+      { grantType: "authorization_code", clientId },
+      { grantType: "refresh_token", clientId },
+      { grantType: "refresh_token", clientId },
+    ]);
+    expect(server.revocations).toEqual([
+      { token: provider.saved!.refresh_token, clientId },
+    ]);
+  });
+
+  it("denies the next authorization on demand", async () => {
+    server.scriptAuthorization("access-denied");
+    const provider = new MemoryProvider();
+    await auth(provider, { serverUrl: server.mcpUrl });
+
+    const approval = await fetch(provider.authorizationUrl!, {
+      redirect: "manual",
+    });
+    const callback = new URL(approval.headers.get("location")!);
+
+    expect(approval.status).toBe(302);
+    expect(Object.fromEntries(callback.searchParams)).toEqual({
+      error: "access_denied",
+      state: "state-1",
+      iss: server.url,
+    });
+    await signIn(provider);
+    expect(provider.saved!.access_token).toEqual(expect.any(String));
+  });
+
+  it("names a wrong issuer on the next authorization on demand", async () => {
+    server.scriptAuthorization("wrong-iss");
+    const provider = new MemoryProvider();
+    await auth(provider, { serverUrl: server.mcpUrl });
+    const approval = await fetch(provider.authorizationUrl!, {
+      redirect: "manual",
+    });
+    const callback = new URL(approval.headers.get("location")!);
+
+    await expect(
+      auth(provider, {
+        serverUrl: server.mcpUrl,
+        authorizationCode: callback.searchParams.get("code")!,
+        iss: callback.searchParams.get("iss")!,
+      }),
+    ).rejects.toBeInstanceOf(IssuerMismatchError);
   });
 
   it("refuses a code exchanged with the wrong PKCE verifier", async () => {
@@ -281,6 +394,43 @@ describe("fake MCP server", () => {
       expect(provider.info!.client_id).toBe(host.url);
       const client = await connect(provider);
       expect((await client.listTools()).tools).toHaveLength(4);
+    } finally {
+      host.close();
+    }
+  });
+
+  it("accepts an http: CIMD client id, as nunio's dev API serves", async () => {
+    const host = await hostClientMetadata(
+      (url) => ({ client_id: url, redirect_uris: [REDIRECT] }),
+      "http",
+    );
+    try {
+      const metadata = await discoverAuthorizationServerMetadata(server.url);
+      const clientInformation = { client_id: host.url };
+      // The SDK client only offers https: CIMD ids itself, so the flow is driven step by step.
+      const { authorizationUrl, codeVerifier } = await startAuthorization(
+        server.url,
+        {
+          metadata,
+          clientInformation,
+          redirectUrl: REDIRECT,
+          resource: new URL(server.mcpUrl),
+        },
+      );
+      const approval = await fetch(authorizationUrl, { redirect: "manual" });
+      const callback = new URL(approval.headers.get("location")!).searchParams;
+
+      const tokens = await exchangeAuthorization(server.url, {
+        metadata,
+        clientInformation,
+        authorizationCode: callback.get("code")!,
+        iss: callback.get("iss")!,
+        codeVerifier,
+        redirectUri: REDIRECT,
+        resource: new URL(server.mcpUrl),
+      });
+
+      expect(tokens.access_token).toEqual(expect.any(String));
     } finally {
       host.close();
     }
