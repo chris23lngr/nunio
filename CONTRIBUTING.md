@@ -32,7 +32,7 @@ The services run in the background. The first build takes a few minutes. When it
 | API         | <http://api.nunio.test:3001> (`/health`) |
 | Temporal UI | <http://localhost:8233>                  |
 
-The stack runs with `INTEGRATION_FAKES` on, and its migrate step offers Email and Testnotizen in Einstellungen › Verbindungen. Testnotizen is a fake MCP server at <http://mcp.nunio.test:3002>. A GreenMail server at `mail.nunio.test` stands in for a university mailbox (IMAP over TLS on 3993, SMTP over TLS on 3465) and takes any address with any password.
+The stack runs with `INTEGRATION_FAKES` on, and its migrate step offers Email and Testnotizen in Einstellungen › Verbindungen. Testnotizen is a fake MCP server at <http://mcp.nunio.test:3002>. A GreenMail server at `mail.nunio.test` stands in for a university mailbox and takes any address with any password. It serves IMAP over TLS on 8993 and SMTP over TLS on 8465, as in the e2e suite, which the host reaches on 3993 and 3465. Its certificate comes from a dev CA in the `mail-certs` volume, which the API and worker trust.
 
 ### Create an account
 

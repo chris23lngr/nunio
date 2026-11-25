@@ -20,8 +20,8 @@ export function testCertificate(): TestCertificate {
   return created;
 }
 
-/** A throwaway CA and a leaf for `names`, given as subjectAltName entries such as `DNS:localhost`. */
-export function createCertificate(names: string[]): TestCertificate {
+/** A throwaway CA and a leaf for `names`, given as subjectAltName entries such as `DNS:localhost`, valid for `days`. */
+export function createCertificate(names: string[], days = 2): TestCertificate {
   return inTempDir((path) => {
     openssl(
       "req",
@@ -30,7 +30,7 @@ export function createCertificate(names: string[]): TestCertificate {
       "rsa:2048",
       "-nodes",
       "-days",
-      "2",
+      String(days),
       "-subj",
       "/CN=nunio fake mail CA",
       "-keyout",
@@ -63,7 +63,7 @@ export function createCertificate(names: string[]): TestCertificate {
       "x509",
       "-req",
       "-days",
-      "2",
+      String(days),
       "-in",
       path("tls.csr"),
       "-CA",
