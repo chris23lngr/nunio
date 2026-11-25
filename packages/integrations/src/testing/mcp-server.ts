@@ -43,6 +43,9 @@ export type McpFault =
   /** A text result of exactly `characters` characters. */
   | { kind: "oversize"; characters: number };
 
+/** The faults the service answers itself, as a result, rather than the HTTP layer. */
+type ResultFault = Exclude<McpFault, { kind: "hang" | "drop" | "http" }>;
+
 export interface FakeMcpServer {
   /** The origin, which is also the authorization server's issuer. */
   url: string;
@@ -74,18 +77,19 @@ interface Client {
   secret?: string;
 }
 
-interface Grant {
+/** One OAuth authorization: a code, then the tokens issued from it. */
+interface Authorization {
   id: string;
   clientId: string;
 }
 
-interface Code extends Grant {
+interface Code extends Authorization {
   redirectUri: string;
   challenge: string;
   expiresAt: number;
 }
 
-interface AccessToken extends Grant {
+interface AccessToken extends Authorization {
   expiresAt: number;
 }
 
@@ -96,7 +100,7 @@ export async function startFakeMcpServer(
   const clients = new Map<string, Client>();
   const codes = new Map<string, Code>();
   const accessTokens = new Map<string, AccessToken>();
-  const refreshTokens = new Map<string, Grant>();
+  const refreshTokens = new Map<string, Authorization>();
   const calls: ReceivedCall[] = [];
   const scripts = new Map<string, McpFault[]>();
   const tools = new Map<string, McpToolDefinition>(
@@ -108,7 +112,7 @@ export async function startFakeMcpServer(
   let mcpUrl = "";
 
   const handler = createMcpHandler(({ authInfo }) => {
-    const fault = authInfo?.extra?.fault as McpFault | undefined;
+    const fault = authInfo?.extra?.fault as ResultFault | undefined;
     const server = new Server(
       { name: "testnotizen", version: "1.0.0" },
       { capabilities: { tools: {} } },
@@ -119,8 +123,9 @@ export async function startFakeMcpServer(
     server.setRequestHandler(
       "tools/call",
       (request): CallToolResult =>
-        (fault && faultResult(fault)) ??
-        testnotizen(request.params.name, request.params.arguments ?? {}),
+        fault
+          ? faultResult(fault)
+          : testnotizen(request.params.name, request.params.arguments ?? {}),
     );
     return server;
   });
@@ -156,7 +161,7 @@ export async function startFakeMcpServer(
         client_id_metadata_document_supported: true,
       });
     if (path === "/register" && req.method === "POST")
-      return register(res, JSON.parse(await body(req)));
+      return register(res, await body(req));
     if (path === "/authorize" && req.method === "GET")
       return authorize(res, new URL(req.url!, issuer).searchParams);
     if (path === "/token" && req.method === "POST")
@@ -167,7 +172,13 @@ export async function startFakeMcpServer(
     json(res, 404, { error: "not_found" });
   }
 
-  function register(res: ServerResponse, metadata: Record<string, unknown>) {
+  function register(res: ServerResponse, request: string) {
+    let metadata: Record<string, unknown>;
+    try {
+      metadata = JSON.parse(request);
+    } catch {
+      return json(res, 400, { error: "invalid_client_metadata" });
+    }
     const redirectUris = metadata.redirect_uris;
     if (
       !Array.isArray(redirectUris) ||
@@ -185,7 +196,10 @@ export async function startFakeMcpServer(
       client_id: clientId,
       client_id_issued_at: Math.floor(Date.now() / 1000),
       token_endpoint_auth_method: method,
-      ...(client.secret && { client_secret: client.secret }),
+      ...(client.secret && {
+        client_secret: client.secret,
+        client_secret_expires_at: 0,
+      }),
     });
   }
 
@@ -255,10 +269,11 @@ export async function startFakeMcpServer(
     if (resource !== null && resource !== mcpUrl)
       return json(res, 400, { error: "invalid_target" });
 
-    let grant: Grant | undefined;
+    let authorization: Authorization | undefined;
     if (params.get("grant_type") === "authorization_code") {
-      const code = codes.get(params.get("code") ?? "");
-      codes.delete(params.get("code") ?? "");
+      const value = params.get("code") ?? "";
+      const code = codes.get(value);
+      codes.delete(value);
       const verifier = params.get("code_verifier") ?? "";
       if (
         code &&
@@ -268,25 +283,26 @@ export async function startFakeMcpServer(
         createHash("sha256").update(verifier).digest("base64url") ===
           code.challenge
       )
-        grant = code;
+        authorization = code;
     } else if (params.get("grant_type") === "refresh_token") {
-      const refresh = refreshTokens.get(params.get("refresh_token") ?? "");
+      const value = params.get("refresh_token") ?? "";
+      const refresh = refreshTokens.get(value);
       if (refresh?.clientId === clientId) {
         // Rotation: a used refresh token stops working.
-        refreshTokens.delete(params.get("refresh_token")!);
-        grant = refresh;
+        refreshTokens.delete(value);
+        authorization = refresh;
       }
     } else return json(res, 400, { error: "unsupported_grant_type" });
-    if (!grant) return json(res, 400, { error: "invalid_grant" });
+    if (!authorization) return json(res, 400, { error: "invalid_grant" });
 
     const access = secret();
     const refresh = secret();
     accessTokens.set(access, {
-      id: grant.id,
+      id: authorization.id,
       clientId,
       expiresAt: Date.now() + tokenLifetime * 1000,
     });
-    refreshTokens.set(refresh, { id: grant.id, clientId });
+    refreshTokens.set(refresh, { id: authorization.id, clientId });
     json(res, 200, {
       access_token: access,
       token_type: "Bearer",
@@ -296,7 +312,7 @@ export async function startFakeMcpServer(
     });
   }
 
-  /** RFC 7009: revoking a refresh token ends its grant, access tokens included. */
+  /** RFC 7009: revoking a refresh token ends its authorization, access tokens included. */
   function revoke(
     req: IncomingMessage,
     res: ServerResponse,
@@ -306,12 +322,12 @@ export async function startFakeMcpServer(
     if (clientId === undefined)
       return json(res, 401, { error: "invalid_client" });
     const value = params.get("token") ?? "";
-    const grant = refreshTokens.get(value) ?? accessTokens.get(value);
-    if (grant?.clientId === clientId) {
+    const authorization = refreshTokens.get(value) ?? accessTokens.get(value);
+    if (authorization?.clientId === clientId) {
       accessTokens.delete(value);
       if (refreshTokens.delete(value))
         for (const [token, access] of accessTokens)
-          if (access.id === grant.id) accessTokens.delete(token);
+          if (access.id === authorization.id) accessTokens.delete(token);
     }
     res.writeHead(200).end();
   }
@@ -383,6 +399,7 @@ export async function startFakeMcpServer(
           ? {}
           : { "retry-after": String(fault.retryAfter) },
       );
+    // The other faults travel to the service with the call.
     const auth: AuthInfo = {
       token: bearer!,
       clientId: access.clientId,
@@ -446,8 +463,7 @@ export async function startFakeMcpServer(
   };
 }
 
-/** The result a fault answers with, or `undefined` if it leaves the answer to the service. */
-function faultResult(fault: McpFault): CallToolResult | undefined {
+function faultResult(fault: ResultFault): CallToolResult {
   const bytes = (size: number) => Buffer.alloc(size, 7).toString("base64");
   switch (fault.kind) {
     case "tool-error":
@@ -492,8 +508,6 @@ function faultResult(fault: McpFault): CallToolResult | undefined {
           },
         ],
       };
-    default:
-      return undefined;
   }
 }
 

@@ -33,7 +33,7 @@ it("runs standalone over HTTPS on a given host and port, under its public URL", 
 
   child = spawn(
     process.execPath,
-    ["--import", "tsx", join(import.meta.dirname, "fake-mcp.ts")],
+    ["--import", "tsx", join(import.meta.dirname, "run-fake-mcp.ts")],
     {
       env: {
         ...process.env,

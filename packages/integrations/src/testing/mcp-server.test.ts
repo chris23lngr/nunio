@@ -11,6 +11,7 @@ import type {
 import {
   auth,
   Client,
+  exchangeAuthorization,
   OAuthError,
   refreshAuthorization,
   StreamableHTTPClientTransport,
@@ -152,6 +153,27 @@ describe("fake MCP server", () => {
       "notes.share",
     ]);
     expect(tools).toEqual(testnotizenTools);
+  });
+
+  it("refuses a code exchanged with the wrong PKCE verifier", async () => {
+    const provider = new MemoryProvider();
+    await auth(provider, { serverUrl: server.mcpUrl });
+    const approval = await fetch(provider.authorizationUrl!, {
+      redirect: "manual",
+    });
+    const code = new URL(approval.headers.get("location")!).searchParams.get(
+      "code",
+    )!;
+
+    await expect(
+      exchangeAuthorization(server.url, {
+        clientInformation: provider.info!,
+        authorizationCode: code,
+        codeVerifier: `${provider.verifier}-wrong`,
+        redirectUri: REDIRECT,
+        resource: new URL(server.mcpUrl),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_grant" });
   });
 
   it("rotates refresh tokens, so a used one stops working", async () => {
