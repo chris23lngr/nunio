@@ -6,7 +6,14 @@
 export const target =
   process.env.E2E_TARGET === "staging" ? "staging" : "local";
 
-export const ports = { app: 8443, api: 8444, evil: 8445 } as const;
+export const ports = {
+  app: 8443,
+  api: 8444,
+  evil: 8445,
+  mcp: 8446,
+  imaps: 8993,
+  smtps: 8465,
+} as const;
 
 const evil = `https://evil.test:${ports.evil}`;
 
@@ -22,6 +29,12 @@ export const origins =
         api: `https://api.nunio.test:${ports.api}`,
         evil,
       };
+
+/** The Integration fakes beside the local API: the Testnotizen MCP server, and GreenMail on `ports.imaps` and `ports.smtps`. */
+export const fakes = {
+  mcp: `https://mcp.nunio.test:${ports.mcp}`,
+  mail: "mail.nunio.test",
+};
 
 export const cookieDomain =
   target === "staging" ? "staging.nunio.app" : "nunio.test";

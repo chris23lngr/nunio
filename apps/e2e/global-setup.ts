@@ -4,11 +4,22 @@ import { readFileSync } from "node:fs";
 import { request } from "node:https";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
+import type {
+  FakeMailServer,
+  FakeMcpServer,
+} from "@nunio/integrations/testing";
+import {
+  seedIntegrationCatalog,
+  startFakeMailServer,
+  startFakeMcpServer,
+} from "@nunio/integrations/testing";
 import { createCerts } from "./certs.js";
 import {
   cookieDomain,
+  fakes,
   origins,
   ports,
   spikeWebhookSecret,
@@ -22,8 +33,15 @@ export default async function globalSetup() {
     new URL(origins.app).hostname,
     new URL(origins.api).hostname,
     new URL(origins.evil).hostname,
+    new URL(fakes.mcp).hostname,
+    fakes.mail,
   ]);
   const ca = readFileSync(certs.caPath);
+  const certificate = {
+    ca: ca.toString("utf8"),
+    key: readFileSync(certs.keyPath, "utf8"),
+    cert: readFileSync(certs.certPath, "utf8"),
+  };
   const tls = {
     NODE_EXTRA_CA_CERTS: certs.caPath,
     TLS_KEY: certs.keyPath,
@@ -31,9 +49,11 @@ export default async function globalSetup() {
   };
   const children: ChildProcess[] = [];
   let db: TestDatabase | undefined;
+  let mail: FakeMailServer | undefined;
+  let mcp: FakeMcpServer | undefined;
   const cleanup = async () => {
     await Promise.all(children.map(stop));
-    await db?.stop();
+    await Promise.all([db?.stop(), mail?.stop(), mcp?.stop()]);
   };
 
   try {
@@ -52,7 +72,19 @@ export default async function globalSetup() {
           "Local browser tests require a disposable database; unset DATABASE_URL and DATABASE_URL_UNPOOLED",
         );
       }
-      db = await startTestDatabase();
+      [db, mail, mcp] = await Promise.all([
+        startTestDatabase(),
+        startFakeMailServer({
+          tls: certificate,
+          ports: { imaps: ports.imaps, smtps: ports.smtps },
+        }),
+        startFakeMcpServer({
+          port: ports.mcp,
+          url: fakes.mcp,
+          tls: certificate,
+        }),
+      ]);
+      await seed(db.connectionString, mcp);
       const shared = {
         ...process.env,
         NODE_ENV: "production" as const,
@@ -86,6 +118,7 @@ export default async function globalSetup() {
           // Required at API startup for Chat; no e2e flow asks a question, and the host never resolves.
           OPENROUTER_API_KEY: "test",
           OPENROUTER_BASE_URL: "https://openrouter.invalid/api/v1",
+          INTEGRATION_FAKES: "true",
         }),
         start("web", {
           ...shared,
@@ -109,6 +142,16 @@ export default async function globalSetup() {
   } catch (error) {
     await cleanup();
     throw error;
+  }
+}
+
+/** Offers Email and Testnotizen, served by the fake MCP server, as the dev migrate step does. */
+async function seed(databaseUrl: string, mcp: FakeMcpServer): Promise<void> {
+  const prisma = createPrismaClient(createPool(databaseUrl));
+  try {
+    await seedIntegrationCatalog(prisma, mcp);
+  } finally {
+    await prisma.$disconnect();
   }
 }
 
