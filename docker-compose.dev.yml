@@ -1,4 +1,5 @@
-# Local development stack: Postgres, Temporal, the API, the web app and the Temporal worker.
+# Local development stack: Postgres, Temporal, the API, the web app, the Temporal worker and the
+# Integration fakes (a GreenMail mail server and the Testnotizen MCP server).
 # Everything here is a throwaway dev value; nothing connects to staging or production.
 # Not included: the parser and object storage, so Source uploads and ingestion do not work.
 # Usage: docker compose -f docker-compose.dev.yml up --build (see CONTRIBUTING.md).
@@ -41,6 +42,8 @@ x-backend: &backend
   AI_DISABLED: ${AI_DISABLED:-true}
   # Email is not sent: Scaleway rejects these. The API logs sign-in codes instead (CONTRIBUTING.md).
   SCW_PROJECT_ID: dev
+  # Lets Integrations reach the fakes below (private hosts, the nunio.test mail provider).
+  INTEGRATION_FAKES: "true"
 
 services:
   db:
@@ -94,6 +97,7 @@ services:
     command: ["sh", "/usr/local/bin/dev-migrate.sh"]
     environment:
       DATABASE_URL: postgresql://nunio:nunio@db:5432/nunio
+      FAKE_MCP_URL: http://mcp.nunio.test:3002
     depends_on:
       db:
         condition: service_healthy
@@ -162,6 +166,34 @@ services:
         condition: service_completed_successfully
       temporal:
         condition: service_healthy
+
+  # The Integration fakes. Their names resolve on the host too (/etc/hosts): the browser opens the fake
+  # MCP server's sign-in page, and a mail client can read the mailbox. GreenMail takes any address with
+  # any password and serves TLS under its own self-signed certificate.
+  mail:
+    image: greenmail/standalone:2.1.15
+    ports:
+      - "127.0.0.1:3993:3993" # IMAP over TLS
+      - "127.0.0.1:3465:3465" # SMTP over TLS
+    networks:
+      default:
+        aliases:
+          - mail.nunio.test
+
+  fake-mcp:
+    <<: *app
+    working_dir: /app/packages/integrations
+    command: ["node", "--import", "tsx", "src/testing/run-fake-mcp.ts"]
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3002"
+      PUBLIC_URL: http://mcp.nunio.test:3002
+    ports:
+      - "127.0.0.1:3002:3002"
+    networks:
+      default:
+        aliases:
+          - mcp.nunio.test
 
 volumes:
   db-data:
