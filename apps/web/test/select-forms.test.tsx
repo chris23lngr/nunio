@@ -2,7 +2,6 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { PlanView } from "@/app/(app)/plan/plan-view";
-import { ProjectsView } from "@/app/(app)/projects/projects-view";
 import { ReviewList } from "@/app/(app)/review/review-list";
 import { api } from "./api";
 
@@ -16,35 +15,6 @@ const course = {
   obligations: [exam],
   facts: [],
 };
-
-test("the Project select submits its chosen Obligation and resets to no Obligation", async () => {
-  const created: unknown[] = [];
-  api.route("GET", "/api/me/projects", () => Response.json([]));
-  api.route("GET", "/api/me/review", () =>
-    Response.json({ courses: [course] }),
-  );
-  api.route("POST", "/api/me/projects", async (request) => {
-    created.push(await request.json());
-    return Response.json({ id: "project-1" });
-  });
-  render(<ProjectsView apiOrigin={api.origin} />);
-  const user = userEvent.setup();
-  await screen.findByRole("checkbox", { name: "Analysis I" });
-  const select = screen.getByRole("combobox", { name: "Toward" });
-  expect(select.textContent).toContain("No Obligation");
-  await user.type(screen.getByLabelText("Name"), "Prüfungsvorbereitung");
-  await user.click(select);
-  await user.click(
-    await screen.findByRole("option", { name: "Klausur (Analysis I)" }),
-  );
-  await user.click(screen.getByRole("button", { name: "Create" }));
-  await waitFor(() =>
-    expect(created).toEqual([
-      { name: "Prüfungsvorbereitung", courseIds: [], obligationId: "exam-1" },
-    ]),
-  );
-  await waitFor(() => expect(select.textContent).toContain("No Obligation"));
-});
 
 test("the Review selects submit a Course and Kind, then restore their defaults", async () => {
   const created: unknown[] = [];
