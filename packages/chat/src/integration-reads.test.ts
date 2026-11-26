@@ -4,15 +4,15 @@ import type { ReadableTool } from "./integration-reads.js";
 import { integrationReadTools, modelToolName } from "./integration-reads.js";
 import { createTurn } from "./turn.js";
 
-const readable = (name: string): ReadableTool => ({
-  connectionId: "connection-1",
-  integration: { key: "testnotizen", name: "Testnotizen" },
+const readable = (name: string, key = "testnotizen"): ReadableTool => ({
+  connectionId: `connection-${key}`,
+  integration: { key, name: key },
   name,
   label: name,
   definition: { description: "Reads.", inputSchema: { type: "object" } },
 });
 
-const names = (...tools: string[]) =>
+const names = (...tools: (string | [key: string, name: string])[]) =>
   Object.keys(
     integrationReadTools(
       createTurn(),
@@ -22,7 +22,9 @@ const names = (...tools: string[]) =>
         },
       },
       principal.fromSession({ studentId: "student-1" }),
-      tools.map(readable),
+      tools.map((tool) =>
+        typeof tool === "string" ? readable(tool) : readable(tool[1], tool[0]),
+      ),
     ).tools,
   );
 
@@ -45,5 +47,15 @@ describe("the names the model is given for Integration tools", () => {
 
     expect(first).toBe("testnotizen__notes_search");
     expect(second).toMatch(/^testnotizen__notes_search_[0-9a-f]{8}$/);
+  });
+
+  it("keeps apart tools of two Integrations whose keys and names join alike", () => {
+    const [first, second] = names(["foo", "bar__baz"], ["foo__bar", "baz"]);
+
+    expect(first).toBe("foo__bar__baz");
+    expect(second).toMatch(/^foo__bar__baz_[0-9a-f]{8}$/);
+    expect(modelToolName("foo", "bar__baz", { hashed: true })).not.toBe(
+      modelToolName("foo__bar", "baz", { hashed: true }),
+    );
   });
 });

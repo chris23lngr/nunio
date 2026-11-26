@@ -30,17 +30,20 @@ export interface ReadableTool {
 /**
  * The name a tool is given to the model: namespaced by its Integration and sanitised to the names providers accept
  * (letters, digits, `_` and `-`, at most 64). A name that had to be cut, or that another tool's name sanitised to,
- * ends in a hash of the server's own name, so two stay apart.
+ * ends in a hash of the Integration's key and the server's own name, so two stay apart.
  */
 export function modelToolName(
   integrationKey: string,
   toolName: string,
   { hashed = false }: { hashed?: boolean } = {},
 ) {
-  const whole = `${integrationKey}__${toolName}`;
-  const name = whole.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const name = `${integrationKey}__${toolName}`.replace(/[^a-zA-Z0-9_-]/g, "_");
   if (name.length <= 64 && !hashed) return name;
-  const hash = createHash("sha256").update(whole).digest("hex").slice(0, 8);
+  // Hashed apart, so no Integration key and tool name hash like another pair's.
+  const hash = createHash("sha256")
+    .update(`${integrationKey}\0${toolName}`)
+    .digest("hex")
+    .slice(0, 8);
   return `${name.slice(0, 55)}_${hash}`;
 }
 
