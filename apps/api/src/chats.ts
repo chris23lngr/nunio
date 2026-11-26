@@ -117,6 +117,23 @@ const Part = z
             ),
         }),
     ),
+    z.object({
+      type: z.literal("tool-integration"),
+      toolCallId: z.string(),
+      input: z.object({}).strict().describe("A read's arguments are not kept."),
+      output: z.object({
+        integration: z.object({ key: z.string(), name: z.string() }),
+        tool: z.object({
+          name: z.string().describe("The server's own tool name."),
+          label: z.string().describe("nunio's German label."),
+        }),
+        outcome: z
+          .enum(["answered", "failed", "refused"])
+          .describe(
+            "failed: the service reported an error or couldn't be reached; refused: past the answer's 10 reads.",
+          ),
+      }),
+    }),
     proposalPart(
       "tool-proposeStudyBlock",
       z.object({ work: z.string(), ...times }),
@@ -214,13 +231,23 @@ const modelChoice = z
   .describe(
     "A Model Catalog key from GET /api/me/models; without one, the remembered choice or the default answers.",
   );
+/** The Connections a Chat may read, by their Integration's key. */
+const ChatConnections = z
+  .array(z.string().min(1).max(100))
+  .max(20)
+  .describe(
+    "The Connections the Chat may read, by their Integration's key; none in a new Chat.",
+  );
 const Selection = z
   .object({
     courseIds: z.array(z.string().uuid()).max(50),
     sourceIds: z.array(z.string().uuid()).max(200),
+    connections: ChatConnections.optional(),
   })
   .strict()
-  .describe("The Courses and Sources the Chat may read; empty means none.");
+  .describe(
+    "The Courses, Sources and Connections the Chat may read; empty means none.",
+  );
 const ErrorBody = z.object({ error: z.string() });
 const json = (schema: z.ZodType, description: string) => ({
   description,
@@ -687,9 +714,10 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
                 code: z.string().nullable(),
               }),
             ),
+            connections: ChatConnections,
             messages: z.array(Message),
           }),
-          "The Chat and its fixed selection.",
+          "The Chat, its fixed selection of Courses, and the Connections it may read.",
         ),
         ...errors,
       },
@@ -723,7 +751,7 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
         201: json(z.object({ id: z.string() }), "Created."),
         404: json(
           ErrorBody,
-          "A selected Course or Source is gone or not the student's.",
+          "A selected Course or Source is gone or not the student's, or the student has no Connection to a selected Integration.",
         ),
         401: errors[401],
       },
@@ -737,6 +765,48 @@ export function registerChatRoutes(routes: OpenAPIHono<AppBindings>) {
         .create(principal.fromSession(actor), c.req.valid("json"));
       if (created.status === "gone") return c.json({ error: "gone" }, 404);
       return c.json({ id: created.id }, 201);
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "put",
+      path: "/api/me/chats/{id}/connections",
+      request: {
+        params: chatParams,
+        body: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: z.object({ connections: ChatConnections }).strict(),
+            },
+          },
+        },
+      },
+      responses: {
+        200: json(
+          z.object({ connections: ChatConnections }),
+          "The Connections the Chat may read from its next question on.",
+        ),
+        401: errors[401],
+        404: json(
+          ErrorBody,
+          "The Chat is gone, or the student has no Connection to a selected Integration.",
+        ),
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const set = await c
+        .get("chats")
+        .setConnections(
+          principal.fromSession(actor),
+          c.req.valid("param").id,
+          c.req.valid("json").connections,
+        );
+      if (set.status === "gone") return c.json({ error: "gone" }, 404);
+      return c.json({ connections: set.connections }, 200);
     },
   );
   routes.openapi(

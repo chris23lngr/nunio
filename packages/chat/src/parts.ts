@@ -3,6 +3,8 @@ import type { UIMessageChunk } from "ai";
 import { readUIMessageStream } from "ai";
 import type { AgendaOutput } from "./agenda.js";
 import type { CourseFactsOutput } from "./course-facts.js";
+import type { IntegrationReadOutput } from "./integration-reads.js";
+import { isIntegrationRead } from "./integration-reads.js";
 import type { ArtifactOutput } from "./practice.js";
 import type { SearchOutput } from "./search.js";
 
@@ -33,6 +35,13 @@ export type ChatPart =
       toolCallId: string;
       input: { topics: string[] };
       output: ArtifactOutput;
+    }
+  | {
+      /** A read through a Connection; its arguments aren't kept. */
+      type: "tool-integration";
+      toolCallId: string;
+      input: Record<string, never>;
+      output: IntegrationReadOutput;
     }
   | ProposalPart<"tool-proposeStudyBlock", { work: string } & Times>
   | ProposalPart<"tool-proposeStudyBlockMove", { block: string } & Times>
@@ -114,12 +123,20 @@ export async function partsFrom(
       p.state === "output-available"
     )
       return [
-        {
-          type: p.type,
-          toolCallId: p.toolCallId,
-          input: p.input,
-          output: p.output,
-        } as ChatPart,
+        // An Integration read is kept under one type, whatever the model called it, and without its arguments.
+        isIntegrationRead(p.output)
+          ? {
+              type: "tool-integration",
+              toolCallId: p.toolCallId as string,
+              input: {},
+              output: p.output,
+            }
+          : ({
+              type: p.type,
+              toolCallId: p.toolCallId,
+              input: p.input,
+              output: p.output,
+            } as ChatPart),
       ];
     // A proposal waits for the student; it shows as the Action it is asked as.
     if (p.state === "approval-requested") {

@@ -369,9 +369,10 @@ model Chat {
   /// When the student last asked or decided proposals in it (Last Activity); null until the first question is saved.
   lastActivityAt DateTime?
 
-  courses  ChatCourse[]
-  sources  ChatSource[]
-  messages ChatMessage[]
+  courses     ChatCourse[]
+  sources     ChatSource[]
+  connections ChatConnection[]
+  messages    ChatMessage[]
   runs     Run[]
 
   @@unique([id, studentId])
@@ -400,6 +401,19 @@ model ChatSource {
 
   @@id([chatId, sourceId])
   @@map("chat_source")
+}
+
+/// A Connection the Chat may read (#291); none in a new Chat.
+model ChatConnection {
+  chatId       String
+  connectionId String
+  studentId    String
+  chat         Chat       @relation(fields: [chatId, studentId], references: [id, studentId], onDelete: Cascade)
+  connection   Connection @relation(fields: [connectionId, studentId], references: [id, studentId], onDelete: Cascade)
+
+  @@id([chatId, connectionId])
+  @@index([connectionId])
+  @@map("chat_connection")
 }
 
 enum ChatRole {

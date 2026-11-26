@@ -8,8 +8,6 @@
  * reaches public addresses over https.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { lookup as dnsLookup } from "node:dns";
-import { isIP } from "node:net";
 import type {
   OAuthAuthorizationServerInformation,
   OAuthClientInformation,
@@ -22,8 +20,8 @@ import type { PrismaClient } from "@nunio/db";
 import type { Principal } from "@nunio/delegation";
 import { accessRefusal, withOwner } from "@nunio/delegation";
 import type { ConnectionCredentialKeys, SourceKeys } from "@nunio/keys";
-import { Agent, buildConnector, fetch as undiciFetch } from "undici";
 import { isPublic } from "./email/servers.js";
+import { publicFetch } from "./public-fetch.js";
 
 /** How long a student has to sign in at the vendor and come back. */
 const OAUTH_FLOW_LIFETIME_MS = 10 * 60_000;
@@ -140,59 +138,18 @@ class IssuerRefused extends Error {
 }
 
 /**
- * The fetch `auth()` uses for every OAuth request. Outside INTEGRATION_FAKES it speaks https only, so codes,
- * verifiers and client secrets never travel in the clear. It refuses every connection unless each address is
- * public: a host name is resolved inside the connector, so the address checked is the address used (no DNS
- * rebinding), and an IP address is checked there too. It never follows a redirect; the SDK follows them by hand,
- * each hop through this fetch again. `allowed` is a test seam.
+ * The fetch `auth()` uses for every OAuth request: https only outside INTEGRATION_FAKES, public addresses only, and
+ * no redirects followed (see `publicFetch`). `allowed` is a test seam.
  */
 export function oauthFetch(
   fakes: boolean,
   allowed: (address: string) => boolean = isPublic,
 ): typeof fetch {
-  // A wrapper rather than globalThis.fetch itself, which the SDK would swap for its own guarded fetch.
-  if (fakes) return (input, init) => fetch(input, init);
-  const refused = (host: string) =>
-    new Error(`OAuth host ${host} is not public`);
-  const connector = buildConnector({
-    timeout: OAUTH_REQUEST_TIMEOUT_MS,
-    lookup: (hostname, options, callback) =>
-      dnsLookup(hostname, { ...options, all: true }, (error, addresses) => {
-        if (error) return callback(error, []);
-        if (!addresses.length || !addresses.every((a) => allowed(a.address)))
-          return callback(refused(hostname), []);
-        if (options.all) return callback(null, addresses);
-        const [first] = addresses;
-        (callback as (e: null, address: string, family: number) => void)(
-          null,
-          first!.address,
-          first!.family,
-        );
-      }),
+  return publicFetch(fakes, {
+    timeoutMs: OAUTH_REQUEST_TIMEOUT_MS,
+    allowed,
+    purpose: "OAuth",
   });
-  const dispatcher = new Agent({
-    headersTimeout: OAUTH_REQUEST_TIMEOUT_MS,
-    bodyTimeout: OAUTH_REQUEST_TIMEOUT_MS,
-    // Every connection, every hop: an IP address is never looked up, so it is checked here.
-    connect: (options, callback) => {
-      const address = options.hostname.replace(/^\[|\]$/g, "");
-      if (isIP(address) && !allowed(address))
-        return callback(refused(options.hostname), null);
-      connector(options, callback);
-    },
-  });
-  return (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = new URL(input instanceof Request ? input.url : input);
-    if (url.protocol !== "https:")
-      throw new Error("OAuth requests use https only");
-    if (init?.redirect === "follow")
-      throw new Error("OAuth requests don't follow redirects");
-    return undiciFetch(input as never, {
-      ...(init as object),
-      redirect: init?.redirect ?? "error",
-      dispatcher,
-    });
-  }) as unknown as typeof fetch;
 }
 
 /** Wraps `base` to observe the authorization server's metadata and the code exchange's raw response. */

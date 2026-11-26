@@ -54,6 +54,7 @@ test("Chat keeps its composer visible on desktop and mobile and opens citations 
     expect(route.request().postDataJSON()).toEqual({
       courseIds: [course.id],
       sourceIds: [],
+      connections: [],
     });
     return route.fulfill({ headers: cors, status: 201, json: { id } });
   });

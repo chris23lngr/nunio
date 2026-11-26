@@ -28,6 +28,7 @@ import type { Catalog, Connections } from "@nunio/integrations";
 import {
   createCatalog,
   createConnections,
+  createIntegrationReads,
   integrationFakes,
 } from "@nunio/integrations";
 import {
@@ -239,6 +240,7 @@ export async function appFromEnv(
       )?.due ?? null,
   });
   const keys = sourceKeysFromEnv(env);
+  const credentials = connectionCredentialKeysFromEnv(env);
   const sources = createSources({
     db: prisma,
     keys,
@@ -310,6 +312,7 @@ export async function appFromEnv(
       keys,
       reader,
       delegation,
+      integrations: createIntegrationReads({ db: prisma, credentials, fakes }),
       plan,
       clock,
       artifacts,
@@ -334,7 +337,7 @@ export async function appFromEnv(
     connections: createConnections({
       db: prisma,
       keys,
-      credentials: connectionCredentialKeysFromEnv(env),
+      credentials,
       fakes,
       apiOrigin: required("BETTER_AUTH_URL"),
     }),

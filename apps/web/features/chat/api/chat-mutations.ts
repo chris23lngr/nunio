@@ -9,13 +9,16 @@ export function createChat(apiOrigin: string) {
   return mutationOptions({
     mutationFn: async ({
       courseIds,
+      connections,
       signal,
     }: {
       courseIds: string[];
+      /** The Connections it may read, by Integration key. */
+      connections: string[];
       signal?: AbortSignal;
     }) => {
       const result = await createApiClient(apiOrigin).POST("/api/me/chats", {
-        body: { courseIds, sourceIds: [] },
+        body: { courseIds, sourceIds: [], connections },
         signal,
       });
       if (!result.data)
@@ -25,14 +28,37 @@ export function createChat(apiOrigin: string) {
       return result.data.id;
     },
     // The new Chat is known to be empty, so opening it needs no request.
-    onSuccess: (id, { courseIds }, _, { client }) => {
+    onSuccess: (id, { courseIds, connections }, _, { client }) => {
       client.setQueryData(chatQueries(apiOrigin, id).queryKey, {
         id,
         courses: (
           client.getQueryData(chatCourseQueries(apiOrigin).queryKey) ?? []
         ).filter((course) => courseIds.includes(course.id)),
+        connections: [...connections].sort(),
         messages: [],
       });
+    },
+  });
+}
+
+/** Switches on exactly these Connections for an open Chat, from its next question on. */
+export function setChatConnections(apiOrigin: string, chatId: string) {
+  return mutationOptions({
+    mutationFn: async (connections: string[]) => {
+      const result = await createApiClient(apiOrigin).PUT(
+        "/api/me/chats/{id}/connections",
+        { params: { path: { id: chatId } }, body: { connections } },
+      );
+      if (!result.data)
+        throw new ChatError(
+          "Die Verbindungen konnten nicht gespeichert werden.",
+        );
+      return result.data.connections;
+    },
+    onSuccess: (connections, _, __, { client }) => {
+      client.setQueryData(chatQueries(apiOrigin, chatId).queryKey, (chat) =>
+        chat ? { ...chat, connections } : chat,
+      );
     },
   });
 }

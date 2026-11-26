@@ -1515,6 +1515,83 @@
               "type": {
                 "type": "string",
                 "enum": [
+                  "tool-integration"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false,
+                "description": "A read's arguments are not kept."
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "integration": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "name"
+                    ]
+                  },
+                  "tool": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "The server's own tool name."
+                      },
+                      "label": {
+                        "type": "string",
+                        "description": "nunio's German label."
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "label"
+                    ]
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "answered",
+                      "failed",
+                      "refused"
+                    ],
+                    "description": "failed: the service reported an error or couldn't be reached; refused: past the answer's 10 reads."
+                  }
+                },
+                "required": [
+                  "integration",
+                  "tool",
+                  "outcome"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "output"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
                   "tool-proposeStudyBlock"
                 ]
               },
@@ -10343,6 +10420,16 @@
                       "format": "uuid"
                     },
                     "maxItems": 200
+                  },
+                  "connections": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "maxItems": 20,
+                    "description": "The Connections the Chat may read, by their Integration's key; none in a new Chat."
                   }
                 },
                 "required": [
@@ -10350,7 +10437,7 @@
                   "sourceIds"
                 ],
                 "additionalProperties": false,
-                "description": "The Courses and Sources the Chat may read; empty means none."
+                "description": "The Courses, Sources and Connections the Chat may read; empty means none."
               }
             }
           }
@@ -10393,7 +10480,7 @@
             }
           },
           "404": {
-            "description": "A selected Course or Source is gone or not the student's.",
+            "description": "A selected Course or Source is gone or not the student's, or the student has no Connection to a selected Integration.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10428,7 +10515,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The Chat and its fixed selection.",
+            "description": "The Chat, its fixed selection of Courses, and the Connections it may read.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10462,6 +10549,16 @@
                         ]
                       }
                     },
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "maxItems": 20,
+                      "description": "The Connections the Chat may read, by their Integration's key; none in a new Chat."
+                    },
                     "messages": {
                       "type": "array",
                       "items": {
@@ -10472,6 +10569,7 @@
                   "required": [
                     "id",
                     "courses",
+                    "connections",
                     "messages"
                   ]
                 }
@@ -10498,6 +10596,110 @@
           },
           "404": {
             "description": "The Chat is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/chats/{id}/connections": {
+      "put": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "connections": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "maxItems": 20,
+                    "description": "The Connections the Chat may read, by their Integration's key; none in a new Chat."
+                  }
+                },
+                "required": [
+                  "connections"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Connections the Chat may read from its next question on.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "maxItems": 20,
+                      "description": "The Connections the Chat may read, by their Integration's key; none in a new Chat."
+                    }
+                  },
+                  "required": [
+                    "connections"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The Chat is gone, or the student has no Connection to a selected Integration.",
             "content": {
               "application/json": {
                 "schema": {

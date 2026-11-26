@@ -204,6 +204,12 @@ const chats = createChats({
   keys,
   reader,
   delegation,
+  // Its Chats select no Connection.
+  integrations: {
+    open: () => {
+      throw new Error("This eval reads through no Connection");
+    },
+  },
   plan,
   clock,
   artifacts: {
