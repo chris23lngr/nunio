@@ -1,15 +1,18 @@
 "use client";
 
-import { Button } from "@nunio/ui/components/button/button";
+import { Button, buttonVariants } from "@nunio/ui/components/button/button";
 import { useQuery } from "@tanstack/react-query";
 import Image from "next/image";
+import Link from "next/link";
 import { PageHeading } from "@/components/headings";
 import type { Integration } from "./api/integration-queries";
 import { integrationQueries } from "./api/integration-queries";
 import { EmailConnectDialog } from "./components/email-connect-dialog";
+import { foldersLine } from "./components/folder-chips";
 import { OAuthConnectDialog } from "./components/oauth-connect-dialog";
 import { SettingGroup } from "./components/setting-group";
 import { SettingsNavigation } from "./components/settings-navigation";
+import { StateBadge } from "./components/state-badge";
 
 export function ConnectionsScreen({
   apiOrigin,
@@ -131,11 +134,7 @@ export function ConnectionsScreen({
 function readsLine(connection: NonNullable<Integration["connection"]>) {
   const parts = [];
   if (connection.folders.length > 0)
-    parts.push(
-      `Lesen: ${connection.folders
-        .map((folder) => (folder === "INBOX" ? "Posteingang" : folder))
-        .join(", ")}`,
-    );
+    parts.push(foldersLine(connection.folders));
   if (connection.agentCount === 1) parts.push("1 Agent nutzt diese Verbindung");
   else if (connection.agentCount > 1)
     parts.push(`${connection.agentCount} Agents nutzen diese Verbindung`);
@@ -144,7 +143,6 @@ function readsLine(connection: NonNullable<Integration["connection"]>) {
 
 function ConnectedRow({ integration }: { integration: Integration }) {
   const connection = integration.connection!;
-  const connected = connection.state === "connected";
   const line = readsLine(connection);
   return (
     <li className="flex items-center gap-3 py-3">
@@ -163,23 +161,13 @@ function ConnectedRow({ integration }: { integration: Integration }) {
           <p className="mt-0.5 text-xs leading-4 text-base-500">{line}</p>
         )}
       </div>
-      <span
-        className={`flex h-5 shrink-0 items-center gap-1.5 rounded-[5px] px-1.5 text-xs leading-4 font-medium ${
-          connected
-            ? "bg-success-50 text-success-800"
-            : "bg-warning-50 text-warning-800"
-        }`}
+      <StateBadge state={connection.state} />
+      <Link
+        href={`/settings/connections/${integration.key}`}
+        className={buttonVariants({ variant: "ghost" })}
       >
-        <span
-          aria-hidden
-          className={`size-1.5 rounded-full ${connected ? "bg-success-500" : "bg-warning-500"}`}
-        />
-        {connected ? "Verbunden" : "Neu verbinden nötig"}
-      </span>
-      {/* The Connection's page comes with #289. */}
-      <Button variant="ghost" disabled>
         Verwalten
-      </Button>
+      </Link>
     </li>
   );
 }

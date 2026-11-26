@@ -198,7 +198,9 @@ test("shows a connected Email under Verbunden with what it reads", async () => {
     ),
   ).toBeTruthy();
   expect(email.getByText("Verbunden")).toBeTruthy();
-  expect(email.getByRole("button", { name: "Verwalten" })).toBeTruthy();
+  expect(
+    email.getByRole("link", { name: "Verwalten" }).getAttribute("href"),
+  ).toBe("/settings/connections/email");
   const available = within(screen.getByRole("region", { name: "Verfügbar" }));
   expect(available.queryByText("E-Mail")).toBeNull();
 });

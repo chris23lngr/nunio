@@ -20,7 +20,7 @@ import { Input } from "@nunio/ui/components/input/input";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, X } from "lucide-react";
 import { useId, useState } from "react";
-import type { EmailLogin, MailFolder } from "../api/email-connection";
+import type { EmailLogin } from "../api/email-connection";
 import {
   emailConnectMutation,
   emailDiscoveryQuery,
@@ -29,6 +29,7 @@ import {
 } from "../api/email-connection";
 import { integrationQueries } from "../api/integration-queries";
 import { DataNote } from "./data-note";
+import { FolderChips } from "./folder-chips";
 
 const noServers = {
   imapHost: "",
@@ -36,11 +37,6 @@ const noServers = {
   smtpHost: "",
   smtpPort: "587",
 };
-
-/** A folder chip's label: the inbox by its German name, as Verbunden shows it, others as the mailbox names them. */
-function folderLabel(folder: MailFolder) {
-  return folder.specialUse === "\\Inbox" ? "Posteingang" : folder.name;
-}
 
 /** What a refused mailbox means to the student, except a failed login, which shows its step. */
 function refusalMessage(error: Error) {
@@ -388,40 +384,11 @@ export function EmailConnectDialog({
                   <legend className="mb-2 text-sm leading-5 font-medium text-base-800">
                     Ordner, die nunio lesen darf
                   </legend>
-                  <div className="flex flex-wrap gap-2">
-                    {folders.map((folder) => {
-                      const pressed = selected.includes(folder.path);
-                      return (
-                        <button
-                          key={folder.path}
-                          type="button"
-                          aria-pressed={pressed}
-                          onClick={() =>
-                            setSelected(
-                              pressed
-                                ? selected.filter(
-                                    (path) => path !== folder.path,
-                                  )
-                                : [...selected, folder.path],
-                            )
-                          }
-                          className={`flex h-7 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-[13px] leading-4 font-medium outline-1 focus-visible:outline-2 focus-visible:outline-primary-500 ${
-                            pressed
-                              ? "bg-primary-50 text-primary-700 outline-primary-300"
-                              : "text-base-600 outline-base-300 hover:bg-base-50"
-                          }`}
-                        >
-                          {pressed && (
-                            <Check
-                              aria-hidden
-                              className="size-3 text-primary-600"
-                            />
-                          )}
-                          {folderLabel(folder)}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <FolderChips
+                    folders={folders}
+                    selected={selected}
+                    onChange={setSelected}
+                  />
                 </fieldset>
               )}
             </FieldGroup>

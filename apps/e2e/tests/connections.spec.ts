@@ -76,4 +76,20 @@ test("a student connects Email: nunio recognises the mail server, tests the logi
   await expect(row.getByText("Lesen: Posteingang")).toBeVisible();
   await expect(row.getByText("Verbunden", { exact: true })).toBeVisible();
   await expect(dialog).toBeHidden();
+
+  // "Verwalten" opens the Connection's page: its folders, listed from the mailbox, and sending always asks.
+  await row.getByRole("link", { name: "Verwalten" }).click();
+  await expect(page).toHaveURL(`${origins.app}/settings/connections/email`);
+  await expect(
+    page
+      .getByRole("region", { name: "Ordner, die nunio lesen darf" })
+      .getByRole("button", { name: "Posteingang" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page
+      .getByRole("region", { name: "Fragt immer" })
+      .getByRole("listitem")
+      .filter({ hasText: "Mail senden" })
+      .getByText("Fragt immer"),
+  ).toBeVisible();
 });
