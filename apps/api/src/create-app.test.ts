@@ -12224,6 +12224,7 @@ describe("connecting an OAuth Integration", () => {
     expect(fake.tokenRequests.at(-1)).toEqual({
       grantType: "authorization_code",
       clientId: cimdUrl(),
+      resource: fake.mcpUrl,
     });
     const credential = JSON.parse(
       connectionCredentials.open(stored.connections[0]!.id, {
@@ -12308,6 +12309,7 @@ describe("connecting an OAuth Integration", () => {
     expect(fake.tokenRequests.at(-1)).toEqual({
       grantType: "authorization_code",
       clientId: clientA,
+      resource: fake.mcpUrl,
     });
     expect(await registrations()).toHaveLength(1);
 
@@ -12428,6 +12430,197 @@ describe("connecting an OAuth Integration", () => {
       `${appOrigin}/settings/connections`,
     );
     expect((await storedFor(cookie)).connections).toHaveLength(1);
+  });
+
+  /** The callback the vendor sends the student back with, after the start. */
+  async function startedAtVendor(cookie: string, key = "testnotizen") {
+    const started = await start(cookie, key);
+    expect(started.status).toBe(200);
+    const { authorizationUrl } = (await started.json()) as {
+      authorizationUrl: string;
+    };
+    return atVendor(authorizationUrl);
+  }
+
+  it("stores nothing when the vendor advertises iss but its response leaves it out, without exchanging the code", async () => {
+    const cookie = await signUp("oauth-no-iss");
+    const callback = await startedAtVendor(cookie);
+    callback.searchParams.delete("iss");
+    const exchanges = fake.tokenRequests.length;
+
+    const returned = await back(cookie, callback);
+
+    expect(returned.headers.get("location")).toBe(
+      `${appOrigin}/settings/connections?connect=testnotizen&error=failed`,
+    );
+    expect(fake.tokenRequests).toHaveLength(exchanges);
+    expect(await storedFor(cookie)).toEqual(nothing);
+  });
+
+  it("refuses a completed callback replayed, without exchanging its code again", async () => {
+    const cookie = await signUp("oauth-replay");
+    const callback = await startedAtVendor(cookie);
+    expect((await back(cookie, callback)).headers.get("location")).toBe(
+      `${appOrigin}/settings/connections`,
+    );
+    const exchanges = fake.tokenRequests.length;
+
+    const replayed = await back(cookie, callback);
+
+    expect(replayed.headers.get("location")).toBe(
+      `${appOrigin}/settings/connections?connect=testnotizen&error=expired`,
+    );
+    expect(fake.tokenRequests).toHaveLength(exchanges);
+    expect((await storedFor(cookie)).connections).toHaveLength(1);
+  });
+
+  it("refuses to start when the server's Protected Resource Metadata is missing, even with the server allowlisted", async () => {
+    const key = await addIntegration("no-prm", fake, {
+      issuers: [fake.url, fake.mcpUrl],
+    });
+    const cookie = await signUp("oauth-no-prm");
+    fake.setProtectedResourceMetadata(null);
+    try {
+      const response = await start(cookie, key);
+
+      expect(response.status).toBe(422);
+      expect(await response.json()).toEqual({ error: "authorization_failed" });
+      expect(await storedFor(cookie)).toEqual(nothing);
+    } finally {
+      fake.setProtectedResourceMetadata();
+    }
+  });
+
+  it("refuses to start when the Protected Resource Metadata names another resource", async () => {
+    const cookie = await signUp("oauth-other-resource");
+    fake.setProtectedResourceMetadata({
+      resource: `${fake.url}/elsewhere`,
+      authorization_servers: [fake.url],
+    });
+    try {
+      const response = await start(cookie);
+
+      expect(response.status).toBe(422);
+      expect(await response.json()).toEqual({ error: "authorization_failed" });
+      expect(await storedFor(cookie)).toEqual(nothing);
+    } finally {
+      fake.setProtectedResourceMetadata();
+    }
+  });
+
+  it("exchanges the code for the resource pinned at the start, even when the metadata is gone at the callback", async () => {
+    const cookie = await signUp("oauth-pinned-resource");
+    const callback = await startedAtVendor(cookie);
+    fake.setProtectedResourceMetadata(null);
+    try {
+      const returned = await back(cookie, callback);
+
+      expect(returned.headers.get("location")).toBe(
+        `${appOrigin}/settings/connections`,
+      );
+      expect(fake.tokenRequests.at(-1)).toEqual({
+        grantType: "authorization_code",
+        clientId: cimdUrl(),
+        resource: fake.mcpUrl,
+      });
+    } finally {
+      fake.setProtectedResourceMetadata();
+    }
+  });
+
+  it("stores nothing when the resource changed between the start and the callback", async () => {
+    const cookie = await signUp("oauth-changed-resource");
+    const callback = await startedAtVendor(cookie);
+    const exchanges = fake.tokenRequests.length;
+    fake.setProtectedResourceMetadata({
+      resource: `${fake.url}/elsewhere`,
+      authorization_servers: [fake.url],
+    });
+    try {
+      const returned = await back(cookie, callback);
+
+      expect(returned.headers.get("location")).toBe(
+        `${appOrigin}/settings/connections?connect=testnotizen&error=failed`,
+      );
+      expect(fake.tokenRequests).toHaveLength(exchanges);
+      expect(await storedFor(cookie)).toEqual(nothing);
+    } finally {
+      fake.setProtectedResourceMetadata();
+    }
+  });
+
+  it("refuses an authorization server whose metadata names an issuer not on the row, before registering", async () => {
+    // The row allows a tenant's issuer; the server's root metadata names the root issuer instead.
+    const tenant = `${fake.url}/tenant`;
+    const key = await addIntegration("tenant", fake, {
+      registration: "dcr",
+      issuers: [tenant],
+    });
+    const cookie = await signUp("oauth-tenant");
+    fake.setProtectedResourceMetadata({
+      resource: fake.mcpUrl,
+      authorization_servers: [tenant],
+    });
+    try {
+      const response = await start(cookie, key);
+
+      expect(response.status).toBe(422);
+      expect(await response.json()).toEqual({ error: "issuer_refused" });
+      expect(
+        await admin.oAuthClient.findMany({ where: { integrationKey: key } }),
+      ).toEqual([]);
+      expect(await storedFor(cookie)).toEqual(nothing);
+    } finally {
+      fake.setProtectedResourceMetadata();
+    }
+  });
+
+  it("refuses to start against an authorization server without metadata", async () => {
+    const bare = serve({
+      fetch: () => new Response("not found", { status: 404 }),
+      hostname: "127.0.0.1",
+      port: 0,
+    });
+    await new Promise((resolve) => bare.once("listening", resolve));
+    const server = `http://127.0.0.1:${(bare.address() as AddressInfo).port}`;
+    const key = await addIntegration("bare-as", fake, { issuers: [server] });
+    const cookie = await signUp("oauth-bare-as");
+    fake.setProtectedResourceMetadata({
+      resource: fake.mcpUrl,
+      authorization_servers: [server],
+    });
+    try {
+      const response = await start(cookie, key);
+
+      expect(response.status).toBe(422);
+      expect(await response.json()).toEqual({ error: "authorization_failed" });
+      expect(await storedFor(cookie)).toEqual(nothing);
+    } finally {
+      fake.setProtectedResourceMetadata();
+      await new Promise((resolve) => bare.close(resolve));
+    }
+  });
+
+  it("connects when the vendor names a lifetime too long for a date, storing no expiry", async () => {
+    const forever = await startFakeMcpServer({ tokenLifetime: 1e300 });
+    try {
+      const key = await addIntegration("forever", forever);
+      const cookie = await signUp("oauth-forever");
+
+      const { location } = await connect(cookie, key);
+
+      expect(location).toBe(`${appOrigin}/settings/connections`);
+      const stored = await storedFor(cookie);
+      const credential = JSON.parse(
+        connectionCredentials.open(stored.connections[0]!.id, {
+          version: stored.credentials[0]!.keyVersion,
+          ciphertext: stored.credentials[0]!.ciphertext,
+        }),
+      );
+      expect(credential.expiresAt).toBeNull();
+    } finally {
+      await forever.stop();
+    }
   });
 
   it("needs a signed-in student and the app's origin to start", async () => {

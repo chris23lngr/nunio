@@ -2,9 +2,10 @@
  * Connecting an OAuth Integration (#288): nunio's `OAuthClientProvider` for `@ai-sdk/mcp`, backed by Postgres.
  *
  * The SDK discovers the authorization server through Protected Resource Metadata and does PKCE, `resource` and `iss`
- * validation. nunio adds the issuer allowlist, CIMD (a URL client id passed as a pre-registered public client, #257),
- * DCR results stored per Integration and issuer, the flow bound to the student's session for 10 minutes, and a fetch
- * that only reaches public addresses.
+ * validation. nunio adds the issuer allowlist (on the advertised server and on the issuer its metadata names), a
+ * required and pinned `resource`, CIMD (a URL client id passed as a pre-registered public client, #257), DCR results
+ * stored per Integration and issuer, the flow bound to the student's session for 10 minutes, and a fetch that only
+ * reaches public addresses over https.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns";
@@ -21,11 +22,14 @@ import type { PrismaClient } from "@nunio/db";
 import type { Principal } from "@nunio/delegation";
 import { accessRefusal, withOwner } from "@nunio/delegation";
 import type { ConnectionCredentialKeys, SourceKeys } from "@nunio/keys";
-import { Agent, fetch as undiciFetch } from "undici";
+import { Agent, buildConnector, fetch as undiciFetch } from "undici";
 import { isPublic } from "./email/servers.js";
 
 /** How long a student has to sign in at the vendor and come back. */
 const OAUTH_FLOW_LIFETIME_MS = 10 * 60_000;
+
+/** How long nunio waits to connect to a vendor, for its headers and between body chunks. */
+const OAUTH_REQUEST_TIMEOUT_MS = 10_000;
 
 export type OAuthStart =
   | { ok: true; authorizationUrl: string }
@@ -63,15 +67,21 @@ interface PendingFlow {
   codeVerifier: string;
   client: OAuthClientInformation;
   server: OAuthAuthorizationServerInformation;
+  /** The protected resource (RFC 8707) from the start's Protected Resource Metadata, sent again with the code. */
+  resource: string;
   /** The authorization server advertised RFC 9207, so its response must carry `iss`. */
   issRequired: boolean;
 }
 
 /** What nunio observed of the responses `auth()` fetched. */
 interface Observed {
-  /** The authorization server served its metadata; without it the SDK would guess its endpoints and skip checks. */
-  metadata: boolean;
-  issRequired: boolean;
+  /**
+   * Set once nunio allowed the authorization server: the SDK fetches its metadata next, so the first GET that
+   * succeeds after it is that metadata, wherever its redirects led.
+   */
+  discovering: boolean;
+  /** The authorization server's metadata. Without it the SDK would guess its endpoints and skip its checks. */
+  metadata?: Record<string, unknown>;
   /** The raw first token response, which carries the account name (e.g. `workspace_name`) the SDK drops. */
   tokenResponse?: Record<string, unknown>;
 }
@@ -94,6 +104,34 @@ const sha256 = (value: string) =>
 const isUniqueViolation = (error: unknown) =>
   (error as { code?: string } | null)?.code === "P2002";
 
+/** The issuer the authorization server's metadata names; there is none without metadata. */
+function discoveredIssuer(observed: Observed): string {
+  const issuer = observed.metadata?.issuer;
+  if (typeof issuer !== "string")
+    throw new Error("The authorization server served no metadata");
+  return issuer;
+}
+
+/** Whether a Protected Resource Metadata `resource` covers the MCP URL: the same origin, and its path or a parent. */
+function coversMcpUrl(resource: string, mcpUrl: string): boolean {
+  const covering = new URL(resource);
+  const mcp = new URL(mcpUrl);
+  const path = covering.pathname.replace(/\/+$/, "");
+  return (
+    covering.origin === mcp.origin &&
+    (mcp.pathname.replace(/\/+$/, "") === path ||
+      mcp.pathname.startsWith(`${path}/`))
+  );
+}
+
+/** When the access token expires, or null when the vendor named no lifetime nunio can turn into a date. */
+function expiryOf(expiresIn: number | undefined): string | null {
+  if (expiresIn === undefined || !Number.isFinite(expiresIn) || expiresIn < 0)
+    return null;
+  const at = new Date(Date.now() + expiresIn * 1000);
+  return Number.isNaN(at.getTime()) ? null : at.toISOString();
+}
+
 class IssuerRefused extends Error {
   constructor() {
     super("The authorization server's issuer is not allowlisted");
@@ -102,63 +140,77 @@ class IssuerRefused extends Error {
 }
 
 /**
- * The fetch `auth()` uses for every OAuth request. Outside INTEGRATION_FAKES, each connection resolves its host and
- * refuses unless every address is public, at connect time, so the address checked is the address used (no DNS
- * rebinding). A host that is an IP address is never looked up, so it is checked before the request. Redirects are
- * the SDK's to refuse or validate.
+ * The fetch `auth()` uses for every OAuth request. Outside INTEGRATION_FAKES it speaks https only, so codes,
+ * verifiers and client secrets never travel in the clear. It refuses every connection unless each address is
+ * public: a host name is resolved inside the connector, so the address checked is the address used (no DNS
+ * rebinding), and an IP address is checked there too. It never follows a redirect; the SDK follows them by hand,
+ * each hop through this fetch again. `allowed` is a test seam.
  */
-export function oauthFetch(fakes: boolean): typeof fetch {
+export function oauthFetch(
+  fakes: boolean,
+  allowed: (address: string) => boolean = isPublic,
+): typeof fetch {
   // A wrapper rather than globalThis.fetch itself, which the SDK would swap for its own guarded fetch.
   if (fakes) return (input, init) => fetch(input, init);
+  const refused = (host: string) =>
+    new Error(`OAuth host ${host} is not public`);
+  const connector = buildConnector({
+    timeout: OAUTH_REQUEST_TIMEOUT_MS,
+    lookup: (hostname, options, callback) =>
+      dnsLookup(hostname, { ...options, all: true }, (error, addresses) => {
+        if (error) return callback(error, []);
+        if (!addresses.length || !addresses.every((a) => allowed(a.address)))
+          return callback(refused(hostname), []);
+        if (options.all) return callback(null, addresses);
+        const [first] = addresses;
+        (callback as (e: null, address: string, family: number) => void)(
+          null,
+          first!.address,
+          first!.family,
+        );
+      }),
+  });
   const dispatcher = new Agent({
-    connect: {
-      lookup: (hostname, options, callback) =>
-        dnsLookup(hostname, { ...options, all: true }, (error, addresses) => {
-          if (error) return callback(error, []);
-          if (!addresses.length || !addresses.every((a) => isPublic(a.address)))
-            return callback(
-              new Error(`OAuth host ${hostname} is not public`),
-              [],
-            );
-          if (options.all) return callback(null, addresses);
-          const [first] = addresses;
-          (callback as (e: null, address: string, family: number) => void)(
-            null,
-            first!.address,
-            first!.family,
-          );
-        }),
+    headersTimeout: OAUTH_REQUEST_TIMEOUT_MS,
+    bodyTimeout: OAUTH_REQUEST_TIMEOUT_MS,
+    // Every connection, every hop: an IP address is never looked up, so it is checked here.
+    connect: (options, callback) => {
+      const address = options.hostname.replace(/^\[|\]$/g, "");
+      if (isIP(address) && !allowed(address))
+        return callback(refused(options.hostname), null);
+      connector(options, callback);
     },
   });
   return (async (input: string | URL | Request, init?: RequestInit) => {
-    const { hostname } = new URL(input instanceof Request ? input.url : input);
-    const address = hostname.replace(/^\[|\]$/g, "");
-    if (isIP(address) && !isPublic(address))
-      throw new Error(`OAuth host ${hostname} is not public`);
-    return undiciFetch(input as never, { ...(init as object), dispatcher });
+    const url = new URL(input instanceof Request ? input.url : input);
+    if (url.protocol !== "https:")
+      throw new Error("OAuth requests use https only");
+    if (init?.redirect === "follow")
+      throw new Error("OAuth requests don't follow redirects");
+    return undiciFetch(input as never, {
+      ...(init as object),
+      redirect: init?.redirect ?? "error",
+      dispatcher,
+    });
   }) as unknown as typeof fetch;
 }
 
-/** Wraps `base` to observe the authorization server's RFC 9207 support and the code exchange's raw response. */
+/** Wraps `base` to observe the authorization server's metadata and the code exchange's raw response. */
 function observing(base: typeof fetch, observed: Observed): typeof fetch {
   return async (input, init) => {
     const response = await base(input, init);
-    const url = new URL(input instanceof Request ? input.url : String(input));
     const read = () =>
       response
         .clone()
         .json()
         .catch(() => undefined) as Promise<Record<string, unknown> | undefined>;
     if (
+      observed.discovering &&
       response.ok &&
-      /\/\.well-known\/(oauth-authorization-server|openid-configuration)/.test(
-        url.pathname,
-      )
+      (init?.method ?? "GET").toUpperCase() === "GET"
     ) {
-      const metadata = await read();
-      observed.metadata = metadata !== undefined;
-      if (metadata?.authorization_response_iss_parameter_supported === true)
-        observed.issRequired = true;
+      observed.discovering = false;
+      observed.metadata = await read();
     }
     if (
       response.ok &&
@@ -272,7 +324,10 @@ export function createOAuthConnect({
     });
   }
 
-  /** Refuses an authorization server whose issuer isn't on the Integration row, before nunio fetches its metadata. */
+  /**
+   * Refuses an authorization server whose issuer isn't on the Integration row: the server the resource advertises,
+   * before nunio fetches its metadata, and the issuer that metadata names.
+   */
   const allowlisted =
     (integration: McpIntegration) => (_server: unknown, as: string | URL) => {
       if (!integration.issuers.map(issuerOf).includes(issuerOf(as)))
@@ -321,8 +376,9 @@ export function createOAuthConnect({
         );
 
       const state = randomBytes(32).toString("base64url");
-      const observed: Observed = { metadata: false, issRequired: false };
+      const observed: Observed = { discovering: false };
       let issuer: string | undefined;
+      let resource: string | undefined;
       let client: OAuthClientInformation | undefined;
       let server: OAuthAuthorizationServerInformation | undefined;
       let codeVerifier: string | undefined;
@@ -335,11 +391,23 @@ export function createOAuthConnect({
         saveTokens: () => {
           throw new Error("No tokens before the callback");
         },
+        // Without Protected Resource Metadata the SDK would fall back to no `resource` at all.
+        validateResourceURL: async (_server, advertised) => {
+          if (!advertised || !coversMcpUrl(advertised, integration.mcpUrl))
+            throw new Error("No protected resource for this MCP server");
+          resource = new URL(advertised).href;
+          return new URL(resource);
+        },
         validateAuthorizationServerURL: (serverUrl, as) => {
           allowlisted(integration)(serverUrl, as);
-          issuer = issuerOf(as);
+          observed.discovering = true;
         },
+        // Called right after the metadata, before any registration: its issuer must be allowlisted too, as the
+        // SDK accepts a path-scoped server's root metadata.
         clientInformation: async () => {
+          const discovered = discoveredIssuer(observed);
+          allowlisted(integration)(null, discovered);
+          issuer = issuerOf(discovered);
           if (integration.registration === "cimd")
             client = { client_id: clientId };
           else client = await registeredClient(integration.key, issuer!);
@@ -352,6 +420,10 @@ export function createOAuthConnect({
           },
         }),
         saveAuthorizationServerInformation: (information) => {
+          allowlisted(integration)(
+            null,
+            information.issuer ?? information.authorizationServerUrl,
+          );
           server = information;
         },
         authorizationServerInformation: () => server,
@@ -379,8 +451,13 @@ export function createOAuthConnect({
         return { ok: false, reason: "authorization_failed" };
       }
       if (
-        !observed.metadata ||
         !authorizationUrl ||
+        // The student's browser goes there next: https only, but for the fakes.
+        !(
+          authorizationUrl.protocol === "https:" ||
+          (fakes && authorizationUrl.protocol === "http:")
+        ) ||
+        !resource ||
         !client ||
         !server ||
         !codeVerifier
@@ -392,7 +469,10 @@ export function createOAuthConnect({
         codeVerifier,
         client,
         server,
-        issRequired: observed.issRequired,
+        resource,
+        issRequired:
+          observed.metadata?.authorization_response_iss_parameter_supported ===
+          true,
       };
       const sealed = credentials.seal(
         `oauth-flow:${id}`,
@@ -464,7 +544,7 @@ export function createOAuthConnect({
         };
       const { integration } = checked;
 
-      const observed: Observed = { metadata: false, issRequired: false };
+      const observed: Observed = { discovering: false };
       let tokens: OAuthTokens | undefined;
       const provider: OAuthClientProvider = {
         redirectUrl: redirectUrl(integration.key),
@@ -473,10 +553,24 @@ export function createOAuthConnect({
         saveTokens: (saved) => {
           tokens = saved;
         },
-        validateAuthorizationServerURL: allowlisted(integration),
+        // The resource pinned at the start; Protected Resource Metadata found now may only name it again.
+        validateResourceURL: async (_server, advertised) => {
+          if (advertised && new URL(advertised).href !== pending.resource)
+            throw new Error("The protected resource changed");
+          return new URL(pending.resource);
+        },
+        validateAuthorizationServerURL: (serverUrl, as) => {
+          allowlisted(integration)(serverUrl, as);
+          observed.discovering = true;
+        },
         clientInformation: () => pending.client,
         authorizationServerInformation: () => pending.server,
-        storedState: () => callback.state,
+        // The SDK asks for the state after the metadata and before the exchange: the last point to refuse a server
+        // that served none, or names an issuer not on the row.
+        storedState: () => {
+          allowlisted(integration)(null, discoveredIssuer(observed));
+          return callback.state;
+        },
         saveCodeVerifier: () => {
           throw new Error("No new authorization in the callback");
         },
@@ -514,10 +608,7 @@ export function createOAuthConnect({
         JSON.stringify({
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token ?? null,
-          expiresAt:
-            tokens.expires_in === undefined
-              ? null
-              : new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+          expiresAt: expiryOf(tokens.expires_in),
           scopes:
             tokens.scope?.split(" ").filter(Boolean) ?? integration.scopes,
           tokenType: tokens.token_type,
