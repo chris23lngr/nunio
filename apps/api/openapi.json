@@ -7210,7 +7210,15 @@
             "description": "email connects with a password, mcp through OAuth."
           },
           "connection": {
-            "$ref": "#/components/schemas/Connection"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Connection"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The student's Connection to it, or null when they have none."
           },
           "tools": {
             "type": "array",
@@ -7251,10 +7259,7 @@
         ]
       },
       "Connection": {
-        "type": [
-          "object",
-          "null"
-        ],
+        "type": "object",
         "properties": {
           "state": {
             "type": "string",
@@ -7285,8 +7290,118 @@
           "accountLabel",
           "folders",
           "agentCount"
-        ],
-        "description": "The student's Connection to it, or null when they have none."
+        ]
+      },
+      "ConnectionDetail": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "logo": {
+            "type": "string",
+            "description": "The path of its logo in the web app."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "mcp",
+              "email"
+            ]
+          },
+          "connection": {
+            "$ref": "#/components/schemas/Connection"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "The server's own tool name."
+                },
+                "label": {
+                  "type": "string",
+                  "description": "nunio's German label."
+                },
+                "class": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "write",
+                    "write_always_asked",
+                    "blocked"
+                  ]
+                },
+                "mode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "ask",
+                    "always_allowed",
+                    "always_asks",
+                    null
+                  ],
+                  "description": "A write tool's setting: ask (Nachfragen) or always_allowed (Immer erlaubt, a Grant held by the Connection, in every Chat and Agent); always_asks for one that is never grantable. Null for read and blocked tools."
+                },
+                "available": {
+                  "type": "boolean",
+                  "description": "Whether nunio offers it; a blocked tool never is."
+                }
+              },
+              "required": [
+                "name",
+                "label",
+                "class",
+                "mode",
+                "available"
+              ]
+            },
+            "description": "Every tool nunio classified, by name; a tool nunio hasn't classified is never listed."
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "logo",
+          "kind",
+          "connection",
+          "tools"
+        ]
+      },
+      "MailFolder": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "specialUse": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Its special use, such as \\Inbox or \\Sent."
+          },
+          "preselected": {
+            "type": "boolean",
+            "description": "INBOX is preselected."
+          }
+        },
+        "required": [
+          "path",
+          "name",
+          "specialUse",
+          "preselected"
+        ]
       },
       "EmailDiscovery": {
         "oneOf": [
@@ -7382,34 +7497,6 @@
             ],
             "description": "The student enters the servers in the manual form."
           }
-        ]
-      },
-      "MailFolder": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "specialUse": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Its special use, such as \\Inbox or \\Sent."
-          },
-          "preselected": {
-            "type": "boolean",
-            "description": "INBOX is preselected."
-          }
-        },
-        "required": [
-          "path",
-          "name",
-          "specialUse",
-          "preselected"
         ]
       },
       "ClientIdMetadataDocument": {
@@ -18495,6 +18582,481 @@
                   },
                   "required": [
                     "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/connections/{integrationKey}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "integrationKey",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The student's Connection with its tools; never its credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The student has no Connection to it (gone).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/connections/{integrationKey}/tools/{toolName}": {
+      "put": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "integrationKey",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "toolName",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "ask",
+                      "always_allowed"
+                    ]
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The student has no Connection to it (gone).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "not_grantable: only a write tool nunio classified can be Immer erlaubt; never one that always asks, a Chat-only, read, blocked or unclassified tool.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/connections/email/folders": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "The mailbox's folders, listed with the stored login; nothing was stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "folders": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MailFolder"
+                      }
+                    }
+                  },
+                  "required": [
+                    "folders"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The student has no Email Connection (gone).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Nothing was stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "login_failed"
+                          ]
+                        },
+                        "step": {
+                          "type": "string",
+                          "enum": [
+                            "imap"
+                          ],
+                          "description": "The stored login no longer opens the mailbox: Neu anmelden."
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "step"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "port_refused",
+                            "server_refused",
+                            "unknown_folder"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "server_refused: the stored host no longer resolves to public addresses. unknown_folder: a chosen folder the mailbox doesn't have."
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "folders": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000
+                    },
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "description": "The folders nunio may read, by IMAP path."
+                  }
+                },
+                "required": [
+                  "folders"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The student has no Email Connection (gone).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Nothing was stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "login_failed"
+                          ]
+                        },
+                        "step": {
+                          "type": "string",
+                          "enum": [
+                            "imap"
+                          ],
+                          "description": "The stored login no longer opens the mailbox: Neu anmelden."
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "step"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "port_refused",
+                            "server_refused",
+                            "unknown_folder"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "server_refused: the stored host no longer resolves to public addresses. unknown_folder: a chosen folder the mailbox doesn't have."
+                    }
                   ]
                 }
               }

@@ -12653,3 +12653,419 @@ describe("connecting an OAuth Integration", () => {
     }
   });
 });
+
+describe("the Connection's page", () => {
+  let mail: FakeMailServer;
+  let lea: MailAccount;
+  const password = "Pruefung-2026!";
+  const defaultCAs = getCACertificates("default");
+
+  beforeAll(async () => {
+    mail = await startFakeMailServer();
+    setDefaultCACertificates([...defaultCAs, mail.ca]);
+    lea = await mail.createAccount("lea.page@uni.test", password);
+    await mail.createFolder(lea, "Lehrstuhl");
+    // Offers Testnotizen and Email; the page makes no call to the MCP server.
+    await seedIntegrationCatalog(admin, {
+      url: "https://mcp.nunio.test",
+      mcpUrl: "https://mcp.nunio.test/mcp",
+    });
+  }, 180_000);
+
+  afterAll(async () => {
+    await admin?.integration.updateMany({
+      where: { key: { in: ["email", "testnotizen"] } },
+      data: { status: "hidden" },
+    });
+    setDefaultCACertificates(defaultCAs);
+    await mail?.stop();
+  });
+
+  function request(
+    method: string,
+    path: string,
+    cookie: string,
+    body?: unknown,
+  ) {
+    return app.request(`${apiOrigin}${path}`, {
+      method,
+      headers: {
+        cookie,
+        origin: appOrigin,
+        ...(body !== undefined && { "content-type": "application/json" }),
+      },
+      ...(body !== undefined && { body: JSON.stringify(body) }),
+    });
+  }
+
+  /** A Testnotizen Connection, as the OAuth callback stores one. */
+  async function connectTestnotizen(cookie: string) {
+    const id = randomUUID();
+    await admin.connection.create({
+      data: {
+        id,
+        studentId: await studentId(cookie),
+        integrationKey: "testnotizen",
+        accountLabel: "Leas Lernnotizen",
+        keyVersion: "test",
+        keyCiphertext: "wrapped",
+      },
+    });
+    return id;
+  }
+
+  async function connectEmail(cookie: string) {
+    const response = await request(
+      "POST",
+      "/api/me/connections/email",
+      cookie,
+      {
+        address: lea.address,
+        password,
+        servers: { imap: mail.imap.implicitTls, smtp: mail.smtp.implicitTls },
+        folders: ["INBOX"],
+      },
+    );
+    expect(response.status).toBe(201);
+  }
+
+  const setMode = (cookie: string, tool: string, mode: string) =>
+    request("PUT", `/api/me/connections/testnotizen/tools/${tool}`, cookie, {
+      mode,
+    });
+
+  it("shows the Connection with every tool: label, class, mode and availability", async () => {
+    const cookie = await signUp("connection-page");
+    await connectTestnotizen(cookie);
+
+    const response = await request(
+      "GET",
+      "/api/me/connections/testnotizen",
+      cookie,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      key: "testnotizen",
+      name: "Testnotizen",
+      logo: "/integrations/testnotizen.svg",
+      kind: "mcp",
+      connection: {
+        state: "connected",
+        accountLabel: "Leas Lernnotizen",
+        folders: [],
+        agentCount: 0,
+      },
+      tools: [
+        {
+          name: "notes.create_page",
+          label: "Seite anlegen",
+          class: "write",
+          mode: "ask",
+          available: true,
+        },
+        {
+          name: "notes.read",
+          label: "Notiz lesen",
+          class: "read",
+          mode: null,
+          available: true,
+        },
+        {
+          name: "notes.search",
+          label: "Notizen durchsuchen",
+          class: "read",
+          mode: null,
+          available: true,
+        },
+        {
+          name: "notes.share",
+          label: "Notiz teilen",
+          class: "write_always_asked",
+          mode: "always_asks",
+          available: true,
+        },
+      ],
+    });
+  });
+
+  it("shows a blocked tool as unavailable, and never a tool nunio hasn't classified", async () => {
+    const cookie = await signUp("connection-blocked");
+    await connectTestnotizen(cookie);
+    await admin.integrationTool.update({
+      where: {
+        integrationKey_name: {
+          integrationKey: "testnotizen",
+          name: "notes.share",
+        },
+      },
+      data: { class: "blocked" },
+    });
+    try {
+      const response = await request(
+        "GET",
+        "/api/me/connections/testnotizen",
+        cookie,
+      );
+
+      const { tools } = (await response.json()) as {
+        tools: { name: string }[];
+      };
+      expect(tools.find((tool) => tool.name === "notes.share")).toEqual({
+        name: "notes.share",
+        label: "Notiz teilen",
+        class: "blocked",
+        mode: null,
+        available: false,
+      });
+      expect(tools.map((tool) => tool.name)).toEqual([
+        "notes.create_page",
+        "notes.read",
+        "notes.search",
+        "notes.share",
+      ]);
+      // Nor can it be given a mode while blocked.
+      const granted = await setMode(cookie, "notes.share", "always_allowed");
+      expect(granted.status).toBe(422);
+      expect(await granted.json()).toEqual({ error: "not_grantable" });
+      expect(
+        await admin.grant.count({
+          where: { studentId: await studentId(cookie) },
+        }),
+      ).toBe(0);
+    } finally {
+      await admin.integrationTool.update({
+        where: {
+          integrationKey_name: {
+            integrationKey: "testnotizen",
+            name: "notes.share",
+          },
+        },
+        data: { class: "write_always_asked" },
+      });
+    }
+  });
+
+  it("makes notes.create_page Immer erlaubt with a Grant held by the Connection, and Nachfragen removes it", async () => {
+    const cookie = await signUp("connection-grant");
+    const connectionId = await connectTestnotizen(cookie);
+    const grants = () => admin.grant.findMany({ where: { connectionId } });
+
+    const granted = await setMode(
+      cookie,
+      "notes.create_page",
+      "always_allowed",
+    );
+
+    expect(granted.status).toBe(200);
+    expect(await grants()).toEqual([
+      expect.objectContaining({
+        studentId: await studentId(cookie),
+        agentId: null,
+        kind: null,
+        connectionId,
+        toolName: "notes.create_page",
+      }),
+    ]);
+    const page = await request(
+      "GET",
+      "/api/me/connections/testnotizen",
+      cookie,
+    );
+    const { tools } = (await page.json()) as {
+      tools: { name: string; mode: string }[];
+    };
+    expect(tools.find((tool) => tool.name === "notes.create_page")?.mode).toBe(
+      "always_allowed",
+    );
+    // Setting it again keeps the one Grant.
+    expect(
+      (await setMode(cookie, "notes.create_page", "always_allowed")).status,
+    ).toBe(200);
+    expect(await grants()).toHaveLength(1);
+
+    const asked = await setMode(cookie, "notes.create_page", "ask");
+
+    expect(asked.status).toBe(200);
+    expect(await grants()).toEqual([]);
+  });
+
+  it("refuses Immer erlaubt for notes.share, email.send, email.submit, read, blocked and unclassified tools", async () => {
+    const cookie = await signUp("connection-never-grantable");
+    await connectTestnotizen(cookie);
+    await connectEmail(cookie);
+
+    for (const [integration, tool] of [
+      ["testnotizen", "notes.share"],
+      ["testnotizen", "notes.search"],
+      ["testnotizen", "notes.delete_all"],
+      ["email", "email.send"],
+      ["email", "email.reply"],
+      ["email", "email.submit"],
+    ])
+      for (const mode of ["always_allowed", "ask"]) {
+        const response = await request(
+          "PUT",
+          `/api/me/connections/${integration}/tools/${tool}`,
+          cookie,
+          { mode },
+        );
+        expect(response.status, `${tool} ${mode}`).toBe(422);
+        expect(await response.json()).toEqual({ error: "not_grantable" });
+      }
+    expect(
+      await admin.grant.count({
+        where: { studentId: await studentId(cookie) },
+      }),
+    ).toBe(0);
+  });
+
+  it("is only the student's own: another student has no such Connection", async () => {
+    const cookie = await signUp("connection-owner");
+    const connectionId = await connectTestnotizen(cookie);
+    await connectEmail(cookie);
+    const other = await signUp("connection-other");
+
+    const read = await request("GET", "/api/me/connections/testnotizen", other);
+    const set = await setMode(other, "notes.create_page", "always_allowed");
+    const folders = await request(
+      "GET",
+      "/api/me/connections/email/folders",
+      other,
+    );
+    const setFolders = await request(
+      "PUT",
+      "/api/me/connections/email/folders",
+      other,
+      { folders: ["INBOX", "Lehrstuhl"] },
+    );
+
+    for (const response of [read, set, folders, setFolders]) {
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: "gone" });
+    }
+    expect(await admin.grant.count({ where: { connectionId } })).toBe(0);
+    const email = await admin.connection.findFirstOrThrow({
+      where: { studentId: await studentId(cookie), integrationKey: "email" },
+    });
+    expect(email.folders).toEqual(["INBOX"]);
+    const unsigned = await app.request(
+      `${apiOrigin}/api/me/connections/testnotizen`,
+    );
+    expect(unsigned.status).toBe(401);
+    const forged = await app.request(
+      `${apiOrigin}/api/me/connections/testnotizen/tools/notes.create_page`,
+      {
+        method: "PUT",
+        headers: {
+          cookie,
+          origin: evilOrigin,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ mode: "always_allowed" }),
+      },
+    );
+    expect(forged.status).toBe(403);
+    expect(await admin.grant.count({ where: { connectionId } })).toBe(0);
+  });
+
+  it("changes Email's folders without signing in again, accepting only folders the mailbox has", async () => {
+    const cookie = await signUp("connection-folders");
+    await connectEmail(cookie);
+    // A folder made after connecting can be picked, too.
+    await mail.createFolder(lea, "Prüfungsamt");
+
+    const listed = await request(
+      "GET",
+      "/api/me/connections/email/folders",
+      cookie,
+    );
+
+    expect(listed.status).toBe(200);
+    const { folders } = (await listed.json()) as {
+      folders: { path: string; preselected: boolean }[];
+    };
+    expect(folders.map((folder) => folder.path)).toEqual(
+      expect.arrayContaining(["INBOX", "Lehrstuhl", "Prüfungsamt"]),
+    );
+
+    const unknown = await request(
+      "PUT",
+      "/api/me/connections/email/folders",
+      cookie,
+      {
+        folders: ["INBOX", "Privat"],
+      },
+    );
+    expect(unknown.status).toBe(422);
+    expect(await unknown.json()).toEqual({ error: "unknown_folder" });
+
+    const changed = await request(
+      "PUT",
+      "/api/me/connections/email/folders",
+      cookie,
+      {
+        folders: ["Lehrstuhl", "Prüfungsamt"],
+      },
+    );
+
+    expect(changed.status).toBe(200);
+    const page = await request("GET", "/api/me/connections/email", cookie);
+    const body = await page.json();
+    expect(body).toMatchObject({
+      key: "email",
+      kind: "email",
+      connection: {
+        accountLabel: lea.address,
+        folders: ["Lehrstuhl", "Prüfungsamt"],
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain(password);
+  });
+
+  it("names Lesen (IMAP) when the stored login no longer works, and keeps the folders", async () => {
+    const cookie = await signUp("connection-folders-login");
+    await connectEmail(cookie);
+    const connection = await admin.connection.findFirstOrThrow({
+      where: { studentId: await studentId(cookie) },
+    });
+    // The stored password no longer opens the mailbox, as after the student changed it at the university.
+    const sealed = connectionCredentials.seal(
+      connection.id,
+      JSON.stringify({ username: lea.address, password: "falsch" }),
+    );
+    await admin.connectionCredential.update({
+      where: { connectionId: connection.id },
+      data: { keyVersion: sealed.version, ciphertext: sealed.ciphertext },
+    });
+
+    const listed = await request(
+      "GET",
+      "/api/me/connections/email/folders",
+      cookie,
+    );
+    const set = await request(
+      "PUT",
+      "/api/me/connections/email/folders",
+      cookie,
+      {
+        folders: ["INBOX", "Lehrstuhl"],
+      },
+    );
+
+    for (const response of [listed, set]) {
+      expect(response.status).toBe(422);
+      expect(await response.json()).toEqual({
+        error: "login_failed",
+        step: "imap",
+      });
+    }
+    expect(
+      (
+        await admin.connection.findUniqueOrThrow({
+          where: { id: connection.id },
+        })
+      ).folders,
+    ).toEqual(["INBOX"]);
+  });
+});

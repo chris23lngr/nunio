@@ -87,6 +87,7 @@ model Connection {
   lastUsedAt     DateTime?
 
   credential ConnectionCredential?
+  grants     Grant[]
 
   @@unique([studentId, integrationKey])
   @@unique([id, studentId])
