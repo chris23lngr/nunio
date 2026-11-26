@@ -157,6 +157,7 @@ export async function sendBriefing(
       textContent: briefing.text.content,
       textKey: briefing.text.contentKey,
       derivedFrom: briefing.text.derivedFrom,
+      derivedFromConnections: briefing.text.derivedFromConnections,
       createdAt: at,
       items,
     },

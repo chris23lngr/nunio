@@ -2,7 +2,13 @@
 
 export { type AiUse, type AiUseClass, aiUseClasses } from "./ai-use.js";
 export { type Courses, createCourses } from "./courses.js";
-export { createDerivedText, type DerivedText, type Sealed } from "./derived.js";
+export {
+  createDerivedText,
+  type DerivedText,
+  type GoneReason,
+  type Opened,
+  type Sealed,
+} from "./derived.js";
 export {
   type Correction,
   createFacts,

@@ -5,7 +5,12 @@ import type { PrismaClient } from "@nunio/db";
 import type { Delegation, Principal, Transaction } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
-import type { Citation, KnowledgeReader, Provenance } from "@nunio/knowledge";
+import type {
+  Citation,
+  GoneReason,
+  KnowledgeReader,
+  Provenance,
+} from "@nunio/knowledge";
 import { createDerivedText, definitely } from "@nunio/knowledge";
 import type { Plan } from "@nunio/planning";
 import type { Understanding } from "@nunio/understanding";
@@ -55,8 +60,10 @@ const maxSteps = 6;
 export type ChatMessage = {
   id: string;
   role: "student" | "assistant";
-  /** Null once a Source the answer drew on is deleted: its wording is shredded with that Source. */
+  /** Null once a Source it drew on is deleted or a Connection it drew on is Disconnected: its wording is shredded. */
   text: string | null;
+  /** Why the text is gone; null while it can be read. */
+  gone: GoneReason | null;
   reasoning?: string;
   /** The answer's reasoning, tool calls and text in order; empty once withdrawn. */
   parts: ChatPart[];
@@ -132,19 +139,23 @@ export function createChats({
       });
       const messages = await Promise.all(
         rows.reverse().map(async (row) => {
-          const text = await derived.open(tx, row.id, row);
+          const { text } = await derived.open(tx, row.id, row);
           const parts =
             text !== null && row.partsContent
-              ? await derived.open(tx, `${row.id}:parts`, {
-                  content: row.partsContent,
-                  contentKey: row.partsKey,
-                  derivedFrom: row.derivedFrom,
-                })
+              ? (
+                  await derived.open(tx, `${row.id}:parts`, {
+                    content: row.partsContent,
+                    contentKey: row.partsKey,
+                    derivedFrom: row.derivedFrom,
+                    derivedFromConnections: row.derivedFromConnections,
+                  })
+                ).text
               : null;
           return {
             role: row.role as ChatMessage["role"],
             text,
             derivedFrom: row.derivedFrom,
+            derivedFromConnections: row.derivedFromConnections,
             proposals: parts
               ? (JSON.parse(parts) as ChatPart[]).filter(isProposal)
               : [],
@@ -375,14 +386,16 @@ export function createChats({
       });
       return Promise.all(
         rows.map(async (row) => {
-          const parts = await derived.open(tx, `${row.id}:parts`, {
+          const { text: parts } = await derived.open(tx, `${row.id}:parts`, {
             content: row.partsContent!,
             contentKey: row.partsKey,
             derivedFrom: row.derivedFrom,
+            derivedFromConnections: row.derivedFromConnections,
           });
           return {
             id: row.id,
             derivedFrom: row.derivedFrom,
+            derivedFromConnections: row.derivedFromConnections,
             parts: parts === null ? [] : (JSON.parse(parts) as ChatPart[]),
           };
         }),
@@ -479,19 +492,32 @@ export function createChats({
       const text = parts
         .flatMap((part) => (part.type === "text" ? [part.text] : []))
         .join("\n\n");
-      // It restates the answer it follows, so it goes with that answer's Sources.
+      // It restates the answer it follows, so it goes with that answer's Sources and Connections.
       const derivedFrom = [
         ...new Set([...answered.derivedFrom, ...history.derivedFrom]),
+      ];
+      const derivedFromConnections = [
+        ...new Set([
+          ...answered.derivedFromConnections,
+          ...history.derivedFromConnections,
+        ]),
       ];
       const id = options.id ?? randomUUID();
       const createdAt = new Date();
       const recorded = await withOwner(db, p, async (tx, studentId) => {
-        const sealed = await derived.seal(tx, id, derivedFrom, text);
+        const sealed = await derived.seal(
+          tx,
+          id,
+          derivedFrom,
+          text,
+          derivedFromConnections,
+        );
         const sealedParts = await derived.seal(
           tx,
           `${id}:parts`,
           derivedFrom,
           JSON.stringify(parts),
+          derivedFromConnections,
         );
         if (!sealed || !sealedParts) return null;
         return tx.chatMessage.create({
@@ -515,6 +541,7 @@ export function createChats({
         id,
         role: "assistant",
         text,
+        gone: null,
         parts,
         createdAt: createdAt.toISOString(),
         citations: [],
@@ -555,6 +582,7 @@ export function createChats({
                 content: true,
                 contentKey: true,
                 derivedFrom: true,
+                derivedFromConnections: true,
               },
             },
           },
@@ -563,7 +591,7 @@ export function createChats({
           chats.slice(0, page.limit).map(async (chat) => {
             const question = chat.messages[0];
             const text = question
-              ? await derived.open(tx, question.id, question)
+              ? (await derived.open(tx, question.id, question)).text
               : null;
             return {
               id: chat.id,
@@ -759,21 +787,31 @@ export function createChats({
       ].flatMap((tag) =>
         turn.citations.filter((citation) => citation.tag === tag),
       );
-      // The answer may restate earlier answers, so it is withdrawn with their Sources too.
+      // The answer may restate earlier answers, so it is withdrawn with their Sources and Connections too.
       const derivedFrom = [
         ...new Set([...turn.sources, ...history.derivedFrom]),
+      ];
+      const derivedFromConnections = [
+        ...new Set([...turn.connections, ...history.derivedFromConnections]),
       ];
       const questionId = options.ids?.question ?? randomUUID();
       const createdAt = new Date();
       const recorded = await withOwner(db, p, async (tx, studentId) => {
         if (!(await tx.chat.findUnique({ where: { id: chatId } })))
           return false;
-        const sealed = await derived.seal(tx, id, derivedFrom, text);
+        const sealed = await derived.seal(
+          tx,
+          id,
+          derivedFrom,
+          text,
+          derivedFromConnections,
+        );
         const sealedParts = await derived.seal(
           tx,
           `${id}:parts`,
           derivedFrom,
           JSON.stringify(parts),
+          derivedFromConnections,
         );
         // A Source deleted while answering takes the answer with it.
         if (!sealed || !sealedParts) return false;
@@ -851,6 +889,7 @@ export function createChats({
         id,
         role: "assistant",
         text,
+        gone: null,
         ...(reasoning ? { reasoning } : {}),
         parts,
         createdAt: createdAt.toISOString(),
@@ -864,6 +903,7 @@ export function createChats({
           id: questionId,
           role: "student",
           text: question,
+          gone: null,
           parts: [{ type: "text", text: question }],
           citations: [],
           model: null,
@@ -889,17 +929,20 @@ export function createChats({
         if (!chat) return null;
         return Promise.all(
           chat.messages.map(async (message) => {
-            const text = await derived.open(tx, message.id, message);
-            const open = (
+            const { text, gone } = await derived.open(tx, message.id, message);
+            const open = async (
               suffix: string,
               content: Uint8Array<ArrayBuffer>,
               contentKey: Uint8Array<ArrayBuffer> | null,
             ) =>
-              derived.open(tx, `${message.id}:${suffix}`, {
-                content,
-                contentKey,
-                derivedFrom: message.derivedFrom,
-              });
+              (
+                await derived.open(tx, `${message.id}:${suffix}`, {
+                  content,
+                  contentKey,
+                  derivedFrom: message.derivedFrom,
+                  derivedFromConnections: message.derivedFromConnections,
+                })
+              ).text;
             const stored =
               text !== null && message.partsContent
                 ? await open("parts", message.partsContent, message.partsKey)
@@ -932,6 +975,7 @@ export function createChats({
               createdAt: message.createdAt.toISOString(),
               role: message.role as ChatMessage["role"],
               text,
+              gone,
               ...(thought ? { reasoning: thought } : {}),
               parts,
               citations: message.citations as Citation[],

@@ -172,6 +172,8 @@ model Run {
   summaryContent   Bytes?
   summaryKey       Bytes?
   derivedFrom      String[]        @default([])
+  /// The Connections it was drawn from, sealed after the Sources in wrapping order (#266).
+  derivedFromConnections String[] @default([])
 
   actions  Action[]
   pin      RunPin?
@@ -225,6 +227,8 @@ model RunStep {
   transcriptContent Bytes?
   transcriptKey     Bytes?
   derivedFrom       String[] @default([])
+  /// The Connections it was drawn from, sealed after the Sources in wrapping order (#266).
+  derivedFromConnections String[] @default([])
   /// Its Action calls in order, each the Action the gate performs under `runId:step:call`, or why none was asked.
   calls             Json?
   /// The handles the step's tools gave out so far, such as O1 or B1, which later steps name work and blocks by.

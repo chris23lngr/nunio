@@ -8,7 +8,15 @@ import {
 } from "@nunio/outreach";
 import type { AppBindings } from "./app.js";
 import { ActionShown, describeAction } from "./approvals.js";
-import { body, Done, errors, json, outcomes, student } from "./outcomes.js";
+import {
+  body,
+  Done,
+  errors,
+  GoneReason,
+  json,
+  outcomes,
+  student,
+} from "./outcomes.js";
 
 const Settings = z
   .object({
@@ -89,8 +97,9 @@ const Notice = z
       .string()
       .nullable()
       .describe(
-        "Plain text of at most 500 characters, never rendered as a link or formatting; null once a Source the Run had read is deleted.",
+        "Plain text of at most 500 characters, never rendered as a link or formatting; null once a Source the Run had read is deleted or a Connection it read is Disconnected.",
       ),
+    gone: GoneReason,
     sentAt: z.date(),
     readAt: z
       .date()
@@ -130,8 +139,9 @@ const Briefing = z
       .string()
       .nullable()
       .describe(
-        "Plain text of at most 1,500 characters, never rendered as a link or formatting; null on past nunio Briefings or once a Source the Run had read is deleted.",
+        "Plain text of at most 1,500 characters, never rendered as a link or formatting; null on past nunio Briefings or once a Source the Run had read is deleted or a Connection it read is Disconnected.",
       ),
+    gone: GoneReason,
     announcement: z
       .enum(["pending", "announced", "inbox_only"])
       .describe(

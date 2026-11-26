@@ -579,6 +579,7 @@ describe("retired nunio Briefing (#189)", () => {
         agentName: null,
         runId: null,
         text: null,
+        gone: null,
         announcement: "inbox_only",
         interventions: ["i-past"],
         approvals: ["a-past"],

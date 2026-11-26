@@ -277,7 +277,7 @@ export function createArtifacts({
           where: { artifactId_version: { artifactId, version } },
         });
         const text =
-          row && (await derived.open(tx, `${artifactId}:${version}`, row));
+          row && (await derived.open(tx, `${artifactId}:${version}`, row)).text;
         const stored = text && (JSON.parse(text) as StoredContent);
         return row && stored && "text" in stored
           ? { text: stored.text, derivedFrom: row.derivedFrom }
@@ -680,7 +680,13 @@ export function createArtifacts({
             // A withdrawn one cannot be read; its Sources' keys are gone.
             const text =
               latest && !summary.withdrawn
-                ? await derived.open(tx, `${row.id}:${latest.version}`, latest)
+                ? (
+                    await derived.open(
+                      tx,
+                      `${row.id}:${latest.version}`,
+                      latest,
+                    )
+                  ).text
                 : null;
             const stored = text ? (JSON.parse(text) as StoredContent) : null;
             const named = summary.obligationId
@@ -737,7 +743,7 @@ export function createArtifacts({
         if (!editable) return { status: "not_editable" };
         const [latest] = artifact.versions;
         if (latest?.version !== edit.baseVersion) return { status: "stale" };
-        const text = await derived.open(
+        const { text } = await derived.open(
           tx,
           `${artifactId}:${latest.version}`,
           latest,
@@ -842,7 +848,7 @@ export function createArtifacts({
         });
         const [latest] = artifact?.versions ?? [];
         if (artifact?.kind !== "flashcards" || !latest) return null;
-        const text = await derived.open(
+        const { text } = await derived.open(
           tx,
           `${artifactId}:${latest.version}`,
           latest,
@@ -903,11 +909,13 @@ export function createArtifacts({
         });
         const text =
           latest &&
-          (await derived.open(
-            tx,
-            `${ref.artifactId}:${latest.version}`,
-            latest,
-          ));
+          (
+            await derived.open(
+              tx,
+              `${ref.artifactId}:${latest.version}`,
+              latest,
+            )
+          ).text;
         return text && latest
           ? { stored: JSON.parse(text) as StoredContent, latest }
           : null;
@@ -950,7 +958,8 @@ export function createArtifacts({
             data: { openedAt: clock.now() },
           });
         return latest
-          ? derived.open(tx, `${artifactId}:${latest.version}`, latest)
+          ? (await derived.open(tx, `${artifactId}:${latest.version}`, latest))
+              .text
           : null;
       });
       const stored = text ? (JSON.parse(text) as StoredContent) : null;

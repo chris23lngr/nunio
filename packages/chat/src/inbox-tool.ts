@@ -30,8 +30,8 @@ const artifactKinds: Record<string, string> = {
  * Reads the student's open Inbox items across all Courses for an Agent holding "Briefing erstellen" (#146):
  * open Interventions, every Agent's pending Approvals, unread Notices (without marking them read), and ready
  * Artifacts. Each item receives a handle (I1, A1, N1, R1) that `createBriefing` bundles it by. Every item is fenced
- * as data (ADR-0026), and any Source behind an unread Notice or ready Artifact is recorded on the turn so deleting
- * that Source shreds any Briefing that may have restated it (ADR-0007).
+ * as data (ADR-0026), and any Source or Connection behind an unread Notice or ready Artifact is recorded on the turn
+ * so deleting that Source or Disconnecting that Connection shreds any Briefing that may have restated it (ADR-0007).
  */
 export function inboxTool(
   turn: Turn,
@@ -131,11 +131,15 @@ export function inboxTool(
             agentName: row.agent.name,
             createdAt: row.createdAt,
             derivedFrom: row.derivedFrom,
-            text: await derived.open(tx, noticeTextId(row.runId), {
-              content: row.textContent,
-              contentKey: row.textKey,
-              derivedFrom: row.derivedFrom,
-            }),
+            derivedFromConnections: row.derivedFromConnections,
+            text: (
+              await derived.open(tx, noticeTextId(row.runId), {
+                content: row.textContent,
+                contentKey: row.textKey,
+                derivedFrom: row.derivedFrom,
+                derivedFromConnections: row.derivedFromConnections,
+              })
+            ).text,
           })),
         );
         const actionIds = interventions
@@ -320,8 +324,11 @@ export function inboxTool(
       });
 
       const noticeLines = read.notices.map((n) => {
-        if (n.text !== null)
+        if (n.text !== null) {
           for (const sourceId of n.derivedFrom) turn.sources.add(sourceId);
+          for (const connectionId of n.derivedFromConnections)
+            turn.connections.add(connectionId);
+        }
         const handle = turn.handleFor("notice", n.id);
         return `- ${handle} · from ${n.agentName} · sent ${at(n.createdAt)} · ${n.text ?? "(text unavailable)"}`;
       });

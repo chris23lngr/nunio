@@ -52,6 +52,7 @@ export async function sendNotice(
       textContent: text.content,
       textKey: text.contentKey,
       derivedFrom: text.derivedFrom,
+      derivedFromConnections: text.derivedFromConnections,
       createdAt: at,
     },
   });

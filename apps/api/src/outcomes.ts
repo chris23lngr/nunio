@@ -35,6 +35,14 @@ export const archivedOutcomes = {
   ),
 };
 export const id = z.object({ id: z.string().uuid() });
+/** Why sealed text is gone (#266): a Source it drew on was deleted, or a Connection it drew on Disconnected. */
+export const GoneReason = z
+  .enum(["source_deleted", "connection_disconnected"])
+  .nullable()
+  .describe(
+    "Why the text is gone: a Source it drew on was deleted, or a Connection it drew on was Disconnected, which wins when both apply; null while it can be read.",
+  )
+  .openapi("GoneReason");
 export type Result = {
   status: "ok" | "gone" | "invalid" | "stale" | "course_archived" | "no_course";
   id?: string;

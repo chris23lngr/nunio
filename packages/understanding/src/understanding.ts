@@ -124,11 +124,13 @@ export function createUnderstanding({
           row,
           feedback:
             row.feedback &&
-            (await derived.open(tx, row.id, {
-              content: row.feedback,
-              contentKey: row.feedbackKey,
-              derivedFrom: row.derivedFrom,
-            })),
+            (
+              await derived.open(tx, row.id, {
+                content: row.feedback,
+                contentKey: row.feedbackKey,
+                derivedFrom: row.derivedFrom,
+              })
+            ).text,
         })),
       );
     });

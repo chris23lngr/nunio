@@ -616,18 +616,22 @@ async function evalRun(arm: Arm, model: CatalogModel) {
     const briefing = await tx.briefing.findFirst({ where: { runId } });
     return {
       notice: notice
-        ? await derived.open(tx, noticeTextId(runId), {
-            content: notice.textContent,
-            contentKey: notice.textKey,
-            derivedFrom: notice.derivedFrom,
-          })
+        ? (
+            await derived.open(tx, noticeTextId(runId), {
+              content: notice.textContent,
+              contentKey: notice.textKey,
+              derivedFrom: notice.derivedFrom,
+            })
+          ).text
         : null,
       briefing: briefing?.textContent
-        ? await derived.open(tx, briefingTextId(runId), {
-            content: briefing.textContent,
-            contentKey: briefing.textKey,
-            derivedFrom: briefing.derivedFrom,
-          })
+        ? (
+            await derived.open(tx, briefingTextId(runId), {
+              content: briefing.textContent,
+              contentKey: briefing.textKey,
+              derivedFrom: briefing.derivedFrom,
+            })
+          ).text
         : null,
     };
   });

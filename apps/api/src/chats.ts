@@ -12,6 +12,7 @@ import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
 import { ActionShown, describeAction, performApproved } from "./approvals.js";
+import { GoneReason } from "./outcomes.js";
 
 const Provenance = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("correction") }),
@@ -150,8 +151,9 @@ const Message = z
       .string()
       .nullable()
       .describe(
-        "Null once a Source the answer drew on is deleted: its wording is removed with that Source.",
+        "Null once a Source the answer drew on is deleted or a Connection it drew on is Disconnected: its wording is removed with it.",
       ),
+    gone: GoneReason,
     reasoning: z
       .string()
       .optional()

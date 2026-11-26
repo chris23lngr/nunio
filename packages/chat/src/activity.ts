@@ -330,8 +330,9 @@ export function createActivity({
     /**
      * One of the Agent's Runs: its cost (settled usage plus what its calls in flight hold) against the Agent's Budget,
      * its summary, and its Verlauf. The summary is null without a final message, and `summaryGone` once a Source it
-     * was drawn from is deleted. Courses, Sources and work are named as they are now, Archived ones included, and
-     * null only once deleted. Null when the Run is not the student's.
+     * was drawn from is deleted or a Connection Disconnected, which `summaryGoneReason` tells apart. Courses, Sources
+     * and work are named as they are now, Archived ones included, and null only once deleted. Null when the Run is not
+     * the student's.
      */
     async run(p: Principal, agentId: string, runId: string) {
       const read = await withOwner(db, p, async (tx) => {
@@ -366,6 +367,7 @@ export function createActivity({
               content: run.summaryContent,
               contentKey: run.summaryKey,
               derivedFrom: run.derivedFrom,
+              derivedFromConnections: run.derivedFromConnections,
             })
           : null;
         const reads = run.events
@@ -704,8 +706,9 @@ export function createActivity({
         ...shown(run, read.open),
         costMicroUsd: Number(read.cost),
         budgetMicroUsd: Number(run.agent!.budgetMicroUsd),
-        summary: read.summary,
-        summaryGone: run.summaryContent !== null && read.summary === null,
+        summary: read.summary?.text ?? null,
+        summaryGone: read.summary?.gone != null,
+        summaryGoneReason: read.summary?.gone ?? null,
         verlauf,
       };
     },

@@ -3,15 +3,16 @@ export const historyTurns = 10;
 
 type StoredMessage = {
   role: "student" | "assistant";
-  /** Null once a Source the message drew on is deleted. */
+  /** Null once a Source the message drew on is deleted or a Connection it drew on is Disconnected. */
   text: string | null;
   derivedFrom: readonly string[];
+  derivedFromConnections: readonly string[];
 };
 
 /**
- * The last questions and answers of a Chat, oldest first, as the model sees them, and the Sources their answers
- * drew on. A withdrawn answer is left out with its question, and Citation tags are removed because each turn
- * numbers its own.
+ * The last questions and answers of a Chat, oldest first, as the model sees them, and the Sources and Connections
+ * their answers drew on. A withdrawn answer is left out with its question, and Citation tags are removed because
+ * each turn numbers its own.
  */
 export function historyFrom(messages: readonly StoredMessage[]) {
   const pairs: { question: string | null; answer: StoredMessage }[] = [];
@@ -21,18 +22,26 @@ export function historyFrom(messages: readonly StoredMessage[]) {
     if (question.role === "student" && answer.role === "assistant")
       pairs.push({ question: question.text, answer });
   }
-  const kept = pairs
-    .slice(-historyTurns)
-    .flatMap(({ question, answer }) =>
-      question !== null && answer.text !== null
-        ? [{ question, answer: answer.text, derivedFrom: answer.derivedFrom }]
-        : [],
-    );
+  const kept = pairs.slice(-historyTurns).flatMap(({ question, answer }) =>
+    question !== null && answer.text !== null
+      ? [
+          {
+            question,
+            answer: answer.text,
+            derivedFrom: answer.derivedFrom,
+            derivedFromConnections: answer.derivedFromConnections,
+          },
+        ]
+      : [],
+  );
   return {
     turns: kept.map(({ question, answer }) => ({
       question,
       answer: answer.replace(/\s*\[S\d+\]/g, ""),
     })),
     derivedFrom: [...new Set(kept.flatMap((turn) => turn.derivedFrom))],
+    derivedFromConnections: [
+      ...new Set(kept.flatMap((turn) => turn.derivedFromConnections)),
+    ],
   };
 }

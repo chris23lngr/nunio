@@ -26,6 +26,7 @@ import {
   done,
   ErrorBody,
   errors,
+  GoneReason,
   id,
   json,
   student,
@@ -999,13 +1000,14 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
               .string()
               .nullable()
               .describe(
-                "The Agent's own words on what it did; null without a final message, or once a Source it drew on is deleted.",
+                "The Agent's own words on what it did; null without a final message, or once a Source it drew on is deleted or a Connection it drew on is Disconnected.",
               ),
             summaryGone: z
               .boolean()
               .describe(
-                "It had a summary, gone with a Source it drew on that was deleted since.",
+                "It had a summary, gone with a Source it drew on that was deleted since or a Connection Disconnected since.",
               ),
+            summaryGoneReason: GoneReason,
             verlauf: z.array(VerlaufEntrySchema),
             approvals: z
               .array(Approval)
