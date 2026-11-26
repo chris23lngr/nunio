@@ -25,7 +25,7 @@ import { Agent, fetch as undiciFetch } from "undici";
 import { isPublic } from "./email/servers.js";
 
 /** How long a student has to sign in at the vendor and come back. */
-export const OAUTH_FLOW_LIFETIME_MS = 10 * 60_000;
+const OAUTH_FLOW_LIFETIME_MS = 10 * 60_000;
 
 export type OAuthStart =
   | { ok: true; authorizationUrl: string }
@@ -69,6 +69,8 @@ interface PendingFlow {
 
 /** What nunio observed of the responses `auth()` fetched. */
 interface Observed {
+  /** The authorization server served its metadata; without it the SDK would guess its endpoints and skip checks. */
+  metadata: boolean;
   issRequired: boolean;
   /** The raw first token response, which carries the account name (e.g. `workspace_name`) the SDK drops. */
   tokenResponse?: Record<string, unknown>;
@@ -154,6 +156,7 @@ function observing(base: typeof fetch, observed: Observed): typeof fetch {
       )
     ) {
       const metadata = await read();
+      observed.metadata = metadata !== undefined;
       if (metadata?.authorization_response_iss_parameter_supported === true)
         observed.issRequired = true;
     }
@@ -280,7 +283,11 @@ export function createOAuthConnect({
     /** nunio's Client ID Metadata Document, at its own URL, listing every CIMD Integration's callback. */
     async clientMetadataDocument() {
       const integrations = await db.integration.findMany({
-        where: { kind: "mcp", registration: "cimd" },
+        where: {
+          kind: "mcp",
+          registration: "cimd",
+          status: { not: "withdrawn" },
+        },
         select: { key: true },
         orderBy: { key: "asc" },
       });
@@ -314,7 +321,7 @@ export function createOAuthConnect({
         );
 
       const state = randomBytes(32).toString("base64url");
-      const observed: Observed = { issRequired: false };
+      const observed: Observed = { metadata: false, issRequired: false };
       let issuer: string | undefined;
       let client: OAuthClientInformation | undefined;
       let server: OAuthAuthorizationServerInformation | undefined;
@@ -371,7 +378,13 @@ export function createOAuthConnect({
         });
         return { ok: false, reason: "authorization_failed" };
       }
-      if (!authorizationUrl || !client || !server || !codeVerifier)
+      if (
+        !observed.metadata ||
+        !authorizationUrl ||
+        !client ||
+        !server ||
+        !codeVerifier
+      )
         return { ok: false, reason: "authorization_failed" };
 
       const id = sha256(state);
@@ -451,7 +464,7 @@ export function createOAuthConnect({
         };
       const { integration } = checked;
 
-      const observed: Observed = { issRequired: false };
+      const observed: Observed = { metadata: false, issRequired: false };
       let tokens: OAuthTokens | undefined;
       const provider: OAuthClientProvider = {
         redirectUrl: redirectUrl(integration.key),

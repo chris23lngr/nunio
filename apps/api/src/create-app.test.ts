@@ -12153,6 +12153,11 @@ describe("connecting an OAuth Integration", () => {
     const dcr = await addIntegration("cimd-doc-dcr", fake, {
       registration: "dcr",
     });
+    const withdrawn = await addIntegration("cimd-doc-withdrawn", fake);
+    await admin.integration.update({
+      where: { key: withdrawn },
+      data: { status: "withdrawn" },
+    });
 
     const response = await fetch(cimdUrl());
 
@@ -12170,6 +12175,7 @@ describe("connecting an OAuth Integration", () => {
     });
     expect(document.redirect_uris).toContain(callbackFor("testnotizen"));
     expect(document.redirect_uris).not.toContain(callbackFor(dcr));
+    expect(document.redirect_uris).not.toContain(callbackFor(withdrawn));
   });
 
   it("connects through CIMD: the vendor's sign-in asks for every scope, and only the callback creates the Connection", async () => {

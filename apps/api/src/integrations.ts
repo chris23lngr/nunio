@@ -412,11 +412,12 @@ export function registerOAuthRoutes(routes: OpenAPIHono<AppBindings>) {
       path: "/api/me/connections/{integrationKey}/oauth/callback",
       request: {
         params: IntegrationKey,
+        // Never refused: whatever the vendor sends, the student goes back to the dialog.
         query: z.object({
-          state: z.string().max(1000).optional(),
-          code: z.string().max(4000).optional(),
-          iss: z.string().max(1000).optional(),
-          error: z.string().max(200).optional(),
+          state: z.string().optional(),
+          code: z.string().optional(),
+          iss: z.string().optional(),
+          error: z.string().optional(),
         }),
       },
       responses: {
@@ -425,7 +426,6 @@ export function registerOAuthRoutes(routes: OpenAPIHono<AppBindings>) {
             "Back to Einstellungen › Verbindungen: with the Connection made, or with `connect` naming the " +
             "Integration and `error` the reason (cancelled, expired, already_connected or failed), nothing stored.",
         },
-        400: json(ErrorBody, "Not valid."),
       },
     }),
     async (c) => {
