@@ -286,7 +286,13 @@ function EmailFolders({
 }) {
   const queryClient = useQueryClient();
   const mailbox = useQuery(mailboxFoldersQuery(apiOrigin));
-  const [selected, setSelected] = useState(saved);
+  const [chosen, setChosen] = useState(saved);
+  // Only folders the mailbox still has: a saved one deleted or renamed there has no chip to unpress.
+  const selected = mailbox.data
+    ? chosen.filter((path) =>
+        mailbox.data.some((folder) => folder.path === path),
+      )
+    : chosen;
   const save = useMutation({
     ...foldersMutation(apiOrigin),
     onSuccess: async () => {
@@ -294,6 +300,14 @@ function EmailFolders({
         queryClient.invalidateQueries(connectionQuery(apiOrigin, "email")),
         queryClient.invalidateQueries(integrationQueries(apiOrigin)),
       ]);
+    },
+    onError: async (error) => {
+      // A chosen folder left the mailbox since it was listed: list it again.
+      if (
+        error instanceof FoldersRefused &&
+        error.refusal.error === "unknown_folder"
+      )
+        await queryClient.invalidateQueries(mailboxFoldersQuery(apiOrigin));
     },
   });
   const changed =
@@ -320,7 +334,7 @@ function EmailFolders({
         <FolderChips
           folders={mailbox.data}
           selected={selected}
-          onChange={setSelected}
+          onChange={setChosen}
         />
       ) : (
         <p className="text-sm text-base-600">{foldersLine(saved)}</p>

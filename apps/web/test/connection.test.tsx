@@ -232,6 +232,84 @@ test("changes Email's folders with its chips, without signing in again", async (
   expect(save.hasAttribute("disabled")).toBe(true);
 });
 
+test("drops a saved folder the mailbox no longer has, so the student can save without it", async () => {
+  const user = userEvent.setup();
+  let current = {
+    ...email,
+    connection: { ...email.connection, folders: ["INBOX", "Seminar"] },
+  };
+  let listings = 0;
+  const sent: unknown[] = [];
+  api.route("GET", "/api/me/connections/email", () => Response.json(current));
+  api.route("GET", "/api/me/connections/email/folders", () => {
+    listings += 1;
+    return Response.json({ folders });
+  });
+  api.route("PUT", "/api/me/connections/email/folders", async (request) => {
+    const body = (await request.json()) as { folders: string[] };
+    sent.push(body);
+    current = {
+      ...current,
+      connection: { ...current.connection, folders: body.folders },
+    };
+    return Response.json({ status: "ok" });
+  });
+  renderConnection("email");
+
+  const group = within(
+    await screen.findByRole("region", { name: "Ordner, die nunio lesen darf" }),
+  );
+  const inbox = await group.findByRole("button", { name: "Posteingang" });
+  expect(group.queryByRole("button", { name: "Seminar" })).toBeNull();
+  const save = group.getByRole("button", { name: "Speichern" });
+  // "Seminar" is gone from the mailbox: saving what's left is a change.
+  expect(save.hasAttribute("disabled")).toBe(false);
+
+  // Unpressing every chip leaves nothing to save.
+  await user.click(inbox);
+  expect(save.hasAttribute("disabled")).toBe(true);
+  await user.click(inbox);
+  await user.click(save);
+
+  await waitFor(() => expect(sent).toEqual([{ folders: ["INBOX"] }]));
+  await waitFor(() => expect(save.hasAttribute("disabled")).toBe(true));
+  expect(listings).toBe(1);
+});
+
+test("lists the mailbox again when a chosen folder was removed meanwhile", async () => {
+  const user = userEvent.setup();
+  let listed = folders;
+  let listings = 0;
+  api.route("GET", "/api/me/connections/email", () => Response.json(email));
+  api.route("GET", "/api/me/connections/email/folders", () => {
+    listings += 1;
+    return Response.json({ folders: listed });
+  });
+  api.route("PUT", "/api/me/connections/email/folders", () => {
+    // Lehrstuhl was deleted in the mailbox after the page listed it.
+    listed = folders.filter((folder) => folder.path !== "Lehrstuhl");
+    return Response.json({ error: "unknown_folder" }, { status: 422 });
+  });
+  renderConnection("email");
+
+  const group = within(
+    await screen.findByRole("region", { name: "Ordner, die nunio lesen darf" }),
+  );
+  await user.click(await group.findByRole("button", { name: "Lehrstuhl" }));
+  await user.click(group.getByRole("button", { name: "Speichern" }));
+
+  expect((await group.findByRole("alert")).textContent).toBe(
+    "Einen dieser Ordner gibt es in deinem Postfach nicht mehr.",
+  );
+  await waitFor(() => expect(listings).toBe(2));
+  await waitFor(() =>
+    expect(group.queryByRole("button", { name: "Lehrstuhl" })).toBeNull(),
+  );
+  expect(
+    group.getByRole("button", { name: "Speichern" }).hasAttribute("disabled"),
+  ).toBe(true);
+});
+
 test("says so when the mailbox's folders can't be listed, and keeps showing what nunio reads", async () => {
   api.route("GET", "/api/me/connections/email", () => Response.json(email));
   api.route("GET", "/api/me/connections/email/folders", () =>
