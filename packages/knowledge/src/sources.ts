@@ -46,7 +46,10 @@ export function joinChunks(chunks: readonly { page: number; text: string }[]) {
 }
 // Bounds a still-valid PUT and an in-flight ingestion Activity after deletion.
 const inFlightBoundMs = 20 * 60_000;
-const cleanupAfter = (source: { uploadExpiresAt: Date }, deletedAt: Date) =>
+export const cleanupAfter = (
+  source: { uploadExpiresAt: Date },
+  deletedAt: Date,
+) =>
   new Date(
     Math.max(
       source.uploadExpiresAt.getTime(),

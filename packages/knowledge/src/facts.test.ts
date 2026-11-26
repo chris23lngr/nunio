@@ -1362,6 +1362,30 @@ it("merges a Course into another, combining items with the same key, and sends l
       confirmedAt: new Date(),
     },
   });
+  // Own Work on the merged Course's "Übungsblatt 3", which the target's one replaces.
+  const [paired] = await admin.obligation.findMany({
+    where: {
+      courseId: from.id,
+      matchKey: {
+        in: (
+          await admin.obligation.findMany({ where: { courseId: into.id } })
+        ).map((o) => o.matchKey),
+      },
+    },
+  });
+  const ownWorkId = randomUUID();
+  await admin.ownWorkFile.create({
+    data: {
+      id: ownWorkId,
+      studentId: p.studentId,
+      obligationId: paired!.id,
+      name: "Lösung.pdf",
+      bytes: 3,
+      keyVersion: "v1",
+      keyCiphertext: "wrapped",
+      uploadExpiresAt: new Date(),
+    },
+  });
 
   expect(await facts.mergeCourses(p, from.id, into.id)).toEqual({
     status: "ok",
@@ -1369,6 +1393,13 @@ it("merges a Course into another, combining items with the same key, and sends l
 
   const { courses } = await facts.review(p);
   expect(courses.map((c) => [c.id, c.status])).toEqual([[into.id, "accepted"]]);
+  expect(
+    await admin.ownWorkFile.findUniqueOrThrow({ where: { id: ownWorkId } }),
+  ).toMatchObject({
+    obligationId: courses[0]!.obligations.find(
+      (o) => o.title === "Übungsblatt 3",
+    )!.id,
+  });
   expect(
     await admin.task.findUniqueOrThrow({ where: { id: taskId } }),
   ).toMatchObject({ courseId: into.id });

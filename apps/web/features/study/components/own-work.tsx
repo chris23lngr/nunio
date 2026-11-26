@@ -134,6 +134,7 @@ export function OwnWork({
                 key={file.id}
                 file={file}
                 now={now}
+                uploading={upload.isPending}
                 deleting={remove.isPending && remove.variables === file.id}
                 onDelete={() => remove.mutate(file.id)}
               />
@@ -178,15 +179,19 @@ export function OwnWork({
 function FileRow({
   file,
   now,
+  uploading,
   deleting,
   onDelete,
 }: {
   file: OwnWorkFile;
   now: Date;
+  /** An upload is under way here, so an unconfirmed file may still be on its way. */
+  uploading: boolean;
   deleting: boolean;
   onDelete: () => void;
 }) {
-  const pending = file.status === "uploading" || file.status === "promoting";
+  const pending =
+    file.status === "promoting" || (file.status === "uploading" && uploading);
   return (
     <li className="flex items-center gap-2.5 border-t border-base-200 py-2.5">
       <FileText aria-hidden="true" className="size-4 shrink-0 text-base-400" />
@@ -203,9 +208,12 @@ function FileRow({
             Wird gespeichert…
           </span>
         ) : (
-          file.status === "failed" && (
+          file.status !== "ready" && (
             <span className="text-xs text-destructive-600">
-              Nicht gespeichert. Lösche die Datei und lade sie erneut hoch.
+              {file.status === "failed"
+                ? "Nicht gespeichert."
+                : "Nicht fertig hochgeladen."}{" "}
+              Lösche die Datei und lade sie erneut hoch.
             </span>
           )
         )}

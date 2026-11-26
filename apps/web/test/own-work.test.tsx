@@ -23,7 +23,7 @@ function renderOwnWork() {
   );
 }
 
-test("lists Own Work by name, size and upload time, pending until it is ready", async () => {
+test("lists Own Work by name, size and upload time, pending until it is ready, and says when it was not stored", async () => {
   api.route("GET", base, () =>
     Response.json([
       solution,
@@ -41,12 +41,20 @@ test("lists Own Work by name, size and upload time, pending until it is ready", 
         status: "failed",
         uploadedAt: "2026-11-21T09:05:00.000Z",
       },
+      {
+        id: "f0000000-0000-4000-8000-000000000004",
+        name: "Notizen.txt",
+        bytes: 100,
+        status: "uploading",
+        uploadedAt: "2026-11-21T09:10:00.000Z",
+      },
     ]),
   );
   renderOwnWork();
 
   const list = await screen.findByRole("list", { name: "Eigene Arbeit" });
-  const [ready, pending, failed] = within(list).getAllByRole("listitem");
+  const [ready, pending, failed, unfinished] =
+    within(list).getAllByRole("listitem");
   expect(ready!.textContent).toContain("Lösung.pdf");
   expect(ready!.textContent).toContain("1,2 MB");
   expect(ready!.textContent).toContain("20. Nov.");
@@ -56,6 +64,9 @@ test("lists Own Work by name, size and upload time, pending until it is ready", 
   expect(pending!.textContent).toContain("Wird gespeichert");
   expect(failed!.textContent).toContain(
     "Nicht gespeichert. Lösche die Datei und lade sie erneut hoch.",
+  );
+  expect(unfinished!.textContent).toContain(
+    "Nicht fertig hochgeladen. Lösche die Datei und lade sie erneut hoch.",
   );
 });
 

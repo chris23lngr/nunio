@@ -137,10 +137,13 @@ const ownWorkStorage: SourceStorage = {
     headers: { key: key.toString("base64") },
     expiresAt: new Date(Date.now() + 300_000),
   }),
-  download: async (id, key) => {
-    const bytes = ownWorkObjects.quarantine.get(id);
+  download: async (id, key, location) => {
+    const bytes =
+      location === "sources"
+        ? ownWorkObjects.sources.get(id)?.at(-1)
+        : ownWorkObjects.quarantine.get(id);
     if (!bytes) throw new Error("NoSuchKey");
-    ownWorkObjects.snapshots.set(id, bytes);
+    if (location !== "sources") ownWorkObjects.snapshots.set(id, bytes);
     return {
       url: `https://storage.invalid/quarantine/sealed/${id}`,
       keyBase64: key.toString("base64"),
@@ -10001,7 +10004,9 @@ describe("Own Work (#306)", () => {
     const { file } = (await created.json()) as { file: { id: string } };
     await s.send(`${s.base}/${file.id}/confirm`, {});
 
-    expect(await ownWork.promote(s.p, file.id)).toEqual({ status: "failed" });
+    await expect(ownWork.promote(s.p, file.id)).rejects.toThrow();
+    // As the worker does once its retries run out.
+    await ownWork.fail(s.p, file.id);
     expect(await s.list()).toEqual([
       expect.objectContaining({ id: file.id, status: "failed" }),
     ]);

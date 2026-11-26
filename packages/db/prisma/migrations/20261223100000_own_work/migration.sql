@@ -21,9 +21,10 @@ CREATE INDEX "own_work_file_obligationId_idx" ON "own_work_file"("obligationId")
 
 ALTER TABLE "own_work_file" ADD CONSTRAINT "own_work_file_obligationId_studentId_fkey" FOREIGN KEY ("obligationId", "studentId") REFERENCES "obligation"("id", "studentId") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- Student-owned. Only the status changes after upload; deleting the row deletes the file's key.
+-- Student-owned. After upload only the status changes, and the Obligation when its Course is merged; deleting the
+-- row deletes the file's key.
 GRANT SELECT, INSERT, DELETE ON "own_work_file" TO nunio_runtime;
-GRANT UPDATE ("status") ON "own_work_file" TO nunio_runtime;
+GRANT UPDATE ("status", "obligationId") ON "own_work_file" TO nunio_runtime;
 ALTER TABLE "own_work_file" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "own_work_file" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "owner" ON "own_work_file" USING ("studentId" = current_setting('app.owner_id', true));

@@ -35,11 +35,7 @@ export function sourceWorkflowsFromEnv(
     kind: string,
     workflowId: string,
     args: unknown[],
-    workflowExecutionTimeout:
-      | "7 days"
-      | "20 minutes"
-      | "10 minutes"
-      | "5 minutes",
+    workflowExecutionTimeout: "7 days" | "20 minutes" | "10 minutes",
   ) {
     const connection = await Connection.connect({
       address: required("TEMPORAL_ADDRESS"),
@@ -87,7 +83,7 @@ export function sourceWorkflowsFromEnv(
         kind,
         `${kind}/${fileId}`,
         [{ studentId, fileId, ...(cleanupAfter ? { cleanupAfter } : {}) }],
-        kind === "deleteOwnWork" ? "7 days" : "5 minutes",
+        kind === "deleteOwnWork" ? "7 days" : "20 minutes",
       );
     },
   };

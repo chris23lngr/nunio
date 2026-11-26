@@ -1,5 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
+import { OwnWorkStatus } from "@nunio/db";
 import { principal } from "@nunio/delegation";
 import { maxOwnWorkBytes } from "@nunio/knowledge";
 import type { AppBindings } from "./app.js";
@@ -9,7 +10,7 @@ const OwnWorkFile = z
     id: z.string(),
     name: z.string(),
     bytes: z.number().int(),
-    status: z.enum(["uploading", "promoting", "ready", "failed"]).openapi({
+    status: z.enum(OwnWorkStatus).openapi({
       description:
         "ready once the worker promoted it; failed when there was no upload to keep, so the student uploads it again.",
     }),

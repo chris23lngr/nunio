@@ -12,13 +12,12 @@ export function createOwnWorkActivities(ownWork: OwnWork) {
   return {
     /** Moves a snapshot of the upload from quarantine into sources; only the worker promotes (ADR-0007). */
     async promoteOwnWorkFile({ studentId, fileId }: OwnWorkRef) {
-      const result = await ownWork.promote(
-        principal.fromSession({ studentId }),
-        fileId,
-      );
-      if (result.status === "failed")
-        log("own work promotion failed", { fileId });
-      return result;
+      return ownWork.promote(principal.fromSession({ studentId }), fileId);
+    },
+    /** Promotion gave up, as when nothing was uploaded: the student sees the file failed. */
+    async failOwnWorkFile({ studentId, fileId }: OwnWorkRef) {
+      log("own work promotion failed", { fileId });
+      await ownWork.fail(principal.fromSession({ studentId }), fileId);
     },
     /** Deletes the file's key if the API did not, then every stored object and version. */
     async purgeOwnWorkFile({ studentId, fileId }: OwnWorkRef) {

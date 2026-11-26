@@ -110,14 +110,24 @@ export async function deleteSource(
 }
 
 // Own Work (#306) is copied, never parsed or metered, so promotion and cleanup are safe to retry.
-const { promoteOwnWorkFile, purgeOwnWorkFile } =
+const { promoteOwnWorkFile } = proxyActivities<OwnWorkActivities>({
+  startToCloseTimeout: "2 minutes",
+  retry: { initialInterval: "1 second", maximumAttempts: 4 },
+});
+const { failOwnWorkFile, purgeOwnWorkFile } =
   proxyActivities<OwnWorkActivities>({
-    startToCloseTimeout: "2 minutes",
+    startToCloseTimeout: "1 minute",
     retry: { initialInterval: "5 seconds", maximumInterval: "1 minute" },
   });
-/** Promotes a confirmed Own Work file's snapshot into sources. */
+/** Promotes a confirmed Own Work file's snapshot into sources; a file with nothing to promote fails. */
 export async function promoteOwnWork(input: OwnWorkRef) {
-  return promoteOwnWorkFile(input);
+  try {
+    return await promoteOwnWorkFile(input);
+  } catch (error) {
+    if (isCancellation(error)) throw error;
+    await failOwnWorkFile(input);
+    return { status: "failed" as const };
+  }
 }
 export async function deleteOwnWork(
   input: OwnWorkRef & { cleanupAfter: string },

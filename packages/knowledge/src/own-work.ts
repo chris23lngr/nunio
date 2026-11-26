@@ -1,15 +1,14 @@
 import { randomUUID } from "node:crypto";
-import type { ObligationKind, PrismaClient } from "@nunio/db";
+import type { ObligationKind, OwnWorkStatus, PrismaClient } from "@nunio/db";
 import type { Principal, Transaction } from "@nunio/delegation";
 import { accessRefusal, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
 import type { SourceStorage } from "./sources.js";
+import { cleanupAfter } from "./sources.js";
 
-/** An email hand-in carries at most 14 MB of attachments, so no single file can be larger. */
+/** An email Submission carries at most 14 MB of attachments, so no single file can be larger. */
 export const maxOwnWorkBytes = 14 * 1024 * 1024;
 const notHandedIn: ObligationKind[] = ["exam", "registration"];
-// Bounds a still-valid PUT and an in-flight promotion after deletion.
-const inFlightBoundMs = 20 * 60_000;
 
 /**
  * Own Work: files the student uploads to hand in for an Obligation. nunio never parses them. Each is stored under
@@ -103,7 +102,7 @@ export function createOwnWork({
     },
     /**
      * The worker's promotion, without parsing: snapshots the upload inside `quarantine`, then moves the snapshot into
-     * `sources`. A file with nothing uploaded fails; the student deletes it and uploads again.
+     * `sources`. A storage failure throws, so the worker retries; a retry after the move finds it in `sources`.
      */
     async promote(p: Principal, id: string) {
       const file = await withOwner(db, p, (tx) =>
@@ -115,21 +114,19 @@ export function createOwnWork({
         ciphertext: file.keyCiphertext,
       });
       try {
-        // Downloading from quarantine takes the snapshot; its URL is not used.
-        await storage.download(id, key);
-        await storage.promote(id, key);
-      } catch {
-        await withOwner(db, p, (tx) =>
-          tx.ownWorkFile.updateMany({
-            where: { id, status: "promoting" },
-            data: { status: "failed" },
-          }),
+        const promoted = await storage.download(id, key, "sources").then(
+          () => true,
+          () => false,
         );
-        return { status: "failed" } as const;
+        if (!promoted) {
+          // Downloading from quarantine takes the snapshot; its URL is not used.
+          await storage.download(id, key);
+          await storage.promote(id, key);
+        }
       } finally {
         key.fill(0);
       }
-      const promoted = await withOwner(db, p, async (tx) => {
+      const ready = await withOwner(db, p, async (tx) => {
         await fileLock(tx, id);
         const { count } = await tx.ownWorkFile.updateMany({
           where: { id, status: "promoting" },
@@ -138,8 +135,17 @@ export function createOwnWork({
         return count > 0;
       });
       // Deleted while it was promoted: its key is gone, so its objects go too.
-      if (!promoted) await storage.remove(id);
-      return { status: promoted ? "ready" : "stopped" } as const;
+      if (!ready) await storage.remove(id);
+      return { status: ready ? "ready" : "stopped" } as const;
+    },
+    /** The worker gave up promoting: there was no upload to keep. The student deletes it and uploads again. */
+    async fail(p: Principal, id: string) {
+      await withOwner(db, p, (tx) =>
+        tx.ownWorkFile.updateMany({
+          where: { id, status: "promoting" },
+          data: { status: "failed" },
+        }),
+      );
     },
     /** Deletes the file's key. Dispatches the cleanup of its objects first, so a dispatch failure leaves it intact. */
     async removeWithCleanup(
@@ -150,14 +156,7 @@ export function createOwnWork({
     ) {
       const file = await withOwner(db, p, (tx) => fileOn(tx, obligationId, id));
       if (!file) return { status: "gone" } as const;
-      await dispatch(
-        new Date(
-          Math.max(
-            file.uploadExpiresAt.getTime(),
-            Date.now() + inFlightBoundMs,
-          ),
-        ),
-      );
+      await dispatch(cleanupAfter(file, new Date()));
       await withOwner(db, p, (tx) =>
         tx.ownWorkFile.deleteMany({ where: { id } }),
       );
@@ -178,7 +177,7 @@ function view(file: {
   id: string;
   name: string;
   bytes: number;
-  status: "uploading" | "promoting" | "ready" | "failed";
+  status: OwnWorkStatus;
   createdAt: Date;
 }) {
   return {

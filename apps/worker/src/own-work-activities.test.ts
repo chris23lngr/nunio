@@ -42,9 +42,14 @@ afterAll(async () => {
 
 /**
  * The buckets in memory: the browser's upload in quarantine, the worker's snapshot, and every version in sources.
- * `afterSnapshot` runs once the snapshot is taken, as a replayed upload URL could.
+ * `afterSnapshot` runs once the snapshot is taken, as a replayed upload URL could; `afterPromote` once it is moved.
  */
-function buckets(afterSnapshot: (id: string) => void = () => {}) {
+function buckets(
+  faults: {
+    afterSnapshot?: (id: string) => void;
+    afterPromote?: () => void;
+  } = {},
+) {
   const quarantine = new Map<string, Buffer>(),
     snapshots = new Map<string, Buffer>(),
     sources = new Map<string, Buffer[]>();
@@ -54,13 +59,16 @@ function buckets(afterSnapshot: (id: string) => void = () => {}) {
       headers: {},
       expiresAt: new Date(Date.now() + 300_000),
     }),
-    download: async (id, key) => {
-      const bytes = quarantine.get(id);
+    download: async (id, key, location) => {
+      const bytes =
+        location === "sources" ? sources.get(id)?.at(-1) : quarantine.get(id);
       if (!bytes) throw new Error("NoSuchKey");
-      snapshots.set(id, bytes);
-      afterSnapshot(id);
+      if (location !== "sources") {
+        snapshots.set(id, bytes);
+        faults.afterSnapshot?.(id);
+      }
       return {
-        url: `https://storage.invalid/quarantine/sealed/${id}`,
+        url: `https://storage.invalid/${id}`,
         keyBase64: key.toString("base64"),
         etag: "etag",
       };
@@ -69,6 +77,7 @@ function buckets(afterSnapshot: (id: string) => void = () => {}) {
       sources.set(id, [...(sources.get(id) ?? []), snapshots.get(id)!]);
       quarantine.delete(id);
       snapshots.delete(id);
+      faults.afterPromote?.();
     },
     remove: async (id) => {
       quarantine.delete(id);
@@ -144,8 +153,10 @@ async function confirmedFile(storage: ReturnType<typeof buckets>) {
 describe("Own Work promotion", () => {
   it("promotes the snapshot into sources as uploaded, without parsing, whatever a replayed upload writes after it", async () => {
     let fileId = "";
-    const storage = buckets((id) => {
-      if (id === fileId) storage.quarantine.set(id, Buffer.from("replayed"));
+    const storage = buckets({
+      afterSnapshot: (id) => {
+        if (id === fileId) storage.quarantine.set(id, Buffer.from("replayed"));
+      },
     });
     const file = await confirmedFile(storage);
     fileId = file.fileId;
@@ -168,6 +179,58 @@ describe("Own Work promotion", () => {
     expect(storage.sources.get(file.fileId)).toEqual([file.bytes]);
     expect(await file.list()).toEqual([
       expect.objectContaining({ id: file.fileId, status: "ready" }),
+    ]);
+  });
+
+  it("keeps the promoted file ready when the move completed but its answer was lost", async () => {
+    let drops = 1;
+    const storage = buckets({
+      afterPromote: () => {
+        if (drops-- > 0) throw new Error("socket hang up");
+      },
+    });
+    const file = await confirmedFile(storage);
+    const worker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities: createOwnWorkActivities(file.ownWork),
+    });
+
+    const result = await worker.runUntil(
+      env.client.workflow.execute("promoteOwnWork", {
+        taskQueue,
+        workflowId: `promoteOwnWork/${file.fileId}`,
+        args: [{ studentId: file.studentId, fileId: file.fileId }],
+      }),
+    );
+
+    expect(result).toEqual({ status: "ready" });
+    expect(storage.sources.get(file.fileId)).toEqual([file.bytes]);
+  });
+
+  it("shows the file failed once promotion gives up on an upload that never arrived", async () => {
+    const storage = buckets();
+    const file = await confirmedFile(storage);
+    storage.quarantine.delete(file.fileId);
+    const worker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities: createOwnWorkActivities(file.ownWork),
+    });
+
+    const result = await worker.runUntil(
+      env.client.workflow.execute("promoteOwnWork", {
+        taskQueue,
+        workflowId: `promoteOwnWork/${file.fileId}`,
+        args: [{ studentId: file.studentId, fileId: file.fileId }],
+      }),
+    );
+
+    expect(result).toEqual({ status: "failed" });
+    expect(await file.list()).toEqual([
+      expect.objectContaining({ id: file.fileId, status: "failed" }),
     ]);
   });
 
