@@ -415,6 +415,28 @@ test("a done Run whose summary went with a Disconnected Connection shows content
   expect(screen.queryByText(/Zusammenfassung nicht mehr verfügbar/)).toBeNull();
 });
 
+test("a Run stopped because a Connection it read was Disconnected says so", async () => {
+  const stopped = listed("r-3", 60, "stopped", {
+    stopReason: "connection_disconnected",
+  });
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [stopped], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-3", () =>
+    Response.json(detail(stopped)),
+  );
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+
+  const summary = await screen.findByRole("region", {
+    name: "Zusammenfassung",
+  });
+  expect(
+    within(summary).getByText(
+      "Abgebrochen: Eine gelesene Verbindung wurde getrennt",
+    ),
+  ).toBeTruthy();
+});
+
 test("'Seit …' counts on while a Run is under way, even when nothing else changes", async () => {
   vi.useFakeTimers({
     toFake: ["Date", "setInterval", "clearInterval"],
