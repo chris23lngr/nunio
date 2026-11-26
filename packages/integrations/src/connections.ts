@@ -250,7 +250,7 @@ export function createConnections({
       }),
     ) as { username: string; password: string };
     const { imap } = row.servers as unknown as { imap: MailServer };
-    return { username, password, imap };
+    return { connectionId: row.id, username, password, imap };
   }
 
   /** Lists the folders of the student's mailbox with its stored login, for the folder chips. */
@@ -366,14 +366,17 @@ export function createConnections({
     ): Promise<
       { ok: true } | FolderListing | { ok: false; reason: "unknown_folder" }
     > {
-      const listing = await mailboxFolders(p);
+      const login = await storedMailboxLogin(p);
+      if (!login) return { ok: false, reason: "gone" };
+      const listing = await listMailboxFolders(login, { fakes, lookup });
       if (!listing.ok) return listing;
       const listed = new Set(listing.folders.map((folder) => folder.path));
       if (!folders.every((folder) => listed.has(folder)))
         return { ok: false, reason: "unknown_folder" };
       const { count } = await withOwner(db, p, (tx) =>
         tx.connection.updateMany({
-          where: { integrationKey: EMAIL },
+          // The mailbox it listed: never a Connection made since, after a Disconnect.
+          where: { id: login.connectionId, integrationKey: EMAIL },
           data: { folders: [...new Set(folders)] },
         }),
       );
