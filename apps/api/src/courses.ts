@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import { ObligationKind } from "@nunio/db";
-import { courseColors } from "@nunio/knowledge";
+import { courseColors, emailAddress } from "@nunio/knowledge";
 import { deadline } from "@nunio/planning";
 import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
@@ -271,6 +271,33 @@ export function registerCourseRoutes(routes: OpenAPIHono<AppBindings>) {
   );
   routes.openapi(
     createRoute({
+      method: "post",
+      path: "/api/me/courses/{id}/email-destination",
+      description:
+        "The student confirms the default email Destination its Obligations use unless they have their own, or clears it (null).",
+      request: {
+        params: id,
+        ...body(z.object({ address: emailAddress.nullable() }).strict()),
+      },
+      responses: { 200: Done, ...outcomes },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      return done(
+        c,
+        await c
+          .get("courses")
+          .confirmEmailDestination(
+            p,
+            c.req.valid("param").id,
+            c.req.valid("json").address,
+          ),
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
       method: "delete",
       path: "/api/me/courses/{id}",
       description:
@@ -297,6 +324,12 @@ export function registerCourseRoutes(routes: OpenAPIHono<AppBindings>) {
           z
             .object({
               course: Course.omit({ next: true, lastActivityAt: true }),
+              emailDestination: z
+                .object({ address: z.string(), confirmedAt: z.date() })
+                .nullable()
+                .describe(
+                  "The default email Destination its Obligations use unless they have their own.",
+                ),
               sources: z.array(
                 z.object({
                   id: z.string(),

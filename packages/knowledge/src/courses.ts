@@ -451,6 +451,13 @@ export function createCourses({
             entered: course.enteredAt !== null,
             archived: course.archivedAt !== null,
           },
+          emailDestination:
+            course.emailDestination && course.emailDestinationConfirmedAt
+              ? {
+                  address: course.emailDestination,
+                  confirmedAt: course.emailDestinationConfirmedAt,
+                }
+              : null,
           sources,
           topics,
         };
@@ -634,6 +641,24 @@ export function createCourses({
                 : { courseId: course.id, intoId: into.id },
             ),
         );
+      });
+    },
+
+    /** Confirms the default email Destination its Obligations use unless they have their own, or clears it. */
+    async confirmEmailDestination(
+      p: Principal,
+      id: string,
+      address: string | null,
+    ) {
+      return withOwner(db, p, async (tx) => {
+        const { count } = await tx.course.updateMany({
+          where: { id, status: { in: ["proposed", "accepted"] } },
+          data: {
+            emailDestination: address,
+            emailDestinationConfirmedAt: address === null ? null : clock.now(),
+          },
+        });
+        return { status: count ? "ok" : "gone" } as const;
       });
     },
 

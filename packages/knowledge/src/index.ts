@@ -9,6 +9,7 @@ export {
   type Opened,
   type Sealed,
 } from "./derived.js";
+export { emailAddress } from "./email-address.js";
 export {
   type Correction,
   createFacts,

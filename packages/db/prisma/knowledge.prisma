@@ -100,6 +100,9 @@ model Course {
   enteredAt  DateTime?
   /// Set while Archived: nunio neither plans nor acts for it.
   archivedAt DateTime?
+  /// The default email Destination its Obligations use unless they have their own, and when the student confirmed it.
+  emailDestination            String?
+  emailDestinationConfirmedAt DateTime?
   /// Set when merged: a later Source naming this Course lands in the target.
   mergedIntoId String?
   mergedInto   Course?    @relation("merge", fields: [mergedIntoId, studentId], references: [id, studentId], onDelete: Cascade)
@@ -183,6 +186,15 @@ enum ObligationKind {
   @@map("obligation_kind")
 }
 
+/// Where a value came from: a Source's extraction, the student's Correction, or their own entry.
+enum ProvenanceKind {
+  source
+  correction
+  entry
+
+  @@map("provenance_kind")
+}
+
 /// Why a corrected item has no extraction left; it stays because the Correction is the student's own.
 enum Unsupported {
   source_deleted
@@ -219,6 +231,13 @@ model Obligation {
   enteredAt            DateTime?
   /// Reported as Submitted: the student says they handed it in through a Handoff; nunio cannot verify it.
   reportedSubmittedAt  DateTime?
+  /// A confirmed email Destination: the address the student confirmed, and when; it wins over its Course's default.
+  emailDestination             String?
+  emailDestinationConfirmedAt  DateTime?
+  /// The Provenance of the prefill the student confirmed: an extraction's Destination wording (resolved when shown),
+  /// their Correction, or entry, which is also an address they typed.
+  emailDestinationProvenance   ProvenanceKind?
+  emailDestinationExtractionId String?
   unsupported          Unsupported?
   createdAt            DateTime       @default(now())
 

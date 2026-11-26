@@ -120,6 +120,22 @@ export function dueMetaText(due: Due, now: Date) {
 export const reportedDayText = (at: string) =>
   `am ${reportedDay.format(new Date(at))}`;
 
+/** "Bestätigt am 18. Nov." */
+export const confirmedText = (at: string) => `Bestätigt ${reportedDayText(at)}`;
+
+/** Where a prefilled value came from: "Gefunden in Syllabus ADS, S. 4", or the student's own. */
+export const provenanceText = (
+  provenance:
+    | { kind: "correction" }
+    | { kind: "entry" }
+    | { kind: "source"; title: string; page: number },
+) =>
+  provenance.kind === "source"
+    ? `Gefunden in ${provenance.title}, S. ${provenance.page}`
+    : provenance.kind === "correction"
+      ? "Aus deiner Korrektur"
+      : "Von dir eingetragen";
+
 /** "Am 18. Nov., 14:20 als abgegeben gemeldet" */
 export const reportedText = (at: string) =>
   `Am ${reportedAt.format(new Date(at))} als abgegeben gemeldet`;
