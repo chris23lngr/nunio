@@ -104,6 +104,14 @@ interface ReviewObligation extends ReviewItem<{ due: DueValue }> {
   due: DueValue & { text: string | null };
   destination: string | null;
 }
+/** The email Destination an Obligation is handed in to: its own, else its Course's default. */
+type EmailDestination = {
+  address: string;
+  confirmedAt: Date;
+  level: "obligation" | "course";
+  /** Where the confirmed address came from; "gone" once the Source it was prefilled from is. */
+  provenance: Provenance | "gone";
+};
 interface ReviewFact extends ReviewItem<{ value: string }> {
   type: FactType;
   /** The normalized identity key Sources are matched by, such as a Topic's name; it never changes. */
@@ -184,6 +192,25 @@ export function createFacts({
       select: { matchKey: true },
     });
     return named.length === 1 ? `obligation:${named[0]!.matchKey}` : null;
+  };
+  /** The Obligation as reviewed, and the first address in its Destination wording or Correction, with Provenance. */
+  const prefillOf = async (p: Principal, obligationId: string) => {
+    const obligation = (await facts.review(p)).courses
+      .flatMap((course) => course.obligations)
+      .find((o) => o.id === obligationId);
+    if (!obligation) return null;
+    const address = emailIn(obligation.destination);
+    const { provenance } = obligation;
+    if (!address) return { obligation, prefill: null };
+    // The wording shown is the chosen value's first extraction, as `review` picks it.
+    const chosen =
+      obligation.values.find((value) => !value.overruled) ??
+      obligation.values[0];
+    const extractionId =
+      provenance.kind === "source"
+        ? (chosen?.citations[0]?.extractionId ?? null)
+        : null;
+    return { obligation, prefill: { address, provenance, extractionId } };
   };
   const facts = {
     async extract(
@@ -1274,6 +1301,90 @@ export function createFacts({
         return { status: "ok" } as const;
       });
     },
+    /**
+     * The email Destination that applies, and an address found in the Obligation's Destination wording or the
+     * student's Correction, which only the student's click confirms.
+     */
+    async emailDestination(
+      p: Principal,
+      obligationId: string,
+    ): Promise<
+      | {
+          destination: EmailDestination | null;
+          prefill: { address: string; provenance: Provenance } | null;
+        }
+      | "gone"
+    > {
+      const row = await withOwner(db, p, (tx) =>
+        tx.obligation.findUnique({
+          where: { id: obligationId },
+          include: { course: true },
+        }),
+      );
+      const found = row && (await prefillOf(p, obligationId));
+      if (!row || !found) return "gone";
+      const { obligation, prefill } = found;
+      const own = row.emailDestination &&
+        row.emailDestinationConfirmedAt && {
+          address: row.emailDestination,
+          confirmedAt: row.emailDestinationConfirmedAt,
+          level: "obligation" as const,
+          provenance:
+            row.emailDestinationProvenance === "source"
+              ? (sourceCitation(obligation, row.emailDestinationExtractionId) ??
+                ("gone" as const))
+              : { kind: row.emailDestinationProvenance ?? ("entry" as const) },
+        };
+      const { course } = row;
+      const inherited = course.emailDestination &&
+        course.emailDestinationConfirmedAt && {
+          address: course.emailDestination,
+          confirmedAt: course.emailDestinationConfirmedAt,
+          level: "course" as const,
+          provenance: { kind: "entry" as const },
+        };
+      return {
+        destination: own || inherited || null,
+        prefill: prefill && {
+          address: prefill.address,
+          provenance: prefill.provenance,
+        },
+      };
+    },
+    /** Confirms an email Destination for the Obligation (the prefill's Provenance kept when it is the prefill), or clears it. */
+    async confirmEmailDestination(
+      p: Principal,
+      obligationId: string,
+      address: string | null,
+    ) {
+      const found = await prefillOf(p, obligationId);
+      if (!found) return { status: "gone" } as const;
+      if (notHandedIn.includes(found.obligation.kind))
+        return { status: "not_handed_in" } as const;
+      const { prefill } = found;
+      const prefilled =
+        address !== null &&
+        prefill?.address.toLowerCase() === address.toLowerCase();
+      return withOwner(db, p, async (tx) => {
+        const { count } = await tx.obligation.updateMany({
+          where: { id: obligationId },
+          data: {
+            emailDestination: address,
+            emailDestinationConfirmedAt: address === null ? null : clock.now(),
+            emailDestinationProvenance:
+              address === null
+                ? null
+                : prefilled
+                  ? prefill.provenance.kind
+                  : "entry",
+            emailDestinationExtractionId: prefilled
+              ? prefill.extractionId
+              : null,
+          },
+        });
+        return { status: count ? "ok" : "gone" } as const;
+      });
+    },
     async review(p: Principal) {
       return withOwner(db, p, async (tx) => {
         const extractions = {
@@ -1488,6 +1599,27 @@ const due = (row: Due) => ({
   time: row.dueTime,
   timeZone: row.timeZone,
 });
+/** The first email address in a Destination's wording or Correction. */
+const emailIn = (text: string | null) =>
+  text?.match(/[\w.%+-]+@[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}/i)?.[0] ?? null;
+/** The Provenance of a stored extraction among the Obligation's live ones; null once its Source is gone. */
+const sourceCitation = (
+  obligation: ReviewObligation,
+  extractionId: string | null,
+): Provenance | null => {
+  const cited = obligation.values
+    .flatMap((value) => value.citations)
+    .find((citation) => citation.extractionId === extractionId);
+  return cited
+    ? {
+        kind: "source",
+        sourceId: cited.sourceId,
+        title: cited.title,
+        page: cited.page,
+        quote: cited.quote,
+      }
+    : null;
+};
 /** An Obligation's value is its deadline alone: wording differs between documents without changing what is owed. */
 const dueKey = (row: Due) => JSON.stringify(due(row));
 const citation = (

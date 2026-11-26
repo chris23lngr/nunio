@@ -3334,6 +3334,26 @@
               "archived"
             ]
           },
+          "emailDestination": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "confirmedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "address",
+              "confirmedAt"
+            ],
+            "description": "The default email Destination its Obligations use unless they have their own."
+          },
           "sources": {
             "type": "array",
             "items": {
@@ -3624,6 +3644,7 @@
         },
         "required": [
           "course",
+          "emailDestination",
           "sources",
           "disagreements",
           "dated",
@@ -7096,6 +7117,183 @@
                   "null"
                 ],
                 "format": "date-time"
+              },
+              "emailDestination": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "confirmedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "level": {
+                    "type": "string",
+                    "enum": [
+                      "obligation",
+                      "course"
+                    ],
+                    "description": "course when it is the Course's default."
+                  },
+                  "provenance": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "correction"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "entry"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "source"
+                            ]
+                          },
+                          "sourceId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "page": {
+                            "type": "integer"
+                          },
+                          "quote": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "sourceId",
+                          "title",
+                          "page",
+                          "quote"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "gone"
+                        ]
+                      }
+                    ],
+                    "description": "Where the confirmed address came from; gone once the Source it was prefilled from is."
+                  }
+                },
+                "required": [
+                  "address",
+                  "confirmedAt",
+                  "level",
+                  "provenance"
+                ],
+                "description": "The confirmed email Destination that applies: the Obligation's own, else its Course's default."
+              },
+              "emailPrefill": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "provenance": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "correction"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "entry"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "source"
+                            ]
+                          },
+                          "sourceId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "page": {
+                            "type": "integer"
+                          },
+                          "quote": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "sourceId",
+                          "title",
+                          "page",
+                          "quote"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "address",
+                  "provenance"
+                ],
+                "description": "An address found in the Destination wording or the Correction; only the student confirms it."
               }
             },
             "required": [
@@ -7103,7 +7301,9 @@
               "title",
               "due",
               "destination",
-              "reportedSubmittedAt"
+              "reportedSubmittedAt",
+              "emailDestination",
+              "emailPrefill"
             ]
           },
           "rule": {
@@ -7131,12 +7331,20 @@
                 "createdAt"
               ]
             }
+          },
+          "mailto": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A mailto: draft (address, subject, body) to the email Destination; the student attaches the file and sends it."
           }
         },
         "required": [
           "obligation",
           "rule",
-          "drafts"
+          "drafts",
+          "mailto"
         ]
       },
       "TopicAreas": {
@@ -9567,6 +9775,122 @@
                 },
                 "required": [
                   "reported"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item or Course is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing is handed in for an exam or registration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/obligations/{id}/email-destination": {
+      "post": {
+        "description": "The student confirms an email Destination for the Obligation, overriding its Course's default, or clears it (null). Confirming the prefill keeps its Provenance.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "email"
+                  }
+                },
+                "required": [
+                  "address"
                 ],
                 "additionalProperties": false
               }
@@ -14816,6 +15140,140 @@
         }
       }
     },
+    "/api/me/courses/{id}/email-destination": {
+      "post": {
+        "description": "The student confirms the default email Destination its Obligations use unless they have their own, or clears it (null).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "email"
+                  }
+                },
+                "required": [
+                  "address"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "It is gone or not the student's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It no longer matches what was read, such as a stale proposed move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/me/home": {
       "get": {
         "responses": {
@@ -18144,7 +18602,7 @@
     },
     "/api/me/obligations/{id}/handoff": {
       "get": {
-        "description": "What the student needs to hand the Obligation in themselves: its Destination wording, its AI-use Rule (with any conditions, such as declaring AI use) and their drafts. Nothing is sent anywhere; the student then reports it as submitted.",
+        "description": "What the student needs to hand the Obligation in themselves: its Destination wording and confirmed email Destination, its AI-use Rule (with any conditions, such as declaring AI use) and their drafts. Nothing is sent anywhere; the student then reports it as submitted.",
         "parameters": [
           {
             "schema": {

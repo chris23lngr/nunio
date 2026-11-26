@@ -14,7 +14,7 @@ import { aiUseClasses } from "@nunio/knowledge";
 import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
 
-const Provenance = z.discriminatedUnion("kind", [
+export const Provenance = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("correction") }),
   z.object({ kind: z.literal("entry") }),
   z.object({
@@ -551,6 +551,49 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
           principal.fromSession(actor),
           c.req.valid("param").id,
           c.req.valid("json").reported,
+        );
+      if (result.status === "gone") return c.json({ error: "gone" }, 404);
+      if (result.status === "not_handed_in")
+        return c.json({ error: "not_handed_in" }, 409);
+      return c.json({ status: "ok" as const }, 200);
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/obligations/{id}/email-destination",
+      description:
+        "The student confirms an email Destination for the Obligation, overriding its Course's default, or clears it (null). Confirming the prefill keeps its Provenance.",
+      request: {
+        params: z.object({ id: z.string().uuid() }),
+        body: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: z.object({ address: z.email().nullable() }).strict(),
+            },
+          },
+        },
+      },
+      responses: {
+        200: Done,
+        409: json(
+          ErrorBody,
+          "Nothing is handed in for an exam or registration.",
+        ),
+        ...errors,
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const result = await c
+        .get("facts")
+        .confirmEmailDestination(
+          principal.fromSession(actor),
+          c.req.valid("param").id,
+          c.req.valid("json").address,
         );
       if (result.status === "gone") return c.json({ error: "gone" }, 404);
       if (result.status === "not_handed_in")

@@ -9373,7 +9373,7 @@ describe("a Briefing's Approvals", () => {
 });
 
 /** A student with Analysis I: a Topic "Klausur" and problem sheet 3, handed in on Moodle, from one ready Source. */
-async function studyFixture(name: string) {
+async function studyFixture(name: string, destination = "Moodle") {
   const cookie = await signUp(name);
   const p = principal.fromSession({ studentId: await studentId(cookie) });
   const upload = await sources.upload(p, {
@@ -9422,7 +9422,7 @@ async function studyFixture(name: string) {
               kind: "assignment",
               title: "Blatt 3 zur Klausur",
               key: "Blatt 3",
-              destination: "Moodle",
+              destination,
               due: { date: "2026-11-20", time: null, timeZone: null, text: "" },
               page: 3,
               quote: "Blatt 3 zur Klausur, Abgabe über Moodle.",
@@ -9844,11 +9844,190 @@ describe("study execution", () => {
           level: "obligation",
         }),
         drafts: [expect.objectContaining({ id: artifactId, version: 1 })],
+        mailto: null,
       },
     ]);
     const other = await studyFixture("study-handoff-other");
     expect(
       (await other.get(`/api/me/obligations/${s.sheetId}/handoff`)).status,
+    ).toBe(404);
+  });
+});
+
+describe("email Destinations", () => {
+  const handoff = async (
+    s: Awaited<ReturnType<typeof studyFixture>>,
+    id: string,
+  ) =>
+    (await s.get(`/api/me/obligations/${id}/handoff`)).json() as Promise<{
+      obligation: Record<string, unknown>;
+      mailto: string | null;
+    }>;
+
+  it("prefills an address from the Obligation's Destination wording with its Provenance, and confirms and clears it", async () => {
+    const s = await studyFixture(
+      "destination-prefill",
+      "Per E-Mail an Prof. Weber, weber@uni-beispiel.de.",
+    );
+    const path = `/api/me/obligations/${s.sheetId}/email-destination`;
+    const fromSource = {
+      kind: "source",
+      sourceId: expect.any(String),
+      title: "Skript.pdf",
+      page: 3,
+      quote: "Blatt 3 zur Klausur, Abgabe über Moodle.",
+    };
+
+    expect((await handoff(s, s.sheetId)).obligation).toMatchObject({
+      emailDestination: null,
+      emailPrefill: {
+        address: "weber@uni-beispiel.de",
+        provenance: fromSource,
+      },
+    });
+
+    expect(
+      (await s.send(path, { address: "weber@uni-beispiel.de" })).status,
+    ).toBe(200);
+    expect((await handoff(s, s.sheetId)).obligation).toMatchObject({
+      emailDestination: {
+        address: "weber@uni-beispiel.de",
+        confirmedAt: expect.any(String),
+        level: "obligation",
+        provenance: fromSource,
+      },
+    });
+
+    expect(
+      (await s.send(path, { address: "sekretariat@uni-beispiel.de" })).status,
+    ).toBe(200);
+    expect((await handoff(s, s.sheetId)).obligation).toMatchObject({
+      emailDestination: {
+        address: "sekretariat@uni-beispiel.de",
+        provenance: { kind: "entry" },
+      },
+    });
+
+    expect((await s.send(path, { address: "kein Postfach" })).status).toBe(400);
+    expect((await s.send(path, { address: null })).status).toBe(200);
+    expect((await handoff(s, s.sheetId)).obligation).toMatchObject({
+      emailDestination: null,
+    });
+
+    const other = await studyFixture("destination-prefill-other");
+    expect(
+      (await other.send(path, { address: "x@uni-beispiel.de" })).status,
+    ).toBe(404);
+  });
+
+  it("prefills an address from the student's Correction, with the Correction as its Provenance", async () => {
+    const s = await studyFixture("destination-correction");
+    expect((await handoff(s, s.sheetId)).obligation).toMatchObject({
+      emailPrefill: null,
+    });
+    await s.send(`/api/me/review/obligation/${s.sheetId}/correct`, {
+      title: "Blatt 3 zur Klausur",
+      due: { date: "2026-11-20", time: null, timeZone: null },
+      destination: "Mail an abgabe@uni-beispiel.de",
+    });
+
+    expect((await handoff(s, s.sheetId)).obligation).toMatchObject({
+      emailPrefill: {
+        address: "abgabe@uni-beispiel.de",
+        provenance: { kind: "correction" },
+      },
+    });
+    await s.send(`/api/me/obligations/${s.sheetId}/email-destination`, {
+      address: "abgabe@uni-beispiel.de",
+    });
+    expect((await handoff(s, s.sheetId)).obligation).toMatchObject({
+      emailDestination: {
+        address: "abgabe@uni-beispiel.de",
+        provenance: { kind: "correction" },
+      },
+    });
+  });
+
+  it("applies the Course's default unless the Obligation has its own, and drafts a mailto for the one that applies", async () => {
+    const s = await studyFixture("destination-course");
+    const course = `/api/me/courses/${s.courseId}/email-destination`;
+    const own = `/api/me/obligations/${s.sheetId}/email-destination`;
+    const drafted = (mailto: string | null) => {
+      const url = new URL(mailto!);
+      return {
+        to: `${url.protocol}${url.pathname}`,
+        subject: url.searchParams.get("subject"),
+        body: url.searchParams.get("body"),
+      };
+    };
+    const body =
+      "Guten Tag,\r\n\r\nanbei meine Abgabe zu „Blatt 3 zur Klausur“.\r\n\r\nViele Grüße";
+
+    expect(await handoff(s, s.sheetId)).toMatchObject({
+      obligation: { emailDestination: null, emailPrefill: null },
+      mailto: null,
+    });
+
+    expect(
+      (await s.send(course, { address: "lehrstuhl@uni-beispiel.de" })).status,
+    ).toBe(200);
+    expect(
+      (
+        (await (await s.get(`/api/me/courses/${s.courseId}`)).json()) as {
+          emailDestination: unknown;
+        }
+      ).emailDestination,
+    ).toEqual({
+      address: "lehrstuhl@uni-beispiel.de",
+      confirmedAt: expect.any(String),
+    });
+    const inherited = await handoff(s, s.sheetId);
+    expect(inherited.obligation).toMatchObject({
+      emailDestination: {
+        address: "lehrstuhl@uni-beispiel.de",
+        level: "course",
+        provenance: { kind: "entry" },
+      },
+    });
+    expect(drafted(inherited.mailto)).toEqual({
+      to: "mailto:lehrstuhl@uni-beispiel.de",
+      subject: "Abgabe: Blatt 3 zur Klausur",
+      body,
+    });
+
+    await s.send(own, { address: "weber@uni-beispiel.de" });
+    const overridden = await handoff(s, s.sheetId);
+    expect(overridden.obligation).toMatchObject({
+      emailDestination: {
+        address: "weber@uni-beispiel.de",
+        level: "obligation",
+      },
+    });
+    expect(drafted(overridden.mailto).to).toBe("mailto:weber@uni-beispiel.de");
+
+    await s.send(own, { address: null });
+    expect((await handoff(s, s.sheetId)).obligation).toMatchObject({
+      emailDestination: {
+        address: "lehrstuhl@uni-beispiel.de",
+        level: "course",
+      },
+    });
+    expect((await s.send(course, { address: null })).status).toBe(200);
+    expect(await handoff(s, s.sheetId)).toMatchObject({
+      obligation: { emailDestination: null },
+      mailto: null,
+    });
+    expect(
+      (
+        (await (await s.get(`/api/me/courses/${s.courseId}`)).json()) as {
+          emailDestination: unknown;
+        }
+      ).emailDestination,
+    ).toBeNull();
+
+    const other = await studyFixture("destination-course-other");
+    expect(
+      (await other.send(course, { address: "x@uni-beispiel.de" })).status,
     ).toBe(404);
   });
 });
