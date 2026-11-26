@@ -78,8 +78,9 @@ export function NoticeCard({
       {shown ? (
         notice.text === null ? (
           <p className="text-[13px] leading-4.5 text-base-500">
-            Nicht mehr lesbar: Eine Quelle, die der Agent gelesen hatte, wurde
-            gelöscht.
+            {notice.gone === "connection_disconnected"
+              ? "Inhalt aus einer getrennten Verbindung"
+              : "Nicht mehr lesbar: Eine Quelle, die der Agent gelesen hatte, wurde gelöscht."}
           </p>
         ) : (
           <p className="text-sm whitespace-pre-line text-base-600">

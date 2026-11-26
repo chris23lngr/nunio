@@ -161,13 +161,15 @@ export function capabilityTools(held: readonly CapabilityId[]): ToolSet {
 /** The kind of Artifact a Lernmaterial Capability starts. */
 export type ArtifactKind = "flashcards" | "practice_set";
 /**
- * A Notice's or Briefing's text as its call is stored: sealed under every Source the Run had read, as base64, so the
- * model's words are never kept in the clear.
+ * A Notice's or Briefing's text as its call is stored: sealed under every Source and Connection the Run had read, as
+ * base64, so the model's words are never kept in the clear.
  */
 export type SealedNotice = {
   content: string;
   contentKey: string | null;
   derivedFrom: string[];
+  /** Missing on calls stored before Connections were recorded. */
+  derivedFromConnections?: string[];
 };
 /** A Briefing as its call is stored: its sealed text and the Inbox item IDs it bundles. */
 export type SealedBriefing = {

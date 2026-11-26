@@ -75,6 +75,7 @@ const detail = (
   more: {
     summary?: string;
     summaryGone?: boolean;
+    summaryGoneReason?: "source_deleted" | "connection_disconnected";
     costMicroUsd?: number;
     verlauf?: unknown[];
     approvals?: unknown[];
@@ -85,6 +86,7 @@ const detail = (
   budgetMicroUsd: 5_000_000,
   summary: more.summary ?? null,
   summaryGone: more.summaryGone ?? false,
+  summaryGoneReason: more.summaryGoneReason ?? null,
   verlauf: more.verlauf ?? [
     { type: "start", at: run.startedAt, trigger: run.trigger },
   ],
@@ -390,6 +392,49 @@ test("a done Run whose summary went with a deleted Source says so, unlike one th
     )[1]!,
   );
   expect(await screen.findByText("Keine Zusammenfassung.")).toBeTruthy();
+});
+
+test("a done Run whose summary went with a Disconnected Connection shows content from a disconnected Connection", async () => {
+  const gone = listed("r-2", 60, "done");
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [gone], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-2", () =>
+    Response.json(
+      detail(gone, {
+        summaryGone: true,
+        summaryGoneReason: "connection_disconnected",
+      }),
+    ),
+  );
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+
+  expect(
+    await screen.findByText("Inhalt aus einer getrennten Verbindung"),
+  ).toBeTruthy();
+  expect(screen.queryByText(/Zusammenfassung nicht mehr verfügbar/)).toBeNull();
+});
+
+test("a Run stopped because a Connection it read was Disconnected says so", async () => {
+  const stopped = listed("r-3", 60, "stopped", {
+    stopReason: "connection_disconnected",
+  });
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [stopped], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-3", () =>
+    Response.json(detail(stopped)),
+  );
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+
+  const summary = await screen.findByRole("region", {
+    name: "Zusammenfassung",
+  });
+  expect(
+    within(summary).getByText(
+      "Abgebrochen: Eine gelesene Verbindung wurde getrennt",
+    ),
+  ).toBeTruthy();
 });
 
 test("'Seit …' counts on while a Run is under way, even when nothing else changes", async () => {

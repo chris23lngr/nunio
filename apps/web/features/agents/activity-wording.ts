@@ -23,6 +23,7 @@ const reasons: Record<string, string> = {
   deletion_pending: "Dein Konto wird gelöscht",
   model_unavailable: "Modell nicht mehr verfügbar",
   source_deleted: "Eine gelesene Quelle wurde gelöscht",
+  connection_disconnected: "Eine gelesene Verbindung wurde getrennt",
   run_unpinned: "Seine Kurse waren nicht lesbar",
   gone: "Gelesenes ist nicht mehr da",
   run_ended: "Lauf war schon beendet",

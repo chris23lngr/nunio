@@ -1,9 +1,23 @@
 import { expect, it } from "vitest";
 import { historyFrom } from "./history.js";
 
-const turn = (n: number, derivedFrom: string[] = []) => [
-  { role: "student" as const, text: `Frage ${n}`, derivedFrom: [] },
-  { role: "assistant" as const, text: `Antwort ${n}`, derivedFrom },
+const turn = (
+  n: number,
+  derivedFrom: string[] = [],
+  derivedFromConnections: string[] = [],
+) => [
+  {
+    role: "student" as const,
+    text: `Frage ${n}`,
+    derivedFrom: [],
+    derivedFromConnections: [],
+  },
+  {
+    role: "assistant" as const,
+    text: `Antwort ${n}`,
+    derivedFrom,
+    derivedFromConnections,
+  },
 ];
 
 it("keeps the last 10 questions and answers, oldest first", () => {
@@ -17,7 +31,7 @@ it("keeps the last 10 questions and answers, oldest first", () => {
 });
 
 it("leaves out a withdrawn answer together with its question, and the Sources it drew on", () => {
-  const [question, answer] = turn(2, ["deleted-source"]);
+  const [question, answer] = turn(2, ["deleted-source"], ["gone-connection"]);
   const messages = [
     ...turn(1),
     question!,
@@ -31,6 +45,7 @@ it("leaves out a withdrawn answer together with its question, and the Sources it
       { question: "Frage 3", answer: "Antwort 3" },
     ],
     derivedFrom: [],
+    derivedFromConnections: [],
   });
 });
 
@@ -54,4 +69,17 @@ it("names every Source the kept answers drew on, so an answer given with them is
   ];
 
   expect(historyFrom(messages).derivedFrom).toEqual(["handbook", "slides"]);
+});
+
+it("names every Connection the kept answers drew on, so an answer given with them is shredded with them", () => {
+  const messages = [
+    ...turn(1, [], ["mail"]),
+    ...turn(2, ["handbook"], ["mail", "notes"]),
+    ...turn(3),
+  ];
+
+  expect(historyFrom(messages).derivedFromConnections).toEqual([
+    "mail",
+    "notes",
+  ]);
 });

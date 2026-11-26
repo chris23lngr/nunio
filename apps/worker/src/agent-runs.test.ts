@@ -23,12 +23,13 @@ import {
 import { workflowAlive } from "@nunio/delegation/temporal-schedules";
 import { createSourceKeys } from "@nunio/keys";
 import {
+  createDerivedText,
   createFacts,
   createKnowledgeReader,
   createSources,
 } from "@nunio/knowledge";
 import type { Outreach } from "@nunio/outreach";
-import { createOutreach } from "@nunio/outreach";
+import { createOutreach, noticeTextId } from "@nunio/outreach";
 import { createPlan, createPlanExecutor, planRules } from "@nunio/planning";
 import { ApplicationFailure } from "@temporalio/common";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
@@ -2320,6 +2321,7 @@ describe("an Agent's Run sending a Notice (#155)", () => {
         agentName: "Klausur Statistik",
         runId: s.runId,
         text: "Deine Klausur in Statistik II ist am 3. März.",
+        gone: null,
         sentAt: expect.any(Date),
         readAt: null,
         announcement: "pending",
@@ -2579,6 +2581,7 @@ describe("an Agent's Run writing a Briefing (#188)", () => {
         agentName: "Morgen-Briefing",
         runId: s.runId,
         text: "Guten Morgen, eine Freigabe und eine Nachricht warten.",
+        gone: null,
         announcement: "pending",
         interventions: [intervention!.id],
         approvals: [approvalAction!.id],
@@ -2631,6 +2634,142 @@ describe("an Agent's Run writing a Briefing (#188)", () => {
     expect((await outreach.inbox(other.p)).briefings).toMatchObject([
       { agentName: "Morgen-Briefing", text: null },
     ]);
+  });
+
+  /** A Briefing Agent's Run, with an unread Notice in the Inbox stored as one drawn from a Connection would be. */
+  async function withConnectionNotice() {
+    const s = await started({ held: [{ id: "createBriefing", mode: null }] });
+    const connectionId = randomUUID();
+    const { wrapped } = keys.generateConnectionKey(connectionId);
+    await admin.connection.create({
+      data: {
+        id: connectionId,
+        studentId: s.studentId,
+        integrationKey: "email",
+        accountLabel: "lea@uni.test",
+        keyVersion: wrapped.version,
+        keyCiphertext: wrapped.ciphertext,
+      },
+    });
+    // Nothing reads through a Connection yet, so an earlier Run's Notice is stored as one that read mail would be.
+    const noticeRunId = randomUUID();
+    await admin.run.create({
+      data: {
+        id: noticeRunId,
+        studentId: s.studentId,
+        agentId: s.agentId,
+        workflowId: `agentRun/${noticeRunId}`,
+        startedAt: clock.now(),
+        status: "done",
+      },
+    });
+    await admin.$transaction(async (tx) => {
+      const text = await createDerivedText(keys).seal(
+        tx,
+        noticeTextId(noticeRunId),
+        [],
+        "Prof. Weber hat die Sprechstunde verschoben.",
+        [connectionId],
+      );
+      await tx.notice.create({
+        data: {
+          id: randomUUID(),
+          studentId: s.studentId,
+          agentId: s.agentId,
+          runId: noticeRunId,
+          textContent: text!.content,
+          textKey: text!.contentKey,
+          derivedFrom: text!.derivedFrom,
+          derivedFromConnections: text!.derivedFromConnections!,
+        },
+      });
+    });
+    return { s, connectionId };
+  }
+
+  it("seals a Briefing drawn from a Notice that read a Connection, its steps and its summary under that Connection, and shreds them on Disconnect", async () => {
+    const { s, connectionId } = await withConnectionNotice();
+    script = [
+      () => calls("inbox", {}),
+      () =>
+        calls("createBriefing", {
+          text: "Die Sprechstunde ist verschoben.",
+          notices: ["N1"],
+        }),
+      () => says("Briefing geschrieben."),
+    ];
+    expect(await run(s)).toEqual({ status: "done" });
+    expect((await outreach.inbox(s.p)).briefings).toMatchObject([
+      { text: "Die Sprechstunde ist verschoben.", gone: null },
+    ]);
+    expect(await activity.run(s.p, s.agentId, s.runId)).toMatchObject({
+      summary: "Briefing geschrieben.",
+      summaryGone: false,
+      summaryGoneReason: null,
+    });
+
+    // Disconnect deletes the Connection with its content key.
+    await admin.connection.delete({ where: { id: connectionId } });
+
+    const inbox = await outreach.inbox(s.p);
+    expect(inbox.notices).toMatchObject([
+      { text: null, gone: "connection_disconnected" },
+    ]);
+    expect(inbox.briefings).toMatchObject([
+      { text: null, gone: "connection_disconnected" },
+    ]);
+    expect(await activity.run(s.p, s.agentId, s.runId)).toMatchObject({
+      summary: null,
+      summaryGone: true,
+      summaryGoneReason: "connection_disconnected",
+    });
+    expect((await runs.view(s.p, s.runId))!.steps).toEqual([
+      { n: 1, parts: null, gone: "connection_disconnected" },
+      { n: 2, parts: null, gone: "connection_disconnected" },
+      { n: 3, parts: null, gone: "connection_disconnected" },
+    ]);
+  });
+
+  it("stops with connection_disconnected when a Connection it read is Disconnected between steps", async () => {
+    const { s, connectionId } = await withConnectionNotice();
+    script = [() => calls("inbox", {})];
+    const activities = createAgentRunActivities(runs);
+    const step = activities.agentStep;
+    activities.agentStep = async (ref) => {
+      const outcome = await step(ref);
+      if (ref.n === 1)
+        await admin.connection.delete({ where: { id: connectionId } });
+      return outcome;
+    };
+
+    expect(await run(s, activities)).toEqual({
+      status: "stopped",
+      reason: "connection_disconnected",
+    });
+    expect(await runs.view(s.p, s.runId)).toMatchObject({
+      status: "stopped",
+      stopReason: "connection_disconnected",
+    });
+  });
+
+  it("stops with connection_disconnected when a Connection it read is Disconnected during a step", async () => {
+    const { s, connectionId } = await withConnectionNotice();
+    script = [
+      () => calls("inbox", {}),
+      async () => {
+        await admin.connection.delete({ where: { id: connectionId } });
+        return says("Nichts zu tun.");
+      },
+    ];
+
+    expect(await run(s)).toEqual({
+      status: "stopped",
+      reason: "connection_disconnected",
+    });
+    expect(await runs.view(s.p, s.runId)).toMatchObject({
+      status: "stopped",
+      stopReason: "connection_disconnected",
+    });
   });
 
   it("refuses createBriefing with nothing_open when nothing open is bundled, and with invalid for links, >1500 chars or unknown handles", async () => {

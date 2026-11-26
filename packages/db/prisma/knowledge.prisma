@@ -410,6 +410,8 @@ model ChatMessage {
   contentKey  Bytes?
   /// The Sources whose passages the answer was given, in wrapping order.
   derivedFrom String[] @default([])
+  /// The Connections it was drawn from, sealed after the Sources in wrapping order (#266).
+  derivedFromConnections String[] @default([])
   /// [{ tag, cite }] for the citation tags in the text.
   citations   Json     @default("[]")
   /// The Model Catalog key that wrote an assistant answer; null for questions and older answers.

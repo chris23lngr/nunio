@@ -62,6 +62,7 @@ import { createConnectionCredentialKeys, createSourceKeys } from "@nunio/keys";
 import type { Facts, Sources, TopicAreas } from "@nunio/knowledge";
 import {
   createCourses,
+  createDerivedText,
   createFacts,
   createKnowledgeReader,
   createProjects,
@@ -107,6 +108,10 @@ let admin: PrismaClient;
 let app: ReturnType<typeof createApp>;
 /** What the app was built from, to build another one with a dependency swapped. */
 let appDeps: AppDeps;
+const sourceKeys = createSourceKeys({
+  activeVersion: "test",
+  masters: { test: randomBytes(32) },
+});
 const connectionCredentials = createConnectionCredentialKeys({
   activeVersion: "test",
   masters: { test: randomBytes(32) },
@@ -421,10 +426,7 @@ beforeAll(async () => {
         (o) => o.id === obligationId,
       )?.due ?? null,
   });
-  const keys = createSourceKeys({
-    activeVersion: "test",
-    masters: { test: randomBytes(32) },
-  });
+  const keys = sourceKeys;
   sources = createSources({
     db: prisma,
     keys,
@@ -3129,6 +3131,7 @@ describe("Chat", () => {
         }),
         role: "assistant",
         text: "Am 10. Februar [S1].",
+        gone: null,
         reasoning: "Die Quelle nennt den Prüfungstermin.",
         parts: [
           {
@@ -3196,6 +3199,7 @@ describe("Chat", () => {
         createdAt: expect.any(String),
         role: "student",
         text: "Wann ist die Klausur?",
+        gone: null,
         parts: [{ type: "text", text: "Wann ist die Klausur?" }],
         citations: [],
         model: null,
@@ -3205,6 +3209,7 @@ describe("Chat", () => {
         createdAt: expect.any(String),
         role: "assistant",
         text: "Am 10. Februar [S1].",
+        gone: null,
         reasoning: "Die Quelle nennt den Prüfungstermin.",
         parts: [
           {
@@ -3256,6 +3261,7 @@ describe("Chat", () => {
         createdAt: expect.any(String),
         role: "student",
         text: "Wann ist die Klausur?",
+        gone: null,
         parts: [{ type: "text", text: "Wann ist die Klausur?" }],
         citations: [],
         model: null,
@@ -3265,6 +3271,7 @@ describe("Chat", () => {
         createdAt: expect.any(String),
         role: "assistant",
         text: null,
+        gone: "source_deleted",
         parts: [],
         citations: [{ tag: "S1", provenance: "gone" }],
         model: { key: "sonnet-5.5-reasoning-high", name: "Sonnet 5.5" },
@@ -3332,6 +3339,101 @@ describe("Chat", () => {
     prompts.length = 0;
     await ask("Und wo?");
     expect(conversation(prompts[0])).toEqual([context, ["user", "Und wo?"]]);
+  });
+
+  it("shows an answer drawn from a Connection, and a follow-up on it, as gone once the Connection is Disconnected", async () => {
+    const cookie = await signUp("chat-connection");
+    const headers = {
+      cookie,
+      origin: appOrigin,
+      "content-type": "application/json",
+    };
+    const { id } = (await (
+      await app.request(`${apiOrigin}/api/me/chats`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ courseIds: [], sourceIds: [] }),
+      })
+    ).json()) as { id: string };
+    const student = await studentId(cookie);
+    const connectionId = randomUUID();
+    const { wrapped } = sourceKeys.generateConnectionKey(connectionId);
+    await admin.connection.create({
+      data: {
+        id: connectionId,
+        studentId: student,
+        integrationKey: "email",
+        accountLabel: "lea@uni.test",
+        keyVersion: wrapped.version,
+        keyCiphertext: wrapped.ciphertext,
+      },
+    });
+    // Nothing reads through a Connection yet, so the answer is stored as a turn that read mail would store it.
+    const derived = createDerivedText(sourceKeys);
+    const answerId = randomUUID();
+    const answer = "Prof. Weber hat die Sprechstunde verschoben.";
+    const createdAt = new Date(Date.now() - 60_000);
+    await admin.$transaction(async (tx) => {
+      const sealed = await derived.seal(tx, answerId, [], answer, [
+        connectionId,
+      ]);
+      const parts = await derived.seal(
+        tx,
+        `${answerId}:parts`,
+        [],
+        JSON.stringify([{ type: "text", text: answer }]),
+        [connectionId],
+      );
+      await tx.chatMessage.createMany({
+        data: [
+          {
+            id: randomUUID(),
+            chatId: id,
+            studentId: student,
+            role: "student",
+            content: new Uint8Array(Buffer.from("Was schreibt Prof. Weber?")),
+            createdAt,
+          },
+          {
+            id: answerId,
+            chatId: id,
+            studentId: student,
+            role: "assistant",
+            ...sealed!,
+            partsContent: parts!.content,
+            partsKey: parts!.contentKey,
+            createdAt,
+          },
+        ],
+      });
+    });
+    const messages = async () =>
+      (await (
+        await app.request(`${apiOrigin}/api/me/chats/${id}/messages`, {
+          headers: { cookie },
+        })
+      ).json()) as { text: string | null; gone: string | null }[];
+    reasoningText = undefined;
+    reply = "Auf Donnerstag.";
+    expect((await askInChat(headers, id, "Auf wann verschoben?")).status).toBe(
+      200,
+    );
+    expect(await messages()).toMatchObject([
+      { text: "Was schreibt Prof. Weber?", gone: null },
+      { text: answer, gone: null },
+      { text: "Auf wann verschoben?", gone: null },
+      { text: "Auf Donnerstag.", gone: null },
+    ]);
+
+    // Disconnect deletes the Connection with its content key.
+    await admin.connection.delete({ where: { id: connectionId } });
+
+    expect(await messages()).toMatchObject([
+      { text: "Was schreibt Prof. Weber?", gone: null },
+      { text: null, parts: [], gone: "connection_disconnected" },
+      { text: "Auf wann verschoben?", gone: null },
+      { text: null, parts: [], gone: "connection_disconnected" },
+    ]);
   });
 
   it("refuses a selection with another student's or a deleted Source or Course", async () => {
@@ -8807,6 +8909,7 @@ describe("an Agent's form", () => {
           agentName: "Klausur Statistik",
           runId: n.runId,
           text: "Deine Klausur ist am 5. Februar. **Fang** an: <b>jetzt</b>",
+          gone: null,
           sentAt: expect.any(String),
           readAt: null,
           announcement: "pending",

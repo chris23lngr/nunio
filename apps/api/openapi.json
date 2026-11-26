@@ -1011,7 +1011,10 @@
               "string",
               "null"
             ],
-            "description": "Null once a Source the answer drew on is deleted: its wording is removed with that Source."
+            "description": "Null once a Source the answer drew on is deleted or a Connection it drew on is Disconnected: its wording is removed with it."
+          },
+          "gone": {
+            "$ref": "#/components/schemas/GoneReason"
           },
           "reasoning": {
             "type": "string",
@@ -1137,10 +1140,23 @@
           "role",
           "createdAt",
           "text",
+          "gone",
           "parts",
           "citations",
           "model"
         ]
+      },
+      "GoneReason": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "source_deleted",
+          "connection_disconnected",
+          null
+        ],
+        "description": "Why the text is gone: a Source it drew on was deleted, or a Connection it drew on was Disconnected, which wins when both apply; null while it can be read."
       },
       "ChatMessagePart": {
         "oneOf": [
@@ -4821,11 +4837,14 @@
                   "string",
                   "null"
                 ],
-                "description": "The Agent's own words on what it did; null without a final message, or once a Source it drew on is deleted."
+                "description": "The Agent's own words on what it did; null without a final message, or once a Source it drew on is deleted or a Connection it drew on is Disconnected."
               },
               "summaryGone": {
                 "type": "boolean",
-                "description": "It had a summary, gone with a Source it drew on that was deleted since."
+                "description": "It had a summary, gone with a Source it drew on that was deleted since or a Connection Disconnected since."
+              },
+              "summaryGoneReason": {
+                "$ref": "#/components/schemas/GoneReason"
               },
               "verlauf": {
                 "type": "array",
@@ -4846,6 +4865,7 @@
               "budgetMicroUsd",
               "summary",
               "summaryGone",
+              "summaryGoneReason",
               "verlauf",
               "approvals"
             ]
@@ -5552,7 +5572,10 @@
               "string",
               "null"
             ],
-            "description": "Plain text of at most 500 characters, never rendered as a link or formatting; null once a Source the Run had read is deleted."
+            "description": "Plain text of at most 500 characters, never rendered as a link or formatting; null once a Source the Run had read is deleted or a Connection it read is Disconnected."
+          },
+          "gone": {
+            "$ref": "#/components/schemas/GoneReason"
           },
           "sentAt": {
             "type": "string",
@@ -5582,6 +5605,7 @@
           "agentName",
           "runId",
           "text",
+          "gone",
           "sentAt",
           "readAt",
           "announcement"
@@ -5623,7 +5647,10 @@
               "string",
               "null"
             ],
-            "description": "Plain text of at most 1,500 characters, never rendered as a link or formatting; null on past nunio Briefings or once a Source the Run had read is deleted."
+            "description": "Plain text of at most 1,500 characters, never rendered as a link or formatting; null on past nunio Briefings or once a Source the Run had read is deleted or a Connection it read is Disconnected."
+          },
+          "gone": {
+            "$ref": "#/components/schemas/GoneReason"
           },
           "announcement": {
             "type": "string",
@@ -5811,6 +5838,7 @@
           "agentName",
           "runId",
           "text",
+          "gone",
           "announcement",
           "interventions",
           "approvals",

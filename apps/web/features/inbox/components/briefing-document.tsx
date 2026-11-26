@@ -114,7 +114,9 @@ export function BriefingDocument({
       {briefing.agentId && (
         <p className="mt-3 pl-11 text-[15px] leading-6 whitespace-pre-line text-base-700">
           {briefing.text ??
-            "Nicht mehr lesbar: Eine Quelle, die der Agent gelesen hatte, wurde gelöscht."}
+            (briefing.gone === "connection_disconnected"
+              ? "Inhalt aus einer getrennten Verbindung"
+              : "Nicht mehr lesbar: Eine Quelle, die der Agent gelesen hatte, wurde gelöscht.")}
         </p>
       )}
       <div className="flex flex-col gap-8 pt-8 pl-11">

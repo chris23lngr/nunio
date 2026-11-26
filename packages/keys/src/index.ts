@@ -168,6 +168,31 @@ export function unwrapUnderSource(
   return open(sourceKey, JSON.stringify(["derived-key", sourceId]), wrapped);
 }
 
+/** Wraps a derived text's data key under one Connection's content key, so Disconnect shreds it (#266). */
+export function wrapUnderConnection(
+  connectionKey: Buffer,
+  connectionId: string,
+  data: Uint8Array,
+): Buffer {
+  return seal(
+    connectionKey,
+    JSON.stringify(["derived-key-connection", connectionId]),
+    Buffer.from(data),
+  );
+}
+
+export function unwrapUnderConnection(
+  connectionKey: Buffer,
+  connectionId: string,
+  wrapped: Uint8Array,
+): Buffer {
+  return open(
+    connectionKey,
+    JSON.stringify(["derived-key-connection", connectionId]),
+    wrapped,
+  );
+}
+
 /** A JSON object mapping version IDs to base64 master keys, as the platform secret holds it. */
 function mastersFrom(name: string, json: string): Record<string, Buffer> {
   let values: Record<string, string>;

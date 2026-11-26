@@ -3,6 +3,7 @@ import type { PrismaClient } from "@nunio/db";
 import type { Clock, Principal, Transaction } from "@nunio/delegation";
 import { openApprovalAt, withOwner } from "@nunio/delegation";
 import type { SourceKeys } from "@nunio/keys";
+import type { GoneReason } from "@nunio/knowledge";
 import { createDerivedText } from "@nunio/knowledge";
 import { briefingTextId } from "./briefings.js";
 import type { Kind, Subject } from "./causes.js";
@@ -31,6 +32,8 @@ export type NoticeView = {
   agentName: string;
   runId: string;
   text: string | null;
+  /** Why the text is gone: a Source the Run had read was deleted, or a Connection it read was Disconnected. */
+  gone: GoneReason | null;
   sentAt: Date;
   readAt: Date | null;
   announcement: "pending" | "announced" | "inbox_only";
@@ -46,6 +49,8 @@ export type BriefingView = {
   runId: string | null;
   /** Plain text an Agent wrote, null on past nunio Briefings or once a Source its Run had read is deleted. */
   text: string | null;
+  /** Why an Agent's text is gone: a Source its Run had read was deleted, or a Connection it read was Disconnected. */
+  gone: GoneReason | null;
   announcement: "pending" | "announced" | "inbox_only";
   interventions: string[];
   approvals: string[];
@@ -190,11 +195,12 @@ export function createOutreach({
           agentId: row.agentId,
           agentName: row.agent.name,
           runId: row.runId,
-          text: await derived.open(tx, noticeTextId(row.runId), {
+          ...(await derived.open(tx, noticeTextId(row.runId), {
             content: row.textContent,
             contentKey: row.textKey,
             derivedFrom: row.derivedFrom,
-          }),
+            derivedFromConnections: row.derivedFromConnections,
+          })),
           sentAt: row.createdAt,
           readAt: row.readAt,
           announcement: of.some((d) => d.sentAt)
@@ -229,14 +235,14 @@ export function createOutreach({
           agentId: row.agentId,
           agentName: row.agent?.name ?? null,
           runId: row.runId,
-          text:
-            row.runId && row.textContent !== null
-              ? await derived.open(tx, briefingTextId(row.runId), {
-                  content: row.textContent,
-                  contentKey: row.textKey,
-                  derivedFrom: row.derivedFrom,
-                })
-              : null,
+          ...(row.runId && row.textContent !== null
+            ? await derived.open(tx, briefingTextId(row.runId), {
+                content: row.textContent,
+                contentKey: row.textKey,
+                derivedFrom: row.derivedFrom,
+                derivedFromConnections: row.derivedFromConnections,
+              })
+            : { text: null, gone: null }),
           announcement: of.some((d) => d.sentAt)
             ? "announced"
             : of.some((d) => !d.droppedAt)

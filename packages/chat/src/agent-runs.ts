@@ -174,7 +174,8 @@ export function createAgentRuns({
     content: Uint8Array<ArrayBuffer>,
     contentKey: Uint8Array<ArrayBuffer> | null,
     derivedFrom: string[],
-  ): Sealed => ({ content, contentKey, derivedFrom });
+    derivedFromConnections: string[],
+  ): Sealed => ({ content, contentKey, derivedFrom, derivedFromConnections });
   /**
    * Starts the Artifact Run that call `i` of step `n` asks for, at most one per Run, and records it in the Verlauf. A
    * call already recorded is left as it was, so a repeat starts nothing twice.
@@ -248,7 +249,8 @@ export function createAgentRuns({
       const named = { step: n, call: i + 1, capability: call.toolName };
       let detail: NoticeEvent;
       if ("notice" in call) {
-        const { content, contentKey, derivedFrom } = call.notice;
+        const { content, contentKey, derivedFrom, derivedFromConnections } =
+          call.notice;
         const sent = await sendNotice(
           tx,
           runId,
@@ -259,6 +261,7 @@ export function createAgentRuns({
                 ? null
                 : Uint8Array.from(Buffer.from(contentKey, "base64")),
             derivedFrom,
+            derivedFromConnections,
           },
           clock.now(),
         );
@@ -306,7 +309,8 @@ export function createAgentRuns({
       const named = { step: n, call: i + 1, capability: call.toolName };
       let detail: BriefingEvent;
       if ("briefing" in call) {
-        const { content, contentKey, derivedFrom } = call.briefing.text;
+        const { content, contentKey, derivedFrom, derivedFromConnections } =
+          call.briefing.text;
         const written = await sendBriefing(
           tx,
           runId,
@@ -318,6 +322,7 @@ export function createAgentRuns({
                   ? null
                   : Uint8Array.from(Buffer.from(contentKey, "base64")),
               derivedFrom,
+              derivedFromConnections,
             },
             items: call.briefing.items,
           },
@@ -439,6 +444,7 @@ export function createAgentRuns({
                     step.transcriptContent,
                     step.transcriptKey,
                     step.derivedFrom,
+                    step.derivedFromConnections,
                   ),
                 )
               : null,
@@ -452,9 +458,14 @@ export function createAgentRuns({
           : { status: "failed", reason: "step_interrupted" };
       if ("ended" in loaded) return { status: "refused", reason: "run_ended" };
       const { run, transcripts, performed, started } = loaded;
-      // A Source deleted since takes the earlier steps with it, so the Run cannot go on from them.
+      // A Source deleted or a Connection Disconnected since takes the earlier steps with it, so the Run cannot go on
+      // from them; a Disconnect is named first, as when opening.
       if (transcripts.some((transcript) => transcript === null))
         return { status: "refused", reason: "source_deleted" };
+      const gone =
+        transcripts.find((t) => t!.gone === "connection_disconnected")?.gone ??
+        transcripts.find((t) => t!.gone)?.gone;
+      if (gone) return { status: "refused", reason: gone };
       // Checked per step: a Model may stop being offered while the Run is under way (ADR-0018).
       const offered = (await catalog.chatModels()).find(
         (model) => model.key === run.modelKey,
@@ -572,7 +583,7 @@ export function createAgentRuns({
             content: `${context.text}\nCarry out your Instructions now.`,
           },
           ...transcripts.flatMap(
-            (transcript) => JSON.parse(transcript!) as ModelMessage[],
+            (transcript) => JSON.parse(transcript!.text!) as ModelMessage[],
           ),
           ...results,
         ],
@@ -627,9 +638,15 @@ export function createAgentRuns({
             output: result.output,
           }) as RunStepPart,
       );
-      // A step's text may restate anything read before it, so it goes with every Source read so far.
+      // A step's text may restate anything read before it, so it goes with every Source and Connection read so far.
       const derivedFrom = [
         ...new Set([...(run.steps.at(-1)?.derivedFrom ?? []), ...turn.sources]),
+      ];
+      const derivedFromConnections = [
+        ...new Set([
+          ...(run.steps.at(-1)?.derivedFromConnections ?? []),
+          ...turn.connections,
+        ]),
       ];
       // What the step read, for the Verlauf: ids only, since names are looked up when shown.
       const read = (name: string) =>
@@ -671,11 +688,18 @@ export function createAgentRuns({
           select: { status: true },
         });
         if (current.status !== "running") return "ended" as const;
+        // Why a seal failed: a Source deleted or a Connection Disconnected while the step ran.
+        const goneNow = async () => ({
+          gone:
+            (await derived.gone(tx, derivedFrom, derivedFromConnections)) ??
+            ("source_deleted" as const),
+        });
         const sealedParts = await derived.seal(
           tx,
           `${runId}:${n}:parts`,
           derivedFrom,
           JSON.stringify(parts),
+          derivedFromConnections,
         );
         // The results of the previous step's Actions go with this step's messages, so later steps are given them too.
         const transcript = await derived.seal(
@@ -683,6 +707,7 @@ export function createAgentRuns({
           `${runId}:${n}:transcript`,
           derivedFrom,
           JSON.stringify([...results, ...stepped.value.messages]),
+          derivedFromConnections,
         );
         // A Notice's or Briefing's text is the model's own and may restate what it read, so it is sealed like the transcript.
         const kept: StoredCall[] = [];
@@ -694,8 +719,9 @@ export function createAgentRuns({
               noticeTextId(runId),
               derivedFrom,
               noticeText,
+              derivedFromConnections,
             );
-            if (!text) return null;
+            if (!text) return goneNow();
             kept.push({
               ...rest,
               notice: {
@@ -704,6 +730,7 @@ export function createAgentRuns({
                   ? Buffer.from(text.contentKey).toString("base64")
                   : null,
                 derivedFrom: text.derivedFrom,
+                derivedFromConnections,
               },
             });
             continue;
@@ -715,8 +742,9 @@ export function createAgentRuns({
               briefingTextId(runId),
               derivedFrom,
               briefingDraft.text,
+              derivedFromConnections,
             );
-            if (!text) return null;
+            if (!text) return goneNow();
             kept.push({
               ...rest,
               briefing: {
@@ -726,6 +754,7 @@ export function createAgentRuns({
                     ? Buffer.from(text.contentKey).toString("base64")
                     : null,
                   derivedFrom: text.derivedFrom,
+                  derivedFromConnections,
                 },
                 items: briefingDraft.items,
               },
@@ -734,7 +763,7 @@ export function createAgentRuns({
           }
           kept.push(call);
         }
-        if (!sealedParts || !transcript) return null;
+        if (!sealedParts || !transcript) return goneNow();
         await tx.runStep.update({
           where: { runId_n: { runId, n } },
           data: {
@@ -744,6 +773,7 @@ export function createAgentRuns({
             transcriptContent: transcript.content,
             transcriptKey: transcript.contentKey,
             derivedFrom,
+            derivedFromConnections,
             calls: kept as object[],
             handles: turn.handled(),
             citations: [...turn.citations],
@@ -756,8 +786,8 @@ export function createAgentRuns({
         return answered;
       });
       if (stored === "ended") return { status: "refused", reason: "run_ended" };
-      if (stored === null)
-        return { status: "refused", reason: "source_deleted" };
+      if (typeof stored === "object")
+        return { status: "refused", reason: stored.gone };
       return outcome(stored, calls);
     },
 
@@ -897,21 +927,30 @@ export function createAgentRuns({
         const last = run.steps[0];
         const transcript =
           end.status === "done" && last?.answered && last.transcriptContent
-            ? await derived.open(
-                tx,
-                `${runId}:${last.n}:transcript`,
-                sealedOf(
-                  last.transcriptContent,
-                  last.transcriptKey,
-                  last.derivedFrom,
-                ),
-              )
+            ? (
+                await derived.open(
+                  tx,
+                  `${runId}:${last.n}:transcript`,
+                  sealedOf(
+                    last.transcriptContent,
+                    last.transcriptKey,
+                    last.derivedFrom,
+                    last.derivedFromConnections,
+                  ),
+                )
+              ).text
             : null;
         const text = transcript
           ? summaryOf(finalText(JSON.parse(transcript)))
           : "";
         const summary = text
-          ? await derived.seal(tx, `${runId}:summary`, last!.derivedFrom, text)
+          ? await derived.seal(
+              tx,
+              `${runId}:summary`,
+              last!.derivedFrom,
+              text,
+              last!.derivedFromConnections,
+            )
           : null;
         await tx.run.update({
           where: { id: runId },
@@ -922,6 +961,7 @@ export function createAgentRuns({
             summaryContent: summary?.content ?? null,
             summaryKey: summary?.contentKey ?? null,
             derivedFrom: summary?.derivedFrom ?? [],
+            derivedFromConnections: summary?.derivedFromConnections ?? [],
           },
         });
         await tx.runStep.updateMany({
@@ -938,7 +978,7 @@ export function createAgentRuns({
     /**
      * The Run as the student may see it: status, trigger, start and end, why it stopped, its summary, and each step's
      * tool calls. Null when it is not the student's; the summary and a step's parts are null once a Source they were
-     * drawn from is deleted.
+     * drawn from is deleted or a Connection Disconnected, and `summaryGoneReason` and a step's `gone` say which.
      */
     async view(p: Principal, runId: string) {
       return withOwner(db, p, async (tx) => {
@@ -956,7 +996,12 @@ export function createAgentRuns({
           ? await derived.open(
               tx,
               `${runId}:summary`,
-              sealedOf(run.summaryContent, run.summaryKey, run.derivedFrom),
+              sealedOf(
+                run.summaryContent,
+                run.summaryKey,
+                run.derivedFrom,
+                run.derivedFromConnections,
+              ),
             )
           : null;
         return {
@@ -966,18 +1011,25 @@ export function createAgentRuns({
           startedAt: run.startedAt,
           endedAt: run.endedAt,
           stopReason: run.stopReason,
-          summary,
+          summary: summary?.text ?? null,
+          summaryGoneReason: summary?.gone ?? null,
           steps: await Promise.all(
             run.steps.map(async (step) => {
-              const parts = await derived.open(
+              const { text: parts, gone } = await derived.open(
                 tx,
                 `${runId}:${step.n}:parts`,
-                sealedOf(step.partsContent!, step.partsKey, step.derivedFrom),
+                sealedOf(
+                  step.partsContent!,
+                  step.partsKey,
+                  step.derivedFrom,
+                  step.derivedFromConnections,
+                ),
               );
               return {
                 n: step.n,
                 parts:
                   parts === null ? null : (JSON.parse(parts) as RunStepPart[]),
+                gone,
               };
             }),
           ),

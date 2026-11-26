@@ -71,6 +71,8 @@ model Notice {
   textContent Bytes
   textKey     Bytes?
   derivedFrom String[]  @default([])
+  /// The Connections it was drawn from, sealed after the Sources in wrapping order (#266).
+  derivedFromConnections String[] @default([])
   createdAt   DateTime  @default(now())
   readAt      DateTime?
 
@@ -97,6 +99,8 @@ model Briefing {
   textContent Bytes?
   textKey     Bytes?
   derivedFrom String[] @default([])
+  /// The Connections it was drawn from, sealed after the Sources in wrapping order (#266).
+  derivedFromConnections String[] @default([])
   createdAt   DateTime @default(now())
   items       Json
 
