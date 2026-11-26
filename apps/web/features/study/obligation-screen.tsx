@@ -32,6 +32,7 @@ import type { AiUse, ArtifactRequest } from "./api/study-queries";
 import { coursesQueries, handoffQuery } from "./api/study-queries";
 import { AiUseCard } from "./components/ai-use-card";
 import { HandoffPanel } from "./components/handoff-panel";
+import { OwnWork } from "./components/own-work";
 import { draftDateText, dueMetaText, obligationKinds } from "./study-format";
 
 type WriteRequest = Extract<ArtifactRequest, { kind: "draft" | "critique" }>;
@@ -531,6 +532,8 @@ function ObligationScreenContent({
                   </section>
                 </>
               )}
+
+              <OwnWork apiOrigin={apiOrigin} obligationId={id} />
             </div>
 
             <div className="flex w-full shrink-0 flex-col gap-6 lg:w-[340px]">
