@@ -50,11 +50,27 @@ export interface McpServer {
   accessToken: string;
 }
 
-/** The Connection can't be read: gone, not Connected, or not an MCP Integration. */
+/** The Connection can't be read: gone, not Connected, or not through an offered MCP Integration. */
 class Unavailable extends Error {}
 
-/** The `Retry-After` of the response a read got, set by the fetch inside that read's own async context. */
+/** The read's 30 s ran out before nunio could send the call. */
+class DeadlinePassed extends Error {}
+
+/** The time left until `until`; none left fails the attempt at once. */
+function remaining(until: number) {
+  const ms = until - Date.now();
+  if (ms <= 0) throw new DeadlinePassed();
+  return ms;
+}
+
+/**
+ * The `Retry-After` of the latest response, set by the fetch inside the async context of the read, or of the opening
+ * of the client, that sent it.
+ */
 const retryAfter = new AsyncLocalStorage<{ ms?: number }>();
+
+/** The `Retry-After` a failed opening was told, kept with its error for every read that waited on it. */
+const openingRetryAfter = new WeakMap<object, number | undefined>();
 
 /** A `Retry-After` value in milliseconds: delay seconds or an HTTP date. */
 function retryAfterMs(value: string | null): number | undefined {
@@ -69,14 +85,16 @@ function retryAfterMs(value: string | null): number | undefined {
 /**
  * The fetch an MCP client gets: only the catalog's server (its URL for Streamable HTTP, its origin for SSE, whose
  * endpoint the server names), through `publicFetch`, noting a 429's or a 5xx's `Retry-After` for the read under way.
+ * An SSE stream may go quiet between steps, so its body may wait as long as it takes; each call has its own deadline.
  */
 function serverFetch(
   mcpUrl: string,
   type: "http" | "sse",
-  fakes: boolean,
+  { fakes, timeoutMs }: { fakes: boolean; timeoutMs: number },
 ): typeof fetch {
   const base = publicFetch(fakes, {
-    timeoutMs: READ_TIMEOUT_MS,
+    timeoutMs,
+    bodyTimeoutMs: type === "sse" ? 0 : timeoutMs,
     purpose: "MCP",
   });
   const server = new URL(mcpUrl);
@@ -87,12 +105,12 @@ function serverFetch(
       (type === "http" && url.href !== server.href)
     )
       throw new Error("MCP requests go only to the Integration's server");
+    // Only the latest response counts: an earlier one's Retry-After was answered by this request.
+    const observed = retryAfter.getStore();
+    if (observed) observed.ms = undefined;
     const response = await base(input, init);
-    if (response.status === 429 || response.status >= 500) {
-      const observed = retryAfter.getStore();
-      if (observed)
-        observed.ms = retryAfterMs(response.headers.get("retry-after"));
-    }
+    if (observed && (response.status === 429 || response.status >= 500))
+      observed.ms = retryAfterMs(response.headers.get("retry-after"));
     return response;
   };
 }
@@ -103,13 +121,17 @@ const noStreamableHttp = (error: unknown) =>
   (error.statusCode === 404 || error.statusCode === 405);
 
 /**
- * Opens an MCP client to the server, over Streamable HTTP with SSE as the fallback, or SSE when the row says so.
- * Listing the server's tools against the pins comes with drift (#295).
+ * Opens an MCP client to the server, over Streamable HTTP with SSE as the fallback, or SSE when the row says so, in
+ * the time left until `until`. Listing the server's tools against the pins comes with drift (#295).
  */
 async function connect(
   server: McpServer,
-  fakes: boolean,
-  signal: AbortSignal,
+  {
+    fakes,
+    timeoutMs,
+    signal,
+    until,
+  }: { fakes: boolean; timeoutMs: number; signal: AbortSignal; until: number },
 ): Promise<MCPClient> {
   const open = (type: "http" | "sse") =>
     createMCPClient({
@@ -118,9 +140,9 @@ async function connect(
         url: server.mcpUrl,
         headers: { authorization: `Bearer ${server.accessToken}` },
         redirect: "error",
-        fetch: serverFetch(server.mcpUrl, type, fakes),
+        fetch: serverFetch(server.mcpUrl, type, { fakes, timeoutMs }),
       },
-      initializationOptions: { signal, timeout: READ_TIMEOUT_MS },
+      initializationOptions: { signal, timeout: remaining(until) },
       maxRetries: 0,
     });
   if (server.transport === "sse") return open("sse");
@@ -164,39 +186,70 @@ function failureOf(
 }
 
 /**
+ * Whether a call failed on its connection rather than with an answer: it dropped, or no answer came in time. An SSE
+ * stream that died never says so, so the client is closed and the retry opens another.
+ */
+const lostConnection = (error: unknown) =>
+  !(error instanceof Unavailable) &&
+  !(error instanceof DeadlinePassed) &&
+  !(MCPClientError.isInstance(error) && error.statusCode !== undefined);
+
+/**
  * A read session on an MCP server. A read retries once after a transport failure, a 429 or a 5xx, after the
  * `Retry-After` the service names (at most 5 s) and within `signal`; a tool error, a JSON-RPC error or another 4xx
  * is final.
  */
 export function openMcpReads(
   server: () => Promise<McpServer>,
-  { fakes }: { fakes: boolean },
+  {
+    fakes,
+    timeoutMs = READ_TIMEOUT_MS,
+  }: {
+    fakes: boolean;
+    /** How long one read may take, opening the client included; a test seam. */
+    timeoutMs?: number;
+  },
 ): ReadSession {
   let client: Promise<MCPClient> | undefined;
-  const opened = (signal: AbortSignal) => {
-    client ??= server()
-      .then((resolved) => connect(resolved, fakes, signal))
+  /** The session's client, opened by the first read that needs it, within that read's deadline. */
+  const opened = (signal: AbortSignal, until: number) => {
+    if (client) return client;
+    const seen: { ms?: number } = {};
+    const opening: Promise<MCPClient> = retryAfter
+      .run(seen, async () =>
+        connect(await server(), { fakes, timeoutMs, signal, until }),
+      )
       .catch((error: unknown) => {
         // Opened again by the retry or the next read.
-        client = undefined;
+        if (client === opening) client = undefined;
+        if (typeof error === "object" && error !== null)
+          openingRetryAfter.set(error, seen.ms);
         throw error;
       });
-    return client;
+    client = opening;
+    return opening;
+  };
+  /** Closes a client its connection left dead, so the next read opens another. */
+  const discard = (dead: Promise<MCPClient>) => {
+    if (client === dead) client = undefined;
+    void dead.then((c) => c.close()).catch(() => {});
   };
   return {
     async read(toolName, args, { signal }) {
       for (let attempt = 1; ; attempt++) {
         const observed: { ms?: number } = {};
+        // The read's time, opening the client included.
+        const until = Date.now() + timeoutMs;
+        let used: Promise<MCPClient> | undefined;
         try {
-          // 30 s for the call, opening the client included.
-          const until = Date.now() + READ_TIMEOUT_MS;
-          const called = await retryAfter.run(observed, async () =>
-            (await opened(signal)).callTool({
+          const called = await retryAfter.run(observed, async () => {
+            used = opened(signal, until);
+            return (await used).callTool({
               name: toolName,
               arguments: args,
-              options: { signal, timeout: Math.max(1, until - Date.now()) },
-            }),
-          );
+              options: { signal, timeout: remaining(until) },
+            });
+          });
           // A legacy server's result is a bare `toolResult`.
           const result: ToolResult =
             "toolResult" in called
@@ -211,7 +264,15 @@ export function openMcpReads(
           const failure = failureOf(error);
           if (failure.kind === "service")
             return { outcome: "failed", text: shapeError(failure.message) };
-          const wait = observed.ms ?? DEFAULT_RETRY_DELAY_MS;
+          const fromOpening =
+            typeof error === "object" &&
+            error !== null &&
+            openingRetryAfter.has(error);
+          if (used && !fromOpening && lostConnection(error)) discard(used);
+          const wait =
+            (fromOpening
+              ? openingRetryAfter.get(error as object)
+              : observed.ms) ?? DEFAULT_RETRY_DELAY_MS;
           if (
             failure.kind === "final" ||
             attempt > 1 ||
@@ -240,7 +301,7 @@ export function createIntegrationReads({
   credentials: ConnectionCredentialKeys;
   fakes: boolean;
 }) {
-  /** The Connection's server and token, if it is the student's, Connected, and through an MCP Integration. */
+  /** The Connection's server and token, if it is the student's, Connected, and through an offered MCP Integration. */
   async function serverOf(
     p: Principal,
     connectionId: string,
@@ -252,7 +313,12 @@ export function createIntegrationReads({
       }),
     );
     const { integration, credential } = row ?? {};
-    if (!row || !credential || integration?.kind !== "mcp")
+    if (
+      !row ||
+      !credential ||
+      integration?.kind !== "mcp" ||
+      integration.status !== "offered"
+    )
       throw new Unavailable();
     if (!integration.mcpUrl) throw new Unavailable();
     const { accessToken } = JSON.parse(

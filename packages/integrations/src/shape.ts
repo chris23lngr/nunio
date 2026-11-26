@@ -33,17 +33,21 @@ function sizeOf(base64: string | undefined) {
   return bytes < 1024 ? `${bytes} bytes` : `${Math.round(bytes / 1024)} KB`;
 }
 
+/** A type the service names, on one line. */
+const oneLine = (value: string | undefined) =>
+  value === undefined ? "unknown type" : value.replace(/\s+/g, " ").trim();
+
 /** One content part as text: its own text, or one line naming what isn't text. */
 function textOf(part: Content): string {
   if (part.type === "text" && "text" in part) return part.text;
   if ((part.type === "image" || part.type === "audio") && "data" in part)
-    return `[${part.type}, ${part.mimeType ?? "unknown type"}, ${sizeOf(part.data)}, not shown]`;
+    return `[${part.type}, ${oneLine(part.mimeType)}, ${sizeOf(part.data)}, not shown]`;
   if (part.type === "resource" && "resource" in part) {
     const { resource } = part;
     if (typeof resource.text === "string") return resource.text;
-    return `[file, ${resource.mimeType ?? "unknown type"}, ${sizeOf(resource.blob)}, not shown]`;
+    return `[file, ${oneLine(resource.mimeType)}, ${sizeOf(resource.blob)}, not shown]`;
   }
-  return `[${part.type}, not shown]`;
+  return `[${oneLine(part.type)}, not shown]`;
 }
 
 /** Service text in a nonce fence, as data the model must never follow. Fence look-alikes are escaped. */

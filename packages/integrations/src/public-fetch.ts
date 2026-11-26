@@ -8,16 +8,19 @@ import { isPublic } from "./email/servers.js";
  * speaks https only, so tokens, codes and verifiers never travel in the clear. It refuses every connection unless
  * each address is public: a host name is resolved inside the connector, so the address checked is the address used
  * (no DNS rebinding), and an IP address is checked there too. It never follows a redirect. `timeoutMs` bounds
- * connecting, waiting for headers and the wait between body chunks; `allowed` is a test seam.
+ * connecting and waiting for headers, and by default the wait between body chunks; `allowed` is a test seam.
  */
 export function publicFetch(
   fakes: boolean,
   {
     timeoutMs,
+    bodyTimeoutMs = timeoutMs,
     allowed = isPublic,
     purpose,
   }: {
     timeoutMs: number;
+    /** The longest wait between body chunks; 0 waits as long as it takes, as an event stream must. */
+    bodyTimeoutMs?: number;
     allowed?: (address: string) => boolean;
     /** What the requests are for, in errors: "OAuth" or "MCP". */
     purpose: string;
@@ -45,7 +48,7 @@ export function publicFetch(
   });
   const dispatcher = new Agent({
     headersTimeout: timeoutMs,
-    bodyTimeout: timeoutMs,
+    bodyTimeout: bodyTimeoutMs,
     // Every connection, every hop: an IP address is never looked up, so it is checked here.
     connect: (options, callback) => {
       const address = options.hostname.replace(/^\[|\]$/g, "");
