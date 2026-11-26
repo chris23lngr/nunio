@@ -14,6 +14,7 @@ import { readUIMessageStream } from "ai";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { resolveUnconfirmed } from "@/features/approvals/api/approval-mutations";
+import { integrationQueries } from "@/features/settings/api/integration-queries";
 import { PageHeader } from "@/features/shared/components/page-header";
 import { ApiError } from "@/lib/api-client";
 import { useAppForm } from "@/lib/form";
@@ -25,6 +26,7 @@ import {
   chatTransport,
   createChat,
   failureMessage,
+  setChatConnections,
 } from "./api/chat-mutations";
 import type { ChatUIMessage, Turn } from "./api/chat-queries";
 import {
@@ -39,6 +41,7 @@ import { ChatComposer } from "./components/chat-composer";
 import { ChatEmptyState } from "./components/chat-empty-state";
 import { ChatHeaderActions } from "./components/chat-header-actions";
 import { ChatMessage } from "./components/chat-message";
+import { ConnectionSelector } from "./components/connection-selector";
 import { KnowledgeSelector } from "./components/knowledge-selector";
 import { ModelSelector } from "./components/model-selector";
 import {
@@ -127,6 +130,14 @@ export function ChatScreen({
   const recent = useQuery(recentChatQueries(apiOrigin));
   const startNewChat = useNewChat();
   const create = useMutation(createChat(apiOrigin));
+  const integrations = useQuery(integrationQueries(apiOrigin));
+  // The student's Connections, which a Chat reads only once switched on for it.
+  const connectionOptions = (integrations.data ?? []).flatMap(
+    ({ key, name, connection }) => (connection ? [{ key, name }] : []),
+  );
+  const switchConnections = useMutation(
+    setChatConnections(apiOrigin, id ?? ""),
+  );
   const models = useQuery(modelQueries(apiOrigin));
   // The student's pick in this visit; the server remembers it once a question is sent.
   const [picked, setPicked] = useState<string | null>(null);
@@ -151,7 +162,11 @@ export function ChatScreen({
     before: string;
   } | null>(null);
   // Read by the transport, which outlives renders.
-  const sendContext = useRef({ openChat, courseIds: [] as string[] });
+  const sendContext = useRef({
+    openChat,
+    courseIds: [] as string[],
+    connections: [] as string[],
+  });
   sendContext.current.openChat = openChat;
 
   const transport = useMemo(
@@ -159,8 +174,12 @@ export function ChatScreen({
       chatTransport(apiOrigin, async (signal) => {
         const { key, id } = sendContext.current.openChat;
         if (id) return id;
-        const courseIds = sendContext.current.courseIds;
-        const created = await create.mutateAsync({ courseIds, signal });
+        const { courseIds, connections } = sendContext.current;
+        const created = await create.mutateAsync({
+          courseIds,
+          connections,
+          signal,
+        });
         if (signal?.aborted || sendContext.current.openChat.key !== key)
           throw new DOMException("The Chat was left", "AbortError");
         shownRouteId.current = created;
@@ -377,7 +396,12 @@ export function ChatScreen({
       : "";
 
   const form = useAppForm({
-    defaultValues: { text: "", courseIds: [] as string[] },
+    defaultValues: {
+      text: "",
+      courseIds: [] as string[],
+      // A new Chat's Connections, saved when it is created; an open Chat saves each switch at once.
+      connections: [] as string[],
+    },
     onSubmit: ({ value }) => {
       const text = value.text.trim();
       if (!text || text.length > 4000 || busy) return;
@@ -385,6 +409,7 @@ export function ChatScreen({
       turn.current = { key: openChat.key, questionId, draft: value.text };
       restored.current = null;
       sendContext.current.courseIds = value.courseIds;
+      sendContext.current.connections = value.connections;
       setError(null);
       create.reset();
       form.setFieldValue("text", "");
@@ -435,7 +460,8 @@ export function ChatScreen({
     setStepping(false);
     form.reset();
     create.reset();
-  }, [routeId, form, create.reset]);
+    switchConnections.reset();
+  }, [routeId, form, create.reset, switchConnections.reset]);
 
   const busy = status === "submitted" || status === "streaming";
   const last = messages.at(-1);
@@ -534,11 +560,17 @@ export function ChatScreen({
           [
             state.values.text,
             state.values.courseIds,
+            state.values.connections,
             state.isSubmitting,
           ] as const
         }
       >
-        {([text, selected, submitting]) => {
+        {([text, selected, newConnections, submitting]) => {
+          const connections = id
+            ? ((switchConnections.isPending
+                ? switchConnections.variables
+                : chat.data?.connections) ?? [])
+            : newConnections;
           const canSend = !submitting && !!text.trim() && !(!!id && !chat.data);
           return (
             // Overlaps the list's last 64px so messages fade out behind the band;
@@ -592,29 +624,47 @@ export function ChatScreen({
                 )
               }
               knowledge={
-                <KnowledgeSelector
-                  courses={courses.data ?? []}
-                  selected={
-                    id
-                      ? (chat.data?.courses ?? [])
-                      : (courses.data ?? []).filter((course) =>
-                          selected.includes(course.id),
-                        )
-                  }
-                  // The API fixes a Chat's courses when it is created, so they lock with the first message.
-                  locked={started || busy}
-                  loading={courses.isPending}
-                  error={courses.error?.message}
-                  onToggle={(courseId) => {
-                    if (!started && !busy)
-                      form.setFieldValue(
-                        "courseIds",
-                        selected.includes(courseId)
-                          ? selected.filter((value) => value !== courseId)
-                          : [...selected, courseId],
-                      );
-                  }}
-                />
+                <>
+                  <KnowledgeSelector
+                    courses={courses.data ?? []}
+                    selected={
+                      id
+                        ? (chat.data?.courses ?? [])
+                        : (courses.data ?? []).filter((course) =>
+                            selected.includes(course.id),
+                          )
+                    }
+                    // The API fixes a Chat's courses when it is created, so they lock with the first message.
+                    locked={started || busy}
+                    loading={courses.isPending}
+                    error={courses.error?.message}
+                    onToggle={(courseId) => {
+                      if (!started && !busy)
+                        form.setFieldValue(
+                          "courseIds",
+                          selected.includes(courseId)
+                            ? selected.filter((value) => value !== courseId)
+                            : [...selected, courseId],
+                        );
+                    }}
+                  />
+                  <ConnectionSelector
+                    connections={connectionOptions}
+                    selected={connections}
+                    error={
+                      switchConnections.error?.message ??
+                      integrations.error?.message
+                    }
+                    onToggle={(key) => {
+                      const next = connections.includes(key)
+                        ? connections.filter((value) => value !== key)
+                        : [...connections, key];
+                      if (!id) form.setFieldValue("connections", next);
+                      else if (!switchConnections.isPending)
+                        switchConnections.mutate(next);
+                    }}
+                  />
+                </>
               }
             />
           );

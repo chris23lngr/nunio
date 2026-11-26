@@ -83,6 +83,9 @@ beforeEach(() => {
   api.route("GET", "/api/me/chats", () =>
     Response.json({ chats: [], nextCursor: null }),
   );
+  api.route("GET", "/api/me/integrations", () =>
+    Response.json({ integrations: [] }),
+  );
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -606,7 +609,11 @@ test("first send fixes the selected courses and displays the persisted turn", as
   );
   await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
   await screen.findByRole("heading", { name: "Grundlagen" });
-  expect(selection).toEqual({ courseIds: ["course-1"], sourceIds: [] });
+  expect(selection).toEqual({
+    courseIds: ["course-1"],
+    sourceIds: [],
+    connections: [],
+  });
   expect(screen.getByText("Erkläre die Grundlagen")).toBeTruthy();
   expect(
     (
@@ -2448,4 +2455,241 @@ test("deleting a Source while an answer streams withdraws earlier answers and ke
   } finally {
     stream.close();
   }
+});
+
+/** The student's Integrations, with Testnotizen connected and Email not. */
+function connectedIntegrations() {
+  const integration = (key: string, name: string, connected: boolean) => ({
+    key,
+    name,
+    logo: `/integrations/${key}.svg`,
+    description: "",
+    dataNote: "",
+    kind: key === "email" ? "email" : "mcp",
+    connection: connected
+      ? {
+          state: "connected",
+          accountLabel: name,
+          folders: [],
+          agentCount: 0,
+        }
+      : null,
+    tools: [],
+  });
+  api.route("GET", "/api/me/integrations", () =>
+    Response.json({
+      integrations: [
+        integration("email", "E-Mail", false),
+        integration("testnotizen", "Testnotizen", true),
+      ],
+    }),
+  );
+}
+
+test("a Connection switched on before the first question goes with the new Chat", async () => {
+  connectedIntegrations();
+  let selection: unknown;
+  api.route("POST", "/api/me/chats", async (request) => {
+    selection = await request.json();
+    return Response.json({ id: "chat-1" }, { status: 201 });
+  });
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({
+      id: "chat-1",
+      courses: [],
+      connections: ["testnotizen"],
+      messages: [],
+    }),
+  );
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", () =>
+    committedResponse({
+      id: "answer-1",
+      role: "assistant",
+      text: "Gefunden.",
+      parts: [{ type: "text", text: "Gefunden." }],
+      citations: [],
+      createdAt: "2026-11-10T09:48:00Z",
+      question: null,
+    }),
+  );
+  mount();
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole("button", { name: "Verbindungen" }));
+  const rows = await screen.findAllByRole("menuitemcheckbox");
+  // Only Connections are listed; an Integration not connected isn't.
+  expect(rows.map((row) => row.textContent)).toEqual(["Testnotizen"]);
+  await user.click(rows[0]!);
+  await user.keyboard("{Escape}");
+  expect(
+    screen.getByRole("button", {
+      name: "Verbindungen, eingeschaltet: Testnotizen",
+    }),
+  ).toBeTruthy();
+  await user.type(
+    screen.getByRole("textbox", { name: "Nachricht" }),
+    "Was steht in meinen Notizen?",
+  );
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+
+  await waitFor(() =>
+    expect(selection).toEqual({
+      courseIds: [],
+      sourceIds: [],
+      connections: ["testnotizen"],
+    }),
+  );
+});
+
+test("switching a Connection in an open Chat saves it at once", async () => {
+  connectedIntegrations();
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({
+      id: "chat-1",
+      courses: [],
+      connections: [],
+      messages: [],
+    }),
+  );
+  api.route("PUT", "/api/me/chats/chat-1/connections", async (request) => {
+    const body = (await request.json()) as { connections: string[] };
+    saved.push(body);
+    return Response.json(body);
+  });
+  mount("chat-1");
+  await chatLoaded();
+  const user = userEvent.setup();
+
+  await user.click(screen.getByRole("button", { name: "Verbindungen" }));
+  await user.click(
+    await screen.findByRole("menuitemcheckbox", { name: "Testnotizen" }),
+  );
+
+  await waitFor(() =>
+    expect(saved).toEqual([{ connections: ["testnotizen"] }]),
+  );
+  expect(
+    (
+      await screen.findByRole("menuitemcheckbox", { name: "Testnotizen" })
+    ).getAttribute("aria-checked"),
+  ).toBe("true");
+  await user.keyboard("{Escape}");
+  expect(
+    screen.getByRole("button", {
+      name: "Verbindungen, eingeschaltet: Testnotizen",
+    }),
+  ).toBeTruthy();
+});
+
+test("shows an Integration's reads as one step with per-tool counts, while answering and when reopened", async () => {
+  const testnotizen = { key: "testnotizen", name: "Testnotizen" };
+  const read = (n: number, name: string, label: string) => ({
+    type: "tool-integration",
+    toolCallId: `call-${n}`,
+    input: {},
+    output: {
+      integration: testnotizen,
+      tool: { name, label },
+      outcome: "answered",
+    },
+  });
+  const reads = [
+    read(1, "notes.search", "Notizen durchsuchen"),
+    read(2, "notes.read", "Notiz lesen"),
+    read(3, "notes.read", "Notiz lesen"),
+  ];
+  const answer = {
+    id: "answer-1",
+    role: "assistant",
+    text: "Am Dienstag.",
+    parts: [...reads, { type: "text", text: "Am Dienstag." }],
+    createdAt: "2026-11-10T09:48:00Z",
+    citations: [],
+    model: null,
+  };
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({
+      id: "chat-1",
+      courses: [],
+      connections: [],
+      messages: saved,
+    }),
+  );
+  let finish = () => {};
+  const encoder = new TextEncoder();
+  api.route("POST", "/api/me/chats/chat-1/messages/stream", async (request) => {
+    const { id } = (await request.json()) as { id: string };
+    const question = {
+      id,
+      role: "student",
+      text: "Wann treffe ich Lenz?",
+      parts: [{ type: "text", text: "Wann treffe ich Lenz?" }],
+      createdAt: "2026-11-10T09:48:00Z",
+      citations: [],
+      model: null,
+    };
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          const emit = (data: unknown) =>
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(data)}\n\n`),
+            );
+          emit({ type: "start", messageId: "answer-1" });
+          emit({ type: "start-step" });
+          // While streaming, a read carries the model's own tool name, and nunio's metadata names it.
+          for (const part of reads) {
+            const toolMetadata = {
+              integration: "Testnotizen",
+              label: part.output.tool.label,
+            };
+            emit({
+              type: "tool-input-available",
+              toolCallId: part.toolCallId,
+              toolName: `testnotizen__${part.output.tool.name.replace(".", "_")}`,
+              input: { query: "Lenz" },
+              toolMetadata,
+            });
+            emit({
+              type: "tool-output-available",
+              toolCallId: part.toolCallId,
+              output: part.output,
+              toolMetadata,
+            });
+          }
+          emit({ type: "finish-step" });
+          finish = () => {
+            saved.push(question, answer);
+            emit({ type: "data-committed", data: { ...answer, question } });
+            emit({ type: "finish" });
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          };
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  const { unmount } = mount("chat-1");
+  await chatLoaded();
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Nachricht" }),
+    "Wann treffe ich Lenz?",
+  );
+  await user.click(screen.getByRole("button", { name: "Nachricht senden" }));
+  const line = "Testnotizen · Notizen durchsuchen 1× · Notiz lesen 2×";
+  try {
+    expect(await screen.findByText(line)).toBeTruthy();
+  } finally {
+    finish();
+  }
+  await screen.findByRole("article", { name: "Antwort von nunio" });
+  expect(screen.getAllByText(line)).toHaveLength(1);
+  unmount();
+
+  mount("chat-1");
+  expect(await screen.findByText(line)).toBeTruthy();
 });
