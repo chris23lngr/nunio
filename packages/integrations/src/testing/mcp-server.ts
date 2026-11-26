@@ -84,6 +84,8 @@ export interface FakeMcpServer {
   script(tool: string, ...faults: McpFault[]): void;
   /** Queues faults for the next authorizations, one each, in order; then authorizations approve again. */
   scriptAuthorization(...faults: AuthorizationFault[]): void;
+  /** Replaces the Protected Resource Metadata it serves, answers it with 404 for `null`, or restores it when omitted. */
+  setProtectedResourceMetadata(metadata?: Record<string, unknown> | null): void;
   /** Drift: adds a tool, or changes the definition of one with the same name. */
   setTool(definition: Tool): void;
   /** Drift: removes a tool. */
@@ -106,6 +108,8 @@ export interface TokenRequest {
   grantType: string;
   /** The client id it presented. */
   clientId?: string;
+  /** The `resource` it named (RFC 8707), if any. */
+  resource?: string;
 }
 
 export interface Revocation {
@@ -157,6 +161,8 @@ export async function startFakeMcpServer(
   // Set once the server listens, before any request arrives.
   let issuer = "";
   let mcpUrl = "";
+  /** Replaces the default Protected Resource Metadata; `null` answers 404. */
+  let protectedResource: Record<string, unknown> | null | undefined;
 
   const handler = createMcpHandler(({ authInfo }) => {
     const fault = authInfo?.extra?.fault as ServiceFault | undefined;
@@ -180,7 +186,10 @@ export async function startFakeMcpServer(
 
   async function handle(req: IncomingMessage, res: ServerResponse) {
     const path = new URL(req.url ?? "/", issuer).pathname;
-    if (path.startsWith("/.well-known/oauth-protected-resource"))
+    if (path.startsWith("/.well-known/oauth-protected-resource")) {
+      if (protectedResource === null)
+        return json(res, 404, { error: "not_found" });
+      if (protectedResource) return json(res, 200, protectedResource);
       return json(res, 200, {
         resource: mcpUrl,
         authorization_servers: [issuer],
@@ -188,6 +197,7 @@ export async function startFakeMcpServer(
         bearer_methods_supported: ["header"],
         resource_name: "Testnotizen",
       });
+    }
     if (path === "/.well-known/oauth-authorization-server")
       return json(res, 200, {
         issuer,
@@ -320,6 +330,7 @@ export async function startFakeMcpServer(
     tokenRequests.push({
       grantType: params.get("grant_type") ?? "",
       clientId: credentials(req, params).clientId,
+      ...(params.has("resource") && { resource: params.get("resource")! }),
     });
     const clientId = authenticate(req, params);
     if (clientId === undefined)
@@ -511,6 +522,9 @@ export async function startFakeMcpServer(
     revocations,
     scriptAuthorization(...faults) {
       authorizationFaults.push(...faults);
+    },
+    setProtectedResourceMetadata(metadata) {
+      protectedResource = metadata;
     },
     script(tool, ...faults) {
       scripts.set(tool, [...(scripts.get(tool) ?? []), ...faults]);
