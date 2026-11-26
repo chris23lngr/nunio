@@ -43,7 +43,7 @@ export {
   createIntegrationReads,
   type IntegrationReads,
   READ_TIMEOUT_MS,
-  type Read,
+  type ReadResult,
   type ReadSession,
 } from "./reads.js";
 export { READ_RESULT_MAX_CHARACTERS } from "./shape.js";

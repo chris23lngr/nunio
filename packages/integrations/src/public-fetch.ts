@@ -15,18 +15,18 @@ export function publicFetch(
   {
     timeoutMs,
     allowed = isPublic,
-    what,
+    purpose,
   }: {
     timeoutMs: number;
     allowed?: (address: string) => boolean;
     /** What the requests are for, in errors: "OAuth" or "MCP". */
-    what: string;
+    purpose: string;
   },
 ): typeof fetch {
   // A wrapper rather than globalThis.fetch itself, which the SDK would swap for its own guarded fetch.
   if (fakes) return (input, init) => fetch(input, init);
   const refused = (host: string) =>
-    new Error(`${what} host ${host} is not public`);
+    new Error(`${purpose} host ${host} is not public`);
   const connector = buildConnector({
     timeout: timeoutMs,
     lookup: (hostname, options, callback) =>
@@ -57,9 +57,9 @@ export function publicFetch(
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : input);
     if (url.protocol !== "https:")
-      throw new Error(`${what} requests use https only`);
+      throw new Error(`${purpose} requests use https only`);
     if (init?.redirect === "follow")
-      throw new Error(`${what} requests don't follow redirects`);
+      throw new Error(`${purpose} requests don't follow redirects`);
     return undiciFetch(input as never, {
       ...(init as object),
       redirect: init?.redirect ?? "error",

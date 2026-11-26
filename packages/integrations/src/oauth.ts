@@ -148,7 +148,7 @@ export function oauthFetch(
   return publicFetch(fakes, {
     timeoutMs: OAUTH_REQUEST_TIMEOUT_MS,
     allowed,
-    what: "OAuth",
+    purpose: "OAuth",
   });
 }
 

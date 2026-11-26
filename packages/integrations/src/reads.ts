@@ -25,7 +25,7 @@ const MAX_RETRY_AFTER_MS = 5_000;
 const DEFAULT_RETRY_DELAY_MS = 500;
 
 /** One read as the model gets it: answered or failed, with text that is either fenced service text or nunio's own. */
-export interface Read {
+export interface ReadResult {
   outcome: "answered" | "failed";
   text: string;
 }
@@ -37,7 +37,7 @@ export interface ReadSession {
     toolName: string,
     args: Record<string, unknown>,
     options: { signal: AbortSignal },
-  ): Promise<Read>;
+  ): Promise<ReadResult>;
   /** Closes the client, if a read opened one. */
   close(): Promise<void>;
 }
@@ -75,7 +75,10 @@ function serverFetch(
   type: "http" | "sse",
   fakes: boolean,
 ): typeof fetch {
-  const base = publicFetch(fakes, { timeoutMs: READ_TIMEOUT_MS, what: "MCP" });
+  const base = publicFetch(fakes, {
+    timeoutMs: READ_TIMEOUT_MS,
+    purpose: "MCP",
+  });
   const server = new URL(mcpUrl);
   return async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input);
@@ -99,7 +102,10 @@ const noStreamableHttp = (error: unknown) =>
   MCPClientError.isInstance(error) &&
   (error.statusCode === 404 || error.statusCode === 405);
 
-/** Opens an MCP client to the server, over Streamable HTTP with SSE as the fallback, or SSE when the row says so. */
+/**
+ * Opens an MCP client to the server, over Streamable HTTP with SSE as the fallback, or SSE when the row says so.
+ * Listing the server's tools against the pins comes with drift (#295).
+ */
 async function connect(
   server: McpServer,
   fakes: boolean,
@@ -138,7 +144,8 @@ function failureOf(
       text: "This Connection can't be read right now.",
     };
   if (MCPClientError.isInstance(error)) {
-    // A JSON-RPC error is the service's answer: its message is service text.
+    // A JSON-RPC error is the service's answer: its message is service text. A 401 or 403 is final like any 4xx
+    // until refreshing and Needs reconnection come (#304).
     if (error.code !== undefined)
       return { kind: "service", message: error.message };
     const status = error.statusCode;
@@ -181,11 +188,13 @@ export function openMcpReads(
       for (let attempt = 1; ; attempt++) {
         const observed: { ms?: number } = {};
         try {
+          // 30 s for the call, opening the client included.
+          const until = Date.now() + READ_TIMEOUT_MS;
           const called = await retryAfter.run(observed, async () =>
             (await opened(signal)).callTool({
               name: toolName,
               arguments: args,
-              options: { signal, timeout: READ_TIMEOUT_MS },
+              options: { signal, timeout: Math.max(1, until - Date.now()) },
             }),
           );
           // A legacy server's result is a bare `toolResult`.

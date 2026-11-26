@@ -120,29 +120,23 @@ export async function partsFrom(
     if (
       typeof p.type === "string" &&
       p.type.startsWith("tool-") &&
-      p.state === "output-available" &&
-      isIntegrationRead(p.output)
-    )
-      return [
-        {
-          type: "tool-integration",
-          toolCallId: p.toolCallId as string,
-          input: {},
-          output: p.output,
-        },
-      ];
-    if (
-      typeof p.type === "string" &&
-      p.type.startsWith("tool-") &&
       p.state === "output-available"
     )
       return [
-        {
-          type: p.type,
-          toolCallId: p.toolCallId,
-          input: p.input,
-          output: p.output,
-        } as ChatPart,
+        // An Integration read is kept under one type, whatever the model called it, and without its arguments.
+        isIntegrationRead(p.output)
+          ? {
+              type: "tool-integration",
+              toolCallId: p.toolCallId as string,
+              input: {},
+              output: p.output,
+            }
+          : ({
+              type: p.type,
+              toolCallId: p.toolCallId,
+              input: p.input,
+              output: p.output,
+            } as ChatPart),
       ];
     // A proposal waits for the student; it shows as the Action it is asked as.
     if (p.state === "approval-requested") {

@@ -656,6 +656,8 @@ export function ChatScreen({
                       integrations.error?.message
                     }
                     onToggle={(key) => {
+                      // An open Chat's saved Connections must load first, or a switch would drop them.
+                      if (id && !chat.data) return;
                       const next = connections.includes(key)
                         ? connections.filter((value) => value !== key)
                         : [...connections, key];
