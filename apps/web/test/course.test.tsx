@@ -744,3 +744,48 @@ test("confirms the Course's default email Destination, and removes it", async ()
     { method: "POST", path, body: { address: null } },
   ]);
 });
+
+test("drops a refused address's error once the student cancels or edits again", async () => {
+  serve(page({ emailDestination: null }));
+  api.route("POST", `/api/me/courses/${courseId}/email-destination`, () =>
+    Response.json({ error: "invalid" }, { status: 400 }),
+  );
+  renderScreen();
+  const destination = await screen.findByRole("group", {
+    name: "Abgabe per E-Mail",
+  });
+  const enter = async () => {
+    await userEvent.click(
+      within(destination).getByRole("button", {
+        name: "E-Mail-Adresse eintragen",
+      }),
+    );
+    await userEvent.type(
+      within(destination).getByRole("textbox", { name: "E-Mail-Adresse" }),
+      "lehrstuhl@uni-beispiel.de",
+    );
+    await userEvent.click(
+      within(destination).getByRole("button", { name: "Bestätigen" }),
+    );
+    await within(destination).findByText(
+      "Das ist keine gültige E-Mail-Adresse.",
+    );
+  };
+
+  await enter();
+  await userEvent.click(
+    within(destination).getByRole("button", { name: "Abbrechen" }),
+  );
+  expect(within(destination).queryByRole("alert")).toBeNull();
+
+  await enter();
+  await userEvent.click(
+    within(destination).getByRole("button", { name: "Abbrechen" }),
+  );
+  await userEvent.click(
+    within(destination).getByRole("button", {
+      name: "E-Mail-Adresse eintragen",
+    }),
+  );
+  expect(within(destination).queryByRole("alert")).toBeNull();
+});

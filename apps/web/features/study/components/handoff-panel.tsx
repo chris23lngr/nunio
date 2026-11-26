@@ -140,6 +140,7 @@ export function HandoffPanel({
                     ? () => confirmEmail.mutate(null)
                     : null
                 }
+                onDismissError={confirmEmail.reset}
               />
               {mailto && (
                 <span className="text-xs text-base-500">

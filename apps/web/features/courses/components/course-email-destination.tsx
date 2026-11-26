@@ -25,10 +25,13 @@ export function CourseEmailDestination({
         throw new Error("Das ist keine gültige E-Mail-Adresse.");
       if (!result.data) throw new Error("Das konnte nicht gespeichert werden.");
     },
-    onSettled: () =>
+    onSettled: () => {
       queryClient.invalidateQueries({
         queryKey: coursePageQuery(apiOrigin, courseId).queryKey,
-      }),
+      });
+      // Its Obligations without their own Destination inherit the default.
+      queryClient.invalidateQueries({ queryKey: [apiOrigin, "handoff"] });
+    },
   });
   return (
     <div className="flex flex-col gap-2">
@@ -47,6 +50,7 @@ export function CourseEmailDestination({
         error={confirm.error?.message ?? null}
         onConfirm={(address) => confirm.mutateAsync(address)}
         onClear={() => confirm.mutate(null)}
+        onDismissError={confirm.reset}
       />
     </div>
   );

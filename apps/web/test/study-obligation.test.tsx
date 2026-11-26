@@ -2,6 +2,7 @@ import { SidebarProvider } from "@nunio/ui/components/sidebar/sidebar";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
+import { CourseEmailDestination } from "@/features/courses/components/course-email-destination";
 import { ObligationScreen } from "@/features/study/obligation-screen";
 import { api } from "./api";
 import { TestProviders } from "./providers";
@@ -463,6 +464,75 @@ test("offers an address found in the Obligation's own wording beside the Course'
   await waitFor(() =>
     expect(sent).toEqual([{ address: "weber@uni-beispiel.de" }]),
   );
+});
+
+test("shows a Course default confirmed elsewhere on an open Obligation at once", async () => {
+  serveContext();
+  let courseDefault: string | null = null;
+  api.route("GET", `/api/me/obligations/${sheetId}/handoff`, () =>
+    Response.json({
+      obligation: {
+        id: sheetId,
+        title: "Programmierprojekt: Kürzeste Wege",
+        due: { date: "2099-12-04", time: "23:59", timeZone: null },
+        destination: null,
+        reportedSubmittedAt: null,
+        emailDestination: courseDefault && {
+          address: courseDefault,
+          confirmedAt: "2026-11-18T13:20:00.000Z",
+          level: "course",
+          provenance: { kind: "entry" },
+        },
+        emailPrefill: null,
+      },
+      rule: allowed,
+      drafts: [],
+      mailto: courseDefault && mailto(courseDefault),
+    }),
+  );
+  api.route(
+    "POST",
+    `/api/me/courses/${analysisId}/email-destination`,
+    async (request) => {
+      courseDefault = ((await request.json()) as { address: string }).address;
+      return Response.json({ status: "ok" });
+    },
+  );
+  render(
+    <TestProviders>
+      <SidebarProvider>
+        <ObligationScreen apiOrigin={api.origin} id={sheetId} />
+        <section aria-label="Kurs">
+          <CourseEmailDestination
+            apiOrigin={api.origin}
+            courseId={analysisId}
+            destination={null}
+          />
+        </section>
+      </SidebarProvider>
+    </TestProviders>,
+  );
+  const handoff = await screen.findByRole("region", {
+    name: "Abgabe vorbereiten",
+  });
+  const course = screen.getByRole("region", { name: "Kurs" });
+  await within(handoff).findByRole("button", {
+    name: "E-Mail-Adresse eintragen",
+  });
+
+  await userEvent.click(
+    within(course).getByRole("button", { name: "E-Mail-Adresse eintragen" }),
+  );
+  await userEvent.type(
+    within(course).getByRole("textbox", { name: "E-Mail-Adresse" }),
+    "lehrstuhl@uni-beispiel.de",
+  );
+  await userEvent.click(
+    within(course).getByRole("button", { name: "Bestätigen" }),
+  );
+
+  await within(handoff).findByText("lehrstuhl@uni-beispiel.de");
+  expect(within(handoff).getByText("Standard des Kurses")).toBeTruthy();
 });
 
 test("shows the Course's default email Destination, and lets the student give the Obligation its own and remove it", async () => {

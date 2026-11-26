@@ -15,6 +15,7 @@ export function EmailDestination({
   error,
   onConfirm,
   onClear,
+  onDismissError,
 }: {
   confirmed: Shown | null;
   prefill: Shown | null;
@@ -23,9 +24,15 @@ export function EmailDestination({
   onConfirm: (address: string) => Promise<unknown>;
   /** Null when nothing of its own is confirmed, such as when the Course's default applies. */
   onClear: (() => void) | null;
+  /** A refused address's error goes once the student cancels or edits again. */
+  onDismissError: () => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const inputId = useId();
+  const edit = (address: string | null) => {
+    onDismissError();
+    setEditing(address);
+  };
 
   const confirm = (address: string) =>
     onConfirm(address).then(
@@ -65,7 +72,7 @@ export function EmailDestination({
               type="button"
               size="sm"
               variant="ghost"
-              onClick={() => setEditing(null)}
+              onClick={() => edit(null)}
             >
               Abbrechen
             </Button>
@@ -77,7 +84,7 @@ export function EmailDestination({
             <>
               <Address shown={confirmed} />
               <div className="flex gap-3">
-                <ActionButton onClick={() => setEditing(confirmed.address)}>
+                <ActionButton onClick={() => edit(confirmed.address)}>
                   Ändern
                 </ActionButton>
                 {onClear && (
@@ -99,7 +106,7 @@ export function EmailDestination({
                   Bestätigen
                 </ActionButton>
                 {!confirmed && (
-                  <ActionButton onClick={() => setEditing(prefill.address)}>
+                  <ActionButton onClick={() => edit(prefill.address)}>
                     Ändern
                   </ActionButton>
                 )}
@@ -108,7 +115,7 @@ export function EmailDestination({
           )}
           {!confirmed && !prefill && (
             <div>
-              <ActionButton onClick={() => setEditing("")}>
+              <ActionButton onClick={() => edit("")}>
                 E-Mail-Adresse eintragen
               </ActionButton>
             </div>
