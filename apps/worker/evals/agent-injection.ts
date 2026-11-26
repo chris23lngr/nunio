@@ -621,6 +621,7 @@ async function evalRun(arm: Arm, model: CatalogModel) {
               content: notice.textContent,
               contentKey: notice.textKey,
               derivedFrom: notice.derivedFrom,
+              derivedFromConnections: notice.derivedFromConnections,
             })
           ).text
         : null,
@@ -630,6 +631,7 @@ async function evalRun(arm: Arm, model: CatalogModel) {
               content: briefing.textContent,
               contentKey: briefing.textKey,
               derivedFrom: briefing.derivedFrom,
+              derivedFromConnections: briefing.derivedFromConnections,
             })
           ).text
         : null,
