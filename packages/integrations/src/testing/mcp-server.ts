@@ -36,6 +36,11 @@ export interface FakeMcpServerOptions {
   tokenLifetime?: number;
   /** The account name each token response carries as `workspace_name`, as Notion's does. Default "Testnotizen". */
   workspaceName?: string;
+  /**
+   * Speak only legacy SSE: a GET on the MCP URL opens the event stream and names the endpoint to POST to, and a POST
+   * on the MCP URL is refused with 405, as by a server without Streamable HTTP.
+   */
+  legacySse?: boolean;
 }
 
 /** What the next authorization does instead of approving: redirect with `error=access_denied`, or name a wrong `iss`. */
@@ -56,7 +61,10 @@ export type McpFault =
   | { kind: "delay"; ms: number }
   /** Never answers; the request stays open until the server stops. */
   | { kind: "hang" }
-  /** Closes the connection without answering, after the call was received and recorded. */
+  /**
+   * Closes the connection without answering, after the call was received and recorded. Over legacy SSE it closes the
+   * session's event stream, which ends the session.
+   */
   | { kind: "drop" }
   /** A result that is only a 2 KB PNG, 4 KB of MP3 audio, or an 8 KB PDF resource. */
   | { kind: "image" | "audio" | "binary-resource" }
@@ -76,6 +84,8 @@ export interface FakeMcpServer {
   mcpUrl: string;
   /** Every `tools/call` that reached the service with a valid token, in order. */
   readonly calls: readonly ReceivedCall[];
+  /** How many requests reached the MCP endpoint at all, opening a session included, with a valid token or not. */
+  readonly mcpRequests: number;
   /** Every request to the token endpoint, in order, whether it succeeded or not. */
   readonly tokenRequests: readonly TokenRequest[];
   /** Every request to the revocation endpoint, in order. */
@@ -150,6 +160,7 @@ export async function startFakeMcpServer(
   const accessTokens = new Map<string, AccessToken>();
   const refreshTokens = new Map<string, Authorization>();
   const calls: ReceivedCall[] = [];
+  let mcpRequests = 0;
   const tokenRequests: TokenRequest[] = [];
   const revocations: Revocation[] = [];
   const authorizationFaults: AuthorizationFault[] = [];
@@ -161,6 +172,8 @@ export async function startFakeMcpServer(
   // Set once the server listens, before any request arrives.
   let issuer = "";
   let mcpUrl = "";
+  /** Legacy SSE sessions by id, each with the event stream its answers go back on. */
+  const sseSessions = new Map<string, ServerResponse>();
   /** Replaces the default Protected Resource Metadata; `null` answers 404. */
   let protectedResource: Record<string, unknown> | null | undefined;
 
@@ -225,6 +238,10 @@ export async function startFakeMcpServer(
       return token(req, res, new URLSearchParams(await body(req)));
     if (path === "/revoke" && req.method === "POST")
       return revoke(req, res, new URLSearchParams(await body(req)));
+    if (path === "/mcp" || path === "/mcp/messages") mcpRequests++;
+    if (options.legacySse && path === "/mcp") return serveSse(req, res);
+    if (options.legacySse && path === "/mcp/messages")
+      return serveSseMessage(req, res);
     if (path === "/mcp") return serveMcp(req, res);
     json(res, 404, { error: "not_found" });
   }
@@ -425,16 +442,124 @@ export async function startFakeMcpServer(
     return { "www-authenticate": `Bearer ${[metadata, ...params].join(", ")}` };
   }
 
-  async function serveMcp(req: IncomingMessage, res: ServerResponse) {
+  /** The request's valid access token, or undefined after answering 401 with the Bearer challenge. */
+  function authorized(req: IncomingMessage, res: ServerResponse) {
     const bearer = /^Bearer (.+)$/i.exec(req.headers.authorization ?? "")?.[1];
     const access = bearer === undefined ? undefined : accessTokens.get(bearer);
-    if (!access || access.expiresAt <= Date.now())
+    if (access && access.expiresAt > Date.now())
+      return { bearer: bearer!, access };
+    json(
+      res,
+      401,
+      { error: "invalid_token" },
+      challenge(...(bearer === undefined ? [] : ['error="invalid_token"'])),
+    );
+    return undefined;
+  }
+
+  /** Legacy SSE: opens a session's event stream and names the endpoint its messages go to. */
+  function serveSse(req: IncomingMessage, res: ServerResponse) {
+    if (req.method !== "GET")
+      return json(res, 405, { error: "method_not_allowed" });
+    if (!authorized(req, res)) return;
+    const session = secret();
+    sseSessions.set(session, res);
+    res.on("close", () => sseSessions.delete(session));
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-store",
+    });
+    res.write(`event: endpoint\ndata: /mcp/messages?session=${session}\n\n`);
+  }
+
+  /** Legacy SSE: accepts a message with 202 and sends its answer on the session's event stream. */
+  async function serveSseMessage(req: IncomingMessage, res: ServerResponse) {
+    const authorization = authorized(req, res);
+    if (!authorization) return;
+    const stream = sseSessions.get(
+      new URL(req.url!, issuer).searchParams.get("session") ?? "",
+    );
+    if (!stream) return json(res, 404, { error: "unknown_session" });
+    let message: {
+      id?: string | number;
+      method?: string;
+      params?: Record<string, unknown>;
+    };
+    try {
+      message = JSON.parse(await body(req));
+    } catch {
+      return json(res, 400, { error: "parse_error" });
+    }
+    let fault: McpFault | undefined;
+    if (message.method === "tools/call") {
+      const tool = String(message.params?.name);
+      calls.push({
+        tool,
+        arguments: (message.params?.arguments ?? {}) as Record<string, unknown>,
+        token: authorization.bearer,
+      });
+      fault = scripts.get(tool)?.shift();
+    }
+    if (fault?.kind === "http")
       return json(
         res,
-        401,
-        { error: "invalid_token" },
-        challenge(...(bearer === undefined ? [] : ['error="invalid_token"'])),
+        fault.status,
+        { error: `Scripted HTTP ${fault.status}` },
+        fault.retryAfter === undefined
+          ? {}
+          : { "retry-after": String(fault.retryAfter) },
       );
+    res.writeHead(202).end();
+    if (message.id === undefined || fault?.kind === "hang") return;
+    if (fault?.kind === "drop") return void stream.destroy();
+    if (fault?.kind === "delay") {
+      const { ms } = fault;
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      fault = undefined;
+    }
+    const answer = (result: unknown) =>
+      stream.write(
+        `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: message.id, ...(result as object) })}\n\n`,
+      );
+    try {
+      switch (message.method) {
+        case "initialize":
+          return answer({
+            result: {
+              protocolVersion: "2025-11-25",
+              capabilities: { tools: {} },
+              serverInfo: { name: "testnotizen", version: "1.0.0" },
+            },
+          });
+        case "tools/list":
+          return answer({ result: { tools: [...tools.values()] } });
+        case "tools/call":
+          return answer({
+            result: fault
+              ? faultResult(fault as ServiceFault)
+              : testnotizen(
+                  String(message.params?.name),
+                  (message.params?.arguments ?? {}) as Record<string, unknown>,
+                ),
+          });
+        default:
+          return answer({
+            error: {
+              code: ProtocolErrorCode.MethodNotFound,
+              message: "Method not found",
+            },
+          });
+      }
+    } catch (error) {
+      if (!(error instanceof ProtocolError)) throw error;
+      return answer({ error: { code: error.code, message: error.message } });
+    }
+  }
+
+  async function serveMcp(req: IncomingMessage, res: ServerResponse) {
+    const authorization = authorized(req, res);
+    if (!authorization) return;
+    const { bearer, access } = authorization;
     if (req.method !== "POST") return mcp(req, res);
     let message: { method?: unknown; params?: Record<string, unknown> };
     try {
@@ -518,6 +643,9 @@ export async function startFakeMcpServer(
     url: issuer,
     mcpUrl,
     calls,
+    get mcpRequests() {
+      return mcpRequests;
+    },
     tokenRequests,
     revocations,
     scriptAuthorization(...faults) {

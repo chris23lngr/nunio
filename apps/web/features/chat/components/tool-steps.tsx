@@ -8,12 +8,14 @@ import {
   TraceTitle,
 } from "@nunio/ui/components/trace/trace";
 import {
+  Blocks,
   BookOpen,
   CalendarDays,
   CircleAlert,
   LoaderCircle,
   Search,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import type { ChatUIMessage } from "../api/chat-queries";
 
 export type ToolPart = Extract<
@@ -78,21 +80,87 @@ function describe(part: ToolPart) {
   }
 }
 
+/**
+ * The Integration and tool label of a read through a Connection: from its saved output, or while it streams from the
+ * tool's metadata, which the model never sees.
+ */
+function integrationRead(
+  part: ToolPart,
+): { integration: string; label: string } | undefined {
+  if (part.type === "tool-integration")
+    return part.state === "output-available"
+      ? {
+          integration: part.output.integration.name,
+          label: part.output.tool.label,
+        }
+      : undefined;
+  const metadata = (
+    part as { toolMetadata?: { integration?: unknown; label?: unknown } }
+  ).toolMetadata;
+  return typeof metadata?.integration === "string" &&
+    typeof metadata.label === "string"
+    ? { integration: metadata.integration, label: metadata.label }
+    : undefined;
+}
+
+/** One step line: a single tool call, or every read through one Integration with its per-tool counts. */
+type Step = {
+  key: string;
+  parts: ToolPart[];
+  icon: ReactNode;
+  title: string;
+  result?: string;
+};
+
+/** The answer's steps in order; an Integration's reads join into one line where its first read is. */
+function stepsOf(parts: ToolPart[]): Step[] {
+  const steps: Step[] = [];
+  const reads = new Map<string, { step: Step; counts: Map<string, number> }>();
+  for (const part of parts) {
+    const read = integrationRead(part);
+    if (read) {
+      let group = reads.get(read.integration);
+      if (!group) {
+        group = {
+          step: {
+            key: part.toolCallId,
+            parts: [],
+            icon: <Blocks />,
+            title: "",
+          },
+          counts: new Map(),
+        };
+        reads.set(read.integration, group);
+        steps.push(group.step);
+      }
+      group.step.parts.push(part);
+      group.counts.set(read.label, (group.counts.get(read.label) ?? 0) + 1);
+      group.step.title = [
+        read.integration,
+        ...[...group.counts].map(([label, n]) => `${label} ${n}×`),
+      ].join(" · ");
+      continue;
+    }
+    const step = describe(part);
+    if (step) steps.push({ key: part.toolCallId, parts: [part], ...step });
+  }
+  return steps;
+}
+
 /** What nunio read for an answer, one line per step, from when it starts until the answer is saved. */
 export function ToolSteps({ parts }: { parts: ToolPart[] }) {
   return (
     <Trace>
-      {parts.map((part) => {
-        const step = describe(part);
-        if (!step) return null;
-        const status =
-          part.state === "output-available"
-            ? undefined
-            : part.state === "output-error"
-              ? "error"
-              : "running";
+      {stepsOf(parts).map((step) => {
+        const status = step.parts.every(
+          (part) => part.state === "output-available",
+        )
+          ? undefined
+          : step.parts.some((part) => part.state === "output-error")
+            ? "error"
+            : "running";
         return (
-          <div key={part.toolCallId}>
+          <div key={step.key}>
             <TraceLine status={status}>
               <TraceIcon>
                 {status === "running" ? (

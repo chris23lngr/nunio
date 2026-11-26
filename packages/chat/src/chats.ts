@@ -4,6 +4,7 @@ import type { Artifacts } from "@nunio/artifacts";
 import type { PrismaClient } from "@nunio/db";
 import type { Delegation, Principal, Transaction } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
+import type { IntegrationReads } from "@nunio/integrations";
 import type { SourceKeys } from "@nunio/keys";
 import type {
   Citation,
@@ -19,6 +20,8 @@ import { agendaTool } from "./agenda.js";
 import { chatContext } from "./context.js";
 import { courseFactsTool } from "./course-facts.js";
 import { historyFrom, historyTurns } from "./history.js";
+import type { ReadableTool } from "./integration-reads.js";
+import { integrationReadTools } from "./integration-reads.js";
 import type { ChatPart } from "./parts.js";
 import { isProposal, partsFrom } from "./parts.js";
 import type { ArtifactStart } from "./practice.js";
@@ -93,6 +96,7 @@ export function createChats({
   keys,
   reader,
   delegation,
+  integrations,
   plan,
   clock,
   artifacts,
@@ -103,6 +107,8 @@ export function createChats({
   keys: SourceKeys;
   reader: KnowledgeReader;
   delegation: Delegation;
+  /** Reads through the Connections a Chat may read. */
+  integrations: Pick<IntegrationReads, "open">;
   plan: Pick<Plan, "timeZone" | "view" | "check">;
   clock: { now(): Date };
   artifacts: Pick<Artifacts, "request" | "list">;
@@ -304,16 +310,74 @@ export function createChats({
       }),
     );
   }
+  /**
+   * The read tools of the Connections the Chat may read: selected, Connected, and through an offered MCP
+   * Integration. Email's tools join with its read slice (#292).
+   */
+  async function readableTools(
+    p: Principal,
+    chatId: string,
+  ): Promise<ReadableTool[]> {
+    const selected = await withOwner(db, p, (tx) =>
+      tx.chatConnection.findMany({
+        where: {
+          chatId,
+          connection: {
+            state: "connected",
+            integration: { status: "offered", kind: "mcp" },
+          },
+        },
+        orderBy: { connection: { integrationKey: "asc" } },
+        select: {
+          connection: {
+            select: {
+              id: true,
+              integration: {
+                select: {
+                  key: true,
+                  name: true,
+                  tools: { where: { class: "read" }, orderBy: { name: "asc" } },
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+    return selected.flatMap(({ connection: { id, integration } }) =>
+      integration.tools.map((tool) => ({
+        connectionId: id,
+        integration: { key: integration.key, name: integration.name },
+        name: tool.name,
+        label: tool.label,
+        definition: tool.definition as ReadableTool["definition"],
+      })),
+    );
+  }
+  /** The student's Connections to these Integrations, by id; null if any of them is missing. */
+  async function connectionIds(
+    tx: Transaction,
+    integrationKeys: readonly string[],
+  ) {
+    const keys = [...new Set(integrationKeys)];
+    const rows = await tx.connection.findMany({
+      where: { integrationKey: { in: keys } },
+      select: { id: true },
+    });
+    return rows.length === keys.length ? rows.map((row) => row.id) : null;
+  }
   /** What answering in a Chat needs: its history, the context message, and this turn's tools. */
   async function turnFor(p: Principal, chatId: string) {
-    const [history, timeZone] = await Promise.all([
+    const [history, timeZone, readable] = await Promise.all([
       earlier(p, chatId),
       plan.timeZone(p),
+      readableTools(p, chatId),
     ]);
     if (!history) return null;
     const context = chatContext(clock.now(), timeZone, history.courses);
     const turn = createTurn();
     const started: { current?: ArtifactStart; claimed?: boolean } = {};
+    const reads = integrationReadTools(turn, integrations, p, readable);
     const tools = {
       // A Chat with nothing selected has nothing to search, nor Topics to practise.
       ...(history.selected
@@ -358,6 +422,7 @@ export function createChats({
       proposeStudyBlockRemove: proposeStudyBlockRemoveTool(),
       proposeTask: proposeTaskTool(),
       proposeTaskReopen: proposeTaskReopenTool(),
+      ...reads.tools,
     };
     /** Proposals that passed the Plan's rules, by tool call, waiting for the student once the answer is saved. */
     const proposals = new Map<string, Proposal>();
@@ -375,7 +440,16 @@ export function createChats({
       proposeTask: approve.task,
       proposeTaskReopen: approve.reopen,
     };
-    return { history, context, turn, tools, proposals, toolApproval, started };
+    return {
+      history,
+      context,
+      turn,
+      tools,
+      proposals,
+      toolApproval,
+      started,
+      closeReads: reads.close,
+    };
   }
   /** The saved answers of a Chat, newest first, with their parts opened. */
   async function answers(p: Principal, chatId: string) {
@@ -623,18 +697,62 @@ export function createChats({
                 course: { select: { id: true, title: true, code: true } },
               },
             },
+            connections: {
+              select: { connection: { select: { integrationKey: true } } },
+              orderBy: { connection: { integrationKey: "asc" } },
+            },
           },
         }),
       );
       if (!chat) return null;
       const messages = await this.messages(p, id);
       return messages
-        ? { id, courses: chat.courses.map(({ course }) => course), messages }
+        ? {
+            id,
+            courses: chat.courses.map(({ course }) => course),
+            connections: chat.connections.map(
+              ({ connection }) => connection.integrationKey,
+            ),
+            messages,
+          }
         : null;
+    },
+    /**
+     * Switches on exactly these Connections for the Chat, by their Integration's key, and returns them; gone when the
+     * Chat or one of the student's Connections is.
+     */
+    async setConnections(
+      p: Principal,
+      chatId: string,
+      integrationKeys: string[],
+    ) {
+      return withOwner(db, p, async (tx, studentId) => {
+        if (!(await tx.chat.findUnique({ where: { id: chatId } })))
+          return { status: "gone" } as const;
+        const ids = await connectionIds(tx, integrationKeys);
+        if (!ids) return { status: "gone" } as const;
+        await tx.chatConnection.deleteMany({ where: { chatId } });
+        await tx.chatConnection.createMany({
+          data: ids.map((connectionId) => ({
+            chatId,
+            connectionId,
+            studentId,
+          })),
+        });
+        return {
+          status: "ok",
+          connections: [...new Set(integrationKeys)].sort(),
+        } as const;
+      });
     },
     async create(
       p: Principal,
-      selection: { courseIds: string[]; sourceIds: string[] },
+      selection: {
+        courseIds: string[];
+        sourceIds: string[];
+        /** The Connections it may read, by their Integration's key; none by default. */
+        connections?: string[];
+      },
     ) {
       return withOwner(db, p, async (tx, studentId) => {
         // RLS hides another student's rows, so a foreign ID counts as gone like a deleted one.
@@ -644,9 +762,14 @@ export function createChats({
         const sources = await tx.source.count({
           where: { id: { in: selection.sourceIds }, deletedAt: null },
         });
+        const connections = await connectionIds(
+          tx,
+          selection.connections ?? [],
+        );
         if (
           courses !== new Set(selection.courseIds).size ||
-          sources !== new Set(selection.sourceIds).size
+          sources !== new Set(selection.sourceIds).size ||
+          !connections
         )
           return { status: "gone" } as const;
         const chat = await tx.chat.create({
@@ -663,6 +786,13 @@ export function createChats({
           data: [...new Set(selection.sourceIds)].map((sourceId) => ({
             chatId: chat.id,
             sourceId,
+            studentId,
+          })),
+        });
+        await tx.chatConnection.createMany({
+          data: connections.map((connectionId) => ({
+            chatId: chat.id,
+            connectionId,
             studentId,
           })),
         });
@@ -711,6 +841,7 @@ export function createChats({
         proposals,
         toolApproval,
         started: artifact,
+        closeReads,
       } = setUp;
       const messages: ModelMessage[] = [
         ...history.turns.flatMap((turn): ModelMessage[] => [
@@ -725,39 +856,44 @@ export function createChats({
         chunks.push(chunk);
         options.write?.(chunk);
       };
-      for (let n = 1; ; n++) {
-        options.signal?.throwIfAborted();
-        const input = {
-          messages,
-          tools,
-          toolApproval,
-          last: n === maxSteps,
-        };
-        const stepped = await retryRateLimited(
-          () =>
-            delegation.meter(
-              p,
-              { microUsd: answerer.estimateMicroUsd(input) },
-              (deadline) =>
-                definitely(() =>
-                  answerer.step(input, {
-                    signal: options.signal
-                      ? AbortSignal.any([deadline, options.signal])
-                      : deadline,
-                    write,
-                  }),
-                ),
-            ),
-          options.signal,
-        );
-        const refusal = turn.refusal();
-        if (refusal === "gone") return { status: "gone" } as const;
-        if (refusal) return { status: "refused", reason: refusal } as const;
-        if (stepped.status === "refused") return stepped;
-        messages.push(...stepped.value.messages);
-        // A proposal waits for the student, so the turn ends with it; its call has no result to send on.
-        if (stepped.value.finishReason === "stop" || awaitsApproval(messages))
-          break;
+      // Each Connection read in the turn has its session open until the model is done.
+      try {
+        for (let n = 1; ; n++) {
+          options.signal?.throwIfAborted();
+          const input = {
+            messages,
+            tools,
+            toolApproval,
+            last: n === maxSteps,
+          };
+          const stepped = await retryRateLimited(
+            () =>
+              delegation.meter(
+                p,
+                { microUsd: answerer.estimateMicroUsd(input) },
+                (deadline) =>
+                  definitely(() =>
+                    answerer.step(input, {
+                      signal: options.signal
+                        ? AbortSignal.any([deadline, options.signal])
+                        : deadline,
+                      write,
+                    }),
+                  ),
+              ),
+            options.signal,
+          );
+          const refusal = turn.refusal();
+          if (refusal === "gone") return { status: "gone" } as const;
+          if (refusal) return { status: "refused", reason: refusal } as const;
+          if (stepped.status === "refused") return stepped;
+          messages.push(...stepped.value.messages);
+          // A proposal waits for the student, so the turn ends with it; its call has no result to send on.
+          if (stepped.value.finishReason === "stop" || awaitsApproval(messages))
+            break;
+        }
+      } finally {
+        await closeReads();
       }
       step("generation");
       options.signal?.throwIfAborted();
