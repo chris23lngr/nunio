@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 import { PageHeader } from "@/features/shared/components/page-header";
 import { coursePageQuery, topicAreasQuery } from "./api/course-queries";
 import { Agenda } from "./components/agenda";
+import { CourseEmailDestination } from "./components/course-email-destination";
 import { CourseSources, UploadButton } from "./components/course-sources";
 import { DisagreementCard } from "./components/disagreement-card";
 import { TopicAreaList, TopicList } from "./components/topic-list";
@@ -220,9 +221,18 @@ export function CourseScreen({
                   />
                 </Section>
               </div>
-              <Section title="Termine" className="gap-4">
-                <Agenda dated={page.data.dated} now={now} />
-              </Section>
+              <div className="flex flex-col gap-12">
+                <Section title="Termine" className="gap-4">
+                  <Agenda dated={page.data.dated} now={now} />
+                </Section>
+                <Section title="Abgabe per E-Mail" className="gap-2">
+                  <CourseEmailDestination
+                    apiOrigin={apiOrigin}
+                    courseId={id}
+                    destination={page.data.emailDestination}
+                  />
+                </Section>
+              </div>
             </div>
           </>
         )}

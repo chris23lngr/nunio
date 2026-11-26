@@ -347,6 +347,150 @@ test("reports the Abgabe as submitted through Handoff and takes it back", async 
   expect(reported).toEqual([true, false]);
 });
 
+const allowed = {
+  status: "allowed",
+  level: "course",
+  text: null,
+  provenance: { kind: "entry" },
+};
+const mailto = (address: string) =>
+  `mailto:${address}?subject=Abgabe%3A%20Programmierprojekt&body=Guten%20Tag`;
+
+test("prefills the email Destination from the student's Source, confirms it with one click, and offers the mailto draft", async () => {
+  serveContext();
+  let confirmed: string | null = null;
+  const sent: unknown[] = [];
+  api.route("GET", `/api/me/obligations/${sheetId}/handoff`, () =>
+    Response.json({
+      obligation: {
+        id: sheetId,
+        title: "Programmierprojekt: Kürzeste Wege",
+        due: { date: "2099-12-04", time: "23:59", timeZone: null },
+        destination: "Per E-Mail an weber@uni-beispiel.de",
+        reportedSubmittedAt: null,
+        emailDestination: confirmed && {
+          address: confirmed,
+          confirmedAt: "2026-11-18T13:20:00.000Z",
+          level: "obligation",
+          provenance,
+        },
+        emailPrefill: { address: "weber@uni-beispiel.de", provenance },
+      },
+      rule: allowed,
+      drafts: [],
+      mailto: confirmed && mailto(confirmed),
+    }),
+  );
+  api.route(
+    "POST",
+    `/api/me/obligations/${sheetId}/email-destination`,
+    async (request) => {
+      const body = (await request.json()) as { address: string | null };
+      sent.push(body);
+      confirmed = body.address;
+      return Response.json({ status: "ok" });
+    },
+  );
+
+  renderObligation(sheetId);
+
+  const destination = await screen.findByRole("group", {
+    name: "Abgabe per E-Mail",
+  });
+  expect(within(destination).getByText("weber@uni-beispiel.de")).toBeTruthy();
+  expect(
+    within(destination).getByText(
+      "Gefunden in Syllabus ADS, S. 4 · noch nicht bestätigt",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "E-Mail vorbereiten" })).toBeNull();
+
+  await userEvent.click(
+    within(destination).getByRole("button", { name: "Bestätigen" }),
+  );
+
+  const link = await screen.findByRole("link", { name: "E-Mail vorbereiten" });
+  expect(link.getAttribute("href")).toBe(mailto("weber@uni-beispiel.de"));
+  expect(within(destination).getByText("Bestätigt am 18. Nov.")).toBeTruthy();
+  expect(sent).toEqual([{ address: "weber@uni-beispiel.de" }]);
+});
+
+test("shows the Course's default email Destination, and lets the student give the Obligation its own and remove it", async () => {
+  serveContext();
+  let own: string | null = null;
+  const sent: unknown[] = [];
+  api.route("GET", `/api/me/obligations/${sheetId}/handoff`, () =>
+    Response.json({
+      obligation: {
+        id: sheetId,
+        title: "Programmierprojekt: Kürzeste Wege",
+        due: { date: "2099-12-04", time: "23:59", timeZone: null },
+        destination: null,
+        reportedSubmittedAt: null,
+        emailDestination: {
+          address: own ?? "lehrstuhl@uni-beispiel.de",
+          confirmedAt: "2026-11-18T13:20:00.000Z",
+          level: own ? "obligation" : "course",
+          provenance: { kind: "entry" },
+        },
+        emailPrefill: null,
+      },
+      rule: allowed,
+      drafts: [],
+      mailto: mailto(own ?? "lehrstuhl@uni-beispiel.de"),
+    }),
+  );
+  api.route(
+    "POST",
+    `/api/me/obligations/${sheetId}/email-destination`,
+    async (request) => {
+      const body = (await request.json()) as { address: string | null };
+      sent.push(body);
+      own = body.address;
+      return Response.json({ status: "ok" });
+    },
+  );
+
+  renderObligation(sheetId);
+
+  const destination = await screen.findByRole("group", {
+    name: "Abgabe per E-Mail",
+  });
+  await within(destination).findByText("lehrstuhl@uni-beispiel.de");
+  expect(within(destination).getByText("Standard des Kurses")).toBeTruthy();
+  expect(
+    within(destination).queryByRole("button", { name: "Entfernen" }),
+  ).toBeNull();
+
+  await userEvent.click(
+    within(destination).getByRole("button", { name: "Ändern" }),
+  );
+  const input = within(destination).getByRole("textbox", {
+    name: "E-Mail-Adresse",
+  });
+  await userEvent.clear(input);
+  await userEvent.type(input, "weber@uni-beispiel.de");
+  await userEvent.click(
+    within(destination).getByRole("button", { name: "Bestätigen" }),
+  );
+
+  await within(destination).findByText("weber@uni-beispiel.de");
+  expect(
+    screen
+      .getByRole("link", { name: "E-Mail vorbereiten" })
+      .getAttribute("href"),
+  ).toBe(mailto("weber@uni-beispiel.de"));
+
+  await userEvent.click(
+    within(destination).getByRole("button", { name: "Entfernen" }),
+  );
+  await within(destination).findByText("Standard des Kurses");
+  expect(sent).toEqual([
+    { address: "weber@uni-beispiel.de" },
+    { address: null },
+  ]);
+});
+
 test("asks the AI-use Rule question when unknown, disables AI sections until answered, and shows empty handoff copy", async () => {
   serveContext();
   let rule: Record<string, unknown> = { status: "unknown", reason: "none" };
