@@ -1,11 +1,12 @@
 import { Button } from "@nunio/ui/components/button/button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, CloudUpload, FileText, Shield } from "lucide-react";
+import { CircleCheck, CloudUpload, FileText, Mail, Shield } from "lucide-react";
 import Link from "next/link";
 import { createApiClient } from "@/lib/api-client";
 import type { Handoff } from "../api/study-queries";
 import { coursesQueries, handoffQuery } from "../api/study-queries";
-import { reportedText } from "../study-format";
+import { confirmedText, provenanceText, reportedText } from "../study-format";
+import { EmailDestination } from "./email-destination";
 
 /** What the student needs to hand the Obligation in themselves; nothing is sent anywhere. */
 export function HandoffPanel({
@@ -16,7 +17,7 @@ export function HandoffPanel({
   handoff: Handoff;
 }) {
   const queryClient = useQueryClient();
-  const { obligation, rule, drafts } = handoff;
+  const { obligation, rule, drafts, mailto } = handoff;
   const report = useMutation({
     mutationFn: async (reported: boolean) => {
       const result = await createApiClient(apiOrigin).POST(
@@ -34,6 +35,32 @@ export function HandoffPanel({
       });
     },
   });
+
+  const confirmEmail = useMutation({
+    mutationFn: async (address: string | null) => {
+      const result = await createApiClient(apiOrigin).POST(
+        "/api/me/obligations/{id}/email-destination",
+        { params: { path: { id: obligation.id } }, body: { address } },
+      );
+      if (result.response.status === 400)
+        throw new Error("Das ist keine gültige E-Mail-Adresse.");
+      if (!result.data) throw new Error("Das konnte nicht gespeichert werden.");
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({
+        queryKey: handoffQuery(apiOrigin, obligation.id).queryKey,
+      }),
+  });
+  const { emailDestination, emailPrefill } = obligation;
+  // Nothing confirmed, or only the Course's default while the Obligation's own wording names another address.
+  const suggested =
+    emailPrefill &&
+    (!emailDestination ||
+      (emailDestination.level === "course" &&
+        emailDestination.address.toLowerCase() !==
+          emailPrefill.address.toLowerCase()))
+      ? emailPrefill
+      : null;
 
   const shownDrafts = rule.status === "forbidden" ? drafts : drafts.slice(0, 1);
 
@@ -78,6 +105,53 @@ export function HandoffPanel({
                     Frag im Kurs nach oder trag es selbst ein.
                   </span>
                 </>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-3 border-t border-base-200 py-3.5">
+            <span className="flex w-5 shrink-0 pt-0.5">
+              <Mail aria-hidden="true" className="size-4 text-base-500" />
+            </span>
+            <div className="flex flex-1 flex-col gap-2">
+              <span className="text-xs font-medium text-base-500">
+                Abgabe per E-Mail
+              </span>
+              <EmailDestination
+                confirmed={
+                  emailDestination && {
+                    address: emailDestination.address,
+                    note:
+                      emailDestination.level === "course"
+                        ? "Standard des Kurses"
+                        : confirmedText(emailDestination.confirmedAt),
+                  }
+                }
+                prefill={
+                  suggested && {
+                    address: suggested.address,
+                    note: `${provenanceText(suggested.provenance)} · noch nicht bestätigt`,
+                  }
+                }
+                pending={confirmEmail.isPending}
+                error={confirmEmail.error?.message ?? null}
+                onConfirm={(address) => confirmEmail.mutateAsync(address)}
+                onClear={
+                  emailDestination?.level === "obligation"
+                    ? () => confirmEmail.mutate(null)
+                    : null
+                }
+                onDismissError={confirmEmail.reset}
+              />
+              {mailto && (
+                <span className="text-xs text-base-500">
+                  <a
+                    href={mailto}
+                    className="font-medium text-primary-600 hover:text-primary-700"
+                  >
+                    E-Mail vorbereiten
+                  </a>
+                  {" · "}Häng deine Datei selbst an und sende sie ab.
+                </span>
               )}
             </div>
           </div>

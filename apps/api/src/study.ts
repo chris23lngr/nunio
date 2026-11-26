@@ -4,7 +4,7 @@ import type { Principal } from "@nunio/delegation";
 import { isHandedIn, principal } from "@nunio/delegation";
 import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
-import { AiUse } from "./review.js";
+import { AiUse, Provenance as ItemProvenance } from "./review.js";
 
 const Provenance = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("correction") }),
@@ -710,7 +710,7 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
       method: "get",
       path: "/api/me/obligations/{id}/handoff",
       description:
-        "What the student needs to hand the Obligation in themselves: its Destination wording, its AI-use Rule (with any conditions, such as declaring AI use) and their drafts. Nothing is sent anywhere; the student then reports it as submitted.",
+        "What the student needs to hand the Obligation in themselves: its Destination wording and confirmed email Destination, its AI-use Rule (with any conditions, such as declaring AI use) and their drafts. Nothing is sent anywhere; the student then reports it as submitted.",
       request: { params: z.object({ id: z.string().uuid() }) },
       responses: {
         200: json(
@@ -731,6 +731,29 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
                     "As the Source states it, or the student's Correction; never verified.",
                   ),
                 reportedSubmittedAt: z.date().nullable(),
+                emailDestination: z
+                  .object({
+                    address: z.string(),
+                    confirmedAt: z.date(),
+                    level: z
+                      .enum(["obligation", "course"])
+                      .describe("course when it is the Course's default."),
+                    provenance: z
+                      .union([ItemProvenance, z.literal("gone")])
+                      .describe(
+                        "Where the confirmed address came from; gone once the Source it was prefilled from is.",
+                      ),
+                  })
+                  .nullable()
+                  .describe(
+                    "The confirmed email Destination that applies: the Obligation's own, else its Course's default.",
+                  ),
+                emailPrefill: z
+                  .object({ address: z.string(), provenance: ItemProvenance })
+                  .nullable()
+                  .describe(
+                    "An address found in the Destination wording or the Correction; only the student confirms it.",
+                  ),
               }),
               rule: AiUse,
               drafts: z.array(
@@ -740,6 +763,12 @@ export function registerStudyRoutes(routes: OpenAPIHono<AppBindings>) {
                   createdAt: z.date(),
                 }),
               ),
+              mailto: z
+                .string()
+                .nullable()
+                .describe(
+                  "A mailto: draft (address, subject, body) to the email Destination; the student attaches the file and sends it.",
+                ),
             })
             .openapi("Handoff"),
           "The Handoff.",

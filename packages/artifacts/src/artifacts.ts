@@ -100,6 +100,10 @@ type Content<C> =
   | { title: string | null; items: (Item & { citations: C[] })[] }
   | { title?: string | null; cards: (Card & { citations: C[] })[] }
   | { text: string; citations: C[] };
+type HandoffEmail = Exclude<
+  Awaited<ReturnType<Facts["emailDestination"]>>,
+  "gone"
+>;
 /** What the student needs to hand an Obligation in themselves: nothing here is sent anywhere. */
 export type HandoffView = {
   obligation: {
@@ -109,16 +113,32 @@ export type HandoffView = {
     /** As the Source states it, or the student's Correction; never verified. */
     destination: string | null;
     reportedSubmittedAt: Date | null;
+    /** The confirmed email Destination that applies: the Obligation's own, else its Course's default. */
+    emailDestination: HandoffEmail["destination"];
+    /** An address found in the Destination wording or the Correction, for the student to confirm. */
+    emailPrefill: HandoffEmail["prefill"];
   };
   /** Its conditions, such as declaring AI use, apply to what is handed in. */
   rule: AiUse;
   /** The student's drafts for it, each at its latest version. */
   drafts: { id: string; version: number; createdAt: Date }[];
+  /** A mail draft to the email Destination; the student attaches the file and sends it themselves. */
+  mailto: string | null;
 };
 export type ArtifactView = ArtifactBase & {
   version: number | null;
   /** Null until made, and once withdrawn. */
   content: Content<{ tag: string; provenance: Provenance | "gone" }> | null;
+};
+/**
+ * A `mailto:` link with nunio's template subject and body (RFC 6068). The title comes from Source text, so its line
+ * breaks become spaces: an encoded one in the subject would start another header.
+ */
+const mailto = (address: string, title: string) => {
+  const line = title.replace(/[\r\n]+/g, " ").trim();
+  const subject = `Abgabe: ${line}`;
+  const body = `Guten Tag,\r\n\r\nanbei meine Abgabe zu „${line}“.\r\n\r\nViele Grüße`;
+  return `mailto:${encodeURIComponent(address).replace("%40", "@")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 };
 /** As sealed: citations are stored as refs, resolved when shown. */
 type StoredContent = Content<Citation>;
@@ -809,7 +829,8 @@ export function createArtifacts({
       if (!obligation) return "gone";
       if (notHandedIn.includes(obligation.kind)) return "not_handed_in";
       const rule = await facts.aiUse(student, obligationId);
-      if (rule === "gone") return "gone";
+      const email = await facts.emailDestination(student, obligationId);
+      if (rule === "gone" || email === "gone") return "gone";
       const drafts = (await summaries(student))
         .filter(
           ({ summary }) =>
@@ -831,9 +852,14 @@ export function createArtifacts({
           due: { date, time, timeZone },
           destination: obligation.destination,
           reportedSubmittedAt: obligation.reportedSubmittedAt,
+          emailDestination: email.destination,
+          emailPrefill: email.prefill,
         },
         rule,
         drafts,
+        mailto:
+          email.destination &&
+          mailto(email.destination.address, obligation.title),
       };
     },
     /** The latest version of a set of flashcards as an Anki text file, its cards tagged with their Topics' names. */

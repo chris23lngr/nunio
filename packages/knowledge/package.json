@@ -30,6 +30,7 @@
     "@nunio/keys": "workspace:*",
     "@nunio/ai": "workspace:*",
     "@aws-sdk/client-s3": "3.1160.0",
-    "@aws-sdk/s3-request-presigner": "3.1160.0"
+    "@aws-sdk/s3-request-presigner": "3.1160.0",
+    "zod": "4.6.7"
   }
 }

@@ -1176,6 +1176,8 @@ it("prepares a Handoff with the Obligation's Destination, its AI-use Rule and th
       due: { date: "2026-11-20", time: null, timeZone: "Europe/Berlin" },
       destination: "Moodle",
       reportedSubmittedAt: expect.any(Date),
+      emailDestination: null,
+      emailPrefill: null,
     },
     rule: expect.objectContaining({ status: "conditional", level: "course" }),
     drafts: [
@@ -1185,6 +1187,7 @@ it("prepares a Handoff with the Obligation's Destination, its AI-use Rule and th
         createdAt: expect.any(Date),
       },
     ],
+    mailto: null,
   });
   expect(await artifacts.handoff(p, examId)).toBe("not_handed_in");
   expect(await artifacts.handoff(await student(), sheetId)).toBe("gone");

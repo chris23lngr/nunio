@@ -1439,6 +1439,69 @@ it("moves a Correction only the merged Course has, and refuses a merge between d
   );
 });
 
+it("carries confirmed email Destinations the merged Course has onto the target where it has none", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+  await analysis1Source(p, "Übersicht.pdf");
+  const [into, from] = [
+    await courseNamed(p, "Analysis I"),
+    await courseNamed(p, "Analysis 1"),
+  ];
+  await facts.confirmEmailDestination(
+    p,
+    from.obligations[0]!.id,
+    "weber@uni-beispiel.de",
+  );
+  await coursesOf().confirmEmailDestination(
+    p,
+    from.id,
+    "lehrstuhl@uni-beispiel.de",
+  );
+
+  expect(await facts.mergeCourses(p, from.id, into.id)).toEqual({
+    status: "ok",
+  });
+
+  expect(
+    await facts.emailDestination(p, into.obligations[0]!.id),
+  ).toMatchObject({
+    destination: {
+      address: "weber@uni-beispiel.de",
+      level: "obligation",
+      provenance: { kind: "entry" },
+    },
+  });
+  expect(await coursesOf().detail(p, into.id)).toMatchObject({
+    emailDestination: { address: "lehrstuhl@uni-beispiel.de" },
+  });
+});
+
+it("keeps the target's own email Destinations when merging a Course into it", async () => {
+  const p = await student();
+  await sheet3Source(p, "Analysis.pdf");
+  await analysis1Source(p, "Übersicht.pdf");
+  const [into, from] = [
+    await courseNamed(p, "Analysis I"),
+    await courseNamed(p, "Analysis 1"),
+  ];
+  for (const [course, address] of [
+    [from, "alt@uni-beispiel.de"],
+    [into, "neu@uni-beispiel.de"],
+  ] as const) {
+    await facts.confirmEmailDestination(p, course.obligations[0]!.id, address);
+    await coursesOf().confirmEmailDestination(p, course.id, address);
+  }
+
+  await facts.mergeCourses(p, from.id, into.id);
+
+  expect(
+    await facts.emailDestination(p, into.obligations[0]!.id),
+  ).toMatchObject({ destination: { address: "neu@uni-beispiel.de" } });
+  expect(await coursesOf().detail(p, into.id)).toMatchObject({
+    emailDestination: { address: "neu@uni-beispiel.de" },
+  });
+});
+
 it("refuses merging a Course into itself, into a rejected or merged Course, or another student's Courses", async () => {
   const p = await student();
   await sheet3Source(p, "Analysis.pdf");
