@@ -12824,6 +12824,15 @@ describe("the Connection's page", () => {
         "notes.search",
         "notes.share",
       ]);
+      // Nor can it be given a mode while blocked.
+      const granted = await setMode(cookie, "notes.share", "always_allowed");
+      expect(granted.status).toBe(422);
+      expect(await granted.json()).toEqual({ error: "not_grantable" });
+      expect(
+        await admin.grant.count({
+          where: { studentId: await studentId(cookie) },
+        }),
+      ).toBe(0);
     } finally {
       await admin.integrationTool.update({
         where: {
@@ -12914,6 +12923,7 @@ describe("the Connection's page", () => {
   it("is only the student's own: another student has no such Connection", async () => {
     const cookie = await signUp("connection-owner");
     const connectionId = await connectTestnotizen(cookie);
+    await connectEmail(cookie);
     const other = await signUp("connection-other");
 
     const read = await request("GET", "/api/me/connections/testnotizen", other);
@@ -12927,7 +12937,7 @@ describe("the Connection's page", () => {
       "PUT",
       "/api/me/connections/email/folders",
       other,
-      { folders: ["INBOX"] },
+      { folders: ["INBOX", "Lehrstuhl"] },
     );
 
     for (const response of [read, set, folders, setFolders]) {
@@ -12935,6 +12945,10 @@ describe("the Connection's page", () => {
       expect(await response.json()).toEqual({ error: "gone" });
     }
     expect(await admin.grant.count({ where: { connectionId } })).toBe(0);
+    const email = await admin.connection.findFirstOrThrow({
+      where: { studentId: await studentId(cookie), integrationKey: "email" },
+    });
+    expect(email.folders).toEqual(["INBOX"]);
     const unsigned = await app.request(
       `${apiOrigin}/api/me/connections/testnotizen`,
     );
