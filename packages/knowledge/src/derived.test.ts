@@ -183,3 +183,59 @@ it("cannot be opened without the Connection's own key", async () => {
   });
   await expect(open(p, "message-1", sealed!)).rejects.toThrow();
 });
+
+/** The keys, recording every Source and Connection key they unwrap, so a test can see each one is zeroed. */
+function recordingKeys() {
+  const unwrapped: Buffer[] = [];
+  const record = (key: Buffer) => {
+    unwrapped.push(key);
+    return key;
+  };
+  return {
+    unwrapped,
+    derived: createDerivedText({
+      ...keys,
+      unwrap: (id, wrapped) => record(keys.unwrap(id, wrapped)),
+      unwrapConnectionKey: (id, wrapped) =>
+        record(keys.unwrapConnectionKey(id, wrapped)),
+    }),
+  };
+}
+const zeroed = (key: Buffer) => key.every((byte) => byte === 0);
+
+it("zeroes the keys it unwrapped when the text fails to open", async () => {
+  const p = await student();
+  const sourceId = await source(p);
+  const connectionId = await connection(p);
+  const sealed = await seal(p, "message-1", [sourceId], [connectionId]);
+  const { wrapped } = keys.generateConnectionKey(connectionId);
+  await admin.connection.update({
+    where: { id: connectionId },
+    data: { keyVersion: wrapped.version, keyCiphertext: wrapped.ciphertext },
+  });
+  const { derived, unwrapped } = recordingKeys();
+
+  await expect(
+    withOwner(runtime, p, (tx) => derived.open(tx, "message-1", sealed!)),
+  ).rejects.toThrow();
+  expect(unwrapped).toHaveLength(2);
+  expect(unwrapped.every(zeroed)).toBe(true);
+});
+
+it("zeroes the keys it unwrapped when a later key fails to unwrap", async () => {
+  const p = await student();
+  const sourceId = await source(p);
+  const connectionId = await connection(p);
+  const sealed = await seal(p, "message-1", [sourceId], [connectionId]);
+  await admin.connection.update({
+    where: { id: connectionId },
+    data: { keyCiphertext: Buffer.alloc(60).toString("base64") },
+  });
+  const { derived, unwrapped } = recordingKeys();
+
+  await expect(
+    withOwner(runtime, p, (tx) => derived.open(tx, "message-1", sealed!)),
+  ).rejects.toThrow();
+  expect(unwrapped).toHaveLength(1);
+  expect(unwrapped.every(zeroed)).toBe(true);
+});

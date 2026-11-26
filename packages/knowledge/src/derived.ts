@@ -40,12 +40,12 @@ type Layer = { kind: "source" | "connection"; id: string; key: Buffer };
  * Notices, Briefings, Artifacts and Feedback share it.
  */
 export function createDerivedText(keys: SourceKeys) {
-  /** The live keys, in wrapping order, or why one of them is gone. The caller zeroes them. */
-  async function layersOf(
+  /** The live Source and Connection rows with their wrapped keys, or why one of them is gone. */
+  async function rowsOf(
     tx: Transaction,
     sourceIds: readonly string[],
     connectionIds: readonly string[],
-  ): Promise<Layer[] | GoneReason> {
+  ) {
     const [sources, connections] = await Promise.all([
       sourceIds.length
         ? tx.source.findMany({
@@ -63,34 +63,52 @@ export function createDerivedText(keys: SourceKeys) {
     // Disconnect deletes the Connection row with its key.
     if (connectionIds.some((id) => !connections.some((row) => row.id === id)))
       return "connection_disconnected";
+    if (
+      sourceIds.some((id) => {
+        const row = sources.find((r) => r.id === id);
+        return !row?.keyVersion || !row.keyCiphertext;
+      })
+    )
+      return "source_deleted";
+    return { sources, connections };
+  }
+  /** The live keys, in wrapping order, or why one of them is gone. The caller zeroes them. */
+  async function layersOf(
+    tx: Transaction,
+    sourceIds: readonly string[],
+    connectionIds: readonly string[],
+  ): Promise<Layer[] | GoneReason> {
+    const rows = await rowsOf(tx, sourceIds, connectionIds);
+    if (typeof rows === "string") return rows;
     const layers: Layer[] = [];
-    for (const id of sourceIds) {
-      const row = sources.find((r) => r.id === id);
-      if (!row?.keyVersion || !row.keyCiphertext) {
-        zero(layers);
-        return "source_deleted";
+    try {
+      for (const id of sourceIds) {
+        const row = rows.sources.find((r) => r.id === id)!;
+        layers.push({
+          kind: "source",
+          id,
+          key: keys.unwrap(id, {
+            version: row.keyVersion!,
+            ciphertext: row.keyCiphertext!,
+          }),
+        });
       }
-      layers.push({
-        kind: "source",
-        id,
-        key: keys.unwrap(id, {
-          version: row.keyVersion,
-          ciphertext: row.keyCiphertext,
-        }),
-      });
+      for (const id of connectionIds) {
+        const row = rows.connections.find((r) => r.id === id)!;
+        layers.push({
+          kind: "connection",
+          id,
+          key: keys.unwrapConnectionKey(id, {
+            version: row.keyVersion,
+            ciphertext: row.keyCiphertext,
+          }),
+        });
+      }
+      return layers;
+    } catch (error) {
+      zero(layers);
+      throw error;
     }
-    for (const id of connectionIds) {
-      const row = connections.find((r) => r.id === id)!;
-      layers.push({
-        kind: "connection",
-        id,
-        key: keys.unwrapConnectionKey(id, {
-          version: row.keyVersion,
-          ciphertext: row.keyCiphertext,
-        }),
-      });
-    }
-    return layers;
   }
   return {
     /**
@@ -151,18 +169,19 @@ export function createDerivedText(keys: SourceKeys) {
         sealed.derivedFromConnections ?? [],
       );
       if (typeof layers === "string") return { text: null, gone: layers };
-      // Unwraps through each key in reverse wrapping order.
-      const contentKey = layers.reduceRight<Buffer>(
-        (wrapped, layer) => unwrap(layer, wrapped),
-        Buffer.from(sealed.contentKey),
-      );
+      let contentKey: Buffer | undefined;
       try {
+        // Unwraps through each key in reverse wrapping order.
+        contentKey = layers.reduceRight<Buffer>(
+          (wrapped, layer) => unwrap(layer, wrapped),
+          Buffer.from(sealed.contentKey),
+        );
         return {
           text: decryptDerivedText(contentKey, id, sealed.content),
           gone: null,
         };
       } finally {
-        contentKey.fill(0);
+        contentKey?.fill(0);
         zero(layers);
       }
     },
