@@ -100,7 +100,7 @@ type Content<C> =
   | { title: string | null; items: (Item & { citations: C[] })[] }
   | { title?: string | null; cards: (Card & { citations: C[] })[] }
   | { text: string; citations: C[] };
-type EmailDestinations = Exclude<
+type HandoffEmail = Exclude<
   Awaited<ReturnType<Facts["emailDestination"]>>,
   "gone"
 >;
@@ -114,9 +114,9 @@ export type HandoffView = {
     destination: string | null;
     reportedSubmittedAt: Date | null;
     /** The confirmed email Destination that applies: the Obligation's own, else its Course's default. */
-    emailDestination: EmailDestinations["destination"];
+    emailDestination: HandoffEmail["destination"];
     /** An address found in the Destination wording or the Correction, for the student to confirm. */
-    emailPrefill: EmailDestinations["prefill"];
+    emailPrefill: HandoffEmail["prefill"];
   };
   /** Its conditions, such as declaring AI use, apply to what is handed in. */
   rule: AiUse;

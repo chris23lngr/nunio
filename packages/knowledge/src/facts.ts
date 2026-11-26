@@ -197,7 +197,7 @@ export function createFacts({
   const prefillOf = async (p: Principal, obligationId: string) => {
     const obligation = (await facts.review(p)).courses
       .flatMap((course) => course.obligations)
-      .find((o) => o.id === obligationId);
+      .find((o) => o.id === obligationId && o.state !== "rejected");
     if (!obligation) return null;
     const address = emailIn(obligation.destination);
     const { provenance } = obligation;
@@ -1363,24 +1363,28 @@ export function createFacts({
         return { status: "not_handed_in" } as const;
       const { prefill } = found;
       const prefilled =
-        address !== null &&
-        prefill?.address.toLowerCase() === address.toLowerCase();
+        prefill && address?.toLowerCase() === prefill.address.toLowerCase()
+          ? prefill
+          : null;
+      const data =
+        address === null
+          ? {
+              emailDestination: null,
+              emailDestinationConfirmedAt: null,
+              emailDestinationProvenance: null,
+              emailDestinationExtractionId: null,
+            }
+          : {
+              emailDestination: address,
+              emailDestinationConfirmedAt: clock.now(),
+              emailDestinationProvenance:
+                prefilled?.provenance.kind ?? ("entry" as const),
+              emailDestinationExtractionId: prefilled?.extractionId ?? null,
+            };
       return withOwner(db, p, async (tx) => {
         const { count } = await tx.obligation.updateMany({
           where: { id: obligationId },
-          data: {
-            emailDestination: address,
-            emailDestinationConfirmedAt: address === null ? null : clock.now(),
-            emailDestinationProvenance:
-              address === null
-                ? null
-                : prefilled
-                  ? prefill.provenance.kind
-                  : "entry",
-            emailDestinationExtractionId: prefilled
-              ? prefill.extractionId
-              : null,
-          },
+          data,
         });
         return { status: count ? "ok" : "gone" } as const;
       });

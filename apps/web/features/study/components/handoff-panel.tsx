@@ -52,6 +52,15 @@ export function HandoffPanel({
       }),
   });
   const { emailDestination, emailPrefill } = obligation;
+  // Nothing confirmed, or only the Course's default while the Obligation's own wording names another address.
+  const suggested =
+    emailPrefill &&
+    (!emailDestination ||
+      (emailDestination.level === "course" &&
+        emailDestination.address.toLowerCase() !==
+          emailPrefill.address.toLowerCase()))
+      ? emailPrefill
+      : null;
 
   const shownDrafts = rule.status === "forbidden" ? drafts : drafts.slice(0, 1);
 
@@ -118,9 +127,9 @@ export function HandoffPanel({
                   }
                 }
                 prefill={
-                  emailPrefill && {
-                    address: emailPrefill.address,
-                    note: `${provenanceText(emailPrefill.provenance)} · noch nicht bestätigt`,
+                  suggested && {
+                    address: suggested.address,
+                    note: `${provenanceText(suggested.provenance)} · noch nicht bestätigt`,
                   }
                 }
                 pending={confirmEmail.isPending}

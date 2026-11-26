@@ -1,5 +1,5 @@
 import { SidebarProvider } from "@nunio/ui/components/sidebar/sidebar";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { ObligationScreen } from "@/features/study/obligation-screen";
@@ -413,6 +413,56 @@ test("prefills the email Destination from the student's Source, confirms it with
   expect(link.getAttribute("href")).toBe(mailto("weber@uni-beispiel.de"));
   expect(within(destination).getByText("Bestätigt am 18. Nov.")).toBeTruthy();
   expect(sent).toEqual([{ address: "weber@uni-beispiel.de" }]);
+});
+
+test("offers an address found in the Obligation's own wording beside the Course's default", async () => {
+  serveContext();
+  const sent: unknown[] = [];
+  api.route("GET", `/api/me/obligations/${sheetId}/handoff`, () =>
+    Response.json({
+      obligation: {
+        id: sheetId,
+        title: "Programmierprojekt: Kürzeste Wege",
+        due: { date: "2099-12-04", time: "23:59", timeZone: null },
+        destination: "Per E-Mail an weber@uni-beispiel.de",
+        reportedSubmittedAt: null,
+        emailDestination: {
+          address: "lehrstuhl@uni-beispiel.de",
+          confirmedAt: "2026-11-18T13:20:00.000Z",
+          level: "course",
+          provenance: { kind: "entry" },
+        },
+        emailPrefill: { address: "weber@uni-beispiel.de", provenance },
+      },
+      rule: allowed,
+      drafts: [],
+      mailto: mailto("lehrstuhl@uni-beispiel.de"),
+    }),
+  );
+  api.route(
+    "POST",
+    `/api/me/obligations/${sheetId}/email-destination`,
+    async (request) => {
+      sent.push(await request.json());
+      return Response.json({ status: "ok" });
+    },
+  );
+
+  renderObligation(sheetId);
+
+  const destination = await screen.findByRole("group", {
+    name: "Abgabe per E-Mail",
+  });
+  expect(
+    within(destination).getByText("lehrstuhl@uni-beispiel.de"),
+  ).toBeTruthy();
+  expect(within(destination).getByText("weber@uni-beispiel.de")).toBeTruthy();
+  await userEvent.click(
+    within(destination).getByRole("button", { name: "Bestätigen" }),
+  );
+  await waitFor(() =>
+    expect(sent).toEqual([{ address: "weber@uni-beispiel.de" }]),
+  );
 });
 
 test("shows the Course's default email Destination, and lets the student give the Obligation its own and remove it", async () => {

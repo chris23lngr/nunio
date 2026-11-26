@@ -6,7 +6,7 @@ type Shown = { address: string; note: string };
 
 /**
  * The email Destination the student confirms, for an Obligation or as a Course's default. A prefill nunio found
- * is only a suggestion until the student confirms it.
+ * is only a suggestion until the student confirms it; it can show beside a confirmed one it would replace.
  */
 export function EmailDestination({
   confirmed,
@@ -26,7 +26,6 @@ export function EmailDestination({
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const inputId = useId();
-  const shown = confirmed ?? prefill;
 
   const confirm = (address: string) =>
     onConfirm(address).then(
@@ -72,37 +71,49 @@ export function EmailDestination({
             </Button>
           </div>
         </form>
-      ) : shown ? (
-        <>
-          <span className="text-sm font-medium text-base-800">
-            {shown.address}
-          </span>
-          <span className="text-xs text-base-500">{shown.note}</span>
-          <div className="flex gap-3">
-            {!confirmed && (
-              <ActionButton
-                disabled={pending}
-                onClick={() => confirm(shown.address)}
-              >
-                Bestätigen
-              </ActionButton>
-            )}
-            <ActionButton onClick={() => setEditing(shown.address)}>
-              Ändern
-            </ActionButton>
-            {confirmed && onClear && (
-              <ActionButton disabled={pending} onClick={onClear}>
-                Entfernen
-              </ActionButton>
-            )}
-          </div>
-        </>
       ) : (
-        <div>
-          <ActionButton onClick={() => setEditing("")}>
-            E-Mail-Adresse eintragen
-          </ActionButton>
-        </div>
+        <>
+          {confirmed && (
+            <>
+              <Address shown={confirmed} />
+              <div className="flex gap-3">
+                <ActionButton onClick={() => setEditing(confirmed.address)}>
+                  Ändern
+                </ActionButton>
+                {onClear && (
+                  <ActionButton disabled={pending} onClick={onClear}>
+                    Entfernen
+                  </ActionButton>
+                )}
+              </div>
+            </>
+          )}
+          {prefill && (
+            <>
+              <Address shown={prefill} />
+              <div className="flex gap-3">
+                <ActionButton
+                  disabled={pending}
+                  onClick={() => confirm(prefill.address)}
+                >
+                  Bestätigen
+                </ActionButton>
+                {!confirmed && (
+                  <ActionButton onClick={() => setEditing(prefill.address)}>
+                    Ändern
+                  </ActionButton>
+                )}
+              </div>
+            </>
+          )}
+          {!confirmed && !prefill && (
+            <div>
+              <ActionButton onClick={() => setEditing("")}>
+                E-Mail-Adresse eintragen
+              </ActionButton>
+            </div>
+          )}
+        </>
       )}
       {error && (
         <p role="alert" className="text-xs text-destructive-600">
@@ -110,6 +121,15 @@ export function EmailDestination({
         </p>
       )}
     </fieldset>
+  );
+}
+
+function Address({ shown }: { shown: Shown }) {
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span className="text-sm font-medium text-base-800">{shown.address}</span>
+      <span className="text-xs text-base-500">{shown.note}</span>
+    </span>
   );
 }
 

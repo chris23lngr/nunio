@@ -9914,6 +9914,11 @@ describe("email Destinations", () => {
       emailDestination: null,
     });
 
+    await s.send(`/api/me/review/obligation/${s.sheetId}/reject`, {});
+    expect(
+      (await s.send(path, { address: "weber@uni-beispiel.de" })).status,
+    ).toBe(404);
+
     const other = await studyFixture("destination-prefill-other");
     expect(
       (await other.send(path, { address: "x@uni-beispiel.de" })).status,
