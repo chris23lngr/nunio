@@ -361,6 +361,7 @@
         "@nunio/db": "workspace:*",
         "@nunio/delegation": "workspace:*",
         "@nunio/keys": "workspace:*",
+        "zod": "4.6.7",
       },
       "devDependencies": {
         "@biomejs/biome": "2.6.3",
