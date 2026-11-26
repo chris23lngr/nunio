@@ -2636,7 +2636,8 @@ describe("an Agent's Run writing a Briefing (#188)", () => {
     ]);
   });
 
-  it("seals a Briefing drawn from a Notice that read a Connection, its steps and its summary under that Connection, and shreds them on Disconnect", async () => {
+  /** A Briefing Agent's Run, with an unread Notice in the Inbox stored as one drawn from a Connection would be. */
+  async function withConnectionNotice() {
     const s = await started({ held: [{ id: "createBriefing", mode: null }] });
     const connectionId = randomUUID();
     const { wrapped } = keys.generateConnectionKey(connectionId);
@@ -2683,6 +2684,11 @@ describe("an Agent's Run writing a Briefing (#188)", () => {
         },
       });
     });
+    return { s, connectionId };
+  }
+
+  it("seals a Briefing drawn from a Notice that read a Connection, its steps and its summary under that Connection, and shreds them on Disconnect", async () => {
+    const { s, connectionId } = await withConnectionNotice();
     script = [
       () => calls("inbox", {}),
       () =>
@@ -2722,6 +2728,48 @@ describe("an Agent's Run writing a Briefing (#188)", () => {
       { n: 2, parts: null, gone: "connection_disconnected" },
       { n: 3, parts: null, gone: "connection_disconnected" },
     ]);
+  });
+
+  it("stops with connection_disconnected when a Connection it read is Disconnected between steps", async () => {
+    const { s, connectionId } = await withConnectionNotice();
+    script = [() => calls("inbox", {})];
+    const activities = createAgentRunActivities(runs);
+    const step = activities.agentStep;
+    activities.agentStep = async (ref) => {
+      const outcome = await step(ref);
+      if (ref.n === 1)
+        await admin.connection.delete({ where: { id: connectionId } });
+      return outcome;
+    };
+
+    expect(await run(s, activities)).toEqual({
+      status: "stopped",
+      reason: "connection_disconnected",
+    });
+    expect(await runs.view(s.p, s.runId)).toMatchObject({
+      status: "stopped",
+      stopReason: "connection_disconnected",
+    });
+  });
+
+  it("stops with connection_disconnected when a Connection it read is Disconnected during a step", async () => {
+    const { s, connectionId } = await withConnectionNotice();
+    script = [
+      () => calls("inbox", {}),
+      async () => {
+        await admin.connection.delete({ where: { id: connectionId } });
+        return says("Nichts zu tun.");
+      },
+    ];
+
+    expect(await run(s)).toEqual({
+      status: "stopped",
+      reason: "connection_disconnected",
+    });
+    expect(await runs.view(s.p, s.runId)).toMatchObject({
+      status: "stopped",
+      stopReason: "connection_disconnected",
+    });
   });
 
   it("refuses createBriefing with nothing_open when nothing open is bundled, and with invalid for links, >1500 chars or unknown handles", async () => {

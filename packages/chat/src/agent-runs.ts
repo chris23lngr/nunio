@@ -435,20 +435,18 @@ export function createAgentRuns({
           },
         });
         const transcripts = await Promise.all(
-          run.steps.map(async (step) =>
+          run.steps.map((step) =>
             step.transcriptContent
-              ? (
-                  await derived.open(
-                    tx,
-                    `${runId}:${step.n}:transcript`,
-                    sealedOf(
-                      step.transcriptContent,
-                      step.transcriptKey,
-                      step.derivedFrom,
-                      step.derivedFromConnections,
-                    ),
-                  )
-                ).text
+              ? derived.open(
+                  tx,
+                  `${runId}:${step.n}:transcript`,
+                  sealedOf(
+                    step.transcriptContent,
+                    step.transcriptKey,
+                    step.derivedFrom,
+                    step.derivedFromConnections,
+                  ),
+                )
               : null,
           ),
         );
@@ -460,9 +458,14 @@ export function createAgentRuns({
           : { status: "failed", reason: "step_interrupted" };
       if ("ended" in loaded) return { status: "refused", reason: "run_ended" };
       const { run, transcripts, performed, started } = loaded;
-      // A Source deleted since takes the earlier steps with it, so the Run cannot go on from them.
+      // A Source deleted or a Connection Disconnected since takes the earlier steps with it, so the Run cannot go on
+      // from them; a Disconnect is named first, as when opening.
       if (transcripts.some((transcript) => transcript === null))
         return { status: "refused", reason: "source_deleted" };
+      const gone =
+        transcripts.find((t) => t!.gone === "connection_disconnected")?.gone ??
+        transcripts.find((t) => t!.gone)?.gone;
+      if (gone) return { status: "refused", reason: gone };
       // Checked per step: a Model may stop being offered while the Run is under way (ADR-0018).
       const offered = (await catalog.chatModels()).find(
         (model) => model.key === run.modelKey,
@@ -580,7 +583,7 @@ export function createAgentRuns({
             content: `${context.text}\nCarry out your Instructions now.`,
           },
           ...transcripts.flatMap(
-            (transcript) => JSON.parse(transcript!) as ModelMessage[],
+            (transcript) => JSON.parse(transcript!.text!) as ModelMessage[],
           ),
           ...results,
         ],
@@ -685,6 +688,12 @@ export function createAgentRuns({
           select: { status: true },
         });
         if (current.status !== "running") return "ended" as const;
+        // Why a seal failed: a Source deleted or a Connection Disconnected while the step ran.
+        const goneNow = async () => ({
+          gone:
+            (await derived.gone(tx, derivedFrom, derivedFromConnections)) ??
+            ("source_deleted" as const),
+        });
         const sealedParts = await derived.seal(
           tx,
           `${runId}:${n}:parts`,
@@ -712,7 +721,7 @@ export function createAgentRuns({
               noticeText,
               derivedFromConnections,
             );
-            if (!text) return null;
+            if (!text) return goneNow();
             kept.push({
               ...rest,
               notice: {
@@ -735,7 +744,7 @@ export function createAgentRuns({
               briefingDraft.text,
               derivedFromConnections,
             );
-            if (!text) return null;
+            if (!text) return goneNow();
             kept.push({
               ...rest,
               briefing: {
@@ -754,7 +763,7 @@ export function createAgentRuns({
           }
           kept.push(call);
         }
-        if (!sealedParts || !transcript) return null;
+        if (!sealedParts || !transcript) return goneNow();
         await tx.runStep.update({
           where: { runId_n: { runId, n } },
           data: {
@@ -777,8 +786,8 @@ export function createAgentRuns({
         return answered;
       });
       if (stored === "ended") return { status: "refused", reason: "run_ended" };
-      if (stored === null)
-        return { status: "refused", reason: "source_deleted" };
+      if (typeof stored === "object")
+        return { status: "refused", reason: stored.gone };
       return outcome(stored, calls);
     },
 

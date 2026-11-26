@@ -185,6 +185,15 @@ export function createDerivedText(keys: SourceKeys) {
         zero(layers);
       }
     },
+    /** Why text drawn from these Sources and Connections can't be sealed now; null while all of them are there. */
+    async gone(
+      tx: Transaction,
+      derivedFrom: readonly string[],
+      derivedFromConnections: readonly string[] = [],
+    ): Promise<GoneReason | null> {
+      const rows = await rowsOf(tx, derivedFrom, derivedFromConnections);
+      return typeof rows === "string" ? rows : null;
+    },
   };
 }
 export type DerivedText = ReturnType<typeof createDerivedText>;
