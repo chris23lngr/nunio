@@ -275,17 +275,27 @@ describe("reading through a legacy SSE server", () => {
     );
     const before = sseCalls("notes.read");
     sse.script("notes.read", { kind: "drop" });
+    // A rejection nothing handles would take the API process down.
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
 
-    const read = await reads.read(
-      "notes.read",
-      { id: "note-1" },
-      { signal: signal() },
-    );
-    await reads.close();
+    try {
+      const read = await reads.read(
+        "notes.read",
+        { id: "note-1" },
+        { signal: signal() },
+      );
+      await reads.close();
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-    expect(read.outcome).toBe("answered");
-    expect(read.text).toContain("Lineare Algebra");
-    expect(sseCalls("notes.read") - before).toBe(2);
+      expect(read.outcome).toBe("answered");
+      expect(read.text).toContain("Lineare Algebra");
+      expect(sseCalls("notes.read") - before).toBe(2);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 });
 

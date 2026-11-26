@@ -83,9 +83,30 @@ function retryAfterMs(value: string | null): number | undefined {
 }
 
 /**
+ * An SSE stream's body that ends when its connection drops, rather than erroring. The SDK then sees the stream end and
+ * stops sending on it, and its fire-and-forget `reader.cancel()` on close settles instead of rejecting unhandled.
+ */
+function endingQuietly(body: ReadableStream<Uint8Array>) {
+  const reader = body.getReader();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) controller.close();
+        else controller.enqueue(value);
+      } catch {
+        controller.close();
+      }
+    },
+    cancel: (reason) => reader.cancel(reason).catch(() => {}),
+  });
+}
+
+/**
  * The fetch an MCP client gets: only the catalog's server (its URL for Streamable HTTP, its origin for SSE, whose
  * endpoint the server names), through `publicFetch`, noting a 429's or a 5xx's `Retry-After` for the read under way.
  * An SSE stream may go quiet between steps, so its body may wait as long as it takes; each call has its own deadline.
+ * A dropped SSE stream ends quietly (see `endingQuietly`).
  */
 function serverFetch(
   mcpUrl: string,
@@ -111,6 +132,17 @@ function serverFetch(
     const response = await base(input, init);
     if (observed && (response.status === 429 || response.status >= 500))
       observed.ms = retryAfterMs(response.headers.get("retry-after"));
+    if (
+      type === "sse" &&
+      (init?.method ?? "GET") === "GET" &&
+      response.ok &&
+      response.body
+    )
+      return new Response(endingQuietly(response.body), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
     return response;
   };
 }
