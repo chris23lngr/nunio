@@ -3,6 +3,8 @@ import type { UIMessageChunk } from "ai";
 import { readUIMessageStream } from "ai";
 import type { AgendaOutput } from "./agenda.js";
 import type { CourseFactsOutput } from "./course-facts.js";
+import type { IntegrationReadOutput } from "./integration-reads.js";
+import { isIntegrationRead } from "./integration-reads.js";
 import type { ArtifactOutput } from "./practice.js";
 import type { SearchOutput } from "./search.js";
 
@@ -33,6 +35,13 @@ export type ChatPart =
       toolCallId: string;
       input: { topics: string[] };
       output: ArtifactOutput;
+    }
+  | {
+      /** A read through a Connection; its arguments aren't kept. */
+      type: "tool-integration";
+      toolCallId: string;
+      input: Record<string, never>;
+      output: IntegrationReadOutput;
     }
   | ProposalPart<"tool-proposeStudyBlock", { work: string } & Times>
   | ProposalPart<"tool-proposeStudyBlockMove", { block: string } & Times>
@@ -108,6 +117,20 @@ export async function partsFrom(
       return text ? [{ type: "text", text }] : [];
     }
     // A tool call shows once it has a result, with what the student was shown of it.
+    if (
+      typeof p.type === "string" &&
+      p.type.startsWith("tool-") &&
+      p.state === "output-available" &&
+      isIntegrationRead(p.output)
+    )
+      return [
+        {
+          type: "tool-integration",
+          toolCallId: p.toolCallId as string,
+          input: {},
+          output: p.output,
+        },
+      ];
     if (
       typeof p.type === "string" &&
       p.type.startsWith("tool-") &&
