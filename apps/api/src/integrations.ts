@@ -1,10 +1,14 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import { principal } from "@nunio/delegation";
-import type { ConnectionSummary, EmailCheck } from "@nunio/integrations";
+import type {
+  ConnectionSummary,
+  EmailCheck,
+  FolderListing,
+} from "@nunio/integrations";
 import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
-import { body, ErrorBody, errors, json, student } from "./outcomes.js";
+import { body, Done, ErrorBody, errors, json, student } from "./outcomes.js";
 
 const Connection = z
   .object({
@@ -33,9 +37,10 @@ const Integration = z
     kind: z
       .enum(["mcp", "email"])
       .describe("email connects with a password, mcp through OAuth."),
-    connection: Connection.nullable().describe(
-      "The student's Connection to it, or null when they have none.",
-    ),
+    // A union, not .nullable(): that would make the shared Connection component nullable everywhere.
+    connection: z
+      .union([Connection, z.null()])
+      .describe("The student's Connection to it, or null when they have none."),
     tools: z
       .array(
         z.object({
@@ -53,6 +58,43 @@ const Integration = z
       ),
   })
   .openapi("Integration");
+
+const ConnectionDetail = z
+  .object({
+    key: z.string(),
+    name: z.string(),
+    logo: z.string().describe("The path of its logo in the web app."),
+    kind: z.enum(["mcp", "email"]),
+    connection: Connection,
+    tools: z
+      .array(
+        z.object({
+          name: z.string().describe("The server's own tool name."),
+          label: z.string().describe("nunio's German label."),
+          class: z.enum(["read", "write", "write_always_asked", "blocked"]),
+          mode: z
+            .enum(["ask", "always_allowed", "always_asks"])
+            .nullable()
+            .describe(
+              "A write tool's setting: ask (Nachfragen) or always_allowed (Immer erlaubt, a Grant held by the " +
+                "Connection, in every Chat and Agent); always_asks for one that is never grantable. Null for read " +
+                "and blocked tools.",
+            ),
+          available: z
+            .boolean()
+            .describe("Whether nunio offers it; a blocked tool never is."),
+        }),
+      )
+      .describe(
+        "Every tool nunio classified, by name; a tool nunio hasn't classified is never listed.",
+      ),
+  })
+  .openapi("ConnectionDetail");
+
+const ToolParams = z.object({
+  integrationKey: z.string().min(1).max(100),
+  toolName: z.string().min(1).max(200),
+});
 
 const MailServer = z.object({
   host: z.string().trim().min(1).max(253),
@@ -130,6 +172,41 @@ const LoginFailed = json(
         "port_refused: TLS only on 993 or 143 (IMAP) and 465 or 587 (SMTP). server_refused: a host that doesn't " +
           "resolve to public addresses. servers_required: an unknown domain without servers. unsupported: Microsoft " +
           "365 mail. unknown_folder: a chosen folder the mailbox doesn't have.",
+      ),
+  ]),
+  "Nothing was stored.",
+);
+
+/** Answers a failed folder listing; nothing was stored. */
+function folderRefused(
+  c: Context<AppBindings>,
+  result:
+    | Exclude<FolderListing, { ok: true }>
+    | { ok: false; reason: "unknown_folder" },
+) {
+  if (result.reason === "gone") return c.json({ error: result.reason }, 404);
+  if (result.reason === "login_failed")
+    return c.json({ error: result.reason, step: result.step }, 422);
+  return c.json({ error: result.reason }, 422);
+}
+
+const FolderRefused = json(
+  z.union([
+    z.object({
+      error: z.literal("login_failed"),
+      step: z
+        .literal("imap")
+        .describe(
+          "The stored login no longer opens the mailbox: Neu anmelden.",
+        ),
+    }),
+    z
+      .object({
+        error: z.enum(["port_refused", "server_refused", "unknown_folder"]),
+      })
+      .describe(
+        "server_refused: the stored host no longer resolves to public addresses. unknown_folder: a chosen folder " +
+          "the mailbox doesn't have.",
       ),
   ]),
   "Nothing was stored.",
@@ -226,6 +303,130 @@ export function registerIntegrationRoutes(routes: OpenAPIHono<AppBindings>) {
         },
         200,
       );
+    },
+  );
+
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/connections/{integrationKey}",
+      request: { params: IntegrationKey },
+      responses: {
+        200: json(
+          ConnectionDetail,
+          "The student's Connection with its tools; never its credentials.",
+        ),
+        401: errors[401],
+        404: json(ErrorBody, "The student has no Connection to it (gone)."),
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const detail = await c
+        .get("connections")
+        .read(p, c.req.valid("param").integrationKey);
+      if (!detail) return c.json({ error: "gone" }, 404);
+      return c.json(
+        {
+          key: detail.key,
+          name: detail.name,
+          logo: detail.logo,
+          kind: detail.kind,
+          connection: toConnection(detail.connection),
+          tools: detail.tools,
+        },
+        200,
+      );
+    },
+  );
+
+  routes.openapi(
+    createRoute({
+      method: "put",
+      path: "/api/me/connections/{integrationKey}/tools/{toolName}",
+      request: {
+        params: ToolParams,
+        ...body(z.object({ mode: z.enum(["ask", "always_allowed"]) })),
+      },
+      responses: {
+        200: Done,
+        400: json(ErrorBody, "Not valid."),
+        401: errors[401],
+        404: json(ErrorBody, "The student has no Connection to it (gone)."),
+        422: json(
+          ErrorBody,
+          "not_grantable: only a write tool nunio classified can be Immer erlaubt; never one that always asks, " +
+            "a Chat-only, read, blocked or unclassified tool.",
+        ),
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const { integrationKey, toolName } = c.req.valid("param");
+      const result = await c
+        .get("connections")
+        .setToolMode(p, integrationKey, toolName, c.req.valid("json").mode);
+      if (result.ok) return c.json({ status: "ok" as const }, 200);
+      return result.reason === "gone"
+        ? c.json({ error: result.reason }, 404)
+        : c.json({ error: result.reason }, 422);
+    },
+  );
+
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/connections/email/folders",
+      responses: {
+        200: json(
+          z.object({ folders: z.array(MailFolder) }),
+          "The mailbox's folders, listed with the stored login; nothing was stored.",
+        ),
+        401: errors[401],
+        404: json(ErrorBody, "The student has no Email Connection (gone)."),
+        422: FolderRefused,
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const result = await c.get("connections").mailboxFolders(p);
+      if (!result.ok) return folderRefused(c, result);
+      return c.json({ folders: result.folders }, 200);
+    },
+  );
+
+  routes.openapi(
+    createRoute({
+      method: "put",
+      path: "/api/me/connections/email/folders",
+      request: body(
+        z.object({
+          folders: z
+            .array(z.string().min(1).max(1000))
+            .min(1)
+            .max(200)
+            .describe("The folders nunio may read, by IMAP path."),
+        }),
+      ),
+      responses: {
+        200: Done,
+        400: json(ErrorBody, "Not valid."),
+        401: errors[401],
+        404: json(ErrorBody, "The student has no Email Connection (gone)."),
+        422: FolderRefused,
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const result = await c
+        .get("connections")
+        .setFolders(p, c.req.valid("json").folders);
+      if (!result.ok) return folderRefused(c, result);
+      return c.json({ status: "ok" as const }, 200);
     },
   );
 

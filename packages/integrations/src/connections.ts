@@ -3,8 +3,10 @@ import type { PrismaClient } from "@nunio/db";
 import type { Principal, Transaction } from "@nunio/delegation";
 import { accessRefusal, withOwner } from "@nunio/delegation";
 import type { ConnectionCredentialKeys, SourceKeys } from "@nunio/keys";
+import type { CatalogIntegration, ToolClass } from "./catalog.js";
+import { isGrantable } from "./catalog.js";
 import type { MailboxCheck, MailboxLogin } from "./email/mailbox.js";
-import { checkMailbox } from "./email/mailbox.js";
+import { checkMailbox, listMailboxFolders } from "./email/mailbox.js";
 import type { MailServer } from "./email/providers.js";
 import { discoverMailbox, mailProviderFor } from "./email/providers.js";
 import type { Lookup } from "./email/servers.js";
@@ -20,6 +22,67 @@ export interface ConnectionSummary {
   folders: string[];
   /** How many of the student's Agents use a tool of it. */
   agentCount: number;
+}
+
+/**
+ * A write tool's setting on the Connection's page: Nachfragen (ask) or Immer erlaubt (always_allowed, a Grant held by
+ * the Connection), or always_asks for a tool that is never grantable.
+ */
+export type ToolMode = "ask" | "always_allowed" | "always_asks";
+
+/** A classified tool of a Connection, as its page shows it. */
+export interface ConnectionTool {
+  /** The server's own tool name. */
+  name: string;
+  /** nunio's German label. */
+  label: string;
+  class: ToolClass;
+  /** Null for read and blocked tools, which have no setting. */
+  mode: ToolMode | null;
+  /** Whether nunio offers it at all; a blocked tool never is. */
+  available: boolean;
+}
+
+/** A student's Connection with its Integration and every tool nunio classified, by name. */
+export interface ConnectionDetail
+  extends Pick<CatalogIntegration, "key" | "name" | "logo" | "kind"> {
+  connection: ConnectionSummary;
+  tools: ConnectionTool[];
+}
+
+/** The student has no Connection to that Integration. */
+type Gone = { ok: false; reason: "gone" };
+
+/** The folders of a Connection's mailbox, or why listing them failed. */
+export type FolderListing = Exclude<MailboxCheck, { step: "smtp" }> | Gone;
+
+/** A Connection row as Einstellungen › Verbindungen and the Connection's page show it; never its credentials. */
+function toSummary(row: {
+  integrationKey: string;
+  state: string;
+  accountLabel: string;
+  folders: string[];
+}): ConnectionSummary {
+  return {
+    integrationKey: row.integrationKey,
+    state: row.state as ConnectionSummary["state"],
+    accountLabel: row.accountLabel,
+    folders: row.folders,
+    // No Agent can use a Connection's tools yet.
+    agentCount: 0,
+  };
+}
+
+/** What a tool's mode is, given whether the Connection holds a Grant for it. */
+function modeOf(
+  tool: { class: string; chatOnly: boolean },
+  granted: boolean,
+): ToolMode | null {
+  if (tool.class !== "write" && tool.class !== "write_always_asked")
+    return null;
+  if (!isGrantable({ class: tool.class, chatOnly: tool.chatOnly }))
+    return "always_asks";
+  return granted ? "always_allowed" : "ask";
 }
 
 /** What the student enters in the Connect dialog for Email. */
@@ -71,9 +134,9 @@ const isUniqueViolation = (error: unknown) =>
   (error as { code?: string } | null)?.code === "P2002";
 
 /**
- * Connections (#261): connecting Email and OAuth Integrations now; reconnecting, folders and disconnecting come with
- * later slices. Credentials are sealed under the "connection credentials" master key, and each Connection gets a
- * content key wrapped like a Source key.
+ * Connections (#261): connecting Email and OAuth Integrations, reading one with its tools, setting a tool's mode and
+ * Email's folders; reconnecting and disconnecting come with later slices. Credentials are sealed under the "connection
+ * credentials" master key, and each Connection gets a content key wrapped like a Source key.
  */
 export function createConnections({
   db,
@@ -171,6 +234,32 @@ export function createConnections({
     });
   }
 
+  /** The student's Email Connection's IMAP login, from its sealed credentials and stored servers; null without one. */
+  async function storedMailboxLogin(p: Principal) {
+    const row = await withOwner(db, p, (tx) =>
+      tx.connection.findFirst({
+        where: { integrationKey: EMAIL },
+        include: { credential: true },
+      }),
+    );
+    if (!row?.credential) return null;
+    const { username, password } = JSON.parse(
+      credentials.open(row.id, {
+        version: row.credential.keyVersion,
+        ciphertext: row.credential.ciphertext,
+      }),
+    ) as { username: string; password: string };
+    const { imap } = row.servers as unknown as { imap: MailServer };
+    return { username, password, imap };
+  }
+
+  /** Lists the folders of the student's mailbox with its stored login, for the folder chips. */
+  async function mailboxFolders(p: Principal): Promise<FolderListing> {
+    const login = await storedMailboxLogin(p);
+    if (!login) return { ok: false, reason: "gone" };
+    return listMailboxFolders(login, { fakes, lookup });
+  }
+
   return {
     /** nunio's Client ID Metadata Document, served publicly at its client id. */
     clientMetadataDocument: oauth.clientMetadataDocument,
@@ -182,14 +271,113 @@ export function createConnections({
     /** The student's Connections, by Integration. */
     async list(p: Principal): Promise<ConnectionSummary[]> {
       const rows = await withOwner(db, p, (tx) => tx.connection.findMany());
-      return rows.map((row) => ({
-        integrationKey: row.integrationKey,
-        state: row.state as ConnectionSummary["state"],
-        accountLabel: row.accountLabel,
-        folders: row.folders,
-        // No Agent can use a Connection's tools yet.
-        agentCount: 0,
-      }));
+      return rows.map(toSummary);
+    },
+
+    /** The student's Connection to an Integration with its tools (label, class, mode, availability); no credentials. */
+    async read(
+      p: Principal,
+      integrationKey: string,
+    ): Promise<ConnectionDetail | null> {
+      const row = await withOwner(db, p, (tx) =>
+        tx.connection.findFirst({
+          where: { integrationKey },
+          include: {
+            integration: {
+              include: { tools: { orderBy: { name: "asc" } } },
+            },
+            grants: { select: { toolName: true } },
+          },
+        }),
+      );
+      if (!row) return null;
+      const granted = new Set(row.grants.map((grant) => grant.toolName));
+      return {
+        key: row.integration.key,
+        name: row.integration.name,
+        logo: row.integration.logo,
+        kind: row.integration.kind as CatalogIntegration["kind"],
+        connection: toSummary(row),
+        tools: row.integration.tools.map((tool) => ({
+          name: tool.name,
+          label: tool.label,
+          class: tool.class as ToolClass,
+          mode: modeOf(tool, granted.has(tool.name)),
+          available: tool.class !== "blocked",
+        })),
+      };
+    },
+
+    /**
+     * Sets a write tool to Nachfragen or Immer erlaubt: Immer erlaubt is a Grant held by the Connection, in every Chat
+     * and Agent (ADR-0001). Only a plain write tool nunio classified can be set; never an always-asked, Chat-only,
+     * read, blocked or unclassified one.
+     */
+    async setToolMode(
+      p: Principal,
+      integrationKey: string,
+      toolName: string,
+      mode: "ask" | "always_allowed",
+    ): Promise<{ ok: true } | Gone | { ok: false; reason: "not_grantable" }> {
+      return withOwner(db, p, async (tx, studentId) => {
+        const connection = await tx.connection.findFirst({
+          where: { integrationKey },
+        });
+        if (!connection) return { ok: false, reason: "gone" };
+        const tool = await tx.integrationTool.findUnique({
+          where: { integrationKey_name: { integrationKey, name: toolName } },
+        });
+        if (
+          !tool ||
+          !isGrantable({
+            class: tool.class as ToolClass,
+            chatOnly: tool.chatOnly,
+          })
+        )
+          return { ok: false, reason: "not_grantable" };
+        if (mode === "always_allowed")
+          // One Grant per Connection and tool: setting it again keeps the one there.
+          await tx.grant.createMany({
+            data: [
+              {
+                id: randomUUID(),
+                studentId,
+                connectionId: connection.id,
+                toolName,
+              },
+            ],
+            skipDuplicates: true,
+          });
+        else
+          await tx.grant.deleteMany({
+            where: { connectionId: connection.id, toolName },
+          });
+        return { ok: true };
+      });
+    },
+
+    /** The folders of the student's mailbox, logging in with the stored credentials; stores nothing. */
+    mailboxFolders,
+
+    /** Sets the folders nunio may read, without signing in again: only folders the mailbox has right now. */
+    async setFolders(
+      p: Principal,
+      folders: string[],
+    ): Promise<
+      { ok: true } | FolderListing | { ok: false; reason: "unknown_folder" }
+    > {
+      const listing = await mailboxFolders(p);
+      if (!listing.ok) return listing;
+      const listed = new Set(listing.folders.map((folder) => folder.path));
+      if (!folders.every((folder) => listed.has(folder)))
+        return { ok: false, reason: "unknown_folder" };
+      const { count } = await withOwner(db, p, (tx) =>
+        tx.connection.updateMany({
+          where: { integrationKey: EMAIL },
+          data: { folders: [...new Set(folders)] },
+        }),
+      );
+      return count === 1 ? { ok: true } : { ok: false, reason: "gone" };
     },
 
     /** The university and servers nunio recognises from an address, or "unknown" for the manual form. */

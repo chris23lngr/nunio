@@ -10,12 +10,16 @@ export {
   type ToolClass,
 } from "./catalog.js";
 export {
+  type ConnectionDetail,
   type ConnectionSummary,
   type Connections,
+  type ConnectionTool,
   createConnections,
   type EmailCheck,
   type EmailConnect,
   type EmailLogin,
+  type FolderListing,
+  type ToolMode,
 } from "./connections.js";
 export type { MailboxCheck, MailFolder } from "./email/mailbox.js";
 export {
