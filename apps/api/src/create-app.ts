@@ -37,6 +37,7 @@ import {
 import type {
   Courses,
   Facts,
+  OwnWork,
   Projects,
   Sources,
   TopicAreas,
@@ -45,6 +46,7 @@ import {
   createCourses,
   createFacts,
   createKnowledgeReader,
+  createOwnWork,
   createProjects,
   createSources,
   createTopicAreas,
@@ -77,6 +79,7 @@ export interface AppDeps {
   prisma: PrismaClient;
   delegation: Delegation;
   sources: Sources;
+  ownWork: OwnWork;
   facts: Facts;
   topicAreas: TopicAreas;
   sourceWorkflows: SourceWorkflows;
@@ -113,6 +116,7 @@ export function createApp({
   appOrigin,
   spike,
   sources,
+  ownWork,
   facts,
   topicAreas,
   sourceWorkflows,
@@ -154,6 +158,7 @@ export function createApp({
     c.set("prisma", prisma);
     c.set("delegation", delegation);
     c.set("sources", sources);
+    c.set("ownWork", ownWork);
     c.set("facts", facts);
     c.set("topicAreas", topicAreas);
     c.set("sourceWorkflows", sourceWorkflows);
@@ -239,11 +244,8 @@ export async function appFromEnv(
       )?.due ?? null,
   });
   const keys = sourceKeysFromEnv(env);
-  const sources = createSources({
-    db: prisma,
-    keys,
-    storage: sourceStorageFromEnv(env),
-  });
+  const storage = sourceStorageFromEnv(env);
+  const sources = createSources({ db: prisma, keys, storage });
   const clock = { now: () => new Date() };
   const facts = createFacts({ db: prisma, keys, clock });
   const provider = {
@@ -302,6 +304,7 @@ export async function appFromEnv(
     appOrigin,
     spike,
     sources,
+    ownWork: createOwnWork({ db: prisma, keys, storage }),
     facts,
     topicAreas: createTopicAreas({ db: prisma, facts, clock }),
     sourceWorkflows: sourceWorkflowsFromEnv(env),
