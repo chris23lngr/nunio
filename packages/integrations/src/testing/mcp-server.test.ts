@@ -222,13 +222,29 @@ describe("fake MCP server", () => {
     }).catch(() => {});
 
     expect(server.tokenRequests).toEqual([
-      { grantType: "authorization_code", clientId },
-      { grantType: "refresh_token", clientId },
+      { grantType: "authorization_code", clientId, resource: server.mcpUrl },
+      { grantType: "refresh_token", clientId, resource: server.mcpUrl },
       { grantType: "refresh_token", clientId },
     ]);
     expect(server.revocations).toEqual([
       { token: provider.saved!.refresh_token, clientId },
     ]);
+  });
+
+  it("serves other Protected Resource Metadata, or none, on demand", async () => {
+    const prm = () =>
+      fetch(`${server.url}/.well-known/oauth-protected-resource/mcp`);
+    server.setProtectedResourceMetadata({
+      resource: `${server.url}/elsewhere`,
+      authorization_servers: [`${server.url}/tenant`],
+    });
+    expect(await (await prm()).json()).toEqual({
+      resource: `${server.url}/elsewhere`,
+      authorization_servers: [`${server.url}/tenant`],
+    });
+
+    server.setProtectedResourceMetadata(null);
+    expect((await prm()).status).toBe(404);
   });
 
   it("denies the next authorization on demand", async () => {

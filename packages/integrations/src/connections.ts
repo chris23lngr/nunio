@@ -9,6 +9,7 @@ import type { MailServer } from "./email/providers.js";
 import { discoverMailbox, mailProviderFor } from "./email/providers.js";
 import type { Lookup } from "./email/servers.js";
 import { mailTls } from "./email/servers.js";
+import { createOAuthConnect } from "./oauth.js";
 
 /** A student's Connection as Einstellungen › Verbindungen shows it; never its credentials. */
 export interface ConnectionSummary {
@@ -70,24 +71,29 @@ const isUniqueViolation = (error: unknown) =>
   (error as { code?: string } | null)?.code === "P2002";
 
 /**
- * Connections (#261): connecting Email now; OAuth, reconnecting, folders and disconnecting come with later slices.
- * Credentials are sealed under the "connection credentials" master key, and each Connection gets a content key
- * wrapped like a Source key.
+ * Connections (#261): connecting Email and OAuth Integrations now; reconnecting, folders and disconnecting come with
+ * later slices. Credentials are sealed under the "connection credentials" master key, and each Connection gets a
+ * content key wrapped like a Source key.
  */
 export function createConnections({
   db,
   keys,
   credentials,
   fakes,
+  apiOrigin,
   lookup,
 }: {
   db: PrismaClient;
   keys: SourceKeys;
   credentials: ConnectionCredentialKeys;
-  /** INTEGRATION_FAKES: the `nunio.test` provider, private mail hosts and the fakes' ports. */
+  /** INTEGRATION_FAKES: the `nunio.test` provider, private mail and OAuth hosts and the fakes' ports. */
   fakes: boolean;
+  /** The API's own origin, where nunio's Client ID Metadata Document and the OAuth callbacks live. */
+  apiOrigin: string;
   lookup?: Lookup;
 }) {
+  const oauth = createOAuthConnect({ db, keys, credentials, fakes, apiOrigin });
+
   /** The login nunio tests and stores: the entered servers, or else the recognised provider's. */
   function mailboxLogin(login: EmailLogin): MailboxLogin | Refusal {
     const provider = mailProviderFor(login.address, { fakes });
@@ -166,6 +172,13 @@ export function createConnections({
   }
 
   return {
+    /** nunio's Client ID Metadata Document, served publicly at its client id. */
+    clientMetadataDocument: oauth.clientMetadataDocument,
+    /** Starts connecting an OAuth Integration: returns the vendor's sign-in URL, or why not. */
+    startOAuth: oauth.start,
+    /** The vendor's redirect back: creates the Connection, or stores nothing and says why. */
+    finishOAuth: oauth.finish,
+
     /** The student's Connections, by Integration. */
     async list(p: Principal): Promise<ConnectionSummary[]> {
       const rows = await withOwner(db, p, (tx) => tx.connection.findMany());

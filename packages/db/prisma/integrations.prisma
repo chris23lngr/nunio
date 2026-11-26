@@ -27,8 +27,10 @@ model Integration {
   clientSecretSecret String?
   createdAt          DateTime @default(now())
 
-  tools       IntegrationTool[]
-  connections Connection[]
+  tools        IntegrationTool[]
+  connections  Connection[]
+  oauthFlows   OAuthFlow[]
+  oauthClients OAuthClient[]
 
   @@map("integration")
 }
@@ -115,4 +117,40 @@ model MailLoginLimit {
   windowStart BigInt
 
   @@map("mail_login_limit")
+}
+
+// An OAuth sign-in a student started at a vendor and hasn't finished (#288): the PKCE verifier, the client and the
+// authorization server it pinned, sealed like credentials. It is bound to the session that started it and lives 10
+// minutes; the callback takes it once.
+model OAuthFlow {
+  /// sha256 of the state, in hex; the state itself only travels through the vendor.
+  id             String      @id
+  studentId      String
+  student        User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  sessionId      String
+  session        Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  integrationKey String
+  integration    Integration @relation(fields: [integrationKey], references: [key])
+  /// The "connection credentials" master key version it is sealed under.
+  keyVersion     String
+  ciphertext     String
+  expiresAt      DateTime
+  createdAt      DateTime    @default(now())
+
+  @@index([studentId])
+  @@map("oauth_flow")
+}
+
+// The client nunio registered through DCR, once per Integration and authorization server issuer. A new issuer gets
+// a new registration. Its client secret is sealed like credentials.
+model OAuthClient {
+  integrationKey String
+  integration    Integration @relation(fields: [integrationKey], references: [key])
+  issuer         String
+  keyVersion     String
+  ciphertext     String
+  createdAt      DateTime    @default(now())
+
+  @@id([integrationKey, issuer])
+  @@map("oauth_client")
 }

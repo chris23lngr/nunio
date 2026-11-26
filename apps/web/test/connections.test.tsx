@@ -1,9 +1,13 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import { ConnectionsScreen } from "@/features/settings/connections-screen";
+import { leaveTo } from "@/lib/navigation";
 import { api } from "./api";
 import { TestProviders } from "./providers";
+
+vi.mock("@/lib/navigation", () => ({ leaveTo: vi.fn() }));
+beforeEach(() => vi.mocked(leaveTo).mockClear());
 
 const email = {
   key: "email",
@@ -14,6 +18,10 @@ const email = {
   dataNote: "Daten werden von deiner Hochschule verarbeitet",
   kind: "email",
   connection: null,
+  tools: [
+    { label: "Mails durchsuchen", class: "read" },
+    { label: "Mail senden", class: "write_always_asked" },
+  ],
 };
 const testnotizen = {
   key: "testnotizen",
@@ -23,12 +31,20 @@ const testnotizen = {
   dataNote: "Test-Dienst, Daten bleiben auf deinem Rechner",
   kind: "mcp",
   connection: null,
+  tools: [
+    { label: "Seite anlegen", class: "write" },
+    { label: "Notiz lesen", class: "read" },
+    { label: "Notizen durchsuchen", class: "read" },
+    { label: "Notiz teilen", class: "write_always_asked" },
+  ],
 };
 
-function renderConnections() {
+function renderConnections(
+  returned?: Parameters<typeof ConnectionsScreen>[0]["returned"],
+) {
   return render(
     <TestProviders>
-      <ConnectionsScreen apiOrigin={api.origin} />
+      <ConnectionsScreen apiOrigin={api.origin} returned={returned} />
     </TestProviders>,
   );
 }
@@ -60,12 +76,11 @@ test("shows no Connections yet and each offered Integration under Verfügbar", a
     "/integrations/email.svg",
   );
   expect(first.getByRole("button", { name: "Verbinden" })).toBeTruthy();
-  // The OAuth Connect dialog comes with #288.
   expect(
     within(rows[1]!)
       .getByRole("button", { name: "Verbinden" })
       .hasAttribute("disabled"),
-  ).toBe(true);
+  ).toBe(false);
   expect(within(rows[1]!).getByText("Testnotizen")).toBeTruthy();
 
   const connected = within(screen.getByRole("region", { name: "Verbunden" }));
@@ -520,3 +535,135 @@ test.each([
 
   expect((await dialog.findByRole("alert")).textContent).toBe(message);
 });
+
+/** Opens Testnotizen's Connect dialog from Verfügbar. */
+async function openTestnotizenDialog(user: ReturnType<typeof userEvent.setup>) {
+  const available = within(
+    await screen.findByRole("region", { name: "Verfügbar" }),
+  );
+  const row = available.getByText("Testnotizen").closest("li")!;
+  await user.click(within(row).getByRole("button", { name: "Verbinden" }));
+  return within(
+    await screen.findByRole("dialog", { name: "Testnotizen verbinden" }),
+  );
+}
+
+test("connects an OAuth Integration: shows its tools by class and the data note, then sends the student to the vendor", async () => {
+  const vendor =
+    "https://mcp.nunio.test/authorize?client_id=x&state=s&code_challenge=c";
+  let started = 0;
+  api.route("GET", "/api/me/integrations", () =>
+    Response.json({ integrations: [email, testnotizen] }),
+  );
+  api.route("POST", "/api/me/connections/testnotizen/oauth", () => {
+    started++;
+    return Response.json({ authorizationUrl: vendor });
+  });
+  const user = userEvent.setup();
+  renderConnections();
+
+  const dialog = await openTestnotizenDialog(user);
+
+  expect(
+    dialog.getByText("Notizen durchsuchen und lesen, Seiten anlegen"),
+  ).toBeTruthy();
+  const listed = (name: string) =>
+    within(dialog.getByRole("region", { name }))
+      .getAllByRole("listitem")
+      .map((item) => item.textContent);
+  expect(listed("Liest")).toEqual(["Notiz lesen", "Notizen durchsuchen"]);
+  expect(listed("Schreibt nach deiner Freigabe")).toEqual(["Seite anlegen"]);
+  expect(listed("Fragt immer vorher")).toEqual(["Notiz teilen"]);
+  expect(
+    dialog.getByText("Test-Dienst, Daten bleiben auf deinem Rechner."),
+  ).toBeTruthy();
+  expect(
+    dialog.getByText(
+      "Was nunio liest, geht ohne Speicherung beim Anbieter an das KI-Modell.",
+    ),
+  ).toBeTruthy();
+  expect(
+    dialog.getByText(
+      "nunio speichert es verschlüsselt, bis du den Chat löschst oder die Verbindung trennst.",
+    ),
+  ).toBeTruthy();
+
+  await user.click(
+    dialog.getByRole("button", { name: "Mit Testnotizen verbinden" }),
+  );
+
+  await vi.waitFor(() => expect(leaveTo).toHaveBeenCalledWith(vendor));
+  expect(started).toBe(1);
+  // On its way to the vendor, the dialog stays busy.
+  expect(
+    dialog
+      .getByRole("button", { name: "Mit Testnotizen verbinden" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+});
+
+test("shows why connecting didn't start, and stays on nunio", async () => {
+  api.route("GET", "/api/me/integrations", () =>
+    Response.json({ integrations: [testnotizen] }),
+  );
+  api.route("POST", "/api/me/connections/testnotizen/oauth", () =>
+    Response.json({ error: "issuer_refused" }, { status: 422 }),
+  );
+  const user = userEvent.setup();
+  renderConnections();
+
+  const dialog = await openTestnotizenDialog(user);
+  await user.click(
+    dialog.getByRole("button", { name: "Mit Testnotizen verbinden" }),
+  );
+
+  expect((await dialog.findByRole("alert")).textContent).toBe(
+    "nunio konnte die Anmeldung bei Testnotizen nicht starten. Bitte versuche es später erneut.",
+  );
+  expect(leaveTo).not.toHaveBeenCalled();
+  expect(
+    dialog
+      .getByRole("button", { name: "Mit Testnotizen verbinden" })
+      .hasAttribute("disabled"),
+  ).toBe(false);
+});
+
+test.each([
+  [
+    "cancelled",
+    "Du hast die Anmeldung bei Testnotizen abgebrochen. Es wurde nichts gespeichert.",
+  ],
+  [
+    "expired",
+    "Die Anmeldung ist abgelaufen oder wurde in einem anderen Fenster begonnen. Versuch es noch einmal.",
+  ],
+  [
+    "failed",
+    "Die Anmeldung bei Testnotizen hat nicht geklappt. Es wurde nichts gespeichert.",
+  ],
+  ["already_connected", "Du hast Testnotizen schon verbunden."],
+])(
+  "reopens the Connect dialog with the reason after coming back %s from the vendor",
+  async (error, message) => {
+    api.route("GET", "/api/me/integrations", () =>
+      Response.json({ integrations: [email, testnotizen] }),
+    );
+    window.history.replaceState(
+      null,
+      "",
+      `/settings/connections?connect=testnotizen&error=${error}`,
+    );
+    const user = userEvent.setup();
+    renderConnections({ integrationKey: "testnotizen", error });
+
+    const dialog = within(
+      await screen.findByRole("dialog", { name: "Testnotizen verbinden" }),
+    );
+    expect(dialog.getByRole("alert").textContent).toBe(message);
+
+    await user.click(dialog.getByRole("button", { name: "Abbrechen" }));
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // A reload doesn't show the reason again.
+    expect(window.location.search).toBe("");
+  },
+);

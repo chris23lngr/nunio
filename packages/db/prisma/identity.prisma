@@ -46,6 +46,7 @@ model User {
   selfAssessments  SelfAssessment[]
   connections      Connection[]
   mailLoginLimit   MailLoginLimit?
+  oauthFlows       OAuthFlow[]
 
   @@map("user")
 }
@@ -60,6 +61,7 @@ model Session {
   userAgent String?
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  oauthFlows OAuthFlow[]
 
   @@index([userId])
   @@map("session")

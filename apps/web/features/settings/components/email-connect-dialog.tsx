@@ -28,6 +28,7 @@ import {
   MailboxRefused,
 } from "../api/email-connection";
 import { integrationQueries } from "../api/integration-queries";
+import { DataNote } from "./data-note";
 
 const noServers = {
   imapHost: "",
@@ -427,17 +428,7 @@ export function EmailConnectDialog({
           </form>
         </DialogBody>
         <DialogFooter className="flex-col items-stretch gap-3.5 sm:flex-col">
-          <div className="flex flex-col gap-0.5 text-xs leading-4 text-base-600">
-            <p>{dataNote}.</p>
-            <p>
-              Was nunio liest, geht ohne Speicherung beim Anbieter an das
-              KI-Modell.
-            </p>
-            <p>
-              nunio speichert es verschlüsselt, bis du den Chat löschst oder die
-              Verbindung trennst.
-            </p>
-          </div>
+          <DataNote dataNote={dataNote} />
           <div className="flex justify-end gap-2">
             <DialogClose
               render={<Button variant="outline" disabled={pending} />}
