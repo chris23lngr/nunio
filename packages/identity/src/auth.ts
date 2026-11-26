@@ -27,6 +27,8 @@ export interface AuthOptions {
 
 export interface Actor {
   readonly studentId: string;
+  /** The session the request came with, for state bound to it (such as an OAuth flow). */
+  readonly sessionId: string;
 }
 
 const invitationRequired = () =>
@@ -355,7 +357,7 @@ export function createAuth({
         query: { disableRefresh: true },
       });
       if (!session?.user.emailVerified) return null;
-      return { studentId: session.user.id };
+      return { studentId: session.user.id, sessionId: session.session.id };
     },
     /** Records the current student's deletion request and ends all their sessions in one transaction. */
     async requestDeletion(

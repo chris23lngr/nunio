@@ -30,7 +30,10 @@ import {
   registerOutreachSettingsRoutes,
   registerPushRoutes,
 } from "./inbox.js";
-import { registerIntegrationRoutes } from "./integrations.js";
+import {
+  registerIntegrationRoutes,
+  registerOAuthRoutes,
+} from "./integrations.js";
 import { registerPlanRoutes } from "./plan.js";
 import { registerProjectRoutes } from "./projects.js";
 import { registerReviewRoutes } from "./review.js";
@@ -67,6 +70,8 @@ export interface AppBindings {
     understanding: Understanding;
     integrationCatalog: Catalog;
     connections: Connections;
+    /** The web app's origin, where the OAuth callback sends the student back. */
+    appOrigin: string;
   };
 }
 
@@ -221,3 +226,4 @@ registerPushRoutes(routes);
 registerStudyRoutes(routes);
 registerTopicAreaRoutes(routes);
 registerIntegrationRoutes(routes);
+registerOAuthRoutes(routes);

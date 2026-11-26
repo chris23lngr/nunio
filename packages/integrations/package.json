@@ -33,10 +33,12 @@
     "@biomejs/biome": "2.6.3"
   },
   "dependencies": {
+    "@ai-sdk/mcp": "2.0.87",
     "@nunio/db": "workspace:*",
     "@nunio/delegation": "workspace:*",
     "@nunio/keys": "workspace:*",
     "imapflow": "2.12.2",
-    "nodemailer": "10.6.1"
+    "nodemailer": "10.6.1",
+    "undici": "7.30.1"
   }
 }

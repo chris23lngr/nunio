@@ -7211,6 +7211,32 @@
           },
           "connection": {
             "$ref": "#/components/schemas/Connection"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "nunio's German label."
+                },
+                "class": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "write",
+                    "write_always_asked"
+                  ],
+                  "description": "read: read freely. write: after the student's approval, or Immer erlaubt. write_always_asked: always asks."
+                }
+              },
+              "required": [
+                "label",
+                "class"
+              ]
+            },
+            "description": "Its classified tools by name; blocked tools are never offered and left out."
           }
         },
         "required": [
@@ -7220,7 +7246,8 @@
           "description",
           "dataNote",
           "kind",
-          "connection"
+          "connection",
+          "tools"
         ]
       },
       "Connection": {
@@ -7383,6 +7410,50 @@
           "name",
           "specialUse",
           "preselected"
+        ]
+      },
+      "ClientIdMetadataDocument": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "This document's own URL."
+          },
+          "client_name": {
+            "type": "string"
+          },
+          "redirect_uris": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "grant_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "response_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "token_endpoint_auth_method": {
+            "type": "string",
+            "enum": [
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "redirect_uris",
+          "grant_types",
+          "response_types",
+          "token_endpoint_auth_method"
         ]
       }
     },
@@ -19009,6 +19080,224 @@
           },
           "429": {
             "description": "More than 10 mailbox logins in 15 minutes (too_many_attempts); nothing was tried.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/oauth/client-metadata.json": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "nunio's Client ID Metadata Document: a public client whose id is this URL, with each Integration's callback.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientIdMetadataDocument"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/connections/{integrationKey}/oauth": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "integrationKey",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The flow is stored for 10 minutes, bound to this session; the browser goes to the vendor next.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorizationUrl": {
+                      "type": "string",
+                      "description": "The vendor's sign-in page, asking for every scope."
+                    }
+                  },
+                  "required": [
+                    "authorizationUrl"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Pilot access is not active (not_entitled) or deletion is pending (deletion_pending).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not an offered OAuth Integration (not_offered).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The student already has a Connection to it (already_connected).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "issuer_refused: the server named an authorization server nunio doesn't allow for it. authorization_failed: discovering or registering at the vendor failed. Nothing was stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/connections/{integrationKey}/oauth/callback": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "integrationKey",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "required": false,
+            "name": "code",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "required": false,
+            "name": "iss",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "error",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Back to Einstellungen › Verbindungen: with the Connection made, or with `connect` naming the Integration and `error` the reason (cancelled, expired, already_connected or failed), nothing stored."
+          },
+          "400": {
+            "description": "Not valid.",
             "content": {
               "application/json": {
                 "schema": {

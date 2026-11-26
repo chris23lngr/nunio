@@ -64,7 +64,7 @@ for (const [network, prefix] of [
   specialIPv6.addSubnet(network, prefix, "ipv6");
 
 /** Fails closed: an address with a zone (a local interface) or one that isn't an IP address is not public. */
-function isPublic(address: string): boolean {
+export function isPublic(address: string): boolean {
   if (isIPv4(address)) return !nonPublicIPv4.check(address, "ipv4");
   if (!isIPv6(address) || address.includes("%")) return false;
   // The URL parser writes an IPv6 address canonically, an IPv4-mapped one as ::ffff:hhhh:hhhh.

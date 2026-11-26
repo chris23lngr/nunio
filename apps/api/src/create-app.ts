@@ -175,6 +175,12 @@ export function createApp({
     c.set("understanding", understanding);
     c.set("integrationCatalog", integrationCatalog);
     c.set("connections", connections);
+    c.set("appOrigin", appOrigin);
+    await next();
+  });
+  // nunio's Client ID Metadata Document is public: vendors fetch it without a session.
+  app.use("/oauth/*", async (c, next) => {
+    c.set("connections", connections);
     await next();
   });
   app.route("/", routes);
@@ -330,6 +336,7 @@ export async function appFromEnv(
       keys,
       credentials: connectionCredentialKeysFromEnv(env),
       fakes,
+      apiOrigin: required("BETTER_AUTH_URL"),
     }),
     // Only the worker sends; the API reads the Inbox and settings, and holds no notification key.
     outreach: createOutreach({

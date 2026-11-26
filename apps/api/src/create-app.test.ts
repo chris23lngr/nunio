@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import type { AddressInfo } from "node:net";
 import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { serve } from "@hono/node-server";
 import type {
   Embedder,
   Estimator,
@@ -45,9 +47,15 @@ import {
 } from "@nunio/delegation";
 import { createAuth } from "@nunio/identity";
 import { createCatalog, createConnections } from "@nunio/integrations";
-import type { FakeMailServer, MailAccount } from "@nunio/integrations/testing";
+import type {
+  FakeMailServer,
+  FakeMcpServer,
+  MailAccount,
+} from "@nunio/integrations/testing";
 import {
+  seedIntegrationCatalog,
   startFakeMailServer,
+  startFakeMcpServer,
   startSmtpFaultServer,
 } from "@nunio/integrations/testing";
 import { createConnectionCredentialKeys, createSourceKeys } from "@nunio/keys";
@@ -605,6 +613,7 @@ beforeAll(async () => {
       keys,
       credentials: connectionCredentials,
       fakes: true,
+      apiOrigin,
     }),
     spike: { webhookSecret, pool },
   };
@@ -11386,6 +11395,7 @@ describe("the Integration catalog", () => {
       dataNote: "Daten werden in den USA verarbeitet",
       kind: "mcp",
       connection: null,
+      tools: [],
     });
     const keys = integrations.map((integration) => integration.key);
     // Email is seeded hidden until the Integration injection eval passes.
@@ -11690,6 +11700,7 @@ describe("connecting Email", () => {
         }),
         credentials: connectionCredentials,
         fakes: false,
+        apiOrigin,
       }),
     });
     const cookie = await signUp("email-private-host");
@@ -11904,6 +11915,7 @@ describe("connecting Email", () => {
         }),
         credentials: connectionCredentials,
         fakes: false,
+        apiOrigin,
       }),
     });
     const cookie = await signUp("email-port-not-counted");
@@ -12007,5 +12019,438 @@ describe("connecting Email", () => {
       },
     );
     expect(response.status).toBe(401);
+  });
+});
+
+describe("connecting an OAuth Integration", () => {
+  let fake: FakeMcpServer;
+  let listener: ReturnType<typeof serve>;
+  /** The API as vendors reach it: they fetch nunio's Client ID Metadata Document from its own origin. */
+  let api: ReturnType<typeof createApp>;
+  let apiUrl: string;
+  const workspace = "Leas Lernnotizen";
+
+  beforeAll(async () => {
+    fake = await startFakeMcpServer({ workspaceName: workspace });
+    let handle = (_request: Request): Response | Promise<Response> =>
+      new Response(null, { status: 503 });
+    listener = serve({
+      fetch: (request) => handle(request),
+      hostname: "127.0.0.1",
+      port: 0,
+    });
+    await new Promise((resolve) => listener.once("listening", resolve));
+    apiUrl = `http://127.0.0.1:${(listener.address() as AddressInfo).port}`;
+    api = createApp({
+      ...appDeps,
+      connections: createConnections({
+        db: prisma,
+        keys: createSourceKeys({
+          activeVersion: "test",
+          masters: { test: randomBytes(32) },
+        }),
+        credentials: connectionCredentials,
+        fakes: true,
+        apiOrigin: apiUrl,
+      }),
+    });
+    handle = (request) => api.fetch(request);
+    // Offers Testnotizen (registering through CIMD, with the fake as its issuer) and Email.
+    await seedIntegrationCatalog(admin, fake);
+  }, 180_000);
+
+  afterAll(async () => {
+    await admin?.integration.updateMany({
+      where: { key: { in: ["email", "testnotizen"] } },
+      data: { status: "hidden" },
+    });
+    await new Promise((resolve) => listener?.close(resolve));
+    await fake?.stop();
+  });
+
+  const cimdUrl = () => `${apiUrl}/oauth/client-metadata.json`;
+  const callbackFor = (key: string) =>
+    `${apiUrl}/api/me/connections/${key}/oauth/callback`;
+
+  /** Adds an offered OAuth Integration served by `server`, as a catalog migration would. */
+  async function addIntegration(
+    name: string,
+    server: FakeMcpServer,
+    overrides: { registration?: string; issuers?: string[] } = {},
+  ) {
+    const key = `${name}-${run}`;
+    await admin.integration.create({
+      data: {
+        key,
+        name: `Dienst ${name}`,
+        logo: `/integrations/${key}.svg`,
+        description: "Notizen lesen",
+        dataNote: "Test-Dienst",
+        status: "offered",
+        kind: "mcp",
+        mcpUrl: server.mcpUrl,
+        transport: "http",
+        scopes: ["notes"],
+        issuers: overrides.issuers ?? [server.url],
+        registration: overrides.registration ?? "cimd",
+      },
+    });
+    return key;
+  }
+
+  function start(cookie: string, key = "testnotizen") {
+    return api.request(`${apiUrl}/api/me/connections/${key}/oauth`, {
+      method: "POST",
+      headers: { cookie, origin: appOrigin },
+    });
+  }
+
+  /** The browser at the vendor, which approves at once: where it sends the student back. */
+  async function atVendor(authorizationUrl: string): Promise<URL> {
+    const response = await fetch(authorizationUrl, { redirect: "manual" });
+    expect(response.status).toBe(302);
+    return new URL(response.headers.get("location")!);
+  }
+
+  /** The vendor's redirect back to nunio, in the browser with `cookie`. */
+  function back(cookie: string, callback: URL) {
+    return api.request(callback.href, { headers: { cookie } });
+  }
+
+  /** Starts, signs in at the vendor and comes back; returns the start's body and where nunio sends the student. */
+  async function connect(cookie: string, key = "testnotizen") {
+    const started = await start(cookie, key);
+    expect(started.status).toBe(200);
+    const body = await started.text();
+    const { authorizationUrl } = JSON.parse(body) as {
+      authorizationUrl: string;
+    };
+    const returned = await back(cookie, await atVendor(authorizationUrl));
+    expect(returned.status).toBe(302);
+    return {
+      body,
+      authorizationUrl: new URL(authorizationUrl),
+      location: returned.headers.get("location")!,
+    };
+  }
+
+  async function storedFor(cookie: string) {
+    const id = await studentId(cookie);
+    return {
+      connections: await admin.connection.findMany({
+        where: { studentId: id },
+      }),
+      credentials: await admin.connectionCredential.findMany({
+        where: { studentId: id },
+      }),
+      flows: await admin.oAuthFlow.findMany({ where: { studentId: id } }),
+    };
+  }
+
+  const nothing = { connections: [], credentials: [], flows: [] };
+
+  it("serves nunio's Client ID Metadata Document at its own URL", async () => {
+    const dcr = await addIntegration("cimd-doc-dcr", fake, {
+      registration: "dcr",
+    });
+
+    const response = await fetch(cimdUrl());
+
+    expect(response.status).toBe(200);
+    const document = (await response.json()) as {
+      client_id: string;
+      redirect_uris: string[];
+    };
+    expect(document).toMatchObject({
+      client_id: cimdUrl(),
+      client_name: "nunio",
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
+    });
+    expect(document.redirect_uris).toContain(callbackFor("testnotizen"));
+    expect(document.redirect_uris).not.toContain(callbackFor(dcr));
+  });
+
+  it("connects through CIMD: the vendor's sign-in asks for every scope, and only the callback creates the Connection", async () => {
+    const cookie = await signUp("oauth-cimd");
+
+    const started = await start(cookie);
+    expect(started.status).toBe(200);
+    const { authorizationUrl } = (await started.json()) as {
+      authorizationUrl: string;
+    };
+    const url = new URL(authorizationUrl);
+    expect(url.origin + url.pathname).toBe(`${fake.url}/authorize`);
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({
+      response_type: "code",
+      client_id: cimdUrl(),
+      redirect_uri: callbackFor("testnotizen"),
+      scope: "notes",
+      resource: fake.mcpUrl,
+      code_challenge_method: "S256",
+    });
+    expect(url.searchParams.get("state")).toMatch(/^[\w-]{43}$/);
+    // Before the vendor sends the student back, only the flow is stored: its state's hash and sealed verifier.
+    const pending = await storedFor(cookie);
+    expect(pending.connections).toEqual([]);
+    expect(pending.flows).toHaveLength(1);
+    expect(pending.flows[0]!.id).not.toContain(url.searchParams.get("state"));
+    expect(pending.flows[0]!.expiresAt.getTime()).toBeGreaterThan(
+      Date.now() + 9 * 60_000,
+    );
+
+    const returned = await back(cookie, await atVendor(authorizationUrl));
+
+    expect(returned.status).toBe(302);
+    expect(returned.headers.get("location")).toBe(
+      `${appOrigin}/settings/connections`,
+    );
+    const stored = await storedFor(cookie);
+    expect(stored.flows).toEqual([]);
+    expect(stored.connections).toMatchObject([
+      {
+        integrationKey: "testnotizen",
+        state: "connected",
+        accountLabel: workspace,
+      },
+    ]);
+    expect(fake.tokenRequests.at(-1)).toEqual({
+      grantType: "authorization_code",
+      clientId: cimdUrl(),
+    });
+    const credential = JSON.parse(
+      connectionCredentials.open(stored.connections[0]!.id, {
+        version: stored.credentials[0]!.keyVersion,
+        ciphertext: stored.credentials[0]!.ciphertext,
+      }),
+    );
+    expect(credential).toMatchObject({
+      accessToken: expect.any(String),
+      refreshToken: expect.any(String),
+      expiresAt: expect.any(String),
+      scopes: ["notes"],
+      client: { client_id: cimdUrl() },
+    });
+    expect(stored.credentials[0]!.ciphertext).not.toContain(
+      credential.accessToken,
+    );
+
+    const listed = await api.request(`${apiUrl}/api/me/integrations`, {
+      headers: { cookie },
+    });
+    const listing = await listed.text();
+    expect(JSON.parse(listing).integrations).toContainEqual({
+      key: "testnotizen",
+      name: "Testnotizen",
+      logo: "/integrations/testnotizen.svg",
+      description: "Notizen durchsuchen und lesen, Seiten anlegen",
+      dataNote: "Test-Dienst, Daten bleiben auf deinem Rechner",
+      kind: "mcp",
+      connection: {
+        state: "connected",
+        accountLabel: workspace,
+        folders: [],
+        agentCount: 0,
+      },
+      tools: [
+        { label: "Seite anlegen", class: "write" },
+        { label: "Notiz lesen", class: "read" },
+        { label: "Notizen durchsuchen", class: "read" },
+        { label: "Notiz teilen", class: "write_always_asked" },
+      ],
+    });
+    // No credential in any response.
+    for (const text of [listing, returned.headers.get("location")!])
+      for (const secret of [credential.accessToken, credential.refreshToken])
+        expect(text).not.toContain(secret);
+
+    const again = await start(cookie);
+    expect(again.status).toBe(409);
+    expect(await again.json()).toEqual({ error: "already_connected" });
+  });
+
+  it("connects through DCR, registering once per Integration and issuer, and again when the issuer changes", async () => {
+    const key = await addIntegration("dcr", fake, { registration: "dcr" });
+    const registrations = () =>
+      admin.oAuthClient.findMany({ where: { integrationKey: key } });
+
+    const first = await signUp("oauth-dcr-a");
+    const a = await connect(first, key);
+    expect(a.location).toBe(`${appOrigin}/settings/connections`);
+    const clientA = a.authorizationUrl.searchParams.get("client_id")!;
+    expect(clientA).toMatch(/^client-/);
+    expect(await registrations()).toMatchObject([{ issuer: fake.url }]);
+    expect((await storedFor(first)).connections).toMatchObject([
+      { integrationKey: key, accountLabel: workspace },
+    ]);
+    // The client secret is sealed, never stored or returned in the clear.
+    const [registration] = await registrations();
+    const registered = JSON.parse(
+      connectionCredentials.open(`oauth-client:${key}:${fake.url}`, {
+        version: registration!.keyVersion,
+        ciphertext: registration!.ciphertext,
+      }),
+    ) as { client_id: string; client_secret: string };
+    expect(registered.client_id).toBe(clientA);
+    expect(registration!.ciphertext).not.toContain(registered.client_secret);
+    expect(a.body).not.toContain(registered.client_secret);
+
+    const second = await signUp("oauth-dcr-b");
+    const b = await connect(second, key);
+    expect(b.authorizationUrl.searchParams.get("client_id")).toBe(clientA);
+    expect(fake.tokenRequests.at(-1)).toEqual({
+      grantType: "authorization_code",
+      clientId: clientA,
+    });
+    expect(await registrations()).toHaveLength(1);
+
+    // The Integration moves to another authorization server: nunio registers there.
+    const moved = await startFakeMcpServer();
+    try {
+      await admin.integration.update({
+        where: { key },
+        data: { mcpUrl: moved.mcpUrl, issuers: [moved.url] },
+      });
+      const third = await signUp("oauth-dcr-c");
+      const c = await connect(third, key);
+      expect(c.location).toBe(`${appOrigin}/settings/connections`);
+      expect(c.authorizationUrl.searchParams.get("client_id")).not.toBe(
+        clientA,
+      );
+      expect((await registrations()).map((row) => row.issuer).sort()).toEqual(
+        [fake.url, moved.url].sort(),
+      );
+    } finally {
+      await moved.stop();
+    }
+  });
+
+  it("stores nothing when the student cancels at the vendor, and returns to the dialog with the reason", async () => {
+    const cookie = await signUp("oauth-cancel");
+    fake.scriptAuthorization("access-denied");
+
+    const { location } = await connect(cookie);
+
+    expect(location).toBe(
+      `${appOrigin}/settings/connections?connect=testnotizen&error=cancelled`,
+    );
+    expect(await storedFor(cookie)).toEqual(nothing);
+  });
+
+  it("stores nothing when the vendor's response names another issuer, without exchanging the code", async () => {
+    const cookie = await signUp("oauth-wrong-iss");
+    fake.scriptAuthorization("wrong-iss");
+    const exchanges = fake.tokenRequests.length;
+
+    const { location } = await connect(cookie);
+
+    expect(location).toBe(
+      `${appOrigin}/settings/connections?connect=testnotizen&error=failed`,
+    );
+    expect(fake.tokenRequests).toHaveLength(exchanges);
+    expect(await storedFor(cookie)).toEqual(nothing);
+  });
+
+  it("refuses an authorization server whose issuer isn't allowlisted on the Integration", async () => {
+    const key = await addIntegration("elsewhere", fake, {
+      issuers: ["https://auth.example"],
+    });
+    const cookie = await signUp("oauth-issuer");
+
+    const response = await start(cookie, key);
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: "issuer_refused" });
+    expect(await storedFor(cookie)).toEqual(nothing);
+  });
+
+  it("stores nothing for an expired state, and takes it so it can't be used later", async () => {
+    const cookie = await signUp("oauth-expired");
+    const started = await start(cookie);
+    const { authorizationUrl } = (await started.json()) as {
+      authorizationUrl: string;
+    };
+    await admin.oAuthFlow.updateMany({
+      where: { studentId: await studentId(cookie) },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    const callback = await atVendor(authorizationUrl);
+    const returned = await back(cookie, callback);
+
+    expect(returned.headers.get("location")).toBe(
+      `${appOrigin}/settings/connections?connect=testnotizen&error=expired`,
+    );
+    expect(await storedFor(cookie)).toEqual(nothing);
+  });
+
+  it("stores nothing for an unknown state, or one another session or Integration started", async () => {
+    const name = "oauth-session";
+    const cookie = await signUp(name);
+    const otherSession = cookieOf(
+      await signInWithCode(`${name}+${run}@example.com`),
+    );
+    const started = await start(cookie);
+    const { authorizationUrl } = (await started.json()) as {
+      authorizationUrl: string;
+    };
+    const callback = await atVendor(authorizationUrl);
+    const expired = `${appOrigin}/settings/connections?connect=testnotizen&error=expired`;
+
+    // The same student signed in elsewhere, as when someone sends them a link with their own state.
+    const elsewhere = await back(otherSession, callback);
+    expect(elsewhere.headers.get("location")).toBe(expired);
+    // Another Integration's callback with this state.
+    const other = new URL(callback);
+    other.pathname = other.pathname.replace("testnotizen", "email");
+    expect((await back(cookie, other)).headers.get("location")).toBe(
+      `${appOrigin}/settings/connections?connect=email&error=expired`,
+    );
+    const unknown = new URL(callback);
+    unknown.searchParams.set("state", "unbekannt");
+    expect((await back(cookie, unknown)).headers.get("location")).toBe(expired);
+    // Signed out: no session at all.
+    expect((await api.request(callback.href)).headers.get("location")).toBe(
+      expired,
+    );
+    expect((await storedFor(cookie)).connections).toEqual([]);
+
+    // The session that started it can still finish it.
+    const returned = await back(cookie, callback);
+    expect(returned.headers.get("location")).toBe(
+      `${appOrigin}/settings/connections`,
+    );
+    expect((await storedFor(cookie)).connections).toHaveLength(1);
+  });
+
+  it("needs a signed-in student and the app's origin to start", async () => {
+    const unsigned = await api.request(
+      `${apiUrl}/api/me/connections/testnotizen/oauth`,
+      { method: "POST", headers: { origin: appOrigin } },
+    );
+    expect(unsigned.status).toBe(401);
+    const cookie = await signUp("oauth-forged");
+    const forged = await api.request(
+      `${apiUrl}/api/me/connections/testnotizen/oauth`,
+      { method: "POST", headers: { cookie, origin: evilOrigin } },
+    );
+    expect(forged.status).toBe(403);
+    expect(await storedFor(cookie)).toEqual(nothing);
+  });
+
+  it("refuses a hidden or unknown Integration", async () => {
+    const cookie = await signUp("oauth-hidden");
+    const key = await addIntegration("oauth-hidden", fake);
+    await admin.integration.update({
+      where: { key },
+      data: { status: "hidden" },
+    });
+
+    for (const integration of [key, "email", "unbekannt"]) {
+      const response = await start(cookie, integration);
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: "not_offered" });
+    }
   });
 });

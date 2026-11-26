@@ -1,5 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
+import { principal } from "@nunio/delegation";
 import type { ConnectionSummary, EmailCheck } from "@nunio/integrations";
 import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
@@ -35,6 +36,21 @@ const Integration = z
     connection: Connection.nullable().describe(
       "The student's Connection to it, or null when they have none.",
     ),
+    tools: z
+      .array(
+        z.object({
+          label: z.string().describe("nunio's German label."),
+          class: z
+            .enum(["read", "write", "write_always_asked"])
+            .describe(
+              "read: read freely. write: after the student's approval, or Immer erlaubt. write_always_asked: " +
+                "always asks.",
+            ),
+        }),
+      )
+      .describe(
+        "Its classified tools by name; blocked tools are never offered and left out.",
+      ),
   })
   .openapi("Integration");
 
@@ -178,13 +194,17 @@ export function registerIntegrationRoutes(routes: OpenAPIHono<AppBindings>) {
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
+      const catalog = c.get("integrationCatalog");
       const [offered, connections] = await Promise.all([
-        c.get("integrationCatalog").offered(),
+        catalog.offered(),
         c.get("connections").list(p),
       ]);
+      const tools = await Promise.all(
+        offered.map((integration) => catalog.tools(integration.key)),
+      );
       return c.json(
         {
-          integrations: offered.map((integration) => {
+          integrations: offered.map((integration, index) => {
             const connection = connections.find(
               (row) => row.integrationKey === integration.key,
             );
@@ -196,6 +216,11 @@ export function registerIntegrationRoutes(routes: OpenAPIHono<AppBindings>) {
               dataNote: integration.dataNote,
               kind: integration.kind,
               connection: connection ? toConnection(connection) : null,
+              tools: tools[index]!.flatMap((tool) =>
+                tool.class === "blocked"
+                  ? []
+                  : [{ label: tool.label, class: tool.class }],
+              ),
             };
           }),
         },
@@ -289,6 +314,140 @@ export function registerIntegrationRoutes(routes: OpenAPIHono<AppBindings>) {
           ? c.json({ error: result.reason }, 409)
           : refused(c, result);
       return c.json({ connection: toConnection(result.connection) }, 201);
+    },
+  );
+}
+
+const IntegrationKey = z.object({
+  integrationKey: z.string().min(1).max(100),
+});
+
+/** The OAuth routes: starting at the vendor, the vendor's redirect back, and nunio's Client ID Metadata Document. */
+export function registerOAuthRoutes(routes: OpenAPIHono<AppBindings>) {
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/oauth/client-metadata.json",
+      responses: {
+        200: json(
+          z
+            .object({
+              client_id: z.string().describe("This document's own URL."),
+              client_name: z.string(),
+              redirect_uris: z.array(z.string()),
+              grant_types: z.array(z.string()),
+              response_types: z.array(z.string()),
+              token_endpoint_auth_method: z.literal("none"),
+            })
+            .openapi("ClientIdMetadataDocument"),
+          "nunio's Client ID Metadata Document: a public client whose id is this URL, with each Integration's callback.",
+        ),
+      },
+    }),
+    async (c) =>
+      c.json(await c.get("connections").clientMetadataDocument(), 200),
+  );
+
+  routes.openapi(
+    createRoute({
+      method: "post",
+      path: "/api/me/connections/{integrationKey}/oauth",
+      request: { params: IntegrationKey },
+      responses: {
+        200: json(
+          z.object({
+            authorizationUrl: z
+              .string()
+              .describe("The vendor's sign-in page, asking for every scope."),
+          }),
+          "The flow is stored for 10 minutes, bound to this session; the browser goes to the vendor next.",
+        ),
+        401: errors[401],
+        403: json(
+          ErrorBody,
+          "Pilot access is not active (not_entitled) or deletion is pending (deletion_pending).",
+        ),
+        404: json(ErrorBody, "Not an offered OAuth Integration (not_offered)."),
+        409: json(
+          ErrorBody,
+          "The student already has a Connection to it (already_connected).",
+        ),
+        422: json(
+          ErrorBody,
+          "issuer_refused: the server named an authorization server nunio doesn't allow for it. " +
+            "authorization_failed: discovering or registering at the vendor failed. Nothing was stored.",
+        ),
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const result = await c
+        .get("connections")
+        .startOAuth(
+          principal.fromSession(actor),
+          actor.sessionId,
+          c.req.valid("param").integrationKey,
+        );
+      if (result.ok)
+        return c.json({ authorizationUrl: result.authorizationUrl }, 200);
+      switch (result.reason) {
+        case "not_offered":
+          return c.json({ error: result.reason }, 404);
+        case "not_entitled":
+        case "deletion_pending":
+          return c.json({ error: result.reason }, 403);
+        case "already_connected":
+          return c.json({ error: result.reason }, 409);
+        default:
+          return c.json({ error: result.reason }, 422);
+      }
+    },
+  );
+
+  routes.openapi(
+    createRoute({
+      method: "get",
+      path: "/api/me/connections/{integrationKey}/oauth/callback",
+      request: {
+        params: IntegrationKey,
+        query: z.object({
+          state: z.string().max(1000).optional(),
+          code: z.string().max(4000).optional(),
+          iss: z.string().max(1000).optional(),
+          error: z.string().max(200).optional(),
+        }),
+      },
+      responses: {
+        302: {
+          description:
+            "Back to Einstellungen › Verbindungen: with the Connection made, or with `connect` naming the " +
+            "Integration and `error` the reason (cancelled, expired, already_connected or failed), nothing stored.",
+        },
+        400: json(ErrorBody, "Not valid."),
+      },
+    }),
+    async (c) => {
+      c.header("cache-control", "no-store");
+      const { integrationKey } = c.req.valid("param");
+      const back = new URL("/settings/connections", c.get("appOrigin"));
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      const result = actor
+        ? await c
+            .get("connections")
+            .finishOAuth(
+              principal.fromSession(actor),
+              actor.sessionId,
+              integrationKey,
+              c.req.valid("query"),
+            )
+        : ({ ok: false, reason: "expired" } as const);
+      if (!result.ok) {
+        back.searchParams.set("connect", integrationKey);
+        back.searchParams.set("error", result.reason);
+      }
+      return c.redirect(back.href, 302);
     },
   );
 }

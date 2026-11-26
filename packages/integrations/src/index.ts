@@ -34,4 +34,11 @@ export {
   resolvePublicHost,
 } from "./email/servers.js";
 export { integrationFakes } from "./fakes.js";
+export {
+  OAUTH_FLOW_LIFETIME_MS,
+  type OAuthCallback,
+  type OAuthFailure,
+  type OAuthFinish,
+  type OAuthStart,
+} from "./oauth.js";
 export { definitionHash, type ToolDefinition } from "./pin.js";
