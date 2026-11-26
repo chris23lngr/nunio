@@ -122,14 +122,20 @@ model AgentCapability {
   @@map("agent_capability")
 }
 
-/// Standing authority for one kind of Action across the Agent's Courses; Grants exist only within an Agent.
+/// Standing authority, held either by an Agent for one kind of Action across its Courses, or by a Connection for one
+/// write tool in every Chat and Agent ("Immer erlaubt", ADR-0001). A check constraint allows exactly one of the two.
 model Grant {
   id               String         @id
   studentId        String
-  agentId          String
-  agent            Agent          @relation(fields: [agentId, studentId], references: [id, studentId], onDelete: Cascade)
-  kind             String
+  agentId          String?
+  agent            Agent?         @relation(fields: [agentId, studentId], references: [id, studentId], onDelete: Cascade)
+  kind             String?
+  connectionId     String?
+  connection       Connection?    @relation(fields: [connectionId, studentId], references: [id, studentId], onDelete: Cascade)
+  /// The tool's catalog name, the server's own.
+  toolName         String?
 
+  @@unique([connectionId, toolName])
   @@index([agentId])
   @@map("grant")
 }
