@@ -39,7 +39,8 @@ export type ChatUIMessage = UIMessage<
   {
     createdAt: string;
     citations: Message["citations"];
-    withdrawn?: true;
+    /** Why a saved answer's text is gone: a Source it drew on deleted, or a Connection Disconnected. */
+    withdrawn?: NonNullable<Message["gone"]>;
     /** The name of the model that wrote a saved answer. */
     model?: string;
     /** A saved answer's proposals, by tool call, as their cards show them. */
@@ -58,7 +59,9 @@ export function toUIMessage(message: Message): ChatUIMessage {
     metadata: {
       createdAt: message.createdAt,
       citations: message.citations,
-      ...(message.text === null ? { withdrawn: true as const } : {}),
+      ...(message.text === null
+        ? { withdrawn: message.gone ?? "source_deleted" }
+        : {}),
       ...(message.model ? { model: message.model.name } : {}),
       artifacts: Object.fromEntries(
         message.parts.flatMap((part) =>

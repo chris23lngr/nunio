@@ -94,8 +94,9 @@ export const ChatMessage = memo(function ChatMessage({
         )}
         {withdrawn ? (
           <p className="max-w-[647px] text-sm text-base-500">
-            Diese Antwort wurde entfernt, weil eine verwendete Quelle gelöscht
-            wurde.
+            {saved?.withdrawn === "connection_disconnected"
+              ? "Inhalt aus einer getrennten Verbindung"
+              : "Diese Antwort wurde entfernt, weil eine verwendete Quelle gelöscht wurde."}
           </p>
         ) : student ? (
           <Bubble align="end" variant="tinted">

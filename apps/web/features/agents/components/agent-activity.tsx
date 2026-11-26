@@ -133,9 +133,11 @@ function RunDetail({
               ? "Dein Agent arbeitet noch."
               : run.status !== "done"
                 ? endLine(run.status, run.stopReason)
-                : run.summaryGone
-                  ? "Zusammenfassung nicht mehr verfügbar: eine Quelle, aus der sie stammt, wurde gelöscht."
-                  : "Keine Zusammenfassung."}
+                : run.summaryGoneReason === "connection_disconnected"
+                  ? "Inhalt aus einer getrennten Verbindung"
+                  : run.summaryGone
+                    ? "Zusammenfassung nicht mehr verfügbar: eine Quelle, aus der sie stammt, wurde gelöscht."
+                    : "Keine Zusammenfassung."}
           </p>
         )}
       </section>

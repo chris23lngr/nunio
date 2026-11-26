@@ -703,6 +703,41 @@ test("reopening a Chat restores its locked selection, title, citations and remov
   ).toBeNull();
 });
 
+test("an answer drawn from a Connection Disconnected since shows content from a disconnected Connection", async () => {
+  api.route("GET", "/api/me/chats/chat-1", () =>
+    Response.json({
+      id: "chat-1",
+      courses: [course],
+      messages: [
+        {
+          id: "q",
+          role: "student",
+          text: "Was schreibt Prof. Weber?",
+          gone: null,
+          parts: [{ type: "text", text: "Was schreibt Prof. Weber?" }],
+          createdAt: "2026-11-10T09:48:00Z",
+          citations: [],
+        },
+        {
+          id: "a",
+          role: "assistant",
+          text: null,
+          gone: "connection_disconnected",
+          parts: [],
+          createdAt: "2026-11-10T09:48:00Z",
+          citations: [],
+        },
+      ],
+    }),
+  );
+  mount("chat-1");
+
+  expect(
+    await screen.findByText("Inhalt aus einer getrennten Verbindung"),
+  ).toBeTruthy();
+  expect(screen.queryByText(/Diese Antwort wurde entfernt/)).toBeNull();
+});
+
 test("an answer failure preserves the draft and retries the existing Chat without creating another", async () => {
   let creates = 0;
   let asks = 0;

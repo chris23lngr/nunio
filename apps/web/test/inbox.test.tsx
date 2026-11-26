@@ -345,6 +345,7 @@ const notice = {
   agentName: "Klausur vorbereiten",
   runId: "run-7",
   text: "Deine Klausur ist am 5. Februar." as string | null,
+  gone: null as "source_deleted" | "connection_disconnected" | null,
   sentAt: "2026-11-10T07:00:00.000Z",
   readAt: null as string | null,
   announcement: "announced",
@@ -423,6 +424,24 @@ test("a Notice drawn from a Source deleted since says it can no longer be read",
       "Nicht mehr lesbar: Eine Quelle, die der Agent gelesen hatte, wurde gelöscht.",
     ),
   ).toBeTruthy();
+});
+
+test("a Notice drawn from a Connection Disconnected since shows content from a disconnected Connection", async () => {
+  serveNotices({
+    ...notice,
+    text: null,
+    gone: "connection_disconnected",
+    readAt: "2026-11-10T07:30:00.000Z",
+  });
+
+  const item = await screen.findByRole("article", {
+    name: "Nachricht von Klausur vorbereiten",
+  });
+
+  expect(
+    within(item).getByText("Inhalt aus einer getrennten Verbindung"),
+  ).toBeTruthy();
+  expect(within(item).queryByText(/Eine Quelle/)).toBeNull();
 });
 
 test("a Notice whose marking as read fails can be opened again", async () => {
@@ -683,6 +702,43 @@ test("an Agent Briefing drawn from a deleted Source says it can no longer be rea
   expect(
     screen.queryByText("Nichts braucht gerade deine Aufmerksamkeit."),
   ).toBeNull();
+});
+
+test("an Agent Briefing drawn from a Connection Disconnected since shows content from a disconnected Connection", async () => {
+  api.route("GET", "/api/me/inbox", () =>
+    Response.json({
+      interventions: [],
+      notices: [],
+      briefings: [
+        {
+          id: "b-agent-disconnected",
+          madeAt: "2026-11-10T06:05:00.000Z",
+          agentId: "agent-briefing",
+          agentName: "Morgen-Briefing",
+          runId: "run-briefing-3",
+          text: null,
+          gone: "connection_disconnected",
+          announcement: "inbox_only",
+          interventions: [],
+          approvals: [],
+          agents: [],
+          notices: [],
+          artifacts: [],
+        },
+      ],
+    }),
+  );
+
+  renderInbox();
+
+  const panel = await showTab(/Briefings/);
+  const card = within(panel).getByRole("article", {
+    name: "Briefing von Morgen-Briefing",
+  });
+  expect(
+    within(card).getByText("Inhalt aus einer getrennten Verbindung"),
+  ).toBeTruthy();
+  expect(within(card).queryByText(/Eine Quelle/)).toBeNull();
 });
 
 test("the Briefings tab switches between Briefings via Letzte Briefings and renders past nunio Briefings", async () => {
