@@ -10,7 +10,7 @@ import {
 } from "@nunio/db";
 import type { Principal } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
-import { aiUseClasses } from "@nunio/knowledge";
+import { aiUseClasses, emailAddress } from "@nunio/knowledge";
 import type { Context } from "hono";
 import type { AppBindings } from "./app.js";
 
@@ -570,7 +570,7 @@ export function registerReviewRoutes(routes: OpenAPIHono<AppBindings>) {
           required: true,
           content: {
             "application/json": {
-              schema: z.object({ address: z.email().nullable() }).strict(),
+              schema: z.object({ address: emailAddress.nullable() }).strict(),
             },
           },
         },

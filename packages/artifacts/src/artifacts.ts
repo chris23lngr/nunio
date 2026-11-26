@@ -130,10 +130,15 @@ export type ArtifactView = ArtifactBase & {
   /** Null until made, and once withdrawn. */
   content: Content<{ tag: string; provenance: Provenance | "gone" }> | null;
 };
-/** A `mailto:` link with nunio's template subject and body (RFC 6068). */
+/**
+ * A `mailto:` link with nunio's template subject and body (RFC 6068). The title comes from Source text, so its line
+ * breaks become spaces: an encoded one in the subject would start another header.
+ */
 const mailto = (address: string, title: string) => {
-  const body = `Guten Tag,\r\n\r\nanbei meine Abgabe zu „${title}“.\r\n\r\nViele Grüße`;
-  return `mailto:${encodeURIComponent(address).replace("%40", "@")}?subject=${encodeURIComponent(`Abgabe: ${title}`)}&body=${encodeURIComponent(body)}`;
+  const line = title.replace(/[\r\n]+/g, " ").trim();
+  const subject = `Abgabe: ${line}`;
+  const body = `Guten Tag,\r\n\r\nanbei meine Abgabe zu „${line}“.\r\n\r\nViele Grüße`;
+  return `mailto:${encodeURIComponent(address).replace("%40", "@")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 };
 /** As sealed: citations are stored as refs, resolved when shown. */
 type StoredContent = Content<Citation>;

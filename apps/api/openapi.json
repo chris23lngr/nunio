@@ -9886,6 +9886,7 @@
                       "string",
                       "null"
                     ],
+                    "maxLength": 254,
                     "format": "email"
                   }
                 },
@@ -15166,6 +15167,7 @@
                       "string",
                       "null"
                     ],
+                    "maxLength": 254,
                     "format": "email"
                   }
                 },

@@ -22,6 +22,7 @@ import type { SourceKeys } from "@nunio/keys";
 import { decryptSourceText, encryptSourceText } from "@nunio/keys";
 import type { AiUse, AiUseClass } from "./ai-use.js";
 import { isAiUseClass, resolveAiUse } from "./ai-use.js";
+import { emailAddress } from "./email-address.js";
 import { pruneItems } from "./items.js";
 import type { CourseChoice } from "./new-course.js";
 import { chosenCourse, newCourse } from "./new-course.js";
@@ -1132,9 +1133,21 @@ export function createFacts({
                   enteredAt: item.enteredAt,
                 }
               : {};
+          // Like a Correction, a confirmed email Destination is the student's own; its extraction moved along.
+          const destination =
+            item.emailDestinationConfirmedAt &&
+            !target.emailDestinationConfirmedAt
+              ? {
+                  emailDestination: item.emailDestination,
+                  emailDestinationConfirmedAt: item.emailDestinationConfirmedAt,
+                  emailDestinationProvenance: item.emailDestinationProvenance,
+                  emailDestinationExtractionId:
+                    item.emailDestinationExtractionId,
+                }
+              : {};
           await tx.obligation.update({
             where: { id: target.id },
-            data: { unsupported: null, ...correction },
+            data: { unsupported: null, ...correction, ...destination },
           });
           await tx.obligation.delete({ where: { id: item.id } });
         }
@@ -1189,7 +1202,16 @@ export function createFacts({
         });
         await tx.course.update({
           where: { id: intoId },
-          data: { status: "accepted" },
+          data: {
+            status: "accepted",
+            ...(from.emailDestinationConfirmedAt &&
+            !into.emailDestinationConfirmedAt
+              ? {
+                  emailDestination: from.emailDestination,
+                  emailDestinationConfirmedAt: from.emailDestinationConfirmedAt,
+                }
+              : {}),
+          },
         });
         return { status: "ok" } as const;
       });
@@ -1603,9 +1625,14 @@ const due = (row: Due) => ({
   time: row.dueTime,
   timeZone: row.timeZone,
 });
-/** The first email address in a Destination's wording or Correction. */
+/**
+ * The first whole email address in a Destination's wording or Correction that the routes would accept; a word
+ * around an "@" they would refuse is no prefill, so "Bestätigen" never offers what confirming fails on.
+ */
 const emailIn = (text: string | null) =>
-  text?.match(/[\w.%+-]+@[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}/i)?.[0] ?? null;
+  (text?.match(/[^\s<>()[\],;:"]+@[^\s<>()[\],;:"]+/g) ?? [])
+    .map((word) => word.replace(/^['‘„“]+/, "").replace(/[.!?'’“]+$/, ""))
+    .find((word) => emailAddress.safeParse(word).success) ?? null;
 /** The Provenance of a stored extraction among the Obligation's live ones; null once its Source is gone. */
 const sourceCitation = (
   obligation: ReviewObligation,
