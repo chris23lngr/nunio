@@ -7,10 +7,18 @@ import { PageHeading } from "@/components/headings";
 import type { Integration } from "./api/integration-queries";
 import { integrationQueries } from "./api/integration-queries";
 import { EmailConnectDialog } from "./components/email-connect-dialog";
+import { OAuthConnectDialog } from "./components/oauth-connect-dialog";
 import { SettingGroup } from "./components/setting-group";
 import { SettingsNavigation } from "./components/settings-navigation";
 
-export function ConnectionsScreen({ apiOrigin }: { apiOrigin: string }) {
+export function ConnectionsScreen({
+  apiOrigin,
+  returned,
+}: {
+  apiOrigin: string;
+  /** Back from a vendor without a Connection: the Integration and why, to reopen its Connect dialog. */
+  returned?: { integrationKey: string; error: string };
+}) {
   const query = useQuery(integrationQueries(apiOrigin));
   const connected = query.data?.filter((i) => i.connection !== null) ?? [];
   const available = query.data?.filter((i) => i.connection === null) ?? [];
@@ -96,10 +104,15 @@ export function ConnectionsScreen({ apiOrigin }: { apiOrigin: string }) {
                             dataNote={integration.dataNote}
                           />
                         ) : (
-                          // The OAuth Connect dialog comes with #288.
-                          <Button variant="outline" disabled>
-                            Verbinden
-                          </Button>
+                          <OAuthConnectDialog
+                            apiOrigin={apiOrigin}
+                            integration={integration}
+                            failure={
+                              returned?.integrationKey === integration.key
+                                ? returned.error
+                                : undefined
+                            }
+                          />
                         )}
                       </li>
                     ))}
