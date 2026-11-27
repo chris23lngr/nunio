@@ -199,6 +199,12 @@ export function emailSearchDefinition(
   };
 }
 
+/** Whether the server answered a command with NO or BAD: its answer, like a tool error, which no retry changes. */
+const commandRefused = (error: unknown) => {
+  const status = (error as { responseStatus?: string } | null)?.responseStatus;
+  return status === "NO" || status === "BAD";
+};
+
 /** Whether an IMAP failure is the server refusing the login, which no retry fixes. */
 const loginRefused = (error: unknown) =>
   (error as { authenticationFailed?: boolean } | null)?.authenticationFailed ===
@@ -223,10 +229,12 @@ export function openEmailReads(
     timeoutMs: number;
   },
 ): ReadSession {
-  let opened: Promise<{ client: ImapFlow; folders: string[] }> | undefined;
+  type Opened = Promise<{ client: ImapFlow; folders: string[] }>;
+  let opened: Opened | undefined;
 
   function open() {
-    opened ??= (async () => {
+    if (opened) return opened;
+    const opening: Opened = (async () => {
       const readable = await mailbox();
       if (!readable)
         throw new Refused("This Connection can't be read right now.");
@@ -238,10 +246,12 @@ export function openEmailReads(
       await client.connect();
       return { client, folders };
     })().catch((error: unknown) => {
-      opened = undefined;
+      // Opened again by the retry or the next read, unless one already did.
+      if (opened === opening) opened = undefined;
       throw error;
     });
-    return opened;
+    opened = opening;
+    return opening;
   }
 
   /** Drops a client whose connection failed, so the retry or the next read opens another. */
@@ -335,11 +345,23 @@ export function openEmailReads(
           Object.keys(filters).length ? filters : { all: true },
           { uid: true },
         )) || [];
-      // The highest UIDs arrived last; only those are fetched, then ordered by their date.
-      const newest = found.sort((a, b) => b - a).slice(0, limit);
+      // Newest by the date the mailbox received them: only the dates of every hit, then the rest of the newest.
+      const time = (m: FetchMessageObject) =>
+        new Date(m.internalDate ?? 0).getTime();
+      const newest = (
+        found.length
+          ? await client.fetchAll(
+              found.join(","),
+              { uid: true, internalDate: true },
+              { uid: true },
+            )
+          : []
+      )
+        .sort((a, b) => time(b) - time(a) || b.uid - a.uid)
+        .slice(0, limit);
       const fetched: FetchMessageObject[] = newest.length
         ? await client.fetchAll(
-            newest.join(","),
+            newest.map((m) => m.uid).join(","),
             {
               uid: true,
               flags: true,
@@ -350,8 +372,6 @@ export function openEmailReads(
             { uid: true },
           )
         : [];
-      const time = (m: FetchMessageObject) =>
-        new Date(m.internalDate ?? 0).getTime();
       fetched.sort((a, b) => time(b) - time(a) || b.uid - a.uid);
       const hits = [];
       for (const m of fetched) {
@@ -460,6 +480,11 @@ export function openEmailReads(
         } catch (error) {
           if (error instanceof Refused)
             return { outcome: "failed", text: error.message };
+          if (commandRefused(error) && !signal.aborted)
+            return {
+              outcome: "failed",
+              text: "The mailbox refused the request.",
+            };
           // IMAP can't abort one command: the client goes, and the next read opens another.
           discard(used);
           signal.throwIfAborted();
@@ -479,9 +504,9 @@ export function openEmailReads(
       }
     },
     async close() {
-      const open = opened;
+      const closing = opened;
       opened = undefined;
-      await open?.then(({ client }) => client.logout()).catch(() => {});
+      await closing?.then(({ client }) => client.logout()).catch(() => {});
     },
   };
 }

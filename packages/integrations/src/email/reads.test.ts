@@ -240,6 +240,29 @@ describe("email.search", () => {
     expect((await search(student, { limit: 500 })).hits).toHaveLength(50);
   });
 
+  it("orders by the date mail was received, not by when it was filed in the folder", async () => {
+    const student = await mailbox();
+    await mail.seed(student, "INBOX", {
+      from: "kurs@uni.test",
+      to: student.address,
+      subject: "Neu",
+      text: "x",
+      date: day("2026-11-20"),
+    });
+    // Filed later, so it has the higher UID, but received long before.
+    await mail.seed(student, "INBOX", {
+      from: "kurs@uni.test",
+      to: student.address,
+      subject: "Alt",
+      text: "x",
+      date: day("2026-01-05"),
+    });
+
+    expect(
+      (await search(student, { limit: 1 })).hits.map((h) => h.subject),
+    ).toEqual(["Neu"]);
+  });
+
   it("drops whole hits from the end to stay within the cap", async () => {
     const student = await mailbox();
     for (let n = 1; n <= 50; n++)

@@ -20,7 +20,6 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.3",
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/node": "2.1.2",
     "@modelcontextprotocol/server": "2.4.0",
@@ -31,7 +30,8 @@
     "testcontainers": "12.2.1",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "@biomejs/biome": "2.6.3"
   },
   "dependencies": {
     "@ai-sdk/mcp": "2.0.87",

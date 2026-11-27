@@ -403,7 +403,7 @@ export function createIntegrationReads({
         where: { id: connectionId },
         select: { integration: { select: { kind: true } } },
       }),
-    ).catch(() => null);
+    );
     return row?.integration.kind ?? null;
   }
   return {
@@ -412,22 +412,29 @@ export function createIntegrationReads({
      * at its first read.
      */
     open(p: Principal, connectionId: string): ReadSession {
-      let session: Promise<ReadSession> | undefined;
-      const opened = () =>
-        (session ??= kindOf(p, connectionId).then((kind) =>
-          kind === "email"
-            ? openEmailReads(() => mailboxOf(p, connectionId), {
-                fakes,
-                timeoutMs: READ_TIMEOUT_MS,
-              })
-            : openMcpReads(() => serverOf(p, connectionId), { fakes }),
-        ));
+      let session: ReadSession | undefined;
       return {
         async read(toolName, args, options) {
-          return (await opened()).read(toolName, args, options);
+          if (!session) {
+            const kind = await kindOf(p, connectionId).catch(() => undefined);
+            // Not knowing the kind fails this read; the next one asks again.
+            if (kind === undefined)
+              return {
+                outcome: "failed",
+                text: "This Connection can't be read right now.",
+              };
+            session ??=
+              kind === "email"
+                ? openEmailReads(() => mailboxOf(p, connectionId), {
+                    fakes,
+                    timeoutMs: READ_TIMEOUT_MS,
+                  })
+                : openMcpReads(() => serverOf(p, connectionId), { fakes });
+          }
+          return session.read(toolName, args, options);
         },
         async close() {
-          await (await session)?.close();
+          await session?.close();
         },
       };
     },
