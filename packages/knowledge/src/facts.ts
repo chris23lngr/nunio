@@ -1120,6 +1120,11 @@ export function createFacts({
             where: { obligationId: item.id },
             data: { obligationId: target.id },
           });
+          // The student's uploads to hand in stay with the Obligation they belong to.
+          await tx.ownWorkFile.updateMany({
+            where: { obligationId: item.id },
+            data: { obligationId: target.id },
+          });
           const correction =
             item.correctedAt && !target.correctedAt
               ? {

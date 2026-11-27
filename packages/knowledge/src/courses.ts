@@ -8,6 +8,7 @@ import { clashing, courseColors, matchKeys, newCourse } from "./new-course.js";
 import type { Semester } from "./semester.js";
 import { semesterAt, semesterChoices } from "./semester.js";
 import { similarCourses } from "./similar-courses.js";
+import { cleanupAfter } from "./sources.js";
 
 export type Courses = ReturnType<typeof createCourses>;
 
@@ -589,13 +590,23 @@ export function createCourses({
      * Removes the Course and everything only in it; Sources stay, so a later reading may propose it again (ADR 0015).
      * It leaves its Agents first, pausing those left with none, in their own transaction
      * because each Schedule changes after that commit; a failure in between leaves them without a Course that still
-     * exists, which the student asked to go anyway.
+     * exists, which the student asked to go anyway. The cleanup of its Own Work is dispatched before anything changes,
+     * so a dispatch failure leaves the Course intact.
      */
-    async delete(p: Principal, id: string) {
+    async delete(
+      p: Principal,
+      id: string,
+      dispatchOwnWork: (fileId: string, cleanupAfter: Date) => Promise<void>,
+    ) {
       const accepted = await withOwner(db, p, (tx) =>
-        tx.course.findFirst({ where: { id, status: "accepted" } }),
+        tx.course.findFirst({
+          where: { id, status: "accepted" },
+          include: { obligations: { select: { ownWork: true } } },
+        }),
       );
       if (!accepted) return { status: "gone" } as const;
+      for (const file of accepted.obligations.flatMap((o) => o.ownWork))
+        await dispatchOwnWork(file.id, cleanupAfter(file, clock.now()));
       await agents.dropCourse(p, id);
       return withOwner(db, p, async (tx) => {
         const { count } = await tx.course.deleteMany({ where: { id } });

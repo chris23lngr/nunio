@@ -36,6 +36,10 @@ const provenance = {
 };
 
 function serveContext() {
+  for (const id of [sheetId, talkId, forbiddenId])
+    api.route("GET", `/api/me/obligations/${id}/own-work`, () =>
+      Response.json([]),
+    );
   api.route("GET", "/api/me/review", () =>
     Response.json({
       courses: [
