@@ -79,6 +79,7 @@ model Agent {
   runs         Run[]
   courses      AgentCourse[]
   capabilities AgentCapability[]
+  connectionTools AgentConnectionTool[]
   notices      Notice[]
   briefings    Briefing[]
 
@@ -120,6 +121,22 @@ model AgentCapability {
 
   @@id([agentId, capability])
   @@map("agent_capability")
+}
+
+/// A tool of one of the student's Connections that the Agent may use: a row means "on", and every tool starts off
+/// (ADR-0001 "Grants on a Connection's tools"). Ending the Agent deletes its rows; Disconnect deletes the Connection's.
+model AgentConnectionTool {
+  agentId      String
+  connectionId String
+  /// The tool's catalog name, the server's own.
+  toolName     String
+  studentId    String
+  agent        Agent      @relation(fields: [agentId, studentId], references: [id, studentId], onDelete: Cascade)
+  connection   Connection @relation(fields: [connectionId, studentId], references: [id, studentId], onDelete: Cascade)
+
+  @@id([agentId, connectionId, toolName])
+  @@index([connectionId])
+  @@map("agent_connection_tool")
 }
 
 /// Standing authority, held either by an Agent for one kind of Action across its Courses, or by a Connection for one
@@ -164,9 +181,12 @@ model Run {
   endedAt          DateTime?
   /// Why a stopped Run stopped, such as paused, budget_exhausted or model_unavailable.
   stopReason       String?
-  /// The Agent's configuration as the Run started: its Instructions, Capabilities and Model. Its Courses are pinned.
+  /// The Agent's configuration as the Run started: its Instructions, Capabilities, Connection tools and Model. Its
+  /// Courses are pinned.
   instructions     String?
   capabilities     Json?
+  /// The Connection tools that were on, as [{ connectionId, tools }]; null for a Run started before they existed.
+  connectionTools  Json?
   modelKey         String?
   /// The model's final message, plain text, sealed under every Source the Run read; null without one.
   summaryContent   Bytes?
