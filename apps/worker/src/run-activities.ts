@@ -4,7 +4,15 @@ import type { Agents, Delegation } from "@nunio/delegation";
 import { createAgents, createDelegation, principal } from "@nunio/delegation";
 // The mailer alone: the package root also loads Better Auth, which the worker image does not carry.
 import { createScalewayMailer } from "@nunio/identity/email";
-import { sourceKeysFromEnv } from "@nunio/keys";
+import {
+  createActionArgs,
+  createIntegrationExecutor,
+  integrationFakes,
+} from "@nunio/integrations";
+import {
+  connectionCredentialKeysFromEnv,
+  sourceKeysFromEnv,
+} from "@nunio/keys";
 import { createFacts } from "@nunio/knowledge";
 import { createOutreachSender, createWebPusher } from "@nunio/outreach";
 import { createPlan, createPlanExecutor, planRules } from "@nunio/planning";
@@ -58,7 +66,16 @@ export function runActivitiesFromEnv(
     db,
     aiEnabled: () => env.AI_DISABLED !== "true",
     clock,
-    executors: { plan: createPlanExecutor({ db }) },
+    executors: {
+      plan: createPlanExecutor({ db }),
+      // Read only when a write is performed, so a worker without the master keys still starts.
+      integration: createIntegrationExecutor({
+        db,
+        credentials: () => connectionCredentialKeysFromEnv(env),
+        fakes: integrationFakes(env),
+      }),
+    },
+    actionArgs: createActionArgs({ keys: sourceKeysFromEnv(env) }),
     planRules,
     deadlineOf: async (studentId, obligationId) =>
       (await plan.view(principal.fromSession({ studentId }))).obligations.find(

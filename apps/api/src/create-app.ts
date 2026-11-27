@@ -26,8 +26,10 @@ import type { Auth } from "@nunio/identity";
 import { createAuth } from "@nunio/identity";
 import type { Catalog, Connections } from "@nunio/integrations";
 import {
+  createActionArgs,
   createCatalog,
   createConnections,
+  createIntegrationExecutor,
   createIntegrationReads,
   integrationFakes,
 } from "@nunio/integrations";
@@ -226,12 +228,22 @@ export async function appFromEnv(
     env.SPIKE_ROUTES === "true"
       ? { webhookSecret: required("SPIKE_WEBHOOK_SECRET"), pool }
       : undefined;
+  const keys = sourceKeysFromEnv(env);
+  const credentials = connectionCredentialKeysFromEnv(env);
   // The global AI kill switch; like every variable, a change takes effect on the next deployment.
   const delegation = createDelegation({
     db: prisma,
     aiEnabled: () => env.AI_DISABLED !== "true",
     // A Chat's Action has no Run, so the API performs it once the student approves (ADR-0019).
-    executors: { plan: createPlanExecutor({ db: prisma }) },
+    executors: {
+      plan: createPlanExecutor({ db: prisma }),
+      integration: createIntegrationExecutor({
+        db: prisma,
+        credentials: () => credentials,
+        fakes,
+      }),
+    },
+    actionArgs: createActionArgs({ keys }),
     // What the Plan's rules refuse for a free-text Agent's Study Block Actions (ADR-0001).
     planRules,
     deadlineOf: async (studentId, obligationId) =>
@@ -239,8 +251,6 @@ export async function appFromEnv(
         (o) => o.id === obligationId,
       )?.due ?? null,
   });
-  const keys = sourceKeysFromEnv(env);
-  const credentials = connectionCredentialKeysFromEnv(env);
   const sources = createSources({
     db: prisma,
     keys,

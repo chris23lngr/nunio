@@ -19,7 +19,15 @@ import {
   createModelCatalog,
   principal,
 } from "@nunio/delegation";
-import { sourceKeysFromEnv } from "@nunio/keys";
+import {
+  createActionArgs,
+  createIntegrationExecutor,
+  integrationFakes,
+} from "@nunio/integrations";
+import {
+  connectionCredentialKeysFromEnv,
+  sourceKeysFromEnv,
+} from "@nunio/keys";
 import { createFacts, createKnowledgeReader } from "@nunio/knowledge";
 import { createPlan, createPlanExecutor, planRules } from "@nunio/planning";
 import { createUnderstanding } from "@nunio/understanding";
@@ -106,7 +114,16 @@ export function agentRunActivitiesFromEnv(
     db,
     aiEnabled: () => env.AI_DISABLED !== "true",
     clock,
-    executors: { plan: createPlanExecutor({ db }) },
+    executors: {
+      plan: createPlanExecutor({ db }),
+      // Read only when a write is performed, so a worker without the master keys still starts.
+      integration: createIntegrationExecutor({
+        db,
+        credentials: () => connectionCredentialKeysFromEnv(env),
+        fakes: integrationFakes(env),
+      }),
+    },
+    actionArgs: createActionArgs({ keys: keys }),
     planRules,
     deadlineOf: async (studentId, obligationId) =>
       (await plan.view(principal.fromSession({ studentId }))).obligations.find(
