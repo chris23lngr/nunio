@@ -1,10 +1,11 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   connectionCredentialKeysFromEnv,
   createConnectionCredentialKeys,
   createSourceKeys,
   decryptSourceText,
+  digestActionArguments,
   encryptSourceText,
 } from "./index.js";
 
@@ -133,5 +134,25 @@ describe("Connection credentials", () => {
         SOURCE_MASTER_KEYS: JSON.stringify({ v1: key }),
       }),
     ).toThrow("Connection credential master keys are not configured");
+  });
+});
+
+describe("an Integration Action's argument digest", () => {
+  it("depends on the Connection's key, so it can't be computed or matched without it", () => {
+    const text = '{"title":"Lineare Algebra"}';
+    const key = randomBytes(32);
+
+    expect(digestActionArguments(key, text)).toBe(
+      digestActionArguments(Buffer.from(key), text),
+    );
+    expect(digestActionArguments(randomBytes(32), text)).not.toBe(
+      digestActionArguments(key, text),
+    );
+    expect(digestActionArguments(key, '{"title":"Analysis"}')).not.toBe(
+      digestActionArguments(key, text),
+    );
+    expect(digestActionArguments(key, text)).not.toBe(
+      createHash("sha256").update(text).digest("hex"),
+    );
   });
 });

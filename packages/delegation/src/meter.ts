@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import { renewBudget } from "./budget.js";
 import type {
+  ActionArgs,
   ActionOutcome,
   ActionRecord,
   Approve,
@@ -69,6 +70,14 @@ export interface Delegation {
   reconcile(): Promise<number>;
   history(student: Principal, q?: HistoryQuery): Promise<ActionRecord[]>;
   /**
+   * A stored Action as `perform` takes it again; an Integration Action's tool arguments are opened for it. Null once
+   * its Connection is gone, and an Action still asked is then refused.
+   */
+  intentOf(
+    student: Principal,
+    record: Pick<ActionRecord, "id">,
+  ): Promise<ActionIntent | null>;
+  /**
    * Reserves `estimate` against the Allowance, runs `call`, then settles its actual usage. A call that throws
    * after it may have been sent (a timeout, abort or network error) keeps its reservation held.
    */
@@ -100,6 +109,7 @@ export function createDelegation({
   clock = { now: () => new Date() },
   executors,
   planRules,
+  actionArgs,
   deadlineOf,
 }: {
   db: PrismaClient;
@@ -110,6 +120,8 @@ export function createDelegation({
   executors?: Executors;
   /** Needed only to perform a free-text Agent's Study Block Actions. */
   planRules?: PlanRules;
+  /** Needed only for Integration Actions: seals and opens their tool arguments. */
+  actionArgs?: ActionArgs;
   /** An Obligation's deadline, which caps how long a request for Approval stays open. */
   deadlineOf?: (
     studentId: string,
@@ -117,7 +129,7 @@ export function createDelegation({
   ) => Promise<Date | null>;
 }): Delegation {
   return {
-    ...createGate({ db, clock, executors, planRules, deadlineOf }),
+    ...createGate({ db, clock, executors, planRules, actionArgs, deadlineOf }),
     async meter(p, estimate, call, { timeoutMs = 120_000 } = {}) {
       if (!aiEnabled()) return { status: "refused", reason: "ai_disabled" };
       const reservationId = randomUUID();

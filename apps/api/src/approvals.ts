@@ -175,12 +175,18 @@ export async function performApproved(
 ) {
   if (record.approval?.decision !== "approved") return record;
   const delegation = c.get("delegation");
-  // A Run's Action goes through the gate as the Run's, so its Agent's state, Courses and Capabilities decide it now.
-  await delegation
-    .perform(record.runId ? principal.fromRun(record.runId) : p, {
-      key: record.key,
-      intent: record.intent,
-    })
+  // An Integration Action's tool arguments are sealed: the gate opens them first, and refuses the Action if its
+  // Connection is gone. A Run's Action goes through the gate as the Run's, so its Agent's state, Courses and
+  // Capabilities decide it now.
+  await Promise.resolve(record.intent ?? delegation.intentOf(p, record))
+    .then(
+      (intent) =>
+        intent &&
+        delegation.perform(record.runId ? principal.fromRun(record.runId) : p, {
+          key: record.key,
+          intent,
+        }),
+    )
     .catch((error: unknown) =>
       console.error(
         JSON.stringify({

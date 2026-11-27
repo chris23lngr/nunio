@@ -51,7 +51,7 @@ export interface McpServer {
 }
 
 /** The Connection can't be read: gone, not Connected, or not through an offered MCP Integration. */
-class Unavailable extends Error {}
+export class Unavailable extends Error {}
 
 /** The read's 30 s ran out before nunio could send the call. */
 class DeadlinePassed extends Error {}
@@ -111,13 +111,19 @@ function endingQuietly(body: ReadableStream<Uint8Array>) {
 function serverFetch(
   mcpUrl: string,
   type: "http" | "sse",
-  { fakes, timeoutMs }: { fakes: boolean; timeoutMs: number },
-): typeof fetch {
-  const base = publicFetch(fakes, {
+  {
+    fakes,
     timeoutMs,
-    bodyTimeoutMs: type === "sse" ? 0 : timeoutMs,
-    purpose: "MCP",
-  });
+    send,
+  }: { fakes: boolean; timeoutMs: number; send?: typeof fetch },
+): typeof fetch {
+  const base =
+    send ??
+    publicFetch(fakes, {
+      timeoutMs,
+      bodyTimeoutMs: type === "sse" ? 0 : timeoutMs,
+      purpose: "MCP",
+    });
   const server = new URL(mcpUrl);
   return async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input);
@@ -156,14 +162,22 @@ const noStreamableHttp = (error: unknown) =>
  * Opens an MCP client to the server, over Streamable HTTP with SSE as the fallback, or SSE when the row says so, in
  * the time left until `until`. Listing the server's tools against the pins comes with drift (#295).
  */
-async function connect(
+export async function connect(
   server: McpServer,
   {
     fakes,
     timeoutMs,
     signal,
     until,
-  }: { fakes: boolean; timeoutMs: number; signal: AbortSignal; until: number },
+    send,
+  }: {
+    fakes: boolean;
+    timeoutMs: number;
+    signal: AbortSignal;
+    until: number;
+    /** How to send requests to the server, instead of a `publicFetch` with `timeoutMs`. */
+    send?: typeof fetch;
+  },
 ): Promise<MCPClient> {
   const open = (type: "http" | "sse") =>
     createMCPClient({
@@ -172,7 +186,7 @@ async function connect(
         url: server.mcpUrl,
         headers: { authorization: `Bearer ${server.accessToken}` },
         redirect: "error",
-        fetch: serverFetch(server.mcpUrl, type, { fakes, timeoutMs }),
+        fetch: serverFetch(server.mcpUrl, type, { fakes, timeoutMs, send }),
       },
       initializationOptions: { signal, timeout: remaining(until) },
       maxRetries: 0,
@@ -323,6 +337,43 @@ export function openMcpReads(
   };
 }
 
+/** The Connection's server and token, if it is the student's, Connected, and through an offered MCP Integration. */
+export async function serverOf(
+  {
+    db,
+    credentials,
+  }: { db: PrismaClient; credentials: ConnectionCredentialKeys },
+  p: Principal,
+  connectionId: string,
+): Promise<McpServer> {
+  const row = await withOwner(db, p, (tx) =>
+    tx.connection.findFirst({
+      where: { id: connectionId, state: "connected" },
+      include: { credential: true, integration: true },
+    }),
+  );
+  const { integration, credential } = row ?? {};
+  if (
+    !row ||
+    !credential ||
+    integration?.kind !== "mcp" ||
+    integration.status !== "offered"
+  )
+    throw new Unavailable();
+  if (!integration.mcpUrl) throw new Unavailable();
+  const { accessToken } = JSON.parse(
+    credentials.open(row.id, {
+      version: credential.keyVersion,
+      ciphertext: credential.ciphertext,
+    }),
+  ) as { accessToken: string };
+  return {
+    mcpUrl: integration.mcpUrl,
+    transport: integration.transport ?? "http",
+    accessToken,
+  };
+}
+
 /** Reads through a student's Connections, under their owner context; credentials never leave this module. */
 export function createIntegrationReads({
   db,
@@ -333,42 +384,13 @@ export function createIntegrationReads({
   credentials: ConnectionCredentialKeys;
   fakes: boolean;
 }) {
-  /** The Connection's server and token, if it is the student's, Connected, and through an offered MCP Integration. */
-  async function serverOf(
-    p: Principal,
-    connectionId: string,
-  ): Promise<McpServer> {
-    const row = await withOwner(db, p, (tx) =>
-      tx.connection.findFirst({
-        where: { id: connectionId, state: "connected" },
-        include: { credential: true, integration: true },
-      }),
-    );
-    const { integration, credential } = row ?? {};
-    if (
-      !row ||
-      !credential ||
-      integration?.kind !== "mcp" ||
-      integration.status !== "offered"
-    )
-      throw new Unavailable();
-    if (!integration.mcpUrl) throw new Unavailable();
-    const { accessToken } = JSON.parse(
-      credentials.open(row.id, {
-        version: credential.keyVersion,
-        ciphertext: credential.ciphertext,
-      }),
-    ) as { accessToken: string };
-    return {
-      mcpUrl: integration.mcpUrl,
-      transport: integration.transport ?? "http",
-      accessToken,
-    };
-  }
   return {
     /** A lazy read session on one of the student's Connections; it reads the credentials at its first read. */
     open(p: Principal, connectionId: string): ReadSession {
-      return openMcpReads(() => serverOf(p, connectionId), { fakes });
+      return openMcpReads(
+        () => serverOf({ db, credentials }, p, connectionId),
+        { fakes },
+      );
     },
   };
 }

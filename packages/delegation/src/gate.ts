@@ -11,7 +11,13 @@ import type {
 } from "./decision.js";
 import { decideAction } from "./decision.js";
 import { isHandedIn } from "./handed-in.js";
-import type { ActionIntent, Args, Kind, Subject } from "./kinds.js";
+import type {
+  ActionIntent,
+  Args,
+  IntegrationSubject,
+  Kind,
+  Subject,
+} from "./kinds.js";
 import { canonical, definitions, InvalidIntentError } from "./kinds.js";
 import type { Principal, Transaction } from "./principal.js";
 import { principal as mint, withOwner } from "./principal.js";
@@ -54,11 +60,7 @@ export interface Executor {
       block?: { start: Date; end: Date };
     },
     opts: { idempotencyKey: string; signal: AbortSignal },
-  ): Promise<
-    | { status: "done"; effect: unknown }
-    | { status: "rejected"; detail: string }
-    | { status: "ambiguous" }
-  >;
+  ): Promise<ExecutorResult>;
   lookup(
     idempotencyKey: string,
     req: { studentId: string },
@@ -68,9 +70,43 @@ export interface Executor {
     | { status: "unknown" }
   >;
 }
-/** The pilot's one capability: Study Blocks within nunio's Plan. */
+/**
+ * What an executor answers. `result` is what the model is told of an Integration write: the service's answer, shaped
+ * and fenced. It is handed back in memory and never stored.
+ */
+export type ExecutorResult =
+  | { status: "done"; effect: unknown; result?: string }
+  | { status: "rejected"; detail: string; result?: string }
+  | { status: "ambiguous" };
+/** Study Blocks and Tasks within nunio's Plan, and calls of a Connection's write tools. */
 export interface Executors {
   plan: Executor;
+  /** Needed only to perform Integration Actions. */
+  integration?: Executor;
+}
+
+/**
+ * Seals, opens and digests an Integration Action's tool arguments under its Connection's content key, in the gate's
+ * transaction. Each answers null once the Connection is gone, and with it the key. A port, because `delegation`
+ * never imports `integrations`.
+ */
+export interface ActionArgs {
+  /** A keyed hash of the canonical tool arguments, for the check that a repeated key carries the same call. */
+  digest(
+    tx: Transaction,
+    connectionId: string,
+    canonicalArguments: string,
+  ): Promise<string | null>;
+  seal(
+    tx: Transaction,
+    action: { id: string; connectionId: string },
+    toolArguments: Record<string, unknown>,
+  ): Promise<Uint8Array<ArrayBuffer> | null>;
+  open(
+    tx: Transaction,
+    action: { id: string; connectionId: string },
+    sealed: Uint8Array,
+  ): Promise<Record<string, unknown> | null>;
 }
 
 /** An Action on a Study Block. */
@@ -97,8 +133,9 @@ export interface PlanRules {
   ): Promise<Date | null>;
 }
 
+/** `result`, for an Integration write the executor just performed, is the service's answer for the model; never stored. */
 export type ActionOutcome =
-  | { status: "done"; actionId: string; effect: unknown }
+  | { status: "done"; actionId: string; effect: unknown; result?: string }
   | {
       status: "awaiting_approval";
       actionId: string;
@@ -106,7 +143,7 @@ export type ActionOutcome =
       expiresAt: Date;
     }
   | { status: "refused"; actionId: string; reason: Refusal }
-  | { status: "failed"; actionId: string; detail: string }
+  | { status: "failed"; actionId: string; detail: string; result?: string }
   | { status: "unconfirmed"; actionId: string };
 
 export type Approve = {
@@ -130,8 +167,11 @@ export interface ActionRecord {
   agentId: string | null;
   kind: Kind;
   args: unknown;
-  /** `kind` and `args` as `perform` takes them. */
-  intent: ActionIntent;
+  /**
+   * `kind` and `args` as `perform` takes them; null for an `integration.call`, whose tool arguments are sealed and
+   * only `intentOf` opens.
+   */
+  intent: ActionIntent | null;
   status:
     | "awaiting_approval"
     | "dispatching"
@@ -215,6 +255,8 @@ export interface GateDeps {
   executors?: Executors;
   /** Needed only to decide a free-text Agent's Study Block and Task Actions. */
   planRules?: PlanRules;
+  /** Needed only for Integration Actions. */
+  actionArgs?: ActionArgs;
   /** An Obligation's deadline, which caps how long a request for Approval stays open. */
   deadlineOf?: (
     studentId: string,
@@ -232,7 +274,12 @@ type Job = {
   actionId: string;
   attemptId: string;
   idempotencyKey: string;
-  intent: ActionIntent;
+  kind: Kind;
+  /**
+   * What to perform; for recovering an Integration Action, opened from its sealed arguments only if it is to be
+   * dispatched again.
+   */
+  intent: ActionIntent | (() => Promise<ActionIntent | null>);
   block?: { start: Date; end: Date };
 };
 type Row = NonNullable<Awaited<ReturnType<typeof findAction>>>;
@@ -289,6 +336,14 @@ function outcomeOf(a: Row): ActionOutcome {
   }
 }
 
+/** An Integration Action's tool arguments, apart from what is stored in plain. */
+function splitToolArguments(kind: string, args: Args) {
+  if (kind !== "integration.call") return { plain: args, toolArguments: null };
+  const { arguments: toolArguments, ...plain } =
+    args as Args<"integration.call">;
+  return { plain, toolArguments };
+}
+
 function recordOf(a: Row): ActionRecord {
   return {
     id: a.id,
@@ -297,7 +352,7 @@ function recordOf(a: Row): ActionRecord {
     agentId: a.run?.agentId ?? null,
     kind: a.kind as Kind,
     args: a.args,
-    intent: revive(a.kind, a.args),
+    intent: a.kind === "integration.call" ? null : revive(a.kind, a.args),
     status: a.status,
     refusal: a.refusal as Refusal | null,
     authority: a.grantId
@@ -385,6 +440,36 @@ async function subjectOf(
   tx: Transaction,
   intent: ActionIntent,
 ): Promise<Subject | null> {
+  if (intent.kind === "integration.call") {
+    const connection = await tx.connection.findUnique({
+      where: { id: intent.connectionId },
+      include: { integration: { select: { status: true } } },
+    });
+    if (!connection || connection.integrationKey !== intent.integrationKey)
+      return null;
+    // No tool of an Integration nunio no longer offers is available, as reading it isn't.
+    const tool =
+      connection.integration.status !== "offered"
+        ? null
+        : await tx.integrationTool.findUnique({
+            where: {
+              integrationKey_name: {
+                integrationKey: connection.integrationKey,
+                name: intent.toolName,
+              },
+            },
+          });
+    return {
+      connection: {
+        state: connection.state as IntegrationSubject["connection"]["state"],
+      },
+      tool: tool && {
+        class: tool.class as NonNullable<IntegrationSubject["tool"]>["class"],
+        definitionHash: tool.definitionHash,
+        chatOnly: tool.chatOnly,
+      },
+    };
+  }
   // An Obligation the student Rejected or reported as handed in is no work any more, as the Plan treats it, so no new
   // Task or Study Block counts toward it and none is moved for it; a leftover block may still be removed.
   const closed = (
@@ -519,8 +604,77 @@ export function createGate({
   clock,
   executors,
   planRules,
+  actionArgs,
   deadlineOf,
 }: GateDeps) {
+  const needActionArgs = () => {
+    if (!actionArgs)
+      throw new Error(
+        "createDelegation needs actionArgs for Integration Actions",
+      );
+    return actionArgs;
+  };
+  /**
+   * A stored Action as `perform` takes it, an Integration Action's sealed tool arguments opened first; null once they
+   * can't be opened, because its Connection is gone or it kept none.
+   */
+  async function storedIntent(
+    tx: Transaction,
+    a: Pick<Row, "id" | "kind" | "args" | "sealedArgs">,
+  ): Promise<ActionIntent | null> {
+    if (a.kind !== "integration.call") return revive(a.kind, a.args);
+    const ports = needActionArgs();
+    if (!a.sealedArgs) return null;
+    const plain = a.args as { connectionId: string };
+    const toolArguments = await ports.open(
+      tx,
+      { id: a.id, connectionId: plain.connectionId },
+      a.sealedArgs,
+    );
+    return (
+      toolArguments && revive(a.kind, { ...plain, arguments: toolArguments })
+    );
+  }
+  /** The keyed digest an Integration Action's tool arguments are stored with; null once its Connection is gone. */
+  const digestOf = (
+    tx: Transaction,
+    intent: ActionIntent,
+    toolArguments: Record<string, unknown>,
+  ) =>
+    needActionArgs().digest(
+      tx,
+      (intent as Args<"integration.call">).connectionId,
+      canonical(toolArguments),
+    );
+  /**
+   * Whether a repeated key carries other tool arguments than the Action stored under it. Without the Connection
+   * there is nothing to compare them with, and nothing can be performed either: such a call is refused.
+   */
+  async function otherArguments(
+    tx: Transaction,
+    existing: Row,
+    intent: ActionIntent,
+    toolArguments: Record<string, unknown> | null,
+  ) {
+    if (!toolArguments || existing.argsHash === null) return false;
+    const digest = await digestOf(tx, intent, toolArguments);
+    return digest !== null && digest !== existing.argsHash;
+  }
+  /** Refuses an Action asked for Approval whose arguments can no longer be opened: its Connection is gone. */
+  async function refuseUnopenable(
+    tx: Transaction,
+    studentId: string,
+    actionId: string,
+  ) {
+    await tx.$executeRaw`SELECT 1 FROM "action" WHERE "id" = ${actionId} FOR UPDATE`;
+    const { count } = await tx.action.updateMany({
+      where: { id: actionId, status: "awaiting_approval" },
+      data: { status: "refused", refusal: "not_owner" },
+    });
+    if (count)
+      await event(tx, studentId, actionId, "refused", { reason: "not_owner" });
+  }
+
   const event = (
     tx: Transaction,
     studentId: string,
@@ -543,11 +697,8 @@ export function createGate({
     studentId: string,
     actionId: string,
     attemptId: string,
-    result:
-      | { status: "done"; effect: unknown }
-      | { status: "rejected"; detail: string }
-      | { status: "ambiguous" },
-  ) {
+    result: ExecutorResult,
+  ): Promise<ActionOutcome> {
     return withOwner(db, mint.fromSession({ studentId }), async (tx) => {
       const at = clock.now();
       // The Action row first: perform locks it to read the Action and its Attempts consistently.
@@ -588,20 +739,38 @@ export function createGate({
         });
         await event(tx, studentId, actionId, "unconfirmed", { attemptId });
       }
-      return outcomeOf((await findAction(tx, { id: actionId }))!);
+      const outcome = outcomeOf((await findAction(tx, { id: actionId }))!);
+      return result.status !== "ambiguous" && result.result !== undefined
+        ? { ...outcome, result: result.result }
+        : outcome;
     });
   }
 
-  /** One executor call outside any transaction. A failure leaves the Attempt in flight for lookup. */
-  async function execute(job: Job) {
+  /** The executor for an Action's kind. */
+  const executorOf = (kind: Kind) => {
     if (!executors)
       throw new Error("createDelegation needs executors to perform Actions");
+    if (kind !== "integration.call") return executors.plan;
+    if (!executors.integration)
+      throw new Error(
+        "createDelegation needs the integration executor to perform Integration Actions",
+      );
+    return executors.integration;
+  };
+
+  /** One executor call outside any transaction. A failure leaves the Attempt in flight for lookup. */
+  async function execute(job: Job): Promise<ExecutorResult> {
+    const executor = executorOf(job.kind);
+    const intent =
+      typeof job.intent === "function" ? await job.intent() : job.intent;
+    // Its Connection is gone, so it can't be sent again, and nobody knows whether the first dispatch took effect.
+    if (!intent) return { status: "ambiguous" };
     try {
-      return await executors.plan.execute(
+      return await executor.execute(
         {
           studentId: job.studentId,
           actionId: job.actionId,
-          intent: job.intent,
+          intent,
           block: job.block,
         },
         {
@@ -618,7 +787,7 @@ export function createGate({
 
   /** A new dispatch gets one lookup and, only if absent, one recovery dispatch. */
   async function dispatch(job: Job): Promise<ActionOutcome> {
-    let result: Awaited<ReturnType<Executor["execute"]>>;
+    let result: ExecutorResult;
     try {
       result = await execute(job);
     } catch (error) {
@@ -630,9 +799,7 @@ export function createGate({
 
   /** Asks the executor what became of an in-flight Attempt: found is done, absent is a retry with the same key, else Unconfirmed. */
   async function recover(job: Job): Promise<ActionOutcome> {
-    if (!executors)
-      throw new Error("createDelegation needs executors to perform Actions");
-    const found = await executors.plan
+    const found = await executorOf(job.kind)
       .lookup(job.idempotencyKey, { studentId: job.studentId })
       .catch(() => ({ status: "unknown" as const }));
     if (found.status === "found")
@@ -667,7 +834,14 @@ export function createGate({
       actionId: a.id,
       attemptId: attempt.id,
       idempotencyKey: attempt.idempotencyKey,
-      intent: revive(a.kind, a.args),
+      kind: a.kind as Kind,
+      intent:
+        a.kind === "integration.call"
+          ? () =>
+              withOwner(db, mint.fromSession({ studentId }), (tx) =>
+                storedIntent(tx, a),
+              )
+          : revive(a.kind, a.args),
       ...(seen && {
         block: { start: new Date(seen.start), end: new Date(seen.end) },
       }),
@@ -687,6 +861,7 @@ export function createGate({
       const { kind, ...raw } = intent;
       const args = definition.parse(raw) as Args;
       const parsed = { kind, ...args } as ActionIntent;
+      const { plain, toolArguments } = splitToolArguments(kind, args);
 
       const next = await withOwner(db, p, async (tx, studentId) => {
         // Serializes calls with one key, so a repeat waits for the first to commit and then sees its record.
@@ -705,10 +880,12 @@ export function createGate({
         const existing = await findAction(tx, {
           studentId_key: { studentId, key },
         });
+        // An Integration Action's plain arguments hold no tool arguments, so their stored digest is compared too.
         if (
           existing &&
-          canonical({ kind: existing.kind, args: existing.args }) !==
-            canonical({ kind: intent.kind, args: stored(args) })
+          (canonical({ kind: existing.kind, args: existing.args }) !==
+            canonical({ kind: intent.kind, args: stored(plain) }) ||
+            (await otherArguments(tx, existing, parsed, toolArguments)))
         ) {
           throw new KeyConflictError(
             `Key ${key} was used for a different Action`,
@@ -792,6 +969,7 @@ export function createGate({
           planCheck,
           taskDue,
           runUse,
+          inRun: Boolean(run),
           approval: existing?.approval
             ? {
                 id: existing.approval.id,
@@ -817,7 +995,21 @@ export function createGate({
               runId: run?.id ?? null,
               key,
               kind: intent.kind,
-              args: stored(args) as object,
+              args: stored(plain) as object,
+              // Kept only while its Connection is the student's: a call refused as not theirs keeps nothing.
+              ...(toolArguments &&
+                subject && {
+                  argsHash: await digestOf(tx, parsed, toolArguments),
+                  sealedArgs: await needActionArgs().seal(
+                    tx,
+                    {
+                      id: actionId,
+                      connectionId: (parsed as Args<"integration.call">)
+                        .connectionId,
+                    },
+                    toolArguments,
+                  ),
+                }),
               status:
                 decision.outcome === "await_approval"
                   ? "awaiting_approval"
@@ -839,7 +1031,8 @@ export function createGate({
           } as const;
         }
         if (decision.outcome === "await_approval") {
-          const obligationId = subject!.obligationId;
+          const obligationId =
+            subject && "obligationId" in subject ? subject.obligationId : null;
           const deadline =
             obligationId && deadlineOf
               ? await deadlineOf(studentId, obligationId)
@@ -902,6 +1095,7 @@ export function createGate({
             actionId,
             attemptId,
             idempotencyKey,
+            kind,
             intent: parsed,
             block,
           },
@@ -1027,11 +1221,17 @@ export function createGate({
         // Performed meanwhile, or gone with its Run.
         if (action?.status !== "awaiting_approval") continue;
         // As the API performs it: a Run's Action as the Run's, so its Agent's state, Courses and Capabilities decide.
+        // One whose Connection is gone is refused instead.
         await gate
-          .perform(action.runId ? mint.fromRun(action.runId) : student, {
-            key: action.key,
-            intent: revive(action.kind, action.args),
-          })
+          .intentOf(student, action)
+          .then(
+            (intent) =>
+              intent &&
+              gate.perform(
+                action.runId ? mint.fromRun(action.runId) : student,
+                { key: action.key, intent },
+              ),
+          )
           .catch((error: unknown) => {
             // An unreachable Plan fails the whole pass, to be retried; an Action that fails otherwise must not hold up
             // the newer ones behind it, and stays to be tried again on the next pass.
@@ -1046,6 +1246,23 @@ export function createGate({
           });
       }
       return stale.length + approved.length;
+    },
+
+    /**
+     * A stored Action as `perform` takes it again, such as once the student approved it; opens sealed tool arguments.
+     * Null when they can't be opened because the Connection is gone: an Action still asked is then refused.
+     */
+    async intentOf(
+      student: Principal,
+      record: Pick<ActionRecord, "id">,
+    ): Promise<ActionIntent | null> {
+      return withOwner(db, student, async (tx, studentId) => {
+        const action = await findAction(tx, { id: record.id });
+        if (!action) throw new UnknownActionError(`No Action ${record.id}`);
+        const intent = await storedIntent(tx, action);
+        if (!intent) await refuseUnopenable(tx, studentId, action.id);
+        return intent;
+      });
     },
 
     async history(

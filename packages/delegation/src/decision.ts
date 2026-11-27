@@ -1,6 +1,6 @@
 import type { AgentCapability } from "./capabilities.js";
 import { approvalModes, capabilities } from "./capabilities.js";
-import type { Args, Kind, Subject } from "./kinds.js";
+import type { Args, IntegrationSubject, Kind, Subject } from "./kinds.js";
 
 export type Refusal =
   | "not_owner"
@@ -24,7 +24,11 @@ export type Refusal =
   | "run_cap"
   | "open_approvals_cap"
   /** A new call of a Run that has already ended, as when it was told to stop. */
-  | "run_ended";
+  | "run_ended"
+  /** An Integration Action's Connection Needs reconnection. */
+  | "needs_reconnection"
+  /** An Integration tool nunio doesn't offer now (unclassified, removed, blocked or not a write), or a Chat-only one in a Run. */
+  | "tool_unavailable";
 
 /** What the Plan's rules (`plan.check`) refuse a Study Block for: an Agent is refused these in every mode. */
 export type PlanRefusal = Extract<
@@ -116,6 +120,8 @@ export interface Snapshot<K extends Kind = Kind> {
   } | null;
   /** For a new call of an Agent's Run, what it used so far; null otherwise, such as for an Action already asked. */
   runUse: RunUse | null;
+  /** Whether a Run asked for it, rather than a Chat; read for Integration Actions, which a Chat-only tool limits. */
+  inRun?: boolean;
 }
 
 export type Decision =
@@ -136,6 +142,8 @@ const refuse = (reason: Refusal): Decision => ({ outcome: "refuse", reason });
  */
 export function decideAction<K extends Kind>(s: Snapshot<K>): Decision {
   const { intent, subject, agent } = s;
+  if (intent.kind === "integration.call")
+    return decideIntegration(s as Snapshot<"integration.call">);
   if (!subject) return refuse("not_owner");
   if (agent?.state === "ended") return refuse("ended");
   if (agent?.state === "paused") return refuse("paused");
@@ -161,6 +169,32 @@ export function decideAction<K extends Kind>(s: Snapshot<K>): Decision {
   )
     return refuse("past");
   return approved ?? { outcome: "await_approval" };
+}
+
+/**
+ * An Integration Action (#280): never for a Paused or Ended Agent or a Run that ended, only on a Connected Connection,
+ * only for a write tool nunio offers now under the pin the call was made under (#262), never a Chat-only one in a
+ * Run; then on a matching Approval, or it asks. A tool reclassified since still honours a matching Approval; one
+ * re-reviewed under a new pin no longer matches it, since the fingerprint holds the current pin. Grants, caps,
+ * per-Agent tool on/off and taint come with their own tickets.
+ */
+function decideIntegration(s: Snapshot<"integration.call">): Decision {
+  const { agent } = s;
+  if (agent?.state === "ended") return refuse("ended");
+  if (agent?.state === "paused") return refuse("paused");
+  if (s.runUse?.ended) return refuse("run_ended");
+  const subject = s.subject as IntegrationSubject | null;
+  if (!subject) return refuse("not_owner");
+  if (subject.connection.state !== "connected")
+    return refuse("needs_reconnection");
+  const { tool } = subject;
+  if (!tool || (tool.class !== "write" && tool.class !== "write_always_asked"))
+    return refuse("tool_unavailable");
+  if (tool.chatOnly && s.inRun) return refuse("tool_unavailable");
+  // A new call made against a definition nunio no longer has reviewed; an asked one goes by its fingerprint.
+  if (!s.approval && s.intent.args.pinHash !== tool.definitionHash)
+    return refuse("tool_unavailable");
+  return answered(s) ?? { outcome: "await_approval" };
 }
 
 const dayMs = 24 * 60 * 60_000;
@@ -207,7 +241,9 @@ function decideByMode<K extends Kind>(
   s: Snapshot<K> & { subject: Subject<K> },
   agent: CapableAgent,
 ): Decision {
-  const { intent, subject } = s;
+  const { intent } = s;
+  // Integration Actions are decided apart, in `decideIntegration`.
+  const subject = s.subject as Exclude<Subject, IntegrationSubject>;
   if (!subject.courseId || !agent.courseIds.includes(subject.courseId))
     return refuse("out_of_scope");
   const own = "createdBy" in subject && subject.createdBy === agent.id;

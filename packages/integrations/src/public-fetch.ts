@@ -8,26 +8,34 @@ import { isPublic } from "./email/servers.js";
  * speaks https only, so tokens, codes and verifiers never travel in the clear. It refuses every connection unless
  * each address is public: a host name is resolved inside the connector, so the address checked is the address used
  * (no DNS rebinding), and an IP address is checked there too. It never follows a redirect. `timeoutMs` bounds
- * connecting and waiting for headers, and by default the wait between body chunks; `allowed` is a test seam.
+ * connecting, and by default the wait for headers and between body chunks; `allowed` is a test seam. `destroy`
+ * closes every connection it opened, cutting any request still under way.
  */
 export function publicFetch(
   fakes: boolean,
   {
     timeoutMs,
+    headersTimeoutMs = timeoutMs,
     bodyTimeoutMs = timeoutMs,
     allowed = isPublic,
     purpose,
   }: {
     timeoutMs: number;
+    /** The longest wait for a response's headers. */
+    headersTimeoutMs?: number;
     /** The longest wait between body chunks; 0 waits as long as it takes, as an event stream must. */
     bodyTimeoutMs?: number;
     allowed?: (address: string) => boolean;
     /** What the requests are for, in errors: "OAuth" or "MCP". */
     purpose: string;
   },
-): typeof fetch {
+): PublicFetch {
   // A wrapper rather than globalThis.fetch itself, which the SDK would swap for its own guarded fetch.
-  if (fakes) return (input, init) => fetch(input, init);
+  if (fakes)
+    return Object.assign(
+      ((input, init) => fetch(input, init)) as typeof fetch,
+      { destroy: async () => {} },
+    );
   const refused = (host: string) =>
     new Error(`${purpose} host ${host} is not public`);
   const connector = buildConnector({
@@ -47,7 +55,7 @@ export function publicFetch(
       }),
   });
   const dispatcher = new Agent({
-    headersTimeout: timeoutMs,
+    headersTimeout: headersTimeoutMs,
     bodyTimeout: bodyTimeoutMs,
     // Every connection, every hop: an IP address is never looked up, so it is checked here.
     connect: (options, callback) => {
@@ -57,7 +65,10 @@ export function publicFetch(
       connector(options, callback);
     },
   });
-  return (async (input: string | URL | Request, init?: RequestInit) => {
+  const guarded = (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
     const url = new URL(input instanceof Request ? input.url : input);
     if (url.protocol !== "https:")
       throw new Error(`${purpose} requests use https only`);
@@ -69,4 +80,8 @@ export function publicFetch(
       dispatcher,
     });
   }) as unknown as typeof fetch;
+  return Object.assign(guarded, { destroy: () => dispatcher.destroy() });
 }
+
+/** A fetch that reaches only the public internet, and closes its connections when destroyed. */
+export type PublicFetch = typeof fetch & { destroy(): Promise<void> };

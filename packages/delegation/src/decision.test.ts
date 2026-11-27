@@ -6,6 +6,7 @@ import type {
 } from "./capabilities.js";
 import type { BrokenPreference, PlanRefusal, Snapshot } from "./decision.js";
 import { decideAction } from "./decision.js";
+import type { IntegrationSubject } from "./kinds.js";
 
 const now = new Date("2026-11-10T08:00:00Z");
 const block = {
@@ -614,5 +615,145 @@ describe("an Agent's Actions (ADR-0001)", () => {
         }),
       ).toEqual(refuse(reason));
     });
+  });
+});
+
+describe("decideAction for an Integration Action", () => {
+  const tool: NonNullable<IntegrationSubject["tool"]> = {
+    class: "write",
+    definitionHash: "pin-1",
+    chatOnly: false,
+  };
+  const connected = { connection: { state: "connected" as const }, tool };
+  /** A Chat's call of a write tool on a Connected Connection, which no Grant covers yet. */
+  const call: Snapshot = {
+    ...base,
+    intent: {
+      kind: "integration.call",
+      args: {
+        integrationKey: "testnotizen",
+        connectionId: "connection-1",
+        toolName: "notes.create_page",
+        pinHash: "pin-1",
+        arguments: { title: "Lineare Algebra" },
+      },
+    },
+    subject: connected,
+  };
+  const inRun = (state: "active" | "paused" | "ended") => ({
+    inRun: true,
+    agent: {
+      id: "agent-1",
+      state,
+      capabilities: [],
+      grants: [],
+      courseIds: [],
+    },
+  });
+  const withTool = (changes: Partial<typeof tool> | null) => ({
+    subject: { ...connected, tool: changes && { ...tool, ...changes } },
+  });
+
+  it.each<[string, Partial<Snapshot>, object]>([
+    ["asks for a write", {}, ask],
+    [
+      "asks for a write that is always asked",
+      withTool({ class: "write_always_asked" }),
+      ask,
+    ],
+    ["asks in an Agent's Run", inRun("active"), ask],
+    ["refuses for a Paused Agent", inRun("paused"), refuse("paused")],
+    ["refuses for an Ended Agent", inRun("ended"), refuse("ended")],
+    [
+      "refuses a new call of a Run that ended",
+      {
+        ...inRun("active"),
+        runUse: {
+          calls: 0,
+          stepCalls: 0,
+          approvals: 0,
+          openApprovals: 0,
+          ended: true,
+        },
+      },
+      refuse("run_ended"),
+    ],
+    [
+      "refuses for a Paused Agent before a missing Connection",
+      { ...inRun("paused"), subject: null },
+      refuse("paused"),
+    ],
+    [
+      "refuses a Connection that isn't the student's or is gone",
+      { subject: null },
+      refuse("not_owner"),
+    ],
+    [
+      "refuses a Connection that Needs reconnection, even when approved",
+      {
+        subject: { ...connected, connection: { state: "needs_reconnection" } },
+        approval: approved,
+      },
+      refuse("needs_reconnection"),
+    ],
+    [
+      "refuses a tool nunio never classified or that was removed, even when approved",
+      { ...withTool(null), approval: approved },
+      refuse("tool_unavailable"),
+    ],
+    [
+      "refuses a blocked tool, even when approved",
+      { ...withTool({ class: "blocked" }), approval: approved },
+      refuse("tool_unavailable"),
+    ],
+    [
+      "refuses a read tool, which no Action calls, even when approved",
+      { ...withTool({ class: "read" }), approval: approved },
+      refuse("tool_unavailable"),
+    ],
+    [
+      "refuses a Chat-only tool in a Run, even when approved",
+      {
+        ...inRun("active"),
+        ...withTool({ chatOnly: true }),
+        approval: approved,
+      },
+      refuse("tool_unavailable"),
+    ],
+    ["asks for a Chat-only tool in a Chat", withTool({ chatOnly: true }), ask],
+    [
+      "acts on an Approval of the exact call",
+      { approval: approved },
+      { outcome: "dispatch", authority: { approvalId: "approval-1" } },
+    ],
+    [
+      "still acts on a matching Approval once the tool is always asked",
+      { ...withTool({ class: "write_always_asked" }), approval: approved },
+      { outcome: "dispatch", authority: { approvalId: "approval-1" } },
+    ],
+    [
+      "refuses a new call made under a pin the tool no longer has",
+      withTool({ definitionHash: "pin-2" }),
+      refuse("tool_unavailable"),
+    ],
+    [
+      "refuses an Approval given before the tool's pin changed",
+      // The fingerprint holds the pin, so the one shown no longer matches.
+      { fingerprint: "fp-2", approval: approved },
+      refuse("approval_mismatch"),
+    ],
+    ["keeps waiting for an unanswered Approval", { approval: requested }, ask],
+    [
+      "refuses a denied Approval",
+      { approval: { ...approved, decision: "denied" } },
+      refuse("approval_denied"),
+    ],
+    [
+      "refuses an expired Approval",
+      { approval: { ...approved, expiresAt: now } },
+      refuse("approval_expired"),
+    ],
+  ])("%s", (_, changes, expected) => {
+    expect(decideAction({ ...call, ...changes })).toEqual(expected);
   });
 });
