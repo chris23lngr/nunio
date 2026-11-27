@@ -1,6 +1,7 @@
 /**
  * Integrations, Connections, and Destination executors.
  */
+export { createActionArgs } from "./action-args.js";
 export {
   type Catalog,
   type CatalogIntegration,
@@ -37,6 +38,12 @@ export {
   mailTls,
   resolvePublicHost,
 } from "./email/servers.js";
+export {
+  callMcpWrite,
+  createIntegrationExecutor,
+  WRITE_TIMEOUT_MS,
+  type WriteFailure,
+} from "./executor.js";
 export { integrationFakes } from "./fakes.js";
 export { definitionHash, type ToolDefinition } from "./pin.js";
 export {
