@@ -18,6 +18,8 @@ beforeEach(() => {
     Response.json(capabilitySet),
   );
   api.route("GET", "/api/me/models", () => Response.json(chatModels));
+  // The student has no Connection unless a test gives one.
+  api.route("GET", "/api/me/agents/connections", () => Response.json([]));
   api.route("GET", "/api/me/allowance", () =>
     Response.json({
       limitMicroUsd: 5_000_000,
@@ -293,6 +295,7 @@ test("'Neuer Agent' opens a blank form with 🤖 and 5 USD, and Speichern saves 
       instructions: "Bereite mich auf die Klausur vor.",
       courseIds: [ids.statistics],
       capabilities: [],
+      connections: [],
       budgetMicroUsd: 2_500_000,
       trigger: { rhythm: "daily", minute: 360 },
       modelKey: "sonnet-5.5-reasoning-high",
@@ -337,6 +340,7 @@ const agent = {
   state: "active",
   pausedBy: null,
   running: false,
+  connections: [],
   grants: ["studyBlock.create"],
   budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
   trigger: { rhythm: "daily", minute: 360 },
@@ -376,6 +380,7 @@ test("a saved Agent's form shows its Courses, an Archived one as archived, and S
         instructions: "Bereite mich auf die Klausur vor.",
         courseIds: [ids.archived, ids.statistics],
         capabilities: [{ id: "createStudyBlocks", mode: "automatic" }],
+        connections: [],
         budgetMicroUsd: 5_000_000,
         trigger: { rhythm: "daily", minute: 360 },
         modelKey: "sonnet-5.5-reasoning-high",
@@ -1911,4 +1916,191 @@ test("Rückgängig on Kurse leaves out a Course Archived since, which a new Agen
     expect(screen.queryByRole("list", { name: "Kurse" })).toBeNull(),
   );
   expect(screen.queryByText("von nunio geändert")).toBeNull();
+});
+
+/** The student's Connections as the drawer lists them: Email needing reconnection, and Testnotizen. */
+const connectionSet = [
+  {
+    integrationKey: "email",
+    name: "E-Mail",
+    logo: "/integrations/email.svg",
+    state: "needs_reconnection",
+    tools: [
+      { name: "email.read", label: "Mail lesen", class: "read", mode: null },
+      {
+        name: "email.send",
+        label: "Mail senden",
+        class: "write_always_asked",
+        mode: "always_asks",
+      },
+    ],
+  },
+  {
+    integrationKey: "testnotizen",
+    name: "Testnotizen",
+    logo: "/integrations/testnotizen.svg",
+    state: "connected",
+    tools: [
+      {
+        name: "notes.create_page",
+        label: "Seite anlegen",
+        class: "write",
+        mode: "always_allowed",
+      },
+      {
+        name: "notes.edit",
+        label: "Seite bearbeiten",
+        class: "write",
+        mode: "ask",
+      },
+      {
+        name: "notes.search",
+        label: "Notizen durchsuchen",
+        class: "read",
+        mode: null,
+      },
+    ],
+  },
+];
+
+test("'Fähigkeiten verwalten' shows each Connection as a section of its tools, all off, with each write's mode read-only and a link to the Connection", async () => {
+  const saved: unknown[] = [];
+  api.route("GET", "/api/me/agents/connections", () =>
+    Response.json(connectionSet),
+  );
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("POST", "/api/me/agents", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ id: "a-1" }, { status: 201 });
+  });
+  renderScreen(<AgentFormScreen apiOrigin={api.origin} agent={null} />);
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Name" }),
+    "Notizen",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Kurse bearbeiten" }),
+  );
+  let sheet = await screen.findByRole("dialog", { name: "Kurse verwalten" });
+  await userEvent.click(
+    await within(sheet).findByRole("checkbox", { name: /Statistics II/ }),
+  );
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Fähigkeit hinzufügen" }),
+  );
+  sheet = await screen.findByRole("dialog", { name: "Fähigkeiten verwalten" });
+  const notes = await within(sheet).findByRole("button", {
+    name: "Testnotizen",
+  });
+  expect(notes.getAttribute("aria-expanded")).toBe("true");
+  expect(
+    within(sheet).getByText("Verbindung · Neu verbinden nötig"),
+  ).toBeTruthy();
+  const rows = (integration: string) =>
+    within(sheet)
+      .getAllByRole("checkbox")
+      .filter((box) =>
+        box
+          .closest("label")
+          ?.htmlFor.startsWith(`agent-connection-tool-${integration}-`),
+      )
+      .map((box) => [
+        box.closest("label")?.textContent,
+        box.getAttribute("aria-checked"),
+      ]);
+  expect(rows("email")).toEqual([
+    ["Mail lesenOhne Nachfrage", "false"],
+    ["Mail sendenFragt immer", "false"],
+  ]);
+  expect(rows("testnotizen")).toEqual([
+    ["Seite anlegenImmer erlaubt · gilt für alle Chats und Agents", "false"],
+    ["Seite bearbeitenNachfragen · gilt für alle Chats und Agents", "false"],
+    ["Notizen durchsuchenOhne Nachfrage", "false"],
+  ]);
+  // The mode is set on the Connection's page, never here.
+  expect(within(sheet).queryAllByRole("combobox")).toEqual([]);
+  expect(
+    within(sheet)
+      .getAllByRole("link", { name: "Verbindung öffnen" })
+      .map((link) => link.getAttribute("href")),
+  ).toEqual([
+    "/settings/connections/email",
+    "/settings/connections/testnotizen",
+  ]);
+  expect(within(sheet).queryByText("Per E-Mail abgeben")).toBeNull();
+
+  await userEvent.click(
+    within(sheet).getByRole("checkbox", { name: /Notizen durchsuchen/ }),
+  );
+  await userEvent.click(
+    within(sheet).getByRole("checkbox", { name: /Seite anlegen/ }),
+  );
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(
+    within(screen.getByRole("list", { name: "Verbindungen" }))
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toEqual(["TestnotizenSeite anlegen, Notizen durchsuchen"]);
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  await waitFor(() => expect(replace).toHaveBeenCalledWith("/agents/a-1"));
+  expect(saved).toEqual([
+    expect.objectContaining({
+      connections: [
+        {
+          integrationKey: "testnotizen",
+          tools: ["notes.search", "notes.create_page"],
+        },
+      ],
+    }),
+  ]);
+});
+
+test("a saved Agent's Connection tools show checked in the drawer, and turning them all off saves none", async () => {
+  const saved: { connections?: unknown }[] = [];
+  api.route("GET", "/api/me/agents/connections", () =>
+    Response.json(connectionSet),
+  );
+  api.route("GET", "/api/me/agents/a-1", () =>
+    Response.json({
+      ...agent,
+      connections: [{ integrationKey: "testnotizen", tools: ["notes.search"] }],
+    }),
+  );
+  api.route("GET", "/api/me/agents/courses", () => Response.json(offered));
+  api.route("PUT", "/api/me/agents/a-1", async (request) => {
+    saved.push(await request.json());
+    return Response.json({ status: "ok" });
+  });
+  renderScreen(<AgentDetailScreen apiOrigin={api.origin} id="a-1" />);
+
+  await screen.findByRole("list", { name: "Verbindungen" });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Fähigkeit hinzufügen" }),
+  );
+  const sheet = await screen.findByRole("dialog", {
+    name: "Fähigkeiten verwalten",
+  });
+  const search = within(sheet).getByRole("checkbox", {
+    name: /Notizen durchsuchen/,
+  });
+  expect(search.getAttribute("aria-checked")).toBe("true");
+  await userEvent.click(search);
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: "Speichern" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.queryByRole("list", { name: "Verbindungen" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+  expect(await screen.findByText("Gespeichert")).toBeTruthy();
+  expect(saved.map((body) => body.connections)).toEqual([[]]);
 });

@@ -189,6 +189,8 @@ export function describeEntry(entry: VerlaufEntry): {
         ],
       };
     }
+    case "integration_read":
+      return describeIntegrationRead(entry);
     case "action":
       return describeAction(entry);
     case "artifact":
@@ -208,6 +210,41 @@ export function describeEntry(entry: VerlaufEntry): {
         details: [],
       };
   }
+}
+
+/** Why nunio refused an Integration read, as the Verlauf names it. */
+const readRefusals: Record<string, string> = {
+  run_cap: "Limit für diesen Lauf erreicht",
+};
+
+/**
+ * A step's reads through one Connection, as one line with each tool's calls, such as
+ * "E-Mail · Mails durchsuchen 3× · Mail lesen 1×", and under it the calls that failed or were refused.
+ */
+function describeIntegrationRead(
+  entry: Extract<VerlaufEntry, { type: "integration_read" }>,
+) {
+  const refused = (tool: (typeof entry.tools)[number]) =>
+    Object.entries(tool.refused).flatMap(([reason, n]) =>
+      n ? [{ reason, n }] : [],
+    );
+  const calls = (tool: (typeof entry.tools)[number]) =>
+    tool.answered +
+    tool.failed +
+    refused(tool).reduce((sum, { n }) => sum + n, 0);
+  return {
+    title: [
+      entry.integration.name,
+      ...entry.tools.map((tool) => `${tool.label} ${calls(tool)}×`),
+    ].join(" · "),
+    details: entry.tools.flatMap((tool) => [
+      ...(tool.failed ? [`${tool.label}: ${tool.failed}× fehlgeschlagen`] : []),
+      ...refused(tool).map(
+        ({ reason, n }) =>
+          `${tool.label}: ${n}× abgelehnt, ${readRefusals[reason] ?? reason}`,
+      ),
+    ]),
+  };
 }
 
 /** The work an Action was for, its Course and when, as one line; gone only once deleted. */

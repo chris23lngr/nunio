@@ -41,6 +41,7 @@ import {
   Save,
   Workflow,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
@@ -56,11 +57,16 @@ import { controlAgent, saveAgent, startAgentRun } from "./api/agent-mutations";
 import type {
   Agent,
   AgentCapability,
+  AgentConnectionTools,
   AgentCourse,
   AgentTemplate,
   Capability,
 } from "./api/agent-queries";
-import { agentCourseQueries, capabilityQueries } from "./api/agent-queries";
+import {
+  agentConnectionQueries,
+  agentCourseQueries,
+  capabilityQueries,
+} from "./api/agent-queries";
 import type { FormFill } from "./api/builder-mutations";
 import { modeOf } from "./capability-mode";
 import { AgentActivity } from "./components/agent-activity";
@@ -86,6 +92,8 @@ type Draft = {
   courses: AgentCourse[];
   /** Its Capabilities in the capability set's order, each with its mode. */
   capabilities: AgentCapability[];
+  /** The tools of the student's Connections it has on, by Integration. */
+  connections: AgentConnectionTools[];
   /** In USD, as typed. */
   budget: string;
   /** Its Rhythmus: Täglich, or the Wochentage chosen, which stay chosen while Täglich is. */
@@ -106,6 +114,7 @@ const blank: Draft = {
   instructions: "",
   courses: [],
   capabilities: [],
+  connections: [],
   budget: "5",
   rhythm: "daily",
   weekdays: [],
@@ -126,6 +135,7 @@ type Saved = Pick<
   | "instructions"
   | "courses"
   | "capabilities"
+  | "connections"
   | "budget"
   | "trigger"
   | "modelKey"
@@ -180,6 +190,7 @@ const draftOf = (agent: Saved): Draft => ({
   instructions: agent.instructions,
   courses: agent.courses,
   capabilities: agent.capabilities,
+  connections: agent.connections,
   budget: String(agent.budget.limitMicroUsd / 1_000_000),
   rhythm: agent.trigger.rhythm,
   weekdays: agent.trigger.rhythm === "weekdays" ? agent.trigger.weekdays : [],
@@ -198,6 +209,7 @@ const draftOfTemplate = (
   instructions: template.instructions,
   courses: initialCourses,
   capabilities: template.capabilities,
+  connections: [],
   budget: blank.budget,
   rhythm: template.trigger.rhythm,
   weekdays:
@@ -324,6 +336,7 @@ export function AgentFormScreen({
   const [tried, setTried] = useState(false);
   const offered = useQuery(agentCourseQueries(apiOrigin));
   const capabilitySet = useQuery(capabilityQueries(apiOrigin));
+  const connectionSet = useQuery(agentConnectionQueries(apiOrigin));
   const models = useQuery(modelQueries(apiOrigin));
   // Only a new Agent stands in Chat's default: a saved one without a Model has Runs that stop.
   const modelKey =
@@ -497,6 +510,7 @@ export function AgentFormScreen({
         instructions: draft.instructions.trim(),
         courseIds: draft.courses.map((course) => course.id),
         capabilities: draft.capabilities,
+        connections: draft.connections,
         budgetMicroUsd: Math.round(budget * 1_000_000),
         trigger:
           draft.rhythm === "daily"
@@ -1030,6 +1044,44 @@ export function AgentFormScreen({
                         )}
                       </ul>
                     )}
+                    {!!draft.connections.length && connectionSet.data && (
+                      <ul
+                        aria-label="Verbindungen"
+                        className="mb-3 flex flex-col gap-3"
+                      >
+                        {draft.connections.map(({ integrationKey, tools }) => {
+                          const connection = connectionSet.data.find(
+                            (each) => each.integrationKey === integrationKey,
+                          );
+                          if (!connection) return null;
+                          return (
+                            <li
+                              key={integrationKey}
+                              className="flex items-start gap-3 rounded-lg border border-base-200 px-4 py-3"
+                            >
+                              <Image
+                                src={connection.logo}
+                                width={16}
+                                height={16}
+                                alt=""
+                                className="mt-0.5 size-4 rounded-xs"
+                              />
+                              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                <span className="text-sm font-medium text-base-800">
+                                  {connection.name}
+                                </span>
+                                <span className="text-sm text-base-500">
+                                  {connection.tools
+                                    .filter((tool) => tools.includes(tool.name))
+                                    .map((tool) => tool.label)
+                                    .join(", ")}
+                                </span>
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                     {marks.capabilities && (
                       <div className="-mt-1 mb-3">{marked("capabilities")}</div>
                     )}
@@ -1178,8 +1230,10 @@ export function AgentFormScreen({
         loading={capabilitySet.isPending}
         error={capabilitySet.error?.message}
         selected={draft.capabilities}
-        onSave={(capabilities) => {
-          change({ capabilities });
+        connections={connectionSet.data ?? []}
+        selectedTools={draft.connections}
+        onSave={(capabilities, connections) => {
+          change({ capabilities, connections });
           setEditingCapabilities(false);
         }}
         onClose={() => setEditingCapabilities(false)}

@@ -33,15 +33,19 @@ import { ChevronRight, Search } from "lucide-react";
 import { useState } from "react";
 import type {
   AgentCapability,
+  AgentConnection,
+  AgentConnectionTools,
   ApprovalMode,
   Capability,
 } from "../api/agent-queries";
 import { modes } from "../capability-mode";
+import { ConnectionToolSections } from "./connection-tool-sections";
 
 /**
  * "Fähigkeiten verwalten": picks the Agent's Capabilities from the capability set, by section. A checked Action
  * Capability shows its mode, starting on its default; one with a single mode, such as Lernblöcke verschieben, is fixed.
- * One that is no Action, such as Karteikarten erstellen, is simply on.
+ * One that is no Action, such as Karteikarten erstellen, is simply on. Each of the student's Connections follows as a
+ * section of its tools, each on or off.
  */
 export function EditCapabilitiesSheet({
   open,
@@ -49,6 +53,8 @@ export function EditCapabilitiesSheet({
   loading,
   error,
   selected,
+  connections,
+  selectedTools,
   onSave,
   onClose,
 }: {
@@ -57,7 +63,14 @@ export function EditCapabilitiesSheet({
   loading: boolean;
   error?: string;
   selected: AgentCapability[];
-  onSave: (capabilities: AgentCapability[]) => void;
+  /** The student's Connections with the tools an Agent can have. */
+  connections: AgentConnection[];
+  /** The Connection tools that are on. */
+  selectedTools: AgentConnectionTools[];
+  onSave: (
+    capabilities: AgentCapability[],
+    tools: AgentConnectionTools[],
+  ) => void;
   onClose: () => void;
 }) {
   return (
@@ -70,6 +83,8 @@ export function EditCapabilitiesSheet({
             loading={loading}
             error={error}
             selected={selected}
+            connections={connections}
+            selectedTools={selectedTools}
             onSave={onSave}
             onClose={onClose}
           />
@@ -84,6 +99,8 @@ function CapabilityChoice({
   loading,
   error,
   selected,
+  connections,
+  selectedTools,
   onSave,
   onClose,
 }: {
@@ -91,10 +108,16 @@ function CapabilityChoice({
   loading: boolean;
   error?: string;
   selected: AgentCapability[];
-  onSave: (capabilities: AgentCapability[]) => void;
+  connections: AgentConnection[];
+  selectedTools: AgentConnectionTools[];
+  onSave: (
+    capabilities: AgentCapability[],
+    tools: AgentConnectionTools[],
+  ) => void;
   onClose: () => void;
 }) {
   const [checked, setChecked] = useState(selected);
+  const [checkedTools, setCheckedTools] = useState(selectedTools);
   const [query, setQuery] = useState("");
   const shown = offered.filter((capability) =>
     capability.title.toLowerCase().includes(query.trim().toLowerCase()),
@@ -146,12 +169,18 @@ function CapabilityChoice({
             {error}
           </p>
         )}
-        {!!offered.length && !shown.length && (
-          <p className="text-sm text-base-500">
-            Keine Fähigkeit passt zu deiner Suche.
-          </p>
-        )}
-        {!!sections.length && (
+        {!!offered.length &&
+          !shown.length &&
+          !connections.some((connection) =>
+            connection.tools.some((tool) =>
+              tool.label.toLowerCase().includes(query.trim().toLowerCase()),
+            ),
+          ) && (
+            <p className="text-sm text-base-500">
+              Keine Fähigkeit passt zu deiner Suche.
+            </p>
+          )}
+        {(!!sections.length || !!connections.length) && (
           <div className="flex flex-col gap-4.5">
             {sections.map((section) => (
               <Collapsible key={section} defaultOpen>
@@ -208,6 +237,12 @@ function CapabilityChoice({
                 </CollapsibleContent>
               </Collapsible>
             ))}
+            <ConnectionToolSections
+              connections={connections}
+              query={query}
+              checked={checkedTools}
+              onChange={setCheckedTools}
+            />
           </div>
         )}
       </SheetBody>
@@ -219,6 +254,7 @@ function CapabilityChoice({
               offered.flatMap((capability) =>
                 checked.filter((each) => each.id === capability.id),
               ),
+              checkedTools,
             )
           }
         >
