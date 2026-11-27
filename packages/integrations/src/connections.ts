@@ -62,16 +62,20 @@ function toSummary(row: {
   state: string;
   accountLabel: string;
   folders: string[];
+  agentTools: { agentId: string }[];
 }): ConnectionSummary {
   return {
     integrationKey: row.integrationKey,
     state: row.state as ConnectionSummary["state"],
     accountLabel: row.accountLabel,
     folders: row.folders,
-    // No Agent can use a Connection's tools yet.
-    agentCount: 0,
+    // Ending an Agent deletes its rows, so each Agent here uses the Connection.
+    agentCount: new Set(row.agentTools.map((tool) => tool.agentId)).size,
   };
 }
+
+/** What a summary needs to count the Agents that use a Connection. */
+const agentTools = { agentTools: { select: { agentId: true } } };
 
 /** What a tool's mode is, given whether the Connection holds a Grant for it. */
 function modeOf(
@@ -270,7 +274,9 @@ export function createConnections({
 
     /** The student's Connections, by Integration. */
     async list(p: Principal): Promise<ConnectionSummary[]> {
-      const rows = await withOwner(db, p, (tx) => tx.connection.findMany());
+      const rows = await withOwner(db, p, (tx) =>
+        tx.connection.findMany({ include: agentTools }),
+      );
       return rows.map(toSummary);
     },
 
@@ -287,6 +293,7 @@ export function createConnections({
               include: { tools: { orderBy: { name: "asc" } } },
             },
             grants: { select: { toolName: true } },
+            ...agentTools,
           },
         }),
       );
