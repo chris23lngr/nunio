@@ -8,6 +8,7 @@ import type {
   Delegation,
   ModelCatalog,
   Principal,
+  Transaction,
 } from "@nunio/delegation";
 import {
   capabilities,
@@ -15,6 +16,7 @@ import {
   principal,
   withOwner,
 } from "@nunio/delegation";
+import type { IntegrationReads } from "@nunio/integrations";
 import type { SourceKeys } from "@nunio/keys";
 import type {
   Citation,
@@ -37,6 +39,7 @@ import type {
   ActionEvent,
   ArtifactEvent,
   BriefingEvent,
+  IntegrationReadEvent,
   NoticeEvent,
 } from "./activity.js";
 import { recordEvents } from "./activity.js";
@@ -47,6 +50,15 @@ import { chatContext } from "./context.js";
 import { courseFactsTool } from "./course-facts.js";
 import type { InboxOutput } from "./inbox-tool.js";
 import { inboxTool } from "./inbox-tool.js";
+import type {
+  IntegrationReadOutput,
+  ReadableTool,
+} from "./integration-reads.js";
+import {
+  integrationReadTools,
+  isIntegrationRead,
+  maxReadsPerRun,
+} from "./integration-reads.js";
 import type { ChatPart } from "./parts.js";
 import { retryRateLimited } from "./retry.js";
 import type { ReadCall, StoredCall } from "./run-actions.js";
@@ -107,6 +119,103 @@ export type RunEnd =
   | { status: "stopped"; reason: string }
   | { status: "failed"; reason?: string };
 
+/** The Connection tools an Agent had on as its Run started, by Connection. */
+type ConnectionTools = { connectionId: string; tools: string[] }[];
+
+/**
+ * The read tools a Run's step offers: those it started with on, of its Connections that are still Connected through
+ * an offered MCP Integration. Email's tools join with its read slice (#292).
+ */
+async function readableToolsOf(
+  tx: Transaction,
+  snapshot: ConnectionTools,
+): Promise<ReadableTool[]> {
+  const connections = await tx.connection.findMany({
+    where: {
+      id: { in: snapshot.map((c) => c.connectionId) },
+      state: "connected",
+      integration: { status: "offered", kind: "mcp" },
+    },
+    orderBy: { integrationKey: "asc" },
+    select: {
+      id: true,
+      integration: {
+        select: {
+          key: true,
+          name: true,
+          tools: {
+            where: { class: "read", chatOnly: false },
+            orderBy: { name: "asc" },
+          },
+        },
+      },
+    },
+  });
+  return connections.flatMap(({ id, integration }) => {
+    const on = snapshot.find((c) => c.connectionId === id)?.tools ?? [];
+    return integration.tools
+      .filter((tool) => on.includes(tool.name))
+      .map((tool) => ({
+        connectionId: id,
+        integration: { key: integration.key, name: integration.name },
+        name: tool.name,
+        label: tool.label,
+        definition: tool.definition as ReadableTool["definition"],
+      }));
+  });
+}
+
+/** A step's Integration reads as Verlauf events, one per Connection, counting each tool's calls by outcome. */
+function integrationReadEvents(
+  n: number,
+  readable: readonly ReadableTool[],
+  outputs: IntegrationReadOutput[],
+) {
+  const events = new Map<string, IntegrationReadEvent>();
+  for (const output of outputs) {
+    const connectionId = readable.find(
+      (tool) => tool.integration.key === output.integration.key,
+    )!.connectionId;
+    let event = events.get(connectionId);
+    if (!event) {
+      event = {
+        step: n,
+        integrationKey: output.integration.key,
+        connectionId,
+        tools: [],
+      };
+      events.set(connectionId, event);
+    }
+    let counts = event.tools.find((tool) => tool.name === output.tool.name);
+    if (!counts) {
+      counts = { name: output.tool.name, answered: 0, failed: 0, refused: {} };
+      event.tools.push(counts);
+    }
+    // A refused read went over the Run's read limit: the only refusal a read has yet.
+    if (output.outcome === "refused")
+      counts.refused.run_cap = (counts.refused.run_cap ?? 0) + 1;
+    else counts[output.outcome] += 1;
+  }
+  return [...events.values()].map((detail) => ({
+    key: `integration_read:${n}:${detail.connectionId}`,
+    type: "integration_read" as const,
+    detail,
+  }));
+}
+
+/** How many Integration reads a Run's events count, refused ones included. */
+const readsIn = (events: { detail: unknown }[]) =>
+  events
+    .flatMap((event) => (event.detail as IntegrationReadEvent).tools)
+    .reduce(
+      (sum, tool) =>
+        sum +
+        tool.answered +
+        tool.failed +
+        Object.values(tool.refused).reduce((a, b) => a + (b ?? 0), 0),
+      0,
+    );
+
 /** The model's final message, as the student reads it: plain text without links, citation tags or Markdown. */
 export function summaryOf(text: string) {
   const plain = text
@@ -148,6 +257,7 @@ export function createAgentRuns({
   artifacts,
   delegation,
   agents,
+  integrations,
   startArtifactRun,
   catalog,
   modelFor,
@@ -162,6 +272,8 @@ export function createAgentRuns({
   artifacts: Pick<Artifacts, "list" | "startFromRun">;
   delegation: Delegation;
   agents: Pick<Agents, "startRun" | "syncBudgetPause">;
+  /** Reads through the Connection tools a Run's Agent has on. */
+  integrations: Pick<IntegrationReads, "open">;
   /** Starts an Artifact Run's workflow, which then makes its Artifact; safe to repeat. */
   startArtifactRun: (runId: string) => Promise<void>;
   catalog: Pick<ModelCatalog, "chatModels">;
@@ -434,6 +546,17 @@ export function createAgentRuns({
             ],
           },
         });
+        // The Run's reads so far, which count toward its read limit.
+        const readsMade = readsIn(
+          await tx.runEvent.findMany({
+            where: { runId, type: "integration_read" },
+            select: { detail: true },
+          }),
+        );
+        const readable = await readableToolsOf(
+          tx,
+          (run.connectionTools as ConnectionTools | null) ?? [],
+        );
         const transcripts = await Promise.all(
           run.steps.map((step) =>
             step.transcriptContent
@@ -450,14 +573,15 @@ export function createAgentRuns({
               : null,
           ),
         );
-        return { run, transcripts, performed, started };
+        return { run, transcripts, performed, started, readsMade, readable };
       });
       if ("done" in loaded)
         return loaded.done!.partsContent
           ? outcome(loaded.done!.answered, loaded.done!.calls)
           : { status: "failed", reason: "step_interrupted" };
       if ("ended" in loaded) return { status: "refused", reason: "run_ended" };
-      const { run, transcripts, performed, started } = loaded;
+      const { run, transcripts, performed, started, readsMade, readable } =
+        loaded;
       // A Source deleted or a Connection Disconnected since takes the earlier steps with it, so the Run cannot go on
       // from them; a Disconnect is named first, as when opening.
       if (transcripts.some((transcript) => transcript === null))
@@ -490,6 +614,12 @@ export function createAgentRuns({
       const held = ((run.capabilities as { id: string }[] | null) ?? [])
         .map(({ id }) => id)
         .filter((id): id is CapabilityId => Object.hasOwn(capabilities, id));
+      // One session per Connection for the step, opened at its first read; every read counts toward the Run's limit.
+      const reads = integrationReadTools(turn, integrations, p, readable, {
+        max: maxReadsPerRun,
+        made: readsMade,
+        by: "a Run",
+      });
       const tools = {
         searchMaterial: searchTool(
           turn,
@@ -530,6 +660,7 @@ export function createAgentRuns({
             }
           : {}),
         ...capabilityTools(held),
+        ...reads.tools,
       };
       const called = (previous?.calls as StoredCall[] | null) ?? [];
       const results: ModelMessage[] = called.length
@@ -614,12 +745,14 @@ export function createAgentRuns({
           (deadline) =>
             definitely(() => model.step(input, { signal: deadline })),
         ),
-      ).catch(async (error: unknown) => {
-        // Only a call that certainly cost nothing may be called again; any other failure, such as a timeout after the
-        // request was sent, keeps the claim, so the next attempt fails the Run instead of paying twice.
-        if (error instanceof DefiniteFailure) await release();
-        throw error;
-      });
+      )
+        .catch(async (error: unknown) => {
+          // Only a call that certainly cost nothing may be called again; any other failure, such as a timeout after the
+          // request was sent, keeps the claim, so the next attempt fails the Run instead of paying twice.
+          if (error instanceof DefiniteFailure) await release();
+          throw error;
+        })
+        .finally(reads.close);
       if (stepped.status === "refused") {
         await release();
         return { status: "refused", reason: stepped.reason };
@@ -651,7 +784,10 @@ export function createAgentRuns({
       // What the step read, for the Verlauf: ids only, since names are looked up when shown.
       const read = (name: string) =>
         stepped.value.toolResults.filter((result) => result.toolName === name);
-      const reads = {
+      const integrationReads = stepped.value.toolResults
+        .map((result) => result.output)
+        .filter(isIntegrationRead);
+      const readEvent = {
         step: n,
         plan: read("agenda").length > 0,
         approvals: read("approvals").length > 0,
@@ -779,10 +915,12 @@ export function createAgentRuns({
             citations: [...turn.citations],
           },
         });
-        if (stepped.value.toolResults.length)
-          await recordEvents(tx, { runId, studentId: run.studentId }, [
-            { key: `read:${n}`, type: "read", detail: reads },
-          ]);
+        await recordEvents(tx, { runId, studentId: run.studentId }, [
+          ...(stepped.value.toolResults.length > integrationReads.length
+            ? [{ key: `read:${n}`, type: "read" as const, detail: readEvent }]
+            : []),
+          ...integrationReadEvents(n, readable, integrationReads),
+        ]);
         return answered;
       });
       if (stored === "ended") return { status: "refused", reason: "run_ended" };

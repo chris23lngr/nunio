@@ -21,7 +21,15 @@ import {
   principal,
 } from "@nunio/delegation";
 import { workflowAlive } from "@nunio/delegation/temporal-schedules";
-import { createSourceKeys } from "@nunio/keys";
+import type { IntegrationReads } from "@nunio/integrations";
+import { createIntegrationReads } from "@nunio/integrations";
+import type { FakeMcpServer } from "@nunio/integrations/testing";
+import {
+  seedIntegrationCatalog,
+  startFakeMcpServer,
+  tokenFrom,
+} from "@nunio/integrations/testing";
+import { createConnectionCredentialKeys, createSourceKeys } from "@nunio/keys";
 import {
   createDerivedText,
   createFacts,
@@ -164,6 +172,14 @@ const model = new MockLanguageModelV4({
     };
   },
 } as never);
+/** Reads through Connections as the worker does, once a test's fake MCP server is up. */
+let reading: Pick<IntegrationReads, "open"> = {
+  open: () => {
+    throw new Error("No Connection is read here");
+  },
+};
+/** The Connection of each read session a step opened, in order. */
+const opened: string[] = [];
 /** The Plan executor the gate dispatches to: a fake recording each dispatch, unless a test puts in the real one. */
 let executor: Executor;
 let dispatched: string[] = [];
@@ -308,6 +324,12 @@ beforeAll(async () => {
     artifacts,
     delegation,
     agents,
+    integrations: {
+      open: (p, connectionId) => {
+        opened.push(connectionId);
+        return reading.open(p, connectionId);
+      },
+    },
     startArtifactRun: (runId) => startArtifactRun(runId),
     catalog: { chatModels: async () => offered },
     modelFor: (config) => {
@@ -343,6 +365,7 @@ beforeEach(() => {
   prompts.length = 0;
   toolChoices.length = 0;
   toolNames.length = 0;
+  opened.length = 0;
   executor = fakeExecutor;
   dispatched = [];
   makerCost = 20;
@@ -2954,5 +2977,366 @@ describe("an Agent's Run writing a Briefing (#188)", () => {
     expect(
       (await activity.run(other.p, briefingAgent.id, s.runId))?.summaryGone,
     ).toBe(true);
+  });
+});
+
+describe("an Agent's Run reading through its Connections (#300)", () => {
+  let fake: FakeMcpServer;
+  const credentials = createConnectionCredentialKeys({
+    activeVersion: "test",
+    masters: { test: randomBytes(32) },
+  });
+
+  beforeAll(async () => {
+    fake = await startFakeMcpServer();
+    await seedIntegrationCatalog(admin, fake);
+    reading = createIntegrationReads({ db: runtime, credentials, fakes: true });
+  }, 60_000);
+
+  afterAll(async () => {
+    await admin?.integration.updateMany({
+      where: { key: { in: ["email", "testnotizen"] } },
+      data: { status: "hidden" },
+    });
+    await fake?.stop();
+  });
+
+  /** A Connection of the student's to an Integration, with its content key and, for Testnotizen, a token. */
+  async function connect(
+    studentId: string,
+    integrationKey: "testnotizen" | "email",
+    state = "connected",
+  ) {
+    const connectionId = randomUUID();
+    const { wrapped } = keys.generateConnectionKey(connectionId);
+    await admin.connection.create({
+      data: {
+        id: connectionId,
+        studentId,
+        integrationKey,
+        state,
+        stateCause: state === "connected" ? null : "login_failed",
+        accountLabel:
+          integrationKey === "email" ? "lea@uni.test" : "Leas Notizen",
+        keyVersion: wrapped.version,
+        keyCiphertext: wrapped.ciphertext,
+      },
+    });
+    const sealed = credentials.seal(
+      connectionId,
+      JSON.stringify(
+        integrationKey === "email"
+          ? { username: "lea@uni.test", password: "secret" }
+          : { accessToken: await tokenFrom(fake) },
+      ),
+    );
+    await admin.connectionCredential.create({
+      data: {
+        connectionId,
+        studentId,
+        keyVersion: sealed.version,
+        ciphertext: sealed.ciphertext,
+      },
+    });
+    return connectionId;
+  }
+
+  /** Saves the Agent's form with these Connection tools on, as the drawer does; returns the save's status. */
+  async function turnOn(
+    s: { p: ReturnType<typeof principal.fromSession>; agentId: string },
+    connections: { integrationKey: string; tools: string[] }[],
+  ) {
+    const agent = (await agents.view(s.p, s.agentId))!;
+    const saved = await agents.update(s.p, s.agentId, {
+      name: agent.name,
+      description: agent.description,
+      emoji: agent.emoji,
+      instructions: agent.instructions,
+      courseIds: agent.courses.map((course) => course.id),
+      capabilities: agent.capabilities,
+      budgetMicroUsd: agent.budget.limitMicroUsd,
+      trigger: agent.trigger,
+      modelKey: agent.modelKey!,
+      connections,
+    });
+    return saved.status;
+  }
+
+  /** A started Run whose Agent has Testnotizen's search and read on. */
+  async function readingAgent() {
+    const s = await started();
+    const connectionId = await connect(s.studentId, "testnotizen");
+    expect(
+      await turnOn(s, [
+        {
+          integrationKey: "testnotizen",
+          tools: ["notes.read", "notes.search"],
+        },
+      ]),
+    ).toBe("ok");
+    return { s, connectionId };
+  }
+
+  const integrationEntries = async (s: {
+    p: ReturnType<typeof principal.fromSession>;
+    agentId: string;
+    runId: string;
+  }) =>
+    (await activity.run(s.p, s.agentId, s.runId))!.verlauf.filter(
+      (entry) => entry.type === "integration_read",
+    );
+
+  it("offers its Capabilities, its read tools and the read tools it has on of its Connected Connections, never email.submit", async () => {
+    const reads = ["agenda", "approvals", "courseFacts", "searchMaterial"];
+    const s = await started({
+      held: [{ id: "createStudyBlocks", mode: "ask" }],
+    });
+    await connect(s.studentId, "testnotizen");
+    await connect(s.studentId, "email");
+    // An Agent can never have a Chat-only tool, such as handing in by email, nor one nunio didn't classify.
+    expect(
+      await turnOn(s, [{ integrationKey: "email", tools: ["email.submit"] }]),
+    ).toBe("invalid");
+    expect(
+      await turnOn(s, [
+        { integrationKey: "testnotizen", tools: ["notes.unknown"] },
+      ]),
+    ).toBe("invalid");
+    expect(
+      await turnOn(s, [
+        {
+          integrationKey: "testnotizen",
+          tools: ["notes.search", "notes.create_page"],
+        },
+        { integrationKey: "email", tools: ["email.search", "email.send"] },
+      ]),
+    ).toBe("ok");
+    // A row put in behind the form's back still never offers email.submit.
+    await admin.agentConnectionTool.create({
+      data: {
+        agentId: s.agentId,
+        studentId: s.studentId,
+        connectionId: (
+          await admin.connection.findFirstOrThrow({
+            where: { studentId: s.studentId, integrationKey: "email" },
+          })
+        ).id,
+        toolName: "email.submit",
+      },
+    });
+
+    await run(s);
+
+    // notes.read is off; writes come with Agent writes (#301), and Email's reads with its read slice (#292).
+    expect(toolNames).toEqual([
+      [...reads, "createStudyBlocks", "testnotizen__notes_search"].sort(),
+    ]);
+    expect(toolNames.flat().some((name) => name.includes("submit"))).toBe(
+      false,
+    );
+    // The Run snapshotted what was on as it started.
+    const snapshot = (
+      await admin.run.findUniqueOrThrow({ where: { id: s.runId } })
+    ).connectionTools as { connectionId: string; tools: string[] }[];
+    expect(snapshot.map((c) => c.tools).sort()).toEqual([
+      ["email.search", "email.send", "email.submit"],
+      ["notes.create_page", "notes.search"],
+    ]);
+  });
+
+  it("offers no tools of a Connection that needs reconnection, and none of an Agent with every tool off", async () => {
+    const off = await started();
+    await connect(off.studentId, "testnotizen");
+    await run(off);
+    const reconnect = await started();
+    await connect(reconnect.studentId, "testnotizen", "needs_reconnection");
+    expect(
+      await turnOn(reconnect, [
+        { integrationKey: "testnotizen", tools: ["notes.search"] },
+      ]),
+    ).toBe("ok");
+    await run(reconnect);
+
+    for (const names of toolNames)
+      expect(names.some((name) => name.startsWith("testnotizen__"))).toBe(
+        false,
+      );
+  });
+
+  it("reads in its step through one session per Connection, records the reads per step and Connection, and seals what follows under the Connection", async () => {
+    const { s, connectionId } = await readingAgent();
+    script = [
+      () => [
+        ...calls("testnotizen__notes_search", { query: "Projekt" }),
+        ...calls("testnotizen__notes_search", { query: "Algebra" }),
+        ...calls("testnotizen__notes_read", { id: "note-2" }),
+      ],
+      () => calls("testnotizen__notes_read", { id: "note-9" }),
+      () => says("Prof. Lenz trifft dich am Dienstag."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect(fake.calls.slice(-4).map((call) => call.tool)).toEqual(
+      expect.arrayContaining(["notes.search", "notes.search", "notes.read"]),
+    );
+    // One session per step and Connection, closed with the step.
+    expect(opened).toEqual([connectionId, connectionId]);
+    // The model got what it read fenced as untrusted data.
+    expect(JSON.stringify(prompts[1])).toMatch(
+      /<<<BEGIN untrusted [0-9a-f]+>>>[^<]*Treffen mit Prof\. Lenz am Dienstag/,
+    );
+    expect(await integrationEntries(s)).toEqual([
+      {
+        type: "integration_read",
+        at: expect.any(Date),
+        step: 1,
+        integration: { key: "testnotizen", name: "Testnotizen" },
+        tools: [
+          {
+            name: "notes.search",
+            label: "Notizen durchsuchen",
+            answered: 2,
+            failed: 0,
+            refused: {},
+          },
+          {
+            name: "notes.read",
+            label: "Notiz lesen",
+            answered: 1,
+            failed: 0,
+            refused: {},
+          },
+        ],
+      },
+      {
+        type: "integration_read",
+        at: expect.any(Date),
+        step: 2,
+        integration: { key: "testnotizen", name: "Testnotizen" },
+        tools: [
+          {
+            name: "notes.read",
+            label: "Notiz lesen",
+            answered: 0,
+            failed: 1,
+            refused: {},
+          },
+        ],
+      },
+    ]);
+    // A step that read only through Connections has no other read entry.
+    expect(
+      (await activity.run(s.p, s.agentId, s.runId))!.verlauf.filter(
+        (entry) => entry.type === "read",
+      ),
+    ).toEqual([]);
+    // Its steps and its summary are sealed under the Connection's key.
+    expect(
+      (await admin.runStep.findMany({ where: { runId: s.runId } })).map(
+        (step) => step.derivedFromConnections,
+      ),
+    ).toEqual([[connectionId], [connectionId], [connectionId]]);
+    expect(
+      await admin.run.findUniqueOrThrow({
+        where: { id: s.runId },
+        select: { derivedFromConnections: true },
+      }),
+    ).toEqual({ derivedFromConnections: [connectionId] });
+    expect(await activity.run(s.p, s.agentId, s.runId)).toMatchObject({
+      summary: "Prof. Lenz trifft dich am Dienstag.",
+    });
+    // Temporal sees only ids: no read content is in the workflow's history.
+    const history = await env.client.workflow
+      .getHandle(s.workflowId)
+      .fetchHistory();
+    const recorded = JSON.stringify(history, (_, value) =>
+      value instanceof Uint8Array ? Buffer.from(value).toString() : value,
+    );
+    expect(recorded).not.toContain("Prof. Lenz");
+    expect(recorded).not.toContain("Projekt Datenbanken");
+
+    // Disconnect shreds them; the counts in the Verlauf stay.
+    await admin.connection.delete({ where: { id: connectionId } });
+    expect(await activity.run(s.p, s.agentId, s.runId)).toMatchObject({
+      summary: null,
+      summaryGoneReason: "connection_disconnected",
+    });
+    expect(await integrationEntries(s)).toHaveLength(2);
+    expect((await runs.view(s.p, s.runId))!.steps).toEqual([
+      { n: 1, parts: null, gone: "connection_disconnected" },
+      { n: 2, parts: null, gone: "connection_disconnected" },
+      { n: 3, parts: null, gone: "connection_disconnected" },
+    ]);
+  });
+
+  it("seals a Notice it writes after reading under the Connection", async () => {
+    const s = await started({ held: [{ id: "notifyStudent", mode: null }] });
+    const connectionId = await connect(s.studentId, "testnotizen");
+    expect(
+      await turnOn(s, [
+        { integrationKey: "testnotizen", tools: ["notes.read"] },
+      ]),
+    ).toBe("ok");
+    script = [
+      () => calls("testnotizen__notes_read", { id: "note-2" }),
+      () =>
+        calls("notifyStudent", {
+          text: "Prof. Lenz trifft dich am Dienstag.",
+        }),
+      () => says("Erledigt."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect(
+      await admin.notice.findFirstOrThrow({
+        where: { runId: s.runId },
+        select: { derivedFromConnections: true },
+      }),
+    ).toEqual({ derivedFromConnections: [connectionId] });
+    await admin.connection.delete({ where: { id: connectionId } });
+    expect((await outreach.inbox(s.p)).notices).toMatchObject([
+      { text: null, gone: "connection_disconnected" },
+    ]);
+  });
+
+  it("makes at most 20 Integration reads across its steps, refusing more with run_cap and carrying on", async () => {
+    const { s } = await readingAgent();
+    const before = fake.calls.length;
+    const search = () =>
+      calls("testnotizen__notes_search", { query: "Projekt" });
+    script = [
+      () => Array.from({ length: 15 }, search).flat(),
+      () => Array.from({ length: 6 }, search).flat(),
+      () => search(),
+      () => says("Mehr lese ich nicht."),
+    ];
+
+    expect(await run(s)).toEqual({ status: "done" });
+
+    expect(fake.calls.length - before).toBe(20);
+    expect(JSON.stringify(prompts[2])).toContain(
+      "Refused (run_cap): a Run makes at most 20 Integration reads.",
+    );
+    expect(
+      (await integrationEntries(s)).map((entry) =>
+        entry.type === "integration_read"
+          ? [entry.step, entry.tools[0]!.answered, entry.tools[0]!.refused]
+          : null,
+      ),
+    ).toEqual([
+      [1, 15, {}],
+      [2, 5, { run_cap: 1 }],
+      [3, 0, { run_cap: 1 }],
+    ]);
+  });
+
+  it("deletes the Agent's Connection tools when it is Ended", async () => {
+    const { s } = await readingAgent();
+    await agents.end(s.p, s.agentId);
+    expect(
+      await admin.agentConnectionTool.count({ where: { agentId: s.agentId } }),
+    ).toBe(0);
   });
 });

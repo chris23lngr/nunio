@@ -249,6 +249,12 @@ const runs = createAgentRuns({
   artifacts,
   delegation,
   agents,
+  // The eval's Agent has no Connection tools on, so its Runs never read through one.
+  integrations: {
+    open: () => {
+      throw new Error("The eval reads through no Connection");
+    },
+  },
   startArtifactRun: async () => {},
   catalog,
   modelFor: (model) => createAgentModel(models.fromConfig(model)),

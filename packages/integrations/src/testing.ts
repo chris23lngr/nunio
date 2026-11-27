@@ -1,6 +1,7 @@
 /**
  * Fakes for testing Integrations without vendor accounts.
  */
+export { tokenFrom } from "./testing/access-token.js";
 export { hostileAddress, hostileMail } from "./testing/hostile-mail.js";
 export {
   type Endpoint,
