@@ -374,6 +374,7 @@ describe("the integration executor", () => {
         integrationKey: "testnotizen",
         accountLabel: "Testnotizen",
         state,
+        stateCause: state === "connected" ? null : "token_refused",
         keyVersion: wrapped.version,
         keyCiphertext: wrapped.ciphertext,
         credential: {
