@@ -706,7 +706,7 @@ describe("an Agent's Study Block Actions through the gate", () => {
     const [record] = await gate.history(s.p, { ids: [asked.actionId] });
     const created = await gate.perform(principal.fromRun(record!.runId!), {
       key: record!.key,
-      intent: record!.intent,
+      intent: record!.intent!,
     });
     if (created.status !== "done") throw new Error(created.status);
 

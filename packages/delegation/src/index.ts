@@ -32,6 +32,7 @@ export {
   runCaps,
 } from "./decision.js";
 export {
+  type ActionArgs,
   type ActionOutcome,
   type ActionRecord,
   type Approve,
@@ -40,6 +41,7 @@ export {
   DelegationUnavailable,
   type Deny,
   type Executor,
+  type ExecutorResult,
   type Executors,
   type HistoryQuery,
   KeyConflictError,

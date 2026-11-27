@@ -602,6 +602,9 @@ export const why: Record<Refusal, string> = {
   run_ended: "this Run has already ended",
   open_approvals_cap:
     "the student has too many of your requests open already, so ask nothing more until they decide",
+  needs_reconnection:
+    "the Connection needs to be reconnected by the student before it can be used",
+  tool_unavailable: "nunio doesn't offer that tool now",
 };
 
 /** Why an Artifact Run was not started, as the model is told. */

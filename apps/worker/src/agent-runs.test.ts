@@ -1537,7 +1537,7 @@ describe("an Agent's Run acting on Study Blocks (ADR-0026)", () => {
     });
     await delegation.perform(principal.fromRun(s.runId), {
       key: decided.key,
-      intent: decided.intent,
+      intent: decided.intent!,
     });
     await delegation.decide(s.p, { kind: "deny", actionId: denied!.id });
     // It expired once the Run had ended, before the next Run.
