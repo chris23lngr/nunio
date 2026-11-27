@@ -11,6 +11,9 @@ import type { PrismaClient } from "@nunio/db";
 import type { Principal } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { ConnectionCredentialKeys } from "@nunio/keys";
+import type { MailServer } from "./email/providers.js";
+import type { ReadableMailbox } from "./email/reads.js";
+import { openEmailReads } from "./email/reads.js";
 import { publicFetch } from "./public-fetch.js";
 import type { ToolResult } from "./shape.js";
 import { shapeError, shapeResult } from "./shape.js";
@@ -365,10 +368,68 @@ export function createIntegrationReads({
       accessToken,
     };
   }
+  /** The Connection's mailbox, if it is the student's, Connected, and through the offered Email Integration. */
+  async function mailboxOf(
+    p: Principal,
+    connectionId: string,
+  ): Promise<ReadableMailbox | null> {
+    const row = await withOwner(db, p, (tx) =>
+      tx.connection.findFirst({
+        where: { id: connectionId, state: "connected" },
+        include: { credential: true, integration: true },
+      }),
+    );
+    const { integration, credential } = row ?? {};
+    if (
+      !row?.servers ||
+      !credential ||
+      integration?.kind !== "email" ||
+      integration.status !== "offered"
+    )
+      return null;
+    const { username, password } = JSON.parse(
+      credentials.open(row.id, {
+        version: credential.keyVersion,
+        ciphertext: credential.ciphertext,
+      }),
+    ) as { username: string; password: string };
+    const { imap } = row.servers as unknown as { imap: MailServer };
+    return { username, password, imap, folders: row.folders };
+  }
+  /** The kind of the Connection's Integration; null when it isn't the student's. */
+  async function kindOf(p: Principal, connectionId: string) {
+    const row = await withOwner(db, p, (tx) =>
+      tx.connection.findFirst({
+        where: { id: connectionId },
+        select: { integration: { select: { kind: true } } },
+      }),
+    ).catch(() => null);
+    return row?.integration.kind ?? null;
+  }
   return {
-    /** A lazy read session on one of the student's Connections; it reads the credentials at its first read. */
+    /**
+     * A lazy read session on one of the student's Connections, over MCP or, for Email, IMAP; it reads the credentials
+     * at its first read.
+     */
     open(p: Principal, connectionId: string): ReadSession {
-      return openMcpReads(() => serverOf(p, connectionId), { fakes });
+      let session: Promise<ReadSession> | undefined;
+      const opened = () =>
+        (session ??= kindOf(p, connectionId).then((kind) =>
+          kind === "email"
+            ? openEmailReads(() => mailboxOf(p, connectionId), {
+                fakes,
+                timeoutMs: READ_TIMEOUT_MS,
+              })
+            : openMcpReads(() => serverOf(p, connectionId), { fakes }),
+        ));
+      return {
+        async read(toolName, args, options) {
+          return (await opened()).read(toolName, args, options);
+        },
+        async close() {
+          await (await session)?.close();
+        },
+      };
     },
   };
 }

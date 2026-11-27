@@ -20,23 +20,25 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.3",
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/node": "2.1.2",
     "@modelcontextprotocol/server": "2.4.0",
     "@nunio/typescript-config": "workspace:*",
+    "@types/html-to-text": "9.0.4",
     "@types/node": "24.19.2",
     "smtp-server": "3.21.7",
     "testcontainers": "12.2.1",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
-    "vitest": "5.0.5",
-    "@biomejs/biome": "2.6.3"
+    "vitest": "5.0.5"
   },
   "dependencies": {
     "@ai-sdk/mcp": "2.0.87",
     "@nunio/db": "workspace:*",
     "@nunio/delegation": "workspace:*",
     "@nunio/keys": "workspace:*",
+    "html-to-text": "10.0.1",
     "imapflow": "2.12.2",
     "nodemailer": "10.6.1",
     "undici": "7.30.1"

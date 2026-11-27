@@ -68,6 +68,8 @@ export interface FakeMailServer {
   /** The address is also the login. */
   createAccount(address: string, password: string): Promise<MailAccount>;
   createFolder(account: MailAccount, path: string): Promise<void>;
+  /** Deletes the folder with its mail and creates it again, so it gets a new `UIDVALIDITY`. */
+  recreateFolder(account: MailAccount, path: string): Promise<void>;
   /** APPENDs the mail to `folder` and returns its UID. */
   seed(account: MailAccount, folder: string, mail: SeedMail): Promise<number>;
   /** Every mail in `folder`, read with PEEK so flags stay as they were. */
@@ -177,6 +179,12 @@ export async function startFakeMailServer({
     },
     async createFolder(account, path) {
       await withImap(account, (client) => client.mailboxCreate(path));
+    },
+    async recreateFolder(account, path) {
+      await withImap(account, async (client) => {
+        await client.mailboxDelete(path);
+        await client.mailboxCreate(path);
+      });
     },
     async seed(account, folder, { flags = [], ...mail }) {
       const raw = await new MailComposer(mail).compile().build();

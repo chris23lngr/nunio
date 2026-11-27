@@ -48,7 +48,7 @@ const CONNECTION_TIMEOUT = 15_000;
 type EndpointRefusal = { ok: false; reason: "port_refused" | "server_refused" };
 
 /** Holds a server to the port rule and checks its host's address is public right before nunio connects to it. */
-async function mailEndpoint(
+export async function mailEndpoint(
   kind: "imap" | "smtp",
   server: MailServer,
   { fakes, lookup }: { fakes: boolean; lookup?: Lookup },
@@ -150,12 +150,15 @@ export async function loginToMailbox({
   return { ok: true, folders };
 }
 
-/** Logs in to IMAP and lists the selectable folders, INBOX first; null when connecting or logging in fails. */
-async function imapFolders(
+/**
+ * An IMAP client for the endpoint nunio checked: it connects to the checked address and verifies the certificate
+ * against the host name. Not yet connected.
+ */
+export function imapClient(
   username: string,
   password: string,
   imapAt: MailEndpoint,
-): Promise<MailFolder[] | null> {
+): ImapFlow {
   const imap = new ImapFlow({
     host: imapAt.address,
     port: imapAt.port,
@@ -169,8 +172,18 @@ async function imapFolders(
     socketTimeout: CONNECTION_TIMEOUT * 2,
     logger: false,
   });
-  // A failed connection also reports itself as an "error" event; the rejected promise below handles it.
+  // A failed connection also reports itself as an "error" event; the rejected promise handles it.
   imap.on("error", () => {});
+  return imap;
+}
+
+/** Logs in to IMAP and lists the selectable folders, INBOX first; null when connecting or logging in fails. */
+async function imapFolders(
+  username: string,
+  password: string,
+  imapAt: MailEndpoint,
+): Promise<MailFolder[] | null> {
+  const imap = imapClient(username, password, imapAt);
   try {
     await imap.connect();
     const listed = await imap.list();
