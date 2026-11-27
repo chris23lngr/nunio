@@ -123,7 +123,7 @@ export function agentRunActivitiesFromEnv(
         fakes: integrationFakes(env),
       }),
     },
-    actionArgs: createActionArgs({ keys: keys }),
+    actionArgs: createActionArgs({ keys }),
     planRules,
     deadlineOf: async (studentId, obligationId) =>
       (await plan.view(principal.fromSession({ studentId }))).obligations.find(

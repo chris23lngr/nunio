@@ -335,7 +335,7 @@ function outcomeOf(a: Row): ActionOutcome {
 }
 
 /** An Integration Action's tool arguments, apart from what is stored in plain. */
-function split(kind: string, args: Args) {
+function splitToolArguments(kind: string, args: Args) {
   if (kind !== "integration.call") return { plain: args, toolArguments: null };
   const { arguments: toolArguments, ...plain } =
     args as Args<"integration.call">;
@@ -600,23 +600,27 @@ export function createGate({
   actionArgs,
   deadlineOf,
 }: GateDeps) {
-  /** A stored Action as `perform` takes it, an Integration Action's sealed tool arguments opened first. */
-  async function intentOfRow(
-    tx: Transaction,
-    a: Pick<Row, "id" | "kind" | "args" | "sealedArgs">,
-  ): Promise<ActionIntent> {
-    if (a.kind !== "integration.call") return revive(a.kind, a.args);
+  const needActionArgs = () => {
     if (!actionArgs)
       throw new Error(
         "createDelegation needs actionArgs for Integration Actions",
       );
+    return actionArgs;
+  };
+  /** A stored Action as `perform` takes it, an Integration Action's sealed tool arguments opened first. */
+  async function storedIntent(
+    tx: Transaction,
+    a: Pick<Row, "id" | "kind" | "args" | "sealedArgs">,
+  ): Promise<ActionIntent> {
+    if (a.kind !== "integration.call") return revive(a.kind, a.args);
+    const ports = needActionArgs();
     // Only an Action refused as not the student's has none, and nothing performs it.
     if (!a.sealedArgs)
       throw new Error(`Action ${a.id} has no sealed arguments`);
     const plain = a.args as { connectionId: string };
     return revive(a.kind, {
       ...plain,
-      arguments: await actionArgs.open(
+      arguments: await ports.open(
         tx,
         { id: a.id, connectionId: plain.connectionId },
         a.sealedArgs,
@@ -624,18 +628,18 @@ export function createGate({
     });
   }
   /** Seals an Integration Action's tool arguments under its Connection's content key. */
-  function sealed(
+  function sealArguments(
     tx: Transaction,
     actionId: string,
     intent: ActionIntent,
     toolArguments: Record<string, unknown>,
   ) {
-    if (!actionArgs)
-      throw new Error(
-        "createDelegation needs actionArgs for Integration Actions",
-      );
     const { connectionId } = intent as Args<"integration.call">;
-    return actionArgs.seal(tx, { id: actionId, connectionId }, toolArguments);
+    return needActionArgs().seal(
+      tx,
+      { id: actionId, connectionId },
+      toolArguments,
+    );
   }
 
   const event = (
@@ -800,7 +804,7 @@ export function createGate({
         a.kind === "integration.call"
           ? () =>
               withOwner(db, mint.fromSession({ studentId }), (tx) =>
-                intentOfRow(tx, a),
+                storedIntent(tx, a),
               )
           : revive(a.kind, a.args),
       ...(seen && {
@@ -822,7 +826,7 @@ export function createGate({
       const { kind, ...raw } = intent;
       const args = definition.parse(raw) as Args;
       const parsed = { kind, ...args } as ActionIntent;
-      const { plain, toolArguments } = split(kind, args);
+      const { plain, toolArguments } = splitToolArguments(kind, args);
 
       const next = await withOwner(db, p, async (tx, studentId) => {
         // Serializes calls with one key, so a repeat waits for the first to commit and then sees its record.
@@ -962,7 +966,12 @@ export function createGate({
                 argsHash: argumentsHash(toolArguments),
                 // Sealed only while its Connection is the student's: a call refused as not theirs keeps none.
                 ...(subject && {
-                  sealedArgs: await sealed(tx, actionId, parsed, toolArguments),
+                  sealedArgs: await sealArguments(
+                    tx,
+                    actionId,
+                    parsed,
+                    toolArguments,
+                  ),
                 }),
               }),
               status:
@@ -1176,7 +1185,7 @@ export function createGate({
         // Performed meanwhile, or gone with its Run.
         if (action?.status !== "awaiting_approval") continue;
         // As the API performs it: a Run's Action as the Run's, so its Agent's state, Courses and Capabilities decide.
-        await withOwner(db, student, (tx) => intentOfRow(tx, action))
+        await withOwner(db, student, (tx) => storedIntent(tx, action))
           .then((intent) =>
             gate.perform(action.runId ? mint.fromRun(action.runId) : student, {
               key: action.key,
@@ -1207,7 +1216,7 @@ export function createGate({
       return withOwner(db, student, async (tx) => {
         const action = await findAction(tx, { id: record.id });
         if (!action) throw new UnknownActionError(`No Action ${record.id}`);
-        return intentOfRow(tx, action);
+        return storedIntent(tx, action);
       });
     },
 

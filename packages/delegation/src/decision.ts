@@ -173,9 +173,10 @@ export function decideAction<K extends Kind>(s: Snapshot<K>): Decision {
 
 /**
  * An Integration Action (#280): never for a Paused or Ended Agent or a Run that ended, only on a Connected Connection,
- * only for a write tool nunio offers now (#262), never a Chat-only one in a Run; then on a matching Approval, or it
- * asks. A tool reclassified since still honours a matching Approval; one re-reviewed under a new pin no longer
- * matches it, since the fingerprint holds the pin.
+ * only for a write tool nunio offers now under the pin the call was made under (#262), never a Chat-only one in a
+ * Run; then on a matching Approval, or it asks. A tool reclassified since still honours a matching Approval; one
+ * re-reviewed under a new pin no longer matches it, since the fingerprint holds the current pin. Grants, caps,
+ * per-Agent tool on/off and taint come with their own tickets.
  */
 function decideIntegration(s: Snapshot<"integration.call">): Decision {
   const { agent } = s;
@@ -190,6 +191,9 @@ function decideIntegration(s: Snapshot<"integration.call">): Decision {
   if (!tool || (tool.class !== "write" && tool.class !== "write_always_asked"))
     return refuse("tool_unavailable");
   if (tool.chatOnly && s.inRun) return refuse("tool_unavailable");
+  // A new call made against a definition nunio no longer has reviewed; an asked one goes by its fingerprint.
+  if (!s.approval && s.intent.args.pinHash !== tool.definitionHash)
+    return refuse("tool_unavailable");
   return answered(s) ?? { outcome: "await_approval" };
 }
 

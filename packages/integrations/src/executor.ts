@@ -65,20 +65,24 @@ function isToolCall(init: RequestInit | undefined) {
   }
 }
 
-/** A failure to open the session: nothing was sent, or the service refused the credentials. */
-function unopened(error: unknown) {
-  const status = MCPClientError.isInstance(error)
-    ? error.statusCode
-    : undefined;
-  if (status === 401 || status === 403)
-    return failed(
-      "needs_reconnection",
-      "The service refused the Connection's sign-in; the student must reconnect it. Nothing was sent.",
-    );
-  return failed(
-    "not_sent",
-    "The service could not be reached. Nothing was sent.",
+/** The write never reached the service. */
+const notSent = () =>
+  failed("not_sent", "The service could not be reached. Nothing was sent.");
+
+/** The service refused the Connection's sign-in, which only reconnecting fixes. */
+const refusedSignIn = (status: number) =>
+  failed(
+    "needs_reconnection",
+    `The service refused the Connection's sign-in (HTTP ${status}); the student must reconnect it.`,
   );
+
+const statusOf = (error: unknown) =>
+  MCPClientError.isInstance(error) ? error.statusCode : undefined;
+
+/** A failure to open the session, before any call went out. */
+function sessionFailure(error: unknown) {
+  const status = statusOf(error);
+  return status === 401 || status === 403 ? refusedSignIn(status) : notSent();
 }
 
 /** What a tool call's answer, or its failure after it was sent, makes of the write. */
@@ -98,11 +102,7 @@ function outcomeOf(
     if (error.code !== undefined)
       return failed("service_error", shapeError(error.message));
     const status = error.statusCode;
-    if (status === 401 || status === 403)
-      return failed(
-        "needs_reconnection",
-        `The service refused the Connection's sign-in (HTTP ${status}); the student must reconnect it.`,
-      );
+    if (status === 401 || status === 403) return refusedSignIn(status);
     // A 5xx may have been applied before it failed.
     if (status !== undefined && status >= 500) return { status: "ambiguous" };
     if (status !== undefined)
@@ -111,31 +111,24 @@ function outcomeOf(
         `The service refused the call (HTTP ${status}).`,
       );
   }
-  // The connection dropped: after the call went out, nobody knows whether it was applied.
-  return sent
-    ? { status: "ambiguous" }
-    : failed("not_sent", "The service could not be reached. Nothing was sent.");
+  return lost(sent);
 }
+
+/** No answer: once the call went out, nobody knows whether it was applied. */
+const lost = (sent: boolean): ExecutorResult =>
+  sent ? { status: "ambiguous" } : notSent();
 
 /**
  * Calls one write tool on an MCP server with a client of its own and no retry. `signal` is the gate's timeout: it
- * may stop opening the session, but a call once sent is never aborted. Past it the write is `ambiguous`, and the
- * client is closed whenever the call settles.
+ * may stop opening the session, which must also be done in `WRITE_TIMEOUT_MS`, but a call once sent is never
+ * aborted, so the transport itself never times out. Past `signal` the write is `ambiguous`, and the client is closed
+ * whenever the call settles.
  */
 export async function callMcpWrite(
   server: () => Promise<McpServer>,
   toolName: string,
   args: Record<string, unknown>,
-  {
-    fakes,
-    signal,
-    timeoutMs = WRITE_TIMEOUT_MS,
-  }: {
-    fakes: boolean;
-    signal: AbortSignal;
-    /** How long the transport waits; a test seam. */
-    timeoutMs?: number;
-  },
+  { fakes, signal }: { fakes: boolean; signal: AbortSignal },
 ): Promise<ExecutorResult> {
   let sent = false;
   const tap: Tap = (send) => async (input, init) => {
@@ -152,13 +145,14 @@ export async function callMcpWrite(
   try {
     client = await connect(await server(), {
       fakes,
-      timeoutMs,
+      // No connect, headers or body timeout: the session's opening has `until`, and a sent call never times out.
+      timeoutMs: 0,
       signal,
-      until: Date.now() + timeoutMs,
+      until: Date.now() + WRITE_TIMEOUT_MS,
       tap,
     });
   } catch (error) {
-    return unopened(error);
+    return sessionFailure(error);
   }
   // No signal: the call is never cancelled once it may have gone out.
   const call = client.callTool({ name: toolName, arguments: args });
@@ -190,14 +184,7 @@ export async function callMcpWrite(
       },
     );
   });
-  if ("timedOut" in answer)
-    return sent
-      ? { status: "ambiguous" }
-      : failed(
-          "not_sent",
-          "The service could not be reached. Nothing was sent.",
-        );
-  return outcomeOf(answer, sent);
+  return "timedOut" in answer ? lost(sent) : outcomeOf(answer, sent);
 }
 
 /**

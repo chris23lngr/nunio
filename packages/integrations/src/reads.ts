@@ -51,7 +51,7 @@ export interface McpServer {
 }
 
 /** The Connection can't be read: gone, not Connected, or not through an offered MCP Integration. */
-export class Unavailable extends Error {}
+class Unavailable extends Error {}
 
 /** The read's 30 s ran out before nunio could send the call. */
 class DeadlinePassed extends Error {}

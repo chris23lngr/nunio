@@ -728,6 +728,11 @@ describe("decideAction for an Integration Action", () => {
       { outcome: "dispatch", authority: { approvalId: "approval-1" } },
     ],
     [
+      "refuses a new call made under a pin the tool no longer has",
+      withTool({ definitionHash: "pin-2" }),
+      refuse("tool_unavailable"),
+    ],
+    [
       "refuses an Approval given before the tool's pin changed",
       // The fingerprint holds the pin, so the one shown no longer matches.
       { fingerprint: "fp-2", approval: approved },

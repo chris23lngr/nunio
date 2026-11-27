@@ -38,12 +38,7 @@ export {
   mailTls,
   resolvePublicHost,
 } from "./email/servers.js";
-export {
-  callMcpWrite,
-  createIntegrationExecutor,
-  WRITE_TIMEOUT_MS,
-  type WriteFailure,
-} from "./executor.js";
+export { createIntegrationExecutor } from "./executor.js";
 export { integrationFakes } from "./fakes.js";
 export { definitionHash, type ToolDefinition } from "./pin.js";
 export {
