@@ -4,7 +4,8 @@ CREATE TYPE "own_work_status" AS ENUM ('uploading', 'promoting', 'ready', 'faile
 CREATE TABLE "own_work_file" (
     "id" TEXT NOT NULL,
     "studentId" TEXT NOT NULL,
-    "obligationId" TEXT NOT NULL,
+    -- Null once its Obligation went with its last Source or a reading, until the worker cleans it up.
+    "obligationId" TEXT,
     "name" TEXT NOT NULL,
     "bytes" INTEGER NOT NULL,
     "status" "own_work_status" NOT NULL DEFAULT 'uploading',
@@ -19,7 +20,7 @@ CREATE TABLE "own_work_file" (
 CREATE UNIQUE INDEX "own_work_file_id_studentId_key" ON "own_work_file"("id", "studentId");
 CREATE INDEX "own_work_file_obligationId_idx" ON "own_work_file"("obligationId");
 
-ALTER TABLE "own_work_file" ADD CONSTRAINT "own_work_file_obligationId_studentId_fkey" FOREIGN KEY ("obligationId", "studentId") REFERENCES "obligation"("id", "studentId") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "own_work_file" ADD CONSTRAINT "own_work_file_obligationId_studentId_fkey" FOREIGN KEY ("obligationId", "studentId") REFERENCES "obligation"("id", "studentId") ON DELETE SET NULL ("obligationId") ON UPDATE CASCADE;
 
 -- Student-owned. After upload only the status changes, and the Obligation when its Course is merged; deleting the
 -- row deletes the file's key.

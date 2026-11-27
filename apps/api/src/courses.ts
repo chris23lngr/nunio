@@ -1,6 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
 import { ObligationKind } from "@nunio/db";
+import { principal } from "@nunio/delegation";
 import { courseColors, emailAddress } from "@nunio/knowledge";
 import { deadline } from "@nunio/planning";
 import type { Context } from "hono";
@@ -303,12 +304,47 @@ export function registerCourseRoutes(routes: OpenAPIHono<AppBindings>) {
       description:
         "Removes the Course and everything only in it; it leaves its Agents, and one left with none is Paused. Its Sources stay.",
       request: { params: id },
-      responses: { 200: Done, ...outcomes },
+      responses: {
+        200: Done,
+        503: json(
+          ErrorBody,
+          "The cleanup of its Own Work could not start (error not_started); the Course stays, so trying again is safe.",
+        ),
+        ...outcomes,
+      },
     }),
     async (c) => {
-      const p = await student(c);
-      if (!p) return c.json({ error: "unauthorized" }, 401);
-      return done(c, await c.get("courses").delete(p, c.req.valid("param").id));
+      c.header("cache-control", "no-store");
+      const actor = await c.get("auth").authenticate(c.req.raw);
+      if (!actor) return c.json({ error: "unauthorized" }, 401);
+      const workflows = c.get("sourceWorkflows");
+      let notStarted = false;
+      try {
+        return done(
+          c,
+          await c
+            .get("courses")
+            .delete(
+              principal.fromSession(actor),
+              c.req.valid("param").id,
+              (fileId, cleanupAfter) =>
+                workflows
+                  .ownWork(
+                    "deleteOwnWork",
+                    actor.studentId,
+                    fileId,
+                    cleanupAfter.toISOString(),
+                  )
+                  .catch((error) => {
+                    notStarted = true;
+                    throw error;
+                  }),
+            ),
+        );
+      } catch (error) {
+        if (!notStarted) throw error;
+        return c.json({ error: "not_started" }, 503);
+      }
     },
   );
   // Last, so the fixed paths such as merge-suggestions win over {id}.

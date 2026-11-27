@@ -529,7 +529,7 @@ it("deletes a Course with everything only in it, pausing an Agent left with no C
   });
   if (project.status !== "ok") throw new Error(project.status);
 
-  expect(await courses.delete(p, id)).toEqual({ status: "ok" });
+  expect(await courses.delete(p, id, async () => {})).toEqual({ status: "ok" });
 
   expect((await courses.list(p)).courses.map((c) => c.id)).toEqual([kept]);
   expect(await courses.impact(p, id)).toBeNull();
@@ -543,7 +543,9 @@ it("deletes a Course with everything only in it, pausing an Agent left with no C
       obligationId: null,
     }),
   ]);
-  expect(await courses.delete(p, id)).toEqual({ status: "gone" });
+  expect(await courses.delete(p, id, async () => {})).toEqual({
+    status: "gone",
+  });
 });
 
 const studentIdOf = (p: Principal) => (p as { studentId: string }).studentId;

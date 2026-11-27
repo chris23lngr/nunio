@@ -14816,6 +14816,24 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "The cleanup of its Own Work could not start (error not_started); the Course stays, so trying again is safe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
           }
         }
       },

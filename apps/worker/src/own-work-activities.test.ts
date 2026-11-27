@@ -40,14 +40,20 @@ afterAll(async () => {
   await Promise.all([env?.teardown(), db?.stop()]);
 });
 
+/** What S3 answers for an object that is not there. */
+const notFound = () =>
+  Object.assign(new Error("Not Found"), { name: "NotFound" });
+
 /**
  * The buckets in memory: the browser's upload in quarantine, the worker's snapshot, and every version in sources.
- * `afterSnapshot` runs once the snapshot is taken, as a replayed upload URL could; `afterPromote` once it is moved.
+ * `afterSnapshot` runs once the snapshot is taken, as a replayed upload URL could; `afterPromote` once it is moved;
+ * `checkSources` before sources is asked for the file.
  */
 function buckets(
   faults: {
     afterSnapshot?: (id: string) => void;
-    afterPromote?: () => void;
+    afterPromote?: () => void | Promise<void>;
+    checkSources?: () => void;
   } = {},
 ) {
   const quarantine = new Map<string, Buffer>(),
@@ -60,9 +66,10 @@ function buckets(
       expiresAt: new Date(Date.now() + 300_000),
     }),
     download: async (id, key, location) => {
+      if (location === "sources") faults.checkSources?.();
       const bytes =
         location === "sources" ? sources.get(id)?.at(-1) : quarantine.get(id);
-      if (!bytes) throw new Error("NoSuchKey");
+      if (!bytes) throw notFound();
       if (location !== "sources") {
         snapshots.set(id, bytes);
         faults.afterSnapshot?.(id);
@@ -77,7 +84,7 @@ function buckets(
       sources.set(id, [...(sources.get(id) ?? []), snapshots.get(id)!]);
       quarantine.delete(id);
       snapshots.delete(id);
-      faults.afterPromote?.();
+      await faults.afterPromote?.();
     },
     remove: async (id) => {
       quarantine.delete(id);
@@ -147,7 +154,8 @@ async function confirmedFile(storage: ReturnType<typeof buckets>) {
     const listed = await ownWork.list(p, obligationId);
     return listed.status === "ok" ? listed.files : [];
   };
-  return { studentId, fileId, bytes, ownWork, list };
+  const ref = { studentId, fileId };
+  return { studentId, fileId, ref, bytes, ownWork, list };
 }
 
 describe("Own Work promotion", () => {
@@ -207,6 +215,52 @@ describe("Own Work promotion", () => {
 
     expect(result).toEqual({ status: "ready" });
     expect(storage.sources.get(file.fileId)).toEqual([file.bytes]);
+  });
+
+  it("never removes a file another attempt made ready while this one stalled after its move", async () => {
+    let release = () => {};
+    const stalled = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let stalls = 1;
+    const storage = buckets({
+      afterPromote: () => (stalls-- > 0 ? stalled : undefined),
+    });
+    const file = await confirmedFile(storage);
+    const { promoteOwnWorkFile } = createOwnWorkActivities(file.ownWork);
+
+    // The first attempt outlives its timeout, so the worker starts a second one.
+    const first = promoteOwnWorkFile(file.ref);
+    while (stalls > 0) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(await promoteOwnWorkFile(file.ref)).toEqual({ status: "ready" });
+    release();
+    await first;
+
+    expect(storage.sources.get(file.fileId)).toEqual([file.bytes]);
+    expect(await file.list()).toEqual([
+      expect.objectContaining({ id: file.fileId, status: "ready" }),
+    ]);
+  });
+
+  it("retries rather than copying again when asking sources fails for another reason than a missing file", async () => {
+    let failures = 1;
+    const storage = buckets({
+      checkSources: () => {
+        if (failures-- > 0)
+          throw Object.assign(new Error("Service Unavailable"), {
+            $metadata: { httpStatusCode: 503 },
+          });
+      },
+    });
+    const file = await confirmedFile(storage);
+    const { promoteOwnWorkFile } = createOwnWorkActivities(file.ownWork);
+
+    await expect(promoteOwnWorkFile(file.ref)).rejects.toThrow(
+      "Service Unavailable",
+    );
+    expect(storage.sources.has(file.fileId)).toBe(false);
+    expect(storage.quarantine.get(file.fileId)).toEqual(file.bytes);
+    expect(await promoteOwnWorkFile(file.ref)).toEqual({ status: "ready" });
   });
 
   it("shows the file failed once promotion gives up on an upload that never arrived", async () => {

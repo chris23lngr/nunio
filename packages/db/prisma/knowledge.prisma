@@ -257,12 +257,14 @@ model Obligation {
 
 /// Own Work: a file the student uploaded to hand in for an Obligation. nunio never parses it. It is stored under its
 /// own SSE-C key like a Source: the browser uploads to `quarantine`, and the worker promotes a snapshot into
-/// `sources` under the file's id (ADR-0007). Deleting the row deletes the key.
+/// `sources` under the file's id (ADR-0007). Deleting the row deletes the key. An Obligation that goes with its last
+/// Source or a reading leaves its Own Work without one (the migration's SET NULL ("obligationId")) until the worker
+/// deletes its objects and key.
 model OwnWorkFile {
   id              String        @id
   studentId       String
-  obligationId    String
-  obligation      Obligation    @relation(fields: [obligationId, studentId], references: [id, studentId], onDelete: Cascade)
+  obligationId    String?
+  obligation      Obligation?   @relation(fields: [obligationId, studentId], references: [id, studentId], onDelete: SetNull)
   name            String
   bytes           Int
   status          OwnWorkStatus @default(uploading)

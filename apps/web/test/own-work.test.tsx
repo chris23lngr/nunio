@@ -138,6 +138,21 @@ test("refuses a file over 14 MB before uploading anything", async () => {
   );
 });
 
+test("refuses an empty file with its own message", async () => {
+  api.route("GET", base, () => Response.json([]));
+  const user = userEvent.setup();
+  renderOwnWork();
+
+  await user.upload(
+    await screen.findByLabelText("Eigene Arbeit hochladen"),
+    new File([], "Leer.pdf"),
+  );
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Leere Dateien können nicht hochgeladen werden.",
+  );
+});
+
 test("deleting a file removes it from the list", async () => {
   let files = [solution];
   api.route("GET", base, () => Response.json(files));

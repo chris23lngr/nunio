@@ -62,7 +62,9 @@ export function OwnWork({
 
   const upload = useMutation({
     mutationFn: async (chosen: File[]) => {
-      if (chosen.some((file) => file.size < 1 || file.size > maxBytes))
+      if (chosen.some((file) => file.size < 1))
+        throw new Error("Leere Dateien können nicht hochgeladen werden.");
+      if (chosen.some((file) => file.size > maxBytes))
         throw new Error("Eine Datei darf höchstens 14 MB groß sein.");
       const client = createApiClient(apiOrigin);
       for (const file of chosen) {
