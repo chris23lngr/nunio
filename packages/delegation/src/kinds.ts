@@ -51,6 +51,17 @@ const schemas = {
       end: z.date(),
     })
     .refine(ordered, message),
+  /**
+   * A call of one write tool of a Connection (#280). Only the Integration, Connection, tool and the pin hash of the
+   * definition it was called under are stored in plain; the gate seals `arguments` under the Connection's content key.
+   */
+  "integration.call": z.strictObject({
+    integrationKey: z.string().min(1),
+    connectionId: z.string().min(1),
+    toolName: z.string().min(1),
+    pinHash: z.string().min(1),
+    arguments: z.record(z.string(), z.unknown()),
+  }),
 };
 
 /** What the gate re-reads at dispatch about the work an Action is for. */
@@ -72,12 +83,23 @@ export interface BlockSubject extends WorkSubject {
 export interface TaskSubject extends WorkSubject {
   title: string;
 }
+/** ...and about the Connection and the tool an Integration Action calls, as they stand now. */
+export interface IntegrationSubject {
+  connection: { state: "connected" | "needs_reconnection" };
+  /** The tool's catalog row; null for a tool nunio never classified or that is gone. */
+  tool: {
+    class: "read" | "write" | "write_always_asked" | "blocked";
+    definitionHash: string;
+    chatOnly: boolean;
+  } | null;
+}
 type Subjects = {
   "studyBlock.create": WorkSubject;
   "studyBlock.move": BlockSubject;
   "task.create": WorkSubject;
   "task.reopen": TaskSubject;
   "studyBlock.remove": BlockSubject;
+  "integration.call": IntegrationSubject;
 };
 
 const versions = {
@@ -111,7 +133,7 @@ export function canonical(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
 
-function definition<K extends keyof typeof schemas>(kind: K) {
+function definition<K extends keyof typeof versions>(kind: K) {
   return {
     /** The hash of kind@version, the canonical arguments, and what was re-read for them; an Approval is bound to it. */
     fingerprint(
@@ -138,6 +160,39 @@ function definition<K extends keyof typeof schemas>(kind: K) {
   };
 }
 
+const sha256 = (text: string) =>
+  createHash("sha256").update(text).digest("hex");
+
+/** The hash of an Integration Action's tool arguments as canonical JSON, stored beside them once they are sealed. */
+export const argumentsHash = (toolArguments: Record<string, unknown>) =>
+  sha256(canonical(toolArguments));
+
+const integrationCall = {
+  /**
+   * The hash of the Connection, the tool, the pin hash it has now and the canonical tool arguments (#262). An Approval
+   * asked against an older definition no longer matches once the tool is re-reviewed under a new pin.
+   */
+  fingerprint(
+    args: z.infer<(typeof schemas)["integration.call"]>,
+    subject: IntegrationSubject,
+  ): string {
+    return sha256(
+      canonical({
+        connectionId: args.connectionId,
+        toolName: args.toolName,
+        pinHash: subject.tool?.definitionHash ?? null,
+        arguments: args.arguments,
+      }),
+    );
+  },
+  parse(input: unknown): z.infer<(typeof schemas)["integration.call"]> {
+    const parsed = schemas["integration.call"].safeParse(input);
+    if (!parsed.success)
+      throw new InvalidIntentError(`integration.call: ${parsed.error.message}`);
+    return parsed.data;
+  },
+};
+
 /** Each Action kind the gate performs. Adding one changes this module: only vetted kinds can act. */
 export const definitions = {
   "studyBlock.create": definition("studyBlock.create"),
@@ -145,6 +200,7 @@ export const definitions = {
   "task.create": definition("task.create"),
   "task.reopen": definition("task.reopen"),
   "studyBlock.remove": definition("studyBlock.remove"),
+  "integration.call": integrationCall,
 };
 
 export type Kind = keyof typeof definitions;

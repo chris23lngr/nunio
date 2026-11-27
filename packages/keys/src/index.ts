@@ -193,6 +193,31 @@ export function unwrapUnderConnection(
   );
 }
 
+/** An Integration Action's tool arguments, sealed directly under its Connection's content key (#280). */
+export function encryptActionArguments(
+  connectionKey: Buffer,
+  actionId: string,
+  text: string,
+): Buffer {
+  return seal(
+    connectionKey,
+    JSON.stringify(["action-arguments", actionId]),
+    Buffer.from(text),
+  );
+}
+
+export function decryptActionArguments(
+  connectionKey: Buffer,
+  actionId: string,
+  ciphertext: Uint8Array,
+): string {
+  return open(
+    connectionKey,
+    JSON.stringify(["action-arguments", actionId]),
+    ciphertext,
+  ).toString("utf8");
+}
+
 /** A JSON object mapping version IDs to base64 master keys, as the platform secret holds it. */
 function mastersFrom(name: string, json: string): Record<string, Buffer> {
   let values: Record<string, string>;

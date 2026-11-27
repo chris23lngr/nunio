@@ -5,6 +5,7 @@ import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type {
+  ActionArgs,
   ActionIntent,
   ActionOutcome,
   Delegation,
@@ -13,6 +14,7 @@ import type {
   PlanVerdict,
 } from "./index.js";
 import {
+  argumentsHash,
   createDelegation,
   DelegationUnavailable,
   KeyConflictError,
@@ -338,7 +340,7 @@ describe("Approval", () => {
       intent: move(s),
     });
     expect(
-      await g.perform(s.p, { key: record.key, intent: record.intent }),
+      await g.perform(s.p, { key: record.key, intent: record.intent! }),
     ).toMatchObject({ status: "done", actionId: asking.actionId });
     expect(dispatched).toHaveLength(1);
   });
@@ -1112,6 +1114,339 @@ describe("dispatch and recovery", () => {
     expect((await g.history(s.p, { ids: [asking.actionId] }))[0]).toMatchObject(
       { status: "refused", refusal: "paused" },
     );
+  });
+});
+
+describe("Integration Actions", () => {
+  /** Pins as the catalog stores them: sha256 hashes of the reviewed definition. */
+  const pin1 = "a".repeat(64),
+    pin2 = "b".repeat(64);
+  /** A fake of `actionArgs` that seals by reversing the JSON, and counts how often it opened arguments. */
+  function fakeActionArgs() {
+    const opened: string[] = [];
+    const actionArgs: ActionArgs = {
+      async seal(_, { id, connectionId }, toolArguments) {
+        return new Uint8Array(
+          Buffer.from(
+            JSON.stringify({ id, connectionId, toolArguments }),
+          ).reverse(),
+        );
+      },
+      async open(_, { id, connectionId }, sealed) {
+        const box = JSON.parse(Buffer.from(sealed).reverse().toString());
+        // Bound to the Action and its Connection, as the real port's AAD is.
+        if (box.id !== id || box.connectionId !== connectionId)
+          throw new Error("sealed for another Action");
+        opened.push(id);
+        return box.toolArguments;
+      },
+    };
+    return { actionArgs, opened };
+  }
+
+  /** A fake integration executor that records the intents it performs. */
+  function fakeIntegration(execute?: Executor["execute"]) {
+    const performed: unknown[] = [];
+    const executor: Executor = {
+      execute:
+        execute ??
+        (async (req) => {
+          performed.push(req.intent);
+          return {
+            status: "done",
+            effect: {},
+            result:
+              "<<<BEGIN untrusted n>>>\nSeite angelegt\n<<<END untrusted n>>>",
+          };
+        }),
+      lookup: async () => ({ status: "unknown" }),
+    };
+    return { executor, performed };
+  }
+
+  function integrationGate(integration: Executor, actionArgs: ActionArgs) {
+    return createDelegation({
+      db: runtime,
+      aiEnabled: () => true,
+      clock,
+      executors: { plan: fakeExecutor().executor, integration },
+      actionArgs,
+    });
+  }
+
+  /** The student's Connection to a fresh MCP Integration with one grantable write tool. */
+  async function connection(s: { studentId: string }) {
+    const integrationKey = `testnotizen-${randomUUID()}`,
+      connectionId = randomUUID();
+    await admin.integration.create({
+      data: {
+        key: integrationKey,
+        name: "Testnotizen",
+        logo: "/integrations/testnotizen.svg",
+        description: "Notizen",
+        dataNote: "EU",
+        status: "offered",
+        kind: "mcp",
+        mcpUrl: "https://mcp.nunio.test/mcp",
+        transport: "http",
+        registration: "dcr",
+        issuers: ["https://mcp.nunio.test"],
+        tools: {
+          create: {
+            name: "notes.create_page",
+            class: "write",
+            definition: { description: "Creates a page", inputSchema: {} },
+            definitionHash: pin1,
+            label: "Seite anlegen",
+          },
+        },
+      },
+    });
+    await admin.connection.create({
+      data: {
+        id: connectionId,
+        studentId: s.studentId,
+        integrationKey,
+        accountLabel: "Testnotizen",
+        keyVersion: "v1",
+        keyCiphertext: "wrapped",
+      },
+    });
+    return { integrationKey, connectionId };
+  }
+
+  const createPage = (
+    c: { integrationKey: string; connectionId: string },
+    toolArguments: Record<string, unknown> = { title: "Lineare Algebra" },
+  ): ActionIntent => ({
+    kind: "integration.call",
+    integrationKey: c.integrationKey,
+    connectionId: c.connectionId,
+    toolName: "notes.create_page",
+    pinHash: pin1,
+    arguments: toolArguments,
+  });
+
+  async function asked(
+    g: Delegation,
+    s: Awaited<ReturnType<typeof student>>,
+    intent: ActionIntent,
+  ) {
+    return (await g.perform(s.p, {
+      key: `chat-9:message-1:${randomUUID()}`,
+      intent,
+    })) as Extract<ActionOutcome, { status: "awaiting_approval" }>;
+  }
+
+  it("asks in a Chat, keeps the tool's arguments only sealed, and performs them once approved", async () => {
+    const s = await student();
+    const c = await connection(s);
+    const { executor, performed } = fakeIntegration();
+    const { actionArgs } = fakeActionArgs();
+    const g = integrationGate(executor, actionArgs);
+    const intent = createPage(c, { title: "Lineare Algebra", tags: ["a"] });
+
+    const asking = await asked(g, s, intent);
+
+    expect(asking.status).toBe("awaiting_approval");
+    const row = await admin.action.findUniqueOrThrow({
+      where: { id: asking.actionId },
+    });
+    expect(row.args).toEqual({
+      integrationKey: c.integrationKey,
+      connectionId: c.connectionId,
+      toolName: "notes.create_page",
+      pinHash: pin1,
+    });
+    expect(Buffer.from(row.sealedArgs!).toString()).not.toContain(
+      "Lineare Algebra",
+    );
+    expect(row.argsHash).toBe(
+      argumentsHash({ title: "Lineare Algebra", tags: ["a"] }),
+    );
+    const [record] = await g.history(s.p, { ids: [asking.actionId] });
+    expect(record!.intent).toBeNull();
+
+    const decided = await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+    const outcome = await g.perform(s.p, {
+      key: decided.key,
+      intent: await g.intentOf(s.p, decided),
+    });
+
+    expect(outcome).toMatchObject({
+      status: "done",
+      result: expect.stringContaining("Seite angelegt"),
+    });
+    expect(performed).toEqual([intent]);
+    // The service's answer is handed back, never stored.
+    const done = await admin.action.findUniqueOrThrow({
+      where: { id: asking.actionId },
+    });
+    expect(JSON.stringify(done)).not.toContain("Seite angelegt");
+  });
+
+  it("refuses a repeated key with other tool arguments as a key conflict", async () => {
+    const s = await student();
+    const c = await connection(s);
+    const g = integrationGate(
+      fakeIntegration().executor,
+      fakeActionArgs().actionArgs,
+    );
+    const key = `chat-9:message-2:${randomUUID()}`;
+    await g.perform(s.p, { key, intent: createPage(c) });
+
+    await expect(
+      g.perform(s.p, { key, intent: createPage(c, { title: "Analysis" }) }),
+    ).rejects.toThrow(KeyConflictError);
+    expect(
+      await g.perform(s.p, {
+        key,
+        intent: createPage(c, { title: "Lineare Algebra" }),
+      }),
+    ).toMatchObject({ status: "awaiting_approval" });
+  });
+
+  it("refuses an Approval given before the tool was re-reviewed under a new pin", async () => {
+    const s = await student();
+    const c = await connection(s);
+    const { executor, performed } = fakeIntegration();
+    const g = integrationGate(executor, fakeActionArgs().actionArgs);
+    const asking = await asked(g, s, createPage(c));
+    const decided = await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+    await admin.integrationTool.update({
+      where: {
+        integrationKey_name: {
+          integrationKey: c.integrationKey,
+          name: "notes.create_page",
+        },
+      },
+      data: { definitionHash: pin2 },
+    });
+
+    expect(
+      await g.perform(s.p, {
+        key: decided.key,
+        intent: await g.intentOf(s.p, decided),
+      }),
+    ).toMatchObject({ status: "refused", reason: "approval_mismatch" });
+    expect(performed).toEqual([]);
+  });
+
+  it("refuses an approved call of a tool that was removed since", async () => {
+    const s = await student();
+    const c = await connection(s);
+    const { executor, performed } = fakeIntegration();
+    const g = integrationGate(executor, fakeActionArgs().actionArgs);
+    const asking = await asked(g, s, createPage(c));
+    const decided = await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+    await admin.integrationTool.delete({
+      where: {
+        integrationKey_name: {
+          integrationKey: c.integrationKey,
+          name: "notes.create_page",
+        },
+      },
+    });
+
+    expect(
+      await g.perform(s.p, {
+        key: decided.key,
+        intent: await g.intentOf(s.p, decided),
+      }),
+    ).toMatchObject({ status: "refused", reason: "tool_unavailable" });
+    expect(performed).toEqual([]);
+  });
+
+  it("refuses a call on another student's Connection, keeping no arguments", async () => {
+    const s = await student();
+    const other = await student();
+    const c = await connection(other);
+    const g = integrationGate(
+      fakeIntegration().executor,
+      fakeActionArgs().actionArgs,
+    );
+
+    const outcome = await g.perform(s.p, {
+      key: `chat-9:message-3:${randomUUID()}`,
+      intent: createPage(c),
+    });
+
+    expect(outcome).toMatchObject({ status: "refused", reason: "not_owner" });
+    const row = await admin.action.findUniqueOrThrow({
+      where: { id: outcome.actionId },
+    });
+    expect(row.sealedArgs).toBeNull();
+  });
+
+  it("lets reconcile perform an approved Integration Action, opening its arguments first", async () => {
+    const s = await student();
+    const c = await connection(s);
+    const { executor, performed } = fakeIntegration();
+    const { actionArgs, opened } = fakeActionArgs();
+    const g = integrationGate(executor, actionArgs);
+    const intent = createPage(c);
+    const asking = await asked(g, s, intent);
+    await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+
+    now = new Date(now.getTime() + hour);
+    await g.reconcile();
+
+    expect(opened).toContain(asking.actionId);
+    expect(performed).toEqual([intent]);
+    expect((await g.history(s.p, { ids: [asking.actionId] }))[0]).toMatchObject(
+      { status: "done" },
+    );
+  });
+
+  it("lets reconcile turn a stale in-flight Integration Attempt Unconfirmed, never opening its arguments", async () => {
+    const s = await student();
+    const c = await connection(s);
+    // The process dies mid-call: no answer ever comes.
+    const { executor } = fakeIntegration(() => new Promise(() => {}));
+    const { actionArgs, opened } = fakeActionArgs();
+    const g = integrationGate(executor, actionArgs);
+    const asking = await asked(g, s, createPage(c));
+    const decided = await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+    void g.perform(s.p, {
+      key: decided.key,
+      intent: await g.intentOf(s.p, decided),
+    });
+    await expect
+      .poll(() =>
+        admin.attempt.count({
+          where: { actionId: asking.actionId, status: "in_flight" },
+        }),
+      )
+      .toBe(1);
+
+    now = new Date(now.getTime() + hour);
+    await g.reconcile();
+
+    expect((await g.history(s.p, { ids: [asking.actionId] }))[0]).toMatchObject(
+      { status: "unconfirmed" },
+    );
+    // Opened once, to perform it; recovering it only asks the executor.
+    expect(opened).toEqual([asking.actionId]);
   });
 });
 

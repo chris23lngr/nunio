@@ -17,6 +17,9 @@ export function createPlanExecutor({ db }: { db: PrismaClient }): Executor {
       { studentId, actionId, intent, block: seen },
       { idempotencyKey },
     ) {
+      // The gate sends Integration Actions to the integration executor.
+      if (intent.kind === "integration.call")
+        throw new Error("The Plan executor can't perform integration.call");
       return withOwner(db, principal.fromSession({ studentId }), async (tx) => {
         // Serializes executions of one key, so a repeat sees the effect the first recorded.
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${idempotencyKey}))`;

@@ -282,7 +282,12 @@ model Action {
   run         Run?         @relation(fields: [runId, studentId], references: [id, studentId], onDelete: Cascade)
   key         String
   kind        String
+  /// For an integration.call, only its Integration, Connection, tool and pin hash: the tool's arguments are sealed.
   args        Json
+  /// An integration.call's tool arguments, sealed under its Connection's content key; Disconnect shreds them.
+  sealedArgs  Bytes?
+  /// sha256 of an integration.call's canonical tool arguments, so a repeated key is checked against them.
+  argsHash    String?
   status      ActionStatus
   refusal     String?
   /// Why the executor definitely did not take the effect.
