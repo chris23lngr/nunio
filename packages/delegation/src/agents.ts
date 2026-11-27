@@ -96,6 +96,20 @@ export type AgentForm = {
   trigger: AgentTrigger;
   /** The Model its Runs run on: one Chat offers, or the one it already has. */
   modelKey: string;
+  /** The tools it may use of the student's Connections, by Integration; every other tool is off. Unchanged if left out. */
+  connections?: AgentConnectionTools[];
+};
+
+/** The tools of one of the student's Connections that an Agent may use, by the Integration's key and tool names. */
+export type AgentConnectionTools = { integrationKey: string; tools: string[] };
+
+/**
+ * A tool an Agent may have on: one nunio classified for reading or writing, never a blocked one or one offered only
+ * in a Chat, such as handing in by email (ADR-0001 "Grants on a Connection's tools").
+ */
+const agentToolWhere = {
+  class: { in: ["read", "write", "write_always_asked"] },
+  chatOnly: false,
 };
 
 /** The Plan's time zone, which an Agent's trigger is in. */
@@ -148,6 +162,94 @@ async function saveCapabilities(
       .filter((kind) => !kept.some((g) => g.kind === kind))
       .map((kind) => ({ id: randomUUID(), studentId, agentId, kind })),
   });
+}
+
+/**
+ * The form's Connection tools as rows, if each is a tool an Agent may have of one of the student's Connections;
+ * `stale` when the student no longer has one of the Connections, such as after a Disconnect in another tab.
+ */
+async function checkConnectionTools(
+  tx: Transaction,
+  connections: AgentConnectionTools[],
+) {
+  const keys = connections.map((c) => c.integrationKey);
+  if (
+    new Set(keys).size !== keys.length ||
+    connections.some(({ tools }) => new Set(tools).size !== tools.length)
+  )
+    return "invalid" as const;
+  const found = await tx.connection.findMany({
+    where: { integrationKey: { in: keys } },
+    select: { id: true, integrationKey: true },
+  });
+  const tools = await tx.integrationTool.findMany({
+    where: { integrationKey: { in: keys }, ...agentToolWhere },
+    select: { integrationKey: true, name: true },
+  });
+  const rows: { connectionId: string; toolName: string }[] = [];
+  for (const { integrationKey, tools: names } of connections) {
+    const connection = found.find((c) => c.integrationKey === integrationKey);
+    if (!connection) return "stale" as const;
+    for (const toolName of names) {
+      if (
+        !tools.some(
+          (t) => t.integrationKey === integrationKey && t.name === toolName,
+        )
+      )
+        return "invalid" as const;
+      rows.push({ connectionId: connection.id, toolName });
+    }
+  }
+  return rows;
+}
+
+/** Stores which Connection tools an Agent has on; an Ended Agent has none. */
+async function saveConnectionTools(
+  tx: Transaction,
+  agent: { id: string; studentId: string; state: string },
+  rows: { connectionId: string; toolName: string }[],
+) {
+  const { id: agentId, studentId } = agent;
+  await tx.agentConnectionTool.deleteMany({ where: { agentId } });
+  if (agent.state === "ended") return;
+  await tx.agentConnectionTool.createMany({
+    data: rows.map((row) => ({ agentId, studentId, ...row })),
+  });
+}
+
+/**
+ * The Connection tools an Agent has on, by Integration and in name order, leaving out any nunio no longer offers to
+ * an Agent.
+ */
+async function connectionToolsOf(
+  tx: Transaction,
+  agentId: string,
+): Promise<AgentConnectionTools[]> {
+  const rows = await tx.agentConnectionTool.findMany({
+    where: { agentId },
+    select: {
+      toolName: true,
+      connection: { select: { integrationKey: true } },
+    },
+  });
+  const keys = [...new Set(rows.map((r) => r.connection.integrationKey))];
+  const offered = await tx.integrationTool.findMany({
+    where: { integrationKey: { in: keys }, ...agentToolWhere },
+    select: { integrationKey: true, name: true },
+  });
+  return keys.sort().map((integrationKey) => ({
+    integrationKey,
+    tools: rows
+      .filter(
+        (r) =>
+          r.connection.integrationKey === integrationKey &&
+          offered.some(
+            (t) => t.integrationKey === integrationKey && t.name === r.toolName,
+          ),
+      )
+      .map((r) => r.toolName)
+      .sort(),
+  }));
 }
 
 /**
@@ -456,12 +558,15 @@ export function createAgents({
         const courseIds = await checkCourses(tx, input.courseIds);
         if (typeof courseIds === "string")
           return { status: courseIds } as const;
+        const tools = await checkConnectionTools(tx, input.connections ?? []);
+        if (typeof tools === "string") return { status: tools } as const;
         const id = randomUUID();
         const {
           courseIds: _,
           capabilities: __,
           trigger: ___,
           templateId: ____,
+          connections: _____,
           ...fields
         } = input;
         const agent = await tx.agent.create({
@@ -481,6 +586,7 @@ export function createAgents({
           })),
         });
         await saveCapabilities(tx, agent, held);
+        await saveConnectionTools(tx, agent, tools);
         await saveSchedule(tx, agent);
         return { status: "ok", id } as const;
       });
@@ -512,10 +618,15 @@ export function createAgents({
         );
         if (typeof courseIds === "string")
           return { status: courseIds } as const;
+        const tools =
+          form.connections &&
+          (await checkConnectionTools(tx, form.connections));
+        if (typeof tools === "string") return { status: tools } as const;
         const {
           courseIds: _,
           capabilities: __,
           trigger: ___,
+          connections: ____,
           ...fields
         } = form;
         const saved = await tx.agent.update({
@@ -523,6 +634,7 @@ export function createAgents({
           data: { ...fields, ...triggerColumns(trigger) },
         });
         await saveCapabilities(tx, r, held);
+        if (tools) await saveConnectionTools(tx, r, tools);
         await tx.agentCourse.deleteMany({
           where: { agentId: id, courseId: { notIn: courseIds } },
         });
@@ -661,6 +773,7 @@ export function createAgents({
         });
         if (!(await tx.agent.findUnique({ where: { id } }))) return null;
         await tx.grant.deleteMany({ where: { agentId: id } });
+        await tx.agentConnectionTool.deleteMany({ where: { agentId: id } });
         // Under the Agent's lock, which performing takes before an Action's, so no call asks one meanwhile.
         await withdrawApprovals(tx, { studentId, agentId: id }, clock.now());
         return runsUnderWay(tx, id);
@@ -819,6 +932,7 @@ export function createAgents({
                 mode: c.mode as ApprovalMode | null,
               })),
           ),
+          connections: await connectionToolsOf(tx, id),
           trigger: triggerOf(r),
           modelKey: r.modelKey,
           state: r.state as "active" | "paused" | "ended",
@@ -880,8 +994,11 @@ export function createAgents({
         const existing = await tx.run.findUnique({ where: { id: runId } });
         const agent = await tx.agent.findUnique({
           where: { id: agentId },
-          include: { capabilities: true },
+          include: { capabilities: true, connectionTools: true },
         });
+        const connectionIds = [
+          ...new Set(agent?.connectionTools.map((t) => t.connectionId)),
+        ].sort();
         const snapshot = agent && {
           instructions: agent.instructions,
           capabilities: capabilityIds.flatMap((capability) =>
@@ -889,6 +1006,13 @@ export function createAgents({
               .filter((c) => c.capability === capability)
               .map((c) => ({ id: capability, mode: c.mode })),
           ),
+          connectionTools: connectionIds.map((connectionId) => ({
+            connectionId,
+            tools: agent.connectionTools
+              .filter((t) => t.connectionId === connectionId)
+              .map((t) => t.toolName)
+              .sort(),
+          })),
           modelKey: agent.modelKey,
         };
         if (existing) {

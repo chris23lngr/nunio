@@ -3,6 +3,7 @@
  */
 
 export {
+  type AgentConnectionTools,
   type AgentForm,
   type Agents,
   type AgentTrigger,
