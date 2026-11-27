@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { argumentsHash, definitions, InvalidIntentError } from "./kinds.js";
+import { definitions, InvalidIntentError } from "./kinds.js";
 
 // The per-kind contract suite: every Action kind the gate can perform must pass it.
 const samples = {
@@ -155,18 +155,12 @@ describe("the integration.call fingerprint", () => {
       arguments: { body: "Zusammenfassung", title: "Lineare Algebra" },
     };
     expect(fingerprint(reordered, subject)).toBe(fingerprint(call, subject));
-    expect(argumentsHash(reordered.arguments)).toBe(
-      argumentsHash(call.arguments),
-    );
   });
 
   it("changes when a nested argument changes", () => {
     const nested = { ...call, arguments: { page: { tags: ["a", "b"] } } };
     const other = { ...call, arguments: { page: { tags: ["b", "a"] } } };
     expect(fingerprint(nested, subject)).not.toBe(fingerprint(other, subject));
-    expect(argumentsHash(nested.arguments)).not.toBe(
-      argumentsHash(other.arguments),
-    );
   });
 
   it("changes when the tool was re-reviewed under a new pin", () => {
@@ -183,5 +177,35 @@ describe("the integration.call fingerprint", () => {
       tool: { ...subject.tool, class: "write_always_asked" as const },
     };
     expect(fingerprint(call, always)).toBe(fingerprint(call, subject));
+  });
+});
+
+describe("an integration.call's tool arguments", () => {
+  it("are taken as JSON, so what is fingerprinted is what is sealed and opened again", () => {
+    const parsed = definitions["integration.call"].parse({
+      ...samples["integration.call"],
+      arguments: {
+        title: "Lineare Algebra",
+        note: undefined,
+        due: new Date("2026-11-30T12:00:00Z"),
+        tags: [undefined, "a"],
+      },
+    });
+
+    expect(parsed.arguments).toEqual({
+      title: "Lineare Algebra",
+      due: "2026-11-30T12:00:00.000Z",
+      tags: [null, "a"],
+    });
+    expect(Object.hasOwn(parsed.arguments, "note")).toBe(false);
+  });
+
+  it("refuses arguments that aren't JSON", () => {
+    expect(() =>
+      definitions["integration.call"].parse({
+        ...samples["integration.call"],
+        arguments: { size: 1n },
+      }),
+    ).toThrow(InvalidIntentError);
   });
 });

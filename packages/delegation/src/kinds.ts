@@ -163,10 +163,6 @@ function definition<K extends keyof typeof versions>(kind: K) {
 const sha256 = (text: string) =>
   createHash("sha256").update(text).digest("hex");
 
-/** The hash of an Integration Action's tool arguments as canonical JSON, stored beside them once they are sealed. */
-export const argumentsHash = (toolArguments: Record<string, unknown>) =>
-  sha256(canonical(toolArguments));
-
 const integrationCall = {
   /**
    * The hash of the Connection, the tool, the pin hash it has now and the canonical tool arguments (#262). An Approval
@@ -189,7 +185,14 @@ const integrationCall = {
     const parsed = schemas["integration.call"].safeParse(input);
     if (!parsed.success)
       throw new InvalidIntentError(`integration.call: ${parsed.error.message}`);
-    return parsed.data;
+    // As JSON, as they are sealed and opened again: what is fingerprinted and hashed is exactly what is performed.
+    let toolArguments: Record<string, unknown>;
+    try {
+      toolArguments = JSON.parse(JSON.stringify(parsed.data.arguments));
+    } catch {
+      throw new InvalidIntentError("integration.call: arguments are not JSON");
+    }
+    return { ...parsed.data, arguments: toolArguments };
   },
 };
 

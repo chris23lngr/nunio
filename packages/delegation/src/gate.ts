@@ -18,12 +18,7 @@ import type {
   Kind,
   Subject,
 } from "./kinds.js";
-import {
-  argumentsHash,
-  canonical,
-  definitions,
-  InvalidIntentError,
-} from "./kinds.js";
+import { canonical, definitions, InvalidIntentError } from "./kinds.js";
 import type { Principal, Transaction } from "./principal.js";
 import { principal as mint, withOwner } from "./principal.js";
 
@@ -91,20 +86,27 @@ export interface Executors {
 }
 
 /**
- * Seals and opens an Integration Action's tool arguments under its Connection's content key, in the gate's
- * transaction. A port, because `delegation` never imports `integrations`.
+ * Seals, opens and digests an Integration Action's tool arguments under its Connection's content key, in the gate's
+ * transaction. Each answers null once the Connection is gone, and with it the key. A port, because `delegation`
+ * never imports `integrations`.
  */
 export interface ActionArgs {
+  /** A keyed hash of the canonical tool arguments, for the check that a repeated key carries the same call. */
+  digest(
+    tx: Transaction,
+    connectionId: string,
+    canonicalArguments: string,
+  ): Promise<string | null>;
   seal(
     tx: Transaction,
     action: { id: string; connectionId: string },
     toolArguments: Record<string, unknown>,
-  ): Promise<Uint8Array<ArrayBuffer>>;
+  ): Promise<Uint8Array<ArrayBuffer> | null>;
   open(
     tx: Transaction,
     action: { id: string; connectionId: string },
     sealed: Uint8Array,
-  ): Promise<Record<string, unknown>>;
+  ): Promise<Record<string, unknown> | null>;
 }
 
 /** An Action on a Study Block. */
@@ -277,7 +279,7 @@ type Job = {
    * What to perform; for recovering an Integration Action, opened from its sealed arguments only if it is to be
    * dispatched again.
    */
-  intent: ActionIntent | (() => Promise<ActionIntent>);
+  intent: ActionIntent | (() => Promise<ActionIntent | null>);
   block?: { start: Date; end: Date };
 };
 type Row = NonNullable<Awaited<ReturnType<typeof findAction>>>;
@@ -441,17 +443,22 @@ async function subjectOf(
   if (intent.kind === "integration.call") {
     const connection = await tx.connection.findUnique({
       where: { id: intent.connectionId },
+      include: { integration: { select: { status: true } } },
     });
     if (!connection || connection.integrationKey !== intent.integrationKey)
       return null;
-    const tool = await tx.integrationTool.findUnique({
-      where: {
-        integrationKey_name: {
-          integrationKey: connection.integrationKey,
-          name: intent.toolName,
-        },
-      },
-    });
+    // No tool of an Integration nunio no longer offers is available, as reading it isn't.
+    const tool =
+      connection.integration.status !== "offered"
+        ? null
+        : await tx.integrationTool.findUnique({
+            where: {
+              integrationKey_name: {
+                integrationKey: connection.integrationKey,
+                name: intent.toolName,
+              },
+            },
+          });
     return {
       connection: {
         state: connection.state as IntegrationSubject["connection"]["state"],
@@ -607,39 +614,65 @@ export function createGate({
       );
     return actionArgs;
   };
-  /** A stored Action as `perform` takes it, an Integration Action's sealed tool arguments opened first. */
+  /**
+   * A stored Action as `perform` takes it, an Integration Action's sealed tool arguments opened first; null once they
+   * can't be opened, because its Connection is gone or it kept none.
+   */
   async function storedIntent(
     tx: Transaction,
     a: Pick<Row, "id" | "kind" | "args" | "sealedArgs">,
-  ): Promise<ActionIntent> {
+  ): Promise<ActionIntent | null> {
     if (a.kind !== "integration.call") return revive(a.kind, a.args);
     const ports = needActionArgs();
-    // Only an Action refused as not the student's has none, and nothing performs it.
-    if (!a.sealedArgs)
-      throw new Error(`Action ${a.id} has no sealed arguments`);
+    if (!a.sealedArgs) return null;
     const plain = a.args as { connectionId: string };
-    return revive(a.kind, {
-      ...plain,
-      arguments: await ports.open(
-        tx,
-        { id: a.id, connectionId: plain.connectionId },
-        a.sealedArgs,
-      ),
-    });
+    const toolArguments = await ports.open(
+      tx,
+      { id: a.id, connectionId: plain.connectionId },
+      a.sealedArgs,
+    );
+    return (
+      toolArguments && revive(a.kind, { ...plain, arguments: toolArguments })
+    );
   }
-  /** Seals an Integration Action's tool arguments under its Connection's content key. */
-  function sealArguments(
+  /** The keyed digest an Integration Action's tool arguments are stored with; null once its Connection is gone. */
+  const digestOf = (
     tx: Transaction,
-    actionId: string,
     intent: ActionIntent,
     toolArguments: Record<string, unknown>,
-  ) {
-    const { connectionId } = intent as Args<"integration.call">;
-    return needActionArgs().seal(
+  ) =>
+    needActionArgs().digest(
       tx,
-      { id: actionId, connectionId },
-      toolArguments,
+      (intent as Args<"integration.call">).connectionId,
+      canonical(toolArguments),
     );
+  /**
+   * Whether a repeated key carries other tool arguments than the Action stored under it. Without the Connection
+   * there is nothing to compare them with, and nothing can be performed either: such a call is refused.
+   */
+  async function otherArguments(
+    tx: Transaction,
+    existing: Row,
+    intent: ActionIntent,
+    toolArguments: Record<string, unknown> | null,
+  ) {
+    if (!toolArguments || existing.argsHash === null) return false;
+    const digest = await digestOf(tx, intent, toolArguments);
+    return digest !== null && digest !== existing.argsHash;
+  }
+  /** Refuses an Action asked for Approval whose arguments can no longer be opened: its Connection is gone. */
+  async function refuseUnopenable(
+    tx: Transaction,
+    studentId: string,
+    actionId: string,
+  ) {
+    await tx.$executeRaw`SELECT 1 FROM "action" WHERE "id" = ${actionId} FOR UPDATE`;
+    const { count } = await tx.action.updateMany({
+      where: { id: actionId, status: "awaiting_approval" },
+      data: { status: "refused", refusal: "not_owner" },
+    });
+    if (count)
+      await event(tx, studentId, actionId, "refused", { reason: "not_owner" });
   }
 
   const event = (
@@ -726,10 +759,12 @@ export function createGate({
   };
 
   /** One executor call outside any transaction. A failure leaves the Attempt in flight for lookup. */
-  async function execute(job: Job) {
+  async function execute(job: Job): Promise<ExecutorResult> {
     const executor = executorOf(job.kind);
     const intent =
       typeof job.intent === "function" ? await job.intent() : job.intent;
+    // Its Connection is gone, so it can't be sent again, and nobody knows whether the first dispatch took effect.
+    if (!intent) return { status: "ambiguous" };
     try {
       return await executor.execute(
         {
@@ -845,13 +880,12 @@ export function createGate({
         const existing = await findAction(tx, {
           studentId_key: { studentId, key },
         });
-        // An Integration Action's plain arguments hold no tool arguments, so their stored hash is compared too.
+        // An Integration Action's plain arguments hold no tool arguments, so their stored digest is compared too.
         if (
           existing &&
           (canonical({ kind: existing.kind, args: existing.args }) !==
             canonical({ kind: intent.kind, args: stored(plain) }) ||
-            existing.argsHash !==
-              (toolArguments ? argumentsHash(toolArguments) : null))
+            (await otherArguments(tx, existing, parsed, toolArguments)))
         ) {
           throw new KeyConflictError(
             `Key ${key} was used for a different Action`,
@@ -962,18 +996,20 @@ export function createGate({
               key,
               kind: intent.kind,
               args: stored(plain) as object,
-              ...(toolArguments && {
-                argsHash: argumentsHash(toolArguments),
-                // Sealed only while its Connection is the student's: a call refused as not theirs keeps none.
-                ...(subject && {
-                  sealedArgs: await sealArguments(
+              // Kept only while its Connection is the student's: a call refused as not theirs keeps nothing.
+              ...(toolArguments &&
+                subject && {
+                  argsHash: await digestOf(tx, parsed, toolArguments),
+                  sealedArgs: await needActionArgs().seal(
                     tx,
-                    actionId,
-                    parsed,
+                    {
+                      id: actionId,
+                      connectionId: (parsed as Args<"integration.call">)
+                        .connectionId,
+                    },
                     toolArguments,
                   ),
                 }),
-              }),
               status:
                 decision.outcome === "await_approval"
                   ? "awaiting_approval"
@@ -1185,12 +1221,16 @@ export function createGate({
         // Performed meanwhile, or gone with its Run.
         if (action?.status !== "awaiting_approval") continue;
         // As the API performs it: a Run's Action as the Run's, so its Agent's state, Courses and Capabilities decide.
-        await withOwner(db, student, (tx) => storedIntent(tx, action))
-          .then((intent) =>
-            gate.perform(action.runId ? mint.fromRun(action.runId) : student, {
-              key: action.key,
-              intent,
-            }),
+        // One whose Connection is gone is refused instead.
+        await gate
+          .intentOf(student, action)
+          .then(
+            (intent) =>
+              intent &&
+              gate.perform(
+                action.runId ? mint.fromRun(action.runId) : student,
+                { key: action.key, intent },
+              ),
           )
           .catch((error: unknown) => {
             // An unreachable Plan fails the whole pass, to be retried; an Action that fails otherwise must not hold up
@@ -1208,15 +1248,20 @@ export function createGate({
       return stale.length + approved.length;
     },
 
-    /** A stored Action as `perform` takes it again, such as once the student approved it; opens sealed tool arguments. */
+    /**
+     * A stored Action as `perform` takes it again, such as once the student approved it; opens sealed tool arguments.
+     * Null when they can't be opened because the Connection is gone: an Action still asked is then refused.
+     */
     async intentOf(
       student: Principal,
       record: Pick<ActionRecord, "id">,
-    ): Promise<ActionIntent> {
-      return withOwner(db, student, async (tx) => {
+    ): Promise<ActionIntent | null> {
+      return withOwner(db, student, async (tx, studentId) => {
         const action = await findAction(tx, { id: record.id });
         if (!action) throw new UnknownActionError(`No Action ${record.id}`);
-        return storedIntent(tx, action);
+        const intent = await storedIntent(tx, action);
+        if (!intent) await refuseUnopenable(tx, studentId, action.id);
+        return intent;
       });
     },
 

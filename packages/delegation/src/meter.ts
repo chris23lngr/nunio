@@ -69,11 +69,14 @@ export interface Delegation {
   /** Recovers in-flight dispatches, and performs or refuses approved Actions nobody went on to perform. */
   reconcile(): Promise<number>;
   history(student: Principal, q?: HistoryQuery): Promise<ActionRecord[]>;
-  /** A stored Action as `perform` takes it again; an Integration Action's tool arguments are opened for it. */
+  /**
+   * A stored Action as `perform` takes it again; an Integration Action's tool arguments are opened for it. Null once
+   * its Connection is gone, and an Action still asked is then refused.
+   */
   intentOf(
     student: Principal,
     record: Pick<ActionRecord, "id">,
-  ): Promise<ActionIntent>;
+  ): Promise<ActionIntent | null>;
   /**
    * Reserves `estimate` against the Allowance, runs `call`, then settles its actual usage. A call that throws
    * after it may have been sent (a timeout, abort or network error) keeps its reservation held.

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
@@ -70,9 +70,9 @@ describe("an Integration Action's sealed tool arguments", () => {
     const { connectionId, p } = await connected();
     const action = { id: randomUUID(), connectionId };
 
-    const sealed = await withOwner(runtime, p, (tx) =>
+    const sealed = (await withOwner(runtime, p, (tx) =>
       actionArgs.seal(tx, action, page),
-    );
+    ))!;
 
     expect(Buffer.from(sealed).toString("latin1")).not.toContain(
       "Lineare Algebra",
@@ -84,9 +84,9 @@ describe("an Integration Action's sealed tool arguments", () => {
 
   it("open only for the Action they were sealed for", async () => {
     const { connectionId, p } = await connected();
-    const sealed = await withOwner(runtime, p, (tx) =>
+    const sealed = (await withOwner(runtime, p, (tx) =>
       actionArgs.seal(tx, { id: randomUUID(), connectionId }, page),
-    );
+    ))!;
 
     await expect(
       withOwner(runtime, p, (tx) =>
@@ -95,17 +95,47 @@ describe("an Integration Action's sealed tool arguments", () => {
     ).rejects.toThrow();
   });
 
-  it("are shredded with the Connection's content key", async () => {
+  it("are shredded with the Connection's content key, and can't be sealed or digested any more", async () => {
     const { connectionId, p } = await connected();
     const action = { id: randomUUID(), connectionId };
-    const sealed = await withOwner(runtime, p, (tx) =>
+    const sealed = (await withOwner(runtime, p, (tx) =>
       actionArgs.seal(tx, action, page),
-    );
+    ))!;
 
     await admin.connection.delete({ where: { id: connectionId } });
 
-    await expect(
-      withOwner(runtime, p, (tx) => actionArgs.open(tx, action, sealed)),
-    ).rejects.toThrow();
+    await withOwner(runtime, p, async (tx) => {
+      expect(await actionArgs.open(tx, action, sealed)).toBeNull();
+      expect(await actionArgs.seal(tx, action, page)).toBeNull();
+      expect(await actionArgs.digest(tx, connectionId, "{}")).toBeNull();
+    });
+  });
+
+  it("digest under the Connection's key: alike for one Connection, unrelated across Connections", async () => {
+    const a = await connected();
+    const b = await connected();
+    const text = '{"title":"Lineare Algebra"}';
+
+    const [first, again, other, changed] = await Promise.all([
+      withOwner(runtime, a.p, (tx) =>
+        actionArgs.digest(tx, a.connectionId, text),
+      ),
+      withOwner(runtime, a.p, (tx) =>
+        actionArgs.digest(tx, a.connectionId, text),
+      ),
+      withOwner(runtime, b.p, (tx) =>
+        actionArgs.digest(tx, b.connectionId, text),
+      ),
+      withOwner(runtime, a.p, (tx) =>
+        actionArgs.digest(tx, a.connectionId, '{"title":"Analysis"}'),
+      ),
+    ]);
+
+    expect(first).toMatch(/^[0-9a-f]{64}$/);
+    expect(again).toBe(first);
+    expect(other).not.toBe(first);
+    expect(changed).not.toBe(first);
+    // Not the bare hash of the arguments, which anyone could compute and compare.
+    expect(first).not.toBe(createHash("sha256").update(text).digest("hex"));
   });
 });

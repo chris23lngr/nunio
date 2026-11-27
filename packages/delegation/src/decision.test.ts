@@ -707,13 +707,17 @@ describe("decideAction for an Integration Action", () => {
       refuse("tool_unavailable"),
     ],
     [
-      "refuses a read tool, which no Action calls",
-      withTool({ class: "read" }),
+      "refuses a read tool, which no Action calls, even when approved",
+      { ...withTool({ class: "read" }), approval: approved },
       refuse("tool_unavailable"),
     ],
     [
-      "refuses a Chat-only tool in a Run",
-      { ...inRun("active"), ...withTool({ chatOnly: true }) },
+      "refuses a Chat-only tool in a Run, even when approved",
+      {
+        ...inRun("active"),
+        ...withTool({ chatOnly: true }),
+        approval: approved,
+      },
       refuse("tool_unavailable"),
     ],
     ["asks for a Chat-only tool in a Chat", withTool({ chatOnly: true }), ask],

@@ -1,9 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { TestDatabase } from "@nunio/db/testing";
 import { startTestDatabase } from "@nunio/db/testing";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type {
   ActionArgs,
   ActionIntent,
@@ -12,15 +20,16 @@ import type {
   Executor,
   PlanRules,
   PlanVerdict,
+  Transaction,
 } from "./index.js";
 import {
-  argumentsHash,
   createDelegation,
   DelegationUnavailable,
   KeyConflictError,
   principal,
   StaleApprovalError,
 } from "./index.js";
+import { canonical } from "./kinds.js";
 
 let db: TestDatabase;
 /** Seeds fixtures as the migration role, outside RLS. */
@@ -1121,18 +1130,35 @@ describe("Integration Actions", () => {
   /** Pins as the catalog stores them: sha256 hashes of the reviewed definition. */
   const pin1 = "a".repeat(64),
     pin2 = "b".repeat(64);
-  /** A fake of `actionArgs` that seals by reversing the JSON, and counts how often it opened arguments. */
+  /** The fake's key for a Connection, gone with its row as a content key is. */
+  const keyOf = async (tx: Transaction, connectionId: string) =>
+    (await tx.connection.findUnique({ where: { id: connectionId } }))
+      ? `key-${connectionId}`
+      : null;
+  /**
+   * A fake of `actionArgs` that seals by reversing the JSON and digests with the Connection's id as the key; like the
+   * real port it answers null once the Connection is gone. It counts how often it opened arguments.
+   */
   function fakeActionArgs() {
     const opened: string[] = [];
     const actionArgs: ActionArgs = {
-      async seal(_, { id, connectionId }, toolArguments) {
+      async digest(tx, connectionId, canonicalArguments) {
+        const key = await keyOf(tx, connectionId);
+        return (
+          key &&
+          createHmac("sha256", key).update(canonicalArguments).digest("hex")
+        );
+      },
+      async seal(tx, { id, connectionId }, toolArguments) {
+        if (!(await keyOf(tx, connectionId))) return null;
         return new Uint8Array(
           Buffer.from(
             JSON.stringify({ id, connectionId, toolArguments }),
           ).reverse(),
         );
       },
-      async open(_, { id, connectionId }, sealed) {
+      async open(tx, { id, connectionId }, sealed) {
+        if (!(await keyOf(tx, connectionId))) return null;
         const box = JSON.parse(Buffer.from(sealed).reverse().toString());
         // Bound to the Action and its Connection, as the real port's AAD is.
         if (box.id !== id || box.connectionId !== connectionId)
@@ -1261,8 +1287,11 @@ describe("Integration Actions", () => {
     expect(Buffer.from(row.sealedArgs!).toString()).not.toContain(
       "Lineare Algebra",
     );
+    // Keyed by the Connection, so it can't be matched across students or guessed, and Disconnect shreds it.
     expect(row.argsHash).toBe(
-      argumentsHash({ title: "Lineare Algebra", tags: ["a"] }),
+      createHmac("sha256", `key-${c.connectionId}`)
+        .update(canonical({ title: "Lineare Algebra", tags: ["a"] }))
+        .digest("hex"),
     );
     const [record] = await g.history(s.p, { ids: [asking.actionId] });
     expect(record!.intent).toBeNull();
@@ -1274,7 +1303,7 @@ describe("Integration Actions", () => {
     });
     const outcome = await g.perform(s.p, {
       key: decided.key,
-      intent: await g.intentOf(s.p, decided),
+      intent: (await g.intentOf(s.p, decided))!,
     });
 
     expect(outcome).toMatchObject({
@@ -1334,7 +1363,7 @@ describe("Integration Actions", () => {
     expect(
       await g.perform(s.p, {
         key: decided.key,
-        intent: await g.intentOf(s.p, decided),
+        intent: (await g.intentOf(s.p, decided))!,
       }),
     ).toMatchObject({ status: "refused", reason: "approval_mismatch" });
     expect(performed).toEqual([]);
@@ -1363,7 +1392,7 @@ describe("Integration Actions", () => {
     expect(
       await g.perform(s.p, {
         key: decided.key,
-        intent: await g.intentOf(s.p, decided),
+        intent: (await g.intentOf(s.p, decided))!,
       }),
     ).toMatchObject({ status: "refused", reason: "tool_unavailable" });
     expect(performed).toEqual([]);
@@ -1387,7 +1416,139 @@ describe("Integration Actions", () => {
     const row = await admin.action.findUniqueOrThrow({
       where: { id: outcome.actionId },
     });
-    expect(row.sealedArgs).toBeNull();
+    expect(row).toMatchObject({ sealedArgs: null, argsHash: null });
+  });
+
+  it("refuses a call of a tool whose Integration was withdrawn", async () => {
+    const s = await student();
+    const c = await connection(s);
+    await admin.integration.update({
+      where: { key: c.integrationKey },
+      data: { status: "withdrawn" },
+    });
+    const g = integrationGate(
+      fakeIntegration().executor,
+      fakeActionArgs().actionArgs,
+    );
+
+    expect(
+      await g.perform(s.p, {
+        key: `chat-9:message-4:${randomUUID()}`,
+        intent: createPage(c),
+      }),
+    ).toMatchObject({ status: "refused", reason: "tool_unavailable" });
+  });
+
+  it("keeps tool arguments as JSON, so an approved call opens to the Action that was asked", async () => {
+    const s = await student();
+    const c = await connection(s);
+    const { executor, performed } = fakeIntegration();
+    const g = integrationGate(executor, fakeActionArgs().actionArgs);
+    const asking = await asked(
+      g,
+      s,
+      createPage(c, { title: "Lineare Algebra", note: undefined }),
+    );
+    const decided = await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+
+    expect(
+      await g.perform(s.p, {
+        key: decided.key,
+        intent: (await g.intentOf(s.p, decided))!,
+      }),
+    ).toMatchObject({ status: "done" });
+    expect(performed).toEqual([createPage(c, { title: "Lineare Algebra" })]);
+  });
+
+  it("refuses, rather than opens, an approved call whose Connection is gone", async () => {
+    const s = await student();
+    const c = await connection(s);
+    const { executor, performed } = fakeIntegration();
+    const g = integrationGate(executor, fakeActionArgs().actionArgs);
+    const asking = await asked(g, s, createPage(c));
+    const decided = await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+    await admin.connection.delete({ where: { id: c.connectionId } });
+
+    expect(await g.intentOf(s.p, decided)).toBeNull();
+
+    expect(performed).toEqual([]);
+    expect((await g.history(s.p, { ids: [asking.actionId] }))[0]).toMatchObject(
+      { status: "refused", refusal: "not_owner" },
+    );
+  });
+
+  it("lets reconcile refuse an approved Integration Action whose Connection is gone, once", async () => {
+    const s = await student();
+    const c = await connection(s);
+    const { executor, performed } = fakeIntegration();
+    const { actionArgs, opened } = fakeActionArgs();
+    const g = integrationGate(executor, actionArgs);
+    const asking = await asked(g, s, createPage(c));
+    await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+    await admin.connection.delete({ where: { id: c.connectionId } });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    now = new Date(now.getTime() + hour);
+    await g.reconcile();
+    await g.reconcile();
+
+    expect(errors).not.toHaveBeenCalledWith(
+      expect.stringContaining(asking.actionId),
+    );
+    errors.mockRestore();
+    expect(performed).toEqual([]);
+    expect(opened).toEqual([]);
+    expect((await g.history(s.p, { ids: [asking.actionId] }))[0]).toMatchObject(
+      { status: "refused", refusal: "not_owner" },
+    );
+  });
+
+  it("lets reconcile turn a stale in-flight Integration Attempt Unconfirmed once its Connection is gone", async () => {
+    const s = await student();
+    const c = await connection(s);
+    // Answers that it doesn't know the write, so recovery would dispatch it again if it could.
+    const executor: Executor = {
+      execute: () => new Promise(() => {}),
+      lookup: async () => ({ status: "absent" }),
+    };
+    const g = integrationGate(executor, fakeActionArgs().actionArgs);
+    const asking = await asked(g, s, createPage(c));
+    const decided = await g.decide(s.p, {
+      kind: "approve",
+      actionId: asking.actionId,
+      fingerprint: asking.fingerprint,
+    });
+    void g.perform(s.p, {
+      key: decided.key,
+      intent: (await g.intentOf(s.p, decided))!,
+    });
+    await expect
+      .poll(() =>
+        admin.attempt.count({
+          where: { actionId: asking.actionId, status: "in_flight" },
+        }),
+      )
+      .toBe(1);
+    await admin.connection.delete({ where: { id: c.connectionId } });
+
+    now = new Date(now.getTime() + hour);
+    await g.reconcile();
+
+    expect((await g.history(s.p, { ids: [asking.actionId] }))[0]).toMatchObject(
+      { status: "unconfirmed" },
+    );
   });
 
   it("lets reconcile perform an approved Integration Action, opening its arguments first", async () => {
@@ -1429,7 +1590,7 @@ describe("Integration Actions", () => {
     });
     void g.perform(s.p, {
       key: decided.key,
-      intent: await g.intentOf(s.p, decided),
+      intent: (await g.intentOf(s.p, decided))!,
     });
     await expect
       .poll(() =>

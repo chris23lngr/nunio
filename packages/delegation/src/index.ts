@@ -53,7 +53,6 @@ export {
 export { isHandedIn } from "./handed-in.js";
 export {
   type ActionIntent,
-  argumentsHash,
   InvalidIntentError,
   type Kind,
 } from "./kinds.js";

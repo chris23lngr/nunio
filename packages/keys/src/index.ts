@@ -1,4 +1,9 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+} from "node:crypto";
 
 /** The version selects a master key; only this authenticated envelope is persisted (ADR-0007). */
 export interface WrappedKey {
@@ -216,6 +221,19 @@ export function decryptActionArguments(
     JSON.stringify(["action-arguments", actionId]),
     ciphertext,
   ).toString("utf8");
+}
+
+/**
+ * A keyed digest of an Integration Action's canonical tool arguments under its Connection's content key: it can't be
+ * matched across Connections or guessed without the key, and Disconnect shreds it with the key.
+ */
+export function digestActionArguments(
+  connectionKey: Buffer,
+  canonicalArguments: string,
+): string {
+  return createHmac("sha256", connectionKey)
+    .update(JSON.stringify(["action-arguments-digest", canonicalArguments]))
+    .digest("hex");
 }
 
 /** A JSON object mapping version IDs to base64 master keys, as the platform secret holds it. */
