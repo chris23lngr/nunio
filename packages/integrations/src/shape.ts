@@ -68,10 +68,18 @@ export function shapeResult(result: ToolResult): string {
     parts.length || result.structuredContent === undefined
       ? parts.map(textOf).join("\n")
       : JSON.stringify(result.structuredContent);
-  const truncated = text.length > READ_RESULT_MAX_CHARACTERS;
-  const shaped = fenced(text.slice(0, READ_RESULT_MAX_CHARACTERS));
-  const body = truncated ? `${shaped}\ntruncated: true` : shaped;
+  const body = shapeText(text);
   return result.isError ? `The service reported an error:\n${body}` : body;
+}
+
+/**
+ * Service text as the model sees it: fenced and cut at the cap, then `truncated: true` if it was cut, or if the caller
+ * already left some of it out to fit the cap (as Email's search drops whole hits).
+ */
+export function shapeText(text: string, { truncated = false } = {}): string {
+  const cut = truncated || text.length > READ_RESULT_MAX_CHARACTERS;
+  const shaped = fenced(text.slice(0, READ_RESULT_MAX_CHARACTERS));
+  return cut ? `${shaped}\ntruncated: true` : shaped;
 }
 
 /** A service's error message (a JSON-RPC error) as the model sees it: fenced like any result. */

@@ -14231,3 +14231,158 @@ describe("a Chat reading through its Connections (#291)", () => {
     expect(image).toContain("[image, image/png, 2 KB, not shown]");
   });
 });
+
+describe("a Chat reading mail (#292)", () => {
+  let mail: FakeMailServer;
+  const password = "Pruefung-2026!";
+  const defaultCAs = getCACertificates("default");
+
+  beforeAll(async () => {
+    mail = await startFakeMailServer();
+    // nunio verifies mail servers' certificates; this one is signed by the fake's own CA.
+    setDefaultCACertificates([...defaultCAs, mail.ca]);
+    // Email is seeded hidden until the Integration injection eval passes.
+    await admin.integration.update({
+      where: { key: "email" },
+      data: { status: "offered" },
+    });
+  }, 180_000);
+
+  afterAll(async () => {
+    await admin?.integration.update({
+      where: { key: "email" },
+      data: { status: "hidden" },
+    });
+    setDefaultCACertificates(defaultCAs);
+    await mail?.stop();
+  });
+
+  /** A student with a mailbox, Email connected reading INBOX and Lehrstuhl, and a Chat with it switched on. */
+  async function mailChat(name: string) {
+    const { cookie, headers, id } = await emptyChat(name);
+    const account = await mail.createAccount(`${name}@uni.test`, password);
+    await mail.createFolder(account, "Lehrstuhl");
+    await mail.createFolder(account, "Privat");
+    const connected = await app.request(
+      `${apiOrigin}/api/me/connections/email`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          address: account.address,
+          password,
+          servers: { imap: mail.imap.implicitTls, smtp: mail.smtp.implicitTls },
+          folders: ["INBOX", "Lehrstuhl"],
+        }),
+      },
+    );
+    expect(connected.status).toBe(201);
+    const selected = await app.request(
+      `${apiOrigin}/api/me/chats/${id}/connections`,
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ connections: ["email"] }),
+      },
+    );
+    expect(selected.status).toBe(200);
+    const { id: connectionId } = await admin.connection.findFirstOrThrow({
+      where: { studentId: await studentId(cookie), integrationKey: "email" },
+    });
+    return { headers, chatId: id, account, connectionId };
+  }
+
+  /** The tool results a step's prompt gave the model, as text, in order. */
+  const toolResults = (prompt: unknown) =>
+    (prompt as { role: string; content: unknown }[])
+      .filter((message) => message.role === "tool")
+      .flatMap(
+        (message) =>
+          message.content as { output: { type: string; value: unknown } }[],
+      )
+      .map((part) => String(part.output.value));
+
+  /** The JSON between a result's fence lines. */
+  const unfenced = (result: string) =>
+    JSON.parse(result.split("\n").slice(1, -1).join("\n")) as {
+      id: string;
+      subject: string;
+    }[];
+
+  it("searches the picked folders and reads mail without asking, leaving it unread, and seals the answer", async () => {
+    const { headers, chatId, account, connectionId } =
+      await mailChat("lea-mail");
+    for (const [folder, subject, date] of [
+      ["INBOX", "Sprechstunde verschoben", "2026-11-10"],
+      ["INBOX", "Klausurtermin", "2026-11-20"],
+      ["Privat", "Privates von Lenz", "2026-11-21"],
+    ] as const)
+      await mail.seed(account, folder, {
+        from: "Prof. Lenz <lenz@uni.test>",
+        to: account.address,
+        subject,
+        text: `${subject}: Details folgen.`,
+        date: new Date(`${date}T09:00:00Z`),
+      });
+    const before = await mail.messages(account, "INBOX");
+    // The model searches, reads both hits, then answers.
+    const searched = prompts.length;
+    steps.push(
+      calls("email__email_search", { sender: "lenz@uni.test" }),
+      (prompt) =>
+        unfenced(toolResults(prompt)[0]!).flatMap((hit) =>
+          calls("email__email_read", { messageId: hit.id }),
+        ),
+      says("Prof. Lenz hat die Sprechstunde und den Klausurtermin gemailt."),
+    );
+
+    const answered = await askInChat(
+      headers,
+      chatId,
+      "Was hat Prof. Lenz geschrieben?",
+    );
+
+    expect(answered.status).toBe(200);
+    // The search names only the picked folders, and finds nothing outside them.
+    expect(
+      (
+        offeredToolSchemas.at(-1)!.email__email_search as {
+          properties: { folder: { enum: string[] } };
+        }
+      ).properties.folder.enum,
+    ).toEqual(["INBOX", "Lehrstuhl"]);
+    const [hits, ...reads] = toolResults(prompts[searched + 2]);
+    expect(unfenced(hits!).map((hit) => hit.subject)).toEqual([
+      "Klausurtermin",
+      "Sprechstunde verschoben",
+    ]);
+    expect(reads).toHaveLength(2);
+    for (const read of reads)
+      expect(read).toMatch(
+        /^<<<BEGIN untrusted [0-9a-f]{16}>>>\n[\s\S]*Details folgen\.\n[\s\S]*<<<END untrusted [0-9a-f]{16}>>>$/,
+      );
+    // The step line: "E-Mail · Mails durchsuchen 1× · Mail lesen 2×".
+    const email = { key: "email", name: "E-Mail" };
+    const search = { name: "email.search", label: "Mails durchsuchen" };
+    const read = { name: "email.read", label: "Mail lesen" };
+    expect(
+      (answered.body.parts as { type: string; output?: unknown }[])
+        .filter((part) => part.type === "tool-integration")
+        .map((part) => part.output),
+    ).toEqual([
+      { integration: email, tool: search, outcome: "answered" },
+      { integration: email, tool: read, outcome: "answered" },
+      { integration: email, tool: read, outcome: "answered" },
+    ]);
+    // The mailbox looks the same: still unread, nothing moved.
+    expect(await mail.messages(account, "INBOX")).toEqual(before);
+    for (const stored of before) expect(stored.flags).not.toContain("\\Seen");
+    // Sealed under the Email Connection's key.
+    const row = await admin.chatMessage.findUniqueOrThrow({
+      where: { id: answered.body.id },
+    });
+    expect(row.derivedFromConnections).toEqual([connectionId]);
+    expect(row.contentKey).not.toBeNull();
+    expect(row.partsKey).not.toBeNull();
+  });
+});

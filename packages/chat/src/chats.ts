@@ -5,6 +5,7 @@ import type { PrismaClient } from "@nunio/db";
 import type { Delegation, Principal, Transaction } from "@nunio/delegation";
 import { withOwner } from "@nunio/delegation";
 import type { IntegrationReads } from "@nunio/integrations";
+import { emailSearchDefinition } from "@nunio/integrations";
 import type { SourceKeys } from "@nunio/keys";
 import type {
   Citation,
@@ -311,8 +312,8 @@ export function createChats({
     );
   }
   /**
-   * The read tools of the Connections the Chat may read: selected, Connected, and through an offered MCP
-   * Integration. Email's tools join with its read slice (#292).
+   * The read tools of the Connections the Chat may read: selected, Connected, and through an offered Integration.
+   * Email's search names only the folders the student picked.
    */
   async function readableTools(
     p: Principal,
@@ -324,7 +325,7 @@ export function createChats({
           chatId,
           connection: {
             state: "connected",
-            integration: { status: "offered", kind: "mcp" },
+            integration: { status: "offered" },
           },
         },
         orderBy: { connection: { integrationKey: "asc" } },
@@ -332,10 +333,12 @@ export function createChats({
           connection: {
             select: {
               id: true,
+              folders: true,
               integration: {
                 select: {
                   key: true,
                   name: true,
+                  kind: true,
                   tools: { where: { class: "read" }, orderBy: { name: "asc" } },
                 },
               },
@@ -344,14 +347,20 @@ export function createChats({
         },
       }),
     );
-    return selected.flatMap(({ connection: { id, integration } }) =>
-      integration.tools.map((tool) => ({
-        connectionId: id,
-        integration: { key: integration.key, name: integration.name },
-        name: tool.name,
-        label: tool.label,
-        definition: tool.definition as ReadableTool["definition"],
-      })),
+    return selected.flatMap(({ connection: { id, folders, integration } }) =>
+      integration.tools.map((tool) => {
+        const definition = tool.definition as ReadableTool["definition"];
+        return {
+          connectionId: id,
+          integration: { key: integration.key, name: integration.name },
+          name: tool.name,
+          label: tool.label,
+          definition:
+            integration.kind === "email" && tool.name === "email.search"
+              ? emailSearchDefinition(definition, folders)
+              : definition,
+        };
+      }),
     );
   }
   /** The student's Connections to these Integrations, by id; null if any of them is missing. */

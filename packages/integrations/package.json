@@ -24,6 +24,7 @@
     "@modelcontextprotocol/node": "2.1.2",
     "@modelcontextprotocol/server": "2.4.0",
     "@nunio/typescript-config": "workspace:*",
+    "@types/html-to-text": "9.0.4",
     "@types/node": "24.19.2",
     "smtp-server": "3.21.7",
     "testcontainers": "12.2.1",
@@ -37,6 +38,7 @@
     "@nunio/db": "workspace:*",
     "@nunio/delegation": "workspace:*",
     "@nunio/keys": "workspace:*",
+    "html-to-text": "10.0.1",
     "imapflow": "2.12.2",
     "nodemailer": "10.6.1",
     "undici": "7.30.1"

@@ -30,6 +30,7 @@ export {
   mailProviderFor,
   mailProviders,
 } from "./email/providers.js";
+export { emailSearchDefinition } from "./email/reads.js";
 export {
   type Lookup,
   MailServerRefused,
