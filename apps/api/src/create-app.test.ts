@@ -584,6 +584,11 @@ beforeAll(async () => {
     artifacts,
     delegation,
     agents,
+    integrations: {
+      open: () => {
+        throw new Error("No Run reads through a Connection in the API");
+      },
+    },
     startArtifactRun: async () => {
       throw new Error("No Run starts an Artifact Run in the API");
     },
@@ -14229,5 +14234,232 @@ describe("a Chat reading through its Connections (#291)", () => {
     expect(body).toHaveLength(20_000);
     expect(long!.split("\n").at(-1)).toBe("truncated: true");
     expect(image).toContain("[image, image/png, 2 KB, not shown]");
+  });
+});
+
+describe("an Agent's Connection tools (#300)", () => {
+  beforeAll(async () => {
+    // Offers Testnotizen and Email; nothing here reads through them.
+    await seedIntegrationCatalog(admin, {
+      url: "https://mcp.nunio.test",
+      mcpUrl: "https://mcp.nunio.test/mcp",
+    });
+  });
+
+  afterAll(async () => {
+    await admin?.integration.updateMany({
+      where: { key: { in: ["email", "testnotizen"] } },
+      data: { status: "hidden" },
+    });
+  });
+
+  /** A student with a Course and a Connection to each of these Integrations, as connecting stores one. */
+  async function withConnections(
+    name: string,
+    integrationKeys: ("testnotizen" | "email")[],
+  ) {
+    const s = await withCourse(name);
+    const id = await studentId(s.cookie);
+    for (const integrationKey of integrationKeys)
+      await admin.connection.create({
+        data: {
+          id: randomUUID(),
+          studentId: id,
+          integrationKey,
+          accountLabel:
+            integrationKey === "email" ? "lea@uni.test" : "Leas Notizen",
+          keyVersion: "test",
+          keyCiphertext: "wrapped",
+        },
+      });
+    const call = (method: string, path: string, body?: unknown) =>
+      app.request(`${apiOrigin}${path}`, {
+        method,
+        headers: s.headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    const form = (connections?: unknown) => ({
+      name: "Notizen-Agent",
+      description: "",
+      emoji: "🤖",
+      instructions: "Fasse meine Notizen zusammen.",
+      courseIds: [s.courseId],
+      capabilities: [],
+      budgetMicroUsd: 1_000_000,
+      trigger: { rhythm: "daily", minute: 360 },
+      modelKey: "sonnet-5.5-reasoning-high",
+      ...(connections !== undefined && { connections }),
+    });
+    return { ...s, call, form };
+  }
+
+  it("lists every Connection the student has for the drawer, with the tools an Agent can have and their mode, never email.submit", async () => {
+    const s = await withConnections("agent-connections-drawer", [
+      "testnotizen",
+      "email",
+    ]);
+    await admin.connection.updateMany({
+      where: { studentId: await studentId(s.cookie), integrationKey: "email" },
+      data: { state: "needs_reconnection", stateCause: "login_failed" },
+    });
+    expect(
+      (
+        await s.call(
+          "PUT",
+          "/api/me/connections/testnotizen/tools/notes.create_page",
+          { mode: "always_allowed" },
+        )
+      ).status,
+    ).toBe(200);
+
+    const response = await s.call("GET", "/api/me/agents/connections");
+
+    expect(response.status).toBe(200);
+    const listed = (await response.json()) as {
+      integrationKey: string;
+      name: string;
+      state: string;
+      tools: { name: string; label: string; class: string; mode: string }[];
+    }[];
+    expect(
+      listed.map(({ integrationKey, name, state }) => ({
+        integrationKey,
+        name,
+        state,
+      })),
+    ).toEqual([
+      { integrationKey: "email", name: "E-Mail", state: "needs_reconnection" },
+      {
+        integrationKey: "testnotizen",
+        name: "Testnotizen",
+        state: "connected",
+      },
+    ]);
+    expect(listed[1]!.tools).toEqual([
+      {
+        name: "notes.create_page",
+        label: "Seite anlegen",
+        class: "write",
+        mode: "always_allowed",
+      },
+      { name: "notes.read", label: "Notiz lesen", class: "read", mode: null },
+      {
+        name: "notes.search",
+        label: "Notizen durchsuchen",
+        class: "read",
+        mode: null,
+      },
+      {
+        name: "notes.share",
+        label: "Notiz teilen",
+        class: "write_always_asked",
+        mode: "always_asks",
+      },
+    ]);
+    const email = listed[0]!.tools.map((tool) => tool.name);
+    expect(email).toContain("email.send");
+    expect(email).not.toContain("email.submit");
+  });
+
+  it("saves the tools that are on with the form, shows them on the Agent, keeps them when left out, and counts the Agent on the Connection", async () => {
+    const s = await withConnections("agent-connections-form", ["testnotizen"]);
+    const created = await s.call(
+      "POST",
+      "/api/me/agents",
+      s.form([
+        {
+          integrationKey: "testnotizen",
+          tools: ["notes.search", "notes.create_page"],
+        },
+      ]),
+    );
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+    const shown = async () =>
+      (
+        (await (await s.call("GET", `/api/me/agents/${id}`)).json()) as {
+          connections: unknown;
+        }
+      ).connections;
+    const agentCount = async () =>
+      (
+        (await (
+          await s.call("GET", "/api/me/connections/testnotizen")
+        ).json()) as { connection: { agentCount: number } }
+      ).connection.agentCount;
+
+    expect(await shown()).toEqual([
+      {
+        integrationKey: "testnotizen",
+        tools: ["notes.create_page", "notes.search"],
+      },
+    ]);
+    expect(await agentCount()).toBe(1);
+
+    // Left out, they stay; an empty list turns every tool off.
+    expect((await s.call("PUT", `/api/me/agents/${id}`, s.form())).status).toBe(
+      200,
+    );
+    expect(await shown()).toHaveLength(1);
+    expect(
+      (await s.call("PUT", `/api/me/agents/${id}`, s.form([]))).status,
+    ).toBe(200);
+    expect(await shown()).toEqual([]);
+    expect(await agentCount()).toBe(0);
+  });
+
+  it("refuses a Chat-only or unknown tool or a Connection listed twice as invalid, and a Connection the student lacks as stale", async () => {
+    const s = await withConnections("agent-connections-refused", [
+      "testnotizen",
+      "email",
+    ]);
+    const save = (connections: unknown) =>
+      s.call("POST", "/api/me/agents", s.form(connections));
+
+    for (const connections of [
+      [{ integrationKey: "email", tools: ["email.submit"] }],
+      [{ integrationKey: "testnotizen", tools: ["notes.unknown"] }],
+      [
+        { integrationKey: "testnotizen", tools: ["notes.read"] },
+        { integrationKey: "testnotizen", tools: ["notes.search"] },
+      ],
+    ]) {
+      const refused = await save(connections);
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toEqual({ error: "invalid" });
+    }
+    const stale = await save([
+      { integrationKey: "notion", tools: ["notion-search"] },
+    ]);
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({ error: "stale" });
+    expect(
+      await admin.agent.count({
+        where: { studentId: await studentId(s.cookie) },
+      }),
+    ).toBe(0);
+  });
+
+  it("deletes the Agent's Connection tools when it is Ended, so the Connection no longer counts it", async () => {
+    const s = await withConnections("agent-connections-ended", ["testnotizen"]);
+    const created = await s.call(
+      "POST",
+      "/api/me/agents",
+      s.form([{ integrationKey: "testnotizen", tools: ["notes.search"] }]),
+    );
+    const { id } = (await created.json()) as { id: string };
+
+    expect((await s.call("POST", `/api/me/agents/${id}/end`)).status).toBe(200);
+
+    expect(
+      await admin.agentConnectionTool.count({ where: { agentId: id } }),
+    ).toBe(0);
+    expect(
+      (
+        (await (
+          await s.call("GET", "/api/me/connections/testnotizen")
+        ).json()) as { connection: { agentCount: number } }
+      ).connection.agentCount,
+    ).toBe(0);
   });
 });
