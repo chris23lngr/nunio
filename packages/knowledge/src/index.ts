@@ -17,6 +17,7 @@ export {
   type ItemRef,
 } from "./facts.js";
 export { type CourseColor, courseColors } from "./new-course.js";
+export { createOwnWork, maxOwnWorkBytes, type OwnWork } from "./own-work.js";
 export { createProjects, type Projects } from "./projects.js";
 export { definitely } from "./provider.js";
 export {

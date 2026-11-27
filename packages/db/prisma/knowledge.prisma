@@ -247,11 +247,47 @@ model Obligation {
   studyBlocks StudyBlock[]
   projects    Project[]
   priorities  Priority[]
+  ownWork     OwnWorkFile[]
 
   @@unique([id, studentId])
   @@unique([courseId, matchKey])
   @@index([studentId, courseId])
   @@map("obligation")
+}
+
+/// Own Work: a file the student uploaded to hand in for an Obligation. nunio never parses it. It is stored under its
+/// own SSE-C key like a Source: the browser uploads to `quarantine`, and the worker promotes a snapshot into
+/// `sources` under the file's id (ADR-0007). Deleting the row deletes the key. An Obligation that goes with its last
+/// Source or a reading leaves its Own Work without one (the migration's SET NULL ("obligationId")) until the worker
+/// deletes its objects and key.
+model OwnWorkFile {
+  id              String        @id
+  studentId       String
+  obligationId    String?
+  obligation      Obligation?   @relation(fields: [obligationId, studentId], references: [id, studentId], onDelete: SetNull)
+  name            String
+  bytes           Int
+  status          OwnWorkStatus @default(uploading)
+  keyVersion      String
+  keyCiphertext   String
+  uploadExpiresAt DateTime
+  createdAt       DateTime      @default(now())
+
+  @@unique([id, studentId])
+  @@index([obligationId])
+  @@map("own_work_file")
+}
+
+enum OwnWorkStatus {
+  /// Waiting for the browser's upload to be confirmed.
+  uploading
+  /// Confirmed; the worker promotes the snapshot.
+  promoting
+  ready
+  /// Promotion found no upload to keep; the student deletes it and uploads again.
+  failed
+
+  @@map("own_work_status")
 }
 
 // Structure is plain for planning and matching; wording is encrypted under the Source key.

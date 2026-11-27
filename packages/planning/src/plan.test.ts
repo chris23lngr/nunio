@@ -855,7 +855,7 @@ it("leaves an Event Series undecided once its Course is deleted, keeping its eve
     },
   });
 
-  await courses.delete(p, analysisId);
+  await courses.delete(p, analysisId, async () => {});
 
   const view = await plan.view(p);
   expect(view.eventSeries[0]).toMatchObject({
@@ -1729,7 +1729,7 @@ it("keeps a Task in a Course, which the Course's daily limit, Archiving and dele
     expect.objectContaining({ id: task.id }),
   ]);
 
-  await courses.delete(p, courseId);
+  await courses.delete(p, courseId, async () => {});
   expect(await admin.task.findUnique({ where: { id: task.id } })).toBeNull();
 });
 

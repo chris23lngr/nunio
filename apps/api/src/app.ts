@@ -11,6 +11,7 @@ import type { Catalog, Connections } from "@nunio/integrations";
 import type {
   Courses,
   Facts,
+  OwnWork,
   Projects,
   Sources,
   TopicAreas,
@@ -34,6 +35,7 @@ import {
   registerIntegrationRoutes,
   registerOAuthRoutes,
 } from "./integrations.js";
+import { registerOwnWorkRoutes } from "./own-work.js";
 import { registerPlanRoutes } from "./plan.js";
 import { registerProjectRoutes } from "./projects.js";
 import { registerReviewRoutes } from "./review.js";
@@ -49,6 +51,7 @@ export interface AppBindings {
     prisma: PrismaClient;
     delegation: Delegation;
     sources: Sources;
+    ownWork: OwnWork;
     facts: Facts;
     topicAreas: TopicAreas;
     sourceWorkflows: SourceWorkflows;
@@ -227,3 +230,4 @@ registerStudyRoutes(routes);
 registerTopicAreaRoutes(routes);
 registerIntegrationRoutes(routes);
 registerOAuthRoutes(routes);
+registerOwnWorkRoutes(routes);

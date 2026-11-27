@@ -289,7 +289,7 @@ it("moves a bound Source with its Course when merged, and keeps it, unbound, whe
   await facts.mergeCourses(p, from, into);
   expect(await boundTo()).toBe(into);
 
-  await courses.delete(p, into);
+  await courses.delete(p, into, async () => {});
   expect(await boundTo()).toBeNull();
   await extract(p, source.id, fromSlides);
   expect((await reviewed(p)).map((course) => course.title)).toEqual([

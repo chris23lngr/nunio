@@ -18,6 +18,7 @@ import type {
   AgentRunActivities,
   AgentRunRef,
 } from "./agent-run-activities.js";
+import type { OwnWorkActivities, OwnWorkRef } from "./own-work-activities.js";
 import type { RunActivities } from "./run-activities.js";
 import type {
   CourseRef,
@@ -106,6 +107,36 @@ export async function deleteSource(
   const delay = new Date(input.cleanupAfter).getTime() - Date.now();
   if (delay > 0) await sleep(delay);
   await purgeSource({ studentId: input.studentId, sourceId: input.sourceId });
+}
+
+// Own Work (#306) is copied, never parsed or metered, so promotion and cleanup are safe to retry.
+const { promoteOwnWorkFile } = proxyActivities<OwnWorkActivities>({
+  startToCloseTimeout: "2 minutes",
+  retry: { initialInterval: "1 second", maximumAttempts: 4 },
+});
+const { failOwnWorkFile, purgeOwnWorkFile } =
+  proxyActivities<OwnWorkActivities>({
+    startToCloseTimeout: "1 minute",
+    retry: { initialInterval: "5 seconds", maximumInterval: "1 minute" },
+  });
+/** Promotes a confirmed Own Work file's snapshot into sources; a file with nothing to promote fails. */
+export async function promoteOwnWork(input: OwnWorkRef) {
+  try {
+    return await promoteOwnWorkFile(input);
+  } catch (error) {
+    if (isCancellation(error)) throw error;
+    await failOwnWorkFile(input);
+    return { status: "failed" as const };
+  }
+}
+export async function deleteOwnWork(
+  input: OwnWorkRef & { cleanupAfter: string },
+) {
+  const ref = { studentId: input.studentId, fileId: input.fileId };
+  await purgeOwnWorkFile(ref);
+  const delay = new Date(input.cleanupAfter).getTime() - Date.now();
+  if (delay > 0) await sleep(delay);
+  await purgeOwnWorkFile(ref);
 }
 
 // Recovers dispatches a dead API or worker left in flight; a thrown Activity error is infrastructure, safe to retry.

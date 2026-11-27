@@ -14,6 +14,13 @@ export interface SourceWorkflows {
   ): Promise<void>;
   /** Groups a Course's Topics into Topic Areas after a merge (ADR-0024). */
   groupCourse(studentId: string, courseId: string): Promise<void>;
+  /** Promotes an Own Work file, or cleans up its objects after deletion (#306). */
+  ownWork(
+    kind: "promoteOwnWork" | "deleteOwnWork",
+    studentId: string,
+    fileId: string,
+    cleanupAfter?: string,
+  ): Promise<void>;
 }
 export function sourceWorkflowsFromEnv(
   env: NodeJS.ProcessEnv,
@@ -69,6 +76,14 @@ export function sourceWorkflowsFromEnv(
         `groupCourse/${courseId}`,
         [{ studentId, courseId }],
         "10 minutes",
+      );
+    },
+    async ownWork(kind, studentId, fileId, cleanupAfter) {
+      await startOnce(
+        kind,
+        `${kind}/${fileId}`,
+        [{ studentId, fileId, ...(cleanupAfter ? { cleanupAfter } : {}) }],
+        kind === "deleteOwnWork" ? "7 days" : "20 minutes",
       );
     },
   };

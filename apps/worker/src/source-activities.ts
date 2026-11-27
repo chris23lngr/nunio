@@ -14,6 +14,7 @@ import { sourceKeysFromEnv } from "@nunio/keys";
 import type { Ingestion, Sources } from "@nunio/knowledge";
 import {
   createFacts,
+  createOwnWork,
   createSources,
   createTopicAreas,
   IngestionError,
@@ -21,6 +22,7 @@ import {
 } from "@nunio/knowledge";
 import { Context } from "@temporalio/activity";
 import { log } from "./log.js";
+import { createOwnWorkActivities } from "./own-work-activities.js";
 
 export interface SourceRef {
   studentId: string;
@@ -58,11 +60,9 @@ export function createSourceActivities(
     throw new Error(`Missing settings: ${missing.join(", ")}`);
   const db: PrismaClient = createPrismaClient(createPool(env.DATABASE_URL!));
   const keys = sourceKeysFromEnv(env);
-  const sources: Sources = createSources({
-    db,
-    keys,
-    storage: sourceStorageFromEnv(env),
-  });
+  const storage = sourceStorageFromEnv(env);
+  const sources: Sources = createSources({ db, keys, storage });
+  const ownWork = createOwnWork({ db, keys, storage });
   const clock = { now: () => new Date() };
   const facts = createFacts({ db, keys, clock });
   const areas = createTopicAreas({ db, facts, clock });
@@ -84,6 +84,7 @@ export function createSourceActivities(
       await db.$disconnect();
     },
     activities: {
+      ...createOwnWorkActivities(ownWork),
       async processSource({ studentId, sourceId }: SourceRef) {
         const context = Context.current();
         const heartbeat = setInterval(() => context.heartbeat(), 5_000);
@@ -120,13 +121,19 @@ export function createSourceActivities(
         const context = Context.current();
         const heartbeat = setInterval(() => context.heartbeat(), 5_000);
         try {
-          const result = await facts.extract(
-            principal.fromSession({ studentId }),
-            sourceId,
-            { extractor, delegation, signal: context.cancellationSignal },
-          );
+          const p = principal.fromSession({ studentId });
+          const result = await facts.extract(p, sourceId, {
+            extractor,
+            delegation,
+            signal: context.cancellationSignal,
+          });
           // IDs and counts only: never Source content.
           log("extraction finished", { sourceId, ...result });
+          // Obligations this reading no longer found went; so do the objects and keys of their Own Work. A failure
+          // never fails the reading: the next cleanup takes them.
+          await ownWork
+            .purgeOrphans(p)
+            .catch(() => log("own work cleanup failed", { sourceId }));
           return result;
         } finally {
           clearInterval(heartbeat);
@@ -156,6 +163,8 @@ export function createSourceActivities(
         // Dispatch precedes API deletion: finish the tombstone even if the API process stopped.
         await sources.remove(p, sourceId);
         await sources.purge(p, sourceId);
+        // Obligations only this Source supported went with it; so do the objects and keys of their Own Work.
+        await ownWork.purgeOrphans(p);
       },
     },
   };

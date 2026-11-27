@@ -63,12 +63,19 @@ import {
   startSmtpFaultServer,
 } from "@nunio/integrations/testing";
 import { createConnectionCredentialKeys, createSourceKeys } from "@nunio/keys";
-import type { Facts, Sources, TopicAreas } from "@nunio/knowledge";
+import type {
+  Facts,
+  OwnWork,
+  SourceStorage,
+  Sources,
+  TopicAreas,
+} from "@nunio/knowledge";
 import {
   createCourses,
   createDerivedText,
   createFacts,
   createKnowledgeReader,
+  createOwnWork,
   createProjects,
   createSources,
   createTopicAreas,
@@ -121,6 +128,48 @@ const connectionCredentials = createConnectionCredentialKeys({
   masters: { test: randomBytes(32) },
 });
 let sources: Sources;
+let ownWork: OwnWork;
+/** Own Work objects as the buckets hold them: quarantine, the worker's snapshot, and every version in sources. */
+const ownWorkObjects = {
+  quarantine: new Map<string, Buffer>(),
+  snapshots: new Map<string, Buffer>(),
+  sources: new Map<string, Buffer[]>(),
+};
+const ownWorkStorage: SourceStorage = {
+  upload: async (id, key) => ({
+    url: `https://storage.invalid/quarantine/${id}`,
+    headers: { key: key.toString("base64") },
+    expiresAt: new Date(Date.now() + 300_000),
+  }),
+  download: async (id, key, location) => {
+    const bytes =
+      location === "sources"
+        ? ownWorkObjects.sources.get(id)?.at(-1)
+        : ownWorkObjects.quarantine.get(id);
+    if (!bytes)
+      throw Object.assign(new Error("Not Found"), { name: "NotFound" });
+    if (location !== "sources") ownWorkObjects.snapshots.set(id, bytes);
+    return {
+      url: `https://storage.invalid/quarantine/sealed/${id}`,
+      keyBase64: key.toString("base64"),
+      etag: "etag",
+    };
+  },
+  promote: async (id) => {
+    const versions = ownWorkObjects.sources.get(id) ?? [];
+    ownWorkObjects.sources.set(id, [
+      ...versions,
+      ownWorkObjects.snapshots.get(id)!,
+    ]);
+    ownWorkObjects.quarantine.delete(id);
+    ownWorkObjects.snapshots.delete(id);
+  },
+  remove: async (id) => {
+    ownWorkObjects.quarantine.delete(id);
+    ownWorkObjects.snapshots.delete(id);
+    ownWorkObjects.sources.delete(id);
+  },
+};
 let facts: Facts;
 let topicAreas: TopicAreas;
 let delegation: Delegation;
@@ -456,6 +505,7 @@ beforeAll(async () => {
       remove: async () => {},
     },
   });
+  ownWork = createOwnWork({ db: prisma, keys, storage: ownWorkStorage });
   facts = createFacts({ db: prisma, keys, clock: { now: () => new Date() } });
   topicAreas = createTopicAreas({
     db: prisma,
@@ -560,6 +610,7 @@ beforeAll(async () => {
     delegation,
     appOrigin,
     sources,
+    ownWork,
     facts,
     chats,
     chatModels: createChatModels({
@@ -622,6 +673,10 @@ beforeAll(async () => {
       groupCourse: async (...args) => {
         if (workflowsDown) throw new Error("Temporal unavailable");
         started.push(["groupCourse", ...args]);
+      },
+      ownWork: async (...args) => {
+        if (workflowsDown) throw new Error("Temporal unavailable");
+        started.push(args);
       },
     },
     topicAreas,
@@ -9868,6 +9923,253 @@ describe("study execution", () => {
     expect(
       (await other.get(`/api/me/obligations/${s.sheetId}/handoff`)).status,
     ).toBe(404);
+  });
+});
+
+describe("Own Work (#306)", () => {
+  /** Uploads Own Work to the Obligation as the browser does, up to the PUT. */
+  async function ownWorkFixture(name: string) {
+    const s = await studyFixture(name);
+    const sid = await studentId(s.cookie);
+    const p = principal.fromSession({ studentId: sid });
+    const base = `/api/me/obligations/${s.sheetId}/own-work`;
+    const list = async () => (await s.get(base)).json();
+    const remove = (id: string) =>
+      app.request(`${apiOrigin}${base}/${id}`, {
+        method: "DELETE",
+        headers: { cookie: s.cookie, origin: appOrigin },
+      });
+    return { ...s, sid, p, base, list, remove };
+  }
+
+  it("uploads to quarantine, promotes a snapshot once confirmed, lists it, and deletes every stored version and its key", async () => {
+    const s = await ownWorkFixture("own-work");
+    const body = { name: "Lösung.docx", bytes: 5 };
+
+    expect((await s.send(s.base, body, evilOrigin)).status).toBe(403);
+    expect(
+      (await s.send(s.base, { ...body, bytes: 14 * 1024 * 1024 + 1 })).status,
+    ).toBe(400);
+    const created = await s.send(s.base, body);
+    expect(created.status).toBe(201);
+    const { file, upload } = (await created.json()) as {
+      file: { id: string };
+      upload: unknown;
+    };
+    expect(upload).toEqual({
+      url: `https://storage.invalid/quarantine/${file.id}`,
+      headers: expect.any(Object),
+      expiresAt: expect.any(String),
+    });
+    expect(await s.list()).toEqual([
+      {
+        id: file.id,
+        name: "Lösung.docx",
+        bytes: 5,
+        status: "uploading",
+        uploadedAt: expect.any(String),
+      },
+    ]);
+
+    // The browser's PUT; confirming it starts the worker's promotion.
+    ownWorkObjects.quarantine.set(file.id, Buffer.from("first"));
+    const confirmed = await s.send(`${s.base}/${file.id}/confirm`, {});
+    expect([confirmed.status, await confirmed.json()]).toEqual([
+      202,
+      { status: "queued" },
+    ]);
+    expect(started).toContainEqual(["promoteOwnWork", s.sid, file.id]);
+    expect(await s.list()).toEqual([
+      expect.objectContaining({ id: file.id, status: "promoting" }),
+    ]);
+
+    // As the worker's Activity would. A replayed upload URL afterwards changes nothing promoted.
+    expect(await ownWork.promote(s.p, file.id)).toEqual({ status: "ready" });
+    ownWorkObjects.quarantine.set(file.id, Buffer.from("other"));
+    expect((await s.send(`${s.base}/${file.id}/confirm`, {})).status).toBe(202);
+    expect(await ownWork.promote(s.p, file.id)).toEqual({
+      status: "stopped",
+    });
+    expect(ownWorkObjects.sources.get(file.id)).toEqual([Buffer.from("first")]);
+    expect(await s.list()).toEqual([
+      expect.objectContaining({ id: file.id, status: "ready" }),
+    ]);
+
+    const deleted = await s.remove(file.id);
+    expect([deleted.status, await deleted.json()]).toEqual([
+      202,
+      { status: "deleted" },
+    ]);
+    expect(started).toContainEqual([
+      "deleteOwnWork",
+      s.sid,
+      file.id,
+      expect.any(String),
+    ]);
+    expect(await s.list()).toEqual([]);
+    expect(await admin.ownWorkFile.findUnique({ where: { id: file.id } })).toBe(
+      null,
+    );
+    // As the worker's cleanup would.
+    await ownWork.purge(s.p, file.id);
+    expect(ownWorkObjects.sources.has(file.id)).toBe(false);
+    expect(ownWorkObjects.quarantine.has(file.id)).toBe(false);
+    expect((await s.remove(file.id)).status).toBe(404);
+  });
+
+  it("shows a file as failed when promotion finds no upload to keep", async () => {
+    const s = await ownWorkFixture("own-work-failed");
+    const created = await s.send(s.base, { name: "Folien.pdf", bytes: 3 });
+    const { file } = (await created.json()) as { file: { id: string } };
+    await s.send(`${s.base}/${file.id}/confirm`, {});
+
+    await expect(ownWork.promote(s.p, file.id)).rejects.toThrow();
+    // As the worker does once its retries run out.
+    await ownWork.fail(s.p, file.id);
+    expect(await s.list()).toEqual([
+      expect.objectContaining({ id: file.id, status: "failed" }),
+    ]);
+    expect(ownWorkObjects.sources.has(file.id)).toBe(false);
+  });
+
+  it("keeps Own Work to the student's own Obligations that are handed in", async () => {
+    const s = await ownWorkFixture("own-work-scope");
+    const other = await ownWorkFixture("own-work-other");
+    const created = await s.send(s.base, { name: "Lösung.pdf", bytes: 3 });
+    const { file } = (await created.json()) as { file: { id: string } };
+    const entered = await s.send("/api/me/obligations", {
+      course: { id: s.courseId },
+      kind: "exam",
+      title: "Klausur",
+      due: { date: "2026-11-05", time: null, timeZone: null },
+      destination: null,
+    });
+    const exam = ((await entered.json()) as { id: string }).id;
+
+    const forExam = await s.send(`/api/me/obligations/${exam}/own-work`, {
+      name: "Lösung.pdf",
+      bytes: 3,
+    });
+    expect([forExam.status, await forExam.json()]).toEqual([
+      409,
+      { error: "not_handed_in" },
+    ]);
+    expect(
+      (
+        await other.send(`/api/me/obligations/${s.sheetId}/own-work`, {
+          name: "Lösung.pdf",
+          bytes: 3,
+        })
+      ).status,
+    ).toBe(404);
+    expect((await other.get(s.base)).status).toBe(404);
+    // The student's own Obligation and file, asked for by another student: row-level security hides both.
+    expect((await other.send(`${s.base}/${file.id}/confirm`, {})).status).toBe(
+      404,
+    );
+    expect(
+      (
+        await app.request(`${apiOrigin}${s.base}/${file.id}`, {
+          method: "DELETE",
+          headers: { cookie: other.cookie, origin: appOrigin },
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await s.send(
+          `/api/me/obligations/${exam}/own-work/${file.id}/confirm`,
+          {},
+        )
+      ).status,
+    ).toBe(404);
+    expect(await s.list()).toEqual([
+      expect.objectContaining({ id: file.id, status: "uploading" }),
+    ]);
+  });
+
+  it("keeps the file and its key when its cleanup cannot be dispatched", async () => {
+    const s = await ownWorkFixture("own-work-delete-down");
+    const created = await s.send(s.base, { name: "Lösung.pdf", bytes: 3 });
+    const { file } = (await created.json()) as { file: { id: string } };
+
+    workflowsDown = true;
+    const deleted = await Promise.resolve(s.remove(file.id)).finally(() => {
+      workflowsDown = false;
+    });
+
+    expect(deleted.status).toBe(500);
+    expect(await s.list()).toEqual([expect.objectContaining({ id: file.id })]);
+    expect(
+      await admin.ownWorkFile.findUnique({ where: { id: file.id } }),
+    ).toMatchObject({ keyCiphertext: expect.any(String) });
+  });
+
+  it("cleans up a deleted Course's Own Work, and keeps the Course when the cleanup cannot be dispatched", async () => {
+    const s = await ownWorkFixture("own-work-course");
+    const created = await s.send(s.base, { name: "Lösung.pdf", bytes: 5 });
+    const { file } = (await created.json()) as { file: { id: string } };
+    ownWorkObjects.quarantine.set(file.id, Buffer.from("first"));
+    await s.send(`${s.base}/${file.id}/confirm`, {});
+    await ownWork.promote(s.p, file.id);
+    const course = `${apiOrigin}/api/me/courses/${s.courseId}`;
+    const remove = () =>
+      app.request(course, {
+        method: "DELETE",
+        headers: { cookie: s.cookie, origin: appOrigin },
+      });
+
+    workflowsDown = true;
+    const refused = await Promise.resolve(remove()).finally(() => {
+      workflowsDown = false;
+    });
+    expect([refused.status, await refused.json()]).toEqual([
+      503,
+      { error: "not_started" },
+    ]);
+    expect(await s.list()).toEqual([
+      expect.objectContaining({ id: file.id, status: "ready" }),
+    ]);
+
+    expect((await remove()).status).toBe(200);
+    expect(started).toContainEqual([
+      "deleteOwnWork",
+      s.sid,
+      file.id,
+      expect.any(String),
+    ]);
+    // As the worker's cleanup would.
+    await ownWork.purge(s.p, file.id);
+    expect(ownWorkObjects.sources.has(file.id)).toBe(false);
+    expect(await admin.ownWorkFile.findUnique({ where: { id: file.id } })).toBe(
+      null,
+    );
+  });
+
+  it("cleans up the Own Work of an Obligation that goes with its last Source", async () => {
+    const s = await ownWorkFixture("own-work-pruned");
+    const created = await s.send(s.base, { name: "Lösung.pdf", bytes: 5 });
+    const { file } = (await created.json()) as { file: { id: string } };
+    ownWorkObjects.quarantine.set(file.id, Buffer.from("first"));
+    await s.send(`${s.base}/${file.id}/confirm`, {});
+    await ownWork.promote(s.p, file.id);
+    const [source] = (await (await s.get("/api/me/sources")).json()) as {
+      id: string;
+    }[];
+
+    const deleted = await app.request(
+      `${apiOrigin}/api/me/sources/${source!.id}`,
+      { method: "DELETE", headers: { cookie: s.cookie, origin: appOrigin } },
+    );
+
+    expect(deleted.status).toBe(202);
+    expect((await s.get(s.base)).status).toBe(404);
+    // As the worker does after deleting a Source or reading one again.
+    await ownWork.purgeOrphans(s.p);
+    expect(ownWorkObjects.sources.has(file.id)).toBe(false);
+    expect(await admin.ownWorkFile.findUnique({ where: { id: file.id } })).toBe(
+      null,
+    );
   });
 });
 

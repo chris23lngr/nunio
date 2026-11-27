@@ -11,6 +11,7 @@ export {
   FactType,
   Grounding,
   ObligationKind,
+  OwnWorkStatus,
   ReviewState,
   SourceFailure,
   SourceStatus,
