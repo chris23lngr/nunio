@@ -51,7 +51,7 @@ export interface McpServer {
 }
 
 /** The Connection can't be read: gone, not Connected, or not through an offered MCP Integration. */
-class Unavailable extends Error {}
+export class Unavailable extends Error {}
 
 /** The read's 30 s ran out before nunio could send the call. */
 class DeadlinePassed extends Error {}
@@ -114,16 +114,16 @@ function serverFetch(
   {
     fakes,
     timeoutMs,
-    tap = (send) => send,
-  }: { fakes: boolean; timeoutMs: number; tap?: Tap },
+    send,
+  }: { fakes: boolean; timeoutMs: number; send?: typeof fetch },
 ): typeof fetch {
-  const base = tap(
+  const base =
+    send ??
     publicFetch(fakes, {
       timeoutMs,
       bodyTimeoutMs: type === "sse" ? 0 : timeoutMs,
       purpose: "MCP",
-    }),
-  );
+    });
   const server = new URL(mcpUrl);
   return async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input);
@@ -153,9 +153,6 @@ function serverFetch(
   };
 }
 
-/** Wraps the fetch that sends each request to the server, such as to see whether a call went out. */
-export type Tap = (send: typeof fetch) => typeof fetch;
-
 /** Whether the server doesn't speak Streamable HTTP, so SSE is worth a try. */
 const noStreamableHttp = (error: unknown) =>
   MCPClientError.isInstance(error) &&
@@ -172,13 +169,14 @@ export async function connect(
     timeoutMs,
     signal,
     until,
-    tap,
+    send,
   }: {
     fakes: boolean;
     timeoutMs: number;
     signal: AbortSignal;
     until: number;
-    tap?: Tap;
+    /** How to send requests to the server, instead of a `publicFetch` with `timeoutMs`. */
+    send?: typeof fetch;
   },
 ): Promise<MCPClient> {
   const open = (type: "http" | "sse") =>
@@ -188,7 +186,7 @@ export async function connect(
         url: server.mcpUrl,
         headers: { authorization: `Bearer ${server.accessToken}` },
         redirect: "error",
-        fetch: serverFetch(server.mcpUrl, type, { fakes, timeoutMs, tap }),
+        fetch: serverFetch(server.mcpUrl, type, { fakes, timeoutMs, send }),
       },
       initializationOptions: { signal, timeout: remaining(until) },
       maxRetries: 0,

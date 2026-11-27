@@ -3,19 +3,34 @@
  * fresh credentials and no retry. A write that may have reached the service and got no answer is `ambiguous`, so the
  * gate records it Unconfirmed, and `lookup` never knows better.
  */
+
+import { setTimeout as sleep } from "node:timers/promises";
 import type { MCPClient } from "@ai-sdk/mcp";
 import { MCPClientError } from "@ai-sdk/mcp";
 import type { PrismaClient } from "@nunio/db";
 import type { Executor, ExecutorResult } from "@nunio/delegation";
 import { principal } from "@nunio/delegation";
 import type { ConnectionCredentialKeys } from "@nunio/keys";
-import type { McpServer, Tap } from "./reads.js";
-import { connect, serverOf } from "./reads.js";
+import { publicFetch } from "./public-fetch.js";
+import type { McpServer } from "./reads.js";
+import { connect, serverOf, Unavailable } from "./reads.js";
 import type { ToolResult } from "./shape.js";
 import { shapeError, shapeResult } from "./shape.js";
 
-/** How long a write may take, as the gate waits for it; the transport gives up then too. */
+/** How long the gate waits for a write; opening its session must be done in that time too. */
 export const WRITE_TIMEOUT_MS = 60_000;
+
+/** How long making a connection may take; a handshake that never completes sent nothing. */
+const CONNECT_TIMEOUT_MS = 10_000;
+
+/**
+ * How long a sent write may take to answer at all. Past the gate's 60 s it is Unconfirmed, but it runs on to its own
+ * answer or this bound, and only then are its connection, client and access token let go.
+ */
+const ANSWER_TIMEOUT_MS = 5 * 60_000;
+
+/** How long closing a write's client may take before its connections are cut. */
+const CLOSE_TIMEOUT_MS = 5_000;
 
 /** Why nunio failed a write: the only failure it stores. The service's own text goes to the model alone. */
 export type WriteFailure = "service_error" | "not_sent" | "needs_reconnection";
@@ -119,45 +134,108 @@ const lost = (sent: boolean): ExecutorResult =>
   sent ? { status: "ambiguous" } : notSent();
 
 /**
+ * Wraps how a write's requests are sent, to know whether its call went out. The call counts as sent from the moment
+ * it is handed on, unless no connection could be made. Once `signal` has aborted, the call is never handed on: the
+ * gate has then recorded it as not sent, so it must not go out later.
+ */
+export function guardedSend(base: typeof fetch, signal: AbortSignal) {
+  let sent = false;
+  const send = (async (input, init) => {
+    const call = isToolCall(init);
+    if (call) {
+      if (signal.aborted)
+        throw new Error("The write's time ran out before its call was sent");
+      sent = true;
+    }
+    try {
+      return await base(input, init);
+    } catch (error) {
+      if (call && neverConnected(error)) sent = false;
+      throw error;
+    }
+  }) as typeof fetch;
+  return { send, sent: () => sent };
+}
+
+/** Whether a failure to load the Connection or open its session is one nunio expects, not a fault to look into. */
+const expected = (error: unknown) =>
+  error instanceof Unavailable ||
+  MCPClientError.isInstance(error) ||
+  (error instanceof TypeError && error.message === "fetch failed");
+
+/**
  * Calls one write tool on an MCP server with a client of its own and no retry. `signal` is the gate's timeout: it
- * may stop opening the session, which must also be done in `WRITE_TIMEOUT_MS`, but a call once sent is never
- * aborted, so the transport itself never times out. Past `signal` the write is `ambiguous`, and the client is closed
- * whenever the call settles.
+ * may stop opening the session, but a call once sent is never aborted by it. Past `signal` the write is `ambiguous`;
+ * the call runs on to its own answer or `ANSWER_TIMEOUT_MS`, then its client and connections are let go.
  */
 export async function callMcpWrite(
   server: () => Promise<McpServer>,
   toolName: string,
   args: Record<string, unknown>,
-  { fakes, signal }: { fakes: boolean; signal: AbortSignal },
+  {
+    fakes,
+    signal,
+    allowed,
+    answerTimeoutMs = ANSWER_TIMEOUT_MS,
+  }: {
+    fakes: boolean;
+    signal: AbortSignal;
+    /** Which addresses count as public; a test seam. */
+    allowed?: (address: string) => boolean;
+    /** How long a sent call may take to answer at all; a test seam. */
+    answerTimeoutMs?: number;
+  },
 ): Promise<ExecutorResult> {
-  let sent = false;
-  const tap: Tap = (send) => async (input, init) => {
-    const call = isToolCall(init);
-    if (call) sent = true;
-    try {
-      return await send(input, init);
-    } catch (error) {
-      if (call && neverConnected(error)) sent = false;
-      throw error;
-    }
-  };
+  const transport = publicFetch(fakes, {
+    timeoutMs: CONNECT_TIMEOUT_MS,
+    headersTimeoutMs: answerTimeoutMs,
+    bodyTimeoutMs: answerTimeoutMs,
+    purpose: "MCP",
+    ...(allowed && { allowed }),
+  });
+  const guard = guardedSend(transport, signal);
   let client: MCPClient;
   try {
     client = await connect(await server(), {
       fakes,
-      // No connect, headers or body timeout: the session's opening has `until`, and a sent call never times out.
-      timeoutMs: 0,
+      timeoutMs: CONNECT_TIMEOUT_MS,
       signal,
       until: Date.now() + WRITE_TIMEOUT_MS,
-      tap,
+      send: guard.send,
     });
   } catch (error) {
+    void transport.destroy().catch(() => {});
+    // Nothing was sent either way; a fault such as missing master keys or a database error is logged to be fixed.
+    if (!expected(error))
+      console.error(
+        JSON.stringify({
+          msg: "an Integration write could not be opened",
+          error: error instanceof Error ? error.name : typeof error,
+          message: error instanceof Error ? error.message : undefined,
+        }),
+      );
     return sessionFailure(error);
   }
-  // No signal: the call is never cancelled once it may have gone out.
-  const call = client.callTool({ name: toolName, arguments: args });
-  const close = () => void client.close().catch(() => {});
-  call.then(close, close);
+  /** Lets the write's client and connections go, however its client's closing goes. */
+  const release = async () => {
+    await Promise.race([
+      client.close().catch(() => {}),
+      sleep(CLOSE_TIMEOUT_MS, undefined, { ref: false }),
+    ]);
+    await transport.destroy().catch(() => {});
+  };
+  // The gate gave up while the session opened: the call is never made.
+  if (signal.aborted) {
+    void release();
+    return notSent();
+  }
+  // Not the gate's signal: the call is never cancelled because the gate stopped waiting.
+  const call = client.callTool({
+    name: toolName,
+    arguments: args,
+    options: { timeout: answerTimeoutMs },
+  });
+  call.then(release, release);
   const answer = await new Promise<
     | { ok: true; value: ToolResult }
     | { ok: false; error: unknown }
@@ -184,12 +262,15 @@ export async function callMcpWrite(
       },
     );
   });
-  return "timedOut" in answer ? lost(sent) : outcomeOf(answer, sent);
+  return "timedOut" in answer
+    ? lost(guard.sent())
+    : outcomeOf(answer, guard.sent());
 }
 
 /**
  * The gate's executor for Integration Actions. It loads the Connection's credentials at each call; `credentials` is
- * read then too, so a process without the master keys fails a write as not sent instead of failing to start.
+ * read then too, so a process without the master keys fails a write as not sent, and logs why, instead of failing to
+ * start. Throwing instead would make the gate record the write Unconfirmed, as `lookup` never knows better.
  */
 export function createIntegrationExecutor({
   db,
