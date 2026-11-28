@@ -3,6 +3,7 @@ import type { BlockNote, BlockRefusal, Plan } from "@nunio/planning";
 import { deadline } from "@nunio/planning";
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
+import type { IntegrationCallPart } from "./parts.js";
 import type { Turn } from "./turn.js";
 
 const localTime = {
@@ -51,6 +52,19 @@ export type Proposal = {
       };
     }
   | { kind: "task.reopen"; args: { taskId: string } }
+  | {
+      kind: "integration.call";
+      args: {
+        integrationKey: string;
+        connectionId: string;
+        toolName: string;
+        /** The pin of the definition the model was shown. */
+        pinHash: string;
+        arguments: Record<string, unknown>;
+      };
+      /** What its card names. */
+      shown: Pick<IntegrationCallPart, "integration" | "tool">;
+    }
 );
 
 /** The Action a proposal is asked as. */

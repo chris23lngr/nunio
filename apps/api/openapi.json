@@ -2152,6 +2152,147 @@
               "notes",
               "action"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool-integrationCall"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false,
+                "description": "Its arguments are shown from the Action it is asked as."
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "integration": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "logo": {
+                    "type": "string",
+                    "description": "The path of its logo in the web app."
+                  }
+                },
+                "required": [
+                  "key",
+                  "name",
+                  "logo"
+                ]
+              },
+              "tool": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "The server's own tool name."
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "nunio's German label."
+                  },
+                  "headlineArgument": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "The argument the card shows first."
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "headlineArgument"
+                ]
+              },
+              "action": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "fingerprint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "expiresAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "awaiting_approval",
+                      "expired",
+                      "dispatching",
+                      "done",
+                      "failed",
+                      "refused",
+                      "unconfirmed"
+                    ]
+                  },
+                  "decision": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "approved",
+                      "denied",
+                      null
+                    ]
+                  },
+                  "arguments": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "additionalProperties": {},
+                    "description": "Every argument of the exact Action, opened while it awaits the student, to show as plain text; null otherwise."
+                  }
+                },
+                "required": [
+                  "id",
+                  "fingerprint",
+                  "expiresAt",
+                  "status",
+                  "decision",
+                  "arguments"
+                ],
+                "description": "The Action the student is asked to approve; null if it could not be asked."
+              }
+            },
+            "required": [
+              "type",
+              "toolCallId",
+              "input",
+              "approvalId",
+              "integration",
+              "tool",
+              "action"
+            ]
           }
         ]
       },

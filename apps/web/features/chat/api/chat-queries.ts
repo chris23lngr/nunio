@@ -12,6 +12,16 @@ export type SavedProposal = Extract<
   Message["parts"][number],
   { approvalId: string }
 >;
+/** A proposed Study Block or Task change. */
+export type PlanProposal = Exclude<
+  SavedProposal,
+  { type: "tool-integrationCall" }
+>;
+/** A write through a Connection, asked on an Approval card with every argument. */
+export type IntegrationProposal = Extract<
+  SavedProposal,
+  { type: "tool-integrationCall" }
+>;
 /** Where an Artifact an answer started stands; null if it could not be started. */
 export type ChatArtifact = Extract<
   Message["parts"][number],

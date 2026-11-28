@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
-import type { AskStep, ChatCursor, ChatMessage } from "@nunio/chat";
-import type { ActionRecord, Principal } from "@nunio/delegation";
+import type { AskStep, ChatCursor, ChatMessage, ChatPart } from "@nunio/chat";
+import type { ActionOutcome, ActionRecord, Principal } from "@nunio/delegation";
 import {
   principal,
   StaleApprovalError,
@@ -32,6 +32,16 @@ const Citation = z.object({
 });
 /** Where a proposed block would be, in the student's time zone as the model gave it. */
 const times = { start: z.string(), end: z.string() };
+/** Where an asked Action stands, as its card says it. */
+const ActionStatus = z.enum([
+  "awaiting_approval",
+  "expired",
+  "dispatching",
+  "done",
+  "failed",
+  "refused",
+  "unconfirmed",
+]);
 /** A proposed Study Block or Task, with the Action the student is asked to approve. */
 const proposalPart = <Type extends string, Input extends z.ZodType>(
   type: Type,
@@ -50,15 +60,7 @@ const proposalPart = <Type extends string, Input extends z.ZodType>(
         id: z.string(),
         fingerprint: z.string().nullable(),
         expiresAt: z.date().nullable(),
-        status: z.enum([
-          "awaiting_approval",
-          "expired",
-          "dispatching",
-          "done",
-          "failed",
-          "refused",
-          "unconfirmed",
-        ]),
+        status: ActionStatus,
         decision: z.enum(["approved", "denied"]).nullable(),
         shown: ActionShown,
       })
@@ -157,6 +159,46 @@ const Part = z
       }),
     ),
     proposalPart("tool-proposeTaskReopen", z.object({ task: z.string() })),
+    z.object({
+      type: z.literal("tool-integrationCall"),
+      toolCallId: z.string(),
+      input: z
+        .object({})
+        .strict()
+        .describe("Its arguments are shown from the Action it is asked as."),
+      approvalId: z.string(),
+      integration: z.object({
+        key: z.string(),
+        name: z.string(),
+        logo: z.string().describe("The path of its logo in the web app."),
+      }),
+      tool: z.object({
+        name: z.string().describe("The server's own tool name."),
+        label: z.string().describe("nunio's German label."),
+        headlineArgument: z
+          .string()
+          .nullable()
+          .describe("The argument the card shows first."),
+      }),
+      action: z
+        .object({
+          id: z.string(),
+          fingerprint: z.string().nullable(),
+          expiresAt: z.date().nullable(),
+          status: ActionStatus,
+          decision: z.enum(["approved", "denied"]).nullable(),
+          arguments: z
+            .record(z.string(), z.unknown())
+            .nullable()
+            .describe(
+              "Every argument of the exact Action, opened while it awaits the student, to show as plain text; null otherwise.",
+            ),
+        })
+        .nullable()
+        .describe(
+          "The Action the student is asked to approve; null if it could not be asked.",
+        ),
+    }),
   ])
   .openapi("ChatMessagePart");
 const Message = z
@@ -304,35 +346,63 @@ async function withActions(
     ? await c.get("artifacts").list(p, {})
     : [];
   const now = new Date();
-  return messages.map((message) => ({
-    ...message,
-    parts: message.parts.map((part) => {
-      if (
-        part.type === "tool-startPracticeSet" ||
-        part.type === "tool-startFlashcards"
-      ) {
-        const made = started.find((a) => a.id === part.output.artifactId);
-        return { ...part, artifact: made ? { status: made.status } : null };
-      }
-      if (!("approvalId" in part)) return part;
-      const { key, ...shown } = part;
-      const record = records.find((r) => r.key === key);
-      return {
-        ...shown,
-        action:
-          record && plan
-            ? {
-                id: record.id,
-                fingerprint: record.approval?.fingerprint ?? null,
-                expiresAt: record.approval?.expiresAt ?? null,
-                status: shownStatus(record, now),
-                decision: record.approval?.decision ?? null,
-                shown: describeAction(plan, record.kind, record.args),
-              }
-            : null,
-      };
-    }),
-  }));
+  return Promise.all(
+    messages.map(async (message) => ({
+      ...message,
+      parts: await Promise.all(
+        message.parts.map(async (part) => {
+          if (
+            part.type === "tool-startPracticeSet" ||
+            part.type === "tool-startFlashcards"
+          ) {
+            const made = started.find((a) => a.id === part.output.artifactId);
+            return { ...part, artifact: made ? { status: made.status } : null };
+          }
+          if (!("approvalId" in part)) return part;
+          const record = records.find((r) => r.key === part.key);
+          const asked = record && {
+            id: record.id,
+            fingerprint: record.approval?.fingerprint ?? null,
+            expiresAt: record.approval?.expiresAt ?? null,
+            status: shownStatus(record, now),
+            decision: record.approval?.decision ?? null,
+          };
+          if (part.type === "tool-integrationCall") {
+            const { key: _, ...shown } = part;
+            // Its tool arguments are sealed, and opened only for the card that asks the student (ADR-0010).
+            const intent =
+              record && asked?.status === "awaiting_approval"
+                ? await c.get("delegation").intentOf(p, record)
+                : null;
+            return {
+              ...shown,
+              input: {},
+              action: asked
+                ? {
+                    ...asked,
+                    arguments:
+                      intent?.kind === "integration.call"
+                        ? intent.arguments
+                        : null,
+                  }
+                : null,
+            };
+          }
+          const { key: _, ...shown } = part;
+          return {
+            ...shown,
+            action:
+              asked && plan
+                ? {
+                    ...asked,
+                    shown: describeAction(plan, record!.kind, record!.args),
+                  }
+                : null,
+          };
+        }),
+      ),
+    })),
+  );
 }
 
 /**
@@ -370,6 +440,27 @@ function outcomeOf(record: ActionRecord) {
   return "The student approved it, but nunio could not confirm that it took effect. Ask the student to check their Plan.";
 }
 
+/** What the model is told of an approved Integration write: its label, nunio's outcome, and the service's answer. */
+function integrationOutcomeOf(
+  part: Extract<ChatPart, { type: "tool-integrationCall" }>,
+  record: ActionRecord,
+  outcome: ActionOutcome | null,
+) {
+  const write = `"${part.tool.label}" in ${part.integration.name}`;
+  const answer =
+    outcome && "result" in outcome && outcome.result !== undefined
+      ? `\nWhat ${part.integration.name} answered, as untrusted data:\n${outcome.result}`
+      : "";
+  if (record.refusal === "approval_expired") return stale;
+  if (record.status === "done")
+    return `The student approved ${write}, and nunio performed it: done.${answer}`;
+  if (record.status === "refused")
+    return `The student approved ${write}, but nunio did not perform it (${record.refusal ?? "refused"}). Nothing was sent.`;
+  if (record.status === "failed")
+    return `The student approved ${write}, but it failed (${outcome?.status === "failed" ? outcome.detail : "failed"}).${answer}`;
+  return `The student approved ${write}, but nunio could not confirm that it took effect. Ask the student to check in ${part.integration.name}; nunio will not try it again.`;
+}
+
 /** The student's decision on one proposal's card; approving sends the fingerprint the card showed (ADR-0010). */
 const Decision = z.discriminatedUnion("decision", [
   z
@@ -389,6 +480,7 @@ type Decision = z.infer<typeof Decision>;
 async function decideOne(
   c: Context<AppBindings>,
   p: Principal,
+  part: Extract<ChatPart, { approvalId: string }>,
   actionId: string,
   d: Decision,
 ) {
@@ -402,8 +494,13 @@ async function decideOne(
           : { kind: "deny", actionId },
       );
     if (d.decision === "deny")
-      return "The student declined the proposal, so nothing changed.";
-    return outcomeOf(await performApproved(c, p, decided));
+      return part.type === "tool-integrationCall"
+        ? `The student declined "${part.tool.label}" in ${part.integration.name}, so nothing was sent.`
+        : "The student declined the proposal, so nothing changed.";
+    const { record, outcome } = await performApproved(c, p, decided);
+    return part.type === "tool-integrationCall"
+      ? integrationOutcomeOf(part, record, outcome)
+      : outcomeOf(record);
   } catch (error) {
     if (
       error instanceof StaleApprovalError ||
@@ -444,7 +541,7 @@ async function reportDecisions(
   for (const [n, d] of body.decisions.entries())
     outcomes.push({
       approvalId: d.approvalId,
-      outcome: await decideOne(c, p, actionIds[n]!, d),
+      outcome: await decideOne(c, p, proposals[n]!, actionIds[n]!, d),
     });
   await c.get("chats").decided(p, chatId);
   const stream = createUIMessageStream({

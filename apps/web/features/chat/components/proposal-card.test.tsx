@@ -1,9 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
-import type { SavedProposal } from "../api/chat-queries";
+import type { PlanProposal } from "../api/chat-queries";
 import { ProposalCard, UnconfirmedActionCard } from "./proposal-card";
 
-type Shown = NonNullable<SavedProposal["action"]>["shown"];
+type Shown = NonNullable<PlanProposal["action"]>["shown"];
 /** An instant at `hour` o'clock on `day` November 2026, in whatever zone the tests run. */
 const at = (day: number, hour: number) =>
   new Date(2026, 10, day, hour).toISOString();
@@ -20,8 +20,8 @@ const block = (shown: Partial<Shown>): Shown => ({
 });
 const proposal = (
   shown: Shown,
-  notes: SavedProposal["notes"] = [],
-): SavedProposal =>
+  notes: PlanProposal["notes"] = [],
+): PlanProposal =>
   ({
     type: "tool-proposeStudyBlock",
     toolCallId: "call-1",
@@ -36,8 +36,8 @@ const proposal = (
       decision: null,
       shown,
     },
-  }) as SavedProposal;
-const ask = (shown: Shown, notes?: SavedProposal["notes"]) =>
+  }) as PlanProposal;
+const ask = (shown: Shown, notes?: PlanProposal["notes"]) =>
   render(
     <ProposalCard
       proposal={proposal(shown, notes)}

@@ -42,6 +42,7 @@ import { ChatEmptyState } from "./components/chat-empty-state";
 import { ChatHeaderActions } from "./components/chat-header-actions";
 import { ChatMessage } from "./components/chat-message";
 import { ConnectionSelector } from "./components/connection-selector";
+import { IntegrationApprovalCard } from "./components/integration-approval-card";
 import { KnowledgeSelector } from "./components/knowledge-selector";
 import { ModelSelector } from "./components/model-selector";
 import {
@@ -388,12 +389,26 @@ export function ChatScreen({
     if (last) void send(batch, decisions);
   };
   const reporting = !!sending && !sending.arrived;
+  /** What the batch's current card needs, whichever kind it is. */
+  const cardProps = (at: { index: number }, total: number) => ({
+    position: { index: at.index, total },
+    busy: reporting,
+    focus: stepping,
+    onBack:
+      progress && at.index > 0
+        ? () => setProgressed({ ...progress, index: at.index - 1 })
+        : undefined,
+    onDecide: decide,
+  });
   // What the student is asked now, read out as each card comes while they step through.
+  const current = batch && progress && batch.proposals[progress.index]!;
   const asking = unconfirmed
     ? happenedQuestion(unconfirmed.action!.shown)
-    : batch && progress
-      ? question(batch.proposals[progress.index]!.action!.shown)
-      : "";
+    : !current
+      ? ""
+      : current.type === "tool-integrationCall"
+        ? `${current.tool.label}?`
+        : question(current.action!.shown);
 
   const form = useAppForm({
     defaultValues: {
@@ -599,28 +614,21 @@ export function ChatScreen({
                   />
                 ) : (
                   batch &&
-                  progress && (
-                    <ProposalCard
-                      key={batch.proposals[progress.index]!.approvalId}
-                      proposal={batch.proposals[progress.index]!}
-                      position={{
-                        index: progress.index,
-                        total: batch.proposals.length,
-                      }}
-                      busy={reporting}
-                      focus={stepping}
-                      onBack={
-                        progress.index > 0
-                          ? () =>
-                              setProgressed({
-                                ...progress,
-                                index: progress.index - 1,
-                              })
-                          : undefined
-                      }
-                      onDecide={decide}
+                  progress &&
+                  current &&
+                  (current.type === "tool-integrationCall" ? (
+                    <IntegrationApprovalCard
+                      key={current.approvalId}
+                      proposal={current}
+                      {...cardProps(progress, batch.proposals.length)}
                     />
-                  )
+                  ) : (
+                    <ProposalCard
+                      key={current.approvalId}
+                      proposal={current}
+                      {...cardProps(progress, batch.proposals.length)}
+                    />
+                  ))
                 )
               }
               knowledge={

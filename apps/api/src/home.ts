@@ -106,8 +106,14 @@ export function registerHomeRoutes(routes: OpenAPIHono<AppBindings>) {
       const now = new Date();
       const agentWork = [
         // An expired Approval no longer asks anything of the student.
+        // A Chat's Integration write is asked only on its card in the Chat until Freigaben show it (#301).
         ...asking
-          .filter((a) => a.approval && a.approval.expiresAt > now)
+          .filter(
+            (a) =>
+              a.approval &&
+              a.approval.expiresAt > now &&
+              a.kind !== "integration.call",
+          )
           .map((a) => ({
             kind: "approval" as const,
             actionId: a.id,

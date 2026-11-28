@@ -21,7 +21,9 @@ import { chatContext } from "./context.js";
 import { courseFactsTool } from "./course-facts.js";
 import { historyFrom, historyTurns } from "./history.js";
 import type { ReadableTool } from "./integration-reads.js";
-import { integrationReadTools } from "./integration-reads.js";
+import { integrationReadTools, modelToolName } from "./integration-reads.js";
+import type { WritableTool } from "./integration-writes.js";
+import { integrationWriteTools } from "./integration-writes.js";
 import type { ChatPart } from "./parts.js";
 import { isProposal, partsFrom } from "./parts.js";
 import type { ArtifactStart } from "./practice.js";
@@ -56,6 +58,12 @@ function awaitsApproval(messages: readonly ModelMessage[]) {
       }
   return [...asked].some((id) => !answered.has(id));
 }
+
+/** The name the model called a proposal's tool by. */
+const toolNameOf = (proposal: Extract<ChatPart, { approvalId: string }>) =>
+  proposal.type === "tool-integrationCall"
+    ? modelToolName(proposal.integration.key, proposal.tool.name)
+    : proposal.type.slice("tool-".length);
 
 /** At most this many model steps answer one question; the last one must answer (ADR-0019). */
 const maxSteps = 6;
@@ -259,6 +267,24 @@ export function createChats({
     return new Map(
       proposals.map((part) => {
         const record = records.find((r) => r.key === part.key);
+        const status = !record
+          ? "it could not be asked"
+          : record.approval?.decision === "denied"
+            ? "denied by the student"
+            : record.status === "awaiting_approval"
+              ? record.approval && record.approval.expiresAt <= now
+                ? "expired unanswered"
+                : "still waiting for the student's approval"
+              : record.status === "done"
+                ? "approved and done"
+                : record.status === "refused"
+                  ? `not performed (${record.refusal})`
+                  : "approved, but not confirmed to have taken effect";
+        if (part.type === "tool-integrationCall")
+          return [
+            part.key,
+            `(You asked the student to approve "${part.tool.label}" in ${part.integration.name}: ${record?.status === "failed" ? "approved, but it failed" : status}.)`,
+          ] as const;
         const args = (record?.args ?? {}) as {
           workId?: string;
           studyBlockId?: string;
@@ -290,19 +316,6 @@ export function createChats({
             : args.start && args.end
               ? ` at ${local(args.start)}–${local(args.end).slice(11)}`
               : "";
-        const status = !record
-          ? "it could not be asked"
-          : record.approval?.decision === "denied"
-            ? "denied by the student"
-            : record.status === "awaiting_approval"
-              ? record.approval && record.approval.expiresAt <= now
-                ? "expired unanswered"
-                : "still waiting for the student's approval"
-              : record.status === "done"
-                ? "approved and done"
-                : record.status === "refused"
-                  ? `not performed (${record.refusal})`
-                  : "approved, but not confirmed to have taken effect";
         return [
           part.key,
           `(You proposed to ${what} for "${title}"${when}: ${status}.)`,
@@ -311,13 +324,13 @@ export function createChats({
     );
   }
   /**
-   * The read tools of the Connections the Chat may read: selected, Connected, and through an offered MCP
-   * Integration. Email's tools join with its read slice (#292).
+   * The read and write tools of the Connections the Chat may use: selected, Connected, and through an offered MCP
+   * Integration. Email's tools join with its own slices (#292, #299).
    */
-  async function readableTools(
+  async function connectionTools(
     p: Principal,
     chatId: string,
-  ): Promise<ReadableTool[]> {
+  ): Promise<{ readable: ReadableTool[]; writable: WritableTool[] }> {
     const selected = await withOwner(db, p, (tx) =>
       tx.chatConnection.findMany({
         where: {
@@ -336,7 +349,13 @@ export function createChats({
                 select: {
                   key: true,
                   name: true,
-                  tools: { where: { class: "read" }, orderBy: { name: "asc" } },
+                  logo: true,
+                  tools: {
+                    where: {
+                      class: { in: ["read", "write", "write_always_asked"] },
+                    },
+                    orderBy: { name: "asc" },
+                  },
                 },
               },
             },
@@ -344,15 +363,38 @@ export function createChats({
         },
       }),
     );
-    return selected.flatMap(({ connection: { id, integration } }) =>
+    const tools = selected.flatMap(({ connection: { id, integration } }) =>
       integration.tools.map((tool) => ({
         connectionId: id,
-        integration: { key: integration.key, name: integration.name },
+        integration: {
+          key: integration.key,
+          name: integration.name,
+          logo: integration.logo,
+        },
         name: tool.name,
         label: tool.label,
+        class: tool.class,
+        headlineArgument: tool.headlineArgument,
         definition: tool.definition as ReadableTool["definition"],
+        definitionHash: tool.definitionHash,
       })),
     );
+    return {
+      readable: tools.flatMap(({ class: kind, integration, ...tool }) =>
+        kind === "read"
+          ? [
+              {
+                connectionId: tool.connectionId,
+                integration: { key: integration.key, name: integration.name },
+                name: tool.name,
+                label: tool.label,
+                definition: tool.definition,
+              },
+            ]
+          : [],
+      ),
+      writable: tools.filter((tool) => tool.class !== "read"),
+    };
   }
   /** The student's Connections to these Integrations, by id; null if any of them is missing. */
   async function connectionIds(
@@ -366,12 +408,19 @@ export function createChats({
     });
     return rows.length === keys.length ? rows.map((row) => row.id) : null;
   }
-  /** What answering in a Chat needs: its history, the context message, and this turn's tools. */
-  async function turnFor(p: Principal, chatId: string) {
-    const [history, timeZone, readable] = await Promise.all([
+  /**
+   * What answering in a Chat needs: its history, the context message, and this turn's tools. Each write the turn asks
+   * is its answer's n-th Action, `chatId:answerId:n`, numbered by one counter as it is made.
+   */
+  async function turnFor(
+    p: Principal,
+    chatId: string,
+    answerId: string = randomUUID(),
+  ) {
+    const [history, timeZone, { readable, writable }] = await Promise.all([
       earlier(p, chatId),
       plan.timeZone(p),
-      readableTools(p, chatId),
+      connectionTools(p, chatId),
     ]);
     if (!history) return null;
     const context = chatContext(clock.now(), timeZone, history.courses);
@@ -424,8 +473,9 @@ export function createChats({
       proposeTaskReopen: proposeTaskReopenTool(),
       ...reads.tools,
     };
-    /** Proposals that passed the Plan's rules, by tool call, waiting for the student once the answer is saved. */
+    /** Proposals that passed the Plan's rules, and Integration writes, by tool call, asked once the answer is saved. */
     const proposals = new Map<string, Proposal>();
+    const writes = integrationWriteTools(turn, proposals, writable, tools);
     const approve = approveProposal(turn, {
       plan,
       p,
@@ -433,19 +483,41 @@ export function createChats({
       proposals,
       courses: context.courses,
     });
+    /** The key of each proposal held, by tool call, in the order the turn made them. */
+    const keys = new Map<string, string>();
+    const keyed =
+      <Input, Status extends { type: string }>(
+        approval: (
+          input: Input,
+          options: { toolCallId: string },
+        ) => Status | Promise<Status>,
+      ) =>
+      async (input: Input, options: { toolCallId: string }) => {
+        const status = await approval(input, options);
+        if (status.type === "user-approval")
+          keys.set(options.toolCallId, `${chatId}:${answerId}:${keys.size}`);
+        return status;
+      };
     const toolApproval = {
-      proposeStudyBlock: approve.create,
-      proposeStudyBlockMove: approve.move,
-      proposeStudyBlockRemove: approve.remove,
-      proposeTask: approve.task,
-      proposeTaskReopen: approve.reopen,
+      proposeStudyBlock: keyed(approve.create),
+      proposeStudyBlockMove: keyed(approve.move),
+      proposeStudyBlockRemove: keyed(approve.remove),
+      proposeTask: keyed(approve.task),
+      proposeTaskReopen: keyed(approve.reopen),
+      ...Object.fromEntries(
+        Object.entries(writes.toolApproval).map(([name, approval]) => [
+          name,
+          keyed(approval),
+        ]),
+      ),
     };
     return {
       history,
       context,
       turn,
-      tools,
+      tools: { ...tools, ...writes.tools },
       proposals,
+      keys,
       toolApproval,
       started,
       closeReads: reads.close,
@@ -525,7 +597,7 @@ export function createChats({
           content: found.map((proposal) => ({
             type: "tool-call" as const,
             toolCallId: proposal.toolCallId,
-            toolName: proposal.type.slice("tool-".length),
+            toolName: toolNameOf(proposal),
             input: proposal.input,
           })),
         },
@@ -534,7 +606,7 @@ export function createChats({
           content: found.map((proposal, n) => ({
             type: "tool-result" as const,
             toolCallId: proposal.toolCallId,
-            toolName: proposal.type.slice("tool-".length),
+            toolName: toolNameOf(proposal),
             output: { type: "text" as const, value: outcomes[n]!.outcome },
           })),
         },
@@ -830,7 +902,9 @@ export function createChats({
         options.onStep?.(name, now - started);
         started = now;
       };
-      const setUp = await turnFor(p, chatId);
+      // Fixed before the first step, as every write the turn asks is keyed by it.
+      const id = options.ids?.answer ?? randomUUID();
+      const setUp = await turnFor(p, chatId, id);
       step("history");
       if (!setUp) return { status: "gone" } as const;
       const {
@@ -839,6 +913,7 @@ export function createChats({
         turn,
         tools,
         proposals,
+        keys,
         toolApproval,
         started: artifact,
         closeReads,
@@ -897,19 +972,22 @@ export function createChats({
       }
       step("generation");
       options.signal?.throwIfAborted();
-      const id = options.ids?.answer ?? randomUUID();
-      // Each proposal is asked as the answer's n-th Action (`chatId:messageId:n`) once the answer is saved.
-      const asked = [...proposals].map(([toolCallId, proposal], n) => ({
+      // Each proposal is asked under the key it was given when the model made it, once the answer is saved.
+      const asked = [...keys].map(([toolCallId, key]) => ({
         toolCallId,
-        key: `${chatId}:${id}:${n}`,
-        proposal,
+        key,
+        proposal: proposals.get(toolCallId)!,
       }));
       const parts = await partsFrom(
         chunks,
         new Set(turn.citations.map((citation) => citation.tag)),
         (toolCallId) => {
           const found = asked.find((a) => a.toolCallId === toolCallId);
-          return found && { key: found.key, notes: found.proposal.notes };
+          if (!found) return undefined;
+          const { key, proposal } = found;
+          return proposal.kind === "integration.call"
+            ? { type: "tool-integrationCall", key, ...proposal.shown }
+            : { key, notes: proposal.notes };
         },
       );
       const text = parts
