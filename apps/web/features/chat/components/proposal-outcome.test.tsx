@@ -1,9 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
-import type { SavedProposal } from "../api/chat-queries";
+import type { PlanProposal } from "../api/chat-queries";
 import { ProposalOutcome } from "./proposal-outcome";
 
-type Action = NonNullable<SavedProposal["action"]>;
+type Action = NonNullable<PlanProposal["action"]>;
 /** An instant at `hour` o'clock on `day` November 2026, in whatever zone the tests run. */
 const at = (day: number, hour: number) =>
   new Date(2026, 10, day, hour).toISOString();
@@ -29,7 +29,7 @@ const saved = (action: Partial<Action> & Pick<Action, "status">) =>
       },
       ...action,
     },
-  }) as SavedProposal;
+  }) as PlanProposal;
 
 test.each([
   ["done", "approved", "Angelegt"],

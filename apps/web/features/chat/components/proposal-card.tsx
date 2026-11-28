@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
-import type { SavedProposal } from "../api/chat-queries";
+import type { PlanProposal } from "../api/chat-queries";
 import type { Decision } from "../proposal-queue";
 import type { Shown } from "../proposal-wording";
 import {
@@ -89,7 +89,8 @@ function details(shown: Shown): ReactNode {
 }
 
 /** The card frame shared by every question asked at the composer. */
-function ComposerCard({
+export function ComposerCard({
+  icon,
   label,
   position,
   onBack,
@@ -98,6 +99,8 @@ function ComposerCard({
   actions,
   focus = false,
 }: {
+  /** Shown before the label, such as an Integration's logo. */
+  icon?: ReactNode;
   label: string;
   position: { index: number; total: number };
   onBack?: () => void;
@@ -117,6 +120,7 @@ function ComposerCard({
     <section aria-label={label} className="-mb-2 px-6 pt-8">
       <div className="flex flex-col rounded-t-lg bg-white px-6 pt-5 pb-7 font-sans shadow-sm outline-1 outline-base-700/15">
         <div className="flex h-4 items-center gap-4 text-xs text-base-500">
+          {icon}
           <span>{label}</span>
           <span className="flex-1" />
           {onBack && (
@@ -154,7 +158,7 @@ export function ProposalCard({
   onBack,
   onDecide,
 }: {
-  proposal: SavedProposal;
+  proposal: PlanProposal;
   position: { index: number; total: number };
   busy: boolean;
   focus?: boolean;
@@ -211,7 +215,7 @@ export function UnconfirmedActionCard({
   focus,
   onResolve,
 }: {
-  proposal: SavedProposal;
+  proposal: PlanProposal;
   busy: boolean;
   focus?: boolean;
   onResolve: (resolution: "happened" | "did_not_happen") => void;

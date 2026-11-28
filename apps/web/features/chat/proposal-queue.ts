@@ -1,4 +1,8 @@
-import type { ChatUIMessage, SavedProposal } from "./api/chat-queries";
+import type {
+  ChatUIMessage,
+  PlanProposal,
+  SavedProposal,
+} from "./api/chat-queries";
 
 /** The student's decision on one proposal's card. */
 export type Decision = "approve" | "deny";
@@ -10,13 +14,20 @@ const waiting = (proposal: SavedProposal) =>
   proposal.action?.status === "awaiting_approval" &&
   !!proposal.action.fingerprint;
 
-/** The oldest approved proposal nunio could not confirm took effect, which the student settles before any batch. */
+/**
+ * The oldest approved proposal nunio could not confirm took effect, which the student settles before any batch. An
+ * Unconfirmed Integration write gets its own card later (#298).
+ */
 export function oldestUnconfirmed(
   messages: ChatUIMessage[],
-): SavedProposal | null {
+): PlanProposal | null {
   for (const message of messages)
     for (const proposal of Object.values(message.metadata?.proposals ?? {}))
-      if (proposal.action?.status === "unconfirmed") return proposal;
+      if (
+        proposal.type !== "tool-integrationCall" &&
+        proposal.action?.status === "unconfirmed"
+      )
+        return proposal;
   return null;
 }
 

@@ -12,11 +12,11 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import type { SavedProposal } from "../api/chat-queries";
+import type { PlanProposal } from "../api/chat-queries";
 import type { Shown } from "../proposal-wording";
 import { quoted, shortSpan } from "../proposal-wording";
 
-type Action = NonNullable<SavedProposal["action"]>;
+type Action = NonNullable<PlanProposal["action"]>;
 type Tone = "done" | "neutral" | "warning";
 
 /** How loud a row is: the colors of its icon and of its word. */
@@ -137,7 +137,7 @@ export function ProposalOutcome({
   saved,
   sending = false,
 }: {
-  saved: SavedProposal | undefined;
+  saved: PlanProposal | undefined;
   /** The student's decisions on its answer's proposals are being sent. */
   sending?: boolean;
 }) {

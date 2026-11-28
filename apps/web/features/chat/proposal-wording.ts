@@ -1,9 +1,9 @@
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
-import type { SavedProposal } from "./api/chat-queries";
+import type { PlanProposal } from "./api/chat-queries";
 
 /** The exact Action a proposal asks for, as its card shows it. */
-export type Shown = NonNullable<SavedProposal["action"]>["shown"];
+export type Shown = NonNullable<PlanProposal["action"]>["shown"];
 type Span = { start: string; end: string };
 
 /** A whole hour as "10", otherwise "10:30". */
@@ -71,7 +71,7 @@ export function happenedQuestion(shown: Shown) {
 }
 
 /** The Preferences a block would break, as its card notes them. */
-export const noted: Record<SavedProposal["notes"][number], string> = {
+export const noted: Record<PlanProposal["notes"][number], string> = {
   outside_study_window: "Außerhalb deines Lernfensters",
   daily_limit: "Über deinem Tageslimit",
   work_limit: "Über dem Tageslimit für diese Arbeit",
