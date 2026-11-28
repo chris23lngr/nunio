@@ -3086,7 +3086,7 @@ describe("an Agent's Run reading through its Connections (#300)", () => {
       (entry) => entry.type === "integration_read",
     );
 
-  it("offers its Capabilities, its read tools and the read tools it has on of its Connected Connections, never email.submit", async () => {
+  it("offers, as ADR-0026 has it, its Capabilities, its read tools and the read tools it has on of its Connected Connections, never email.submit", async () => {
     const reads = ["agenda", "approvals", "courseFacts", "searchMaterial"];
     const s = await started({
       held: [{ id: "createStudyBlocks", mode: "ask" }],
