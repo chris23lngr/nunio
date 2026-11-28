@@ -47,8 +47,10 @@ import {
 } from "@nunio/delegation";
 import { createAuth } from "@nunio/identity";
 import {
+  createActionArgs,
   createCatalog,
   createConnections,
+  createIntegrationExecutor,
   createIntegrationReads,
 } from "@nunio/integrations";
 import type {
@@ -479,7 +481,16 @@ beforeAll(async () => {
   delegation = createDelegation({
     db: prisma,
     aiEnabled: () => true,
-    executors: { plan: createPlanExecutor({ db: prisma }) },
+    executors: {
+      plan: createPlanExecutor({ db: prisma }),
+      // Under INTEGRATION_FAKES, so the fake MCP server on localhost is reachable.
+      integration: createIntegrationExecutor({
+        db: prisma,
+        credentials: () => connectionCredentials,
+        fakes: true,
+      }),
+    },
+    actionArgs: createActionArgs({ keys: sourceKeys }),
     planRules,
     deadlineOf: async (studentId, obligationId) =>
       (await plan.view(principal.fromSession({ studentId }))).obligations.find(
@@ -13968,9 +13979,14 @@ describe("a Chat reading through its Connections (#291)", () => {
         "testnotizen__notes_read",
       ]),
     );
-    // Writes are not reads; they come with the gate (#293).
+    // Its write tools are offered too, and asked before they run (#294).
     expect(offered.filter((name) => name.startsWith("testnotizen__"))).toEqual(
-      ["testnotizen__notes_read", "testnotizen__notes_search"].sort(),
+      [
+        "testnotizen__notes_read",
+        "testnotizen__notes_search",
+        "testnotizen__notes_create_page",
+        "testnotizen__notes_share",
+      ],
     );
     // The model sees the pinned description and schema, and nunio's class.
     expect(offeredToolDescriptions.at(-1)!.testnotizen__notes_read).toBe(
@@ -14229,5 +14245,206 @@ describe("a Chat reading through its Connections (#291)", () => {
     expect(body).toHaveLength(20_000);
     expect(long!.split("\n").at(-1)).toBe("truncated: true");
     expect(image).toContain("[image, image/png, 2 KB, not shown]");
+  });
+
+  describe("asking before it writes (#294)", () => {
+    const page = {
+      title: "Lineare Algebra – Woche 3",
+      content: "Eigenwerte, Eigenvektoren.\nQuelle: https://evil.test/a",
+    };
+    type IntegrationCall = {
+      type: "tool-integrationCall";
+      approvalId: string;
+      action: { id: string; fingerprint: string } | null;
+    };
+
+    /** Asks in a Chat whose model wants to create `page` in Testnotizen; the answer and its card. */
+    async function askedToWrite(name: string) {
+      const chat = await readingChat(name);
+      steps.push(calls("testnotizen__notes_create_page", page));
+      const asked = await askInChat(
+        chat.headers,
+        chat.chatId,
+        "Lege meine Notizen als Seite an.",
+      );
+      expect(asked.status).toBe(200);
+      const card = (asked.body.parts as { type: string }[]).find(
+        (part) => part.type === "tool-integrationCall",
+      ) as IntegrationCall;
+      return { ...chat, answerId: asked.body.id as string, card };
+    }
+
+    /** Sends the student's decisions on an answer's cards; the stream's chunks. */
+    async function decide(
+      headers: Record<string, string>,
+      chatId: string,
+      decisions: unknown[],
+    ) {
+      return sseChunks(
+        await app.request(
+          `${apiOrigin}/api/me/chats/${chatId}/messages/stream`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ decisions }),
+          },
+        ),
+      );
+    }
+
+    it("offers the write tools of the selected Connections, and asks one at the composer with every argument", async () => {
+      const before = callsTo("notes.create_page");
+      const { chatId, connectionId, answerId, card } =
+        await askedToWrite("lea-write-asked");
+
+      const offered = offeredTools.at(-1)!;
+      expect(offered).toEqual(
+        expect.arrayContaining([
+          "testnotizen__notes_create_page",
+          "testnotizen__notes_share",
+        ]),
+      );
+      expect(callsTo("notes.create_page")).toBe(before);
+      expect(card).toMatchObject({
+        input: {},
+        integration: {
+          key: "testnotizen",
+          name: "Testnotizen",
+          logo: "/integrations/testnotizen.svg",
+        },
+        tool: {
+          name: "notes.create_page",
+          label: "Seite anlegen",
+          headlineArgument: "title",
+        },
+        action: {
+          status: "awaiting_approval",
+          decision: null,
+          fingerprint: expect.any(String),
+          arguments: page,
+        },
+      });
+      // The first write of the answer, keyed by the id the answer had before its first step.
+      const action = await admin.action.findUniqueOrThrow({
+        where: { id: card.action!.id },
+      });
+      expect(action).toMatchObject({
+        kind: "integration.call",
+        key: `${chatId}:${answerId}:0`,
+      });
+      expect(JSON.stringify(action.args)).not.toContain("Eigenwerte");
+      // The answer holds what would be written, so it is sealed under the Connection's key.
+      const asking = await admin.chatMessage.findUniqueOrThrow({
+        where: { id: answerId },
+      });
+      expect(asking.derivedFromConnections).toEqual([connectionId]);
+    });
+
+    it("performs an approved write once, reports it with the service's fenced answer, and seals the report", async () => {
+      const before = callsTo("notes.create_page");
+      const { headers, chatId, connectionId, card } =
+        await askedToWrite("lea-write-approved");
+      reply = "Die Seite ist angelegt.";
+      prompts.length = 0;
+
+      const chunks = await decide(headers, chatId, [
+        {
+          approvalId: card.approvalId,
+          decision: "approve",
+          fingerprint: card.action!.fingerprint,
+        },
+      ]);
+
+      expect(callsTo("notes.create_page") - before).toBe(1);
+      expect(fake.calls.at(-1)).toMatchObject({
+        tool: "notes.create_page",
+        arguments: page,
+      });
+      expect(
+        (
+          await admin.action.findUniqueOrThrow({
+            where: { id: card.action!.id },
+          })
+        ).status,
+      ).toBe("done");
+      // The model is told the label, nunio's outcome, and the service's answer as fenced data.
+      const [told] = toolResults(prompts[0]);
+      expect(told).toContain("Seite anlegen");
+      expect(told).toContain("done");
+      expect(told).toMatch(
+        /<<<BEGIN untrusted [0-9a-f]{16}>>>\n[\s\S]*angelegt\.[\s\S]*\n<<<END untrusted [0-9a-f]{16}>>>/,
+      );
+      const report = chunks.find((chunk) => chunk.type === "data-committed")
+        .data as { id: string; text: string };
+      expect(report.text).toBe("Die Seite ist angelegt.");
+      const row = await admin.chatMessage.findUniqueOrThrow({
+        where: { id: report.id },
+      });
+      expect(row.derivedFromConnections).toEqual([connectionId]);
+      expect(row.contentKey).not.toBeNull();
+      expect(row.partsKey).not.toBeNull();
+      // The service's answer is held only in memory, never stored with the Action.
+      const events = await admin.actionEvent.findMany({
+        where: { actionId: card.action!.id },
+      });
+      expect(JSON.stringify(events)).not.toContain("angelegt");
+    });
+
+    it("declines a write: nothing reaches the service", async () => {
+      const before = callsTo("notes.create_page");
+      const { headers, chatId, card } = await askedToWrite("lea-write-denied");
+      prompts.length = 0;
+
+      await decide(headers, chatId, [
+        { approvalId: card.approvalId, decision: "deny" },
+      ]);
+
+      expect(callsTo("notes.create_page")).toBe(before);
+      expect(
+        await admin.action.findUniqueOrThrow({
+          where: { id: card.action!.id },
+        }),
+      ).toMatchObject({ status: "refused", refusal: "approval_denied" });
+      expect(toolResults(prompts[0])).toEqual([
+        "The student declined the proposal, so nothing changed.",
+      ]);
+    });
+
+    it("refuses an approval given after the tool's pin changed, with approval_mismatch", async () => {
+      const before = callsTo("notes.create_page");
+      const { headers, chatId, card } =
+        await askedToWrite("lea-write-repinned");
+      // Re-reviewed under a new pin after the card was shown.
+      await admin.integrationTool.update({
+        where: {
+          integrationKey_name: {
+            integrationKey: "testnotizen",
+            name: "notes.create_page",
+          },
+        },
+        data: { definitionHash: "re-reviewed" },
+      });
+      prompts.length = 0;
+
+      try {
+        await decide(headers, chatId, [
+          {
+            approvalId: card.approvalId,
+            decision: "approve",
+            fingerprint: card.action!.fingerprint,
+          },
+        ]);
+      } finally {
+        await seedIntegrationCatalog(admin, fake);
+      }
+
+      expect(callsTo("notes.create_page")).toBe(before);
+      expect(
+        await admin.action.findUniqueOrThrow({
+          where: { id: card.action!.id },
+        }),
+      ).toMatchObject({ status: "refused", refusal: "approval_mismatch" });
+      expect(toolResults(prompts[0])[0]).toContain("approval_mismatch");
+    });
   });
 });

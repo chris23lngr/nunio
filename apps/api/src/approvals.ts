@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute, z } from "@hono/zod-openapi";
-import type { ActionRecord, Principal } from "@nunio/delegation";
+import type { ActionOutcome, ActionRecord, Principal } from "@nunio/delegation";
 import {
   principal,
   StaleApprovalError,
@@ -166,37 +166,45 @@ export const ActionShown = z
 /**
  * Performs an Action once the student approved it, wherever they did: a Chat's, which has no Run (ADR-0019,
  * delegation-gate.md "Chat origin"), or an Agent's, whose Run ended without waiting and still owns the Action
- * (ADR-0006). Its record then tells how it went.
+ * (ADR-0006). Its record then tells how it went; the gate's outcome, when it performed it now, also carries an
+ * Integration write's answer from the service, which is never stored.
  */
 export async function performApproved(
   c: Context<AppBindings>,
   p: Principal,
   record: ActionRecord,
-) {
-  if (record.approval?.decision !== "approved") return record;
+): Promise<{ record: ActionRecord; outcome: ActionOutcome | null }> {
+  if (record.approval?.decision !== "approved")
+    return { record, outcome: null };
   const delegation = c.get("delegation");
   // An Integration Action's tool arguments are sealed: the gate opens them first, and refuses the Action if its
   // Connection is gone. A Run's Action goes through the gate as the Run's, so its Agent's state, Courses and
   // Capabilities decide it now.
-  await Promise.resolve(record.intent ?? delegation.intentOf(p, record))
-    .then(
-      (intent) =>
-        intent &&
-        delegation.perform(record.runId ? principal.fromRun(record.runId) : p, {
-          key: record.key,
-          intent,
-        }),
+  const outcome = await Promise.resolve(
+    record.intent ?? delegation.intentOf(p, record),
+  )
+    .then((intent) =>
+      intent
+        ? delegation.perform(
+            record.runId ? principal.fromRun(record.runId) : p,
+            { key: record.key, intent },
+          )
+        : null,
     )
-    .catch((error: unknown) =>
+    .catch((error: unknown) => {
       console.error(
         JSON.stringify({
           msg: "approved Action failed",
           actionId: record.id,
           error: String(error),
         }),
-      ),
-    );
-  return (await delegation.history(p, { ids: [record.id] }))[0] ?? record;
+      );
+      return null;
+    });
+  return {
+    record: (await delegation.history(p, { ids: [record.id] }))[0] ?? record,
+    outcome,
+  };
 }
 
 /** The Actions awaiting the student's Approval, or those of one Run, each as the exact Action the card shows. */
@@ -206,10 +214,14 @@ export async function approvalsOf(
   q: { runId?: string } = {},
 ) {
   const now = new Date();
-  // An expired Approval no longer counts; a Chat's has no Run to close it, so it is left out here (ADR-0019).
+  // An expired Approval no longer counts; a Chat's has no Run to close it, so it is left out here (ADR-0019). A
+  // Chat's Integration write is asked only on its card in the Chat until Freigaben show Integration cards (#301).
   const asking = (
     await c.get("delegation").history(p, { status: "awaiting_approval", ...q })
-  ).filter((a) => a.approval && a.approval.expiresAt > now);
+  ).filter(
+    (a) =>
+      a.approval && a.approval.expiresAt > now && a.kind !== "integration.call",
+  );
   if (!asking.length) return [];
   const plan = await c.get("plan").view(p);
   const agents = new Map<string, string>();
@@ -297,7 +309,7 @@ export function registerApprovalRoutes(routes: OpenAPIHono<AppBindings>) {
           return c.json({ error: "stale" }, 409);
         throw error;
       }
-      const applied = await performApproved(c, p, record);
+      const { record: applied } = await performApproved(c, p, record);
       // The card showed an Action that is no longer what the gate would do, or a request that had expired.
       if (applied.refusal === "approval_mismatch")
         return c.json({ error: "changed" }, 409);
@@ -326,9 +338,10 @@ export function registerApprovalRoutes(routes: OpenAPIHono<AppBindings>) {
     async (c) => {
       const p = await student(c);
       if (!p) return c.json({ error: "unauthorized" }, 401);
-      const unconfirmed = await c
-        .get("delegation")
-        .history(p, { status: "unconfirmed" });
+      // An Unconfirmed Integration write is resolved on its own card (#298).
+      const unconfirmed = (
+        await c.get("delegation").history(p, { status: "unconfirmed" })
+      ).filter((a) => a.kind !== "integration.call");
       if (!unconfirmed.length) return c.json([], 200);
       const plan = await c.get("plan").view(p);
       return c.json(
