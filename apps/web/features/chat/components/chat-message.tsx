@@ -11,13 +11,23 @@ import {
 import { Reasoning } from "@nunio/ui/components/reasoning/reasoning";
 import { memo, useMemo, useState } from "react";
 import { sourceReferences } from "@/features/shared/components/source-citations";
-import type { ChatUIMessage, PlanProposal } from "../api/chat-queries";
+import type {
+  ChatUIMessage,
+  PlanProposal,
+  SavedProposal,
+} from "../api/chat-queries";
 import { messageText } from "../api/chat-queries";
 import { ArtifactCard } from "./artifact-card";
 import { MessageActions } from "./message-actions";
 import { ProposalOutcome } from "./proposal-outcome";
 import type { ToolPart } from "./tool-steps";
 import { ToolSteps } from "./tool-steps";
+
+/** A saved proposal, if it is a Plan one: an Integration write shows no row here. */
+const planProposal = (
+  proposal: SavedProposal | undefined,
+): PlanProposal | undefined =>
+  proposal?.type === "tool-integrationCall" ? undefined : proposal;
 
 function renderReference(reference: MdxReference) {
   return (
@@ -132,10 +142,7 @@ export const ChatMessage = memo(function ChatMessage({
           proposals.map((part) => (
             <ProposalOutcome
               key={part.toolCallId}
-              // A tool-propose part's saved proposal is a Plan one.
-              saved={
-                saved?.proposals?.[part.toolCallId] as PlanProposal | undefined
-              }
+              saved={planProposal(saved?.proposals?.[part.toolCallId])}
               sending={sending}
             />
           ))}

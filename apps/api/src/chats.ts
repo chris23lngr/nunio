@@ -368,7 +368,7 @@ async function withActions(
             decision: record.approval?.decision ?? null,
           };
           if (part.type === "tool-integrationCall") {
-            const { key: _, input: __, ...shown } = part;
+            const { key: _, ...shown } = part;
             // Its tool arguments are sealed, and opened only for the card that asks the student (ADR-0010).
             const intent =
               record && asked?.status === "awaiting_approval"
@@ -494,7 +494,9 @@ async function decideOne(
           : { kind: "deny", actionId },
       );
     if (d.decision === "deny")
-      return "The student declined the proposal, so nothing changed.";
+      return part.type === "tool-integrationCall"
+        ? `The student declined "${part.tool.label}" in ${part.integration.name}, so nothing was sent.`
+        : "The student declined the proposal, so nothing changed.";
     const { record, outcome } = await performApproved(c, p, decided);
     return part.type === "tool-integrationCall"
       ? integrationOutcomeOf(part, record, outcome)

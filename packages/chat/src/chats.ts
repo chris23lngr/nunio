@@ -279,13 +279,11 @@ export function createChats({
                 ? "approved and done"
                 : record.status === "refused"
                   ? `not performed (${record.refusal})`
-                  : record.status === "failed"
-                    ? "approved, but it did not happen"
-                    : "approved, but not confirmed to have taken effect";
+                  : "approved, but not confirmed to have taken effect";
         if (part.type === "tool-integrationCall")
           return [
             part.key,
-            `(You asked the student to approve "${part.tool.label}" in ${part.integration.name}: ${status}.)`,
+            `(You asked the student to approve "${part.tool.label}" in ${part.integration.name}: ${record?.status === "failed" ? "approved, but it failed" : status}.)`,
           ] as const;
         const args = (record?.args ?? {}) as {
           workId?: string;

@@ -390,7 +390,7 @@ export function ChatScreen({
   };
   const reporting = !!sending && !sending.arrived;
   /** What the batch's current card needs, whichever kind it is. */
-  const card = (at: { index: number }, total: number) => ({
+  const cardProps = (at: { index: number }, total: number) => ({
     position: { index: at.index, total },
     busy: reporting,
     focus: stepping,
@@ -620,13 +620,13 @@ export function ChatScreen({
                     <IntegrationApprovalCard
                       key={current.approvalId}
                       proposal={current}
-                      {...card(progress, batch.proposals.length)}
+                      {...cardProps(progress, batch.proposals.length)}
                     />
                   ) : (
                     <ProposalCard
                       key={current.approvalId}
                       proposal={current}
-                      {...card(progress, batch.proposals.length)}
+                      {...cardProps(progress, batch.proposals.length)}
                     />
                   ))
                 )
