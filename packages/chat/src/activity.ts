@@ -24,6 +24,26 @@ export type ReadEvent = {
 };
 
 /**
+ * A step's reads through one Connection (ADR-0028 "how Integration calls show in Activity"): per tool, how many calls
+ * the service answered, how many failed, and how many nunio refused, by reason. Counts and names only, never content;
+ * the Integration's name and the tools' labels are the catalog's, looked up when shown.
+ */
+export type IntegrationReadEvent = {
+  step: number;
+  integrationKey: string;
+  connectionId: string;
+  /** In the order the step first called each. */
+  tools: {
+    /** The server's own tool name. */
+    name: string;
+    answered: number;
+    failed: number;
+    /** By reason: run_cap past the Run's read limit. */
+    refused: { run_cap?: number };
+  }[];
+};
+
+/**
  * What became of one Action call: the gate's outcome for the Action it asked for, or a refusal without one when the call
  * named nothing the Run had read (`invalid`). A Preference it broke under Immer erlaubt is noted. The work and times are
  * kept as the call named them, so the entry still reads right once the block is moved or removed.
@@ -117,6 +137,7 @@ export async function recordEvents(
   run: { runId: string; studentId: string },
   events: (
     | { key: string; type: "read"; detail: ReadEvent }
+    | { key: string; type: "integration_read"; detail: IntegrationReadEvent }
     | { key: string; type: "action"; detail: ActionEvent }
     | { key: string; type: "artifact"; detail: ArtifactEvent }
     | { key: string; type: "notice"; detail: NoticeEvent }
@@ -169,6 +190,15 @@ export type VerlaufEntry =
       inbox: boolean;
       courses: { id: string; title: string | null }[];
       sources: { id: string; title: string | null }[];
+    }
+  | {
+      type: "integration_read";
+      at: Date;
+      step: number;
+      /** The Integration by its catalog name. */
+      integration: { key: string; name: string };
+      /** Each tool by nunio's label, with its calls by outcome. */
+      tools: (IntegrationReadEvent["tools"][number] & { label: string })[];
     }
   | {
       type: "action";
@@ -373,6 +403,24 @@ export function createActivity({
         const reads = run.events
           .filter((event) => event.type === "read")
           .map((event) => event.detail as ReadEvent);
+        // The catalog's names and labels, which stay after a Disconnect.
+        const integrations = await tx.integration.findMany({
+          where: {
+            key: {
+              in: run.events
+                .filter((event) => event.type === "integration_read")
+                .map(
+                  (event) =>
+                    (event.detail as IntegrationReadEvent).integrationKey,
+                ),
+            },
+          },
+          select: {
+            key: true,
+            name: true,
+            tools: { select: { name: true, label: true } },
+          },
+        });
         // Its Approvals as they stand: decided, expired, or still open.
         const approvals = await tx.approval.findMany({
           where: { action: { runId } },
@@ -472,6 +520,7 @@ export function createActivity({
           run,
           cost,
           summary,
+          integrations,
           approvals,
           workOfAction,
           newTasks,
@@ -629,6 +678,27 @@ export function createActivity({
               inbox: read.inbox ?? false,
               courses: titled(read.courseIds, courses),
               sources: titled(read.sourceIds, sources),
+            };
+          }
+          if (event.type === "integration_read") {
+            const reads = event.detail as IntegrationReadEvent;
+            const integration = read.integrations.find(
+              (i) => i.key === reads.integrationKey,
+            );
+            return {
+              type: "integration_read",
+              at: event.at,
+              step: reads.step,
+              integration: {
+                key: reads.integrationKey,
+                name: integration?.name ?? reads.integrationKey,
+              },
+              tools: reads.tools.map((tool) => ({
+                ...tool,
+                label:
+                  integration?.tools.find((t) => t.name === tool.name)?.label ??
+                  tool.name,
+              })),
             };
           }
           if (event.type === "artifact") {

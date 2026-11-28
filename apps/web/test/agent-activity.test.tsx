@@ -14,6 +14,7 @@ vi.mock("next/navigation", () => ({
 beforeEach(() => {
   api.route("GET", "/api/me/agents/capabilities", () => Response.json([]));
   api.route("GET", "/api/me/agents/courses", () => Response.json([]));
+  api.route("GET", "/api/me/agents/connections", () => Response.json([]));
   api.route("GET", "/api/me/models", () =>
     Response.json({ models: [], default: null, selected: null }),
   );
@@ -46,6 +47,7 @@ const agent = {
   state: "active",
   pausedBy: null,
   running: false,
+  connections: [],
   grants: [],
   budget: { limitMicroUsd: 5_000_000, usedMicroUsd: 0, heldMicroUsd: 0 },
   trigger: { rhythm: "daily", minute: 360 },
@@ -1013,5 +1015,65 @@ test("a Run under way when nunio made its Agent from an earlier delegation reads
     expect.stringContaining("Lernblock erstellt„Klausur Analysis“"),
     expect.stringMatching(/Abgebrochen: In einen Agenten übernommen$/),
     expect.stringContaining("Freigabe abgelaufen"),
+  ]);
+});
+
+test("the Verlauf shows a step's reads through a Connection as one entry with each tool's calls, and those that failed or were refused", async () => {
+  const run = listed("r-1", 60, "done");
+  const reads = (step: number, tools: object[]) => ({
+    type: "integration_read",
+    at: run.startedAt,
+    step,
+    integration: { key: "email", name: "E-Mail" },
+    tools,
+  });
+  api.route("GET", "/api/me/agents/a-1/runs", () =>
+    Response.json({ runs: [run], nextCursor: null }),
+  );
+  api.route("GET", "/api/me/agents/a-1/runs/r-1", () =>
+    Response.json(
+      detail(run, {
+        verlauf: [
+          reads(1, [
+            {
+              name: "email.search",
+              label: "Mails durchsuchen",
+              answered: 3,
+              failed: 0,
+              refused: {},
+            },
+            {
+              name: "email.read",
+              label: "Mail lesen",
+              answered: 1,
+              failed: 0,
+              refused: {},
+            },
+          ]),
+          reads(2, [
+            {
+              name: "email.read",
+              label: "Mail lesen",
+              answered: 0,
+              failed: 1,
+              refused: { run_cap: 2 },
+            },
+          ]),
+        ],
+      }),
+    ),
+  );
+  renderScreen(<AgentActivity apiOrigin={api.origin} agentId="a-1" />);
+
+  const verlauf = await screen.findByRole("list", { name: "Verlauf" });
+  expect(
+    within(verlauf)
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toEqual([
+    expect.stringMatching(/UhrE-Mail · Mails durchsuchen 3× · Mail lesen 1×$/),
+    expect.stringMatching(
+      /UhrE-Mail · Mail lesen 3×Mail lesen: 1× fehlgeschlagenMail lesen: 2× abgelehnt, Limit für diesen Lauf erreicht$/,
+    ),
   ]);
 });

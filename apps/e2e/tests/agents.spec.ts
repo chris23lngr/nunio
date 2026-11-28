@@ -94,6 +94,7 @@ test("a student starts an Agent from a Template, runs it and finds its Approval 
     instructions,
     courses: [course],
     capabilities: template.capabilities,
+    connections: [],
     state: "active",
     pausedBy: null,
     running,
@@ -174,6 +175,7 @@ test("a student starts an Agent from a Template, runs it and finds its Approval 
     "GET /api/me/agents/templates": () => [template],
     "GET /api/me/agents/capabilities": () => capabilitySet,
     "GET /api/me/agents/courses": () => [course],
+    "GET /api/me/agents/connections": () => [],
     "GET /api/me/models": () => models,
     "GET /api/me/allowance": () => ({
       limitMicroUsd: 5_000_000,
@@ -251,6 +253,7 @@ test("a student starts an Agent from a Template, runs it and finds its Approval 
       instructions,
       courseIds: [course.id],
       capabilities: template.capabilities,
+      connections: [],
       budgetMicroUsd: 5_000_000,
       trigger: { rhythm: "daily", minute: 360 },
       modelKey: sonnet,

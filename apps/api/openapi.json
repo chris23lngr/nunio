@@ -4231,6 +4231,14 @@
             "maxLength": 200,
             "description": "The Model its Runs run on: one of the Models Chat offers (GET /api/me/models), or the one it already has."
           },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentConnectionTools"
+            },
+            "maxItems": 50,
+            "description": "The tools it may use of the student's Connections (GET /api/me/agents/connections), each Connection at most once; every tool not listed is off. Left out, they stay as they are. A Connection the student no longer has is refused as stale."
+          },
           "templateId": {
             "type": [
               "string",
@@ -4354,6 +4362,31 @@
         ],
         "description": "Täglich (daily) or on chosen Wochentage (weekdays), at a minute of the day (Uhrzeit) in the Plan's time zone."
       },
+      "AgentConnectionTools": {
+        "type": "object",
+        "properties": {
+          "integrationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "maxItems": 100,
+            "description": "The tools that are on, by the server's own name: read and write tools nunio classified, never a Chat-only one such as email.submit."
+          }
+        },
+        "required": [
+          "integrationKey",
+          "tools"
+        ],
+        "additionalProperties": false
+      },
       "AgentForm": {
         "type": "object",
         "properties": {
@@ -4409,6 +4442,14 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "The Model its Runs run on: one of the Models Chat offers (GET /api/me/models), or the one it already has."
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentConnectionTools"
+            },
+            "maxItems": 50,
+            "description": "The tools it may use of the student's Connections (GET /api/me/agents/connections), each Connection at most once; every tool not listed is off. Left out, they stay as they are. A Connection the student no longer has is refused as stale."
           }
         },
         "required": [
@@ -4466,6 +4507,79 @@
           "archived",
           "topics",
           "sources"
+        ]
+      },
+      "AgentConnection": {
+        "type": "object",
+        "properties": {
+          "integrationKey": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "logo": {
+            "type": "string",
+            "description": "The path of its logo in the web app."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "needs_reconnection"
+            ]
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "The server's own tool name."
+                },
+                "label": {
+                  "type": "string",
+                  "description": "nunio's German label."
+                },
+                "class": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "write",
+                    "write_always_asked"
+                  ]
+                },
+                "mode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "ask",
+                    "always_allowed",
+                    "always_asks",
+                    null
+                  ],
+                  "description": "A write tool's setting, set on the Connection's page and shown read-only here: ask (Nachfragen) or always_allowed (Immer erlaubt), for all Chats and Agents; always_asks for one that is never grantable. Null for a read tool."
+                }
+              },
+              "required": [
+                "name",
+                "label",
+                "class",
+                "mode"
+              ]
+            },
+            "description": "Its tools an Agent can have, by name: never a blocked one or one offered only in a Chat."
+          }
+        },
+        "required": [
+          "integrationKey",
+          "name",
+          "logo",
+          "state",
+          "tools"
         ]
       },
       "Capability": {
@@ -4789,6 +4903,13 @@
             },
             "description": "Its Capabilities in the capability set's order."
           },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentConnectionTools"
+            },
+            "description": "The Connection tools it has on, by Integration; a Connection with none on is left out."
+          },
           "grants": {
             "type": "array",
             "items": {
@@ -4853,6 +4974,7 @@
           "running",
           "approvalRunId",
           "capabilities",
+          "connections",
           "grants",
           "budget",
           "next"
@@ -5083,6 +5205,87 @@
               "inbox",
               "courses",
               "sources"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "integration_read"
+                ]
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "step": {
+                "type": "integer"
+              },
+              "integration": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "key",
+                  "name"
+                ],
+                "description": "The Integration it read through, by its catalog name."
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "description": "The server's own tool name."
+                    },
+                    "label": {
+                      "type": "string",
+                      "description": "nunio's German label."
+                    },
+                    "answered": {
+                      "type": "integer"
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "description": "Calls the service failed or could not be reached for."
+                    },
+                    "refused": {
+                      "type": "object",
+                      "properties": {
+                        "run_cap": {
+                          "type": "integer"
+                        }
+                      },
+                      "description": "Calls nunio refused, by reason: run_cap past the Run's 20 Integration reads."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "label",
+                    "answered",
+                    "failed",
+                    "refused"
+                  ]
+                },
+                "description": "Each tool it called in the step, in the order it first did."
+              }
+            },
+            "required": [
+              "type",
+              "at",
+              "step",
+              "integration",
+              "tools"
             ]
           },
           {
@@ -16465,6 +16668,43 @@
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/AgentCourse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/agents/connections": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Every Connection the student has, Connected or not, with the tools an Agent can have on, by Integration name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentConnection"
                   }
                 }
               }

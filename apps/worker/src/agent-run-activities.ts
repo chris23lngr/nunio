@@ -11,6 +11,7 @@ import {
 import { createArtifacts } from "@nunio/artifacts";
 import type { AgentRuns, RunEnd } from "@nunio/chat";
 import { createAgentRuns } from "@nunio/chat";
+import type { PrismaClient } from "@nunio/db";
 import { createPool, createPrismaClient } from "@nunio/db";
 import type { Schedules } from "@nunio/delegation";
 import {
@@ -19,9 +20,11 @@ import {
   createModelCatalog,
   principal,
 } from "@nunio/delegation";
+import type { IntegrationReads } from "@nunio/integrations";
 import {
   createActionArgs,
   createIntegrationExecutor,
+  createIntegrationReads,
   integrationFakes,
 } from "@nunio/integrations";
 import {
@@ -32,6 +35,7 @@ import { createFacts, createKnowledgeReader } from "@nunio/knowledge";
 import { createPlan, createPlanExecutor, planRules } from "@nunio/planning";
 import { createUnderstanding } from "@nunio/understanding";
 import { Context } from "@temporalio/activity";
+import { log } from "./log.js";
 
 /**
  * What starts an Agent's Run: its Schedule, or the API once the student pressed "Jetzt starten", which already
@@ -75,6 +79,49 @@ export function createAgentRunActivities(
 }
 
 export type AgentRunActivities = ReturnType<typeof createAgentRunActivities>;
+
+/** The settings that hold the "connection credentials" master keys, which reading through a Connection needs. */
+export const connectionCredentialSettings = [
+  "CONNECTION_CREDENTIAL_KEY_VERSION",
+  "CONNECTION_CREDENTIAL_MASTER_KEYS",
+];
+
+/**
+ * Reads through Connections for Agent Runs. Without the "connection credentials" master keys the worker still starts
+ * and runs every Run: each Integration read then fails, the model is told the Connection can't be read, and the worker
+ * logs which settings are missing, once as it starts and again at each read.
+ */
+export function integrationReadsFromEnv(
+  env: NodeJS.ProcessEnv,
+  db: PrismaClient,
+): Pick<IntegrationReads, "open"> {
+  const fakes = integrationFakes(env);
+  try {
+    return createIntegrationReads({
+      db,
+      credentials: connectionCredentialKeysFromEnv(env),
+      fakes,
+    });
+  } catch (error) {
+    const missing = {
+      settings: connectionCredentialSettings,
+      error: error instanceof Error ? error.message : String(error),
+    };
+    log("Agent Runs can't read through Connections: set the settings", missing);
+    return {
+      open: () => ({
+        async read() {
+          log("an Integration read failed: set the settings", missing);
+          return {
+            outcome: "failed",
+            text: "This Connection can't be read right now.",
+          };
+        },
+        close: async () => {},
+      }),
+    };
+  }
+}
 
 const settings = [
   "DATABASE_URL",
@@ -167,6 +214,7 @@ export function agentRunActivitiesFromEnv(
     artifacts,
     delegation,
     agents,
+    integrations: integrationReadsFromEnv(env, db),
     startArtifactRun,
     catalog: createModelCatalog({ db, clock }),
     modelFor: (model) => createAgentModel(models.fromConfig(model)),

@@ -202,6 +202,7 @@ beforeEach(() => {
   api.route("GET", "/api/me/agents/courses", () =>
     Response.json(activeCourses),
   );
+  api.route("GET", "/api/me/agents/connections", () => Response.json([]));
   // The form's builder panel reads whether the Allowance is left.
   api.route("GET", "/api/me/allowance", () =>
     Response.json({
@@ -383,6 +384,7 @@ test("Template verwenden for Klausur vorbereiten prefills without Courses, saves
         instructions: templatesFixture[0]!.instructions,
         courseIds: [activeCourses[0]!.id],
         capabilities: templatesFixture[0]!.capabilities,
+        connections: [],
         budgetMicroUsd: 5_000_000,
         trigger: { rhythm: "daily", minute: 360 },
         modelKey: "sonnet-5.5-reasoning-high",
@@ -453,6 +455,7 @@ test("Template verwenden for Briefings erstellen preselects all active Courses a
         instructions: templatesFixture[2]!.instructions,
         courseIds: [activeCourses[0]!.id, activeCourses[1]!.id],
         capabilities: [{ id: "createBriefing", mode: null }],
+        connections: [],
         budgetMicroUsd: 5_000_000,
         trigger: { rhythm: "daily", minute: 420 },
         modelKey: "sonnet-5.5-reasoning-high",

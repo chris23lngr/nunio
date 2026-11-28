@@ -68,6 +68,20 @@ const AgentCapability = z
   .strict()
   .openapi("AgentCapability");
 
+/** The tools of one of the student's Connections an Agent may use; every other tool of it is off. */
+const AgentConnectionTools = z
+  .object({
+    integrationKey: z.string().min(1).max(100),
+    tools: z
+      .array(z.string().min(1).max(200))
+      .max(100)
+      .describe(
+        "The tools that are on, by the server's own name: read and write tools nunio classified, never a Chat-only one such as email.submit.",
+      ),
+  })
+  .strict()
+  .openapi("AgentConnectionTools");
+
 /** A minute of the day, as the Uhrzeit. */
 const Minute = z
   .number()
@@ -134,6 +148,13 @@ const AgentForm = z
       .max(200)
       .describe(
         "The Model its Runs run on: one of the Models Chat offers (GET /api/me/models), or the one it already has.",
+      ),
+    connections: z
+      .array(AgentConnectionTools)
+      .max(50)
+      .optional()
+      .describe(
+        "The tools it may use of the student's Connections (GET /api/me/agents/connections), each Connection at most once; every tool not listed is off. Left out, they stay as they are. A Connection the student no longer has is refused as stale.",
       ),
   })
   .strict()
@@ -267,6 +288,11 @@ const Agent = z
     capabilities: z
       .array(AgentCapability)
       .describe("Its Capabilities in the capability set's order."),
+    connections: z
+      .array(AgentConnectionTools)
+      .describe(
+        "The Connection tools it has on, by Integration; a Connection with none on is left out.",
+      ),
     grants: z.array(
       z.enum(["studyBlock.create", "studyBlock.move", "studyBlock.remove"]),
     ),
@@ -338,6 +364,36 @@ const VerlaufEntrySchema = z
         .describe("It read the Inbox across the student's Courses."),
       courses: z.array(Named).describe("The Courses whose Facts it read."),
       sources: z.array(Named).describe("The Sources it drew on."),
+    }),
+    z.object({
+      type: z.literal("integration_read"),
+      at: z.date(),
+      step: z.number().int(),
+      integration: z
+        .object({ key: z.string(), name: z.string() })
+        .describe("The Integration it read through, by its catalog name."),
+      tools: z
+        .array(
+          z.object({
+            name: z.string().describe("The server's own tool name."),
+            label: z.string().describe("nunio's German label."),
+            answered: z.number().int(),
+            failed: z
+              .number()
+              .int()
+              .describe(
+                "Calls the service failed or could not be reached for.",
+              ),
+            refused: z
+              .object({ run_cap: z.number().int().optional() })
+              .describe(
+                "Calls nunio refused, by reason: run_cap past the Run's 20 Integration reads.",
+              ),
+          }),
+        )
+        .describe(
+          "Each tool it called in the step, in the order it first did.",
+        ),
     }),
     z.object({
       type: z.literal("action"),
@@ -633,6 +689,92 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
   routes.openapi(
     createRoute({
       method: "get",
+      path: "/api/me/agents/connections",
+      responses: {
+        200: json(
+          z.array(
+            z
+              .object({
+                integrationKey: z.string(),
+                name: z.string(),
+                logo: z
+                  .string()
+                  .describe("The path of its logo in the web app."),
+                state: z.enum(["connected", "needs_reconnection"]),
+                tools: z
+                  .array(
+                    z.object({
+                      name: z.string().describe("The server's own tool name."),
+                      label: z.string().describe("nunio's German label."),
+                      class: z.enum(["read", "write", "write_always_asked"]),
+                      mode: z
+                        .enum(["ask", "always_allowed", "always_asks"])
+                        .nullable()
+                        .describe(
+                          "A write tool's setting, set on the Connection's page and shown read-only here: ask (Nachfragen) or always_allowed (Immer erlaubt), for all Chats and Agents; always_asks for one that is never grantable. Null for a read tool.",
+                        ),
+                    }),
+                  )
+                  .describe(
+                    "Its tools an Agent can have, by name: never a blocked one or one offered only in a Chat.",
+                  ),
+              })
+              .openapi("AgentConnection"),
+          ),
+          "Every Connection the student has, Connected or not, with the tools an Agent can have on, by Integration name.",
+        ),
+        401: errors[401],
+      },
+    }),
+    async (c) => {
+      const p = await student(c);
+      if (!p) return c.json({ error: "unauthorized" }, 401);
+      const connections = c.get("connections");
+      const details = await Promise.all(
+        (await connections.list(p)).map(async (summary) => ({
+          detail: await connections.read(p, summary.integrationKey),
+          // Handing in by email is offered only in a Chat, never to an Agent.
+          chatOnly: new Set(
+            (await c.get("integrationCatalog").tools(summary.integrationKey))
+              .filter((tool) => tool.chatOnly)
+              .map((tool) => tool.name),
+          ),
+        })),
+      );
+      return c.json(
+        details
+          .flatMap(({ detail, chatOnly }) =>
+            detail ? [{ ...detail, chatOnly }] : [],
+          )
+          .sort((a, b) => a.name.localeCompare(b.name, "de"))
+          .map((detail) => ({
+            integrationKey: detail.key,
+            name: detail.name,
+            logo: detail.logo,
+            state: detail.connection.state,
+            tools: detail.tools.flatMap((tool) =>
+              tool.class === "blocked" || detail.chatOnly.has(tool.name)
+                ? []
+                : [
+                    {
+                      name: tool.name,
+                      label: tool.label,
+                      class: tool.class as Exclude<
+                        typeof tool.class,
+                        "blocked"
+                      >,
+                      mode: tool.mode,
+                    },
+                  ],
+            ),
+          })),
+        200,
+      );
+    },
+  );
+  routes.openapi(
+    createRoute({
+      method: "get",
       path: "/api/me/agents/capabilities",
       responses: {
         200: json(
@@ -820,6 +962,7 @@ export function registerAgentRoutes(routes: OpenAPIHono<AppBindings>) {
             ...sizes.get(course.id)!,
           })),
           capabilities: r.capabilities,
+          connections: r.connections.filter((c) => c.tools.length),
           trigger: r.trigger,
           modelKey: r.modelKey,
           state: r.state,

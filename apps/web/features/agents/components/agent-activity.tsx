@@ -8,6 +8,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import {
+  Blocks,
   CircleCheck,
   CirclePlay,
   CircleStop,
@@ -78,6 +79,8 @@ function entryIcon(entry: VerlaufEntry) {
     if (entry.status === "failed") return CircleX;
     return CircleStop;
   }
+  // Like the Chat's step line for reads through an Integration.
+  if (entry.type === "integration_read") return Blocks;
   return Route;
 }
 

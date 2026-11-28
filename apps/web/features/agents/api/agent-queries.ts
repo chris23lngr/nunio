@@ -78,6 +78,26 @@ export function capabilityQueries(apiOrigin: string) {
   });
 }
 
+export type AgentConnection =
+  paths["/api/me/agents/connections"]["get"]["responses"][200]["content"]["application/json"][number];
+export type AgentConnectionTools = Agent["connections"][number];
+
+/** Every Connection the student has, Connected or not, with the tools an Agent can have on and their mode. */
+export function agentConnectionQueries(apiOrigin: string) {
+  return queryOptions({
+    queryKey: [apiOrigin, "agent-connections"],
+    queryFn: async ({ signal }) => {
+      const result = await createApiClient(apiOrigin).GET(
+        "/api/me/agents/connections",
+        { signal },
+      );
+      if (!result.data)
+        throw new Error("Deine Verbindungen konnten nicht geladen werden.");
+      return result.data;
+    },
+  });
+}
+
 export type AgentTemplate =
   paths["/api/me/agents/templates"]["get"]["responses"][200]["content"]["application/json"][number];
 

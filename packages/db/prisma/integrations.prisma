@@ -89,6 +89,7 @@ model Connection {
   credential ConnectionCredential?
   grants     Grant[]
   chats      ChatConnection[]
+  agentTools AgentConnectionTool[]
 
   @@unique([studentId, integrationKey])
   @@unique([id, studentId])

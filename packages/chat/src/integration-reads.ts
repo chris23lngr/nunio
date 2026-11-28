@@ -7,6 +7,15 @@ import type { Turn } from "./turn.js";
 
 /** A Chat turn makes at most this many Integration reads; further ones are refused (ADR-0026 "Integration content"). */
 export const maxReadsPerTurn = 10;
+/** An Agent's Run makes at most this many Integration reads across its steps; further ones are refused. */
+export const maxReadsPerRun = 20;
+
+/** How many Integration reads may be made, how many already were, and what they are made by, as the model is told. */
+export interface ReadLimit {
+  max: number;
+  made: number;
+  by: "an answer" | "a Run";
+}
 
 /** What the student sees of one Integration read, and what its step line counts. */
 export type IntegrationReadOutput = {
@@ -60,19 +69,20 @@ export function isIntegrationRead(
 }
 
 /**
- * The read tools of the Connections a Chat may read, built from their pinned definitions without calling the server.
- * They run without asking; each Connection's session opens at its first read and closes with `close`. Every call
- * counts toward the answer's read limit, answered or failed, and the Connection joins `turn.connections`, so the answer
- * is sealed under its key.
+ * The read tools of the Connections a Chat or a Run step may read, built from their pinned definitions without calling
+ * the server. They run without asking; each Connection's session opens at its first read and closes with `close`.
+ * Every call counts toward the read limit, answered or failed, and the Connection joins `turn.connections`, so what the
+ * answer or step writes is sealed under its key.
  */
 export function integrationReadTools(
   turn: Turn,
   reads: { open(p: Principal, connectionId: string): ReadSession },
   p: Principal,
   readable: readonly ReadableTool[],
+  limit: ReadLimit = { max: maxReadsPerTurn, made: 0, by: "an answer" },
 ) {
   const sessions = new Map<string, ReadSession>();
-  let calls = 0;
+  let calls = limit.made;
   const tools: Record<
     string,
     Tool<Record<string, unknown>, IntegrationReadOutput>
@@ -97,10 +107,10 @@ export function integrationReadTools(
       metadata: { integration: integration.name, label },
       execute: async (input, { toolCallId, abortSignal }) => {
         calls += 1;
-        if (calls > maxReadsPerTurn) {
+        if (calls > limit.max) {
           turn.give(
             toolCallId,
-            `Refused (run_cap): an answer makes at most ${maxReadsPerTurn} Integration reads. Answer with what you have.`,
+            `Refused (run_cap): ${limit.by} makes at most ${limit.max} Integration reads. Answer with what you have.`,
           );
           return output("refused");
         }
