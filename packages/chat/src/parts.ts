@@ -56,7 +56,8 @@ export type ChatPart =
         minutes?: number;
       }
     >
-  | ProposalPart<"tool-proposeTaskReopen", { task: string }>;
+  | ProposalPart<"tool-proposeTaskReopen", { task: string }>
+  | IntegrationCallPart;
 
 /** Where a proposed block would be, in the student's time zone as the model gave it. */
 type Times = { start: string; end: string };
@@ -71,12 +72,29 @@ export type ProposalPart<Type extends string, Input> = {
   notes: BlockNote[];
 };
 
+/**
+ * A write through a Connection, asked of the student as an `integration.call` Action under `key` once the answer is
+ * saved. Kept under one type, whatever the model called the tool, with what its card names.
+ */
+export type IntegrationCallPart = {
+  type: "tool-integrationCall";
+  toolCallId: string;
+  /** The tool's arguments, as the model gave them. */
+  input: Record<string, unknown>;
+  approvalId: string;
+  key: string;
+  integration: { key: string; name: string; logo: string };
+  /** The server's own tool name, nunio's label, and the argument the card shows first. */
+  tool: { name: string; label: string; headlineArgument: string | null };
+};
+
 const proposalTypes = new Set([
   "tool-proposeStudyBlock",
   "tool-proposeStudyBlockMove",
   "tool-proposeStudyBlockRemove",
   "tool-proposeTask",
   "tool-proposeTaskReopen",
+  "tool-integrationCall",
 ]);
 export const isProposal = (
   part: ChatPart,
@@ -93,10 +111,13 @@ export const withoutUnknownTags = (text: string, tags: ReadonlySet<string>) =>
 export async function partsFrom(
   chunks: readonly UIMessageChunk[],
   tags: ReadonlySet<string>,
-  /** What a proposal waiting for the student is asked as, by its tool call. */
+  /** What a proposal waiting for the student is asked as, by its tool call, and what its part shows. */
   asked: (
     toolCallId: string,
-  ) => { key: string; notes: BlockNote[] } | undefined,
+  ) =>
+    | { key: string; notes: BlockNote[] }
+    | Pick<IntegrationCallPart, "type" | "key" | "integration" | "tool">
+    | undefined,
 ): Promise<ChatPart[]> {
   let message: { parts: unknown[] } | undefined;
   for await (const snapshot of readUIMessageStream({
@@ -138,7 +159,7 @@ export async function partsFrom(
               output: p.output,
             } as ChatPart),
       ];
-    // A proposal waits for the student; it shows as the Action it is asked as.
+    // A proposal waits for the student; it shows as the Action it is asked as, an Integration write under its own type.
     if (p.state === "approval-requested") {
       const proposal = asked(p.toolCallId as string);
       return proposal
