@@ -14420,7 +14420,7 @@ describe("a Chat reading through its Connections (#291)", () => {
             name: "notes.create_page",
           },
         },
-        data: { definitionHash: "re-reviewed" },
+        data: { definitionHash: "0".repeat(64) },
       });
       prompts.length = 0;
 
